@@ -1,3 +1,6 @@
-from dplanner.modules.debug.module import DebugDeps, DebugModule
+"""Developer-facing surfaces. Currently the LLM call log.
 
-__all__ = ["DebugDeps", "DebugModule"]
+The module class and its ``Deps`` are imported from ``module.py`` by the composition root.
+This file stays a docstring on purpose: re-exporting the Qt half here would make the
+package's Qt-free files unreachable without loading Qt.
+"""

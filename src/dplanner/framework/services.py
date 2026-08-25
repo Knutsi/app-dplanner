@@ -15,7 +15,7 @@ whole application and then reach into any part of it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from dplanner.core.repository import Repository
@@ -24,11 +24,12 @@ from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import ContextService
 from dplanner.framework.exports import ExportRegistry
+from dplanner.framework.index_panel import IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
 from dplanner.framework.llm_service import LLMService
+from dplanner.framework.module import Module
 from dplanner.framework.settings_registry import SettingsSectionRegistry
-from dplanner.framework.sidebar import SidebarPanelRegistry, UtilityToolRegistry
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
@@ -63,8 +64,7 @@ class AppServices:
     autosave: AutosaveService
 
     # -- surfaces modules contribute to --------------------------------------------------------
-    sidebar_panels: SidebarPanelRegistry
-    utility_tools: UtilityToolRegistry
+    index_segments: IndexSegmentRegistry
     inspector_sections: InspectorSectionRegistry
     detail_cards: InspectorSectionRegistry  # The same registry type, a different host.
     settings_sections: SettingsSectionRegistry
@@ -77,3 +77,8 @@ class AppServices:
     llm_providers: LLMProviderRegistry
     llm: LLMService
     switcher: WorkspaceSwitcher
+
+    # The feature modules themselves, in registration order. Not for modules — they never
+    # see this bundle — but so a test can reach any part of the running application, which
+    # is what this dataclass exists for.
+    modules: list[Module] = field(default_factory=list)

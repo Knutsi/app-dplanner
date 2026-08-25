@@ -8,18 +8,13 @@ write.
 import pytest
 
 from dplanner.framework.exports import ExportRegistry, ExportSpec
+from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
 from dplanner.framework.settings_registry import (
     SettingsScope,
     SettingsSection,
     SettingsSectionRegistry,
-)
-from dplanner.framework.sidebar import (
-    SidebarPanel,
-    SidebarPanelRegistry,
-    UtilityTool,
-    UtilityToolRegistry,
 )
 
 
@@ -38,16 +33,26 @@ class FakeProvider:
         raise NotImplementedError
 
 
-def _panel(panel_id, order=50):
-    from PySide6.QtWidgets import QWidget
+def _segment(segment_id, order=50):
+    return IndexSegment(
+        id=segment_id, label=segment_id, factory=lambda _root: FakeSegmentView(), order=order
+    )
 
-    return SidebarPanel(id=panel_id, label=panel_id, widget=QWidget(), order=order)
 
+class FakeSegmentView:
+    """The smallest thing that satisfies IndexSegmentView."""
 
-def _tool(tool_id, order=50):
-    from PySide6.QtWidgets import QWidget
+    def selection_nodes(self, items):
+        return ()
 
-    return UtilityTool(id=tool_id, widget=QWidget(), order=order)
+    def activated(self, item):
+        pass
+
+    def context_menu(self, item):
+        return None
+
+    def dispose(self):
+        pass
 
 
 class FakeExtension:
@@ -93,8 +98,7 @@ def _export(export_id):
 
 
 CASES = [
-    pytest.param(SidebarPanelRegistry, _panel, "panels", id="sidebar_panels"),
-    pytest.param(UtilityToolRegistry, _tool, "tools", id="utility_tools"),
+    pytest.param(IndexSegmentRegistry, _segment, "segments", id="index_segments"),
     pytest.param(InspectorSectionRegistry, _section, "sections", id="inspector_sections"),
     pytest.param(SettingsSectionRegistry, _settings, "sections", id="settings_sections"),
     pytest.param(ExportRegistry, _export, "specs", id="exports"),
@@ -123,10 +127,10 @@ def test_registration_order_is_preserved(app, factory, make, accessor):
 
 
 def test_ordered_registries_sort_by_order_then_id(app):
-    registry = SidebarPanelRegistry()
-    registry.register(_panel("late", order=90))
-    registry.register(_panel("early", order=10))
-    assert [panel.id for panel in registry.panels()] == ["early", "late"]
+    registry = IndexSegmentRegistry()
+    registry.register(_segment("late", order=90))
+    registry.register(_segment("early", order=10))
+    assert [segment.id for segment in registry.segments()] == ["early", "late"]
 
 
 def test_tab_factories_refuse_a_duplicate_kind(app):

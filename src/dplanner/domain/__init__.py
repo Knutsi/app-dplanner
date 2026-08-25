@@ -1,18 +1,20 @@
-"""The plan: projects, phases and tasks, and the repository that stores them.
+"""The product: a catalogue of projects, each a graph of steps.
 
-A plan is a tree of :class:`Task` nodes. The root is the project; anything with children
-reads as a phase; a leaf is a task. There is deliberately no separate type for each — the
-shape a plan takes is the planner's business, not the model's, and a phase that turns out to
-be one piece of work should not need converting.
+**Product** is the system level — one codebase, the repository it lives in, and the projects
+planned against it. A window holds one product.
 
-Beyond the tree, a task carries the four things a plan is actually made of: **who** it is
-for, **when** it runs, **how big** it is, and **what it waits on**. Dependencies are the one
-piece of structure that does not follow the tree — a task in one phase routinely waits on a
-task in another — so they are stored as ids on the task that waits, and validated against
-the tree rather than derived from it.
+**Project** is a unit of work. **Step** is a node in that project's graph, and edges between
+steps are typed: ``requires`` orders the graph and refuses cycles, ``relates`` is a plain
+link. An edge lives on the step that waits, so a step is self-contained and the direction
+cannot be read the wrong way round.
+
+**Aspects are what the graph does not know.** An estimate, a ticket, a description: none of
+them are fields on :class:`Step`. Each is a module's entry in ``module_data`` (JSON) or
+``module_text`` (prose), namespaced by module id and versioned by the module that writes it,
+so features arrive without the graph learning anything about them.
 """
 
-from dplanner.domain.model import Plan, Task, TaskId
-from dplanner.domain.store import PlanStore
+from dplanner.domain.model import NodeId, Product, Project, ProjectId, Step, StepId
+from dplanner.domain.store import ProductStore
 
-__all__ = ["Plan", "PlanStore", "Task", "TaskId"]
+__all__ = ["NodeId", "Product", "ProductStore", "Project", "ProjectId", "Step", "StepId"]

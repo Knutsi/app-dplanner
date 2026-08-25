@@ -10,7 +10,9 @@ registry sorts within it and draws the separators between groups automatically. 
 ``ActionSpec.order`` only ranks inside one group and no global numbering scheme is needed.
 
 **Add a group rather than smuggling structure into ``order``.** If two of your actions want
-a separator between them, they belong to two groups.
+a separator between them, they belong to two groups — and adding one is this one line, so
+there are deliberately no groups here that nothing registers into. A group naming a feature
+that does not exist is vocabulary that lies, and the next person goes looking for the action.
 """
 
 from typing import Final
@@ -18,13 +20,15 @@ from typing import Final
 MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "open" and "save"/"branch" come from the workspaces and sync modules; "window" from
     # the app shell and the settings dialog.
-    "File": ("open", "save", "branch", "export", "window"),
-    "Edit": ("history", "find"),
+    "File": ("open", "product", "save", "branch", "window"),
+    "Edit": ("history",),
     "View": ("panels", "zoom", "theme", "window"),
-    # The planner's own vocabulary. This is also what the tree's right-click menu renders —
-    # see framework/action_menu.py.
-    "Task": ("edit", "status", "open"),
-    "Tools": ("run",),
+    # The planner's own vocabulary. "Project" is also what the index tree's right-click
+    # menu renders — see framework/action_menu.py. There is deliberately no "Step" menu
+    # yet: steps have no GUI surface until the graph editor, and an empty menu is worse
+    # than no menu.
+    "Project": ("edit", "open"),
+    "Tools": ("agent",),
     "Debug": ("llm",),
     "Help": ("about",),
 }

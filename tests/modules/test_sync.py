@@ -53,8 +53,8 @@ def test_a_local_repo_offers_no_remote_update(git_session):
 
 def test_saving_commits_what_autosave_wrote(git_session, tmp_path):
     services = git_session.services
-    plan = services.document
-    plan.set_description(plan.root.children[0].id, "edited in the test")
+    product = services.document
+    product.set_field(product.id, "repository", "edited in the test")
     services.autosave.flush_now()
 
     storage = services.storage

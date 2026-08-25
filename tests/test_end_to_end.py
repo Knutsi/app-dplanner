@@ -13,7 +13,7 @@ import pytest
 
 from dplanner.app import new_session
 from dplanner.core.storage.locations import StorageLocation
-from dplanner.domain.model import Task
+from dplanner.domain.model import Project, Step, TextEdit
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 
 
@@ -35,48 +35,80 @@ def workspace(app, tmp_path, close_quietly):
     close_quietly(session)
 
 
+def seed_a_project(services):
+    """Put content in an empty product, the way the CLI does: apply, do not push.
+
+    Deliberately *not* through the undo stack. This is the setup, not the edit under test —
+    and it is also exactly what an agent does before the user starts editing, so the state
+    these tests begin from is the state a real session begins from.
+    """
+    from dplanner.domain.commands import AddNodeCommand
+
+    product = services.document
+    project = Project(title="Discovery", summary="what we do not know")
+    AddNodeCommand(product.id, project).redo(product)
+    for title in ("Read the spec", "Draft the model"):
+        AddNodeCommand(project.id, Step(title=title)).redo(product)
+    return project
+
+
 def test_every_registered_activity_opens(workspace):
     session, _location, _root = workspace
     services = session.services
-    plan = services.document
-    services.tabs.open("task", plan.root.children[0].id)
+    project = seed_a_project(services)
+    services.tabs.open("project", project.id)
+    services.tabs.open("product")
     services.tabs.open("llm_calls")
-    assert len(services.tabs.activities()) >= 2
+    assert len(services.tabs.activities()) >= 3
     for activity in services.tabs.activities():
         assert activity.widget is not None
         activity.on_activated()
 
 
+def test_the_index_lists_what_the_product_holds(workspace):
+    session, _location, _root = workspace
+    services = session.services
+    seed_a_project(services)
+    assert [s.id for s in services.index_segments.segments()] == ["projects"]
+
+
 def test_a_mixed_edit_chain_undoes_back_to_an_identical_workspace(workspace, close_quietly):
     session, location, root = workspace
     services = session.services
-    plan = services.document
+    product = services.document
+    project = seed_a_project(services)
     services.autosave.flush_now()
     before = fingerprint(root)
-    assert before  # The seeded workspace is really on disk.
+    assert before  # The workspace is really on disk.
 
-    first = plan.root.children[0]
-    services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("task", first.id)),))
-
-    # Four different kinds of change, each through the undo stack.
-    from dplanner.domain.commands import (
-        AddTaskCommand,
-        RemoveTaskCommand,
-        SetFieldCommand,
-        SetNotesCommand,
-        SetTitleCommand,
+    first, second = project.steps[0], project.steps[1]
+    services.context.set_scope(
+        SCOPE_SELECTION, (ContextNode(selection_uri("project", project.id)),)
     )
 
-    services.undo.push(SetTitleCommand(first.id, "Renamed"))
+    # One of every kind of change this domain has, each through the undo stack.
+    from dplanner.domain.commands import (
+        AddNodeCommand,
+        EditTextCommand,
+        RemoveNodeCommand,
+        SetEdgesCommand,
+        SetFieldCommand,
+        SetModuleDataCommand,
+    )
+
+    services.undo.push(SetFieldCommand(project.id, "title", "Renamed"))
     services.undo.break_coalescing()
-    services.undo.push(SetNotesCommand(first.id, "a note"))
+    services.undo.push(SetFieldCommand(product.id, "repository", "git@example.com:w.git"))
     services.undo.break_coalescing()
-    services.undo.push(SetFieldCommand(first.id, "assignee", "knut"))
+    services.undo.push(EditTextCommand(TextEdit(first.id, "step_description", 0, "", "# Notes\n")))
     services.undo.break_coalescing()
-    added = Task(title="Added")
-    services.undo.push(AddTaskCommand(plan.root.id, added))
+    services.undo.push(SetModuleDataCommand(first.id, "step_estimation", {"days": 3.0}))
     services.undo.break_coalescing()
-    services.undo.push(RemoveTaskCommand(plan.root.children[1].id))
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    services.undo.break_coalescing()
+    services.undo.push(AddNodeCommand(project.id, Step(title="Added")))
+    services.undo.break_coalescing()
+    services.undo.push(RemoveNodeCommand(first.id))
     services.autosave.flush_now()
     assert fingerprint(root) != before
 
@@ -91,8 +123,8 @@ def test_a_mixed_edit_chain_undoes_back_to_an_identical_workspace(workspace, clo
     assert reopened.open_initial(location)
     assert reopened.services is not None
     try:
-        titles = [task.title for task in reopened.services.document.tasks()]
-        assert titles == [task.title for task in plan.tasks()]
+        reopened_titles = [getattr(n, "title", n.kind) for n in reopened.services.document.nodes()]
+        assert reopened_titles == [getattr(n, "title", n.kind) for n in product.nodes()]
         assert fingerprint(root) == before
     finally:
         close_quietly(reopened)
@@ -100,14 +132,16 @@ def test_a_mixed_edit_chain_undoes_back_to_an_identical_workspace(workspace, clo
 
 def test_reopening_restores_the_same_workspace(workspace, close_quietly):
     session, location, _root = workspace
-    original_ids = [task.id for task in session.services.document.tasks()]
+    seed_a_project(session.services)
+    session.services.autosave.flush_now()
+    original_ids = [node.id for node in session.services.document.nodes()]
     close_quietly(session)
 
     reopened = new_session()
     assert reopened.open_initial(location)
     assert reopened.services is not None
     try:
-        assert [task.id for task in reopened.services.document.tasks()] == original_ids
+        assert [node.id for node in reopened.services.document.nodes()] == original_ids
     finally:
         close_quietly(reopened)
 

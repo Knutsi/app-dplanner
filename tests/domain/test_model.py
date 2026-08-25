@@ -1,195 +1,218 @@
-"""The plan model: one signal per mutation, roll-ups that cannot lie, dependencies that
-cannot form a cycle."""
+"""The product model: its index, its graph invariants, and its prose."""
 
 import pytest
 
-from dplanner.domain.model import Plan, Task, TextEdit, unique_folder_name
+from dplanner.domain.model import EDGE_KINDS, Product, Project, Step, TextEdit
 
 
 @pytest.fixture
-def plan():
-    root = Task(title="Project")
-    plan = Plan(root)
-    discovery = Task(title="Discovery")
-    plan.add_task(root.id, discovery)
-    plan.add_task(discovery.id, Task(title="Interviews", estimate_days=3))
-    plan.add_task(discovery.id, Task(title="Write-up", estimate_days=1))
-    plan.add_task(root.id, Task(title="Build", estimate_days=5))
-    return plan
+def product():
+    product = Product(name="Widget")
+    project = Project(title="Discovery")
+    product.add_child(product.id, project)
+    for title in ("Read the spec", "Draft the model", "Review"):
+        product.add_child(project.id, Step(title=title))
+    return product
 
 
-def ids(plan, title):
-    return next(task.id for task in plan.tasks() if task.title == title)
+def find(product, title):
+    return next(node for node in product.nodes() if getattr(node, "title", None) == title)
 
 
-def test_ids_are_stable_and_unique(plan):
-    all_ids = [task.id for task in plan.tasks()]
-    assert len(set(all_ids)) == len(all_ids)
+# -- the index ---------------------------------------------------------------------------------
 
 
-def test_setting_a_title_emits_once_with_its_origin(plan):
+def test_one_index_spans_all_three_kinds(product):
+    """`Repository.owner(id)` is flat over ids, so every level must answer to the same
+    lookup — the framework does not know this model has levels."""
+    project = find(product, "Discovery")
+    step = find(product, "Review")
+    assert product.has(product.id) and product.has(project.id) and product.has(step.id)
+    assert product.node(step.id) is step
+    assert [node.kind for node in product.nodes()][:3] == ["product", "project", "step"]
+
+
+def test_a_step_knows_which_project_it_is_in(product):
+    step = find(product, "Review")
+    assert product.project_of(step.id).title == "Discovery"
+    assert product.parent_of(product.id) is None
+
+
+def test_asking_for_the_wrong_kind_is_an_error(product):
+    project = find(product, "Discovery")
+    with pytest.raises(KeyError):
+        product.step(project.id)
+
+
+# -- fields ------------------------------------------------------------------------------------
+
+
+def test_each_kind_has_its_own_editable_fields(product):
+    project = find(product, "Discovery")
+    product.set_field(product.id, "repository", "git@example.com:widget.git")
+    product.set_field(project.id, "summary", "what we do not know yet")
+    assert product.repository.endswith("widget.git")
+    assert project.summary == "what we do not know yet"
+
+
+def test_a_field_the_kind_does_not_have_is_refused(product):
+    step = find(product, "Review")
+    with pytest.raises(ValueError, match="not an editable field of a step"):
+        product.set_field(step.id, "summary", "nope")
+
+
+def test_setting_a_field_to_what_it_already_is_emits_nothing(product):
     seen = []
-    plan.title_changed.connect(lambda task_id, origin: seen.append((task_id, origin)))
-    marker = object()
-    task_id = ids(plan, "Build")
-    plan.set_title(task_id, "Ship", marker)
-    assert seen == [(task_id, marker)]
-
-
-def test_setting_the_same_value_emits_nothing(plan):
-    seen = []
-    plan.field_changed.connect(lambda *args: seen.append(args))
-    task_id = ids(plan, "Build")
-    plan.set_field(task_id, "status", "todo")
+    product.field_changed.connect(lambda *args: seen.append(args))
+    product.set_field(product.id, "name", "Widget")
     assert seen == []
 
 
-def test_every_change_marks_something_dirty(plan):
-    marks = []
-    plan.dirty.connect(lambda owner_id, aspect: marks.append(aspect))
-    task_id = ids(plan, "Build")
-    plan.set_title(task_id, "Ship")
-    plan.set_field(task_id, "status", "doing")
-    plan.set_notes(task_id, "note")
-    plan.set_description(task_id, "what it is")
-    plan.set_module_data(task_id, "m", {"a": 1})
-    assert marks == ["meta", "meta", "notes", "description", "module_data"]
+def test_the_origin_reaches_the_signal(product):
+    """A view passes itself and ignores its own echo; identity is the whole mechanism."""
+    view = object()
+    seen = []
+    product.field_changed.connect(lambda node_id, field, origin: seen.append(origin))
+    product.set_field(product.id, "name", "Widget 2", view)
+    assert seen == [view]
 
 
-def test_an_unknown_field_is_refused(plan):
-    with pytest.raises(ValueError, match="not an editable value field"):
-        plan.set_field(ids(plan, "Build"), "colour", "red")
+# -- the graph ---------------------------------------------------------------------------------
 
 
-def test_an_unknown_status_is_refused(plan):
-    with pytest.raises(ValueError, match="not a status"):
-        plan.set_field(ids(plan, "Build"), "status", "nearly")
+def test_a_step_waits_on_another(product):
+    first, second = find(product, "Read the spec"), find(product, "Draft the model")
+    product.set_edges(second.id, "requires", [first.id])
+    assert [step.title for step in product.requires(second.id)] == ["Read the spec"]
+    assert [step.title for step in product.dependents(first.id)] == ["Draft the model"]
 
 
-# -- what makes it a plan rather than a tree of notes -----------------------------------------
-
-
-def test_a_phase_is_done_when_everything_under_it_is(plan):
-    """Derived, not stored — so a phase cannot disagree with its contents."""
-    discovery = plan.task(ids(plan, "Discovery"))
-    assert not discovery.is_done()
-    for child in discovery.children:
-        plan.set_field(child.id, "status", "done")
-    assert discovery.is_done()
-
-
-def test_estimates_roll_up(plan):
-    assert plan.task(ids(plan, "Discovery")).rolled_up_estimate() == 4
-    assert plan.root.rolled_up_estimate() == 9
-
-
-def test_unestimated_leaves_are_counted_not_hidden(plan):
-    """A roll-up that treats unestimated work as zero understates the plan; the count is
-    what lets a view say so."""
-    plan.add_task(ids(plan, "Build"), Task(title="Unknown work"))
-    assert plan.root.unestimated() == 1
-
-
-def test_dependencies_are_stored_on_the_waiting_task(plan):
-    write_up, build = ids(plan, "Write-up"), ids(plan, "Build")
-    plan.set_dependencies(build, [write_up])
-    assert plan.task(build).depends_on == [write_up]
-
-
-def test_blockers_are_the_dependencies_that_are_not_done(plan):
-    write_up, build = ids(plan, "Write-up"), ids(plan, "Build")
-    plan.set_dependencies(build, [write_up])
-    assert [task.title for task in plan.blockers(build)] == ["Write-up"]
-    plan.set_field(write_up, "status", "done")
-    assert plan.blockers(build) == []
-
-
-def test_a_task_cannot_depend_on_itself(plan):
-    build = ids(plan, "Build")
+def test_a_step_cannot_wait_on_itself(product):
+    step = find(product, "Review")
     with pytest.raises(ValueError, match="cannot depend on itself"):
-        plan.set_dependencies(build, [build])
+        product.set_edges(step.id, "requires", [step.id])
 
 
-def test_a_dependency_must_exist(plan):
-    with pytest.raises(ValueError, match="no such task"):
-        plan.set_dependencies(ids(plan, "Build"), ["nope"])
+def test_an_ordering_kind_refuses_a_cycle(product):
+    first, second = find(product, "Read the spec"), find(product, "Draft the model")
+    product.set_edges(second.id, "requires", [first.id])
+    with pytest.raises(ValueError, match="that is a cycle"):
+        product.set_edges(first.id, "requires", [second.id])
 
 
-def test_a_dependency_cycle_is_refused(plan):
-    """Caught here so the plan is never unsatisfiable — a scheduler above never has to."""
-    write_up, build = ids(plan, "Write-up"), ids(plan, "Build")
-    plan.set_dependencies(build, [write_up])
-    with pytest.raises(ValueError, match="cycle"):
-        plan.set_dependencies(write_up, [build])
+def test_a_non_ordering_kind_allows_one(product):
+    """`relates` is a link, not an order, so two steps may point at each other."""
+    first, second = find(product, "Read the spec"), find(product, "Draft the model")
+    assert EDGE_KINDS["relates"] is False
+    product.set_edges(second.id, "relates", [first.id])
+    product.set_edges(first.id, "relates", [second.id])
+    assert first.edges["relates"] == [second.id]
 
 
-def test_a_longer_cycle_is_refused_too(plan):
-    a, b, c = ids(plan, "Interviews"), ids(plan, "Write-up"), ids(plan, "Build")
-    plan.set_dependencies(b, [a])
-    plan.set_dependencies(c, [b])
-    with pytest.raises(ValueError, match="cycle"):
-        plan.set_dependencies(a, [c])
+def test_an_unknown_kind_cannot_be_created(product):
+    step = find(product, "Review")
+    with pytest.raises(ValueError, match="is not an edge kind"):
+        product.set_edges(step.id, "invented", [])
 
 
-def test_duplicate_dependencies_collapse(plan):
-    write_up, build = ids(plan, "Write-up"), ids(plan, "Build")
-    plan.set_dependencies(build, [write_up, write_up])
-    assert plan.task(build).depends_on == [write_up]
+def test_an_edge_cannot_leave_its_project(product):
+    other = Project(title="Build")
+    product.add_child(product.id, other)
+    outsider = Step(title="Ship it")
+    product.add_child(other.id, outsider)
+    with pytest.raises(ValueError, match="no such step"):
+        product.set_edges(find(product, "Review").id, "requires", [outsider.id])
 
 
-def test_deleting_a_task_leaves_dependencies_on_it_alone(plan):
-    """Undo has to restore the plan exactly, so delete must not rewrite other tasks."""
-    write_up, build = ids(plan, "Write-up"), ids(plan, "Build")
-    plan.set_dependencies(build, [write_up])
-    plan.remove_task(write_up)
-    assert plan.task(build).depends_on == [write_up]
-    assert plan.blockers(build) == []  # But it no longer blocks: it cannot be resolved.
+def test_clearing_an_edge_kind_removes_it_entirely(product):
+    first, second = find(product, "Read the spec"), find(product, "Draft the model")
+    product.set_edges(second.id, "requires", [first.id])
+    product.set_edges(second.id, "requires", [])
+    assert second.edges == {}
+
+
+def test_deleting_a_step_leaves_the_edges_that_named_it(product):
+    """Undo has to restore the graph exactly, so a delete never rewrites anyone else's
+    edges. `requires()` skips what it cannot resolve instead."""
+    first, second = find(product, "Read the spec"), find(product, "Draft the model")
+    product.set_edges(second.id, "requires", [first.id])
+    product.remove_child(first.id)
+    assert second.edges["requires"] == [first.id]
+    assert product.requires(second.id) == []
+
+
+# -- prose -------------------------------------------------------------------------------------
+
+
+def test_prose_is_keyed_by_the_module_that_owns_it(product):
+    step = find(product, "Review")
+    product.set_text(step.id, "step_description", "# Notes\n")
+    assert product.text(step.id, "step_description") == "# Notes\n"
+    assert product.text(step.id, "something_else") == ""
+
+
+def test_a_positioned_edit_splices(product):
+    step = find(product, "Review")
+    product.set_text(step.id, "step_description", "hello")
+    product.apply_text_edit(TextEdit(step.id, "step_description", 5, "", " there"))
+    assert product.text(step.id, "step_description") == "hello there"
+
+
+def test_a_stale_edit_is_refused(product):
+    """A binding whose view has drifted would otherwise write plausible nonsense."""
+    step = find(product, "Review")
+    product.set_text(step.id, "step_description", "hello")
+    with pytest.raises(ValueError, match="stale TextEdit"):
+        product.apply_text_edit(TextEdit(step.id, "step_description", 0, "HELLO", "x"))
+
+
+def test_emptying_a_document_removes_it(product):
+    step = find(product, "Review")
+    product.set_text(step.id, "step_description", "hello")
+    product.set_text(step.id, "step_description", "")
+    assert "step_description" not in step.module_text
 
 
 # -- structure ---------------------------------------------------------------------------------
 
 
-def test_a_stale_text_edit_is_refused(plan):
-    task_id = ids(plan, "Build")
-    plan.set_description(task_id, "hello")
-    with pytest.raises(ValueError, match="stale TextEdit"):
-        plan.apply_text_edit(TextEdit(task_id, 0, "goodbye", "x"))
+def test_folder_names_are_unique_among_siblings(product):
+    project = find(product, "Discovery")
+    product.add_child(project.id, Step(title="Review"))
+    assert [step.folder_name for step in project.steps][-2:] == ["review", "review-2"]
 
 
-def test_removing_and_restoring_returns_the_subtree(plan):
-    discovery = plan.task(ids(plan, "Discovery"))
-    child_id = discovery.children[0].id
-    parent_id, index = plan.remove_task(discovery.id)
-    assert not plan.has(child_id)
-    plan.restore_task(parent_id, discovery, index)
-    assert plan.has(child_id)
-    assert plan.root.children[0] is discovery
+def test_a_folder_name_does_not_follow_a_retitle(product):
+    step = find(product, "Review")
+    product.set_field(step.id, "title", "Review everything")
+    assert step.folder_name == "review"
 
 
-def test_a_cross_parent_move_announces_both_parents(plan):
-    seen: list[str] = []
-    plan.structure_changed.connect(seen.append)
-    build, discovery = ids(plan, "Build"), ids(plan, "Discovery")
-    plan.move_task(build, discovery, 0)
-    assert seen == [plan.root.id, discovery]
+def test_remove_reports_where_it_was_so_undo_can_restore_it(product):
+    project = find(product, "Discovery")
+    step = find(product, "Draft the model")
+    parent_id, index = product.remove_child(step.id)
+    assert (parent_id, index) == (project.id, 1)
+    product.restore_child(parent_id, step, index)
+    assert [s.title for s in project.steps][1] == "Draft the model"
 
 
-def test_a_task_cannot_be_moved_inside_itself(plan):
-    discovery = plan.task(ids(plan, "Discovery"))
-    with pytest.raises(ValueError, match="inside itself"):
-        plan.move_task(discovery.id, discovery.children[0].id, 0)
+def test_a_project_cannot_hold_a_project(product):
+    with pytest.raises(ValueError, match="does not hold"):
+        product.add_child(find(product, "Discovery").id, Project(title="Nested"))
 
 
-def test_the_root_is_not_removable(plan):
-    with pytest.raises(ValueError, match="root"):
-        plan.remove_task(plan.root.id)
+def test_the_product_itself_cannot_be_removed(product):
+    with pytest.raises(ValueError, match="cannot be removed"):
+        product.remove_child(product.id)
 
 
-def test_folder_names_avoid_siblings_and_reserved_names():
-    assert unique_folder_name("First Slice", set()) == "first-slice"
-    assert unique_folder_name("First Slice", {"first-slice"}) == "first-slice-2"
-    assert unique_folder_name("modules", {"modules"}) == "modules-2"
+# -- module data -------------------------------------------------------------------------------
 
 
-def test_folder_names_transliterate_rather_than_strip():
-    assert unique_folder_name("Møte på Sørøya", set()) == "mote-pa-soroya"
+def test_an_empty_entry_removes_itself(product):
+    step = find(product, "Review")
+    product.set_module_data(step.id, "step_estimation", {"days": 3.0})
+    assert step.module_data["step_estimation"] == {"days": 3.0}
+    product.set_module_data(step.id, "step_estimation", {})
+    assert "step_estimation" not in step.module_data

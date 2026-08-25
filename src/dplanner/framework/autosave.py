@@ -17,6 +17,12 @@ cadence — so a burst of typing costs one write, and a pause costs nothing.
 **``pause()`` nests.** A branch switch rewrites files under the running application; a
 flush racing it would write a stale model over freshly checked-out content. The counter is
 what lets the reload path leave autosave paused and simply discard the whole build.
+
+**A refused write keeps its marks and stops trying.** A store may decline to flush — the
+usual reason is that something else wrote to the same folder — and the wrong answers are
+both obvious: dropping the marks loses the user's edits, and retrying every 1.5 seconds
+turns one problem into an endless one. So the batch goes back, autosave pauses itself, and
+``failed`` says so. Whoever is listening decides; ``resume()`` is how they say to try again.
 """
 
 from PySide6.QtCore import QTimer
@@ -35,6 +41,7 @@ class AutosaveService:
         self._dirty: set[DirtyMark] = set()
         self._paused = 0
         self.flushed: Signal[()] = Signal()
+        self.failed: Signal[Exception] = Signal()
 
         self._timer = QTimer()
         self._timer.setSingleShot(True)
@@ -76,5 +83,11 @@ class AutosaveService:
             return
         dirty, self._dirty = self._dirty, set()
         self._timer.stop()
-        self._persister.flush(dirty)
+        try:
+            self._persister.flush(dirty)
+        except Exception as error:
+            self._dirty |= dirty
+            self.pause()
+            self.failed.emit(error)
+            return
         self.flushed.emit()

@@ -9,7 +9,8 @@ list applies them from the start. All colours flow through the theme (`$TOKEN`s 
 **This document is the standard for all UI work in this repo.** New surfaces follow it
 from the first commit; touching an existing surface includes bringing it up to these rules
 (the boy-scout rule applies to pixels too). When a rule here is ambiguous, match what the
-detail panel in `modules/example_editor/` does. `CLAUDE.md` points agents here.
+project tab in `modules/projects/` does — its form, its captions, and the row delegate in
+`modules/projects/steplist.py`. `CLAUDE.md` points agents here.
 
 ## Space
 

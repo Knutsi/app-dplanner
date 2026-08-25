@@ -1,72 +1,100 @@
 # DPlanner
 
-A desktop project planner: a plan is a tree of tasks kept as plain files on disk, so it can
-live in version control next to whatever it is planning. Built on
+A development planner: a **product** — one codebase, its repository, and the work planned
+against it — kept as plain files on disk, so the plan can live in version control next to
+whatever it is planning. Built on
 [app-framework](https://github.com/Knutsi/app-framework) — PySide6 (Qt 6, LGPL), managed
 with uv, running on Linux and macOS.
 
+It has two front doors, and they are equals: a desktop window, and a `dplanner` command that
+any coding agent can drive.
+
+## What a plan is
+
+```
+Product  ── the system level: a name, a repository URL, a checkout. One per window.
+└── Project  ── a unit of work with a beginning and an end
+    └── Step  ── a node in that project's graph
+```
+
+**Steps are a graph, not a list.** An edge lives on the step that waits: `requires` orders
+the graph and refuses cycles, `relates` is a plain link. Deleting a step deliberately does
+*not* rewrite anybody else's edges, because undo has to restore the graph exactly.
+
+**Aspects are what the graph does not know.** An estimate, a ticket, a description: none of
+them are fields on a step. Each is a module's namespaced entry beside the step — JSON, prose
+or files — versioned by the module that writes it, so a feature arrives without the model
+learning anything about it. `dplanner aspect list` says which exist in a build.
+
 ## Status
 
-Early. The model, the storage layer and three features are in place and tested; the views
-that make a planner worth using — a board, a timeline, a "what can I start now" list — are
-not written yet.
-
-**What a plan is.** A tree of tasks. The root is the project, anything with children reads
-as a phase, and a leaf is work. There is deliberately no separate type for each: a phase that
-turns out to be one piece of work should not need converting.
-
-Beyond the tree, a task carries the four things a plan is made of — who it is for, when it
-runs, how big it is, and what it waits on. Two consequences fall out of that and are worth
-knowing before using it:
-
-- **Estimates roll up, and say when they are guessing.** A phase shows the sum of its
-  children, plus a count of the leaves that carry no estimate at all — because a total that
-  silently treats unestimated work as zero understates the plan.
-- **A phase is done when everything under it is.** Derived, never stored, so a phase cannot
-  disagree with its contents. Status is editable on leaves only, and the control says why.
-- **Dependencies are the one structure that does not follow the tree.** A task in one phase
-  routinely waits on a task in another, so they are stored as ids on the task that waits.
-  Self-dependencies and cycles are refused at the model, not discovered later.
-
-**What works today**: the plan tree with status and roll-ups, a tab per task with its
-description, a properties panel for status, assignee, estimate, dates and dependencies, and
-everything the framework brings — undo across the whole application, autosave, workspaces on
-a folder or in git or on GitHub, Save as a commit, the settings dialog, background tasks and
-the LLM plumbing.
+Early, and honest about it. The model, the storage layer, the index tree, the project tab
+and the whole CLI are in place and tested. Three aspects ship — estimation, ticket,
+description — and none of them has an editor yet: they are written from the CLI, which is
+what the `data_format` declaration makes safe. The graph editor, reports, and prioritisation
+over the graph are not written.
 
 ## Running
 
 ```bash
 uv sync
 uv run dplanner                                  # last-opened, or the Open dialog
-uv run dplanner --workspace ~/DPlanner/roadmap   # a specific plan; created if empty
+uv run dplanner --workspace ~/Products/widget    # a specific product; created if empty
 ```
 
-A plan can also be named by scheme: `file:~/path` forces a plain folder, `git:~/path`
+A product can also be named by scheme: `file:~/path` forces a plain folder, `git:~/path`
 requires a git checkout, and `github:owner/repo` clones on first open. Whichever you use, the
 application adapts: against a plain folder there is no Save action at all, because there
 would be nothing for it to do.
 
+## Working with an agent
+
+```bash
+uv run dplanner skill install          # ~/.claude/skills/dplanner/
+uv run dplanner skill install --project   # ./.claude/skills/dplanner/, so it travels
+```
+
+The skill is **generated from the command registry**, so it cannot describe a command that
+does not exist; `dplanner skill status` says whether the installed copy matches the build,
+and *Tools ▸ Install Agent Skill…* does the same from the window.
+
+Commands find the product by walking up from the working directory for `product.json`, so an
+agent already sitting in the checkout needs no configuration. Everything takes `--json`.
+
+```bash
+dplanner project list
+dplanner project create "Search rewrite" --summary "Replace the index"
+dplanner step add search "Read the spec"
+dplanner step add search "Draft the model" --after "Read the spec"
+dplanner estimate set "Draft the model" --days 5
+dplanner describe set "Read the spec" --file notes.md
+dplanner project export search > plan.json   # and `import` reads the same shape back
+```
+
+**Both writers may be live.** An agent can work while a window is open on the same folder:
+the window reloads when it owes nothing, and neither side ever overwrites a file it has not
+seen. See `FORMAT.md`.
+
 ## On disk
 
-One directory per task, nested exactly like the plan:
-
 ```
-roadmap/
-├── plan.json              the project: id, title, format version, child order
-├── description.md
-├── discovery/
-│   ├── task.json          id, status, assignee, estimate_days, start, due, depends_on
-│   ├── description.md     (absent when empty)
-│   └── interviews/
-│       └── task.json
-└── build/
-    └── first-slice/
-        └── task.json
+widget/
+├── product.json               id, name, repository, checkout, format, children
+├── modules/
+└── projects/
+    └── search-rewrite/
+        ├── project.json       id, title, summary, children
+        └── steps/
+            └── read-the-spec/
+                ├── step.json  id, title, edges: {"requires": [ids]}
+                └── modules/
+                    ├── step_estimation.json    a module's data
+                    ├── step_description.md     a module's prose
+                    └── step_description/       a module's files
 ```
 
 Ordering lives in the parent's `children` list, folder names are frozen at creation, and
-absent means default — so a diff shows exactly the tasks whose plan actually changed. See
+absent means default — so a diff shows exactly the steps whose plan actually changed. See
 `FORMAT.md`.
 
 ## Development
@@ -78,38 +106,56 @@ uv run mypy                                  # strict type checking, whole tree
 ```
 
 Layering rules are enforced by `tests/test_architecture.py`; the module recipe and the rules
-live in `CLAUDE.md`. `DESIGN.md` is the UI standard.
+live in `CLAUDE.md`. `ARCHITECTURE.md` explains the shape and why. `DESIGN.md` is the UI
+standard, `FORMAT.md` the on-disk one.
 
 ## Layout
 
 ```
 src/dplanner/
 ├── identity.py            what this application calls itself
-├── menus.py               the menu bar's shape, including the Task menu
+├── menus.py               the menu bar's shape, including the Project menu
 ├── app.py                 bootstrap: QApplication, the session, the first open
+├── entry.py               the one `dplanner` command: a window, or a verb
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
 │   ├── storage/             three providers behind one protocol: folder, git, GitHub
-│   ├── repository.py        what the framework knows about the plan, and no more
+│   ├── repository.py        what the framework knows about the model, and no more
 │   ├── formats.py           the format-migration engine
 │   ├── module_data.py       per-module JSON, its versions and takeovers
 │   ├── signals.py  fsio.py  text_diff.py
 │
 ├── domain/                ── the planner itself. Qt-free.
-│   ├── model.py             Task, Plan: the tree, roll-ups, dependencies
-│   ├── store.py             the on-disk format above
-│   ├── migrations.py        its version history — append only
-│   ├── commands.py          undoable changes, and their merge rules
-│   ├── fields.py            bindable text fields
-│   └── sample.py            the starter plan a new workspace is seeded with
+│   ├── model.py             Product, Project, Step: the graph, its edges, its aspects
+│   ├── store.py             the on-disk format above, and the stale-write guard
+│   ├── aspects.py           what an aspect is: id, label, summary, data format
+│   ├── commands.py          undoable changes — the vocabulary the GUI and CLI share
+│   ├── fields.py            bindable prose, keyed by the module that owns it
+│   ├── migrations.py        the format's version history — append only
+│   └── seed.py              what a brand-new workspace contains
 │
-├── framework/             ── from the template. The Qt machinery modules plug into.
+├── cli/                   ── the headless surface. Qt-free.
+│   ├── command.py           CliCommand, CliContext, CliRegistry
+│   ├── workspace.py         finding, opening, migrating and flushing a product
+│   ├── main.py              the argparse tree, built from the registry
+│   ├── lookup.py            an id, a folder name, or part of a title
+│   ├── aspects.py           `aspect list`
+│   └── skill.py             the agent skill, generated from the registry
+│
+├── framework/             ── from the template, and evolved here. The Qt machinery.
+│   ├── index_panel.py       the sidebar: one tree, folders from whoever registered them
+│   ├── window_watch.py      noticing that another writer changed the workspace
+│   └── …                    registries, actions, tabs, undo, autosave, tasks, LLM
 │
 ├── modules/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
-│   ├── plan_tree/           the sidebar: the plan, its statuses and its roll-ups
-│   ├── task_editor/         one tab per task, hosting the properties panel
-│   ├── task_properties/     status, assignee, estimate, dates, dependencies
+│   ├── product/             the product's identity: name, repository, checkout
+│   ├── projects/            the index folder, the project tab, and the project/step verbs
+│   ├── step_estimation/     ── the three step aspects. No editors yet; CLI and data only.
+│   ├── step_ticket/
+│   ├── step_description/
+│   ├── workspace_watch/     reloading when something else writes to the workspace
+│   ├── agent_skill/         installing the generated skill from the window
 │   ├── appshell/  workspaces/  sync/  settings/  taskcenter/  debug/
 │   └── llm/  llm_openai/  llm_anthropic/
 │
@@ -120,5 +166,6 @@ src/dplanner/
 
 Generated from `app-framework`'s template; `.appframe` records which commit. Nothing depends
 on that repo at runtime — the code here is complete and editable — but
-`git -C app-framework diff <revision> -- template/` will show what has changed upstream since
-the fork.
+`git -C app-framework diff <revision> -- template/` will show what has changed upstream
+since the fork. `CLAUDE.md` lists the places DPlanner deliberately changed the framework,
+each of which is a candidate to carry back.

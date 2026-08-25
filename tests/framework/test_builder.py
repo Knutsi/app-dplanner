@@ -18,19 +18,18 @@ def test_the_app_scope_exists_before_modules_register(services):
 
 def test_every_shipped_module_registered_something(services):
     action_ids = {spec.id for spec in services.actions.all_specs()}
-    assert {"appshell.quit", "workspaces.open", "settings.open", "plan_tree.new"} <= action_ids
+    assert {"appshell.quit", "workspaces.open", "settings.open", "projects.new"} <= action_ids
 
 
 def test_module_data_is_migrated_before_any_module_reads_it(session, app, tmp_path):
     """Breaking this order produces a bug that only appears on an old workspace."""
     from dplanner.core.module_data import migrate_module_data
 
-    plan = session.services.document
+    product = session.services.document
     repo = session.services.repo
-    task = plan.root.children[0]
-    plan.set_module_data(task.id, "m", {"old": 1})
+    product.set_module_data(product.id, "m", {"old": 1})
 
     fmt = ModuleDataFormat("m", version=2, migrations=(lambda d: {"new": d["old"]},))
     changed = migrate_module_data(repo, [fmt])
-    assert changed == [task.id]
-    assert task.module_data["m"] == stamped({"new": 1}, 2)
+    assert changed == [product.id]
+    assert product.module_data["m"] == stamped({"new": 1}, 2)

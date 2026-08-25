@@ -107,6 +107,20 @@ class TabHost(QWidget):
         if index != -1:
             self._on_close_requested(index)
 
+    def close_activity(self, activity: Activity) -> bool:
+        """Close one tab wherever it is; False if it is no longer open.
+
+        The symmetric partner of :meth:`focus`. A feature whose subject was deleted has to
+        be able to take its tab with it, and the alternative — reaching into the tab widget
+        — is exactly the shortcut the layering rules exist to prevent. Named for the
+        activity rather than called ``close`` because a ``TabHost`` is itself a QWidget.
+        """
+        index = self._tab_widget.indexOf(activity.widget)
+        if index == -1:
+            return False
+        self._on_close_requested(index)
+        return True
+
     def set_tab_bar_visible(self, visible: bool) -> None:
         self._tab_widget.tabBar().setVisible(visible)
 

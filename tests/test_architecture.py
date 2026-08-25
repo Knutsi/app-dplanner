@@ -19,8 +19,13 @@ The rules, in prose (see also CLAUDE.md):
 4. Modules never import each other. Only ``modules/__init__.py`` may import them all.
 5. Modules never import ``AppServices``, the builder, or the concrete window — they receive
    typed ``Deps`` objects and reach the window through the capability protocols.
-6. ``app.py`` never reaches into a module subpackage; it may import the composition root.
-7. Only ``core/storage/`` and the composition root may import a *concrete* storage provider.
+6. ``app.py`` and ``entry.py`` never reach into a module subpackage; they may import the
+   composition root.
+7. ``cli/`` imports no Qt and nothing above ``domain/``, and a module's ``cli.py`` and
+   ``aspect.py`` are the same: importable without a graphics stack. The CLI is how an agent
+   drives this application, and it has to start in milliseconds on a machine with no GUI
+   libraries at all.
+8. Only ``core/storage/`` and the composition root may import a *concrete* storage provider.
    Everything else depends on the protocols — which is what makes "swap the storage system"
    true rather than aspirational.
 
@@ -30,6 +35,8 @@ your ``Deps``, or a registry.
 """
 
 import ast
+import subprocess
+import sys
 from pathlib import Path
 
 SRC = Path(__file__).parent.parent / "src" / "dplanner"
@@ -48,7 +55,7 @@ def imported_names(path: Path) -> list[tuple[int, str]]:
     """Absolute names imported by ``path``: (line, dotted-name) pairs.
 
     Relative imports are resolved against the file's own package, so ``from . import x``
-    inside ``dplanner/modules/plan_tree/`` reads as ``dplanner.modules.plan_tree``.
+    inside ``dplanner/modules/projects/`` reads as ``dplanner.modules.projects``.
     """
     tree = ast.parse(path.read_text(), filename=str(path))
     relative_to = path.relative_to(SRC.parent)
@@ -96,7 +103,7 @@ def collect_violations() -> list[str]:
             may_name_a_provider = (
                 in_storage
                 or is_composition_root
-                or parts == ("app.py",)
+                or parts in (("app.py",), ("entry.py",))
                 or module_dir_of(path) == "workspaces"
                 or name.endswith(".locations")
             )
@@ -129,6 +136,19 @@ def collect_violations() -> list[str]:
                     )
                 ):
                     forbid(path, line, name, "domain/ may import core/ only")
+            elif top == "cli":
+                if name.startswith(QT_PACKAGES):
+                    forbid(path, line, name, "cli/ must stay free of Qt imports")
+                if name.startswith(
+                    (
+                        f"{PACKAGE}.framework",
+                        f"{PACKAGE}.modules",
+                        f"{PACKAGE}.theme",
+                        f"{PACKAGE}.app",
+                        f"{PACKAGE}.entry",
+                    )
+                ):
+                    forbid(path, line, name, "cli/ sits above domain/ and below the modules")
             elif top == "framework":
                 if name.startswith(f"{PACKAGE}.modules") or name == f"{PACKAGE}.app":
                     forbid(path, line, name, "framework/ never imports modules or the app")
@@ -136,6 +156,14 @@ def collect_violations() -> list[str]:
                 if is_composition_root:
                     continue  # The one place allowed to import everything.
                 own = module_dir_of(path)
+                # The headless half of a module. The composition root reaches these through
+                # `dplanner.modules`, so one Qt import here would put a graphics stack in
+                # every CLI invocation.
+                if path.name in ("cli.py", "aspect.py"):
+                    if name.startswith(QT_PACKAGES):
+                        forbid(path, line, name, "a module's cli.py/aspect.py loads no Qt")
+                    if name.startswith(f"{PACKAGE}.framework"):
+                        forbid(path, line, name, "a module's cli.py/aspect.py uses core and domain")
                 if name.startswith(f"{PACKAGE}.modules."):
                     other = name.split(".")[2] if len(name.split(".")) > 2 else ""
                     if other and other != own:
@@ -149,8 +177,8 @@ def collect_violations() -> list[str]:
                     )
                 if name == f"{PACKAGE}.framework.main_window":
                     forbid(path, line, name, "modules use the framework/window.py protocols")
-            elif parts == ("app.py",) and name.startswith(f"{PACKAGE}.modules."):
-                forbid(path, line, name, "the app never reaches into module subpackages")
+            elif parts in (("app.py",), ("entry.py",)) and name.startswith(f"{PACKAGE}.modules."):
+                forbid(path, line, name, "the entry points never reach into module subpackages")
 
     return violations
 
@@ -179,3 +207,39 @@ def test_the_rules_can_catch_a_violation(tmp_path) -> None:
     finally:
         offender.unlink()
     assert any("_architecture_probe" in violation for violation in violations)
+
+
+def test_the_composition_root_imports_without_qt() -> None:
+    """The CLI reaches a module's headless half through ``dplanner.modules``.
+
+    If any module package re-exported its Qt class, or the composition root imported the
+    modules at file scope, that import would pull in PySide6 — which costs most of a second
+    and, on a machine with no GUI libraries, raises before the CLI has parsed a single
+    argument. This asserts the property directly rather than trusting the convention.
+    """
+    probe = "import sys, dplanner.modules; assert 'PySide6' not in sys.modules, sorted(sys.modules)"
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_cli_never_loads_qt() -> None:
+    """The property the layering rules exist to protect, asserted directly.
+
+    Importing the CLI and building its whole parser tree must not pull in PySide6. Without
+    this, a stray import in any module's cli.py would put most of a second — and a hard
+    dependency on graphics libraries — into every invocation, and nothing would notice.
+    """
+    probe = (
+        "import sys;"
+        "from dplanner.cli.command import CliRegistry;"
+        "from dplanner.cli.main import build_parser;"
+        "from dplanner.modules import default_cli_commands;"
+        "r = CliRegistry(); r.register_all(default_cli_commands()); build_parser(r);"
+        "assert 'PySide6' not in sys.modules, sorted(m for m in sys.modules if 'Side' in m)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr

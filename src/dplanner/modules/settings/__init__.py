@@ -1,4 +1,6 @@
-from dplanner.modules.settings.dialog import SettingsDialog
-from dplanner.modules.settings.module import SettingsDeps, SettingsModule
+"""The Settings dialog, built from whatever sections other modules registered.
 
-__all__ = ["SettingsDeps", "SettingsDialog", "SettingsModule"]
+The module class and its ``Deps`` are imported from ``module.py`` by the composition root.
+This file stays a docstring on purpose: re-exporting the Qt half here would make the
+package's Qt-free files unreachable without loading Qt.
+"""
