@@ -1,3 +1,6 @@
-from dplanner.modules.sync.module import SyncDeps, SyncModule
+"""Storage history: Save as a commit, the diff review, branches, pull.
 
-__all__ = ["SyncDeps", "SyncModule"]
+The module class and its ``Deps`` are imported from ``module.py`` by the composition root.
+This file stays a docstring on purpose: re-exporting the Qt half here would make the
+package's Qt-free files unreachable without loading Qt.
+"""

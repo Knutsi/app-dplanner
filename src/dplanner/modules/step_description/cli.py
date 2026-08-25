@@ -1,0 +1,120 @@
+"""``dplanner describe …`` — a step's markdown, and the images it references."""
+
+from argparse import ArgumentParser, Namespace
+from pathlib import Path
+
+from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.lookup import find_step
+from dplanner.domain.commands import EditTextCommand
+from dplanner.domain.model import Step, TextEdit
+from dplanner.modules.step_description.aspect import (
+    MODULE_ID,
+    assets,
+    attach,
+    read,
+)
+
+
+def commands() -> list[CliCommand]:
+    return [
+        CliCommand(
+            path=("describe", "set"),
+            summary="Replace a step's description with markdown from a file or stdin.",
+            configure=_configure_set,
+            run=_set,
+            examples=(
+                "dplanner describe set 'Read the spec' --file notes.md",
+                "echo '# Notes' | dplanner describe set 'Read the spec' --file -",
+            ),
+        ),
+        CliCommand(
+            path=("describe", "show"),
+            summary="Print a step's description.",
+            configure=_one_step,
+            run=_show,
+            examples=("dplanner describe show 'Read the spec'",),
+        ),
+        CliCommand(
+            path=("describe", "attach"),
+            summary="Add an image beside a step and print the path to link to.",
+            configure=_configure_attach,
+            run=_attach,
+            examples=("dplanner describe attach 'Read the spec' diagram.png",),
+        ),
+        CliCommand(
+            path=("describe", "assets"),
+            summary="List the images a step keeps.",
+            configure=_one_step,
+            run=_assets,
+            examples=("dplanner describe assets 'Read the spec'",),
+        ),
+    ]
+
+
+def _one_step(parser: ArgumentParser) -> None:
+    parser.add_argument("step", help="step id, folder name, or part of its title")
+
+
+def _configure_set(parser: ArgumentParser) -> None:
+    _one_step(parser)
+    parser.add_argument("--file", required=True, help="a markdown file, or - for stdin")
+
+
+def _configure_attach(parser: ArgumentParser) -> None:
+    _one_step(parser)
+    parser.add_argument("image", help="the file to copy in beside the step")
+
+
+def _step(context: CliContext, needle: str) -> Step:
+    return find_step(context.product, needle)
+
+
+def _set(context: CliContext, args: Namespace) -> int:
+    import sys
+
+    if args.file == "-":
+        body = sys.stdin.read()
+    else:
+        path = Path(args.file)
+        if not path.is_file():
+            raise CliError(f"no such file: {args.file}")
+        body = path.read_text()
+
+    step = _step(context, args.step)
+    current = read(step)
+    # One positioned edit over the whole document, labelled so a burst of GUI typing and a
+    # whole-file replacement never coalesce into one undo step.
+    edit = TextEdit(step.id, MODULE_ID, 0, current, body)
+    context.apply(EditTextCommand(edit, label="Set Description"))
+    context.report(
+        {"step": step.id, "characters": len(body)},
+        f"{step.title}: {len(body)} characters",
+    )
+    return 0
+
+
+def _show(context: CliContext, args: Namespace) -> int:
+    step = _step(context, args.step)
+    body = read(step)
+    context.report({"step": step.id, "markdown": body}, body or "(no description)")
+    return 0
+
+
+def _attach(context: CliContext, args: Namespace) -> int:
+    source = Path(args.image)
+    if not source.is_file():
+        raise CliError(f"no such file: {args.image}")
+    step = _step(context, args.step)
+    name = attach(context.store.files(step.id, MODULE_ID), source.read_bytes(), source.name)
+    context.report(
+        {"step": step.id, "asset": name},
+        f"{name}\nReference it from the markdown as ![]({name})",
+    )
+    return 0
+
+
+def _assets(context: CliContext, args: Namespace) -> int:
+    step = _step(context, args.step)
+    names = assets(context.store.files(step.id, MODULE_ID))
+    context.report({"step": step.id, "assets": names}, "\n".join(names) or "(none)")
+    return 0

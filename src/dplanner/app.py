@@ -18,8 +18,8 @@ from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import QApplication
 
 from dplanner.core.storage.locations import StorageLocation, parse_location
-from dplanner.domain.sample import create_sample
-from dplanner.domain.store import PlanStore
+from dplanner.domain.seed import create_product
+from dplanner.domain.store import ProductStore
 from dplanner.framework.action_registry import MenuStructure
 from dplanner.framework.session import AppSession, last_opened, workspace_roots
 from dplanner.framework.splash import StartupSplash
@@ -115,9 +115,9 @@ def new_session() -> AppSession:
     """
     return AppSession(
         module_factory=default_modules,
-        repository=PlanStore,
+        repository=ProductStore,
         menus=MenuStructure(MENU_STRUCTURE),
-        seed=create_sample,
+        seed=create_product,
         clone_into=workspace_roots()[0],
     )
 

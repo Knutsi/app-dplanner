@@ -280,17 +280,41 @@ QScrollBar::sub-page {
     border-radius: ${RADIUS_SM}px;
 }
 
-/* Sidebar shell: Manuscript/Utility tabs over the page stack. */
-#SidebarShell {
+/* The sidebar: one index tree, whose folders come from whoever registered them. */
+#IndexPanel {
     background-color: $BG_ELEVATED;
     border-right: 1px solid $BORDER;
 }
 
-#SidebarTabs, #InspectorTabs {
+#IndexTree {
+    background-color: $BG_ELEVATED;
+    border: none;
+    color: $TEXT_SECONDARY;
+    padding: 8px 4px;
+}
+
+/* DESIGN.md's row metrics for a list of rich items: 10 px vertical, 12 px horizontal.
+   The horizontal half is split between the tree's own padding and the item's, so a
+   nested row still indents rather than starting at the frame. */
+#IndexTree::item {
+    padding: 5px 8px;
+    border-radius: ${RADIUS_SM}px;
+}
+
+#IndexTree::item:selected {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_PRIMARY;
+}
+
+#IndexTree::item:hover {
+    color: $TEXT_PRIMARY;
+}
+
+#InspectorTabs {
     background: transparent;
 }
 
-#SidebarTabs::tab, #InspectorTabs::tab {
+#InspectorTabs::tab {
     background: transparent;
     color: $TEXT_SECONDARY;
     border: none;
@@ -300,36 +324,21 @@ QScrollBar::sub-page {
     margin-right: 10px;
 }
 
-#SidebarTabs::tab:selected, #InspectorTabs::tab:selected {
+#InspectorTabs::tab:selected {
     color: $TEXT_PRIMARY;
     border-bottom: 2px solid $ACCENT;
 }
 
-#SidebarTabs::tab:hover:!selected, #InspectorTabs::tab:hover:!selected {
+#InspectorTabs::tab:hover:!selected {
     color: $TEXT_PRIMARY;
 }
 
-#UtilityPanel {
-    background-color: $BG_ELEVATED;
-}
-
-#UtilityTree {
-    background-color: $BG_ELEVATED;
-    border: none;
-    color: $TEXT_SECONDARY;
-}
-
-#UtilityTree::item {
-    padding: 3px 2px;
-    border-radius: ${RADIUS_SM}px;
-}
-
-#UtilityTree::item:selected {
-    background-color: $BG_OVERLAY;
-    color: $TEXT_PRIMARY;
-}
-
-#UtilityTree::item:hover {
+/* The step list inside a project tab. Its rows are painted by a delegate (DESIGN.md), so
+   only the frame and the selection colour come from here. */
+#StepList {
+    background-color: $BG_BASE;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
     color: $TEXT_PRIMARY;
 }
 

@@ -42,6 +42,7 @@ from dplanner.framework.context import (
     ContextService,
 )
 from dplanner.framework.exports import ExportRegistry
+from dplanner.framework.index_panel import IndexPanel, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
 from dplanner.framework.llm_service import LLMService
@@ -50,19 +51,11 @@ from dplanner.framework.menubar import DynamicMenuBar
 from dplanner.framework.module import Module, PersistsModuleData
 from dplanner.framework.services import AppServices
 from dplanner.framework.settings_registry import SettingsSectionRegistry
-from dplanner.framework.sidebar import (
-    SidebarPanel,
-    SidebarPanelRegistry,
-    SidebarShell,
-    UtilityPanel,
-    UtilityToolRegistry,
-)
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.zoom import ZoomService
-from dplanner.theme.icons import wrench_icon
 
 if TYPE_CHECKING:
     # Type-only: the session module imports this builder at runtime.
@@ -163,19 +156,12 @@ class AppBuilder:
         # stored on the window because its QMenus must outlive this function (PySide
         # invalidates menu wrappers whose last Python reference is dropped).
         window.dynamic_menubar = DynamicMenuBar(window, actions, context)
-        sidebar_panels = SidebarPanelRegistry()
-        utility_tools = UtilityToolRegistry()
-        sidebar_shell = SidebarShell(sidebar_panels)
-        window.set_sidebar(sidebar_shell)
-        sidebar_panels.register(
-            SidebarPanel(
-                id="utility",
-                label="Utility",
-                widget=UtilityPanel(utility_tools),
-                order=20,
-                icon=wrench_icon,
-            )
-        )
+        # The sidebar is one index tree, installed empty. Nothing is pre-registered:
+        # every folder in it belongs to a module, and the framework never learns which.
+        index_segments = IndexSegmentRegistry()
+        index_panel = IndexPanel(index_segments, context)
+        window.set_sidebar(index_panel)
+        window.close_hooks.append(index_panel.dispose)
 
         # 4 — the bundle ------------------------------------------------------------------
         llm_providers = LLMProviderRegistry()
@@ -190,8 +176,7 @@ class AppBuilder:
             window=window,
             undo=undo,
             autosave=autosave,
-            sidebar_panels=sidebar_panels,
-            utility_tools=utility_tools,
+            index_segments=index_segments,
             inspector_sections=InspectorSectionRegistry(),
             detail_cards=InspectorSectionRegistry(),
             settings_sections=SettingsSectionRegistry(),
@@ -204,9 +189,9 @@ class AppBuilder:
             switcher=switcher,
         )
 
-        # Sidebar tab glyphs follow the theme's secondary text colour.
-        theme.changed.connect(lambda t: sidebar_shell.set_icon_color(t.text_secondary))
-        sidebar_shell.set_icon_color(theme.current.text_secondary)
+        # Index folder glyphs follow the theme's secondary text colour.
+        theme.changed.connect(lambda t: index_panel.set_icon_color(t.text_secondary))
+        index_panel.set_icon_color(theme.current.text_secondary)
 
         # 5 — the app scope, before any module registers, so a module that opens a tab
         # during registration acts against a valid context.
@@ -215,6 +200,7 @@ class AppBuilder:
         # 6 and 7 — the composition root, then migrate, then register -----------------------
         self._report("Preparing workspace…")
         modules = self._module_factory(services)
+        services.modules = list(modules)
         # Module data written by an older build is migrated before any module reads it
         # (they do so in register()), and persisted straight away — per owner, so a
         # takeover's remove-and-write lands in one save.

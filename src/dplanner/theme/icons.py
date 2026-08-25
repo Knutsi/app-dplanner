@@ -192,7 +192,7 @@ def branch_icon(color: str) -> QIcon:
 
 
 def wrench_icon(color: str) -> QIcon:
-    """A wrench: the Utility panel's tools."""
+    """A wrench: tools and maintenance."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 2.0))
     painter.drawLine(QPointF(3.5, 12.5), QPointF(8.6, 7.4))

@@ -1,3 +1,6 @@
-from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
+"""The background task list, and its status-bar button.
 
-__all__ = ["TaskCenterDeps", "TaskCenterModule"]
+The module class and its ``Deps`` are imported from ``module.py`` by the composition root.
+This file stays a docstring on purpose: re-exporting the Qt half here would make the
+package's Qt-free files unreachable without loading Qt.
+"""

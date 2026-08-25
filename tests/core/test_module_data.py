@@ -9,30 +9,29 @@ from dplanner.core.module_data import (
     migrate_module_data,
     stamped,
 )
-from dplanner.domain.model import Plan, Task
-from dplanner.domain.store import PlanStore
+from dplanner.domain.model import Product, Project
+from dplanner.domain.store import ProductStore
 
 
 class FakeRepo:
-    """The narrow face migrate_module_data needs, over a plain plan."""
+    """The narrow face migrate_module_data needs, over a plain product."""
 
-    def __init__(self, plan):
-        self.plan = plan
-        self.dirty = plan.dirty
+    def __init__(self, product):
+        self.product = product
+        self.dirty = product.dirty
 
     def owners(self):
-        return list(self.plan.tasks())
+        return list(self.product.nodes())
 
     def set_module_data(self, owner_id, module_id, data):
-        self.plan.set_module_data(owner_id, module_id, data)
+        self.product.set_module_data(owner_id, module_id, data)
 
 
 @pytest.fixture
 def repo():
-    root = Task(title="Project")
-    plan = Plan(root)
-    plan.add_task(root.id, Task(title="Build"))
-    return FakeRepo(plan)
+    product = Product(name="Widget")
+    product.add_child(product.id, Project(title="Build"))
+    return FakeRepo(product)
 
 
 def test_absent_format_means_version_one():
@@ -86,12 +85,11 @@ def test_unknown_entries_survive_a_round_trip(tmp_path):
     from dplanner.core.storage.local import LocalStorage
 
     storage = LocalStorage(tmp_path / "ws")
-    store = PlanStore(storage)
-    root = Task(title="Project")
-    plan = Plan(root)
-    store.create(plan)
-    plan.set_module_data(root.id, "from_the_future", {"anything": [1, 2], "format": 7})
-    store.flush({(root.id, "module_data")})
+    store = ProductStore(storage)
+    product = Product(name="Widget")
+    store.create(product)
+    product.set_module_data(product.id, "from_the_future", {"anything": [1, 2], "format": 7})
+    store.flush({(product.id, "module_data")})
 
-    reloaded = PlanStore(storage).load()
-    assert reloaded.root.module_data["from_the_future"] == {"anything": [1, 2], "format": 7}
+    reloaded = ProductStore(storage).load()
+    assert reloaded.module_data["from_the_future"] == {"anything": [1, 2], "format": 7}
