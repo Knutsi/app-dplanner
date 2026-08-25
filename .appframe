@@ -1,0 +1,6 @@
+# Where this application came from, so upstream changes can still be diffed.
+# `git -C <app-framework> diff <revision> -- template/` shows what has changed since.
+template = app-framework
+revision = 3e9d4e090296c575a83af9450941924d9964f262
+package = dplanner
+name = DPlanner

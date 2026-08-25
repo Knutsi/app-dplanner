@@ -1,0 +1,64 @@
+[project]
+name = "dplanner"
+version = "0.1.0"
+description = "An application built on app-framework"
+requires-python = ">=3.13,<3.15"
+dependencies = [
+    "PySide6-Essentials>=6.9,<7",
+    "keyring>=25.0",
+    "openai>=1.50",
+    "anthropic>=0.40",
+]
+
+[project.scripts]
+dplanner = "dplanner.app:main"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dplanner"]
+
+[dependency-groups]
+dev = ["mypy>=1.16", "pytest>=8.4", "pytest-qt>=4.5", "ruff>=0.16"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+qt_api = "pyside6"
+qt_default_raising = true
+
+[tool.mypy]
+python_version = "3.13"
+mypy_path = ["src", "."]
+files = ["src/dplanner", "tests"]
+explicit_package_bases = true
+strict = true
+warn_unreachable = true
+pretty = true
+
+[[tool.mypy.overrides]]
+# Tests may skip annotations; everything they call is still checked.
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_decorators = false
+disallow_untyped_calls = false
+check_untyped_defs = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "PTH", "TID", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Qt virtual methods must keep their camelCase names and parameter names to override correctly.
+"src/dplanner/theme/style.py" = ["N802", "N803"]
+
+[tool.ruff.format]
+docstring-code-format = true

@@ -1,0 +1,62 @@
+"""Filesystem primitives, free of policy.
+
+Everything here is a helper that a storage provider or a store composes; none of it decides
+anything. ``slugify`` transliterates rather than merely stripping, because a folder name is
+the one part of a workspace a person reads in a file browser.
+"""
+
+import json
+import re
+import unicodedata
+from pathlib import Path
+from typing import Any
+
+# Norwegian (plus neighbours) transliterated explicitly: NFKD alone would drop ø entirely
+# rather than fold it to "o", and æ→ae matters for readable folder names.
+_NORDIC = {
+    "ø": "o",
+    "Ø": "O",
+    "å": "a",
+    "Å": "A",
+    "æ": "ae",
+    "Æ": "Ae",
+    "ö": "o",
+    "ä": "a",
+    "ü": "u",
+    "ß": "ss",
+    "ð": "d",
+    "þ": "th",
+}
+
+
+def slugify(title: str, *, fallback: str = "untitled") -> str:
+    """Fold ``title`` to a lowercase ASCII slug suitable as a folder name."""
+    s = "".join(_NORDIC.get(c, c) for c in title)
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+    return s or fallback
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` so a crash never leaves a truncated file.
+
+    The temporary lives in the same directory as the target because the rename is only
+    atomic within one filesystem. No fsync: git is the durability layer for this project,
+    and the failure this guards against is a partial write, not a lost one.
+    """
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
+def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
+    """Write ``data`` as stable, diff-friendly JSON (sorted keys, trailing newline)."""
+    write_atomic(path, json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: expected a JSON object, got {type(data).__name__}")
+    return data
