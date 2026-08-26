@@ -26,7 +26,7 @@ never sit beside ``modules/``, there are no reserved folder names to trip over::
         └── steps/<slug>/
             ├── step.json
             └── modules/
-                ├── step_estimation.json     structured data
+                ├── estimation.json          structured data
                 ├── step_description.md      prose
                 └── step_description/        files this module owns
 
