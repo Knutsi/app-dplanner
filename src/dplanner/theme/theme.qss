@@ -342,6 +342,34 @@ QScrollBar::sub-page {
     border: none;
 }
 
+/* The order table: steps in the sequence they can be done. A well on the window colour,
+   like the step list it replaces, with the row metrics DESIGN.md gives a list of rich
+   items. No grid — the alignment is the structure. */
+#OrderTable {
+    background-color: $BG_BASE;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
+    color: $TEXT_PRIMARY;
+}
+
+#OrderTable::item {
+    padding: 5px 8px;
+}
+
+#OrderTable::item:selected {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_PRIMARY;
+}
+
+#OrderTable QHeaderView::section {
+    background-color: $BG_BASE;
+    color: $TEXT_SECONDARY;
+    border: none;
+    border-bottom: 1px solid $BORDER;
+    padding: 6px 8px;
+    font-weight: bold;
+}
+
 /* A prose field inside a detail panel: framed like the panel's other inputs. */
 #InspectorNotes {
     background-color: $BG_BASE;
