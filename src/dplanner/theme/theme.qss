@@ -280,10 +280,26 @@ QScrollBar::sub-page {
     border-radius: ${RADIUS_SM}px;
 }
 
-/* The sidebar: one index tree, whose folders come from whoever registered them. */
-#IndexPanel {
+/* A panel area (framework/panels.py): the border belongs here rather than to any panel,
+   because a panel moves between areas and only the area knows which side faces the tabs. */
+#PanelAreaLeft {
     background-color: $BG_ELEVATED;
     border-right: 1px solid $BORDER;
+}
+
+#PanelAreaRight {
+    background-color: $BG_ELEVATED;
+    border-left: 1px solid $BORDER;
+}
+
+#PanelAreaBottom {
+    background-color: $BG_ELEVATED;
+    border-top: 1px solid $BORDER;
+}
+
+/* The index tree, whose folders come from whoever registered them. */
+#IndexPanel {
+    background-color: $BG_ELEVATED;
 }
 
 #IndexTree {
@@ -518,14 +534,9 @@ QScrollBar::sub-page {
     color: $TEXT_PRIMARY;
 }
 
-/* Segment detail panel: shared by the corkboard, segment editor and continuous editors. */
+/* A detail panel's body, below its frame's header strip. */
 #InspectorPanel {
     background-color: $BG_ELEVATED;
-    border-left: 1px solid $BORDER;
-}
-
-#InspectorPlaceholder {
-    color: $TEXT_DISABLED;
 }
 
 #InspectorName, #InspectorTitle {

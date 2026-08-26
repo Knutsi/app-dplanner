@@ -21,9 +21,11 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.context import SCOPE_APP, Context, ContextService
 from dplanner.framework.palette import CommandPalette
+from dplanner.framework.panels import PanelRegistry, PanelSpec
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.framework.window import PanelHost
 from dplanner.framework.zoom import ZoomService
 from dplanner.identity import APP_NAME, APP_VERSION
 from dplanner.theme.themes import OMARCHY_THEMES
@@ -37,6 +39,8 @@ class AppShellDeps:
     theme: ThemeService
     undo: UndoService[Any]
     zoom: ZoomService
+    panels: PanelRegistry
+    chrome: PanelHost  # Which anchored panels the user has switched on.
     # The shell owns the window-level verbs (quit, full screen, dialog parenting) —
     # but plain QMainWindow API suffices, so no dependency on the concrete MainWindow.
     window: QMainWindow
@@ -260,6 +264,41 @@ class AppShellModule:
                 run=run_palette,
             )
         )
+
+        # -- panels -----------------------------------------------------------------------
+        # One checkable entry per anchored panel. Both halves are needed: the framework's own
+        # index panel is registered before any module runs, and every module's panel arrives
+        # after this line.
+        def register_panel_toggle(spec: PanelSpec) -> None:
+            def panel_state(_context: Context, panel_id: str = spec.id) -> ActionState:
+                return ActionState(checked=deps.chrome.is_panel_visible(panel_id))
+
+            def run_panel(_context: Context, panel_id: str = spec.id) -> None:
+                deps.chrome.set_panel_visible(panel_id, not deps.chrome.is_panel_visible(panel_id))
+
+            deps.actions.register(
+                ActionSpec(
+                    id=f"appshell.panel_{spec.id}",
+                    label=spec.title,
+                    menu="View",
+                    group="panels",
+                    # After the palette and the task centre: those are things to open, these
+                    # are what the window is currently made of. One order for all of them, so
+                    # the registry's (order, id) tie-break lists them alphabetically — a
+                    # panel's own `order` is its position in an area and means nothing here.
+                    order=100,
+                    tip=f"Show or hide the {spec.title} panel",
+                    state=panel_state,
+                    run=run_panel,
+                )
+            )
+
+        for spec in deps.panels.panels():
+            register_panel_toggle(spec)
+        deps.panels.registered.connect(register_panel_toggle)
+        # A panel hidden from its own header menu has to reach the checkmark too.
+        deps.chrome.panels_changed.connect(lambda _panel_id: poke_context())
+
         deps.actions.register(
             ActionSpec(
                 id="appshell.about",

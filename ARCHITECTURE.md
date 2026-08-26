@@ -114,8 +114,10 @@ under them — where a tab set shows one feature and hides the rest. The argumen
 the old one is that anything a page could hold is a folder here, so keeping both would have
 been two navigation mechanisms competing for the same 275 pixels.
 
-Three things live in the panel rather than in each segment, because a shared tree is not the
-same problem as a stack of independent widgets: **selection is published exactly once** (Qt
+The tree is not a slot in the window any more; it is one **panel** anchored in the left area
+(below), which is why it can be moved and hidden like anything else contributed to the window.
+Three things still live in the panel rather than in each segment, because a shared tree is not
+the same problem as a stack of independent widgets: **selection is published exactly once** (Qt
 selection is per-tree and `ContextService` has one selection scope, so segments would
 otherwise fight over it); **a segment supplies its own menu** rather than the spec naming a
 `MENU_STRUCTURE` menu, because a menu name is application vocabulary and has no business in
@@ -189,6 +191,10 @@ Two consequences fall out, and both are rules rather than details:
   design — every multi-pane editor has it — and the honest answer is to make which pane is
   active obvious, which is what the dimmed tab titles are for.
 
+The detail panels get the first rule for free, and that is the point of where they live. A
+panel reads the context; only the active pane may write to it; so the panel follows the pane
+the user is in without a single line about panes anywhere in it.
+
 ### What this rules out
 
 The graph canvas is the worked example, because it got this wrong first. A drop originally ran
@@ -203,56 +209,93 @@ what the user picked into the context and running an action. The verb is then te
 handing it a constructed `Context`, and `tests/modules/test_project_editor.py` does exactly
 that with no canvas in sight.
 
+## Where a panel goes
+
+The window has a centre — the tab groups — and three areas around it: **left, right and
+bottom**. Anything anchored in one is a `PanelSpec` in `services.panels`, and the framework's
+`PanelDock` puts it there. The index tree is one; the step detail panel and the project form
+are two more. Right-clicking a panel's header moves it between areas or hides it, and
+*View ▸ Panels* switches it back on.
+
+**One panel, not one per tab.** This is the whole reason the dock exists, and it was learned by
+getting it wrong: the step detail panel used to be built *inside* `ProjectActivity`, so opening
+a second project built a second panel with a second set of aspect editors, and splitting the
+window put both on screen at once. Two copies of one editor is not a richer window — it is the
+same 360 pixels spent twice, and it raises a question with no good answer ("which one is the
+real one?"). So a panel belongs to the window.
+
+**It follows the user by reading the context, not by being told.** A panel that cares implements
+`ContextPanel.show_context(context) -> bool`; the dock calls it on every context change and
+takes the panel off screen when it answers False. Nothing pushes at a panel, and no panel
+subscribes to the context itself — there is one subscription, in the dock.
+
+That one decision is what makes "follow the focused tab" cost nothing. The rule that *only the
+active pane may write to the selection scope* already existed, for a different reason; a panel
+that reads the scope therefore shows the active pane's selection by construction, and
+`ProjectActivity` **lost** its `_panel` field rather than gaining an "am I the visible one?"
+check. It also means a surface nobody planned for gets the panel for free: the order table
+publishes step selections and never had a detail panel, and now has one without a line of code.
+
+**Areas, not draggable docks.** `QDockWidget` gives floating windows, tear-off drags and a
+serialized layout blob nobody can read or reason about. What this needs is "put that over
+there" — three fixed places and a menu — so that is what it has, and where each panel sits is
+three legible `QSettings` keys under `layout/`.
+
+**An area with nothing in it takes no space.** An empty right side is a wider canvas, not a
+blank column, which is what lets two panels share one area and be mutually exclusive: the step
+panel shows while exactly one step is selected, the project form shows the rest of the time,
+and neither has heard of the other.
+
 ## How a panel gets editors it has never heard of
 
 The step detail panel shows a tab per aspect — Estimate, Ticket, Description, Agent — and
-nothing in it knows those four exist. Three seams do that, and they are worth naming because
-the same three answer every "feature A needs feature B" question this application will have.
+nothing in it knows those four exist. Two seams do that, and they are worth naming because they
+answer every "feature A needs feature B" question this application will have.
 
-**A provider module.** `step_properties` owns the panel and `register()`s nothing at all. Its
-whole job is `create_panel()`. That looks odd until a second host wants one, at which point it
-is the only arrangement that does not duplicate the panel or make one feature import another.
-
-**A consumer-owned Protocol.** `project_editor` declares the interface it needs — `widget`,
-`show_step`, `dispose` — in its own file, and types its `Deps` field as
-`Callable[[QWidget], StepPanel] | None`. The real panel satisfies it structurally and never
-learns who hosts it. The `| None` is not defensiveness: an editor with no panel is a legitimate
-build, and saying so in the type is cheaper than discovering it later.
+**Nobody hosts the panel.** `step_properties` owns it and registers it into `services.panels`;
+where it sits is the dock's business and what it shows is the context's. Before the dock existed
+this was a *consumer-owned Protocol* — `project_editor` declared `widget`/`show_step`/`dispose`
+and the composition root handed it a factory — which worked, and cost a panel per tab. Anchoring
+it deleted the Protocol, the `detail_panel` dependency, and the question of who owns the one
+that is on screen. The Protocol-plus-factory shape is still the right answer when one module
+needs a *widget* from another; it stopped being the right answer here when the answer to "how
+many are there" became one.
 
 **A registry for the contributors.** Aspect modules register an `InspectorSection` into
 `services.inspector_sections`; the panel reads that registry when it is *built*, not when the
-modules load, so a contributor's position in the composition root is free.
+modules load, so a contributor's position in the composition root is free — its position
+*ahead* of `step_properties` is not, and the root says so.
 
-The composition root is the only place that knows all three, and it says so in ten lines:
+The composition root is the only place that knows both, and the wiring it used to need between
+the two panel modules is gone:
 
 ```python
 step_properties = StepPropertiesModule(
-    StepPropertiesDeps(..., sections=services.inspector_sections)
+    StepPropertiesDeps(..., panels=services.panels, sections=services.inspector_sections)
 )
-project_editor = ProjectEditorModule(
-    ProjectEditorDeps(..., detail_panel=step_properties.create_panel)
-)
+project_editor = ProjectEditorModule(ProjectEditorDeps(..., panels=services.panels))
 projects = ProjectsModule(ProjectsDeps(..., open_project=project_editor.open))
 ```
 
-This is Writer's arrangement, borrowed wholesale. Its `segment_properties` module serves a
-corkboard, a segment editor and a continuous editor the same way, which is the evidence that
-the shape survives contact with a third host.
-
-The order view's start-date bar is the same three seams again, one layer along: `estimation`
-provides a `create_start_bar()` and registers nothing for it, `step_order` declares a
-`StartBar` Protocol of its own and takes a `Callable[..., StartBar] | None`, and the
-composition root is the only file that knows both names. The reason the bar is a `create_…`
-rather than a registry entry is worth stating: a registry is for *whoever turns up*, and this
-control belongs to exactly one surface. When there is only one host, a registry is ceremony
-that hides which module supplies what.
+**Where provider-and-Protocol is still the answer.** The order view's start-date bar is
+exactly the shape the panel used to have, and it survives the panel's move because the two
+questions are different: a *widget one surface hosts* is not a *surface the window anchors*.
+`estimation` provides a `create_start_bar()` and registers nothing for it, `step_order`
+declares a `StartBar` Protocol of its own and takes a `Callable[..., StartBar] | None`, and
+the composition root is the only file that knows both names. Why a `create_…` rather than a
+registry entry is worth stating too: a registry is for *whoever turns up*, and this control
+belongs to exactly one surface. When there is only one host, a registry is ceremony that hides
+which module supplies what. (This is Writer's arrangement, borrowed wholesale — its
+`segment_properties` serves a corkboard, a segment editor and a continuous editor the same
+way, which is the evidence that the shape survives a second host and a third.)
 
 **What the panel is not.** The project's name and summary are not a section. An
-`InspectorExtension`'s whole contract is `show_target(step_id | None)` — one target
-vocabulary — and making the project form a peer would force every aspect editor to answer
+`InspectorExtension`'s whole contract is `show_target(step_id | None)` — one target vocabulary —
+and making the project form a peer of the aspects would force every aspect editor to answer
 "what if this is a project?" and hide itself, which is precisely the conditional the registry
-exists to delete. So the panel has two pages, the host supplies the empty one, and the project
-form arrives from `project_editor` as a widget the panel never inspects.
+exists to delete. It is a peer of the *panel* instead: a second panel in the same area, with its
+own answer to `show_context`. Both ask `Context.selected_entity("step")`, so "there is exactly
+one step in front of the user" has one definition rather than two that can drift apart.
 
 ## The graph, and what it stores
 

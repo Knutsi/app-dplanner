@@ -110,18 +110,20 @@ def default_modules(services: "AppServices") -> list["Module"]:
         """
         return schedule(order, estimated_days, read_start(product.project(project_id)))
 
-    # Four modules that only make sense together, constructed before the list so the
-    # wiring between them is readable as wiring rather than as ordering:
+    # Three modules constructed before the list, because what each one hands the others
+    # reads better as wiring than as ordering:
     #
-    #   step_properties  builds THE step detail panel and registers nothing at all
-    #   project_editor   hosts one, and opens projects into tabs
+    #   step_properties  anchors THE step detail panel in the window's right area
+    #   project_editor   anchors the project form beside it, and opens projects into tabs
     #   projects         puts projects in the index and opens them through the editor
     #   estimation       owns the estimate and the start date; the order view hosts its bar
     #
-    # None of them imports any other. Construction is side-effect-free, so ordering here is
+    # None of them imports any other, and the two panel modules do not even wire to each
+    # other: each registers a panel and the dock decides what is on screen, so neither knows
+    # the other is in the same area. Construction is side-effect-free, so ordering here is
     # about legibility; what matters at run time is that the aspect modules have registered
-    # their sections before the editor builds its first panel, which is a position in the
-    # list below.
+    # their sections before step_properties builds the panel, which is a position in the list
+    # below.
     estimation = EstimationModule(
         EstimationDeps(product=product, undo=services.undo, sections=services.inspector_sections)
     )
@@ -129,6 +131,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepPropertiesDeps(
             product=product,
             undo=services.undo,
+            panels=services.panels,
             sections=services.inspector_sections,
             theme=services.theme,
         )
@@ -142,8 +145,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             undo=services.undo,
             status=services.window,
             parent=services.window,
-            # The editor asks for a panel and never learns what fills it.
-            detail_panel=step_properties.create_panel,
+            panels=services.panels,
             # A node's second line: whatever the aspects have to say about that step.
             step_aspects=step_aspects,
         )
@@ -160,6 +162,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 undo=services.undo,
                 zoom=services.zoom,
                 window=services.window,
+                # Registered before any panel exists, which is why it listens to the registry
+                # rather than reading it: View ▸ Panels grows an entry as each one arrives.
+                panels=services.panels,
+                chrome=services.window,
             )
         ),
         WorkspacesModule(
@@ -260,8 +266,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             )
         ),
         # -- the step aspects --------------------------------------------------------------
-        # Each registers one tab into the step detail panel. They must come before the
-        # editor, which builds its first panel from whatever has registered by then.
+        # Each registers one tab into the step detail panel. They must come before
+        # step_properties, which builds the panel from whatever has registered by then.
         estimation,
         StepTicketModule(
             StepTicketDeps(

@@ -27,6 +27,19 @@ Use the 4-point scale: **4 / 8 / 12 / 16 / 20 / 24**. Never invent in-between va
 
 When a surface feels "heavy", the fix is almost always more space, not more chrome.
 
+## Panels
+
+A panel anchored in one of the window's areas (`framework/panels.py`) gets a **header strip**
+from its frame: the panel's name in `#InspectorCaption`, 16 px from the sides, 12 above and 6
+below. It is what separates two panels stacked in one area, and it is the right-click target
+for moving the panel — the panel's own widget keeps its own context menu, so there would be
+nowhere else to put it. **A panel's content therefore never prints its own caption**; the
+header already says what it is, and two captions is the one thing `#InspectorCaption` forbids.
+
+A panel with nothing to show goes off screen rather than showing a placeholder, and an area
+with nothing in it takes no width at all. The reasoning is the card rule one level up: an empty
+box is worse than no box.
+
 ## Cards
 
 The one sanctioned box. A panel that hosts *independent features contributed by different

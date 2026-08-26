@@ -1,32 +1,35 @@
-"""The module that provides THE step detail panel, and registers nothing at all.
+"""The module that provides THE step detail panel, and anchors it in the window.
 
-Its whole job is :meth:`create_panel`, which the composition root hands to every host as a
-typed capability. That is the seam: a host declares the panel interface it needs as its own
-``Protocol`` and receives a factory for it, so no module ever imports another, and the day a
-second surface wants a step panel it costs one line in the composition root.
+There is one panel, not one per tab: a panel built inside an activity is duplicated the moment
+the window is split, and two copies of one editor is the same width spent twice. So this
+registers a :class:`~dplanner.framework.panels.PanelSpec` and the dock puts it in an area.
 
-The pattern is Writer's ``segment_properties``, which serves three unrelated hosts —
-a corkboard, a segment editor and a continuous editor — the same way.
+Two seams keep it from knowing anything else in the application. **It never learns who selected
+a step** — the panel reads the context, so a canvas, a table and anything added later reach it
+without being its host. **It never learns which aspects exist** — those arrive from
+``sections``, read when the panel is built, so a contributing module's position in the
+composition root is free (its position *ahead of this one* is not; see the root's comment).
 """
 
 from dataclasses import dataclass
 
-from PySide6.QtWidgets import QWidget
-
 from dplanner.domain.model import Product
 from dplanner.framework.inspector import InspectorSectionRegistry
+from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_properties.panel import StepPanel
 
 MODULE_ID = "step_properties"
+PANEL_ID = f"{MODULE_ID}.step"
 
 
 @dataclass(frozen=True)
 class StepPropertiesDeps:
     product: Product
     undo: UndoService[Product]
-    # Whoever registered an aspect editor. Read when a panel is built, not here, so a
+    panels: PanelRegistry
+    # Whoever registered an aspect editor. Read when the panel is built, not here, so a
     # contributing module's position in the composition root is free.
     sections: InspectorSectionRegistry
     theme: ThemeService  # Tab glyphs follow the theme's secondary text colour.
@@ -39,14 +42,21 @@ class StepPropertiesModule:
         self._deps = deps
 
     def register(self) -> None:
-        """Nothing to install — this module only builds panels for its hosts."""
+        # Order 20: below the project form, which is about the thing the step is part of.
+        self._deps.panels.register(
+            PanelSpec(
+                id=PANEL_ID,
+                title="Step",
+                factory=self._create_panel,
+                area=PanelArea.RIGHT,
+                order=20,
+            )
+        )
 
-    def create_panel(self, empty: QWidget | None = None) -> StepPanel:
-        """One panel for one host. ``empty`` is what shows when no step is selected."""
+    def _create_panel(self) -> StepPanel:
         return StepPanel(
             self._deps.product,
             self._deps.undo,
             sections=self._deps.sections.sections(),
-            empty=empty,
             theme=self._deps.theme,
         )
