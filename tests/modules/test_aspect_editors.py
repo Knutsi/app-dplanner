@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QLabel
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Project, Step, TextEdit
-from dplanner.modules.step_estimation.aspect import read as read_estimate
+from dplanner.modules.estimation.aspect import read as read_estimate
 
 
 @pytest.fixture
@@ -63,8 +63,7 @@ def test_an_estimate_is_written_through_the_undo_stack(services, project, panel)
     editor.days.setValue(3.0)
     editor.days.editingFinished.emit()
 
-    stored = read_estimate(services.document.step(step.id))
-    assert stored is not None and stored.days == 3.0
+    assert read_estimate(services.document.step(step.id)) == 3.0
     services.undo.undo()
     assert read_estimate(services.document.step(step.id)) is None
 
@@ -76,13 +75,34 @@ def test_clearing_an_estimate_removes_the_entry(services, project, panel):
     editor.days.editingFinished.emit()
     editor.days.setValue(0.0)
     editor.days.editingFinished.emit()
-    assert "step_estimation" not in services.document.step(step.id).module_data
+    assert "estimation" not in services.document.step(step.id).module_data
 
 
 def test_a_change_made_elsewhere_reaches_the_estimate(services, project, panel):
     step = project.steps[0]
-    services.undo.push(SetModuleDataCommand(step.id, "step_estimation", {"days": 5.0, "format": 1}))
+    services.undo.push(SetModuleDataCommand(step.id, "estimation", {"days": 5.0, "format": 1}))
     assert section(panel, "Estimate").days.value() == 5.0
+
+
+def test_a_quick_pick_chip_sets_the_estimate_in_one_gesture(services, project, panel):
+    """Most steps are one of a handful of sizes; typing a half day is three gestures."""
+    editor = section(panel, "Estimate")
+    editor.chips.button(1).click()  # ½ a day.
+
+    assert read_estimate(services.document.step(project.steps[0].id)) == 0.5
+    services.undo.undo()
+    assert read_estimate(services.document.step(project.steps[0].id)) is None
+
+
+def test_the_chip_matching_the_value_is_the_checked_one(services, project, panel):
+    """The row displays the estimate as well as sets it — and says nothing about 4 days."""
+    step = project.steps[0]
+    services.undo.push(SetModuleDataCommand(step.id, "estimation", {"days": 5.0, "format": 1}))
+    editor = section(panel, "Estimate")
+    assert [b.text() for b in editor.chips.buttons() if b.isChecked()] == ["5"]
+
+    services.undo.push(SetModuleDataCommand(step.id, "estimation", {"days": 4.0, "format": 1}))
+    assert [b.text() for b in editor.chips.buttons() if b.isChecked()] == []
 
 
 def test_the_editor_ignores_the_echo_of_its_own_write(services, project, panel):
@@ -93,7 +113,7 @@ def test_the_editor_ignores_the_echo_of_its_own_write(services, project, panel):
     editor.days.editingFinished.emit()
     editor.days.setValue(7.0)  # Typed, not yet committed.
     services.document.set_module_data(
-        project.steps[0].id, "step_estimation", {"days": 2.0, "format": 1}, editor
+        project.steps[0].id, "estimation", {"days": 2.0, "format": 1}, editor
     )
     assert editor.days.value() == 7.0
 

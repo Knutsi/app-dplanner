@@ -1,16 +1,25 @@
-"""``dplanner estimate …`` — set, clear and total up estimates."""
+"""``dplanner estimate …`` and ``dplanner schedule …`` — sizing the work, and dating it.
+
+Two nouns because they are two questions. ``estimate`` is about one step and what it costs;
+``schedule`` is about a project and when its steps land. The second is a report over the
+first plus a start date, and it renders through the same formatters the window's order table
+uses, so the terminal and the window cannot show one total two ways.
+"""
 
 from argparse import ArgumentParser, Namespace
+from datetime import date
+from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.modules.step_estimation.aspect import (
-    CONFIDENCES,
-    MODULE_ID,
-    Estimate,
-    read,
-    write,
+from dplanner.domain.schedule import Scheduled, format_days
+from dplanner.modules.estimation.aspect import MODULE_ID, read, write
+from dplanner.modules.estimation.schedule import (
+    finish_date,
+    project_schedule,
+    read_start,
+    write_start,
 )
 
 
@@ -18,10 +27,10 @@ def commands() -> list[CliCommand]:
     return [
         CliCommand(
             path=("estimate", "set"),
-            summary="Say how many days a step is thought to take.",
+            summary="Say how many working days a step is thought to take.",
             configure=_configure_set,
             run=_set,
-            examples=("dplanner estimate set 'Read the spec' --days 3 --confidence low",),
+            examples=("dplanner estimate set 'Read the spec' --days 3",),
         ),
         CliCommand(
             path=("estimate", "clear"),
@@ -37,6 +46,26 @@ def commands() -> list[CliCommand]:
             run=_rollup,
             examples=("dplanner estimate rollup discovery",),
         ),
+        CliCommand(
+            path=("schedule", "start"),
+            summary="Set the date a project's work begins, or clear it.",
+            configure=_configure_start,
+            run=_start,
+            examples=(
+                "dplanner schedule start discovery --date 2026-09-01",
+                "dplanner schedule start discovery --clear",
+            ),
+        ),
+        CliCommand(
+            path=("schedule", "show"),
+            summary="When each step lands, in the order the work can be done.",
+            configure=_one_project,
+            run=_show,
+            examples=(
+                "dplanner schedule show discovery",
+                "dplanner schedule show discovery --json",
+            ),
+        ),
     ]
 
 
@@ -51,14 +80,19 @@ def _one_project(parser: ArgumentParser) -> None:
 def _configure_set(parser: ArgumentParser) -> None:
     _one_step(parser)
     parser.add_argument("--days", type=float, required=True, help="working days")
-    parser.add_argument("--confidence", choices=CONFIDENCES, default="", help="how sure")
+
+
+def _configure_start(parser: ArgumentParser) -> None:
+    _one_project(parser)
+    parser.add_argument("--date", help="ISO-8601, e.g. 2026-09-01")
+    parser.add_argument("--clear", action="store_true", help="remove the start date")
 
 
 def _set(context: CliContext, args: Namespace) -> int:
     if args.days < 0:
         raise CliError("an estimate cannot be negative")
     step = find_step(context.product, args.step)
-    entry = write(Estimate(days=args.days, confidence=args.confidence))
+    entry = write(args.days)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
     context.report({"step": step.id} | entry, f"{step.title}: {args.days:g} days")
     return 0
@@ -79,8 +113,8 @@ def _rollup(context: CliContext, args: Namespace) -> int:
     """
     project = find_project(context.product, args.project)
     estimates = [read(step) for step in project.steps]
-    total = sum(estimate.days for estimate in estimates if estimate is not None)
-    missing = sum(1 for estimate in estimates if estimate is None)
+    total = sum(days for days in estimates if days is not None)
+    missing = sum(1 for days in estimates if days is None)
     data = {
         "project": project.id,
         "days": total,
@@ -90,3 +124,76 @@ def _rollup(context: CliContext, args: Namespace) -> int:
     tail = f", {missing} unestimated" if missing else ""
     context.report(data, f"{project.title}: {total:g} days over {len(project.steps)} steps{tail}")
     return 0
+
+
+def _start(context: CliContext, args: Namespace) -> int:
+    if args.clear == bool(args.date):
+        raise CliError("give either --date or --clear")
+    start = None
+    if args.date:
+        try:
+            start = date.fromisoformat(args.date)
+        except ValueError as error:
+            raise CliError(f"{args.date!r} is not an ISO-8601 date, e.g. 2026-09-01") from error
+    project = find_project(context.product, args.project)
+    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_start(start)))
+    said = "start date cleared" if start is None else f"starts {start.isoformat()}"
+    written = "" if start is None else start.isoformat()
+    context.report({"project": project.id, "start": written}, f"{project.title}: {said}")
+    return 0
+
+
+def _show(context: CliContext, args: Namespace) -> int:
+    """The schedule: the order walk, carrying estimates instead of counting hops."""
+    project = find_project(context.product, args.project)
+    rows = project_schedule(context.product, project)
+    start = read_start(project)
+    unestimated = sum(1 for row in rows if row.days is None)
+    landing = finish_date(rows)
+    data: dict[str, Any] = {
+        "project": project.id,
+        "start": start.isoformat() if start else "",
+        "finish": landing.isoformat() if landing else "",
+        "days": rows[-1].accumulated if rows else 0.0,
+        "unestimated": unestimated,
+        "steps": [
+            {
+                "index": row.place.index,
+                "id": row.place.step.id,
+                "title": row.place.step.title,
+                "days": row.days,
+                "accumulated": row.accumulated,
+                "date": row.finish.isoformat() if row.finish else "",
+            }
+            for row in rows
+        ],
+    }
+    context.report(data, _report(project.title, rows, start, landing, unestimated))
+    return 0
+
+
+def _report(
+    title: str,
+    rows: list[Scheduled],
+    start: date | None,
+    landing: date | None,
+    unestimated: int,
+) -> str:
+    """The same columns the order table shows, through the same formatter."""
+    if not rows:
+        return "No steps yet."
+    width = max(len(row.place.step.title or "Untitled step") for row in rows)
+    lines = [
+        f"{row.place.index:>3}  {(row.place.step.title or 'Untitled step'):<{width}}  "
+        f"{format_days(row.days):>6}  {format_days(row.accumulated):>6}  "
+        f"{row.finish.isoformat() if row.finish else ''}"
+        for row in rows
+    ]
+    tail = f"{format_days(rows[-1].accumulated)} of work"
+    if start is None:
+        tail += "; no start date, so no dates"
+    elif landing is not None:
+        tail += f", landing {landing.isoformat()}"
+    if unestimated:
+        tail += f", {unestimated} unestimated"
+    return "\n".join([*lines, "", f"{title}: {tail}"])
