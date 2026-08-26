@@ -9,9 +9,11 @@ unchanged.
 from dataclasses import dataclass
 from typing import Any
 
+from PySide6.QtCore import QPoint
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QMainWindow, QMessageBox
 
+from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -125,18 +127,6 @@ class AppShellModule:
 
         deps.actions.register(
             ActionSpec(
-                id="appshell.close_tab",
-                label="&Close Tab",
-                menu="File",
-                group="window",
-                order=10,
-                shortcut=QKeySequence.StandardKey.Close,
-                tip="Close the current tab",
-                run=lambda _context: deps.tabs.close_current(),
-            )
-        )
-        deps.actions.register(
-            ActionSpec(
                 id="appshell.quit",
                 label="&Quit",
                 menu="File",
@@ -147,16 +137,27 @@ class AppShellModule:
                 run=run_quit,
             )
         )
+
+        # -- the Tab menu, which the tab bar's right-click also renders --------------------
         # Moving a tab is what splits the window: the group appears to receive it and
         # disappears when the last tab leaves, so there is no split mode and never an empty
-        # pane. Their state depends on the tab host rather than on the context graph, which
-        # is what poke_context() below is for — the same shape as Undo's label.
+        # pane. Every state here depends on the tab host rather than on the context graph,
+        # which is what poke_context() below is for — the same shape as Undo's label.
+        def close_all(activities: list[Any]) -> None:
+            # A list, not the live one: closing mutates what activities() returns.
+            for activity in activities:
+                deps.tabs.close_activity(activity)
+
+        def others() -> list[Any]:
+            current = deps.tabs.current_activity()
+            return [a for a in deps.tabs.activities() if a is not current]
+
         deps.actions.register(
             ActionSpec(
                 id="appshell.move_tab_right",
                 label="Move Tab &Right",
-                menu="View",
-                group="tabs",
+                menu="Tab",
+                group="move",
                 order=10,
                 tip="Put this tab in the group to its right, making one if there is room",
                 state=lambda _context: ENABLED if deps.tabs.can_move_right() else DISABLED,
@@ -167,17 +168,75 @@ class AppShellModule:
             ActionSpec(
                 id="appshell.move_tab_left",
                 label="Move Tab &Left",
-                menu="View",
-                group="tabs",
+                menu="Tab",
+                group="move",
                 order=20,
                 tip="Put this tab back in the group to its left",
                 state=lambda _context: ENABLED if deps.tabs.can_move_left() else DISABLED,
                 run=lambda _context: deps.tabs.move_current_left(),
             )
         )
-        # Whether a tab can move depends on how many groups there are, which no signal
+        deps.actions.register(
+            ActionSpec(
+                id="appshell.close_tab",
+                label="&Close Tab",
+                menu="Tab",
+                group="close",
+                order=10,
+                shortcut=QKeySequence.StandardKey.Close,
+                tip="Close the current tab",
+                state=lambda _context: (
+                    ENABLED if deps.tabs.current_activity() is not None else DISABLED
+                ),
+                run=lambda _context: deps.tabs.close_current(),
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="appshell.close_other_tabs",
+                label="Close &Other Tabs",
+                menu="Tab",
+                group="close",
+                order=20,
+                tip="Close every tab but this one, in every group",
+                state=lambda _context: ENABLED if others() else DISABLED,
+                run=lambda _context: close_all(others()),
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="appshell.close_tabs_right",
+                label="Close Tabs to the &Right",
+                menu="Tab",
+                group="close",
+                order=30,
+                tip="Close the tabs after this one in its own group",
+                state=lambda _context: ENABLED if deps.tabs.after_current() else DISABLED,
+                run=lambda _context: close_all(deps.tabs.after_current()),
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="appshell.close_all_tabs",
+                label="Close &All Tabs",
+                menu="Tab",
+                group="close",
+                order=40,
+                tip="Empty the window",
+                state=lambda _context: ENABLED if deps.tabs.activities() else DISABLED,
+                run=lambda _context: close_all(deps.tabs.activities()),
+            )
+        )
+        # What a tab can do depends on how many tabs and groups there are, which no signal
         # reports; every activity change is also every moment one could have changed.
         deps.tabs.activity_changed.connect(lambda _activity: poke_context())
+
+        # The tab bar has made the tab current by the time this arrives, so the menu is built
+        # from the same context every other presenter reads.
+        def show_tab_menu(at: QPoint) -> None:
+            build_menu(deps.actions, deps.context, "Tab", window).exec(at)
+
+        deps.tabs.tab_menu_requested.connect(show_tab_menu)
 
         deps.actions.register(
             ActionSpec(

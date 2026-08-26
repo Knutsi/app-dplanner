@@ -45,8 +45,20 @@ def read_start(project: Project) -> date | None:
         return None
 
 
+def start_of(project: Project) -> date:
+    """When this project's work begins: the date somebody set, or today.
+
+    **Derived, never written.** Storing today would make merely opening a tab dirty the
+    workspace — ``ordering.py``'s rule again — and it would be wrong by tomorrow. So a
+    project nobody has dated answers "if you start now", every surface asks this rather than
+    ``read_start``, and the only thing on disk is a date a person chose.
+    """
+    return read_start(project) or date.today()
+
+
 def write_start(start: date | None) -> dict[str, Any]:
-    """The project entry to store. ``None`` gives ``{}``, which removes the file."""
+    """The project entry to store. ``None`` gives ``{}``, which removes the file — and
+    puts the project back on "starts today"."""
     if start is None:
         return {}
     return stamped({START_KEY: start.isoformat()}, DATA_FORMAT.version)
@@ -54,7 +66,7 @@ def write_start(start: date | None) -> dict[str, Any]:
 
 def project_schedule(product: Product, project: Project) -> list[Scheduled]:
     """The project's steps in order, each with its running total and its date."""
-    return schedule(placed(product, project), read, read_start(project))
+    return schedule(placed(product, project), read, start_of(project))
 
 
 def finish_date(rows: list[Scheduled]) -> date | None:

@@ -6,7 +6,7 @@ no window, no session — because that is what the host promises it can be.
 """
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QLabel, QWidget
 
 from dplanner.framework.activity import ActivityBase
@@ -345,3 +345,54 @@ def test_a_disposed_host_stops_watching(app, context):
     first.dispose()
     press(app, left.widget)
     assert seen == []
+
+
+# -- the tab bar's right-click ---------------------------------------------------------------
+
+
+def tab_bar(host, group=0):
+    return host._groups[group].tabBar()
+
+
+def test_what_is_to_the_right_is_a_fact_about_one_bar(host):
+    """The one thing about groups the host cannot hide — so it answers rather than exposes."""
+    first = host.open("thing", "a")
+    second = host.open("thing", "b")
+    third = host.open("thing", "c")
+
+    assert [a.uri for a in host.after_current()] == []
+    host.focus(first)
+    assert [a.uri for a in host.after_current()] == [second.uri, third.uri]
+
+    host.focus(third)
+    host.move_current_right()
+    host.focus(first)
+    # Only its own bar: the tab that left is to the right on screen, not in this group.
+    assert [a.uri for a in host.after_current()] == [second.uri]
+
+
+def test_right_clicking_a_tab_makes_it_current_before_the_menu(app, host):
+    """The same move the canvas makes when it selects the node under the cursor: one notion
+    of what the user is on, and the menu is built from it."""
+    first = host.open("thing", "a")
+    host.open("thing", "b")
+    asked: list[object] = []
+    host.tab_menu_requested.connect(asked.append)
+
+    bar = tab_bar(host)
+    host._on_tab_menu(host._groups[0], bar.tabRect(0).center())
+
+    assert host.current_activity() is first
+    assert len(asked) == 1
+
+
+def test_right_clicking_beside_the_tabs_offers_nothing(app, host):
+    """There is no tab there, so there is nothing for a tab menu to act on."""
+    host.open("thing", "a")
+    asked: list[object] = []
+    host.tab_menu_requested.connect(asked.append)
+
+    bar = tab_bar(host)
+    host._on_tab_menu(host._groups[0], QPoint(bar.width() - 1, bar.height() - 1))
+
+    assert asked == []

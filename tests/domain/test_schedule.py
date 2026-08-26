@@ -12,6 +12,7 @@ from dplanner.domain.model import Product, Project, Step
 from dplanner.domain.ordering import placed
 from dplanner.domain.schedule import (
     as_weeks,
+    format_date,
     format_days,
     next_working_day,
     schedule,
@@ -69,12 +70,40 @@ def test_a_week_is_five_working_days():
     assert format_days(None) == ""
 
 
+# -- how a date reads ------------------------------------------------------------------------
+
+
+def test_this_year_needs_no_year():
+    """A schedule is read for *when*; the year is the part that is usually obvious."""
+    assert format_date(date(2026, 9, 23), today=date(2026, 8, 26)) == "23 September"
+    assert format_date(date(2026, 1, 1), today=date(2026, 12, 31)) == "1 January"
+
+
+def test_another_year_says_so_and_abbreviates():
+    """The month shortens when the year arrives, so the column does not double in width."""
+    assert format_date(date(2027, 2, 14), today=date(2026, 8, 26)) == "14 Feb '27"
+    assert format_date(date(2025, 12, 31), today=date(2026, 1, 1)) == "31 Dec '25"
+    assert format_date(date(2100, 3, 5), today=date(2026, 1, 1)) == "5 Mar '00"
+
+
+def test_the_months_do_not_come_from_the_locale():
+    """``strftime`` would spell these differently on a Norwegian machine, and a test that
+    passes only where it was written is worse than no test."""
+    assert [format_date(date(2026, m, 1), today=date(2026, 1, 1)) for m in (5, 9, 12)] == [
+        "1 May",
+        "1 September",
+        "1 December",
+    ]
+
+
 # -- the walk ------------------------------------------------------------------------------------
 
 
 def test_the_total_runs_serially_down_the_order(project):
     product, found = project
-    rows = schedule(placed(product, found), days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0}))
+    rows = schedule(
+        placed(product, found), days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0}), MONDAY
+    )
 
     assert [row.accumulated for row in rows] == [1.0, 3.0, 6.0, 10.0]
 
@@ -103,12 +132,14 @@ def test_two_halves_land_on_the_first_day(project):
     assert rows[1].finish == MONDAY
 
 
-def test_without_a_start_date_there_are_totals_but_no_dates(project):
+def test_only_an_unestimated_step_lacks_a_date(project):
+    """There is no "no start date" case any more — a project nobody dated starts today, so
+    the only blank in the Date column is a step nobody has sized."""
     product, found = project
-    rows = schedule(placed(product, found), days_of({"A": 3.0, "B": 1.0}))
+    rows = schedule(placed(product, found), days_of({"A": 3.0, "B": 1.0}), MONDAY)
 
     assert [row.accumulated for row in rows] == [3.0, 4.0, 4.0, 4.0]
-    assert all(row.finish is None for row in rows)
+    assert [row.finish is None for row in rows] == [False, False, True, True]
 
 
 def test_a_weekend_start_dates_from_the_monday(project):
@@ -129,7 +160,7 @@ def test_a_project_with_no_steps_schedules_to_nothing():
 def test_each_row_keeps_its_place_in_the_order(project):
     """The schedule carries the ordering's answer rather than renumbering the rows itself."""
     product, found = project
-    rows = schedule(placed(product, found), days_of({}))
+    rows = schedule(placed(product, found), days_of({}), MONDAY)
 
     assert [row.place.index for row in rows] == [1, 2, 3, 4]
     assert [row.place.wave for row in rows] == [1, 2, 3, 4]

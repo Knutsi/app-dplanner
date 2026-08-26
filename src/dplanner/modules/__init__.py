@@ -56,7 +56,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
-    from dplanner.modules.estimation.schedule import read_start
+    from dplanner.modules.estimation.schedule import start_of
     from dplanner.modules.llm.module import LlmDeps, LlmModule
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
@@ -108,7 +108,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         The domain never learns where an estimate is stored — it is handed a function that
         answers for a step — and the order view never learns that estimates exist.
         """
-        return schedule(order, estimated_days, read_start(product.project(project_id)))
+        return schedule(order, estimated_days, start_of(product.project(project_id)))
 
     # Three modules constructed before the list, because what each one hands the others
     # reads better as wiring than as ordering:

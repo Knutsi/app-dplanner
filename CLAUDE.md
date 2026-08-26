@@ -198,6 +198,10 @@ root, stop and look for the registry or capability you have not found yet.
   and what a greyed one says. Never write a second reachability check in a view — the one that
   existed refused every drop for a fortnight because it read gesture state that had already
   been cleared.
+- **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
+  `MENU_STRUCTURE`, so anything with a context menu owns a menu in that table — the canvas has
+  `Step`, the index tree has `Project`, the tab bar has `Tab`. Make the thing under the cursor
+  current *first*, then build; the menu then reads the same context every other presenter does.
 - **Derived facts are computed, never stored** — the topological order in
   `domain/ordering.py` is the reference, and `domain/schedule.py` is the same walk carrying
   estimates. Storing one means it can disagree with what it came from, and the CLI is what
