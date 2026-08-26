@@ -64,6 +64,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepDescriptionModule,
     )
     from dplanner.modules.step_estimation.module import StepEstimationDeps, StepEstimationModule
+    from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
     from dplanner.modules.step_properties.module import (
         StepPropertiesDeps,
         StepPropertiesModule,
@@ -262,6 +263,19 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         step_properties,
         project_editor,
+        StepOrderModule(
+            StepOrderDeps(
+                product=product,
+                actions=services.actions,
+                context=services.context,
+                tabs=services.tabs,
+                parent=services.window,
+                # Listing steps is one feature; showing one on a canvas is another. This is
+                # the seam between them, and neither module knows the other's name.
+                reveal_step=project_editor.reveal,
+                step_aspects=step_aspects,
+            )
+        ),
         AgentSkillModule(
             AgentSkillDeps(
                 actions=services.actions,
@@ -299,6 +313,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_estimation import cli as estimation_cli
+    from dplanner.modules.step_order import cli as order_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
 
     specs = aspect_specs()
@@ -309,6 +324,7 @@ def default_cli_commands() -> list["CliCommand"]:
         *ticket_cli.commands(),
         *description_cli.commands(),
         *agent_cli.commands(),
+        *order_cli.commands(),
         *aspect_commands(specs),
     ]
     # The skill describes the registry it is registered into, so the loop is closed here

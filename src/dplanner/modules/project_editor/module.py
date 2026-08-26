@@ -172,6 +172,10 @@ class ProjectActivity(ActivityBase):
         )
         self._publish_selection(self._scene.selected_steps())
 
+    def select_step(self, step_id: StepId) -> None:
+        """Select one step on the canvas — how another view reveals something here."""
+        self._scene.select_step(step_id)
+
     def on_deactivated(self) -> None:
         self._is_active = False
         self._deps.undo.break_coalescing()
@@ -367,6 +371,20 @@ class ProjectEditorModule:
     def open(self, project_id: NodeId) -> None:
         """Show a project in a tab. Handed to the index segment as a plain function."""
         self._deps.tabs.open(PROJECT_KIND, project_id)
+
+    def reveal(self, step_id: StepId) -> None:
+        """Show the step's project and select it there.
+
+        The capability the composition root hands to anything that lists steps — the order
+        view today — so it can say "show me this one" without knowing what a canvas is.
+        """
+        if not self._deps.product.has(step_id):
+            return
+        project = self._deps.product.project_of(step_id)
+        self.open(project.id)
+        for activity in self._activities():
+            if activity.project_id == project.id:
+                activity.select_step(step_id)
 
     def register(self) -> None:
         deps = self._deps
