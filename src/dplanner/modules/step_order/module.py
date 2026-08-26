@@ -7,23 +7,29 @@ adds nothing to the model.
 **Nothing here is stored.** The order is recomputed whenever the graph changes, which is what
 makes it impossible for it to disagree with the graph. See ``domain/ordering.py``.
 
-Two seams, both already established elsewhere in this application:
+Three seams, all established elsewhere in this application:
 
 - **Selecting a step publishes the selection scope**, so the Step menu's verbs target it —
   this view never learns that those verbs exist.
 - **Activating one reveals it in the graph**, through a callback the composition root
   supplies. This module does not import the project editor, and the project editor does not
   know this view exists.
+- **The schedule arrives as an answer, not as data to interpret.** Whoever owns estimates
+  hands over the order already carrying days and dates, and lends the widget that sets the
+  start date. This module never learns what an estimate is stored as, and there is a working
+  default for a build with nobody to ask.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from dplanner.domain.model import NodeId, Product, Project, StepId
-from dplanner.domain.ordering import placed
+from dplanner.domain.model import NodeId, Product, Project, ProjectId, StepId
+from dplanner.domain.ordering import Placed, placed
+from dplanner.domain.schedule import Scheduled, schedule
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
     ENABLED,
@@ -53,6 +59,20 @@ ORDER_KIND = "order"
 
 PANEL_MARGIN = 16
 CAPTION_GAP = 6
+BLOCK_GAP = 12
+
+
+class StartBar(Protocol):
+    """The control the schedule is measured from.
+
+    Consumer-owned interface, satisfied structurally by the estimation module's start-date
+    bar via the composition root — the same arrangement as the project editor's panel.
+    """
+
+    @property
+    def widget(self) -> QWidget: ...
+
+    def dispose(self) -> None: ...
 
 
 def _no_aspects(_step_id: StepId) -> list[str]:
@@ -61,6 +81,15 @@ def _no_aspects(_step_id: StepId) -> list[str]:
 
 def _no_reveal(_step_id: StepId) -> None:
     pass
+
+
+def _unscheduled(_project_id: ProjectId, order: Sequence[Placed]) -> list[Scheduled]:
+    """Nobody in this build knows what a step costs: every row, no days, no dates.
+
+    The honest empty answer is the domain function itself, asked a question with no answer —
+    which is why the table needs no branch for a build without estimates.
+    """
+    return schedule(order, lambda _step: None)
 
 
 @dataclass(frozen=True)
@@ -75,6 +104,13 @@ class StepOrderDeps:
     reveal_step: Callable[[StepId], None] = field(default=_no_reveal)
     # What the aspect modules have to say about a step, one short phrase each.
     step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
+    # The order carrying what each step costs and when it lands. Wired by the composition
+    # root; this module never learns what an estimate is.
+    step_schedule: Callable[[ProjectId, Sequence[Placed]], list[Scheduled]] = field(
+        default=_unscheduled
+    )
+    # The widget that sets the date the schedule counts from. None is a legitimate build.
+    start_bar: Callable[[ProjectId, QWidget], StartBar] | None = None
 
 
 class OrderActivity(ActivityBase):
@@ -99,13 +135,21 @@ class OrderActivity(ActivityBase):
         layout.addWidget(caption)
 
         self._note = QLabel(
-            "Steps in an order that never puts one before what it waits on. "
-            "Everything in the first wave can be started now.",
+            "Steps in an order that never puts one before what it waits on. Everything in the "
+            "first wave can be started now; the dates run them one after another, weekends "
+            "skipped.",
             page,
         )
         self._note.setObjectName("InspectorNote")
         self._note.setWordWrap(True)
         layout.addWidget(self._note)
+
+        self.start_bar: StartBar | None = None
+        if deps.start_bar is not None:
+            self.start_bar = deps.start_bar(project_id, page)
+            layout.addSpacing(BLOCK_GAP)
+            layout.addWidget(self.start_bar.widget)
+            layout.addSpacing(BLOCK_GAP)
 
         self.table = OrderTable(wave_label, deps.step_aspects, page)
         self.table.itemSelectionChanged.connect(self._on_selection)
@@ -152,6 +196,8 @@ class OrderActivity(ActivityBase):
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
+        if self.start_bar is not None:
+            self.start_bar.dispose()
 
     # -- internals -----------------------------------------------------------------------------
 
@@ -161,7 +207,8 @@ class OrderActivity(ActivityBase):
     def _refresh(self) -> None:
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
-        self.table.show_order(placed(self._product, self._project()))
+        order = placed(self._product, self._project())
+        self.table.show_order(self._deps.step_schedule(self.project_id, order))
 
     def _publish(self, step_id: StepId | None) -> None:
         if not self._is_active:

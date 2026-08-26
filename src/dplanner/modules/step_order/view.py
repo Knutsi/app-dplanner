@@ -4,6 +4,9 @@ A table rather than a nested list, because the thing being shown *is* a sorted s
 the first thing you want from one is a position. The wave rides along as a column: two steps
 sharing a wave can be started together, and the first wave is the answer to "what now".
 
+The schedule columns come from ``domain/schedule.py`` and are rendered with its own
+formatter, so this table and ``dplanner schedule show`` cannot express one number two ways.
+
 Rebuilt whenever the graph changes. A project holds tens of steps, so a whole redraw is
 cheaper to read than a diff and cannot go stale.
 """
@@ -20,9 +23,17 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.domain.model import StepId
-from dplanner.domain.ordering import Placed
+from dplanner.domain.schedule import Scheduled, format_days
 
-COLUMNS = ("#", "Step", "Wave", "")
+COLUMNS = ("#", "Step", "Wave", "Estimate", "Accumulated", "Date", "")
+TITLE_COLUMN = 1
+ESTIMATE_COLUMN = 3
+ACCUMULATED_COLUMN = 4
+DATE_COLUMN = 5
+ASPECTS_COLUMN = 6
+
+# Numbers line up on the right; everything else reads from the left.
+NUMERIC_COLUMNS = (ESTIMATE_COLUMN, ACCUMULATED_COLUMN)
 
 # The step id on a row, so a click can say which step it means.
 STEP_ROLE = int(Qt.ItemDataRole.UserRole) + 1
@@ -34,9 +45,11 @@ ROW_HEIGHT = 28
 # alpha-derived secondary is theme-independent by construction (DESIGN.md exception #1).
 SECONDARY_ALPHA = 160
 
+_RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+
 
 class OrderTable(QTableWidget):
-    """Steps in topological order: index, name, wave, and whatever the aspects say."""
+    """Steps in topological order: index, name, wave, what they cost, when they land."""
 
     def __init__(
         self,
@@ -59,31 +72,45 @@ class OrderTable(QTableWidget):
         self.setWordWrap(False)
 
         header = self.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        for column in range(len(COLUMNS)):
+            mode = (
+                QHeaderView.ResizeMode.Interactive
+                if column == TITLE_COLUMN
+                else QHeaderView.ResizeMode.ResizeToContents
+            )
+            header.setSectionResizeMode(column, mode)
         # The last column takes the slack, so the aspects have room and nothing else moves.
         header.setStretchLastSection(True)
         header.setHighlightSections(False)
 
-    def show_order(self, order: Sequence[Placed]) -> None:
+    def show_order(self, order: Sequence[Scheduled]) -> None:
         selected = self.selected_step()
         self.setRowCount(len(order))
-        for row, place in enumerate(order):
-            title = place.step.title or "Untitled step"
-            detail = " · ".join(self._step_aspects(place.step.id))
-            for column, text in enumerate(
-                (str(place.index), title, self._wave_label(place.wave - 1), detail)
-            ):
+        for row, scheduled in enumerate(order):
+            place = scheduled.place
+            cells = (
+                str(place.index),
+                place.step.title or "Untitled step",
+                self._wave_label(place.wave - 1),
+                format_days(scheduled.days),
+                format_days(scheduled.accumulated),
+                scheduled.finish.isoformat() if scheduled.finish else "",
+                " · ".join(self._step_aspects(place.step.id)),
+            )
+            for column, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 item.setData(STEP_ROLE, place.step.id)
-                if column != 1:
+                if column != TITLE_COLUMN:
                     faded = self.palette().text().color()
                     faded.setAlpha(SECONDARY_ALPHA)
                     item.setForeground(faded)
+                if column in NUMERIC_COLUMNS:
+                    item.setTextAlignment(_RIGHT)
                 self.setItem(row, column, item)
             self.setRowHeight(row, ROW_HEIGHT)
-        self.resizeColumnToContents(1)
+        # A column of blanks says less than an absent one: no start date, no Date column.
+        self.setColumnHidden(DATE_COLUMN, all(s.finish is None for s in order))
+        self.resizeColumnToContents(TITLE_COLUMN)
         if selected is not None:
             self.select_step(selected)
 

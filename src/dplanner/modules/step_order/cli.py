@@ -76,7 +76,12 @@ def _show(context: CliContext, args: Namespace) -> int:
 
 
 def _table(order: list[Placed]) -> str:
-    """The same three columns the window shows, so the two answers look like one answer."""
+    """The graph's three columns — the order, and nothing that depends on an estimate.
+
+    The window's table shows these beside a schedule; here the two answers stay apart, and
+    ``dplanner schedule show`` is the one that dates them. Keeping them separate is what lets
+    ``order show`` answer "what can I start now" in a build with no estimates at all.
+    """
     if not order:
         return ""
     width = max(len(place.step.title or "Untitled step") for place in order)
