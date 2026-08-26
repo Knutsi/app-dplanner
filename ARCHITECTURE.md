@@ -297,11 +297,29 @@ client; it is useful to people and to CI; and it needs no process lifecycle. If 
 Claude-specific integration is wanted later, `dplanner mcp serve` is a thin adapter over the
 same registry and introduces no second description of any command.
 
+## Deriving rather than storing
+
+`domain/ordering.py` answers "what order can this be done in" as a pure function, and the
+choice not to store the answer is the same one the canvas made about node positions — for a
+sharper reason. The CLI is a first-class writer here: `dplanner step link` changes a graph
+with no window running, so a stored index would be stale exactly when an agent is driving,
+unless the recompute moved into the model and every `step add` rewrote every step file whose
+index shifted.
+
+What "always available" actually requires is not a file but a function every surface can
+reach. So the walk lives in the domain, and the canvas layout, the order view and
+`dplanner order show --json` are three readers of one implementation. Nothing can disagree
+with the graph, because there is nothing else to disagree.
+
+The rule generalises: **derived data may be cached, but it may not be persisted.** A cache
+that is wrong is a bug you find in a session; a file that is wrong is a bug you find in a
+diff, months later, in a workspace nobody can reconstruct.
+
 ## Where this is going
 
 - **More of the canvas** — panning beyond the scroll bars, edge selection and deletion, and
   a second edge kind that can be drawn rather than only typed.
-- **Estimation and prioritisation over the graph** — `estimate rollup` is the first inch of
-  it. What a planner is really for is answering "what can I start now, and when does this
-  land", and both questions are walks over the graph reading aspects.
+- **Estimation over the graph** — `estimate rollup` and `domain/ordering.py` are the two
+  halves. "What can I start now" is answered; "when does this land" is the same walk carrying
+  estimates instead of counting hops.
 - **Reports** — new folders in the index tree, which is the shape the registry was built for.

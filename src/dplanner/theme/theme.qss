@@ -342,6 +342,29 @@ QScrollBar::sub-page {
     border: none;
 }
 
+/* The order view's waves. Same row metrics as the index tree — both are a tree of things
+   you pick from, and they should feel like one surface. */
+#OrderTree {
+    background-color: $BG_BASE;
+    border: none;
+    color: $TEXT_SECONDARY;
+    padding: 4px;
+}
+
+#OrderTree::item {
+    padding: 5px 8px;
+    border-radius: ${RADIUS_SM}px;
+}
+
+#OrderTree::item:selected {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_PRIMARY;
+}
+
+#OrderTree::item:hover {
+    color: $TEXT_PRIMARY;
+}
+
 /* A prose field inside a detail panel: framed like the panel's other inputs. */
 #InspectorNotes {
     background-color: $BG_BASE;

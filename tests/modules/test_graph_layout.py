@@ -1,12 +1,15 @@
 """Where a node goes when nobody has placed it.
 
 No ``qapp`` fixture: the placement rules are plain functions over the model, which is the
-whole reason they live in their own file.
+whole reason they live in their own file. The dependency walk they build on is the domain's
+and is tested in ``tests/domain/test_ordering.py``; what is tested here is where a node
+ends up on screen.
 """
 
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Product, Project, Step
-from dplanner.modules.project_editor.layout import auto_positions, depths, positions
+from dplanner.domain.ordering import depths
+from dplanner.modules.project_editor.layout import auto_positions, positions
 from dplanner.modules.project_editor.positions import GRID, read_position, write_position
 
 

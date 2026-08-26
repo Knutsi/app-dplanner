@@ -4,6 +4,9 @@ Plain functions over the model, with no Qt anywhere, so the interesting part —
 read left to right in dependency order — is testable without a widget in sight. Writer's
 corkboard splits its move rules out for the same reason.
 
+The dependency walk itself lives in ``domain/ordering.py``: a column here is a wave there, and
+one implementation serves the canvas, the order view and the CLI.
+
 **Nothing here is ever written to disk.** A computed position is recomputed every time the
 project opens; only a step somebody actually dragged earns a stored one. Persisting the
 automatic layout would mean that merely opening a tab dirtied the workspace, autosave would
@@ -12,36 +15,13 @@ position file the next time a window happened to open.
 """
 
 from dplanner.domain.model import Product, Project, StepId
+from dplanner.domain.ordering import depths
 
 # Roughly a node and a half apart, so an edge is visible between two columns.
 COLUMN_SPACING = 260.0
 ROW_SPACING = 110.0
 ORIGIN_X = 40.0
 ORIGIN_Y = 40.0
-
-
-def depths(product: Product, project: Project) -> dict[StepId, int]:
-    """How many ``requires`` edges deep each step is — the length of its longest chain.
-
-    Cycles cannot occur: the model refuses to create one, so the walk always terminates.
-    An edge pointing at a step outside this project cannot occur either, for the same reason.
-    """
-    known: dict[StepId, int] = {}
-
-    def depth_of(step_id: StepId, seen: frozenset[StepId]) -> int:
-        if step_id in known:
-            return known[step_id]
-        if step_id in seen:  # Defensive: a hand-edited file could still contain one.
-            return 0
-        waiting = product.step(step_id).edges.get("requires", [])
-        resolved = [t for t in waiting if project.step(t) is not None]
-        found = 0 if not resolved else 1 + max(depth_of(t, seen | {step_id}) for t in resolved)
-        known[step_id] = found
-        return found
-
-    for step in project.steps:
-        depth_of(step.id, frozenset())
-    return known
 
 
 def auto_positions(product: Product, project: Project) -> dict[StepId, tuple[float, float]]:

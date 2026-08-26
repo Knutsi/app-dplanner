@@ -184,6 +184,11 @@ root, stop and look for the registry or capability you have not found yet.
   and what a greyed one says. Never write a second reachability check in a view — the one that
   existed refused every drop for a fortnight because it read gesture state that had already
   been cleared.
+- **Derived facts are computed, never stored** — the topological order in
+  `domain/ordering.py` is the reference. Storing one means it can disagree with what it came
+  from, and the CLI is what catches you out: `dplanner step link` changes a graph with no
+  window running to notice. Availability comes from exposing the function everywhere — the
+  view, `dplanner order show`, `--json` — not from writing the answer down.
 - **Automatic graph layout is never persisted.** A node nobody moved is placed by dependency
   depth every time the project opens. Storing that would make merely opening a tab dirty the
   workspace, and every CLI-created step would grow a position file behind the user's back.

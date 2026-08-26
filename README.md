@@ -28,10 +28,11 @@ learning anything about it. `dplanner aspect list` says which exist in a build.
 
 ## Status
 
-Early, and honest about it. The model, the storage layer, the index tree, the whole CLI and
-the graph editor are in place and tested. Four aspects ship — estimate, ticket, description,
-agent instruction — each with a tab in the step panel and verbs in the CLI. Reports and
-prioritisation over the graph are not written, and the canvas has no pan beyond scrolling.
+Early, and honest about it. The model, the storage layer, the index tree, the whole CLI, the
+graph editor and the order view are in place and tested. Four aspects ship — estimate,
+ticket, description, agent instruction — each with a tab in the step panel and verbs in the
+CLI. Estimation over the graph and reports are not written, and the canvas has no pan beyond
+scrolling.
 
 ## Running
 
@@ -68,6 +69,7 @@ dplanner step add search "Draft the model" --after "Read the spec"
 dplanner estimate set "Draft the model" --days 5
 dplanner describe set "Read the spec" --file notes.md
 dplanner agent set "Draft the model" --file how-to.md   # what an agent should know first
+dplanner order show search --ready       # what can be started right now
 dplanner project export search > plan.json   # and `import` reads the same shape back
 ```
 
@@ -129,6 +131,7 @@ src/dplanner/
 │   ├── model.py             Product, Project, Step: the graph, its edges, its aspects
 │   ├── store.py             the on-disk format above, and the stale-write guard
 │   ├── aspects.py           what an aspect is: id, label, summary, data format
+│   ├── ordering.py          what order a project can be done in, and what can start now
 │   ├── commands.py          undoable changes — the vocabulary the GUI and CLI share
 │   ├── fields.py            bindable prose, keyed by the module that owns it
 │   ├── migrations.py        the format's version history — append only
@@ -159,6 +162,7 @@ src/dplanner/
 │   ├── step_ticket/
 │   ├── step_description/
 │   ├── step_agent_instruction/
+│   ├── step_order/          the order view: waves of steps, and `dplanner order show`
 │   ├── workspace_watch/     reloading when something else writes to the workspace
 │   ├── agent_skill/         installing the generated skill from the window
 │   ├── appshell/  workspaces/  sync/  settings/  taskcenter/  debug/
