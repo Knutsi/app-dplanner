@@ -11,6 +11,7 @@ from dplanner.framework.exports import ExportRegistry, ExportSpec
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
+from dplanner.framework.panels import PanelRegistry, PanelSpec
 from dplanner.framework.settings_registry import (
     SettingsScope,
     SettingsSection,
@@ -91,6 +92,12 @@ def _settings(section_id):
     )
 
 
+def _panel(panel_id, order=50):
+    from PySide6.QtWidgets import QWidget
+
+    return PanelSpec(id=panel_id, title=panel_id, factory=QWidget, order=order)
+
+
 def _export(export_id):
     return ExportSpec(
         id=export_id, label=export_id, file_filter="x (*.x)", suffix=".x", run=lambda path: None
@@ -100,6 +107,7 @@ def _export(export_id):
 CASES = [
     pytest.param(IndexSegmentRegistry, _segment, "segments", id="index_segments"),
     pytest.param(InspectorSectionRegistry, _section, "sections", id="inspector_sections"),
+    pytest.param(PanelRegistry, _panel, "panels", id="panels"),
     pytest.param(SettingsSectionRegistry, _settings, "sections", id="settings_sections"),
     pytest.param(ExportRegistry, _export, "specs", id="exports"),
     pytest.param(LLMProviderRegistry, FakeProvider, "providers", id="llm_providers"),

@@ -134,12 +134,18 @@ to that tuple; a file the rule cannot see is a rule that is only a habit.
    returns an `InspectorExtension`. For one prose document that is
    `ProseSection(field_for, undo, placeholder)` and nothing else — the framework owns the
    binding mechanics.
-6. If it has verbs, add `cli.py` with a `commands()` function returning `CliCommand`s, and
+6. To anchor a surface *beside* the tabs, register a `PanelSpec` into `deps.panels` naming an
+   area (`LEFT`, `RIGHT`, `BOTTOM`) — the user can move it from its header and hide it from
+   *View ▸ Panels*, so the area on the spec is a default, not a decision. A panel that should
+   appear only sometimes implements `ContextPanel.show_context(context) -> bool`; the dock
+   calls it on every context change and takes the panel off screen when it answers False.
+   **Never build a panel inside an activity** — see the mechanical fact below.
+7. If it has verbs, add `cli.py` with a `commands()` function returning `CliCommand`s, and
    list it in `default_cli_commands()`. Keep it Qt-free.
-7. Construct it in `default_modules()`. **List order is registration order and it matters** —
+8. Construct it in `default_modules()`. **List order is registration order and it matters** —
    status-bar widget order, index folder order, and whether a surface exists before whoever
    renders it is built. Put a comment on any position that is constrained.
-8. Leave the package `__init__.py` as a docstring — the composition root imports
+9. Leave the package `__init__.py` as a docstring — the composition root imports
    `from dplanner.modules.<name>.module import <Name>Deps, <Name>Module`. Re-exporting the
    Qt half there would make the package's Qt-free files unreachable without loading Qt, and
    the CLI reaches them through this package. Add tests under `tests/modules/`; keep
@@ -160,6 +166,11 @@ root, stop and look for the registry or capability you have not found yet.
 - **Only the active pane speaks for the user.** The window can show two or three tab groups
   side by side, and there is still exactly one context. An activity that publishes a
   selection must do it only while it is the current one — see `ProjectActivity._is_active`.
+- **One panel per surface, not one per tab.** A detail panel is anchored in a window area and
+  reads the context; an activity never holds one. Building it inside the tab is what made the
+  step editor appear twice in a split window, and the fix deleted code rather than adding a
+  visibility check — because "only the active pane publishes" already says which selection a
+  panel should be showing. `ARCHITECTURE.md`'s *Where a panel goes* has the rest.
 - **Work may leave the GUI thread; mutation may not.** `core.signals.Signal` is synchronous
   and has no thread affinity, so the model is only ever changed on the GUI thread. Anything
   computed off it returns through `TaskRunner`, the one place that uses real Qt signals.

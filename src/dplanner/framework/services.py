@@ -29,6 +29,7 @@ from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
 from dplanner.framework.llm_service import LLMService
 from dplanner.framework.module import Module
+from dplanner.framework.panels import PanelRegistry
 from dplanner.framework.settings_registry import SettingsSectionRegistry
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.tasks import TaskService
@@ -65,6 +66,7 @@ class AppServices:
 
     # -- surfaces modules contribute to --------------------------------------------------------
     index_segments: IndexSegmentRegistry
+    panels: PanelRegistry
     inspector_sections: InspectorSectionRegistry
     detail_cards: InspectorSectionRegistry  # The same registry type, a different host.
     settings_sections: SettingsSectionRegistry

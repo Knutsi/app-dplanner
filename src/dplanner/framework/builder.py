@@ -6,13 +6,13 @@ never tears any of it down. Opening a different workspace is a *new build* — s
 one.
 
 **The order is the interesting part.** Stages 3 and 5 exist purely so that stage 7 can be
-unconditional: by the time a module registers, the menus, the sidebar and the context
+unconditional: by the time a module registers, the menus, the panel areas and the context
 already exist, so a module may do anything — including opening its own tab — without
 checking whether the world is ready.
 
 1. open the storage provider and load (or seed) the workspace
 2. construct the framework services
-3. install the window shell: menu bar, sidebar, status bar
+3. install the window shell: menu bar, panel dock, index panel, status bar
 4. bundle everything into :class:`AppServices`
 5. set the application context scope
 6. build the modules through the composition root
@@ -49,6 +49,7 @@ from dplanner.framework.llm_service import LLMService
 from dplanner.framework.main_window import AppWindow
 from dplanner.framework.menubar import DynamicMenuBar
 from dplanner.framework.module import Module, PersistsModuleData
+from dplanner.framework.panels import PanelArea, PanelDock, PanelRegistry, PanelSpec
 from dplanner.framework.services import AppServices
 from dplanner.framework.settings_registry import SettingsSectionRegistry
 from dplanner.framework.tabs import TabHost
@@ -65,7 +66,11 @@ type ModuleFactory = Callable[[AppServices], Sequence[Module]]
 # Write a starter workspace into empty storage. Called only when nothing is there yet, and
 # the repository loads it afterwards like any other — so there is exactly one load path.
 type SeedFactory = Callable[[StorageProvider], None]
-type WindowFactory = Callable[[TabHost], AppWindow]
+type WindowFactory = Callable[[TabHost, PanelDock], AppWindow]
+
+# The framework's own panel: the index tree, anchored left. Named so a test — and the
+# builder's own wiring below — can ask the window for it.
+INDEX_PANEL_ID = "index"
 
 
 class AppBuilder:
@@ -147,7 +152,11 @@ class AppBuilder:
         tabs = TabHost(context)
 
         # 3 — the shell -------------------------------------------------------------------
-        window = self._window_factory(tabs)
+        # Every surface anchored beside the tabs is a registered panel; the dock is what the
+        # window shows, and the registry is what modules contribute to.
+        panels = PanelRegistry()
+        dock = PanelDock(panels, context, tabs)
+        window = self._window_factory(tabs, dock)
         # A tab switch is a natural save point and the end of any typing burst.
         tabs.activity_changed.connect(lambda _activity: undo.break_coalescing())
         tabs.activity_changed.connect(lambda _activity: autosave.flush_now())
@@ -156,12 +165,23 @@ class AppBuilder:
         # stored on the window because its QMenus must outlive this function (PySide
         # invalidates menu wrappers whose last Python reference is dropped).
         window.dynamic_menubar = DynamicMenuBar(window, actions, context)
-        # The sidebar is one index tree, installed empty. Nothing is pre-registered:
-        # every folder in it belongs to a module, and the framework never learns which.
+        # The index is one tree, installed empty. Nothing is pre-registered: every folder in
+        # it belongs to a module, and the framework never learns which. It is built here
+        # rather than in its spec's factory because its glyph colour and its disposal are
+        # wired here too — it is the framework's own panel, not a module's.
         index_segments = IndexSegmentRegistry()
         index_panel = IndexPanel(index_segments, context)
-        window.set_sidebar(index_panel)
+        panels.register(
+            PanelSpec(
+                id=INDEX_PANEL_ID,
+                title="Index",
+                factory=lambda: index_panel,
+                area=PanelArea.LEFT,
+                order=10,
+            )
+        )
         window.close_hooks.append(index_panel.dispose)
+        window.close_hooks.append(dock.dispose)
         # The host watches the application to know which pane the user is in. A workspace
         # switch builds a new one before the old window has finished going, so the old
         # watcher has to be told to stop rather than left answering for a dead window.
@@ -181,6 +201,7 @@ class AppBuilder:
             undo=undo,
             autosave=autosave,
             index_segments=index_segments,
+            panels=panels,
             inspector_sections=InspectorSectionRegistry(),
             detail_cards=InspectorSectionRegistry(),
             settings_sections=SettingsSectionRegistry(),
