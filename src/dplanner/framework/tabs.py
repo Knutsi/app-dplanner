@@ -1,99 +1,145 @@
-"""Tab hosting for activities.
+"""Tab hosting for activities, in one or more groups side by side.
 
 The TabHost owns the mapping between tabs and activities and drives the activation
 lifecycle. It deliberately does not know the window: immersive mode and window titles are
 the window's reaction to ``activity_changed``, wired in :mod:`dplanner.framework.main_window`.
+
+**Groups live in here, and nothing outside knows they exist.** The host is still the single
+widget the window is handed, and every method below means what it always meant — ``open`` may
+focus a tab in another group, ``activities()`` is everything everywhere, ``current_activity()``
+is whatever the *active* group is showing. That is the whole reason the groups are internal:
+a module asks for a tab and gets one, and the split is a thing the user arranged.
+
+**One notion of "current", and one way to announce it.** Every action resolves its target
+through the activity scope, so "which pane is the user in" is not a decoration — it decides
+what every menu item does. A group becomes active through the same routine a tab switch uses
+(:meth:`_announce`), which is the only path by which the menu bar, the toolbars, the
+right-click menus, undo coalescing and autosave learn anything at all.
+
+**Only deliberate acts change the active group** — opening, closing, moving, or the user
+touching a pane. A ``currentChanged`` from a background group never does: closing a tab in a
+pane the user is not in (which happens whenever a project is deleted) must not steal their
+place.
 """
 
 from collections.abc import Callable
 
-from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtWidgets import QApplication, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 from dplanner.core.signals import Signal
 from dplanner.framework.activity import Activity
-from dplanner.framework.context import (
-    SCOPE_ACTIVITY,
-    SCOPE_SELECTION,
-    ContextService,
-    activity_uri,
-)
+from dplanner.framework.context import SCOPE_ACTIVITY, SCOPE_SELECTION, ContextService, activity_uri
 
 type ActivityFactory = Callable[[str | None], Activity]
 
+# Three is enough to be useful and few enough that every pane stays wide enough to work in.
+MAX_GROUPS = 3
+
 
 class TabHost(QWidget):
-    """A QTabWidget whose pages are activities, deduplicated by activity URI."""
+    """Activities in tabs, deduplicated by URI, in up to :data:`MAX_GROUPS` groups."""
 
     def __init__(self, context: ContextService, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("TabHost")
         self._context = context
         self._factories: dict[str, ActivityFactory] = {}
+        # Page widget → activity, across every group. Keeping this one flat map is what lets
+        # `activities()`, `set_tab_title` and `close_activity` stay group-agnostic.
         self._activities: dict[QWidget, Activity] = {}
         self._current: Activity | None = None
+        self._announced: tuple[QTabWidget, Activity | None] | None = None
+        self._suspended = 0
+        self._tab_bars_visible = True
 
         self.activity_changed: Signal[Activity | None] = Signal()
 
-        self._tab_widget = QTabWidget(self)
-        self._tab_widget.setObjectName("ActivityTabs")
-        self._tab_widget.setMovable(True)
-        self._tab_widget.setTabsClosable(True)
-        self._tab_widget.setDocumentMode(True)
-        self._tab_widget.currentChanged.connect(self._on_current_changed)
-        self._tab_widget.tabCloseRequested.connect(self._on_close_requested)
+        self._splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        # A group dragged to zero width would be an invisible pane that still holds tabs —
+        # exactly the state "a group vanishes when it empties" exists to prevent.
+        self._splitter.setChildrenCollapsible(False)
+        self._groups: list[QTabWidget] = []
+        self._watcher = _ActiveGroupWatcher(self)
+        self._active = self._new_group(0)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._tab_widget)
+        layout.addWidget(self._splitter)
 
-    # -- registration ---------------------------------------------------------------------
+    # -- registration ------------------------------------------------------------------------
 
     def register_factory(self, kind: str, factory: ActivityFactory) -> None:
         if kind in self._factories:
             raise ValueError(f"activity kind {kind!r} already registered")
         self._factories[kind] = factory
 
-    # -- opening and lookup ---------------------------------------------------------------
+    # -- opening ---------------------------------------------------------------------------
 
     def open(self, kind: str, target: str | None = None) -> Activity:
-        """Open (or focus) the activity identified by ``kind`` and ``target``."""
+        """Open (or focus) the activity identified by ``kind`` and ``target``.
+
+        Dedupe is global: one tab per URI across every group, so opening something already
+        open brings you to it rather than making a second copy.
+        """
         uri = activity_uri(kind, target)
-        for widget, activity in self._activities.items():
-            if activity.uri == uri:
-                self._tab_widget.setCurrentWidget(widget)
-                return activity
+        existing = self._by_uri(uri)
+        if existing is not None:
+            self.focus(existing)
+            return existing
 
         activity = self._factories[kind](target)
         # A factory may normalize its target (a singleton ignores it entirely), so the
         # pre-factory check above can miss: one tab per activity URI must still hold.
-        for widget, existing in self._activities.items():
-            if existing.uri == activity.uri:
-                activity.close()
-                activity.widget.deleteLater()
-                self._tab_widget.setCurrentWidget(widget)
-                return existing
+        duplicate = self._by_uri(activity.uri)
+        if duplicate is not None:
+            activity.close()
+            activity.widget.deleteLater()
+            self.focus(duplicate)
+            return duplicate
+
         self._activities[activity.widget] = activity
-        index = self._tab_widget.addTab(activity.widget, activity.title)
-        self._tab_widget.setCurrentIndex(index)
+        index = self._active.addTab(activity.widget, activity.title)
+        self._active.setCurrentIndex(index)
+        self._announce()
         return activity
+
+    def focus(self, activity: Activity) -> bool:
+        """Make ``activity``'s tab current, in whichever group holds it. False if closed."""
+        found = self._locate(activity.widget)
+        if found is None:
+            return False
+        group, index = found
+        group.setCurrentIndex(index)
+        self._active = group
+        self._announce()
+        return True
+
+    # -- what is open ------------------------------------------------------------------------
 
     def current_activity(self) -> Activity | None:
         return self._current
 
     def activities(self) -> list[Activity]:
-        return list(self._activities.values())
+        """Every open activity, in every group, in the order their tabs sit."""
+        found: list[Activity] = []
+        for group in self._groups:
+            for index in range(group.count()):
+                widget = group.widget(index)
+                activity = self._activities.get(widget) if widget is not None else None
+                if activity is not None:
+                    found.append(activity)
+        return found
 
     def set_tab_title(self, activity: Activity, title: str) -> None:
-        index = self._tab_widget.indexOf(activity.widget)
-        if index != -1:
-            self._tab_widget.setTabText(index, title)
+        found = self._locate(activity.widget)
+        if found is not None:
+            group, index = found
+            group.setTabText(index, title)
 
-    def focus(self, activity: Activity) -> bool:
-        """Make ``activity``'s tab current; False if it is no longer open."""
-        if activity.widget not in self._activities:
-            return False
-        self._tab_widget.setCurrentWidget(activity.widget)
-        return True
+    def tab_title(self, activity: Activity) -> str:
+        found = self._locate(activity.widget)
+        return "" if found is None else found[0].tabText(found[1])
 
     def reannounce_current(self) -> None:
         """Re-emit ``activity_changed`` for an activity that changed identity in place
@@ -101,55 +147,293 @@ class TabHost(QWidget):
         if self._current is not None:
             self.activity_changed.emit(self._current)
 
+    # -- closing -----------------------------------------------------------------------------
+
     def close_current(self) -> None:
         """Close the current tab (the ⌘W path); a no-op when nothing is open."""
-        index = self._tab_widget.currentIndex()
+        index = self._active.currentIndex()
         if index != -1:
-            self._on_close_requested(index)
+            self._close(self._active, index)
 
     def close_activity(self, activity: Activity) -> bool:
         """Close one tab wherever it is; False if it is no longer open.
 
         The symmetric partner of :meth:`focus`. A feature whose subject was deleted has to
         be able to take its tab with it, and the alternative — reaching into the tab widget
-        — is exactly the shortcut the layering rules exist to prevent. Named for the
-        activity rather than called ``close`` because a ``TabHost`` is itself a QWidget.
+        — is exactly the shortcut the layering rules exist to prevent.
         """
-        index = self._tab_widget.indexOf(activity.widget)
-        if index == -1:
+        found = self._locate(activity.widget)
+        if found is None:
             return False
-        self._on_close_requested(index)
+        self._close(*found)
         return True
 
+    # -- groups --------------------------------------------------------------------------------
+
+    def group_count(self) -> int:
+        return len(self._groups)
+
+    def can_move_right(self) -> bool:
+        """True when moving would actually change what is on screen.
+
+        Moving the only tab out of the only group would create a group, move the tab and
+        then empty and drop the group it came from — a verb whose whole effect is nothing.
+        """
+        index = self._groups.index(self._active)
+        if self._active.currentIndex() == -1:
+            return False
+        return index + 1 < len(self._groups) or (
+            len(self._groups) < MAX_GROUPS and self._active.count() > 1
+        )
+
+    def can_move_left(self) -> bool:
+        """Left merges and never creates, so the group list only ever grows rightwards."""
+        return self._groups.index(self._active) > 0 and self._active.currentIndex() != -1
+
+    def move_current_right(self) -> None:
+        if self.can_move_right():
+            self._move(1)
+
+    def move_current_left(self) -> None:
+        if self.can_move_left():
+            self._move(-1)
+
     def set_tab_bar_visible(self, visible: bool) -> None:
-        self._tab_widget.tabBar().setVisible(visible)
+        # Remembered, because a group created later has to agree with immersive mode.
+        self._tab_bars_visible = visible
+        for group in self._groups:
+            group.tabBar().setVisible(visible)
 
-    # -- lifecycle ------------------------------------------------------------------------
+    def dispose(self) -> None:
+        """Stop watching the application. Registered in the builder's close hooks.
 
-    def _on_current_changed(self, index: int) -> None:
+        A host outlives its window briefly when a workspace is reopened, and a watcher that
+        kept filtering would answer for a window that has gone.
+        """
+        self._watcher.dispose()
+
+    # -- internals ---------------------------------------------------------------------------
+
+    def _new_group(self, position: int) -> QTabWidget:
+        group = QTabWidget(self)
+        group.setObjectName("ActivityTabs")
+        group.setMovable(True)
+        group.setTabsClosable(True)
+        group.setDocumentMode(True)
+        group.tabBar().setVisible(self._tab_bars_visible)
+        group.currentChanged.connect(lambda _index, g=group: self._on_current_changed(g))
+        group.tabCloseRequested.connect(lambda index, g=group: self._close(g, index))
+        self._groups.insert(position, group)
+        self._splitter.insertWidget(position, group)
+        self._even_sizes()
+        self._watcher.set_watching(len(self._groups) > 1)
+        return group
+
+    def _drop_group(self, group: QTabWidget) -> None:
+        """Remove an emptied group. Its pages must already have gone somewhere else."""
+        if len(self._groups) == 1 or group.count():
+            return
+        group.currentChanged.disconnect()
+        group.tabCloseRequested.disconnect()
+        self._groups.remove(group)
+        if self._active is group:
+            self._active = self._groups[0]
+        # QSplitter has no removeWidget; reparenting is what takes it out, synchronously.
+        group.setParent(None)
+        group.deleteLater()
+        self._even_sizes()
+        self._watcher.set_watching(len(self._groups) > 1)
+
+    def _even_sizes(self) -> None:
+        if self._groups:
+            self._splitter.setSizes([max(1, self.width() // len(self._groups))] * len(self._groups))
+
+    def _locate(self, widget: QWidget) -> tuple[QTabWidget, int] | None:
+        for group in self._groups:
+            index = group.indexOf(widget)
+            if index != -1:
+                return group, index
+        return None
+
+    def _by_uri(self, uri: str) -> Activity | None:
+        return next((a for a in self._activities.values() if a.uri == uri), None)
+
+    def _move(self, offset: int) -> None:
+        source = self._active
+        index = source.currentIndex()
+        widget = source.widget(index)
+        if widget is None:
+            return
+        title = source.tabText(index)
+        position = self._groups.index(source) + offset
+        self._suspended += 1
+        try:
+            destination = (
+                self._groups[position]
+                if 0 <= position < len(self._groups)
+                else self._new_group(max(position, 0))
+            )
+            # removeTab leaves the page parented to the old group, so it must be re-added
+            # before that group is dropped — otherwise the group takes the page with it.
+            source.removeTab(index)
+            destination.setCurrentIndex(destination.addTab(widget, title))
+            self._active = destination
+            self._drop_group(source)
+            # Focus follows the tab. Without this it stays behind in the group the tab left,
+            # and the next thing the watcher hears puts the user back where they were not.
+            destination.setFocus()
+        finally:
+            self._suspended -= 1
+        self._announce()
+
+    def _close(self, group: QTabWidget, index: int) -> None:
+        widget = group.widget(index)
+        if widget is None:
+            return
+        activity = self._activities.pop(widget, None)
+        self._suspended += 1
+        try:
+            # removeTab fires currentChanged (handling deactivation) when the current tab
+            # goes; the activity must already be out of the map so it cannot be re-selected.
+            group.removeTab(index)
+            self._drop_group(group)
+        finally:
+            self._suspended -= 1
+        if activity is not None:
+            activity.close()
+        widget.deleteLater()
+        self._announce()
+
+    def activate_group_of(self, widget: QWidget | None) -> None:
+        """The user touched something: make its group active, if it is in one.
+
+        Called for every click and every focus change, so it must be cheap and idempotent —
+        and it must do nothing at all when the widget belongs to no group, or clicking the
+        sidebar or the menu bar would clear which pane the user was in.
+        """
+        if len(self._groups) == 1 or self._suspended:
+            # Nothing to switch to — or the application is mid-move, and the focus churn
+            # that a move causes is not the user choosing a pane.
+            return
+        while widget is not None:
+            for group in self._groups:
+                if widget is group:
+                    if group is not self._active:
+                        self._active = group
+                        self._announce()
+                    return
+            widget = widget.parentWidget()
+
+    def _on_current_changed(self, group: QTabWidget) -> None:
+        # Never sets the active group: a tab closing in a background pane must not move the
+        # user. The announcement recomputes from whichever group *is* active, so a signal
+        # from elsewhere is guarded out below.
+        if group is self._active:
+            self._announce()
+
+    def _announce(self) -> None:
+        """Say what the user is now doing. The one path everything else learns through."""
+        if self._suspended:
+            return
+        widget = self._active.currentWidget()
+        activity = self._activities.get(widget) if widget is not None else None
+        # Qt reports a drag-reorder as currentChanged with the same page still current, and
+        # a move keeps the activity while changing its group — so the guard is on the pair.
+        if self._announced == (self._active, activity):
+            return
+        self._announced = (self._active, activity)
+
         previous, self._current = self._current, None
-        if previous is not None:
+        if previous is not None and previous is not activity:
             previous.on_deactivated()
         # The old activity's claims about what the user is doing are void either way; the
         # new one re-populates these scopes from on_activated().
         self._context.clear_scope(SCOPE_SELECTION)
         self._context.clear_scope(SCOPE_ACTIVITY)
 
-        widget = self._tab_widget.widget(index)
-        activity = self._activities.get(widget) if widget is not None else None
         self._current = activity
         if activity is not None:
             activity.on_activated()
+        self._paint_active()
         self.activity_changed.emit(activity)
 
-    def _on_close_requested(self, index: int) -> None:
-        widget = self._tab_widget.widget(index)
-        if widget is None:
+    def _paint_active(self) -> None:
+        """Dim the inactive groups' tabs, so the pane whose menus you are seeing is obvious.
+
+        Done with the palette rather than a stylesheet: styling a QTabBar through QSS
+        replaces its whole native rendering, and these tabs are deliberately unstyled.
+        """
+        primary = self.palette().text().color()
+        faded = self.palette().text().color()
+        faded.setAlpha(110)
+        for group in self._groups:
+            colour = primary if group is self._active else faded
+            for index in range(group.count()):
+                group.tabBar().setTabTextColor(index, colour)
+
+    def reorder_current(self, position: int) -> None:
+        """Move the current tab to ``position`` within its own bar — what a drag does.
+
+        Exposed so the behaviour a drag produces is reachable from a test; nothing in the
+        application calls it.
+        """
+        self._active.tabBar().moveTab(self._active.currentIndex(), position)
+
+
+class _ActiveGroupWatcher(QObject):
+    """Notices which pane the user last touched.
+
+    Two sources, because neither is enough alone: ``focusChanged`` misses a click on anything
+    that takes no focus — a caption, a heading, a card — and an event filter misses focus
+    arriving by keyboard or from a dialog closing. The filter also has to see the press
+    *before* a right-click builds its menu, since that menu reads the context as it opens.
+
+    **The filter exists only while the window is split.** It is the only application-wide
+    filter in this codebase, so it sees every mouse press in the program; with one pane there
+    is nothing for it to decide, and an unsplit window is the ordinary case.
+
+    Parented to the host, and connected through a bound method rather than a lambda, so Qt
+    detaches both when the host goes. A host outlives its window briefly when a workspace is
+    reopened, and a watcher that kept answering would speak for a window that has gone.
+    """
+
+    def __init__(self, host: TabHost) -> None:
+        super().__init__(host)
+        self._host = host
+        self._live = True
+        self._filtering = False
+        application = QApplication.instance()
+        if isinstance(application, QApplication):
+            application.focusChanged.connect(self._on_focus_changed)
+
+    def set_watching(self, wanted: bool) -> None:
+        application = QApplication.instance()
+        if not self._live or self._filtering == wanted or not isinstance(application, QApplication):
             return
-        activity = self._activities.pop(widget, None)
-        # removeTab fires currentChanged (handling deactivation) when the current tab goes;
-        # the activity must already be out of the map so it cannot be re-selected.
-        self._tab_widget.removeTab(index)
-        if activity is not None:
-            activity.close()
-        widget.deleteLater()
+        self._filtering = wanted
+        if wanted:
+            application.installEventFilter(self)
+        else:
+            application.removeEventFilter(self)
+
+    def dispose(self) -> None:
+        self.set_watching(False)
+        self._live = False
+        application = QApplication.instance()
+        if isinstance(application, QApplication):
+            application.focusChanged.disconnect(self._on_focus_changed)
+
+    def _on_focus_changed(self, _old: QWidget | None, new: QWidget | None) -> None:
+        # Focus going nowhere is a window losing it, not the user choosing a pane.
+        if self._live and new is not None:
+            self._host.activate_group_of(new)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt override
+        # Fires once per ancestor as the press propagates; activating is idempotent.
+        if (
+            self._live
+            and event.type() == QEvent.Type.MouseButtonPress
+            and isinstance(watched, QWidget)
+        ):
+            self._host.activate_group_of(watched)
+        return super().eventFilter(watched, event)

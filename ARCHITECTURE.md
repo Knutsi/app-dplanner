@@ -168,6 +168,27 @@ computed off it comes back through `TaskRunner`, which is the one place in the a
 using real Qt signals rather than ours — precisely so that hop is queued. The whole rule:
 **work may leave the GUI thread; mutation may not.**
 
+### When there is more than one pane on screen
+
+Tab groups add a second way for the activity scope to change: a click in another pane, rather
+than a click on a tab. **Activating a group is not a new kind of fact; it is a new cause of an
+existing one.** So it runs the same routine a tab switch runs, and nothing downstream — the
+menu bar, the toolbars, the right-click menus, undo coalescing, autosave — learns that groups
+exist at all.
+
+Two consequences fall out, and both are rules rather than details:
+
+- **Only the pane the user is in may write to the selection scope.** There is one scope and
+  several panes, so a background pane re-syncing its canvas — when a step is deleted, say —
+  would otherwise clobber what the active pane published. `ProjectActivity` tracks this
+  through `on_activated`/`on_deactivated`; anything else that publishes a selection owes the
+  same guard.
+- **A visible pane that is not active is showing a claim the context no longer holds.** Its
+  canvas still paints a selection; an in-tab toolbar would still show the active pane's
+  action state. That is inherent to one context and N visible surfaces, not a bug in this
+  design — every multi-pane editor has it — and the honest answer is to make which pane is
+  active obvious, which is what the dimmed tab titles are for.
+
 ### What this rules out
 
 The graph canvas is the worked example, because it got this wrong first. A drop originally ran

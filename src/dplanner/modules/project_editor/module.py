@@ -113,6 +113,10 @@ class ProjectActivity(ActivityBase):
         self._product = deps.product
         self._verbs = verbs
         self.project_id = project_id
+        # There is one selection scope and there can be several panes on screen. Only the
+        # pane the user is in may write to it: a background one re-syncing its canvas — when
+        # a step is deleted, say — would otherwise clobber what the active pane published.
+        self._is_active = False
 
         self._scene = GraphScene(self._link_refusal)
         self._view = GraphView(self._scene)
@@ -161,6 +165,7 @@ class ProjectActivity(ActivityBase):
         return self._widget
 
     def on_activated(self) -> None:
+        self._is_active = True
         self._deps.context.set_scope(
             SCOPE_ACTIVITY,
             (ContextNode(self.uri, (("entity", entity_uri("project", self.project_id)),)),),
@@ -168,6 +173,7 @@ class ProjectActivity(ActivityBase):
         self._publish_selection(self._scene.selected_steps())
 
     def on_deactivated(self) -> None:
+        self._is_active = False
         self._deps.undo.break_coalescing()
 
     def close(self) -> None:
@@ -286,6 +292,8 @@ class ProjectActivity(ActivityBase):
             self._panel.show_step(selection[0] if len(selection) == 1 else None)
 
     def _publish_selection(self, selection: list[StepId]) -> None:
+        if not self._is_active:
+            return  # See _is_active: a background pane does not speak for the user.
         nodes = tuple(ContextNode(selection_uri("step", step_id)) for step_id in selection)
         self._deps.context.set_scope(SCOPE_SELECTION, nodes)
 
