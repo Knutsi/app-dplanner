@@ -22,6 +22,7 @@ from dplanner.domain.commands import (
     RemoveNodeCommand,
     SetEdgesCommand,
     SetFieldCommand,
+    SetModuleDataCommand,
 )
 from dplanner.domain.model import EDGE_KINDS, Product, Project, Step, StepId
 
@@ -157,6 +158,9 @@ def project_document(product: Product, project: Project) -> dict[str, Any]:
     return {
         "title": project.title,
         "summary": project.summary,
+        # A project owns module data of its own — its start date, for one — so the document
+        # carries it too. Without this, exporting and importing quietly drops it.
+        "aspects": {key: dict(value) for key, value in sorted(project.module_data.items())},
         "steps": [
             {
                 "id": step.id,
@@ -295,6 +299,8 @@ def _project_import(context: CliContext, args: Namespace) -> int:
         summary=str(document.get("summary", "")),
     )
     context.apply(AddNodeCommand(context.product.id, project))
+    for module_id, entry in dict(document.get("aspects", {})).items():
+        context.apply(SetModuleDataCommand(project.id, str(module_id), dict(entry)))
 
     # Ids in the document are the document's own. Steps get fresh ones and the links are
     # rewritten through this map, so importing the same file twice cannot collide.

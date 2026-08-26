@@ -164,6 +164,19 @@ def test_export_and_import_round_trip_with_fresh_ids(cli, monkeypatch):
     assert copied["steps"][0]["id"] != original["steps"][0]["id"]
 
 
+def test_a_projects_own_module_data_survives_the_round_trip(cli, monkeypatch):
+    """A project owns data too — its start date — and a document that dropped it would make
+    export-then-import a quietly lossy operation."""
+    cli("project", "create", "Discovery")
+    cli("schedule", "start", "Discovery", "--date", "2026-09-01")
+    document = data(cli("project", "export", "Discovery"))
+    assert document["aspects"]["estimation"]["start"] == "2026-09-01"
+
+    monkeypatch.setattr("sys.stdin", StringIO(json.dumps(document)))
+    cli("project", "import", "--title", "Copy")
+    assert data(cli("schedule", "show", "Copy", "--json"))["start"] == "2026-09-01"
+
+
 def test_import_refuses_something_that_is_not_a_document(cli, monkeypatch):
     monkeypatch.setattr("sys.stdin", StringIO("not json"))
     assert "not valid JSON" in cli("project", "import", expect=1)
