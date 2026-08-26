@@ -306,6 +306,10 @@ with no window running, so a stored index would be stale exactly when an agent i
 unless the recompute moved into the model and every `step add` rewrote every step file whose
 index shifted.
 
+The index a step carries — its position in that order — is therefore computed with it, by
+`ordering.placed()`, which is the shape both the table and `dplanner order show` render. One
+function decides what step four is, so the window and the terminal cannot disagree about it.
+
 What "always available" actually requires is not a file but a function every surface can
 reach. So the walk lives in the domain, and the canvas layout, the order view and
 `dplanner order show --json` are three readers of one implementation. Nothing can disagree

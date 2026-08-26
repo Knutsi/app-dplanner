@@ -32,45 +32,48 @@ def tab(services, project):
     return services.tabs.open("order", project.id)
 
 
-def waves_on_screen(tab):
-    tree = tab.tree
-    found = []
-    for i in range(tree.topLevelItemCount()):
-        header = tree.topLevelItem(i)
-        found.append(
-            (header.text(0), [header.child(j).text(0) for j in range(header.childCount())])
-        )
-    return found
+def rows_on_screen(tab):
+    """Every row as (index, step, wave) — what a person reads off the table."""
+    table = tab.table
+    return [
+        tuple(table.item(row, column).text() for column in (0, 1, 2))
+        for row in range(table.rowCount())
+    ]
 
 
 # -- what it shows ---------------------------------------------------------------------------
 
 
-def test_the_waves_are_shown_first_one_named_for_what_it_means(services, project, tab):
-    assert waves_on_screen(tab) == [
-        ("Ready to start — 1 step", ["A"]),
-        ("Wave 2 — 2 steps", ["B", "C"]),
-        ("Wave 3 — 1 step", ["D"]),
+def test_the_steps_are_a_numbered_table_in_order(services, project, tab):
+    """The topological index is the first column, because the first thing wanted from a
+    sorted sequence is a position."""
+    assert rows_on_screen(tab) == [
+        ("1", "A", "Ready to start"),
+        ("2", "B", "Wave 2"),
+        ("3", "C", "Wave 2"),
+        ("4", "D", "Wave 3"),
     ]
 
 
-def test_the_waves_follow_the_graph(services, project, tab):
-    """Nothing is stored, so a new edge changes the view with no recompute to remember."""
+def test_the_table_follows_the_graph(services, project, tab):
+    """Nothing is stored, so a new edge renumbers the table with no recompute to remember."""
     _a, b, _c, _d = project.steps
     services.undo.push(SetEdgesCommand(b.id, "requires", []))
-    assert waves_on_screen(tab)[0] == ("Ready to start — 2 steps", ["A", "B"])
+    assert rows_on_screen(tab)[:2] == [
+        ("1", "A", "Ready to start"),
+        ("2", "B", "Ready to start"),
+    ]
 
     services.undo.undo()
-    assert waves_on_screen(tab)[0] == ("Ready to start — 1 step", ["A"])
+    assert rows_on_screen(tab)[1] == ("2", "B", "Wave 2")
 
 
-def test_a_step_row_carries_what_the_aspects_say(services, project, tab):
+def test_a_row_carries_what_the_aspects_say(services, project, tab):
     from dplanner.domain.commands import SetModuleDataCommand
 
     a = project.steps[0]
     services.undo.push(SetModuleDataCommand(a.id, "step_estimation", {"days": 3.0, "format": 1}))
-    header = tab.tree.topLevelItem(0)
-    assert "3d" in header.child(0).text(1)
+    assert "3d" in tab.table.item(0, 3).text()
 
 
 def test_the_tab_is_titled_for_its_project_and_follows_a_rename(services, project, tab):
@@ -93,8 +96,7 @@ def test_a_deleted_project_takes_its_order_tab_with_it(services, project, tab):
 
 def test_selecting_a_step_publishes_it_so_the_step_verbs_target_it(services, project, tab):
     """This view never learns the Step menu exists; it publishes and the verbs follow."""
-    row = tab.tree.topLevelItem(0).child(0)
-    tab.tree.setCurrentItem(row)
+    tab.table.selectRow(0)
 
     context = services.context.current()
     assert context.selected_entities("step") == [project.steps[0].id]
@@ -104,8 +106,7 @@ def test_selecting_a_step_publishes_it_so_the_step_verbs_target_it(services, pro
 def test_activating_a_step_reveals_it_in_the_graph(services, project, tab):
     """The other seam: a callback from the composition root, so neither module imports the
     other."""
-    row = tab.tree.topLevelItem(0).child(0)
-    tab.tree.itemActivated.emit(row, 0)
+    tab.table.cellActivated.emit(0, 1)
 
     graph = next(
         a for a in services.tabs.activities() if a.uri.startswith("app://activity/project")
@@ -113,8 +114,8 @@ def test_activating_a_step_reveals_it_in_the_graph(services, project, tab):
     assert graph._scene.selected_step() == project.steps[0].id
 
 
-def test_activating_a_wave_heading_does_nothing(services, project, tab):
-    tab.tree.itemActivated.emit(tab.tree.topLevelItem(0), 0)
+def test_activating_a_row_that_is_not_there_does_nothing(services, project, tab):
+    tab.table.cellActivated.emit(99, 1)
     assert [a.uri for a in services.tabs.activities()] == [tab.uri]
 
 
@@ -150,6 +151,10 @@ def test_the_cli_gives_the_same_answer(tmp_path):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "A")
     cli("step", "add", "Discovery", "B", "--after", "A")
-    found = json.loads(cli("order", "show", "Discovery", "--json"))["waves"]
-    assert [[s["title"] for s in wave] for wave in found] == [["A"], ["B"]]
-    assert json.loads(cli("order", "show", "Discovery", "--ready", "--json"))["waves"] == [found[0]]
+    found = json.loads(cli("order", "show", "Discovery", "--json"))["steps"]
+    assert [(s["index"], s["wave"], s["title"]) for s in found] == [(1, 1, "A"), (2, 2, "B")]
+    ready = json.loads(cli("order", "show", "Discovery", "--ready", "--json"))["steps"]
+    assert [s["title"] for s in ready] == ["A"]
+
+    # The window and the terminal show the same three columns.
+    assert cli("order", "show", "Discovery").splitlines()[0].split() == ["#", "Step", "Wave"]

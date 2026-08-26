@@ -20,6 +20,8 @@ from exposing this function everywhere instead: the activity, ``dplanner order s
 ``--json`` for anything reading programmatically.
 """
 
+from dataclasses import dataclass
+
 from dplanner.domain.model import Product, Project, Step, StepId
 
 
@@ -65,6 +67,39 @@ def waves(product: Product, project: Project) -> list[list[Step]]:
 def topological_order(product: Product, project: Project) -> list[Step]:
     """Every step, in an order that never puts a step before something it waits on."""
     return [step for wave in waves(product, project) for step in wave]
+
+
+@dataclass(frozen=True)
+class Placed:
+    """One step's place in the order: where it comes, and what it can go alongside.
+
+    ``index`` is the topological index — the step's position in an order that never puts
+    anything before what it waits on. ``wave`` is which group of steps it can be started
+    with. Both are 1-based, because both are shown to people.
+    """
+
+    index: int
+    wave: int
+    step: Step
+
+
+def placed(product: Product, project: Project) -> list[Placed]:
+    """Every step in order, carrying its index and its wave.
+
+    The shape a table wants and the shape the CLI prints, so neither has to number the rows
+    itself and the two can never disagree about what step four is.
+    """
+    return [
+        Placed(index=index, wave=wave_number + 1, step=step)
+        for index, (wave_number, step) in enumerate(
+            (
+                (number, step)
+                for number, wave in enumerate(waves(product, project))
+                for step in wave
+            ),
+            start=1,
+        )
+    ]
 
 
 def ready(product: Product, project: Project) -> list[Step]:

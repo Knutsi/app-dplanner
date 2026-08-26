@@ -342,27 +342,32 @@ QScrollBar::sub-page {
     border: none;
 }
 
-/* The order view's waves. Same row metrics as the index tree — both are a tree of things
-   you pick from, and they should feel like one surface. */
-#OrderTree {
+/* The order table: steps in the sequence they can be done. A well on the window colour,
+   like the step list it replaces, with the row metrics DESIGN.md gives a list of rich
+   items. No grid — the alignment is the structure. */
+#OrderTable {
     background-color: $BG_BASE;
-    border: none;
-    color: $TEXT_SECONDARY;
-    padding: 4px;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
+    color: $TEXT_PRIMARY;
 }
 
-#OrderTree::item {
+#OrderTable::item {
     padding: 5px 8px;
-    border-radius: ${RADIUS_SM}px;
 }
 
-#OrderTree::item:selected {
+#OrderTable::item:selected {
     background-color: $BG_OVERLAY;
     color: $TEXT_PRIMARY;
 }
 
-#OrderTree::item:hover {
-    color: $TEXT_PRIMARY;
+#OrderTable QHeaderView::section {
+    background-color: $BG_BASE;
+    color: $TEXT_SECONDARY;
+    border: none;
+    border-bottom: 1px solid $BORDER;
+    padding: 6px 8px;
+    font-weight: bold;
 }
 
 /* A prose field inside a detail panel: framed like the panel's other inputs. */

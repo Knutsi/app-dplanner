@@ -103,3 +103,28 @@ def test_an_empty_project_has_no_waves():
     assert waves(product, project) == []
     assert ready(product, project) == []
     assert depths(product, project) == {}
+
+
+def test_every_step_carries_its_index_and_its_wave():
+    """The index is the position in the order; the wave is what it can be started with."""
+    from dplanner.domain.ordering import placed
+
+    product, project = build("A", "B", "C", "D")
+    link(product, project, "C", "A")
+    link(product, project, "D", "C")
+
+    found = placed(product, project)
+    assert [(p.index, p.wave, p.step.title) for p in found] == [
+        (1, 1, "A"),
+        (2, 1, "B"),
+        (3, 2, "C"),
+        (4, 3, "D"),
+    ]
+
+
+def test_the_index_matches_the_flat_order():
+    product, project = build("A", "B", "C")
+    link(product, project, "B", "A")
+    from dplanner.domain.ordering import placed
+
+    assert [p.step for p in placed(product, project)] == topological_order(product, project)

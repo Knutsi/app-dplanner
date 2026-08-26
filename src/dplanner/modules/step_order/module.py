@@ -19,10 +19,11 @@ Two seams, both already established elsewhere in this application:
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from PySide6.QtWidgets import QLabel, QTreeWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from dplanner.domain.model import NodeId, Product, Project, StepId
-from dplanner.domain.ordering import waves
+from dplanner.domain.ordering import placed
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
     ENABLED,
@@ -45,7 +46,7 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.tabs import TabHost
 from dplanner.modules.step_order.cli import wave_label
-from dplanner.modules.step_order.view import OrderTree
+from dplanner.modules.step_order.view import OrderTable
 
 MODULE_ID = "step_order"
 ORDER_KIND = "order"
@@ -93,19 +94,21 @@ class OrderActivity(ActivityBase):
         caption.setObjectName("InspectorCaption")
         layout.addWidget(caption)
 
-        self._note = QLabel("Everything under the first heading can be started now.", page)
+        self._note = QLabel(
+            "Steps in an order that never puts one before what it waits on. "
+            "Everything in the first wave can be started now.",
+            page,
+        )
         self._note.setObjectName("InspectorNote")
         self._note.setWordWrap(True)
         layout.addWidget(self._note)
 
-        self.tree = OrderTree(wave_label, deps.step_aspects, page)
-        self.tree.itemSelectionChanged.connect(self._on_selection)
-        self.tree.itemActivated.connect(self._on_activated)
-        self.tree.customContextMenuRequested.connect(self._on_context_menu)
-        from PySide6.QtCore import Qt
-
-        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        layout.addWidget(self.tree, 1)
+        self.table = OrderTable(wave_label, deps.step_aspects, page)
+        self.table.itemSelectionChanged.connect(self._on_selection)
+        self.table.cellActivated.connect(self._on_activated)
+        self.table.customContextMenuRequested.connect(self._on_context_menu)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        layout.addWidget(self.table, 1)
 
         self._widget = page
         self._unsubscribes = [
@@ -135,7 +138,7 @@ class OrderActivity(ActivityBase):
             SCOPE_ACTIVITY,
             (ContextNode(self.uri, (("entity", entity_uri("project", self.project_id)),)),),
         )
-        self._publish(self.tree.selected_step())
+        self._publish(self.table.selected_step())
 
     def close(self) -> None:
         for unsubscribe in self._unsubscribes:
@@ -150,28 +153,28 @@ class OrderActivity(ActivityBase):
     def _refresh(self) -> None:
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
-        self.tree.show_waves(waves(self._product, self._project()))
+        self.table.show_order(placed(self._product, self._project()))
 
     def _publish(self, step_id: StepId | None) -> None:
         nodes = () if step_id is None else (ContextNode(selection_uri("step", step_id)),)
         self._deps.context.set_scope(SCOPE_SELECTION, nodes)
 
     def _on_selection(self) -> None:
-        self._publish(self.tree.selected_step())
+        self._publish(self.table.selected_step())
 
-    def _on_activated(self, item: QTreeWidgetItem, _column: int) -> None:
-        step_id = self.tree.step_at(item)
+    def _on_activated(self, row: int, _column: int) -> None:
+        step_id = self.table.step_at(row)
         if step_id is not None:
             self._deps.reveal_step(step_id)
 
     def _on_context_menu(self, position: object) -> None:
-        from PySide6.QtCore import QPoint
-
         assert isinstance(position, QPoint)
-        if self.tree.step_at(self.tree.itemAt(position)) is None:
+        row = self.table.rowAt(position.y())
+        if self.table.step_at(row) is None:
             return
-        menu = build_menu(self._deps.actions, self._deps.context, "Step", self.tree)
-        menu.exec(self.tree.viewport().mapToGlobal(position))
+        self.table.selectRow(row)
+        menu = build_menu(self._deps.actions, self._deps.context, "Step", self.table)
+        menu.exec(self.table.viewport().mapToGlobal(position))
 
 
 class StepOrderModule:

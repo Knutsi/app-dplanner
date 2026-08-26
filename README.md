@@ -69,7 +69,8 @@ dplanner step add search "Draft the model" --after "Read the spec"
 dplanner estimate set "Draft the model" --days 5
 dplanner describe set "Read the spec" --file notes.md
 dplanner agent set "Draft the model" --file how-to.md   # what an agent should know first
-dplanner order show search --ready       # what can be started right now
+dplanner order show search               # every step, numbered, in dependency order
+dplanner order show search --ready       # just what can be started right now
 dplanner project export search > plan.json   # and `import` reads the same shape back
 ```
 
@@ -162,7 +163,7 @@ src/dplanner/
 │   ├── step_ticket/
 │   ├── step_description/
 │   ├── step_agent_instruction/
-│   ├── step_order/          the order view: waves of steps, and `dplanner order show`
+│   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── workspace_watch/     reloading when something else writes to the workspace
 │   ├── agent_skill/         installing the generated skill from the window
 │   ├── appshell/  workspaces/  sync/  settings/  taskcenter/  debug/
