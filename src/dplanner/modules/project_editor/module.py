@@ -1,11 +1,11 @@
-"""A project open in a tab: its step graph, and the project form beside it.
+"""A project open in a tab: its step graph, a toolbar over it, and the project form beside it.
 
-The tab is the canvas and nothing else. What the user selects on it is published into the
+The tab is the canvas and its verbs. What the user selects on it is published into the
 context, and the window's panels — this module's project form, somebody else's step editor —
 follow from there. So the graph does not host anything, and there is one detail panel in the
 window however many projects are open side by side.
 
-Three seams keep this module from knowing about anything else in the application:
+Four seams keep this module from knowing about anything else in the application:
 
 - **The panel is anchored, not hosted.** ``register()`` puts :class:`ProjectPanel` in an area
   through ``deps.panels``; nothing here knows what else is in that area, and nothing there
@@ -14,13 +14,19 @@ Three seams keep this module from knowing about anything else in the application
   activity is.
 - **What a node's second line says** comes from ``step_aspects``, supplied by the composition
   root from whatever aspect modules registered.
+- **The toolbar names verbs it does not own** — the app shell's undo pair, the order module's
+  ``order.open`` — and reaches them through the registry alone. See ``canvas_toolbar.py``.
+
+**The canvas publishes its mode into the context** as an edge on the activity node, so
+``steps.connect`` can decide whether it is checked from the context alone. That is the whole
+mechanism behind the toolbar's mode switch, and why there is no other one.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMenu, QWidget
+from PySide6.QtWidgets import QMenu, QVBoxLayout, QWidget
 
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -44,13 +50,19 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.tabs import TabHost
+from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.window import StatusHost
-from dplanner.modules.project_editor.graph import EdgeSpec, GraphScene, GraphView, NodeSpec
+from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
+from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
+from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.layout import positions
+from dplanner.modules.project_editor.modes import CONNECT, ConnectMode, IdleMode
+from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
 from dplanner.modules.project_editor.positions import DATA_FORMAT, write_position
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.project_panel import ProjectPanel
+from dplanner.modules.project_editor.selection import EDGE_KIND, CanvasSelection, EdgeRef
 from dplanner.modules.project_editor.verbs import StepVerbs
 
 MODULE_ID = "project_editor"
@@ -74,6 +86,7 @@ class ProjectEditorDeps:
     status: StatusHost
     parent: QWidget
     panels: PanelRegistry
+    theme: ThemeService
     # What the aspect modules have to say about a step, one short phrase each.
     step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
 
@@ -93,15 +106,21 @@ class ProjectActivity(ActivityBase):
         self._is_active = False
 
         self._scene = GraphScene(self._link_refusal)
-        self._view = GraphView(self._scene)
+        self._view = GraphView(
+            self._scene,
+            base_mode=IdleMode,
+            status=lambda text: deps.status.show_status(text, 4000),
+            run_action=self.run_action,
+        )
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
+        self._page, self._toolbar = self._build_page()
 
-        self._scene.focus_changed.connect(self._on_focus)
+        self._scene.selection_changed.connect(self._on_selection)
         self._scene.nodes_moved.connect(self._on_nodes_moved)
         self._scene.link_requested.connect(self._on_link_requested)
         self._scene.create_requested.connect(self._on_create)
-        self._scene.delete_requested.connect(self._verbs.delete_many)
+        self._view.modes.changed.connect(lambda _name: self._publish_activity())
 
         self._unsubscribes = [
             self._product.structure_changed.connect(self._on_structure),
@@ -123,28 +142,68 @@ class ProjectActivity(ActivityBase):
 
     @property
     def widget(self) -> QWidget:
-        return self._view
+        return self._page
 
     def on_activated(self) -> None:
         self._is_active = True
-        self._deps.context.set_scope(
-            SCOPE_ACTIVITY,
-            (ContextNode(self.uri, (("entity", entity_uri("project", self.project_id)),)),),
-        )
-        self._publish_selection(self._scene.selected_steps())
+        self._publish_activity()
+        self._publish_selection(self._scene.selection())
+        # The canvas has its own key bindings, so it has to actually hold the keyboard.
+        self._view.setFocus()
 
     def select_step(self, step_id: StepId) -> None:
         """Select one step on the canvas — how another view reveals something here."""
         self._scene.select_step(step_id)
 
+    def set_connect_mode(self, on: bool) -> None:
+        """Enter or leave connect mode. Escape does the same thing from the keyboard."""
+        if on:
+            if self._view.modes.current().name != CONNECT:
+                self._view.modes.push(ConnectMode(self._view.deps))
+        elif self._view.modes.current().name == CONNECT:
+            self._view.modes.pop()
+
+    def frame(self) -> None:
+        self._view.frame_content()
+
+    def run_action(self, action_id: str) -> bool:
+        """Run a verb against the current context, honouring its state gate.
+
+        The one path from this tab to the vocabulary: the keymap uses it, the mode stack uses
+        it, and so does a link the user just drew. Its answer — did the gate allow it — is
+        what lets one key name several verbs and mean the one that applies.
+        """
+        context = self._deps.context.current()
+        state = self._deps.actions.spec(action_id).state(context)
+        if not (state.visible and state.enabled):
+            return False
+        self._deps.actions.run(action_id, context)
+        return True
+
     def on_deactivated(self) -> None:
         self._is_active = False
+        # A mode is something the user is in, and they are no longer in this pane.
+        self._view.modes.pop_to_base()
         self._deps.undo.break_coalescing()
 
     def close(self) -> None:
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
+        self._toolbar.dispose()
+        self._view.modes.dispose()
+
+    # -- the page ------------------------------------------------------------------------------
+
+    def _build_page(self) -> tuple[QWidget, CanvasToolbar]:
+        page = QWidget()
+        column = QVBoxLayout(page)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        toolbar = CanvasToolbar(self._deps.actions, self._deps.context, self._deps.theme, page)
+        column.addWidget(toolbar)
+        column.addWidget(self._view, 1)
+        return page, toolbar
 
     # -- the graph -----------------------------------------------------------------------------
 
@@ -170,7 +229,7 @@ class ProjectActivity(ActivityBase):
             for step in project.steps
         ]
         edges = [
-            EdgeSpec(waiter=step.id, source=source, kind=kind)
+            EdgeRef(waiter=step.id, kind=kind, source=source)
             for step in project.steps
             for kind, targets in step.edges.items()
             for source in targets
@@ -193,17 +252,37 @@ class ProjectActivity(ActivityBase):
 
     # -- gestures become commands ----------------------------------------------------------------
 
-    def _on_focus(self, selection: list[StepId]) -> None:
+    def _on_selection(self, selection: CanvasSelection) -> None:
         # Publishing *is* how the detail panel learns: it reads the context and nothing here
         # reaches for it. One step is something to edit and several is not, and the panel is
         # the one place that decides that.
         self._deps.undo.break_coalescing()
         self._publish_selection(selection)
 
-    def _publish_selection(self, selection: list[StepId]) -> None:
+    def _publish_activity(self) -> None:
+        if not self._is_active:
+            return
+        self._deps.context.set_scope(
+            SCOPE_ACTIVITY,
+            (
+                ContextNode(
+                    self.uri,
+                    (
+                        ("entity", entity_uri("project", self.project_id)),
+                        ("mode", canvas_mode_uri(self._view.modes.current().name)),
+                    ),
+                ),
+            ),
+        )
+
+    def _publish_selection(self, selection: CanvasSelection) -> None:
         if not self._is_active:
             return  # See _is_active: a background pane does not speak for the user.
-        nodes = tuple(ContextNode(selection_uri("step", step_id)) for step_id in selection)
+        nodes = tuple(
+            ContextNode(selection_uri("step", step_id)) for step_id in selection.steps
+        ) + tuple(
+            ContextNode(selection_uri(EDGE_KIND, edge.entity_id())) for edge in selection.edges
+        )
         self._deps.context.set_scope(SCOPE_SELECTION, nodes)
 
     def _move_command(self, step_id: StepId, x: float, y: float) -> Command:
@@ -228,11 +307,8 @@ class ProjectActivity(ActivityBase):
         """A drop is not a special case: it selects both ends and runs the same verb the
         menu does, so the refusal, the label and the command all come from one place."""
         self._scene.select_steps([source, target])
-        context = self._deps.context.current()
-        state = self._deps.actions.spec("steps.link").state(context)
-        if state.visible and state.enabled:
-            self._deps.actions.run("steps.link", context)
-        else:
+        if not self.run_action("steps.link"):
+            state = self._deps.actions.spec("steps.link").state(self._deps.context.current())
             self._deps.status.show_status(state.label or "Those steps cannot be linked", 4000)
 
     def _on_create(self, x: float, y: float) -> None:
@@ -253,7 +329,7 @@ class ProjectActivity(ActivityBase):
 
         assert isinstance(position, QPoint)
         scene_pos = self._view.mapToScene(position)
-        node = self._scene._node_at(scene_pos)
+        node = self._scene.node_at(scene_pos)
         if node is not None:
             self._scene.select_step(node.step_id)
         menu: QMenu = build_menu(self._deps.actions, self._deps.context, "Step", self._view)
@@ -271,6 +347,13 @@ class ProjectEditorModule:
             undo=deps.undo,
             parent=deps.parent,
             current_project=self._current_project,
+        )
+        self._canvas_verbs = CanvasVerbs(
+            product=deps.product,
+            current_project=self._current_project,
+            select_step=self.reveal,
+            set_connect_mode=self._set_connect_mode,
+            frame=self._frame,
         )
 
     def open(self, project_id: NodeId) -> None:
@@ -310,6 +393,7 @@ class ProjectEditorModule:
             )
         )
         self._verbs.register_into(deps.actions)
+        self._canvas_verbs.register_into(deps.actions)
         # A project that goes away takes its tab with it, and a rename reaches the tab.
         deps.product.structure_changed.connect(lambda *_args: self._close_orphan_tabs())
         deps.product.field_changed.connect(lambda *_args: self._retitle_tabs())
@@ -319,9 +403,23 @@ class ProjectEditorModule:
     def _activities(self) -> list[ProjectActivity]:
         return [a for a in self._deps.tabs.activities() if isinstance(a, ProjectActivity)]
 
-    def _current_project(self) -> NodeId | None:
+    def _current_activity(self) -> ProjectActivity | None:
         current = self._deps.tabs.current_activity()
-        return current.project_id if isinstance(current, ProjectActivity) else None
+        return current if isinstance(current, ProjectActivity) else None
+
+    def _current_project(self) -> NodeId | None:
+        current = self._current_activity()
+        return current.project_id if current is not None else None
+
+    def _set_connect_mode(self, on: bool) -> None:
+        current = self._current_activity()
+        if current is not None:
+            current.set_connect_mode(on)
+
+    def _frame(self) -> None:
+        current = self._current_activity()
+        if current is not None:
+            current.frame()
 
     def _close_orphan_tabs(self) -> None:
         for activity in self._activities():

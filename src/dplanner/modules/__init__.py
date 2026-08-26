@@ -146,6 +146,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             status=services.window,
             parent=services.window,
             panels=services.panels,
+            theme=services.theme,
             # A node's second line: whatever the aspects have to say about that step.
             step_aspects=step_aspects,
         )

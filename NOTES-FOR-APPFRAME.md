@@ -24,6 +24,32 @@ what follows is only visible *because* it runs.
 Each of these is live in DPlanner. The last column is our honest read of whether it belongs
 upstream, not a decision.
 
+### `ActionToolbar` had never been instantiated, and it showed
+
+**What.** Three changes to `framework/toolbar.py`, all found the first time the class was put
+on screen (the graph canvas's verb strip in `modules/project_editor/`):
+
+- Buttons take `Qt.FocusPolicy.NoFocus`. Without it, clicking a toolbar button moves the
+  keyboard off the surface the button just acted on. A canvas with its own key bindings
+  notices immediately; a form would notice eventually.
+- Buttons take a `Fixed` size policy. A `QHBoxLayout` short of room shrinks its children to
+  their minimum, and a 10 px wide button holding a 16 px glyph shows neither icon nor label —
+  it renders as an empty rounded rectangle, which reads as a bug rather than as a tight fit.
+- `_refresh` now sets the tool button style: `ToolButtonTextBesideIcon` when the button has
+  text, `ToolButtonIconOnly` when the per-action override emptied it. `QToolButton` defaults
+  to icon-only, so before this a button with a label and no icon drew nothing at all — which
+  is what every caller with no `set_button_icons` call would have got.
+
+**Why it belongs upstream.** None of the three is DPlanner-specific; all three are what the
+class already promised (`set_button_icons`'s docstring describes exactly the icon-only case it
+could not produce). Worth taking together with a test that puts one on screen — the class was
+correct on paper for as long as nobody rendered it.
+
+**What we did not change.** The multi-pane caveat in its docstring — a toolbar shows the
+*active* pane's action state, not its own tab's — is still true and still the right answer.
+The suggested fix there (`set_active(bool)` rather than a context per group) remains unwritten
+because in practice the dimmed tab title already says which pane speaks.
+
 ### The sidebar is one index tree, not a tab set
 
 **What.** `framework/sidebar.py` is gone. `framework/index_panel.py` replaces it with a

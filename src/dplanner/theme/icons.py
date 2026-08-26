@@ -1,4 +1,4 @@
-"""Tiny painted icons for segment kinds and editor modes.
+"""Tiny painted icons for segment kinds, editor modes and toolbar verbs.
 
 Painted with QPainter instead of bundled SVGs: a handful of glyphs do not justify a
 resource pipeline, and taking the colour as a parameter lets the same glyph read on the
@@ -213,5 +213,112 @@ def sliders_icon(color: str) -> QIcon:
     painter.setBrush(QColor(color))
     for y, knob_x in ((4.0, 10.0), (8.0, 5.5), (12.0, 8.5)):
         painter.drawEllipse(QPointF(knob_x, y), 1.8, 1.8)
+    painter.end()
+    return QIcon(pixmap)
+
+
+# -- canvas toolbar --------------------------------------------------------------------------
+#
+# One glyph per action id the graph editor's toolbar carries. They live here with the rest
+# rather than in the module because the colour parameter is the theme's, and the theme is what
+# repaints them.
+
+
+def plus_icon(color: str) -> QIcon:
+    """A plus: add a step."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.6))
+    painter.drawLine(QPointF(8.0, 3.5), QPointF(8.0, 12.5))
+    painter.drawLine(QPointF(3.5, 8.0), QPointF(12.5, 8.0))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def trash_icon(color: str) -> QIcon:
+    """A waste basket: delete."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawLine(QPointF(2.8, 4.5), QPointF(13.2, 4.5))
+    painter.drawPolyline(
+        QPolygonF(
+            [
+                QPointF(4.2, 4.5),
+                QPointF(4.9, 13.2),
+                QPointF(11.1, 13.2),
+                QPointF(11.8, 4.5),
+            ]
+        )
+    )
+    painter.drawPolyline(
+        QPolygonF([QPointF(6.2, 4.5), QPointF(6.5, 2.8), QPointF(9.5, 2.8), QPointF(9.8, 4.5)])
+    )
+    painter.end()
+    return QIcon(pixmap)
+
+
+def unlink_icon(color: str) -> QIcon:
+    """The same two nodes with the join broken: remove a link."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(QPointF(3.6, 8.0), 2.2, 2.2)
+    painter.drawEllipse(QPointF(12.4, 8.0), 2.2, 2.2)
+    painter.drawLine(QPointF(5.8, 8.0), QPointF(7.0, 8.0))
+    painter.drawLine(QPointF(9.0, 8.0), QPointF(10.2, 8.0))
+    painter.drawLine(QPointF(7.4, 10.0), QPointF(8.6, 6.0))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def undo_icon(color: str) -> QIcon:
+    """An arrow curving back on itself, anticlockwise."""
+    return _turn_icon(color, mirrored=False)
+
+
+def redo_icon(color: str) -> QIcon:
+    """The same arrow the other way round."""
+    return _turn_icon(color, mirrored=True)
+
+
+def _turn_icon(color: str, mirrored: bool) -> QIcon:
+    pixmap, painter = _canvas()
+    if mirrored:
+        painter.translate(ICON_SIZE, 0.0)
+        painter.scale(-1.0, 1.0)
+    painter.setPen(_pen(color, 1.4))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawArc(QRectF(3.0, 4.5, 10.0, 8.0), 20 * 16, 160 * 16)
+    painter.drawPolyline(QPolygonF([QPointF(2.4, 3.2), QPointF(3.0, 7.0), QPointF(6.8, 6.4)]))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def frame_icon(color: str) -> QIcon:
+    """Four corners: fit the whole graph in the window."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.4))
+    for x_from, x_to, y_from, y_to in (
+        (3.0, 6.0, 3.0, 6.0),
+        (13.0, 10.0, 3.0, 6.0),
+        (3.0, 6.0, 13.0, 10.0),
+        (13.0, 10.0, 13.0, 10.0),
+    ):
+        painter.drawLine(QPointF(x_from, y_from), QPointF(x_to, y_from))
+        painter.drawLine(QPointF(x_from, y_from), QPointF(x_from, y_to))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def list_icon(color: str) -> QIcon:
+    """A numbered list: the order table."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    for y in (4.0, 8.0, 12.0):
+        painter.drawLine(QPointF(6.5, y), QPointF(13.0, y))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(color))
+    for y in (4.0, 8.0, 12.0):
+        painter.drawEllipse(QPointF(3.5, y), 1.3, 1.3)
     painter.end()
     return QIcon(pixmap)

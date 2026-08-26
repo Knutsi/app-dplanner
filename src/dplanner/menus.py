@@ -22,7 +22,9 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # the app shell and the settings dialog.
     "File": ("open", "product", "save", "branch", "window"),
     "Edit": ("history",),
-    "View": ("panels", "zoom", "theme", "window"),
+    # "canvas" is the graph editor's own view verbs — framing it is not the application's
+    # font zoom, which is what "zoom" means here.
+    "View": ("panels", "zoom", "canvas", "theme", "window"),
     # A noun menu like "Project" and "Step" below: it is what the tab bar's right-click
     # renders, so the two can never be a hand-maintained copy of each other. "move" is where
     # a tab goes — which is also how the window splits — and "close" is what goes away.
@@ -32,7 +34,9 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "link" holds the two-step verbs: the canvas publishes both ends into the selection
     # scope on a drop and runs the same action the menu does.
     "Project": ("edit", "open"),
-    "Step": ("edit", "link"),
+    # "navigate" is where the canvas's movement verbs live: they select rather than change,
+    # so they belong beside the step verbs but not among them.
+    "Step": ("edit", "link", "navigate"),
     "Tools": ("agent",),
     "Debug": ("llm",),
     "Help": ("about",),
