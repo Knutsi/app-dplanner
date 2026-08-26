@@ -1,11 +1,18 @@
 """What the canvas draws: a node per step, an arrow per edge, and the line under a link drag.
 
-Each item owns its geometry and its paint and nothing else. Interaction lives on the scene,
-so neither file grows a mode machine.
+Each item owns its geometry and its paint and nothing else. Interaction lives in ``modes.py``,
+one mode per behaviour, so no item and no scene grows a state machine.
 """
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtGui import (
+    QColor,
+    QPainter,
+    QPainterPath,
+    QPainterPathStroker,
+    QPen,
+    QPolygonF,
+)
 from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsPathItem,
@@ -15,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.model import StepId
 from dplanner.modules.project_editor.positions import GRID
+from dplanner.modules.project_editor.selection import EdgeRef
 
 NODE_W = 180.0
 NODE_H = 56.0
@@ -31,6 +39,11 @@ HANDLE_GRAB = 12.0
 # an alpha-derived secondary is theme-independent by construction (DESIGN.md exception #1).
 SECONDARY_ALPHA = 160
 FILL_ALPHA = 28
+
+# How wide a curve is to the mouse. An edge is drawn 1.4 px thin and no one can click that,
+# so its shape() is the stroked path at this width — comfortably a target, still narrow
+# enough that two edges through the same gap stay tellable apart.
+EDGE_GRAB = 14.0
 
 # Low-alpha semantic tints that read on every theme (DESIGN.md exception #2).
 VALID_TINT = QColor(120, 200, 140, 180)
@@ -162,9 +175,30 @@ class EdgeItem(QGraphicsPathItem):
         self.source = source
         self.waiter = waiter
         self.kind = kind
+        self.ref = EdgeRef(waiter=waiter.step_id, kind=kind, source=source.step_id)
         self._head: QPolygonF | None = None
+        self._hovered = False
         self.setZValue(-1)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        self.setAcceptHoverEvents(True)
         self.follow()
+
+    def shape(self) -> QPainterPath:
+        stroker = QPainterPathStroker()
+        stroker.setWidth(EDGE_GRAB)
+        return stroker.createStroke(self.path())
+
+    def boundingRect(self) -> QRectF:  # noqa: N802 - Qt override
+        margin = EDGE_GRAB / 2
+        return self.path().boundingRect().adjusted(-margin, -margin, margin, margin)
+
+    def hoverEnterEvent(self, event: object) -> None:  # noqa: N802 - Qt override
+        self._hovered = True
+        self.update()
+
+    def hoverLeaveEvent(self, event: object) -> None:  # noqa: N802 - Qt override
+        self._hovered = False
+        self.update()
 
     def follow(self) -> None:
         start = self.source.anchor_toward(self.waiter.scenePos())
@@ -185,11 +219,14 @@ class EdgeItem(QGraphicsPathItem):
         option: QStyleOptionGraphicsItem,
         widget: QWidget | None = None,
     ) -> None:
-        colour = QColor(option.palette.text().color())
-        colour.setAlpha(220 if self.isSelected() else 130)
+        if self.isSelected():
+            colour = QColor(option.palette.highlight().color())
+        else:
+            colour = QColor(option.palette.text().color())
+            colour.setAlpha(200 if self._hovered else 130)
         style = Qt.PenStyle.SolidLine if self.kind == "requires" else Qt.PenStyle.DashLine
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(QPen(colour, 2.0 if self.isSelected() else 1.4, style))
+        painter.setPen(QPen(colour, 2.4 if self.isSelected() or self._hovered else 1.4, style))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(self.path())
         if self._head is not None:

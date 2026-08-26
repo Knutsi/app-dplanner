@@ -10,12 +10,15 @@ which is the point: however many projects are open, there is one of each.
 
 import pytest
 from PySide6.QtCore import QEvent, QPointF, Qt
-from PySide6.QtWidgets import QGraphicsSceneMouseEvent
+from PySide6.QtGui import QKeyEvent, QMouseEvent
+from PySide6.QtWidgets import QGraphicsView
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetFieldCommand
 from dplanner.domain.model import Project, Step
 from dplanner.framework.context import SCOPE_SELECTION
+from dplanner.modules.project_editor.modes import CONNECT, IDLE, PAN
 from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
+from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef
 from dplanner.modules.step_properties.module import PANEL_ID as STEP_PANEL_ID
 
 
@@ -46,6 +49,10 @@ def scene(tab):
     return tab._scene
 
 
+def view(tab):
+    return tab._view
+
+
 def chain(services, project):
     """A three-step chain, first → second → third, for the cases two steps cannot express."""
     third = Step(title="Ship it")
@@ -58,28 +65,60 @@ def chain(services, project):
 
 # -- driving the canvas the way a mouse does ---------------------------------------------------
 #
-# These send real QGraphicsSceneMouseEvents rather than emitting the scene's signals. The
+# These send real mouse events to the view rather than emitting the scene's signals. The
 # difference is not pedantry: every gesture below was once covered by a signal-level test, and
 # the link drop was broken the whole time because the bug was in the gesture, not the handler.
+# They go to the *view* because that is where the mode stack reads them, and where a real
+# mouse arrives — the scene only ever sees what no mode claimed.
 
 
-def send(app, target, kind, pos, buttons=Qt.MouseButton.LeftButton):
-    event = QGraphicsSceneMouseEvent(kind)
-    event.setScenePos(pos)
-    event.setButton(Qt.MouseButton.LeftButton)
-    event.setButtons(buttons)
-    app.sendEvent(target, event)
+def send(app, tab, kind, scene_pos, buttons=Qt.MouseButton.LeftButton):
+    viewport = view(tab).viewport()
+    local = QPointF(view(tab).mapFromScene(scene_pos))
+    # The global position has to be real: QGraphicsScene picks the item under the *screen*
+    # point, so a placeholder here makes every press land on empty canvas.
+    event = QMouseEvent(
+        kind,
+        local,
+        QPointF(viewport.mapToGlobal(local.toPoint())),
+        Qt.MouseButton.LeftButton,
+        buttons,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    app.sendEvent(viewport, event)
+
+
+def press_key(app, tab, key, modifiers=Qt.KeyboardModifier.NoModifier):
+    _send_key(app, tab, QEvent.Type.KeyPress, key, modifiers)
+
+
+def release_key(app, tab, key, modifiers=Qt.KeyboardModifier.NoModifier):
+    _send_key(app, tab, QEvent.Type.KeyRelease, key, modifiers)
+
+
+def _send_key(app, tab, kind, key, modifiers):
+    # Straight to the widget rather than through QApplication.sendEvent: Qt routes key events
+    # only to the window the platform considers active, and earlier tests leave their windows
+    # open, so which one that is depends on what ran before. The mouse helpers above go the
+    # whole way; what matters here is GraphView's own dispatch, and this reaches it.
+    event = QKeyEvent(kind, key, modifiers)
+    view(tab).event(event)
 
 
 def centre_of(node):
     return node.scenePos() + QPointF(90, 28)
 
 
-def drag(app, canvas, start, end):
+def click(app, tab, scene_pos):
+    send(app, tab, QEvent.Type.MouseButtonPress, scene_pos)
+    send(app, tab, QEvent.Type.MouseButtonRelease, scene_pos, Qt.MouseButton.NoButton)
+
+
+def drag(app, tab, start, end):
     """Press at ``start``, move to ``end``, release there."""
-    send(app, canvas, QEvent.Type.GraphicsSceneMousePress, start)
-    send(app, canvas, QEvent.Type.GraphicsSceneMouseMove, end)
-    send(app, canvas, QEvent.Type.GraphicsSceneMouseRelease, end, Qt.MouseButton.NoButton)
+    send(app, tab, QEvent.Type.MouseButtonPress, start)
+    send(app, tab, QEvent.Type.MouseMove, end)
+    send(app, tab, QEvent.Type.MouseButtonRelease, end, Qt.MouseButton.NoButton)
 
 
 # -- the canvas ------------------------------------------------------------------------------
@@ -154,9 +193,7 @@ def test_dragging_from_a_handle_onto_another_node_links_them(app, services, proj
     """The whole point of the canvas. Dragging from A means "A, then B", so B waits on A."""
     first, second = project.steps
     canvas = scene(tab)
-    drag(
-        app, canvas, canvas._nodes[first.id].handle_scene_pos(), centre_of(canvas._nodes[second.id])
-    )
+    drag(app, tab, canvas._nodes[first.id].handle_scene_pos(), centre_of(canvas._nodes[second.id]))
 
     assert services.document.step(second.id).edges.get("requires") == [first.id]
     assert len(canvas._edges) == 1
@@ -166,9 +203,7 @@ def test_a_drag_that_would_close_a_cycle_creates_nothing(app, services, project,
     first, second = project.steps
     services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
     canvas = scene(tab)
-    drag(
-        app, canvas, canvas._nodes[second.id].handle_scene_pos(), centre_of(canvas._nodes[first.id])
-    )
+    drag(app, tab, canvas._nodes[second.id].handle_scene_pos(), centre_of(canvas._nodes[first.id]))
 
     assert "requires" not in services.document.step(first.id).edges
 
@@ -178,16 +213,16 @@ def test_dragging_a_node_stores_its_position(app, services, project, tab):
     canvas = scene(tab)
     node = canvas._nodes[step.id]
     start = centre_of(node)
-    send(app, canvas, QEvent.Type.GraphicsSceneMousePress, start)
+    send(app, tab, QEvent.Type.MouseButtonPress, start)
     node.setPos(node.pos() + QPointF(64, 32))
-    send(app, canvas, QEvent.Type.GraphicsSceneMouseRelease, start, Qt.MouseButton.NoButton)
+    send(app, tab, QEvent.Type.MouseButtonRelease, start, Qt.MouseButton.NoButton)
 
     assert services.document.step(step.id).module_data["project_editor"]["x"] == 104.0
     assert services.undo.undo_text() == "Move Step"
 
 
 def test_double_clicking_empty_space_creates_a_step_there(app, services, project, tab):
-    send(app, scene(tab), QEvent.Type.GraphicsSceneMouseDoubleClick, QPointF(700, 500))
+    send(app, tab, QEvent.Type.MouseButtonDblClick, QPointF(700, 500))
 
     assert len(project.steps) == 3
     assert project.steps[-1].module_data["project_editor"]["x"] == 608.0
@@ -257,13 +292,13 @@ def test_creating_on_the_canvas_is_one_undo_step(services, project, tab):
     assert len(project.steps) == 2
 
 
-def test_deleting_the_shown_step_leaves_the_panel_empty(services, project, tab, monkeypatch):
+def test_deleting_the_shown_step_leaves_the_panel_empty(app, services, project, tab, monkeypatch):
     from dplanner.modules.project_editor import verbs
 
     monkeypatch.setattr(verbs, "confirm", lambda *_args: True)
     step = project.steps[0]
     scene(tab).select_step(step.id)
-    scene(tab).delete_requested.emit([step.id])
+    press_key(app, tab, Qt.Key.Key_Delete)
 
     assert step_panel(services).current_step_id() is None
     assert len(project.steps) == 1
@@ -342,9 +377,11 @@ def test_link_runs_from_a_context_alone(services, project, tab):
     assert "requires" not in services.document.step(second.id).edges
 
 
-def test_unlink_appears_only_for_a_linked_pair(services, project, tab):
+def test_unlink_offers_itself_only_for_a_linked_pair(services, project, tab):
     first, second = project.steps
-    assert not state(services, "steps.unlink", context_of(services, first.id, second.id)).visible
+    # Disabled rather than hidden: it is a toolbar button, and a row that reflows as the
+    # selection changes cannot be read. `build_menu` filters on enabled, so menus are as before.
+    assert not state(services, "steps.unlink", context_of(services, first.id, second.id)).enabled
 
     services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
     # Either way round: the pair is linked, however the user happened to select it.
@@ -376,3 +413,283 @@ def test_a_background_pane_does_not_publish_its_selection(services, project, tab
 
     tab.on_activated()
     assert services.context.current().selected_entities("step") == [step.id]
+
+
+# -- edges are things you can pick ---------------------------------------------------------------
+
+
+def edge_item(tab, waiter, source, kind="requires"):
+    return scene(tab)._edges[EdgeRef(waiter=waiter.id, kind=kind, source=source.id)]
+
+
+def a_point_on(edge):
+    """A point the user would aim at: the middle of the drawn curve."""
+    return edge.path().pointAtPercent(0.5)
+
+
+def test_an_edge_can_be_clicked(app, services, project, tab):
+    """A 1.4 px bezier is not a target, so the item's shape is the stroked path — clicking
+    the curve within a few pixels has to count, or edges cannot be picked at all."""
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    edge = edge_item(tab, second, first)
+
+    click(app, tab, a_point_on(edge) + QPointF(0, 4))
+    assert edge.isSelected()
+    assert scene(tab).selection().edges == (EdgeRef(second.id, "requires", first.id),)
+
+
+def test_a_picked_edge_survives_an_unrelated_change(services, project, tab):
+    """Edges used to be thrown away and rebuilt on every sync, so a selection could not
+    outlive one. They are diffed by key now, for the same reason nodes always were."""
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    edge = edge_item(tab, second, first)
+    edge.setSelected(True)
+
+    services.undo.push(SetFieldCommand(first.id, "title", "Read it again"))
+    assert edge_item(tab, second, first) is edge
+    assert edge.isSelected()
+
+
+def test_a_picked_edge_reaches_the_context(services, project, tab):
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    edge_item(tab, second, first).setSelected(True)
+
+    picked = services.context.current().selected_entities(EDGE_KIND)
+    assert picked == [EdgeRef(second.id, "requires", first.id).entity_id()]
+
+
+def test_delete_removes_the_picked_edges_as_one_step(app, services, project, tab):
+    """Two edges on the same waiting step are one command: two SetEdgesCommands would each
+    be built from the state before either ran, and the second would put the first one back."""
+    first, second, third = chain(services, project)
+    services.undo.push(SetEdgesCommand(third.id, "requires", [second.id, first.id]))
+    for source in (first, second):
+        edge_item(tab, third, source).setSelected(True)
+
+    press_key(app, tab, Qt.Key.Key_Delete)
+    assert "requires" not in services.document.step(third.id).edges
+    services.undo.undo()
+    assert services.document.step(third.id).edges["requires"] == [second.id, first.id]
+
+
+def test_delete_means_the_verb_the_selection_calls_for(app, services, project, tab, monkeypatch):
+    """One key, two verbs, and no branch on the canvas: the first the context allows runs."""
+    from dplanner.modules.project_editor import verbs
+
+    monkeypatch.setattr(verbs, "confirm", lambda *_args: True)
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+
+    edge_item(tab, second, first).setSelected(True)
+    press_key(app, tab, Qt.Key.Key_Delete)
+    assert len(project.steps) == 2 and "requires" not in services.document.step(second.id).edges
+
+    scene(tab).select_step(second.id)
+    press_key(app, tab, Qt.Key.Key_Delete)
+    assert len(project.steps) == 1
+
+
+def test_deleting_a_multiple_selection_is_one_undo_step(services, project, tab, monkeypatch):
+    from dplanner.modules.project_editor import verbs
+
+    monkeypatch.setattr(verbs, "confirm", lambda *_args: True)
+    first, second = project.steps
+    scene(tab).select_steps([first.id, second.id])
+    services.actions.run("steps.delete", services.context.current())
+
+    assert project.steps == []
+    assert services.undo.undo_text() == "Delete 2 Steps"
+    services.undo.undo()
+    assert len(project.steps) == 2
+
+
+# -- the canvas holds still ----------------------------------------------------------------------
+
+
+def test_moving_a_node_does_not_pan_the_canvas(app, services, project, tab):
+    """The complaint this fixed: the scene rect was recomputed from the items on every sync,
+    the scroll bars re-ranged under a fixed value, and the canvas slid away under the drag."""
+    step = project.steps[0]
+    canvas = scene(tab)
+    node = canvas._nodes[step.id]
+    looking_at = view(tab).mapToScene(view(tab).viewport().rect().topLeft())
+
+    start = centre_of(node)
+    send(app, tab, QEvent.Type.MouseButtonPress, start)
+    node.setPos(node.pos() + QPointF(240, 160))
+    send(app, tab, QEvent.Type.MouseButtonRelease, start, Qt.MouseButton.NoButton)
+
+    assert view(tab).mapToScene(view(tab).viewport().rect().topLeft()) == looking_at
+
+
+def test_the_scene_rect_only_grows(services, project, tab, monkeypatch):
+    from dplanner.modules.project_editor import verbs
+
+    monkeypatch.setattr(verbs, "confirm", lambda *_args: True)
+    canvas = scene(tab)
+    was = canvas.sceneRect()
+    scene(tab).select_step(project.steps[0].id)
+    services.actions.run("steps.delete", services.context.current())
+
+    assert canvas.sceneRect().contains(was)
+
+
+# -- modes -----------------------------------------------------------------------------------------
+
+
+def modes(tab):
+    return view(tab).modes
+
+
+def test_the_base_mode_never_pops(services, project, tab):
+    assert modes(tab).current().name == IDLE
+    assert not modes(tab).pop()
+    assert modes(tab).current().name == IDLE
+
+
+def test_space_pans_while_it_is_held(app, services, project, tab):
+    press_key(app, tab, Qt.Key.Key_Space)
+    assert modes(tab).current().name == PAN
+    assert view(tab).dragMode() == QGraphicsView.DragMode.ScrollHandDrag
+
+    release_key(app, tab, Qt.Key.Key_Space)
+    assert modes(tab).current().name == IDLE
+    assert view(tab).dragMode() == QGraphicsView.DragMode.RubberBandDrag
+
+
+def test_connect_mode_links_two_clicks_and_then_lets_go(app, services, project, tab):
+    """One finished link ends the mode — pressing the button again is how you make another."""
+    first, second = project.steps
+    canvas = scene(tab)
+    services.actions.run("steps.connect", services.context.current())
+    assert modes(tab).current().name == CONNECT
+
+    click(app, tab, centre_of(canvas._nodes[first.id]))
+    click(app, tab, centre_of(canvas._nodes[second.id]))
+
+    assert services.document.step(second.id).edges["requires"] == [first.id]
+    assert modes(tab).current().name == IDLE
+
+
+def test_escape_clears_the_pending_step_before_it_leaves(app, services, project, tab):
+    """Two stages, because backing out of half a link and backing out of the mode are two
+    different intentions and Escape is the only key for either."""
+    first, _second = project.steps
+    services.actions.run("steps.connect", services.context.current())
+    click(app, tab, centre_of(scene(tab)._nodes[first.id]))
+
+    press_key(app, tab, Qt.Key.Key_Escape)
+    assert modes(tab).current().name == CONNECT
+    press_key(app, tab, Qt.Key.Key_Escape)
+    assert modes(tab).current().name == IDLE
+
+
+def test_connect_from_the_keyboard_alone(app, services, project, tab):
+    """Pick a step, press c, walk to the next one, press Enter — no mouse anywhere.
+
+    Two unplaced steps stack in one column, so the next one along is *down* from here."""
+    first, second = project.steps
+    scene(tab).select_step(first.id)
+    press_key(app, tab, Qt.Key.Key_C)
+    assert modes(tab).current().name == CONNECT
+
+    press_key(app, tab, Qt.Key.Key_J)
+    assert scene(tab).selected_step() == second.id
+    press_key(app, tab, Qt.Key.Key_Return)
+
+    assert services.document.step(second.id).edges["requires"] == [first.id]
+    assert modes(tab).current().name == IDLE
+
+
+def test_the_mode_is_in_the_context(services, project, tab):
+    """Which is the whole reason the Connect button can check itself: its state stays a pure
+    function of the context, with no canvas in it."""
+    assert not state(services, "steps.connect", services.context.current()).checked
+    services.actions.run("steps.connect", services.context.current())
+    assert state(services, "steps.connect", services.context.current()).checked
+
+
+def test_leaving_the_pane_leaves_its_modes(services, project, tab):
+    services.actions.run("steps.connect", services.context.current())
+    tab.on_deactivated()
+    assert modes(tab).current().name == IDLE
+
+
+# -- moving about, with no canvas in sight ---------------------------------------------------------
+
+
+def test_movement_verbs_read_the_positions_the_model_holds(services, project, tab):
+    """`layout.positions()` already answers where every node is, so which step is to the
+    right is a pure function — these are testable from a constructed context."""
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+
+    assert state(services, "steps.go_right", context_of(services, first.id)).enabled
+    assert not state(services, "steps.go_right", context_of(services, second.id)).enabled
+    assert state(services, "steps.go_left", context_of(services, second.id)).enabled
+
+    services.actions.run("steps.go_right", context_of(services, first.id))
+    assert scene(tab).selected_step() == second.id
+
+
+def test_the_arrows_say_the_same_thing_as_hjkl(app, services, project, tab):
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    scene(tab).select_step(first.id)
+
+    press_key(app, tab, Qt.Key.Key_Right)
+    assert scene(tab).selected_step() == second.id
+    press_key(app, tab, Qt.Key.Key_H)
+    assert scene(tab).selected_step() == first.id
+
+
+# -- the toolbar -----------------------------------------------------------------------------------
+
+
+def toolbar_button(tab, action_id):
+    found = tab._toolbar.button(action_id)
+    assert found is not None, f"{action_id} is not on the toolbar"
+    return found
+
+
+def test_the_toolbar_greys_rather_than_reflows(services, project, tab):
+    """A row of buttons that appear and vanish as the selection changes cannot be read, so
+    these verbs are disabled rather than hidden — which is why `_on_a_step` changed."""
+    button = toolbar_button(tab, "steps.delete")
+    assert button.isVisible() or not button.isEnabled()
+    assert not button.isEnabled()
+
+    scene(tab).select_step(project.steps[0].id)
+    assert button.isEnabled()
+
+
+def test_the_connect_button_checks_itself_with_the_mode(services, project, tab):
+    button = toolbar_button(tab, "steps.connect")
+    assert not button.isChecked()
+
+    services.actions.run("steps.connect", services.context.current())
+    assert button.isChecked()
+
+    services.actions.run("steps.connect", services.context.current())
+    assert not button.isChecked()
+
+
+def test_the_toolbar_carries_verbs_from_other_modules(services, project, tab):
+    """The registry is the only thing between them: undo comes from the app shell and the
+    order table from step_order, and this module imports neither."""
+    assert toolbar_button(tab, "appshell.undo") is not None
+    assert toolbar_button(tab, "order.open").isEnabled()
+
+    services.actions.run("order.open", services.context.current())
+    assert any(a.uri.startswith("app://activity/order") for a in services.tabs.activities())
+
+
+def test_closing_the_tab_lets_its_toolbars_go(services, project, tab):
+    """A toolbar subscribes to the context, and unlike the menu bar it does not outlive
+    its tab. A leaked subscription would restate a dead widget on every selection change."""
+    before = len(services.context.changed._slots)
+    tab.close()
+    assert len(services.context.changed._slots) < before

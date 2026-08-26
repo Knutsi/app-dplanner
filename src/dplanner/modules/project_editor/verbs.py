@@ -8,6 +8,16 @@ with no widget in sight. See ``ARCHITECTURE.md`` for the chain this is one link 
 It reads **two selected steps, in the order they were selected: the second waits on the
 first.** That is the drag written down — dragging from A's handle onto B means "A, then B" —
 so the canvas and the menu cannot come to mean different things.
+
+**Unlink has two ways of being told which link, and one behaviour.** Two selected steps means
+the link between them; selected *edges* mean those edges. Both end in the same command, so
+picking an arrow on the canvas and picking its two ends are the same verb rather than two that
+have to be kept agreeing. The same reasoning makes Delete act on the whole selection.
+
+**A verb that can act on nothing is disabled, not hidden.** These render as toolbar buttons
+now, and a row that reflows as the selection changes is unreadable. ``build_menu`` filters on
+*enabled*, so the right-click menu is unchanged and the menu bar greys the entry instead — which
+is the better answer there too, since a verb you cannot see is one you cannot learn.
 """
 
 from collections.abc import Callable
@@ -17,6 +27,8 @@ from PySide6.QtWidgets import QInputDialog, QWidget
 
 from dplanner.domain.commands import (
     AddNodeCommand,
+    Command,
+    CompositeCommand,
     RemoveNodeCommand,
     SetEdgesCommand,
     SetFieldCommand,
@@ -33,6 +45,7 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import Context
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
+from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef, parse_edge_id
 
 
 @dataclass(frozen=True)
@@ -85,7 +98,7 @@ class StepVerbs:
                 menu="Step",
                 group="link",
                 order=20,
-                tip="Remove the link between the two selected steps",
+                tip="Remove the picked links, or the link between the two selected steps",
                 state=self._can_unlink,
                 run=self._unlink,
             ),
@@ -95,8 +108,8 @@ class StepVerbs:
                 menu="Step",
                 group="edit",
                 order=30,
-                tip="Remove this step. Links naming it are left alone, so undo stays exact",
-                state=self._on_a_step,
+                tip="Remove these steps. Links naming them are left alone, so undo stays exact",
+                state=self._can_delete,
                 run=self._delete,
             ),
         ]
@@ -104,12 +117,12 @@ class StepVerbs:
     # -- state ---------------------------------------------------------------------------------
 
     def _in_a_project(self, _context: Context) -> ActionState:
-        return ENABLED if self.current_project() is not None else HIDDEN
+        return ENABLED if self.current_project() is not None else DISABLED
 
     def _on_a_step(self, context: Context) -> ActionState:
         step_id = context.focus_entity("step")
         if step_id is None:
-            return HIDDEN
+            return DISABLED
         return ENABLED if self.product.has(step_id) else DISABLED
 
     def _focused(self, context: Context) -> Step | None:
@@ -167,18 +180,58 @@ class StepVerbs:
         waiting = self.product.step(waiter).edges.get("requires", [])
         self.undo.push(SetEdgesCommand(waiter, "requires", [*waiting, source]))
 
+    def _picked_edges(self, context: Context) -> list[EdgeRef]:
+        """The selected edges that the model still agrees exist."""
+        found = [parse_edge_id(entity) for entity in context.selected_entities(EDGE_KIND)]
+        return [
+            ref
+            for ref in found
+            if ref is not None
+            and self.product.has(ref.waiter)
+            and ref.source in self.product.step(ref.waiter).edges.get(ref.kind, [])
+        ]
+
     def _can_unlink(self, context: Context) -> ActionState:
-        return HIDDEN if self._existing_link(context) is None else ENABLED
+        picked = self._picked_edges(context)
+        if picked:
+            if len(picked) == 1:
+                return ActionState(label="Remove &Link")
+            return ActionState(label=f"Remove {len(picked)} &Links")
+        return ENABLED if self._existing_link(context) is not None else DISABLED
 
     def _unlink(self, context: Context) -> None:
+        picked = self._picked_edges(context)
+        if picked:
+            self.undo.push(self._removal_of(picked))
+            return
         found = self._existing_link(context)
         pair = self._pair(context)
         if found is None or pair is None:
             return
         waiter, kind = found
         other = pair[0] if pair[1] == waiter else pair[1]
-        remaining = [t for t in self.product.step(waiter).edges.get(kind, []) if t != other]
-        self.undo.push(SetEdgesCommand(waiter, kind, remaining))
+        self.undo.push(self._removal_of([EdgeRef(waiter=waiter, kind=kind, source=other)]))
+
+    def _removal_of(self, refs: list[EdgeRef]) -> Command:
+        """One command per ``(waiter, kind)``, because ``SetEdgesCommand`` replaces the list.
+
+        Two commands for the same pair would each be built from the state before either ran,
+        and the second would put back what the first removed.
+        """
+        by_list: dict[tuple[StepId, str], set[StepId]] = {}
+        for ref in refs:
+            by_list.setdefault((ref.waiter, ref.kind), set()).add(ref.source)
+        commands: list[Command] = [
+            SetEdgesCommand(
+                waiter,
+                kind,
+                [t for t in self.product.step(waiter).edges.get(kind, []) if t not in gone],
+            )
+            for (waiter, kind), gone in sorted(by_list.items())
+        ]
+        if len(commands) == 1:
+            return commands[0]
+        return CompositeCommand(f"Remove {len(refs)} Links", commands)
 
     # -- run -----------------------------------------------------------------------------------
 
@@ -200,26 +253,35 @@ class StepVerbs:
         if accepted and title.strip():
             self.undo.push(SetFieldCommand(step.id, "title", title.strip()))
 
-    def _delete(self, context: Context) -> None:
-        step = self._focused(context)
-        if step is None:
-            return
-        if confirm(self.parent, "Delete Step", f"Delete {step.title!r}?"):
-            self.undo.push(RemoveNodeCommand(step.id))
+    def _doomed(self, context: Context) -> list[StepId]:
+        """Every selected step, or the one the activity is about — one prompt covers them."""
+        chosen = [s for s in context.selected_entities("step") if self.product.has(s)]
+        if chosen:
+            return chosen
+        step_id = context.focus_entity("step")
+        return [step_id] if step_id is not None and self.product.has(step_id) else []
 
-    def delete_many(self, step_ids: list[StepId]) -> None:
-        """The canvas's Delete key. One prompt for the whole selection, one undo step."""
-        wanted = [s for s in step_ids if self.product.has(s)]
-        if not wanted:
+    def _can_delete(self, context: Context) -> ActionState:
+        doomed = self._doomed(context)
+        if not doomed:
+            return DISABLED
+        if len(doomed) == 1:
+            return ENABLED
+        return ActionState(label=f"&Delete {len(doomed)} Steps")
+
+    def _delete(self, context: Context) -> None:
+        doomed = self._doomed(context)
+        if not doomed:
             return
-        titles = ", ".join(self.product.step(s).title or "untitled" for s in wanted)
-        question = f"Delete {titles}?" if len(wanted) == 1 else f"Delete {len(wanted)} steps?"
+        if len(doomed) == 1:
+            title = self.product.step(doomed[0]).title or "this step"
+            question = f"Delete {title!r}?"
+        else:
+            question = f"Delete {len(doomed)} steps?"
         if not confirm(self.parent, "Delete Step", question):
             return
-        from dplanner.domain.commands import CompositeCommand
-
-        removals = [RemoveNodeCommand(step_id) for step_id in wanted]
+        removals: list[Command] = [RemoveNodeCommand(step_id) for step_id in doomed]
         if len(removals) == 1:
             self.undo.push(removals[0])
         else:
-            self.undo.push(CompositeCommand(f"Delete {len(removals)} Steps", list(removals)))
+            self.undo.push(CompositeCommand(f"Delete {len(removals)} Steps", removals))

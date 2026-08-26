@@ -171,6 +171,20 @@ root, stop and look for the registry or capability you have not found yet.
   step editor appear twice in a split window, and the fix deleted code rather than adding a
   visibility check — because "only the active pane publishes" already says which selection a
   panel should be showing. `ARCHITECTURE.md`'s *Where a panel goes* has the rest.
+- **Canvas input is a stack of modes, and Escape pops one.** A mode handles input and has
+  power over the view; a hook that returns False lets the event fall through to the canvas
+  keymap and then to Qt, which is why `IdleMode` is nine lines and why a mode that claims a
+  press suppresses node dragging without a flag anywhere. A mode still only *reports* — the
+  activity turns its signals into commands. The current mode is published into the context, so
+  a mode-switch action's `checked` stays a pure function of it. `ARCHITECTURE.md`'s *Who owns
+  the canvas's input* has the reasoning; add a behaviour as a mode, never as a field.
+- **A canvas key names action ids; it is never an `ActionSpec.shortcut`.** A bare `h` on a
+  menu-bar QAction fires application-wide and eats a keystroke in the step editor. Bind it in
+  `modules/project_editor/keymap.py`, where a key names the verbs it means in order and the
+  first the context allows runs — that is how one Delete key covers links and steps.
+- **A scrollable area's extent must never depend on what the user is moving.** The canvas's
+  scene rect is a floor that only grows and is left alone mid-drag; recomputing it from the
+  items on every change is what made moving a node look like panning the canvas.
 - **Work may leave the GUI thread; mutation may not.** `core.signals.Signal` is synchronous
   and has no thread affinity, so the model is only ever changed on the GUI thread. Anything
   computed off it returns through `TaskRunner`, the one place that uses real Qt signals.

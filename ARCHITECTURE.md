@@ -312,12 +312,14 @@ A project is a graph, so the tab is a canvas: `QGraphicsView` gives selection, d
 hit-testing and zoom for free. Writer's corkboard is 2,200 hand-rolled lines because cards
 flow in a grid; free positions are the case Qt already handles.
 
-Two decisions keep it small. **Nodes diff, edges rebuild** — a node may be under the mouse
-mid-drag and must keep its identity, while edges never are and there are only tens of them, so
-reconciling one and replacing the other avoids a diffing engine. **The scene reports, the
-activity commands** — every gesture ends in a signal, and the activity turns it into something
-on the undo stack, so a drag is undoable and the model stays the only authority on what a legal
-graph is.
+Two decisions keep it small. **Every item diffs by key** — nodes by step id, edges by
+`(waiter, kind, source)` — because an item the user is holding on to has to keep its identity:
+a node may be under the mouse mid-drag, and an edge may be selected, waiting for Delete. That
+was two rules once, and edges were the ones rebuilt wholesale; the second rule was exactly what
+made edges unselectable, so making them selectable *removed* a rule rather than adding one.
+**The scene reports, the activity commands** — every gesture ends in a signal, and the activity
+turns it into something on the undo stack, so a drag is undoable and the model stays the only
+authority on what a legal graph is.
 
 That last point is why `Product.link_refusal()` exists. A link drag needs to know *before* the
 drop whether an edge would be a cycle, and the alternative — a second reachability check in the
@@ -325,6 +327,67 @@ view — is two implementations that will eventually disagree. So the refusal is
 model answers, `set_edges` asks it before writing, and the canvas asks it under the cursor.
 There is no error dialog anywhere in the interaction because there is never anything to
 apologise for.
+
+### Who owns the canvas's input
+
+Interaction is a **stack of modes**. A mode is an object that handles input and has power over
+the view; pushing one changes what the canvas does, and popping it puts back exactly what was
+there before. Escape pops. `GraphView` normalises each event and offers it to the current mode,
+then to the canvas keymap, then to Qt.
+
+The alternative was the shape this replaced: one set of Qt handlers on the scene with the
+gesture's state in fields beside them — `_link_from` next to `_press_at`. That works for one
+gesture. It produced its first bug at one: a handler cleared `_link_from` on its first line and
+asked about it on its third. A mode has a beginning and an end, so there is no field anybody
+has to remember to clear, and `exit()` is where "put the cursor and the drag mode back" lives
+whatever happened while the mode was on.
+
+Three properties make it cheap rather than another layer:
+
+- **Declining an event costs nothing.** A hook that returns False lets the event fall through,
+  and Qt still does rubber-band selection, item dragging and hand-scrolling for free. `IdleMode`
+  is nine lines: it catches a press on a link handle and declines everything else.
+- **A mode that claims a press suppresses node dragging for free.** The scene's remaining mouse
+  handling is the record of what Qt's own item drag moved, which has to run *after* Qt updates
+  the selection — so it lives on the scene, where the event arrives already handled. Connect
+  and Pan consume the press, the scene never sees it, and nothing anywhere asks "which mode?".
+- **A mode reports; it never writes.** It emits the canvas's signals and the activity turns
+  those into commands. The chain above is untouched; the mode is one more way to reach its top.
+
+`modes.Canvas` is a written-out protocol rather than "pass the scene around", because it is the
+whole of a mode's power. A new mode cannot quietly grow a reach nobody sanctioned, and a mode
+can be driven in a test by anything that satisfies it.
+
+**The mode is published into the context**, as an edge on the activity node. That is what lets
+`steps.connect`'s toolbar button check itself: its `state(context)` stays a pure function, so
+the button, the menu entry and a test all read the mode the same way and nothing reaches for a
+widget to ask.
+
+**Canvas keys name action ids; they are never `ActionSpec.shortcut`s.** A bare `h` on a menu-bar
+QAction fires wherever the application has focus and would eat a keystroke in the step
+description editor. `keymap.py` binds keys that exist only while the canvas has focus, and what
+they run is the same verb the menu runs. A key names the verbs it means *in order* and the first
+one the context allows runs — which is how one Delete key means "remove these links" when edges
+are picked and "remove these steps" when steps are, with no branch on the canvas at all.
+
+That leaves two families of verb, and the distinction is worth stating: **step verbs change the
+plan** (they push commands and are undoable), while **canvas verbs steer a surface** — move the
+selection, enter a mode, frame the graph. Canvas verbs push nothing, and they reach the current
+canvas through a typed callback on their own `Deps`. Where a node *is* is still a fact about the
+model — `layout.positions()` answers it — so "the nearest node to the right" is a pure function
+and only the last step, telling the canvas what to select, needs a window.
+
+### Why the canvas used to pan when you moved a node
+
+Worth writing down because the cause was two floors from the symptom. `sync()` recomputed the
+scene rect from `itemsBoundingRect` on every model change, and a move *is* a model change, so
+dragging a node changed the rect's origin, the scroll bars re-ranged under a fixed value, and
+the canvas slid out from under the drag. The default `AlignCenter` made it worse: a scene
+smaller than the viewport re-centres itself every time its rect changes.
+
+So the scene rect is now a **floor that only grows**, it is not touched at all while a drag is
+in flight, and the view is anchored top-left. The rule generalises past this canvas:
+**a scrollable area's extent must not be a function of what the user is currently moving.**
 
 **Node positions are stored, automatic layout is not.** A step nobody has moved is placed by
 `requires` depth, recomputed each time the project opens. Persisting that would mean merely
@@ -427,8 +490,10 @@ diff, months later, in a workspace nobody can reconstruct.
 
 ## Where this is going
 
-- **More of the canvas** — panning beyond the scroll bars, edge selection and deletion, and
-  a second edge kind that can be drawn rather than only typed.
+- **A second edge kind that can be drawn rather than only typed.** The mode stack is where it
+  goes: a `relates` variant of the linking mode, and nothing else moves.
+- **Rebindable keys.** `modules/project_editor/keymap.py` is the table a settings page would
+  read; nothing reads it yet, which is the only reason it is a constant.
 - **A schedule that knows about parallelism** — today's dates run the steps one after
   another down the order. The waves already say which of them could run side by side, so an
   earliest-finish walk is a change to `domain/schedule.py` and to nothing else.

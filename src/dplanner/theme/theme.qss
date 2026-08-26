@@ -358,6 +358,17 @@ QScrollBar::sub-page {
     border: none;
 }
 
+/* The strip of verbs over the canvas. It sits on the window colour rather than the canvas's,
+   so the drawing surface starts where the chrome stops, and one hairline says where that is. */
+#CanvasToolbar {
+    background-color: $BG_ELEVATED;
+    border-bottom: 1px solid $BORDER;
+}
+
+#ToolbarRule {
+    background-color: $BORDER;
+}
+
 /* The order table: steps in the sequence they can be done. A well on the window colour,
    like the step list it replaces, with the row metrics DESIGN.md gives a list of rich
    items. No grid — the alignment is the structure. */

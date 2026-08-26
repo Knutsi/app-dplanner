@@ -15,8 +15,9 @@ when its group is not the active one, not a context per group.
 
 from collections.abc import Mapping, Sequence
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QHBoxLayout, QToolButton, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QToolButton, QWidget
 
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import Context, ContextService
@@ -46,6 +47,13 @@ class ActionToolbar(QWidget):
         for action_id in action_ids:
             button = QToolButton(self)
             button.setObjectName("ToolbarButton")
+            # A toolbar never takes the keyboard. Without this, clicking a button moves focus
+            # off the surface the button just acted on, and the next keystroke goes nowhere —
+            # which a canvas with its own key bindings notices immediately.
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            # And it keeps its face: a layout short of room shrinks widgets to their minimum,
+            # and a 10 px wide button with a 16 px glyph in it shows neither icon nor label.
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             button.clicked.connect(
                 lambda _checked=False, a=action_id: registry.run(a, context.current())
             )
@@ -68,7 +76,15 @@ class ActionToolbar(QWidget):
             spec = self._registry.spec(action_id)
             state = spec.state(context)
             label = state.label if state.label is not None else spec.label
-            button.setText(self._button_text.get(action_id, label.replace("&", "")))
+            text = self._button_text.get(action_id, label.replace("&", ""))
+            button.setText(text)
+            # QToolButton shows its icon and nothing else unless told otherwise, so a button
+            # with words on it has to say so — and one with an empty override stays a glyph.
+            button.setToolButtonStyle(
+                Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+                if text
+                else Qt.ToolButtonStyle.ToolButtonIconOnly
+            )
             button.setVisible(state.visible)
             button.setEnabled(state.enabled)
             if state.checked is not None:
