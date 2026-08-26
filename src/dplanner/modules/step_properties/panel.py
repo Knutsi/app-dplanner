@@ -1,0 +1,239 @@
+"""One step's detail panel: its title, and a tab per aspect editor other modules registered.
+
+**This module never learns which aspects exist.** It is handed a list of
+:class:`~dplanner.framework.inspector.InspectorSection` objects and turns each into a tab; an
+aspect module never learns that a panel renders it. The composition root is the only place
+that knows both, which is what lets the fifth aspect cost one registration and nothing else.
+
+**Nor does it learn what a host is.** A host says which step to show and supplies the widget
+to display when there is none — for the project editor that is the project's own form, which
+is how "the project when nothing is selected" happens without this file importing a project.
+
+The title sits above the tab bar rather than inside a tab of its own: a step's name belongs
+to the step, not to any aspect, and it should stay readable while you move between them.
+"""
+
+from collections.abc import Sequence
+from functools import partial
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QLabel,
+    QLineEdit,
+    QStackedLayout,
+    QTabBar,
+    QVBoxLayout,
+    QWidget,
+)
+
+from dplanner.domain.commands import SetFieldCommand
+from dplanner.domain.model import NodeId, Product, StepId
+from dplanner.framework.inspector import InspectorExtension, InspectorSection
+from dplanner.framework.theme_service import ThemeService
+from dplanner.framework.undo import UndoService
+from dplanner.theme.themes import Theme
+
+# DESIGN.md: side panels get 16 px outer margins, and more space between blocks than within
+# one — 12 between, 6 from a caption to its field.
+PANEL_MARGIN = 16
+BLOCK_GAP = 12
+CAPTION_GAP = 6
+
+
+def _caption(text: str, parent: QWidget) -> QLabel:
+    label = QLabel(text, parent)
+    label.setObjectName("InspectorCaption")
+    return label
+
+
+class StepPanel(QWidget):
+    """The panel a host installs beside its own surface.
+
+    Its own state is one step id; everything else is either the host's (the empty widget) or
+    a contributing module's (the tabs).
+    """
+
+    def __init__(
+        self,
+        product: Product,
+        undo: UndoService[Product],
+        sections: Sequence[InspectorSection] = (),
+        empty: QWidget | None = None,
+        theme: ThemeService | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("InspectorPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        self._product = product
+        self._undo = undo
+        self._step_id: StepId | None = None
+
+        self._empty = empty if empty is not None else self._placeholder()
+
+        self.title_edit = QLineEdit(self)
+        self.title_edit.setObjectName("InspectorTitle")
+        self.title_edit.setPlaceholderText("What this step is")
+        self.title_edit.editingFinished.connect(self._commit_title)
+
+        self.links = QLabel(self)
+        self.links.setObjectName("InspectorNote")
+        self.links.setWordWrap(True)
+
+        # One extension per section, built once for this panel. The factory takes no
+        # arguments: a contributing module closed over whatever it needs at registration.
+        self._extensions: list[InspectorExtension] = [section.factory() for section in sections]
+
+        self.tab_bar = QTabBar(self)
+        self.tab_bar.setObjectName("InspectorTabs")
+        self.tab_bar.setExpanding(False)
+        self.tab_bar.setDrawBase(False)
+        # Five tabs is more than the template ever contemplated for 360 px, so the bar
+        # degrades rather than clipping.
+        self.tab_bar.setUsesScrollButtons(True)
+        self.tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
+
+        self._pages = QStackedLayout()
+        for section, extension in zip(sections, self._extensions, strict=True):
+            self.tab_bar.addTab(section.label)
+            self._pages.addWidget(extension.widget)
+        self.tab_bar.currentChanged.connect(self._pages.setCurrentIndex)
+        for index, extension in enumerate(self._extensions):
+            extension.tab_visibility_changed.connect(partial(self._set_tab_visible, index))
+            self.tab_bar.setTabVisible(index, extension.tab_visible())
+
+        step_page = QWidget(self)
+        step_layout = QVBoxLayout(step_page)
+        step_layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, 0)
+        step_layout.setSpacing(CAPTION_GAP)
+        step_layout.addWidget(_caption("Step", step_page))
+        step_layout.addWidget(self.title_edit)
+        step_layout.addWidget(self.links)
+        step_layout.addSpacing(BLOCK_GAP)
+        step_layout.addWidget(self.tab_bar)
+        step_layout.addLayout(self._pages, stretch=1)
+
+        self._stack = QStackedLayout(self)
+        self._stack.addWidget(self._empty)
+        self._stack.addWidget(step_page)
+
+        def paint_tab_icons(current: Theme) -> None:
+            for index, section in enumerate(sections):
+                if section.icon is not None:
+                    self.tab_bar.setTabIcon(index, section.icon(current.text_secondary))
+
+        self._unsubscribes = [
+            product.field_changed.connect(self._on_field),
+            product.edges_changed.connect(self._on_edges),
+            product.structure_changed.connect(self._on_structure),
+        ]
+        if theme is not None:
+            # A panel is shorter-lived than the theme service; detach in dispose().
+            self._unsubscribes.append(theme.changed.connect(paint_tab_icons))
+            paint_tab_icons(theme.current)
+
+    # -- what a host says --------------------------------------------------------------------
+
+    @property
+    def widget(self) -> QWidget:
+        """The panel is its own widget; hosts name this through their own Protocol."""
+        return self
+
+    def show_step(self, step_id: StepId | None) -> None:
+        """Show one step, or the host's empty widget.
+
+        The empty path runs *before* the unchanged-id early return: deselecting has to get
+        through every time, or the last step stays on screen after the user clicks away.
+        """
+        if step_id is None or not self._product.has(step_id):
+            self._step_id = None
+            self._stack.setCurrentIndex(0)
+            self._show_in_extensions(None)
+            return
+        if step_id == self._step_id:
+            return
+        self._step_id = step_id
+        self.title_edit.setText(self._product.step(step_id).title)
+        self._refresh_links()
+        self._stack.setCurrentIndex(1)
+        self._show_in_extensions(step_id)
+
+    def current_step_id(self) -> StepId | None:
+        return self._step_id
+
+    def current_section_index(self) -> int:
+        return self.tab_bar.currentIndex()
+
+    def dispose(self) -> None:
+        """Full detachment — a disposed panel must never hear another model signal."""
+        for unsubscribe in self._unsubscribes:
+            unsubscribe()
+        self._unsubscribes.clear()
+        for extension in self._extensions:
+            extension.dispose()
+        self._extensions = []
+
+    # -- internals -----------------------------------------------------------------------------
+
+    def _placeholder(self) -> QWidget:
+        label = QLabel("Select a step to edit it.")
+        label.setObjectName("InspectorPlaceholder")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setWordWrap(True)
+        return label
+
+    def _show_in_extensions(self, step_id: StepId | None) -> None:
+        for extension in self._extensions:
+            extension.show_target(step_id)
+
+    def _set_tab_visible(self, index: int, visible: bool) -> None:
+        self.tab_bar.setTabVisible(index, visible)
+        if not visible and self.tab_bar.currentIndex() == index:
+            first = next((i for i, e in enumerate(self._extensions) if e.tab_visible()), -1)
+            if first >= 0:
+                self.tab_bar.setCurrentIndex(first)
+        self.tab_bar.setVisible(any(e.tab_visible() for e in self._extensions))
+
+    def _commit_title(self) -> None:
+        # editingFinished also fires during teardown, when the step may already be gone.
+        if self._step_id is None or not self._product.has(self._step_id):
+            return
+        value = self.title_edit.text().strip()
+        if value != self._product.step(self._step_id).title:
+            self._undo.push(SetFieldCommand(self._step_id, "title", value, view_origin=self))
+
+    def _on_field(self, node_id: NodeId, field: str, origin: object) -> None:
+        if node_id != self._step_id or field != "title":
+            return
+        # Not a plain `origin is self`: an undo performed while this field has focus still
+        # has to reach it, and only a focused field is mid-edit.
+        if not (origin is self and self.title_edit.hasFocus()):
+            self.title_edit.setText(self._product.step(node_id).title)
+
+    def _on_edges(self, step_id: StepId, _origin: object) -> None:
+        if self._step_id is not None:
+            self._refresh_links()
+
+    def _on_structure(self, _parent_id: NodeId) -> None:
+        if self._step_id is None:
+            return
+        if not self._product.has(self._step_id):
+            # The shown step was removed. This also nulls _step_id, so re-showing the same
+            # id later is not swallowed by the unchanged-id early return.
+            self.show_step(None)
+        else:
+            self._refresh_links()
+
+    def _refresh_links(self) -> None:
+        if self._step_id is None:
+            return
+        waits = [step.title or "untitled" for step in self._product.requires(self._step_id)]
+        blocks = [step.title or "untitled" for step in self._product.dependents(self._step_id)]
+        lines = []
+        if waits:
+            lines.append("Waits on " + ", ".join(waits))
+        if blocks:
+            lines.append("Blocks " + ", ".join(blocks))
+        self.links.setText(" · ".join(lines))
+        self.links.setVisible(bool(lines))

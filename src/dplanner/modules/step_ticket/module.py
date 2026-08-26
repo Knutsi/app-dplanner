@@ -1,19 +1,19 @@
-"""The ticket aspect, in the running application.
-
-No editor yet — see ``step_estimation/module.py`` for why an aspect module exists before it
-has a surface: declaring ``data_format`` is how the builder learns to migrate this aspect's
-data when a window opens an older workspace.
-"""
+"""The ticket aspect, in the running application: one registration, the Ticket tab."""
 
 from dataclasses import dataclass
 
-from dplanner.modules.step_ticket.aspect import DATA_FORMAT, MODULE_ID
+from dplanner.domain.model import Product
+from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
+from dplanner.framework.undo import UndoService
+from dplanner.modules.step_ticket.aspect import DATA_FORMAT, MODULE_ID, SPEC
+from dplanner.modules.step_ticket.section import TicketSection
 
 
 @dataclass(frozen=True)
 class StepTicketDeps:
-    """Nothing yet. The card this module will contribute will want the product and the
-    detail-card registry; adding them here is what that change looks like."""
+    product: Product
+    undo: UndoService[Product]
+    sections: InspectorSectionRegistry
 
 
 class StepTicketModule:
@@ -24,4 +24,12 @@ class StepTicketModule:
         self._deps = deps
 
     def register(self) -> None:
-        """No surface yet — see the module docstring."""
+        deps = self._deps
+        deps.sections.register(
+            InspectorSection(
+                id=f"{MODULE_ID}.tab",
+                label=SPEC.label,
+                order=20,
+                factory=lambda: TicketSection(deps.product, deps.undo),
+            )
+        )

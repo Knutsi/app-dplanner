@@ -109,6 +109,19 @@ def test_a_non_ordering_kind_allows_one(product):
     assert first.edges["relates"] == [second.id]
 
 
+def test_the_refusal_is_asked_as_a_question_as_well_as_enforced(product):
+    """A view dragging a link asks before the drop; set_edges asks before it writes. One
+    implementation, so live feedback and the write can never disagree."""
+    first, second = find(product, "Read the spec"), find(product, "Draft the model")
+    assert product.link_refusal(second.id, "requires", first.id) is None
+    product.set_edges(second.id, "requires", [first.id])
+
+    refusal = product.link_refusal(first.id, "requires", second.id)
+    assert refusal is not None and "that is a cycle" in refusal
+    with pytest.raises(ValueError, match="that is a cycle"):
+        product.set_edges(first.id, "requires", [second.id])
+
+
 def test_an_unknown_kind_cannot_be_created(product):
     step = find(product, "Review")
     with pytest.raises(ValueError, match="is not an edge kind"):
@@ -210,9 +223,42 @@ def test_the_product_itself_cannot_be_removed(product):
 # -- module data -------------------------------------------------------------------------------
 
 
+def test_module_data_carries_the_origin_that_caused_it(product):
+    """An aspect editor is a view of this data; without an origin it would hear its own
+    echo and reload the field the user is still typing in."""
+    view = object()
+    seen = []
+    product.module_data_changed.connect(lambda node_id, module_id, origin: seen.append(origin))
+    step = find(product, "Review")
+    product.set_module_data(step.id, "step_estimation", {"days": 3.0}, view)
+    assert seen == [view]
+
+
 def test_an_empty_entry_removes_itself(product):
     step = find(product, "Review")
     product.set_module_data(step.id, "step_estimation", {"days": 3.0})
     assert step.module_data["step_estimation"] == {"days": 3.0}
     product.set_module_data(step.id, "step_estimation", {})
     assert "step_estimation" not in step.module_data
+
+
+def test_undoing_module_data_carries_a_token_matching_no_view(product):
+    """So every view applies an undo, including the one that made the original edit."""
+    from dplanner.domain.commands import UNDO_ORIGIN, SetModuleDataCommand
+
+    step = find(product, "Review")
+    seen = []
+    product.module_data_changed.connect(lambda _node, _module, origin: seen.append(origin))
+    view = object()
+    command = SetModuleDataCommand(step.id, "step_estimation", {"days": 3.0}, view_origin=view)
+    command.redo(product)
+    command.undo(product)
+    assert seen == [view, UNDO_ORIGIN]
+
+
+def test_a_command_label_names_the_change_rather_than_the_mechanism(product):
+    from dplanner.domain.commands import SetModuleDataCommand
+
+    step = find(product, "Review")
+    assert SetModuleDataCommand(step.id, "m", {"x": 1}, label="Move Step").text() == "Move Step"
+    assert SetModuleDataCommand(step.id, "m", {"x": 1}).text() == "Edit"

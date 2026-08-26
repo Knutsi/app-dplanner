@@ -96,6 +96,28 @@ asserting only on side effects, which is thinner than it should be.
 it is not, because modules never see `AppServices`, and `test_architecture.py` enforces that.
 Worth a sentence in the docstring saying so.
 
+### `framework/prose_section.py`
+
+**What.** An `InspectorExtension` over one prose document: a `QPlainTextEdit` that re-binds
+when the panel shows something else and detaches when it shows nothing. It takes a
+`Callable[[str], TextField | None]`, so it knows nothing about any model.
+
+**Why.** The framework already owns the hard half of editing prose — `TextBinding` turns a
+keystroke into an undo command and keeps other views in sync — and left the easy half to
+every caller. That half is small and quiet when it is wrong: a binding not closed before
+re-binding leaves the old one listening, and one left pointing at a deleted node reaches the
+model on the next keystroke and fails to find it. We wrote it twice within an hour (a step's
+description and its agent instruction) before extracting it.
+
+**One thing it fixes on the way.** `TextBinding.close()` disconnects but never reparents or
+deletes, and the binding is parented to the editor — which outlives it. A panel that re-binds
+on every selection change therefore leaves one inert `QObject` behind per click, for the life
+of the tab. `ProseSection` calls `setParent(None)` after `close()`; the better fix is
+`deleteLater()` inside `close()` itself, since the docstring already promises that "the
+editor may outlive the binding and be bound again later".
+
+**Upstream?** Yes, and the `close()` fix regardless of the rest.
+
 ### `framework/window_watch.py`
 
 **What.** A `WorkspaceWatcher` that polls a repository through a one-method
@@ -105,6 +127,49 @@ Worth a sentence in the docstring saying so.
 
 **Upstream?** Only if the repository-side half (§3) goes too. On its own it watches for
 something nothing reports.
+
+### The tab host the contract promises, and where we put it
+
+**What we found.** `framework/inspector.py` has said since the template that a section
+"appears as a sibling tab beside whatever else is registered", and `#InspectorTabs` sits in
+`theme.qss` styling a `QTabBar` that nothing creates. **No host has ever been written** — not
+here, and not upstream, where `example_editor` renders a `CardStack` instead. So the
+ten-registry table documents a surface that has no implementation, and the one worked example
+contradicts the docstring above it.
+
+Writer resolves it by hand: `segment_properties/panel.py` builds the `QTabBar` over a
+`QStackedLayout` itself, and `text_panel/panel.py` builds the card variant, both taking
+`sections: Sequence[InspectorSection]` as a constructor argument. Two hosts, two hand-rolled
+tab/visibility loops.
+
+**What we did.** The same — the tab host lives in `modules/step_properties/panel.py` — and
+deliberately did *not* extract `framework/inspector_panel.py`, because extracting a widget for
+one caller is speculative and our panel's own title header and host-supplied empty page are
+host concerns that would have to leak in as parameters.
+
+**Upstream?** The gap is real and worth closing, but the shape is not obvious yet: three
+implementations exist (Writer's two, ours) and none of them is quite the others. Either ship
+a host and make the docstring true, or change the docstring to say the framework supplies the
+*contract* and each host renders it. What should not survive is the current position, where a
+registry is documented as producing tabs and every implementation produces something else.
+Note also that `tab_visible()` and `tab_visibility_changed` are honoured by **no** host in
+either upstream repo; ours is the first.
+
+### One mutator that broke the framework's own convention
+
+**What.** `Product.set_module_data()` and `module_data_changed` were the only mutator/signal
+pair in the model without an `origin`, despite the model's own docstring saying "every mutator
+takes an origin". `SetModuleDataCommand` was likewise the only command without a
+`view_origin`.
+
+**Why it mattered here.** It is invisible until a *view* edits module data. The moment an
+aspect editor existed, it heard the echo of its own write and reloaded the field the user was
+still typing in. The template has no such editor, which is exactly why the gap survived.
+
+**Upstream?** The template's `example_notes` writes module data from a card and dodges the
+problem with a `_loading` flag. That works, and it is the wrong lesson: the framework already
+has a mechanism for this and the example quietly declines to use it. Worth fixing in the
+example even if the model change is the application's business.
 
 ---
 
@@ -284,7 +349,11 @@ and both traps.
   have, under a header that still says "Writer". The generic vocabulary in it (`#ToolCard`,
   `#InspectorCaption`, `#PrimaryButton`, the scrollbars, the menus) is genuinely good and
   worth keeping; the rest is confusing to a new developer, who cannot tell which names are
-  contract and which are leftovers.
+  contract and which are leftovers. This change legitimised three more of them —
+  `#InspectorTabs`, `#InspectorPanel`, `#InspectorPlaceholder`, `#InspectorTitle` and
+  `#InspectorNotes` now have real users — which makes the remaining orphans easier to name:
+  `#BinderResults`, `#ReadthroughTable`, `#InspectorSynopsis`, `#InspectorName`,
+  `#InspectorStats`, the Corkboard block and the Zen block.
 - **`SidebarShell._add_panel` ended with an unconditional `setCurrentIndex(0)`.** Correct,
   because registration only happens at startup — but it is the kind of thing that stops being
   correct silently if registration ever becomes dynamic. Worth a comment upstream if the tab
@@ -303,6 +372,10 @@ Recording these so a future backport does not over-reach:
   package exports a module-level `SPEC` and the composition roots name the packages. We wrote
   a registry first and deleted it: there was nobody to arbitrate, and a registry in `domain/`
   fed entirely from `modules/` is an inverted dependency wearing a type.
+- **The step detail panel's tab host stayed in its module** rather than becoming
+  `framework/inspector_panel.py`. One caller, and two of its concerns — the title header and
+  the host-supplied empty page — are not the framework's. See §1 for why the gap upstream is
+  still worth closing.
 - **Lookup by "an id, a folder name, or part of a title" lives in `cli/`**, not in the model.
   It is a command-line affordance — resolving what a person typed — and the model should not
   have opinions about fuzzy matching.

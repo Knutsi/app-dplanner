@@ -1,8 +1,8 @@
 """The "Projects" folder in the index tree.
 
-It owns one folder and everything under it: a row per project, and under each, a row per
-step. That nesting is the reason the sidebar is a tree — the index shows the workspace's
-shape without opening anything.
+It owns one folder and everything under it: a row per project, and nothing below. Steps used
+to nest here, and moving them out is what the graph editor is for — an index answers "what is
+in this workspace", and a step is a position in a graph, which a list of rows cannot show.
 
 The segment publishes what is selected and opens what is activated. It does not know what an
 editor is: opening goes through a callback the composition root supplied.
@@ -25,7 +25,7 @@ KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 
 
 class ProjectsSegment:
-    """Projects, and the steps under each. Rebuilt whenever the model changes shape."""
+    """A row per project. Rebuilt whenever the model changes shape."""
 
     def __init__(
         self,
@@ -60,8 +60,6 @@ class ProjectsSegment:
         kind, node_id = self._identity(item)
         if kind == "project" and node_id:
             self._open_project(node_id)
-        elif kind == "step" and node_id:
-            self._open_project(self._product.project_of(node_id).id)
 
     def context_menu(self, item: QTreeWidgetItem) -> QMenu | None:
         kind, _node_id = self._identity(item)
@@ -81,7 +79,8 @@ class ProjectsSegment:
         """Redraw the folder, keeping open what the user had open.
 
         A whole redraw rather than a diff: a product holds tens of projects, not thousands,
-        and a diff is where tree bugs live.
+        and a diff is where tree bugs live. Expansion is still restored because a folder the
+        user closed should stay closed — and because segments below this one may nest.
         """
         open_keys = expansion_of(self._root)
         self._root.takeChildren()
@@ -90,11 +89,6 @@ class ProjectsSegment:
             row.setData(0, Qt.ItemDataRole.UserRole, project.id)
             row.setData(0, KIND_ROLE, "project")
             self._root.addChild(row)
-            for step in project.steps:
-                child = QTreeWidgetItem([step.title or "Untitled step"])
-                child.setData(0, Qt.ItemDataRole.UserRole, step.id)
-                child.setData(0, KIND_ROLE, "step")
-                row.addChild(child)
         restore_expansion(self._root, open_keys)
 
     def _identity(self, item: QTreeWidgetItem) -> tuple[str, str]:

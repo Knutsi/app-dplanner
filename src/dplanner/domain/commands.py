@@ -227,31 +227,47 @@ class SetModuleDataCommand:
 
     An aspect is edited through the undo stack like everything else, which is what lets the
     CLI set an estimate and the GUI undo it.
+
+    ``label`` is what the Edit menu says, the way :class:`EditTextCommand` has one: "Set
+    Estimate" and "Move Step" are the same mechanism and should not both read "Edit".
     """
 
-    def __init__(self, node_id: NodeId, module_id: str, data: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        node_id: NodeId,
+        module_id: str,
+        data: dict[str, Any],
+        view_origin: object | None = None,
+        label: str = "",
+    ) -> None:
         self.node_id = node_id
         self.module_id = module_id
         self.data = dict(data)
+        self.label = label
         self._before: dict[str, Any] | None = None
+        self._next_origin = view_origin
 
     def text(self) -> str:
+        if self.label:
+            return self.label
         return "Clear" if not self.data else "Edit"
 
     def redo(self, product: Product) -> None:
         if self._before is None:
             self._before = dict(product.node(self.node_id).module_data.get(self.module_id, {}))
-        product.set_module_data(self.node_id, self.module_id, self.data)
+        product.set_module_data(self.node_id, self.module_id, self.data, self._next_origin)
+        self._next_origin = UNDO_ORIGIN
 
     def undo(self, product: Product) -> None:
         assert self._before is not None
-        product.set_module_data(self.node_id, self.module_id, self._before)
+        product.set_module_data(self.node_id, self.module_id, self._before, UNDO_ORIGIN)
 
     def merge_with(self, other: Command) -> bool:
         if (
             not isinstance(other, SetModuleDataCommand)
             or other.node_id != self.node_id
             or other.module_id != self.module_id
+            or other.label != self.label
         ):
             return False
         self.data = other.data

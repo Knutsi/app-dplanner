@@ -208,7 +208,7 @@ class Product(Node):
         self.text_edited: Signal[TextEdit, Origin] = Signal()
         self.edges_changed: Signal[StepId, Origin] = Signal()
         self.structure_changed: Signal[NodeId] = Signal()  # The changed parent's id.
-        self.module_data_changed: Signal[NodeId, str] = Signal()
+        self.module_data_changed: Signal[NodeId, str, Origin] = Signal()
         # (owner id, aspect) — the framework's autosave debounces this.
         self.dirty: Signal[str, str] = Signal()
 
@@ -319,30 +319,47 @@ class Product(Node):
 
     # -- edges ---------------------------------------------------------------------------------
 
+    def link_refusal(self, step_id: StepId, kind: str, target: StepId) -> str | None:
+        """Why ``step_id`` cannot wait on ``target``, or None when it can.
+
+        Four refusals, and each is a graph that would otherwise be quietly unsatisfiable: an
+        unknown kind, a step pointing at itself, a target that does not exist or lives in
+        another project, and — for an ordering kind — a chain that leads back here.
+
+        This is a question as well as an answer. :meth:`set_edges` asks it before it writes,
+        and a view dragging a link asks it under the cursor so it can refuse *before* the
+        drop rather than with a dialog afterwards. One implementation, so the live feedback
+        and the write can never disagree about what is legal.
+        """
+        if kind not in EDGE_KINDS:
+            return f"{kind!r} is not an edge kind: {', '.join(sorted(EDGE_KINDS))}"
+        if target == step_id:
+            return "a step cannot depend on itself"
+        project = self.project_of(step_id)
+        if project.step(target) is None:
+            return f"no such step in {project.title!r}: {target}"
+        if EDGE_KINDS[kind] and self._reaches(target, step_id, kind):
+            return f"{self.step(target).title!r} already waits on this step — that is a cycle"
+        return None
+
     def set_edges(
         self, step_id: StepId, kind: str, targets: list[StepId], origin: Origin = None
     ) -> None:
         """Replace one kind of incoming edge, refusing anything that cannot be true.
 
-        Four refusals, and each is a graph that would otherwise be quietly unsatisfiable: an
-        unknown kind, a step pointing at itself, a target that does not exist or lives in
-        another project, and — for an ordering kind — a chain that leads back here. Catching
-        a cycle at the model means everything above it never has to.
+        The refusals are :meth:`link_refusal`'s; catching them at the model means everything
+        above it never has to.
         """
         if kind not in EDGE_KINDS:
+            # Checked here as well as in link_refusal: clearing an unknown kind passes no
+            # targets, so the loop below would never look at it.
             raise ValueError(f"{kind!r} is not an edge kind: {', '.join(sorted(EDGE_KINDS))}")
         step = self.step(step_id)
-        project = self.project_of(step_id)
         wanted = list(dict.fromkeys(targets))  # De-duplicate, keep the given order.
         for target in wanted:
-            if target == step_id:
-                raise ValueError("a step cannot depend on itself")
-            if project.step(target) is None:
-                raise ValueError(f"no such step in {project.title!r}: {target}")
-            if EDGE_KINDS[kind] and self._reaches(target, step_id, kind):
-                raise ValueError(
-                    f"{self.step(target).title!r} already waits on this step — that is a cycle"
-                )
+            refusal = self.link_refusal(step_id, kind, target)
+            if refusal is not None:
+                raise ValueError(refusal)
         if step.edges.get(kind, []) == wanted:
             return
         if wanted:
@@ -431,15 +448,22 @@ class Product(Node):
 
     # -- module data ---------------------------------------------------------------------------
 
-    def set_module_data(self, node_id: NodeId, module_id: str, data: dict[str, Any]) -> None:
-        """Replace one module's entry. An empty dict removes it, and the file with it."""
+    def set_module_data(
+        self, node_id: NodeId, module_id: str, data: dict[str, Any], origin: Origin = None
+    ) -> None:
+        """Replace one module's entry. An empty dict removes it, and the file with it.
+
+        Takes an ``origin`` like every other mutator here. An aspect editor is a view of this
+        data, so without one it would hear the echo of its own write and reload the field the
+        user is still typing in.
+        """
         node = self._nodes[node_id]
         if data:
             node.module_data[module_id] = data
         else:
             node.module_data.pop(module_id, None)
         self.dirty.emit(node_id, "module_data")
-        self.module_data_changed.emit(node_id, module_id)
+        self.module_data_changed.emit(node_id, module_id, origin)
 
 
 def unique_folder_name(title: str, taken: set[str]) -> str:

@@ -23,11 +23,12 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     "File": ("open", "product", "save", "branch", "window"),
     "Edit": ("history",),
     "View": ("panels", "zoom", "theme", "window"),
-    # The planner's own vocabulary. "Project" is also what the index tree's right-click
-    # menu renders — see framework/action_menu.py. There is deliberately no "Step" menu
-    # yet: steps have no GUI surface until the graph editor, and an empty menu is worse
-    # than no menu.
+    # The planner's own vocabulary. "Project" is what the index tree's right-click menu
+    # renders and "Step" is what the graph canvas's does — see framework/action_menu.py.
+    # Linking is deliberately not a Step verb: it needs two entities, and nothing publishes
+    # a two-entity context. The canvas expresses it as a drag and the CLI as `step link`.
     "Project": ("edit", "open"),
+    "Step": ("edit",),
     "Tools": ("agent",),
     "Debug": ("llm",),
     "Help": ("about",),

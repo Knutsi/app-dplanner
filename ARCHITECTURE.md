@@ -120,6 +120,72 @@ a framework spec; and **expansion state survives a rebuild** through shared help
 rebuilding on change is the normal case and that bookkeeping is what every segment would
 otherwise copy.
 
+## How a panel gets editors it has never heard of
+
+The step detail panel shows a tab per aspect — Estimate, Ticket, Description, Agent — and
+nothing in it knows those four exist. Three seams do that, and they are worth naming because
+the same three answer every "feature A needs feature B" question this application will have.
+
+**A provider module.** `step_properties` owns the panel and `register()`s nothing at all. Its
+whole job is `create_panel()`. That looks odd until a second host wants one, at which point it
+is the only arrangement that does not duplicate the panel or make one feature import another.
+
+**A consumer-owned Protocol.** `project_editor` declares the interface it needs — `widget`,
+`show_step`, `dispose` — in its own file, and types its `Deps` field as
+`Callable[[QWidget], StepPanel] | None`. The real panel satisfies it structurally and never
+learns who hosts it. The `| None` is not defensiveness: an editor with no panel is a legitimate
+build, and saying so in the type is cheaper than discovering it later.
+
+**A registry for the contributors.** Aspect modules register an `InspectorSection` into
+`services.inspector_sections`; the panel reads that registry when it is *built*, not when the
+modules load, so a contributor's position in the composition root is free.
+
+The composition root is the only place that knows all three, and it says so in ten lines:
+
+```python
+step_properties = StepPropertiesModule(StepPropertiesDeps(..., sections=services.inspector_sections))
+project_editor  = ProjectEditorModule(ProjectEditorDeps(..., detail_panel=step_properties.create_panel))
+projects        = ProjectsModule(ProjectsDeps(..., open_project=project_editor.open))
+```
+
+This is Writer's arrangement, borrowed wholesale. Its `segment_properties` module serves a
+corkboard, a segment editor and a continuous editor the same way, which is the evidence that
+the shape survives contact with a third host.
+
+**What the panel is not.** The project's name and summary are not a section. An
+`InspectorExtension`'s whole contract is `show_target(step_id | None)` — one target
+vocabulary — and making the project form a peer would force every aspect editor to answer
+"what if this is a project?" and hide itself, which is precisely the conditional the registry
+exists to delete. So the panel has two pages, the host supplies the empty one, and the project
+form arrives from `project_editor` as a widget the panel never inspects.
+
+## The graph, and what it stores
+
+A project is a graph, so the tab is a canvas: `QGraphicsView` gives selection, dragging,
+hit-testing and zoom for free. Writer's corkboard is 2,200 hand-rolled lines because cards
+flow in a grid; free positions are the case Qt already handles.
+
+Two decisions keep it small. **Nodes diff, edges rebuild** — a node may be under the mouse
+mid-drag and must keep its identity, while edges never are and there are only tens of them, so
+reconciling one and replacing the other avoids a diffing engine. **The scene reports, the
+activity commands** — every gesture ends in a signal, and the activity turns it into something
+on the undo stack, so a drag is undoable and the model stays the only authority on what a legal
+graph is.
+
+That last point is why `Product.link_refusal()` exists. A link drag needs to know *before* the
+drop whether an edge would be a cycle, and the alternative — a second reachability check in the
+view — is two implementations that will eventually disagree. So the refusal is a question the
+model answers, `set_edges` asks it before writing, and the canvas asks it under the cursor.
+There is no error dialog anywhere in the interaction because there is never anything to
+apologise for.
+
+**Node positions are stored, automatic layout is not.** A step nobody has moved is placed by
+`requires` depth, recomputed each time the project opens. Persisting that would mean merely
+opening a tab dirtied the workspace, autosave flushed it 1.5 seconds later, and every step an
+agent created through the CLI grew a position file the next time a window happened to open. A
+test asserts the workspace is unchanged after a tab is opened, because that is the kind of rule
+that decays silently.
+
 ## Two writers, one workspace
 
 The scenario DPlanner is built for — an agent refining a plan *with* the user — means the
@@ -171,12 +237,8 @@ same registry and introduces no second description of any command.
 
 ## Where this is going
 
-- **A graph editor** — a canvas for steps and their edges. It is the module that will take
-  the `step` CLI group with it; a `CliCommand` moves between packages without anything else
-  changing.
-- **Editors for the aspects** — a card per aspect in a step's detail panel. Each is a
-  `register()` that is currently a documented no-op, and the data they will edit is already
-  being written.
+- **More of the canvas** — panning beyond the scroll bars, edge selection and deletion, and
+  a second edge kind that can be drawn rather than only typed.
 - **Estimation and prioritisation over the graph** — `estimate rollup` is the first inch of
   it. What a planner is really for is answering "what can I start now, and when does this
   land", and both questions are walks over the graph reading aspects.

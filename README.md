@@ -21,18 +21,17 @@ Product  ── the system level: a name, a repository URL, a checkout. One per 
 the graph and refuses cycles, `relates` is a plain link. Deleting a step deliberately does
 *not* rewrite anybody else's edges, because undo has to restore the graph exactly.
 
-**Aspects are what the graph does not know.** An estimate, a ticket, a description: none of
-them are fields on a step. Each is a module's namespaced entry beside the step — JSON, prose
+**Aspects are what the graph does not know.** An estimate, a ticket, a description, an
+instruction for a coding agent: none of them are fields on a step. Each is a module's namespaced entry beside the step — JSON, prose
 or files — versioned by the module that writes it, so a feature arrives without the model
 learning anything about it. `dplanner aspect list` says which exist in a build.
 
 ## Status
 
-Early, and honest about it. The model, the storage layer, the index tree, the project tab
-and the whole CLI are in place and tested. Three aspects ship — estimation, ticket,
-description — and none of them has an editor yet: they are written from the CLI, which is
-what the `data_format` declaration makes safe. The graph editor, reports, and prioritisation
-over the graph are not written.
+Early, and honest about it. The model, the storage layer, the index tree, the whole CLI and
+the graph editor are in place and tested. Four aspects ship — estimate, ticket, description,
+agent instruction — each with a tab in the step panel and verbs in the CLI. Reports and
+prioritisation over the graph are not written, and the canvas has no pan beyond scrolling.
 
 ## Running
 
@@ -68,6 +67,7 @@ dplanner step add search "Read the spec"
 dplanner step add search "Draft the model" --after "Read the spec"
 dplanner estimate set "Draft the model" --days 5
 dplanner describe set "Read the spec" --file notes.md
+dplanner agent set "Draft the model" --file how-to.md   # what an agent should know first
 dplanner project export search > plan.json   # and `import` reads the same shape back
 ```
 
@@ -144,16 +144,21 @@ src/dplanner/
 │
 ├── framework/             ── from the template, and evolved here. The Qt machinery.
 │   ├── index_panel.py       the sidebar: one tree, folders from whoever registered them
+│   ├── inspector.py         what a module registers to appear in a detail panel
+│   ├── prose_section.py     a panel section over one document, bound to the undo stack
 │   ├── window_watch.py      noticing that another writer changed the workspace
 │   └── …                    registries, actions, tabs, undo, autosave, tasks, LLM
 │
 ├── modules/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
 │   ├── product/             the product's identity: name, repository, checkout
-│   ├── projects/            the index folder, the project tab, and the project/step verbs
-│   ├── step_estimation/     ── the three step aspects. No editors yet; CLI and data only.
+│   ├── projects/            the Projects folder in the index, and the project verbs
+│   ├── project_editor/      a project in a tab: the graph canvas, hosting a detail panel
+│   ├── step_properties/     THE step detail panel — built for whoever hosts one
+│   ├── step_estimation/     ── the four step aspects: data, editor and verbs each
 │   ├── step_ticket/
 │   ├── step_description/
+│   ├── step_agent_instruction/
 │   ├── workspace_watch/     reloading when something else writes to the workspace
 │   ├── agent_skill/         installing the generated skill from the window
 │   ├── appshell/  workspaces/  sync/  settings/  taskcenter/  debug/

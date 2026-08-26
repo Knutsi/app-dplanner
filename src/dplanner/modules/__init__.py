@@ -52,13 +52,22 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.product.module import ProductDeps, ProductModule
+    from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.projects.module import ProjectsDeps, ProjectsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
+    from dplanner.modules.step_agent_instruction.module import (
+        StepAgentInstructionDeps,
+        StepAgentInstructionModule,
+    )
     from dplanner.modules.step_description.module import (
         StepDescriptionDeps,
         StepDescriptionModule,
     )
     from dplanner.modules.step_estimation.module import StepEstimationDeps, StepEstimationModule
+    from dplanner.modules.step_properties.module import (
+        StepPropertiesDeps,
+        StepPropertiesModule,
+    )
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
@@ -82,6 +91,41 @@ def default_modules(services: "AppServices") -> list["Module"]:
         """One short phrase per aspect that has something to say about this step."""
         step = product.step(step_id)
         return [phrase for phrase in (summary(step) for summary in aspect_summaries()) if phrase]
+
+    # Three modules that only make sense together, constructed before the list so the
+    # wiring between them is readable as wiring rather than as ordering:
+    #
+    #   step_properties  builds THE step detail panel and registers nothing at all
+    #   project_editor   hosts one, and opens projects into tabs
+    #   projects         puts projects in the index and opens them through the editor
+    #
+    # None of the three imports either of the others. Construction is side-effect-free, so
+    # ordering here is about legibility; what matters at run time is that the aspect modules
+    # have registered their sections before the editor builds its first panel, which is a
+    # position in the list below.
+    step_properties = StepPropertiesModule(
+        StepPropertiesDeps(
+            product=product,
+            undo=services.undo,
+            sections=services.inspector_sections,
+            theme=services.theme,
+        )
+    )
+    project_editor = ProjectEditorModule(
+        ProjectEditorDeps(
+            product=product,
+            actions=services.actions,
+            context=services.context,
+            tabs=services.tabs,
+            undo=services.undo,
+            status=services.window,
+            parent=services.window,
+            # The editor asks for a panel and never learns what fills it.
+            detail_panel=step_properties.create_panel,
+            # A node's second line: whatever the aspects have to say about that step.
+            step_aspects=step_aspects,
+        )
+    )
 
     return [
         # -- the shell -------------------------------------------------------------------
@@ -186,21 +230,38 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 product=product,
                 actions=services.actions,
                 context=services.context,
-                tabs=services.tabs,
                 undo=services.undo,
                 segments=services.index_segments,
                 parent=services.window,
-                # The project tab shows what each aspect has to say about a step. It never
-                # learns which aspects exist; they never learn a project tab renders them.
-                step_aspects=step_aspects,
+                # The index opens a project without knowing what an editor is.
+                open_project=project_editor.open,
             )
         ),
         # -- the step aspects --------------------------------------------------------------
-        # No surface yet: each declares data_format so the builder migrates its data when a
-        # window opens an older workspace, and each contributes its verbs to the CLI.
-        StepEstimationModule(StepEstimationDeps()),
-        StepTicketModule(StepTicketDeps()),
-        StepDescriptionModule(StepDescriptionDeps()),
+        # Each registers one tab into the step detail panel. They must come before the
+        # editor, which builds its first panel from whatever has registered by then.
+        StepEstimationModule(
+            StepEstimationDeps(
+                product=product, undo=services.undo, sections=services.inspector_sections
+            )
+        ),
+        StepTicketModule(
+            StepTicketDeps(
+                product=product, undo=services.undo, sections=services.inspector_sections
+            )
+        ),
+        StepDescriptionModule(
+            StepDescriptionDeps(
+                product=product, undo=services.undo, sections=services.inspector_sections
+            )
+        ),
+        StepAgentInstructionModule(
+            StepAgentInstructionDeps(
+                product=product, undo=services.undo, sections=services.inspector_sections
+            )
+        ),
+        step_properties,
+        project_editor,
         AgentSkillModule(
             AgentSkillDeps(
                 actions=services.actions,
@@ -235,6 +296,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.cli.skill import commands as skill_commands
     from dplanner.modules.product import cli as product_cli
     from dplanner.modules.projects import cli as projects_cli
+    from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_estimation import cli as estimation_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
@@ -246,6 +308,7 @@ def default_cli_commands() -> list["CliCommand"]:
         *estimation_cli.commands(),
         *ticket_cli.commands(),
         *description_cli.commands(),
+        *agent_cli.commands(),
         *aspect_commands(specs),
     ]
     # The skill describes the registry it is registered into, so the loop is closed here
@@ -264,20 +327,22 @@ def aspect_specs() -> list["AspectSpec"]:
     an agent uses to find out what a step can carry. Each package declares its own ``SPEC``;
     this is only the list of packages, in the order a person would read them.
     """
+    from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_estimation import aspect as estimation
     from dplanner.modules.step_ticket import aspect as ticket
 
-    return [description.SPEC, estimation.SPEC, ticket.SPEC]
+    return [agent.SPEC, description.SPEC, estimation.SPEC, ticket.SPEC]
 
 
 def aspect_summaries() -> list[Callable[["Step"], str]]:
     """Each aspect's one-phrase description of a step, for whoever renders a step row."""
+    from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_estimation import aspect as estimation
     from dplanner.modules.step_ticket import aspect as ticket
 
-    return [estimation.summary, ticket.summary, description.summary]
+    return [estimation.summary, ticket.summary, description.summary, agent.summary]
 
 
 def default_module_formats() -> list[ModuleDataFormat]:
@@ -288,7 +353,11 @@ def default_module_formats() -> list[ModuleDataFormat]:
     the same list has to be reachable without them — and it must stay complete, because a
     format missing here is data the CLI silently declines to bring forward.
     """
-    return [spec.data_format for spec in aspect_specs()]
+    from dplanner.modules.project_editor import positions
+
+    # The aspects, plus the one module data that is not an aspect: the graph's node
+    # positions. Deriving this list from aspect_specs() alone would silently omit it.
+    return [spec.data_format for spec in aspect_specs()] + [positions.DATA_FORMAT]
 
 
 def choose_workspace() -> StorageLocation | None:

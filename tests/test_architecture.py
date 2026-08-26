@@ -43,6 +43,11 @@ SRC = Path(__file__).parent.parent / "src" / "dplanner"
 PACKAGE = SRC.name
 
 QT_PACKAGES = ("PySide6", "shiboken6")
+
+# Files inside a module package that the CLI reaches, and which must therefore load no Qt.
+# Checked by name because that is what makes the rule visible from the filename: if the
+# composition root imports a file at CLI time, it belongs in this tuple.
+HEADLESS_FILES = ("cli.py", "aspect.py", "positions.py")
 CONCRETE_STORAGE = (
     f"{PACKAGE}.core.storage.local",
     f"{PACKAGE}.core.storage.git",
@@ -159,11 +164,11 @@ def collect_violations() -> list[str]:
                 # The headless half of a module. The composition root reaches these through
                 # `dplanner.modules`, so one Qt import here would put a graphics stack in
                 # every CLI invocation.
-                if path.name in ("cli.py", "aspect.py"):
+                if path.name in HEADLESS_FILES:
                     if name.startswith(QT_PACKAGES):
-                        forbid(path, line, name, "a module's cli.py/aspect.py loads no Qt")
+                        forbid(path, line, name, f"a module's {path.name} loads no Qt")
                     if name.startswith(f"{PACKAGE}.framework"):
-                        forbid(path, line, name, "a module's cli.py/aspect.py uses core and domain")
+                        forbid(path, line, name, f"a module's {path.name} uses core and domain")
                 if name.startswith(f"{PACKAGE}.modules."):
                     other = name.split(".")[2] if len(name.split(".")) > 2 else ""
                     if other and other != own:
