@@ -138,12 +138,22 @@ Two behaviours follow, and both matter once a workspace is shared:
   would be the only key, an empty entry removes the file, an emptied file area is removed
   with its directories, and `modules/` goes when it empties.
 
+**Not every module entry is an aspect.** The graph editor stores each node's position as
+`modules/project_editor.json` beside the step, and it is deliberately *not* an `AspectSpec`:
+an aspect is a fact about the work that an agent may want to write, and a layout is
+presentation. It is per step rather than one map on the project so that moving a node is a
+one-file diff — the same reasoning as ordering living in the parent's list. The distinction
+has one practical consequence worth knowing: the CLI's migration list is built from the
+aspects *plus* anything like this, and a format missing from it is data the CLI silently
+declines to bring forward.
+
 **A module that writes a number owes it a `float`.** The product format used to enforce this
 at the model boundary, because an `int` writes as `5` where a reloaded float writes as `5.0`
 — making a file's bytes depend on whether the workspace had been reopened since it was
 written. Module data is opaque to the model and `stamped()` writes whatever dict it is
 handed, so on this axis the duty belongs to whoever owns the number. See
-`modules/step_estimation/aspect.py`, which is the reference for it.
+`modules/step_estimation/aspect.py`, which is the reference for it, and
+`modules/project_editor/positions.py`, which owes it for a coordinate.
 
 ## Two writers, one folder
 

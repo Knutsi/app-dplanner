@@ -41,7 +41,9 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
 - Only add comments that carry durable value for future developers and agents. Otherwise,
   make the code self-documenting.
 - `DESIGN.md` is the standard for all UI work here. `FORMAT.md` is the standard for anything
-  that reaches disk.
+  that reaches disk. `ARCHITECTURE.md` is where a rule's *reasoning* lives — when you settle an
+  architectural question, write the rule here and the why there, and have each point at the
+  other. A decision that lives only in a commit message is one the next feature rediscovers.
 
 ## Checks — run all three before finishing any task
 
@@ -98,9 +100,14 @@ It follows that a feature has two halves in one package:
 ```
 modules/<name>/
 ├── module.py    the Qt half: the module class, its Deps, its views
-├── cli.py       the headless half: CliCommand specs             ← imports no Qt
-└── aspect.py    for a step aspect: SPEC, DATA_FORMAT, read/write ← imports no Qt
+├── cli.py       the headless half: CliCommand specs                ← imports no Qt
+├── aspect.py    for a step aspect: SPEC, DATA_FORMAT, read/write    ← imports no Qt
+└── section.py   the editor it puts in the step detail panel
 ```
+
+The Qt-free files are checked by **name** — see `HEADLESS_FILES` in
+`tests/test_architecture.py`. If the composition root reaches a new file at CLI time, add it
+to that tuple; a file the rule cannot see is a rule that is only a habit.
 
 ## How to add a feature module
 
@@ -114,16 +121,25 @@ modules/<name>/
    are automatic. **Add a group rather than smuggling structure into `order`.**
 3. If the module needs something another module provides, declare a typed callback — or a
    small consumer-owned `Protocol` — on your own `Deps`, and wire it in
-   `modules/__init__.py`. Never import the other module.
+   `modules/__init__.py`. Never import the other module. `modules/project_editor/module.py`
+   is the worked example: it names the panel interface it needs and is handed a factory.
+   If what you provide is a *widget* other features host, the module that owns it registers
+   nothing and exposes a `create_…()` — see `modules/step_properties/`.
 4. If it stores data, declare `data_format = ModuleDataFormat(...)` on the class and read
    `node.module_data[MODULE_ID]`; prose goes in `node.module_text[MODULE_ID]` and files in
-   `store.files(node_id, MODULE_ID)`. See `FORMAT.md`.
-5. If it has verbs, add `cli.py` with a `commands()` function returning `CliCommand`s, and
+   `store.files(node_id, MODULE_ID)`. See `FORMAT.md`. **Add the format to
+   `default_module_formats()` if it is not an aspect** — that list is what the CLI migrates
+   with, and it is derived from the aspects plus whatever is named explicitly.
+5. To put an editor in the step detail panel, register an `InspectorSection` whose `factory`
+   returns an `InspectorExtension`. For one prose document that is
+   `ProseSection(field_for, undo, placeholder)` and nothing else — the framework owns the
+   binding mechanics.
+6. If it has verbs, add `cli.py` with a `commands()` function returning `CliCommand`s, and
    list it in `default_cli_commands()`. Keep it Qt-free.
-6. Construct it in `default_modules()`. **List order is registration order and it matters** —
+7. Construct it in `default_modules()`. **List order is registration order and it matters** —
    status-bar widget order, index folder order, and whether a surface exists before whoever
    renders it is built. Put a comment on any position that is constrained.
-7. Leave the package `__init__.py` as a docstring — the composition root imports
+8. Leave the package `__init__.py` as a docstring — the composition root imports
    `from dplanner.modules.<name>.module import <Name>Deps, <Name>Module`. Re-exporting the
    Qt half there would make the package's Qt-free files unreachable without loading Qt, and
    the CLI reaches them through this package. Add tests under `tests/modules/`; keep
@@ -134,6 +150,16 @@ root, stop and look for the registry or capability you have not found yet.
 
 ## Mechanical facts worth knowing
 
+- **Every change follows one chain: `action(context) → command → model → signal → views`.**
+  A gesture is not a special case — a canvas drop runs the same `ActionSpec` the menu does, so
+  the verb exists in the palette too and can be tested by handing it a constructed `Context`
+  with no widget in sight. Nothing pushes an update at a view: the model emits, each view
+  decides what to redraw, and the `origin` is how the view that caused the change knows to
+  ignore its own echo. **`ARCHITECTURE.md` has the diagram and why each link is there** — read
+  it before adding a surface that changes anything.
+- **Work may leave the GUI thread; mutation may not.** `core.signals.Signal` is synchronous
+  and has no thread affinity, so the model is only ever changed on the GUI thread. Anything
+  computed off it returns through `TaskRunner`, the one place that uses real Qt signals.
 - **There is no Save-file action.** Autosave writes 1.5 s after the last change; *Save*
   means recording a version, and it only exists when the storage provider has a history. The
   CLI has no timer: a run is a transaction that flushes once, at the end, and writes nothing
@@ -153,6 +179,14 @@ root, stop and look for the registry or capability you have not found yet.
   deliberately *not* rewritten when a step is deleted — undo has to restore the graph
   exactly. `Product.requires()` skips ids it cannot resolve. Edge kinds this build does not
   know are loaded and written back untouched.
+- **`Product.link_refusal()` is the only authority on a legal edge.** `set_edges` asks it
+  before writing, and `steps.link`'s state asks it to decide whether the menu entry is enabled
+  and what a greyed one says. Never write a second reachability check in a view — the one that
+  existed refused every drop for a fortnight because it read gesture state that had already
+  been cleared.
+- **Automatic graph layout is never persisted.** A node nobody moved is placed by dependency
+  depth every time the project opens. Storing that would make merely opening a tab dirty the
+  workspace, and every CLI-created step would grow a position file behind the user's back.
 - **A module that writes a number owes it a `float`.** An `int` writes as `5` where a
   reloaded float writes as `5.0`, making a file's bytes depend on whether the workspace had
   been reopened. `module_data` is opaque to the model, so the coercion belongs in the

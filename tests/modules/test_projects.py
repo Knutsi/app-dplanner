@@ -38,22 +38,21 @@ def test_the_module_contributes_one_index_folder(services):
     assert [segment.id for segment in services.index_segments.segments()] == ["projects"]
 
 
-def test_the_folder_shows_projects_and_their_steps(services, project):
+def test_the_folder_shows_projects_and_not_their_steps(services, project):
+    """Steps left the index when the graph arrived: a step is a position in a graph, which
+    a list of rows cannot show."""
     panel = services.window.sidebar()
     root = panel.tree.topLevelItem(0)
     assert root.text(0) == "Projects"
     assert root.child(0).text(0) == "Discovery"
-    assert root.child(0).child(0).text(0) == "Read the spec"
+    assert root.child(0).childCount() == 0
 
 
 def test_the_folder_follows_the_model(services, project):
     panel = services.window.sidebar()
     root = panel.tree.topLevelItem(0)
-    AddNodeCommand(project.id, Step(title="Draft the model")).redo(services.document)
-    assert [root.child(0).child(i).text(0) for i in range(root.child(0).childCount())] == [
-        "Read the spec",
-        "Draft the model",
-    ]
+    AddNodeCommand(services.document.id, Project(title="Build")).redo(services.document)
+    assert [root.child(i).text(0) for i in range(root.childCount())] == ["Discovery", "Build"]
 
 
 def test_selecting_a_row_publishes_the_selection_scope(services, project):
@@ -118,46 +117,3 @@ def test_rename_reaches_the_tab_title(services, project, monkeypatch):
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Discovery Phase", True))
     services.actions.run("projects.rename", select(services, "project", project.id))
     assert [a.title for a in services.tabs.activities()] == ["Discovery Phase"]
-
-
-# -- the tab -----------------------------------------------------------------------------------
-
-
-@pytest.fixture
-def tab(services, project):
-    return services.tabs.open("project", project.id)
-
-
-def test_the_tab_lists_the_steps(services, project, tab):
-    assert tab._steps.count() == 1
-    assert tab._steps.item(0).text() == "Read the spec"
-
-
-def test_a_steps_second_line_says_what_it_waits_on(services, project, tab):
-    from dplanner.domain.commands import SetEdgesCommand
-
-    first = project.steps[0]
-    second = Step(title="Draft the model")
-    AddNodeCommand(project.id, second).redo(services.document)
-    SetEdgesCommand(second.id, "requires", [first.id]).redo(services.document)
-
-    from dplanner.modules.projects.steplist import SECONDARY_ROLE
-
-    assert tab._steps.item(1).data(SECONDARY_ROLE) == "after Read the spec"
-
-
-def test_editing_the_summary_is_undoable(services, project, tab):
-    tab._summary.setText("what we do not know")
-    tab._summary.editingFinished.emit()
-    assert project.summary == "what we do not know"
-    services.undo.undo()
-    assert project.summary == ""
-
-
-def test_the_tab_says_so_when_there_are_no_steps(services):
-    product = services.document
-    empty = Project(title="Empty")
-    AddNodeCommand(product.id, empty).redo(product)
-    activity = services.tabs.open("project", empty.id)
-    assert activity._empty.isVisibleTo(activity.widget)
-    assert not activity._steps.isVisibleTo(activity.widget)

@@ -1,7 +1,10 @@
-"""The description aspect, in the running application: one registration, the Description tab.
+"""The agent-instruction aspect, in the running application: one registration, the Agent tab.
 
-The editor itself is :class:`~dplanner.framework.prose_section.ProseSection` — the framework
-owns the binding mechanics, so all this module supplies is which document to edit.
+Deliberately a near-twin of ``step_description``'s module, and that is the price of "modules
+never import each other". The part worth sharing is already shared:
+:class:`~dplanner.framework.prose_section.ProseSection` and ``ModuleTextField`` do all the
+work, and what is left here is the three facts that make this aspect itself — which document,
+what to call it, and where it sits among the tabs.
 """
 
 from dataclasses import dataclass
@@ -13,23 +16,23 @@ from dplanner.framework.inspector import InspectorSection, InspectorSectionRegis
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.text_binding import TextField
 from dplanner.framework.undo import UndoService
-from dplanner.modules.step_description.aspect import DATA_FORMAT, MODULE_ID, SPEC
+from dplanner.modules.step_agent_instruction.aspect import DATA_FORMAT, MODULE_ID, SPEC
 
-PLACEHOLDER = "What this step is. Markdown; images go in with `dplanner describe attach`."
+PLACEHOLDER = "How to carry this step out: which files, which conventions, what done means."
 
 
 @dataclass(frozen=True)
-class StepDescriptionDeps:
+class StepAgentInstructionDeps:
     product: Product
     undo: UndoService[Product]
     sections: InspectorSectionRegistry
 
 
-class StepDescriptionModule:
+class StepAgentInstructionModule:
     id = MODULE_ID
     data_format = DATA_FORMAT
 
-    def __init__(self, deps: StepDescriptionDeps) -> None:
+    def __init__(self, deps: StepAgentInstructionDeps) -> None:
         self._deps = deps
 
     def register(self) -> None:
@@ -44,7 +47,7 @@ class StepDescriptionModule:
             InspectorSection(
                 id=f"{MODULE_ID}.tab",
                 label=SPEC.label,
-                order=30,
+                order=40,
                 factory=lambda: ProseSection(field_for, deps.undo, PLACEHOLDER),
             )
         )

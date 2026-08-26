@@ -77,7 +77,7 @@ def install_ctrl_wheel_zoom(editor: QAbstractScrollArea, on_steps: Callable[[int
 # pixels; the clamp keeps a stale stored value from leaving the panel invisible or
 # window-filling.
 INSPECTOR_WIDTH_KEY = "appearance/inspector_width"
-INSPECTOR_DEFAULT_WIDTH = 300
+INSPECTOR_DEFAULT_WIDTH = 360
 INSPECTOR_MIN_WIDTH = 200
 INSPECTOR_MAX_WIDTH = 600
 

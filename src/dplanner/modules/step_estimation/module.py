@@ -1,24 +1,24 @@
 """The estimation aspect, in the running application.
 
-There is no editor yet, and that is deliberate rather than unfinished: the ``data_format``
-declaration alone is what makes the workspace forward-compatible, so the CLI can write
-estimates today and a card can arrive later without a migration. What ``register()`` would
-do is contribute that card.
-
-The module still has to exist and be constructed, because declaring ``data_format`` is how
-:class:`~dplanner.framework.builder.AppBuilder` learns to migrate this aspect's data when a
-window opens an older workspace.
+One registration: the Estimate tab. Which panel shows it, and what else is beside it, is
+not this module's business — it registers an :class:`InspectorSection` and the composition
+root does the rest.
 """
 
 from dataclasses import dataclass
 
-from dplanner.modules.step_estimation.aspect import DATA_FORMAT, MODULE_ID
+from dplanner.domain.model import Product
+from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
+from dplanner.framework.undo import UndoService
+from dplanner.modules.step_estimation.aspect import DATA_FORMAT, MODULE_ID, SPEC
+from dplanner.modules.step_estimation.section import EstimateSection
 
 
 @dataclass(frozen=True)
 class StepEstimationDeps:
-    """Nothing yet. The card this module will contribute will want the product and the
-    detail-card registry; adding them here is what that change looks like."""
+    product: Product
+    undo: UndoService[Product]
+    sections: InspectorSectionRegistry
 
 
 class StepEstimationModule:
@@ -29,4 +29,12 @@ class StepEstimationModule:
         self._deps = deps
 
     def register(self) -> None:
-        """No surface yet — see the module docstring."""
+        deps = self._deps
+        deps.sections.register(
+            InspectorSection(
+                id=f"{MODULE_ID}.tab",
+                label=SPEC.label,
+                order=10,
+                factory=lambda: EstimateSection(deps.product, deps.undo),
+            )
+        )

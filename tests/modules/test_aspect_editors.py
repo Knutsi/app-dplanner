@@ -1,0 +1,145 @@
+"""The four aspect editors, as a panel drives them.
+
+The thing worth proving is not that a spin box works. It is the seam: four modules that have
+never heard of each other or of the panel end up as four tabs, each writing through the undo
+stack, each ignoring the echo of its own write.
+"""
+
+import pytest
+from PySide6.QtWidgets import QLabel
+
+from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
+from dplanner.domain.model import Project, Step, TextEdit
+from dplanner.modules.step_estimation.aspect import read as read_estimate
+
+
+@pytest.fixture
+def project(services):
+    product = services.document
+    project = Project(title="Discovery")
+    AddNodeCommand(product.id, project).redo(product)
+    AddNodeCommand(project.id, Step(title="Read the spec")).redo(product)
+    return project
+
+
+@pytest.fixture
+def panel(services, project):
+    made = next(m for m in services.modules if m.id == "step_properties").create_panel(QLabel())
+    made.show_step(project.steps[0].id)
+    yield made
+    made.dispose()
+
+
+def section(panel, label):
+    index = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())].index(label)
+    return panel._pages.widget(index)
+
+
+# -- the seam ------------------------------------------------------------------------------
+
+
+def test_every_registered_aspect_became_a_tab(services, panel):
+    assert [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())] == [
+        "Estimate",
+        "Ticket",
+        "Description",
+        "Agent",
+    ]
+
+
+def test_an_editor_stays_usable_when_its_value_is_empty(panel):
+    """`tab_visible()` gates informational sections. An editor that hid itself while the
+    value was empty would be a tab you could never use to set one."""
+    for label in ("Estimate", "Ticket", "Description", "Agent"):
+        assert section(panel, label).tab_visible()
+
+
+# -- estimation ----------------------------------------------------------------------------
+
+
+def test_an_estimate_is_written_through_the_undo_stack(services, project, panel):
+    step = project.steps[0]
+    editor = section(panel, "Estimate")
+    editor.days.setValue(3.0)
+    editor.days.editingFinished.emit()
+
+    stored = read_estimate(services.document.step(step.id))
+    assert stored is not None and stored.days == 3.0
+    services.undo.undo()
+    assert read_estimate(services.document.step(step.id)) is None
+
+
+def test_clearing_an_estimate_removes_the_entry(services, project, panel):
+    step = project.steps[0]
+    editor = section(panel, "Estimate")
+    editor.days.setValue(3.0)
+    editor.days.editingFinished.emit()
+    editor.days.setValue(0.0)
+    editor.days.editingFinished.emit()
+    assert "step_estimation" not in services.document.step(step.id).module_data
+
+
+def test_a_change_made_elsewhere_reaches_the_estimate(services, project, panel):
+    step = project.steps[0]
+    services.undo.push(SetModuleDataCommand(step.id, "step_estimation", {"days": 5.0, "format": 1}))
+    assert section(panel, "Estimate").days.value() == 5.0
+
+
+def test_the_editor_ignores_the_echo_of_its_own_write(services, project, panel):
+    """The Phase 1 origin fix, exercised: without it the editor reloads the field the user
+    is still typing in."""
+    editor = section(panel, "Estimate")
+    editor.days.setValue(2.0)
+    editor.days.editingFinished.emit()
+    editor.days.setValue(7.0)  # Typed, not yet committed.
+    services.document.set_module_data(
+        project.steps[0].id, "step_estimation", {"days": 2.0, "format": 1}, editor
+    )
+    assert editor.days.value() == 7.0
+
+
+# -- ticket --------------------------------------------------------------------------------
+
+
+def test_a_ticket_is_written_and_undone(services, project, panel):
+    step = project.steps[0]
+    editor = section(panel, "Ticket")
+    editor.edits["key"].setText("WID-14")
+    editor.edits["key"].editingFinished.emit()
+
+    assert services.document.step(step.id).module_data["step_ticket"]["key"] == "WID-14"
+    services.undo.undo()
+    assert "step_ticket" not in services.document.step(step.id).module_data
+
+
+# -- prose ---------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("label", "key"),
+    [("Description", "step_description"), ("Agent", "step_agent_instruction")],
+)
+def test_prose_binds_both_ways(services, project, panel, label, key):
+    step = project.steps[0]
+    editor = section(panel, label)
+    editor.edit.setPlainText("# Notes")
+    assert services.document.text(step.id, key) == "# Notes"
+
+    services.undo.push(EditText(step.id, key, "# Notes", "# Rewritten"))
+    assert editor.edit.toPlainText() == "# Rewritten"
+
+
+def EditText(node_id, key, before, after):  # noqa: N802 - reads as a constructor
+    from dplanner.domain.commands import EditTextCommand
+
+    return EditTextCommand(TextEdit(node_id, key, 0, before, after))
+
+
+def test_prose_detaches_when_nothing_is_selected(services, project, panel):
+    """A binding left pointing at a deselected step would reach the model on the next
+    keystroke and fail to find it."""
+    editor = section(panel, "Description")
+    editor.edit.setPlainText("something")
+    panel.show_step(None)
+    assert not editor.isEnabled()
+    assert editor.edit.toPlainText() == ""

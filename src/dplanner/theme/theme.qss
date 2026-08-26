@@ -333,13 +333,22 @@ QScrollBar::sub-page {
     color: $TEXT_PRIMARY;
 }
 
-/* The step list inside a project tab. Its rows are painted by a delegate (DESIGN.md), so
-   only the frame and the selection colour come from here. */
-#StepList {
+/* The graph canvas in a project tab. Its nodes and edges are painted by the items
+   themselves from the palette (DESIGN.md exception #1), so only the surface comes from
+   here — the canvas is the window colour, not a well, because it is the tab's content
+   rather than something sitting on it. */
+#GraphView {
     background-color: $BG_BASE;
-    border: 1px solid $BORDER;
-    border-radius: ${RADIUS_MD}px;
+    border: none;
+}
+
+/* A prose field inside a detail panel: framed like the panel's other inputs. */
+#InspectorNotes {
+    background-color: $BG_BASE;
     color: $TEXT_PRIMARY;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    padding: 4px;
 }
 
 /* Read-throughs: completion table tab, its notes field, the status-bar widget. */
@@ -470,14 +479,6 @@ QScrollBar::sub-page {
     border: 1px solid $BORDER;
     border-radius: ${RADIUS_SM}px;
     padding: 6px 8px;
-}
-
-#InspectorSynopsis, #InspectorNotes {
-    background-color: $BG_BASE;
-    color: $TEXT_PRIMARY;
-    border: 1px solid $BORDER;
-    border-radius: ${RADIUS_SM}px;
-    padding: 4px;
 }
 
 #InspectorStats {

@@ -57,7 +57,12 @@ def first_step(product):
 
 def test_aspect_list_names_every_aspect(cli):
     ids = {row["id"] for row in json.loads(cli("aspect", "list", "--json"))["aspects"]}
-    assert ids == {"step_estimation", "step_ticket", "step_description"}
+    assert ids == {
+        "step_estimation",
+        "step_ticket",
+        "step_description",
+        "step_agent_instruction",
+    }
 
 
 def test_aspect_list_needs_no_product(tmp_path):
