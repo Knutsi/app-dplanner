@@ -314,3 +314,20 @@ def test_unlink_removes_the_edge(services, project, tab):
     services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
     services.actions.run("steps.unlink", context_of(services, first.id, second.id))
     assert "requires" not in services.document.step(second.id).edges
+
+
+# -- one selection scope, several panes ----------------------------------------------------------
+
+
+def test_a_background_pane_does_not_publish_its_selection(services, project, tab):
+    """There is one selection scope and there can be several panes on screen. A background
+    one re-syncing its canvas — when a step is deleted, say — must not clobber what the pane
+    the user is actually in published."""
+    step = project.steps[0]
+    tab.on_deactivated()
+
+    scene(tab).select_step(step.id)
+    assert services.context.current().selected_entities("step") == []
+
+    tab.on_activated()
+    assert services.context.current().selected_entities("step") == [step.id]

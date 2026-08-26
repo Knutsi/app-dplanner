@@ -162,6 +162,10 @@ class AppBuilder:
         index_panel = IndexPanel(index_segments, context)
         window.set_sidebar(index_panel)
         window.close_hooks.append(index_panel.dispose)
+        # The host watches the application to know which pane the user is in. A workspace
+        # switch builds a new one before the old window has finished going, so the old
+        # watcher has to be told to stop rather than left answering for a dead window.
+        window.close_hooks.append(tabs.dispose)
 
         # 4 — the bundle ------------------------------------------------------------------
         llm_providers = LLMProviderRegistry()

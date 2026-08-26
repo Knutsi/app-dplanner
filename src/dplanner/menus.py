@@ -22,7 +22,7 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # the app shell and the settings dialog.
     "File": ("open", "product", "save", "branch", "window"),
     "Edit": ("history",),
-    "View": ("panels", "zoom", "theme", "window"),
+    "View": ("panels", "tabs", "zoom", "theme", "window"),
     # The planner's own vocabulary. "Project" is what the index tree's right-click menu
     # renders and "Step" is what the graph canvas's does — see framework/action_menu.py.
     # "link" holds the two-step verbs: the canvas publishes both ends into the selection

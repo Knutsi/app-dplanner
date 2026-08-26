@@ -118,6 +118,47 @@ editor may outlive the binding and be bound again later".
 
 **Upstream?** Yes, and the `close()` fix regardless of the rest.
 
+### Tab groups, and the framework's first focus watcher
+
+**What.** `TabHost` holds a `QSplitter` of up to three `QTabWidget`s instead of one, and its
+public API is unchanged — `open`, `activities`, `current_activity`, `close_activity`,
+`set_tab_title` all mean exactly what they meant. `builder.py` and `main_window.py` needed no
+edit at all, and neither did any module. New: `move_current_left/right`, `group_count`,
+`can_move_*`, `dispose`.
+
+**Why the API could stay still.** `_activities` was already keyed by page widget rather than
+by tab index, so it was already group-agnostic; only `_current` assumed one focused tab in the
+whole application. That is a good property to preserve upstream if the tab host is ever
+touched.
+
+**The interesting half is the watcher.** "Which pane did the user last interact with" has no
+answer in Qt, and the template answers it nowhere. It needs **both** `QApplication.focusChanged`
+*and* an application-level `MouseButtonPress` filter: focus alone misses a click on anything
+that takes no focus — a caption, a heading — and the filter alone misses keyboard traversal.
+The filter must also see the press *before* a right-click builds its menu, since `build_menu`
+reads the context as it opens.
+
+Three things that were not obvious and cost time:
+
+- **The filter must exist only while the window is split.** It is application-wide, so it sees
+  every mouse press in the program; installing it unconditionally cost the test suite 30% and
+  bought nothing, because with one pane there is nothing to decide.
+- **It must be disposed.** A host outlives its window when a workspace is reopened, so
+  `TabHost.dispose()` goes in `close_hooks` beside the index panel's. Without it the suite
+  accumulates one live filter per built session.
+- **Focus must follow a programmatic move**, or the watcher hears the leftover focus in the
+  pane the tab just left and puts the user back where they were not.
+
+**A pre-existing bug it surfaced.** `setMovable(True)` means a drag-reorder fires
+`currentChanged` with the *same* page current, and `_on_current_changed` treated it as a
+switch: deactivate, clear both scopes, reactivate, seal the undo burst, flush autosave — for a
+change that changed nothing. It is in the template too. The guard is on the (group, activity)
+pair, not on the activity, because a move legitimately changes the group while keeping the
+activity.
+
+**Upstream?** The reorder guard, unreservedly. The groups and the watcher, as a pair, if the
+template ever wants a split view — and the three notes above are most of what makes it work.
+
 ### `framework/window_watch.py`
 
 **What.** A `WorkspaceWatcher` that polls a repository through a one-method

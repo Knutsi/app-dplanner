@@ -12,7 +12,13 @@ from typing import Any
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QMainWindow, QMessageBox
 
-from dplanner.framework.action_registry import ActionRegistry, ActionSpec, ActionState
+from dplanner.framework.action_registry import (
+    DISABLED,
+    ENABLED,
+    ActionRegistry,
+    ActionSpec,
+    ActionState,
+)
 from dplanner.framework.context import SCOPE_APP, Context, ContextService
 from dplanner.framework.palette import CommandPalette
 from dplanner.framework.tabs import TabHost
@@ -137,6 +143,38 @@ class AppShellModule:
                 run=run_quit,
             )
         )
+        # Moving a tab is what splits the window: the group appears to receive it and
+        # disappears when the last tab leaves, so there is no split mode and never an empty
+        # pane. Their state depends on the tab host rather than on the context graph, which
+        # is what poke_context() below is for — the same shape as Undo's label.
+        deps.actions.register(
+            ActionSpec(
+                id="appshell.move_tab_right",
+                label="Move Tab &Right",
+                menu="View",
+                group="tabs",
+                order=10,
+                tip="Put this tab in the group to its right, making one if there is room",
+                state=lambda _context: ENABLED if deps.tabs.can_move_right() else DISABLED,
+                run=lambda _context: deps.tabs.move_current_right(),
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="appshell.move_tab_left",
+                label="Move Tab &Left",
+                menu="View",
+                group="tabs",
+                order=20,
+                tip="Put this tab back in the group to its left",
+                state=lambda _context: ENABLED if deps.tabs.can_move_left() else DISABLED,
+                run=lambda _context: deps.tabs.move_current_left(),
+            )
+        )
+        # Whether a tab can move depends on how many groups there are, which no signal
+        # reports; every activity change is also every moment one could have changed.
+        deps.tabs.activity_changed.connect(lambda _activity: poke_context())
+
         deps.actions.register(
             ActionSpec(
                 id="appshell.toggle_full_screen",

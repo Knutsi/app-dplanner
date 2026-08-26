@@ -158,3 +158,14 @@ def test_the_cli_gives_the_same_answer(tmp_path):
 
     # The window and the terminal show the same three columns.
     assert cli("order", "show", "Discovery").splitlines()[0].split() == ["#", "Step", "Wave"]
+
+
+def test_a_background_table_does_not_publish_its_selection(services, project, tab):
+    """One selection scope, and this table often sits beside the graph. Only the pane the
+    user is in may write to it."""
+    tab.on_deactivated()
+    tab.table.selectRow(0)
+    assert services.context.current().selected_entities("step") == []
+
+    tab.on_activated()
+    assert services.context.current().selected_entities("step") == [project.steps[0].id]

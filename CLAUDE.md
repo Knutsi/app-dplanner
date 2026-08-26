@@ -157,6 +157,9 @@ root, stop and look for the registry or capability you have not found yet.
   decides what to redraw, and the `origin` is how the view that caused the change knows to
   ignore its own echo. **`ARCHITECTURE.md` has the diagram and why each link is there** — read
   it before adding a surface that changes anything.
+- **Only the active pane speaks for the user.** The window can show two or three tab groups
+  side by side, and there is still exactly one context. An activity that publishes a
+  selection must do it only while it is the current one — see `ProjectActivity._is_active`.
 - **Work may leave the GUI thread; mutation may not.** `core.signals.Signal` is synchronous
   and has no thread affinity, so the model is only ever changed on the GUI thread. Anything
   computed off it returns through `TaskRunner`, the one place that uses real Qt signals.

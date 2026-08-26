@@ -84,6 +84,10 @@ class OrderActivity(ActivityBase):
         self._deps = deps
         self._product = deps.product
         self.project_id = project_id
+        # There is one selection scope and there can be several panes on screen. Only the
+        # pane the user is in may write to it — see CLAUDE.md's "only the active pane speaks
+        # for the user". This table sits beside the graph often, so it matters here.
+        self._is_active = False
 
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -134,11 +138,15 @@ class OrderActivity(ActivityBase):
         return self._widget
 
     def on_activated(self) -> None:
+        self._is_active = True
         self._deps.context.set_scope(
             SCOPE_ACTIVITY,
             (ContextNode(self.uri, (("entity", entity_uri("project", self.project_id)),)),),
         )
         self._publish(self.table.selected_step())
+
+    def on_deactivated(self) -> None:
+        self._is_active = False
 
     def close(self) -> None:
         for unsubscribe in self._unsubscribes:
@@ -156,6 +164,8 @@ class OrderActivity(ActivityBase):
         self.table.show_order(placed(self._product, self._project()))
 
     def _publish(self, step_id: StepId | None) -> None:
+        if not self._is_active:
+            return  # See _is_active: a background pane does not speak for the user.
         nodes = () if step_id is None else (ContextNode(selection_uri("step", step_id)),)
         self._deps.context.set_scope(SCOPE_SELECTION, nodes)
 

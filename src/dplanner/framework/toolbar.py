@@ -5,6 +5,12 @@ specs as buttons, exactly as the menu bar renders all of them as QActions. Short
 with the menu bar's QActions; a click here goes through ``registry.run``, so the state
 gate holds even if a stale context left a button enabled. Toolbars live inside tabs, so
 unlike the app-lifetime menu bar they must be ``dispose()``d when their tab closes.
+
+**It renders the application's action state, not its own tab's.** A toolbar in a background
+tab — or in a tab group the user is not in — shows what the *active* surface can do, because
+there is one ``ContextService``. Invisible while only one tab is on screen; visible once the
+window is split. If that ever matters, the fix is a ``set_active(bool)`` that greys the row
+when its group is not the active one, not a context per group.
 """
 
 from collections.abc import Mapping, Sequence
