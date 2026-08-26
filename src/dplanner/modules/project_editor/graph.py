@@ -22,7 +22,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QKeyEvent, QMouseEvent, QPainter
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QPainter, QResizeEvent
 from PySide6.QtWidgets import (
     QApplication,
     QGraphicsScene,
@@ -36,6 +36,7 @@ from dplanner.domain.model import StepId
 from dplanner.framework.widgets import install_ctrl_wheel_zoom
 from dplanner.modules.project_editor.items import EdgeItem, LinkPreviewItem, StepNodeItem
 from dplanner.modules.project_editor.keymap import bound_actions
+from dplanner.modules.project_editor.minimap import Minimap
 from dplanner.modules.project_editor.modes import (
     CanvasDeps,
     CanvasEvent,
@@ -53,7 +54,11 @@ ZOOM_MAX = 2.5
 ZOOM_READABLE = 0.75
 FRAME_PADDING = 40.0
 ZOOM_STEP = 1.15
-SCENE_MARGIN = 300.0
+# The canvas is a plane, not a page: the scrollable area is this far out in every direction
+# from the origin and never moves, so panning stops nowhere anybody will reach and no graph
+# can change where the edges are. Large enough to be unbounded in practice, small enough
+# that the scroll ranges stay well inside an int at maximum zoom.
+CANVAS_EXTENT = 100_000.0
 
 
 @dataclass(frozen=True)
@@ -79,6 +84,9 @@ class GraphScene(QGraphicsScene):
         # Click order, which QGraphicsScene.selectedItems() does not preserve. It is what
         # makes `Context.selected_entities("step")` mean "the first, then the second".
         self._selection_order: list[StepId] = []
+        self.setSceneRect(
+            QRectF(-CANVAS_EXTENT, -CANVAS_EXTENT, 2 * CANVAS_EXTENT, 2 * CANVAS_EXTENT)
+        )
         self._preview = LinkPreviewItem()
         self._preview.hide()
         self.addItem(self._preview)
@@ -122,7 +130,6 @@ class GraphScene(QGraphicsScene):
                 self.addItem(edge)
             else:
                 edge.follow()  # A node may have moved under it since the last sync.
-        self._extend_scene_rect()
 
     def reflow_edges(self, step_id: StepId) -> None:
         """Redraw the edges touching one node — called by the item while it is dragged."""
@@ -130,11 +137,15 @@ class GraphScene(QGraphicsScene):
             if edge.source.step_id == step_id or edge.waiter.step_id == step_id:
                 edge.follow()
 
+    def node_rects(self) -> list[QRectF]:
+        """Where every node sits, for anything that draws the graph small."""
+        return [item.sceneBoundingRect() for item in self._nodes.values()]
+
     def content_rect(self) -> QRectF:
         """What the nodes actually occupy, for a view deciding where to look."""
         rect = QRectF()
-        for item in self._nodes.values():
-            rect = rect.united(item.sceneBoundingRect())
+        for item in self.node_rects():
+            rect = rect.united(item)
         return rect
 
     def select_step(self, step_id: StepId | None) -> None:
@@ -215,7 +226,6 @@ class GraphScene(QGraphicsScene):
         self._press_at = {}
         if moved:
             self.nodes_moved.emit(moved)
-            self._extend_scene_rect()
 
     # -- internals ---------------------------------------------------------------------------
 
@@ -230,21 +240,6 @@ class GraphScene(QGraphicsScene):
         self._selection_order = kept + [s for s in current if s not in kept]
         self.selection_changed.emit(self.selection())
 
-    def _extend_scene_rect(self) -> None:
-        """Grow the scrollable area to hold the graph — and never shrink or shift it.
-
-        Recomputing it from ``itemsBoundingRect`` moved its origin every time a node moved,
-        the scroll bars re-ranged under a fixed value, and the whole canvas appeared to pan
-        away under the node being dragged. So the rect is a floor: it only ever unions, and
-        it is not touched at all while a drag is in flight.
-        """
-        if self._press_at:
-            return
-        bounds = self.itemsBoundingRect().adjusted(
-            -SCENE_MARGIN, -SCENE_MARGIN, SCENE_MARGIN, SCENE_MARGIN
-        )
-        self.setSceneRect(bounds if self.sceneRect().isEmpty() else bounds.united(self.sceneRect()))
-
 
 class GraphView(QGraphicsView):
     """The viewport, and where input is routed.
@@ -252,6 +247,11 @@ class GraphView(QGraphicsView):
     Every event is offered to the current mode first, then to the canvas keymap, and only
     then to Qt — which is what still gives rubber-band selection, node dragging and
     hand-scrolling for nothing.
+
+    **It looks onto a plane, so it has no scroll bars.** On a scrollable area whose extent is
+    two hundred viewports across, a scroll bar is a nub that says nothing true about where
+    you are; the minimap in the corner says it instead, and the wheel still scrolls because
+    a hidden scroll bar is still a scroll bar.
     """
 
     def __init__(
@@ -267,17 +267,20 @@ class GraphView(QGraphicsView):
         self.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        # The other half of "do not pan when a node moves": with the default centring
-        # alignment, a scene smaller than the viewport re-centres itself every time its rect
-        # changes, so growing the rect slid the content sideways.
-        self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.NoAnchor)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setFrameShape(QGraphicsView.Shape.NoFrame)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._zoom = 1.0
         self._framed = False
         # The application's View ▸ Zoom is font size; a canvas zooms itself.
         install_ctrl_wheel_zoom(self, self.zoom_by)
+        self.minimap = Minimap(self)
+        scene.changed.connect(self._on_scene_changed)
+        # The plane is centred on the origin and the automatic layout starts there, so this
+        # is where the graph will be even before there is one to frame.
+        self.centerOn(QPointF(0.0, 0.0))
 
         self.deps = CanvasDeps(canvas=scene, view=self, status=status, run_action=run_action)
         self.modes = ModeStack(base_mode(self.deps))
@@ -359,6 +362,33 @@ class GraphView(QGraphicsView):
 
     # -- looking at it -------------------------------------------------------------------------
 
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        self.minimap.place()
+        self._refresh_minimap()
+
+    def scrollContentsBy(self, dx: int, dy: int) -> None:  # noqa: N802 - Qt override
+        super().scrollContentsBy(dx, dy)
+        self._refresh_minimap()
+
+    def _on_scene_changed(self, _regions: list[QRectF]) -> None:
+        self._refresh_minimap()
+
+    def _refresh_minimap(self) -> None:
+        """Hand the map what to draw.
+
+        Asked of the scene here rather than fetched by the map, so that the one object that
+        knows whether there is still a scene to ask is the one that asks. A view whose scene
+        has gone — which is what tearing a tab down looks like from here — simply says
+        nothing, and the map keeps its last picture until it goes too.
+        """
+        scene = self.scene()
+        if isinstance(scene, GraphScene):
+            self.minimap.show_graph(scene.node_rects(), self._looking_at())
+
+    def _looking_at(self) -> QRectF:
+        return self.mapToScene(self.viewport().rect()).boundingRect()
+
     def showEvent(self, event: object) -> None:  # noqa: N802 - Qt override
         super().showEvent(event)  # type: ignore[arg-type]
         if not self._framed:
@@ -375,6 +405,7 @@ class GraphView(QGraphicsView):
             return
         content = scene.content_rect()
         if content.isEmpty():
+            self.centerOn(QPointF(0.0, 0.0))
             return
         padded = content.adjusted(-FRAME_PADDING, -FRAME_PADDING, FRAME_PADDING, FRAME_PADDING)
         viewport = self.viewport().rect()
@@ -389,6 +420,7 @@ class GraphView(QGraphicsView):
             self.scale(wanted / self._zoom, wanted / self._zoom)
             self._zoom = wanted
         self.centerOn(content.center())
+        self._refresh_minimap()
 
     def zoom_by(self, steps: int) -> None:
         factor = ZOOM_STEP**steps
@@ -396,3 +428,4 @@ class GraphView(QGraphicsView):
         if wanted != self._zoom:
             self.scale(wanted / self._zoom, wanted / self._zoom)
             self._zoom = wanted
+            self._refresh_minimap()

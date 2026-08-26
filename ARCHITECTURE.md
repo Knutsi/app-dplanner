@@ -377,17 +377,52 @@ canvas through a typed callback on their own `Deps`. Where a node *is* is still 
 model — `layout.positions()` answers it — so "the nearest node to the right" is a pure function
 and only the last step, telling the canvas what to select, needs a window.
 
-### Why the canvas used to pan when you moved a node
+### The canvas is a plane, and why that is one decision rather than three
 
-Worth writing down because the cause was two floors from the symptom. `sync()` recomputed the
-scene rect from `itemsBoundingRect` on every model change, and a move *is* a model change, so
-dragging a node changed the rect's origin, the scroll bars re-ranged under a fixed value, and
-the canvas slid out from under the drag. The default `AlignCenter` made it worse: a scene
-smaller than the viewport re-centres itself every time its rect changes.
+`GraphScene` sets its scene rect once, in its constructor: a square centred on the origin,
+`CANVAS_EXTENT` out in every direction and never touched again. Three things follow from that
+one line, which is the reason it is worth a section.
 
-So the scene rect is now a **floor that only grows**, it is not touched at all while a drag is
-in flight, and the view is anchored top-left. The rule generalises past this canvas:
-**a scrollable area's extent must not be a function of what the user is currently moving.**
+**Panning does not stop.** The complaint was that it did — a few hundred pixels past the last
+step, most obviously downwards, because the extent was the graph's bounds plus a margin. A
+plane two hundred viewports across has an edge nobody reaches.
+
+**Nothing about the graph can move the extent.** The older code recomputed the rect from
+`itemsBoundingRect` on every model change, and a move *is* a model change: dragging a node
+changed the rect's origin, the scroll bars re-ranged under a fixed value, and the canvas slid
+out from under the drag. The fix at the time was a floor that only grew and was left alone
+mid-drag — a constant is the same rule with nothing left to get wrong. The alignment fix that
+came with it (a scene *smaller* than the viewport re-centres itself whenever its rect changes)
+went away with it too: this scene is never smaller than a viewport. The rule generalises past
+this canvas: **a scrollable area's extent must not be a function of what the user is moving.**
+
+**The scroll bars go.** On an extent like that a scroll bar is a nub that says nothing true
+about where you are, so both are `ScrollBarAlwaysOff` — and still there, so the wheel still
+scrolls. What replaces them is `minimap.py`, anchored in the canvas's lower-left corner: the
+graph small, the viewport as a frame on it, and a click to go anywhere. It is *given* node
+rectangles rather than reaching for a scene, so it imports nothing from the module around it
+and cannot outlive what it draws; `GraphView` pushes on `QGraphicsScene.changed` and on every
+scroll, and is the one object in a position to know whether there is still a scene to ask.
+And it is parented to the view rather than to the viewport, because `QGraphicsView` pans by
+`QWidget::scroll`, which drags the viewport's children along with the pixels.
+
+### The palette a painter is handed is a snapshot
+
+`QStyleOptionGraphicsItem.palette` is filled once, when the scene is constructed, and Qt never
+refreshes it. Nothing about that is visible until the application changes its palette: a theme
+switch repainted the canvas with the *old* theme's ink, and light-on-light lost the graph
+altogether. `items.live_palette()` reads the scene's palette instead, which follows the
+application's, and no canvas item may read `option.palette` again.
+
+The same shape one layer up, with a different cause: `TabHost` copies a palette colour onto
+each tab with `setTabTextColor` to dim the panes the user is not in, and a copy does not
+follow the original. It re-tints on `QEvent.PaletteChange`. **A surface that stores a colour
+owes that hook** — the palette is live, everything derived from it is not.
+
+Two more colours reach past both: Qt's tab-close cross is a bundled red bitmap that no
+stylesheet or palette touches, so `theme/style.py`'s proxy answers `SP_TabCloseButton` with a
+painted glyph — and the style is rebuilt on each theme change because `QCommonStyle` caches
+the icon it is given.
 
 **Node positions are stored, automatic layout is not.** A step nobody has moved is placed by
 `requires` depth, recomputed each time the project opens. Persisting that would mean merely

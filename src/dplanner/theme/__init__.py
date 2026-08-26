@@ -39,8 +39,9 @@ def apply_theme(app: QApplication, theme: Theme = DEFAULT) -> None:
     1. ``setStyle`` re-polishes widgets and resets standard palettes, so it must come first.
        Fusion is the palette-driven style, and the reason the result looks identical on macOS
        and Linux — the native macOS style paints from system colours and largely ignores a
-       custom palette. It is wrapped in a proxy for the per-platform style hints in
-       :mod:`writer.theme.style`.
+       custom palette. It is wrapped in a proxy for the per-platform style hints and the
+       themed standard icons in :mod:`writer.theme.style`, and it is *rebuilt* for each
+       theme because a style caches the icons it is asked for.
     2. ``setColorScheme`` invalidates Qt's cached system palette, so it must precede our own.
        This is the highest-value call here: on macOS it sets ``NSApp.appearance``, which
        flips the window title bar, the traffic-light strip and native dialogs — none of
@@ -49,7 +50,7 @@ def apply_theme(app: QApplication, theme: Theme = DEFAULT) -> None:
     4. Chrome font.
     5. The stylesheet last: narrowest scope, and it wins wherever its selectors match.
     """
-    app.setStyle(build_style())
+    app.setStyle(build_style(theme))
 
     style_hints = app.styleHints()
     # setColorScheme is Qt 6.8+; without it we lose only the native title-bar switching.

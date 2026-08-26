@@ -33,7 +33,7 @@ graph editor and the order view are in place and tested. Four aspects ship — e
 ticket, description, agent instruction — each with a tab in the step panel and verbs in the
 CLI. Estimation runs over the graph: a project start date and the estimates give every step
 a running total and a date, in the order table and in `dplanner schedule show`. Reports
-beyond that one are not written, and the canvas has no pan beyond scrolling.
+beyond that one are not written.
 
 ## Running
 
@@ -161,7 +161,7 @@ src/dplanner/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
 │   ├── product/             the product's identity: name, repository, checkout
 │   ├── projects/            the Projects folder in the index, and the project verbs
-│   ├── project_editor/      a project in a tab: the graph canvas, its modes and its toolbar
+│   ├── project_editor/      a project in a tab: the graph canvas, its modes, toolbar and map
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
 │   ├── estimation/          estimates, the schedule they imply, and its reports
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each

@@ -18,6 +18,8 @@ from dplanner.framework.context import (
     entity_uri,
 )
 from dplanner.framework.tabs import TabHost
+from dplanner.theme import apply_theme
+from dplanner.theme.themes import DARK, DEFAULT, LIGHT
 
 
 class FakeActivity(ActivityBase):
@@ -52,6 +54,13 @@ class FakeActivity(ActivityBase):
 @pytest.fixture
 def context():
     return ContextService()
+
+
+@pytest.fixture
+def themed(app):
+    """A theme is applied application-wide, so put the default back for whatever runs next."""
+    yield app
+    apply_theme(app, DEFAULT)
 
 
 @pytest.fixture
@@ -396,3 +405,17 @@ def test_right_clicking_beside_the_tabs_offers_nothing(app, host):
     host._on_tab_menu(host._groups[0], QPoint(bar.width() - 1, bar.height() - 1))
 
     assert asked == []
+
+
+def test_tab_titles_follow_a_theme_change(themed, app, host):
+    """The dimming copies a colour out of the palette onto each tab, and a copy goes stale.
+
+    Before the palette-change hook, switching the theme left every title in the colour of
+    the theme its pane was last activated in — legible on one theme, invisible on the next.
+    """
+    host.open("thing", "a")
+    apply_theme(app, DARK)
+    assert tab_bar(host).tabTextColor(0).name() == DARK.text_primary
+
+    apply_theme(app, LIGHT)
+    assert tab_bar(host).tabTextColor(0).name() == LIGHT.text_primary

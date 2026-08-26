@@ -9,6 +9,8 @@ from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 
 ICON_SIZE = 16
+# A glyph nobody is pointing at is present without asking to be read.
+IDLE_GLYPH_ALPHA = 110
 
 
 def _canvas() -> tuple[QPixmap, QPainter]:
@@ -31,7 +33,7 @@ def container_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
-def _pen(color: str, width: float) -> QPen:
+def _pen(color: str | QColor, width: float) -> QPen:
     pen = QPen(QColor(color), width)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -308,6 +310,30 @@ def frame_icon(color: str) -> QIcon:
         painter.drawLine(QPointF(x_from, y_from), QPointF(x_from, y_to))
     painter.end()
     return QIcon(pixmap)
+
+
+def close_icon(color: str) -> QIcon:
+    """A cross: the close button on a tab.
+
+    Two pixmaps rather than one because Qt asks for the ``Disabled`` variant whenever the
+    button is neither hovered nor on the current tab, and the variant it generates for
+    itself is greyscale — the one colour a theme cannot reach.
+    """
+    icon = QIcon()
+    icon.addPixmap(_cross(color, 255), QIcon.Mode.Normal)
+    icon.addPixmap(_cross(color, IDLE_GLYPH_ALPHA), QIcon.Mode.Disabled)
+    return icon
+
+
+def _cross(color: str, alpha: int) -> QPixmap:
+    tint = QColor(color)
+    tint.setAlpha(alpha)
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(tint, 1.4))
+    painter.drawLine(QPointF(4.6, 4.6), QPointF(11.4, 11.4))
+    painter.drawLine(QPointF(11.4, 4.6), QPointF(4.6, 11.4))
+    painter.end()
+    return pixmap
 
 
 def list_icon(color: str) -> QIcon:

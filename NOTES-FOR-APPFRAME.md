@@ -292,6 +292,45 @@ problem with a `_loading` flag. That works, and it is the wrong lesson: the fram
 has a mechanism for this and the example quietly declines to use it. Worth fixing in the
 example even if the model change is the application's business.
 
+### A theme change is not one event, and three surfaces missed it
+
+**What.** Three changes, all found by switching the theme with a graph on screen.
+
+- `framework/tabs.py` gained a `changeEvent` that re-runs `_paint_active()` on
+  `QEvent.PaletteChange`. The host dims the tab titles of the panes the user is not in, and it
+  does so with `QTabBar.setTabTextColor` — a *copy* of a palette colour, taken when a pane was
+  last activated. Nothing put it back when the palette moved, so every title kept the colour
+  of the theme its pane had been activated in: readable on one theme, invisible on the next.
+- `theme/style.py`'s proxy now answers `standardIcon(SP_TabCloseButton)` with a painted glyph,
+  and `build_style` takes the theme so it can colour it. Qt's own cross is a bundled red
+  bitmap that no palette or stylesheet reaches — on every theme in the template it is the one
+  mark in the window that belongs to a different application. `QCommonStyle` caches the icon
+  it is handed, which is fine only because `apply_theme` builds a fresh style each time; that
+  ordering is now stated in `apply_theme`'s docstring.
+- `theme/icons.py` gained `close_icon` (and `_pen` now takes a `QColor`, for its faded
+  variant): two pixmaps, because Qt asks for the `Disabled` one whenever a close button is
+  neither hovered nor on the current tab, and the variant Qt generates for itself is
+  greyscale.
+
+**Why it belongs upstream.** None of it is DPlanner-specific, and all three are invisible
+until somebody switches theme at runtime — which the template invites, with 22 themes in a
+menu. The general rule is worth stating in the template's own docs: **the palette is live;
+anything copied out of it is not, and owes a `PaletteChange` hook.**
+
+### A `QStyleOptionGraphicsItem` carries a palette from when the scene was built
+
+Not a framework change — the fix is in a module — but the trap is the framework's to warn
+about, because the template has no `QGraphicsView` and so cannot have met it.
+
+`QStyleOptionGraphicsItem.palette` is filled once, when the `QGraphicsScene` is constructed,
+and Qt never refreshes it: not on `QApplication.setPalette`, not on `QGraphicsScene.setPalette`,
+not on an explicit `invalidate()`. An item that paints from `option.palette` therefore paints
+in whatever theme was current when its scene was created, for as long as that scene lives. Our
+canvas lost its whole graph on a switch to a light theme — the nodes were still there, drawn in
+the dark theme's near-white on near-white. The fix is one helper
+(`modules/project_editor/items.live_palette`) reading `item.scene().palette()`, which *does*
+follow the application. Worth a line wherever the template talks about custom painting.
+
 ---
 
 ## 2. Conventions the template documents that we had to change

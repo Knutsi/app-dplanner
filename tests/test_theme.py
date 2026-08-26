@@ -7,10 +7,12 @@ turn light the moment the window loses focus.
 """
 
 import pytest
+from PySide6.QtWidgets import QStyle
 
 from dplanner.theme import load_stylesheet
 from dplanner.theme.palette import build_palette
-from dplanner.theme.themes import DEFAULT, THEMES
+from dplanner.theme.style import build_style
+from dplanner.theme.themes import DARK, DEFAULT, LIGHT, THEMES
 
 
 def relative_lightness(hex_color: str) -> float:
@@ -57,3 +59,19 @@ def test_the_palette_covers_the_inactive_group(app):
 
 def test_the_default_theme_is_registered():
     assert DEFAULT.name in THEMES
+
+
+def test_the_tab_close_glyph_is_painted_per_theme(app):
+    """The cross on a tab is the one mark in the window a palette cannot reach.
+
+    ``PE_IndicatorTabClose`` asks the style for a standard icon and draws whatever it gets,
+    so Qt's bundled red ✕ read as an error badge on every theme until the proxy style
+    answered with a painted glyph — and the style is rebuilt per theme because it caches
+    the answer.
+    """
+    close = QStyle.StandardPixmap.SP_TabCloseButton
+    dark = build_style(DARK).standardIcon(close)
+    light = build_style(LIGHT).standardIcon(close)
+
+    assert not dark.isNull()
+    assert dark.pixmap(16, 16).toImage() != light.pixmap(16, 16).toImage()

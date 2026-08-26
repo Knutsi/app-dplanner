@@ -9,17 +9,20 @@ which is the point: however many projects are open, there is one of each.
 """
 
 import pytest
-from PySide6.QtCore import QEvent, QPointF, Qt
-from PySide6.QtGui import QKeyEvent, QMouseEvent
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSizeF, Qt
+from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter
 from PySide6.QtWidgets import QGraphicsView
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetFieldCommand
 from dplanner.domain.model import Project, Step
 from dplanner.framework.context import SCOPE_SELECTION
+from dplanner.modules.project_editor.items import FILL_ALPHA, NODE_H, NODE_W
 from dplanner.modules.project_editor.modes import CONNECT, IDLE, PAN
 from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef
 from dplanner.modules.step_properties.module import PANEL_ID as STEP_PANEL_ID
+from dplanner.theme import apply_theme
+from dplanner.theme.themes import DARK, DEFAULT, LIGHT
 
 
 @pytest.fixture
@@ -525,16 +528,154 @@ def test_moving_a_node_does_not_pan_the_canvas(app, services, project, tab):
     assert view(tab).mapToScene(view(tab).viewport().rect().topLeft()) == looking_at
 
 
-def test_the_scene_rect_only_grows(services, project, tab, monkeypatch):
+def test_the_canvas_is_a_plane_no_graph_can_move(services, project, tab, monkeypatch):
+    """The scrollable area is a constant centred on the origin.
+
+    Nothing about the graph may reach it — it used to be grown from the items, and every
+    node that moved re-ranged the scroll bars under a fixed value, which read as the canvas
+    panning away under the drag. A constant cannot do that, and it is also what lets the
+    user keep panning long after the last node is behind them.
+    """
     from dplanner.modules.project_editor import verbs
 
     monkeypatch.setattr(verbs, "confirm", lambda *_args: True)
     canvas = scene(tab)
     was = canvas.sceneRect()
-    scene(tab).select_step(project.steps[0].id)
+    assert was.contains(QRectF(-50_000.0, -50_000.0, 100_000.0, 100_000.0))
+
+    canvas.select_step(project.steps[0].id)
     services.actions.run("steps.delete", services.context.current())
 
-    assert canvas.sceneRect().contains(was)
+    assert canvas.sceneRect() == was
+
+
+def test_panning_does_not_stop_beyond_the_graph(services, project, tab):
+    """The complaint this fixed: panning hit a wall a few hundred pixels past the steps."""
+    canvas_view = view(tab)
+    top = canvas_view.mapToScene(canvas_view.viewport().rect()).boundingRect().top()
+    bar = canvas_view.verticalScrollBar()
+    bar.setValue(bar.value() + 5_000)
+
+    moved = canvas_view.mapToScene(canvas_view.viewport().rect()).boundingRect().top() - top
+    assert moved == pytest.approx(5_000.0, abs=2.0)
+
+
+def test_the_canvas_has_no_scroll_bars(services, project, tab):
+    """A bar whose handle is a two-hundredth of its groove says nothing true; the minimap
+    is what tells the user where they are. The bars still exist, so the wheel still works."""
+    canvas_view = view(tab)
+    policy = Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert canvas_view.horizontalScrollBarPolicy() == policy
+    assert canvas_view.verticalScrollBarPolicy() == policy
+
+
+# -- the canvas follows the theme ----------------------------------------------------------------
+
+
+@pytest.fixture
+def themed(app):
+    """A theme is applied application-wide, so put the default back for whatever runs next."""
+    yield app
+    apply_theme(app, DEFAULT)
+
+
+def painted_node(tab, step_id, background: str) -> QColor:
+    """The colour the node's body comes out, rendered over ``background``."""
+    node = scene(tab)._nodes[step_id]
+    image = QImage(int(NODE_W), int(NODE_H), QImage.Format.Format_ARGB32)
+    image.fill(QColor(background))
+    painter = QPainter(image)
+    scene(tab).render(
+        painter, QRectF(image.rect()), QRectF(node.scenePos(), QSizeF(NODE_W, NODE_H))
+    )
+    painter.end()
+    return image.pixelColor(int(NODE_W / 2), int(NODE_H * 0.75))
+
+
+def ink_over(background: str, ink: str, alpha: int) -> QColor:
+    share = alpha / 255
+    base, over = QColor(background), QColor(ink)
+    return QColor(
+        *(
+            round(getattr(base, channel)() * (1 - share) + getattr(over, channel)() * share)
+            for channel in ("red", "green", "blue")
+        )
+    )
+
+
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=lambda t: t.name)
+def test_a_node_is_painted_in_the_theme_that_is_current(themed, services, project, tab, theme):
+    """Switching the theme repaints the graph.
+
+    ``QStyleOptionGraphicsItem.palette`` is filled once, when the scene is created, and never
+    refreshed — so every node kept the ink of whatever theme the tab was opened in, and a
+    light theme drew the whole graph in the dark theme's near-white and lost it.
+    """
+    apply_theme(themed, theme)
+    body = painted_node(tab, project.steps[0].id, theme.bg_base)
+    wanted = ink_over(theme.bg_base, theme.text_primary, FILL_ALPHA)
+
+    assert abs(body.red() - wanted.red()) <= 2
+    assert abs(body.green() - wanted.green()) <= 2
+    assert abs(body.blue() - wanted.blue()) <= 2
+
+
+# -- the minimap -----------------------------------------------------------------------------------
+
+
+def minimap(tab):
+    return view(tab).minimap
+
+
+def settle(app):
+    """The map is fed from ``QGraphicsScene.changed``, which the scene emits on the turn of
+    the event loop that precedes its views repainting — so the map and the canvas always
+    agree, and a test that changes the graph has to let that turn happen."""
+    app.processEvents()
+
+
+def test_the_minimap_draws_every_node(app, services, project, tab):
+    settle(app)
+    assert not minimap(tab).isHidden()
+    assert len(minimap(tab)._nodes) == len(project.steps)
+
+
+def test_the_minimap_goes_off_screen_without_a_graph(app, services, project, tab, monkeypatch):
+    """An empty box is worse than no box — DESIGN.md's rule for a panel, one surface down."""
+    from dplanner.modules.project_editor import verbs
+
+    monkeypatch.setattr(verbs, "confirm", lambda *_args: True)
+    scene(tab).select_steps([step.id for step in project.steps])
+    services.actions.run("steps.delete", services.context.current())
+    settle(app)
+
+    assert minimap(tab).isHidden()
+
+
+def test_clicking_the_minimap_looks_there(app, services, project, tab):
+    """The map is how you get back to the graph after panning away from it."""
+    canvas_view = view(tab)
+    settle(app)
+    bar = canvas_view.verticalScrollBar()
+    bar.setValue(bar.value() + 5_000)
+    away = canvas_view.mapToScene(canvas_view.viewport().rect()).boundingRect().center()
+
+    map_widget = minimap(tab)
+    local = QPointF(map_widget.width() / 2, 12.0)  # Near the top of the map: back up there.
+    app.sendEvent(
+        map_widget,
+        QMouseEvent(
+            QEvent.Type.MouseButtonPress,
+            local,
+            QPointF(map_widget.mapToGlobal(local.toPoint())),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+
+    back = canvas_view.mapToScene(canvas_view.viewport().rect()).boundingRect().center()
+    assert back.y() < away.y()
 
 
 # -- modes -----------------------------------------------------------------------------------------

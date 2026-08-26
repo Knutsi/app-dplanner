@@ -10,10 +10,12 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QPainterPathStroker,
+    QPalette,
     QPen,
     QPolygonF,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QGraphicsItem,
     QGraphicsPathItem,
     QStyleOptionGraphicsItem,
@@ -48,6 +50,18 @@ EDGE_GRAB = 14.0
 # Low-alpha semantic tints that read on every theme (DESIGN.md exception #2).
 VALID_TINT = QColor(120, 200, 140, 180)
 INVALID_TINT = QColor(220, 110, 110, 180)
+
+
+def live_palette(item: QGraphicsItem) -> QPalette:
+    """The colours to paint from, as they are now.
+
+    **Never ``option.palette``.** Qt fills that field once, when the scene is created, and
+    never refreshes it, so every node and edge kept the colours of whatever theme was
+    current when the tab opened — a light theme drew the whole graph in the dark theme's
+    ink and it vanished. The scene's palette follows the application's.
+    """
+    scene = item.scene()
+    return scene.palette() if scene is not None else QApplication.palette()
 
 
 class StepNodeItem(QGraphicsItem):
@@ -107,16 +121,17 @@ class StepNodeItem(QGraphicsItem):
     def paint(
         self,
         painter: QPainter,
-        option: QStyleOptionGraphicsItem,
+        _option: QStyleOptionGraphicsItem,
         _widget: QWidget | None = None,
     ) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        palette = live_palette(self)
         body = QRectF(0, 0, NODE_W, NODE_H)
-        text_colour = QColor(option.palette.text().color())
+        text_colour = QColor(palette.text().color())
 
         fill = QColor(text_colour)
         fill.setAlpha(FILL_ALPHA)
-        border = QColor(option.palette.highlight().color())
+        border = QColor(palette.highlight().color())
         if self._link_state == "valid":
             border = VALID_TINT
         elif self._link_state == "invalid":
@@ -148,7 +163,7 @@ class StepNodeItem(QGraphicsItem):
             )
 
         if self._hovered or self._link_state:
-            handle = QColor(option.palette.highlight().color())
+            handle = QColor(palette.highlight().color())
             painter.setBrush(handle)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(QPointF(NODE_W, NODE_H / 2), HANDLE_R, HANDLE_R)
@@ -216,13 +231,14 @@ class EdgeItem(QGraphicsPathItem):
     def paint(
         self,
         painter: QPainter,
-        option: QStyleOptionGraphicsItem,
-        widget: QWidget | None = None,
+        _option: QStyleOptionGraphicsItem,
+        _widget: QWidget | None = None,
     ) -> None:
+        palette = live_palette(self)
         if self.isSelected():
-            colour = QColor(option.palette.highlight().color())
+            colour = QColor(palette.highlight().color())
         else:
-            colour = QColor(option.palette.text().color())
+            colour = QColor(palette.text().color())
             colour.setAlpha(200 if self._hovered else 130)
         style = Qt.PenStyle.SolidLine if self.kind == "requires" else Qt.PenStyle.DashLine
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
