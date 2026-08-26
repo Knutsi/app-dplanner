@@ -1,5 +1,8 @@
 # DPlanner's shape, and why
 
+`CLAUDE.md` carries these rules in their short, imperative form — this file is where the
+reasoning lives, so the short form does not have to be taken on faith.
+
 app-framework's `docs/index.html` documents the machinery this is built on — the ten
 registries, the origin token, the two version axes, where state lives. This document covers
 only what DPlanner added on top, and the reasoning is the point: the code shows *what*, and
@@ -119,6 +122,65 @@ otherwise fight over it); **a segment supplies its own menu** rather than the sp
 a framework spec; and **expansion state survives a rebuild** through shared helpers, because
 rebuilding on change is the normal case and that bookkeeping is what every segment would
 otherwise copy.
+
+## How a gesture becomes a change on screen
+
+This is the application's central mechanism, and everything else here is a consequence of it.
+It is one chain, and **nothing is allowed to take a shortcut through it** — the short,
+imperative form of that rule is in `CLAUDE.md`; this section is why each link exists.
+
+```
+a gesture, a menu item, the command palette, or the CLI
+        │
+        ▼   the Context: URI strings only — never widgets, never model objects
+   ActionSpec.state(context) gates it, ActionSpec.run(context) performs it
+        │
+        ▼   a Command from domain/commands.py — the same object either surface builds
+   undo.push(command)   (the window)        command.redo(product)   (the CLI)
+        │
+        ▼   one mutator, one change
+   the model, which emits exactly one signal carrying an `origin`
+        │
+        ▼   synchronous, on the GUI thread
+   every view applies it — except the one whose origin it is, which already shows it
+```
+
+**The command is a step, not an implementation detail.** An action does not change data; it
+pushes a command that does. That is what makes the change undoable, and it is what carries the
+origin token down to the signal. A mutation made directly is a change Ctrl+Z cannot see and no
+other view hears about.
+
+**The visual update is pulled, not pushed.** An action cannot touch a view — it holds only URI
+strings and has no way to reach one. Each view subscribes to the model and decides for itself
+what to redraw. That is the property that lets four aspect modules render into one panel
+without any of them knowing the others exist, and it is why a canvas drop belongs in an action:
+the canvas should not be the thing that knows how to create an edge.
+
+**The origin is what makes the last step safe.** The view that caused the change ignores its
+own echo; undo passes a token matching no view, so everyone applies it. Without it you get the
+oldest bug in desktop software — B updates from A's edit, B's update fires, A's caret jumps to
+the end. Every signal on `Product` carries one, with no exception, because a convention with
+one hole is one nobody can rely on.
+
+**"On the GUI thread" is a constraint, not a formality.** `core.signals.Signal` is synchronous
+and has no thread affinity, so the model may only be mutated on the GUI thread. Anything
+computed off it comes back through `TaskRunner`, which is the one place in the application
+using real Qt signals rather than ours — precisely so that hop is queued. The whole rule:
+**work may leave the GUI thread; mutation may not.**
+
+### What this rules out
+
+The graph canvas is the worked example, because it got this wrong first. A drop originally ran
+a private signal straight to a command: the verb existed nowhere else, its refusal was checked
+by hand in the view — where it read gesture state a later line had already cleared, so *every*
+drop was silently refused — and no test could reach it without a widget. Routing the drop
+through `steps.link` fixed the bug by deleting the code that held it, and gave the same verb to
+the Step menu and the palette for free.
+
+So: **a gesture is not a special case.** If a view can do something, it does it by publishing
+what the user picked into the context and running an action. The verb is then testable by
+handing it a constructed `Context`, and `tests/modules/test_project_editor.py` does exactly
+that with no canvas in sight.
 
 ## How a panel gets editors it has never heard of
 

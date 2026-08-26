@@ -6,6 +6,8 @@ QTest.mousePress would test Qt rather than this module.
 """
 
 import pytest
+from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtWidgets import QGraphicsSceneMouseEvent
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetFieldCommand
 from dplanner.domain.model import Project, Step
@@ -29,6 +31,42 @@ def tab(services, project):
 
 def scene(tab):
     return tab._scene
+
+
+def chain(services, project):
+    """A three-step chain, first → second → third, for the cases two steps cannot express."""
+    third = Step(title="Ship it")
+    services.undo.push(AddNodeCommand(project.id, third))
+    first, second = project.steps[0], project.steps[1]
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    services.undo.push(SetEdgesCommand(third.id, "requires", [second.id]))
+    return first, second, third
+
+
+# -- driving the canvas the way a mouse does ---------------------------------------------------
+#
+# These send real QGraphicsSceneMouseEvents rather than emitting the scene's signals. The
+# difference is not pedantry: every gesture below was once covered by a signal-level test, and
+# the link drop was broken the whole time because the bug was in the gesture, not the handler.
+
+
+def send(app, target, kind, pos, buttons=Qt.MouseButton.LeftButton):
+    event = QGraphicsSceneMouseEvent(kind)
+    event.setScenePos(pos)
+    event.setButton(Qt.MouseButton.LeftButton)
+    event.setButtons(buttons)
+    app.sendEvent(target, event)
+
+
+def centre_of(node):
+    return node.scenePos() + QPointF(90, 28)
+
+
+def drag(app, canvas, start, end):
+    """Press at ``start``, move to ``end``, release there."""
+    send(app, canvas, QEvent.Type.GraphicsSceneMousePress, start)
+    send(app, canvas, QEvent.Type.GraphicsSceneMouseMove, end)
+    send(app, canvas, QEvent.Type.GraphicsSceneMouseRelease, end, Qt.MouseButton.NoButton)
 
 
 # -- the canvas ------------------------------------------------------------------------------
@@ -66,6 +104,52 @@ def test_deselecting_returns_the_panel_to_the_project_form(services, project, ta
     assert tab._panel.current_step_id() is None
 
 
+# -- the gestures themselves ---------------------------------------------------------------
+
+
+def test_dragging_from_a_handle_onto_another_node_links_them(app, services, project, tab):
+    """The whole point of the canvas. Dragging from A means "A, then B", so B waits on A."""
+    first, second = project.steps
+    canvas = scene(tab)
+    drag(
+        app, canvas, canvas._nodes[first.id].handle_scene_pos(), centre_of(canvas._nodes[second.id])
+    )
+
+    assert services.document.step(second.id).edges.get("requires") == [first.id]
+    assert len(canvas._edges) == 1
+
+
+def test_a_drag_that_would_close_a_cycle_creates_nothing(app, services, project, tab):
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    canvas = scene(tab)
+    drag(
+        app, canvas, canvas._nodes[second.id].handle_scene_pos(), centre_of(canvas._nodes[first.id])
+    )
+
+    assert "requires" not in services.document.step(first.id).edges
+
+
+def test_dragging_a_node_stores_its_position(app, services, project, tab):
+    step = project.steps[0]
+    canvas = scene(tab)
+    node = canvas._nodes[step.id]
+    start = centre_of(node)
+    send(app, canvas, QEvent.Type.GraphicsSceneMousePress, start)
+    node.setPos(node.pos() + QPointF(64, 32))
+    send(app, canvas, QEvent.Type.GraphicsSceneMouseRelease, start, Qt.MouseButton.NoButton)
+
+    assert services.document.step(step.id).module_data["project_editor"]["x"] == 104.0
+    assert services.undo.undo_text() == "Move Step"
+
+
+def test_double_clicking_empty_space_creates_a_step_there(app, services, project, tab):
+    send(app, scene(tab), QEvent.Type.GraphicsSceneMouseDoubleClick, QPointF(700, 500))
+
+    assert len(project.steps) == 3
+    assert project.steps[-1].module_data["project_editor"]["x"] == 608.0
+
+
 # -- gestures become commands -----------------------------------------------------------------
 
 
@@ -88,19 +172,37 @@ def test_moving_two_nodes_is_one_undo_step(services, project, tab):
     assert "project_editor" not in services.document.step(second.id).module_data
 
 
-def test_a_link_drop_creates_the_edge(services, project, tab):
+def test_a_drop_runs_the_same_verb_the_menu_does(services, project, tab):
+    """The drop is not a special case: it selects both ends and runs `steps.link`."""
     first, second = project.steps
-    scene(tab).link_dropped.emit(second.id, first.id)
+    scene(tab).link_requested.emit(first.id, second.id)
+
     assert services.document.step(second.id).edges["requires"] == [first.id]
+    assert services.context.current().selected_entities("step") == [first.id, second.id]
 
 
-def test_a_cycle_is_refused_before_the_drop(services, project, tab):
-    """The scene asks the model under the cursor, so an illegal drop never happens — there
-    is no dialog because there is nothing to apologise for."""
+def test_a_refused_drop_says_why_instead_of_doing_nothing(services, project, tab):
+    first, _second, third = chain(services, project)
+    # third already waits on first through second; linking first onto third closes the loop.
+    scene(tab).link_requested.emit(third.id, first.id)
+
+    assert "requires" not in services.document.step(first.id).edges
+    assert "cycle" in services.window.statusBar().currentMessage()
+
+
+def test_a_drop_onto_an_already_linked_node_says_so(services, project, tab):
     first, second = project.steps
     services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
-    refusal = scene(tab)._link_refusal(first.id, second.id)
-    assert refusal is not None and "that is a cycle" in refusal
+    scene(tab).link_requested.emit(first.id, second.id)
+    assert services.window.statusBar().currentMessage() == "Already linked"
+
+
+def test_the_selection_keeps_the_order_it_was_made_in(services, project, tab):
+    """`Context.selected_entities` promises the selecting view's order, and a two-step verb
+    is the reason that promise matters."""
+    first, second = project.steps
+    scene(tab).select_steps([second.id, first.id])
+    assert services.context.current().selected_entities("step") == [second.id, first.id]
 
 
 def test_creating_on_the_canvas_is_one_undo_step(services, project, tab):
@@ -151,3 +253,64 @@ def test_opening_a_tab_writes_nothing(services, project, tab):
     assert not services.autosave.has_pending()
     for step in project.steps:
         assert "project_editor" not in step.module_data
+
+
+# -- the link verbs, with no canvas in sight ----------------------------------------------------
+#
+# The property that made this an action rather than a private signal: it is a pure function of
+# a Context, so it can be evaluated without a widget and offered by the palette.
+
+
+def context_of(services, *step_ids):
+    from dplanner.framework.context import ContextNode, selection_uri
+
+    services.context.set_scope(
+        SCOPE_SELECTION, tuple(ContextNode(selection_uri("step", s)) for s in step_ids)
+    )
+    return services.context.current()
+
+
+def state(services, action_id, context):
+    return services.actions.spec(action_id).state(context)
+
+
+def test_link_wants_exactly_two_steps(services, project, tab):
+    first, second = project.steps
+    assert not state(services, "steps.link", context_of(services)).visible
+    assert not state(services, "steps.link", context_of(services, first.id)).visible
+    assert state(services, "steps.link", context_of(services, first.id, second.id)).enabled
+
+
+def test_link_greys_itself_and_says_why(services, project, tab):
+    """A greyed menu entry that does not say why is a puzzle; the reason rides on the label."""
+    first, _second, third = chain(services, project)
+    found = state(services, "steps.link", context_of(services, third.id, first.id))
+    assert found.visible and not found.enabled
+    assert found.label is not None and "cycle" in found.label
+
+
+def test_link_runs_from_a_context_alone(services, project, tab):
+    first, second = project.steps
+    services.actions.run("steps.link", context_of(services, first.id, second.id))
+    assert services.document.step(second.id).edges["requires"] == [first.id]
+    services.undo.undo()
+    assert "requires" not in services.document.step(second.id).edges
+
+
+def test_unlink_appears_only_for_a_linked_pair(services, project, tab):
+    first, second = project.steps
+    assert not state(services, "steps.unlink", context_of(services, first.id, second.id)).visible
+
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    # Either way round: the pair is linked, however the user happened to select it.
+    assert state(services, "steps.unlink", context_of(services, first.id, second.id)).enabled
+    assert state(services, "steps.unlink", context_of(services, second.id, first.id)).enabled
+    # And Link stands down, so the two never both offer themselves.
+    assert not state(services, "steps.link", context_of(services, first.id, second.id)).visible
+
+
+def test_unlink_removes_the_edge(services, project, tab):
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    services.actions.run("steps.unlink", context_of(services, first.id, second.id))
+    assert "requires" not in services.document.step(second.id).edges

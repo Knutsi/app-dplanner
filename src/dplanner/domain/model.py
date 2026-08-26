@@ -207,7 +207,10 @@ class Product(Node):
         self.field_changed: Signal[NodeId, str, Origin] = Signal()
         self.text_edited: Signal[TextEdit, Origin] = Signal()
         self.edges_changed: Signal[StepId, Origin] = Signal()
-        self.structure_changed: Signal[NodeId] = Signal()  # The changed parent's id.
+        # The changed parent's id, and who changed it. Every signal here carries an origin,
+        # with no exception: a view that adds a node is as entitled to recognise its own echo
+        # as one that renames it, and a convention with one hole is one nobody can rely on.
+        self.structure_changed: Signal[NodeId, Origin] = Signal()
         self.module_data_changed: Signal[NodeId, str, Origin] = Signal()
         # (owner id, aspect) — the framework's autosave debounces this.
         self.dirty: Signal[str, str] = Signal()
@@ -402,7 +405,9 @@ class Product(Node):
 
     # -- structure -----------------------------------------------------------------------------
 
-    def add_child(self, parent_id: NodeId, child: Node, index: int | None = None) -> NodeId:
+    def add_child(
+        self, parent_id: NodeId, child: Node, index: int | None = None, origin: Origin = None
+    ) -> NodeId:
         """Add a project to the product, or a step to a project."""
         children = self._children_of(parent_id, type(child))
         if not child.folder_name:
@@ -412,10 +417,10 @@ class Product(Node):
         children.insert(len(children) if index is None else index, child)
         self.reindex()
         self.dirty.emit(parent_id, "structure")
-        self.structure_changed.emit(parent_id)
+        self.structure_changed.emit(parent_id, origin)
         return child.id
 
-    def remove_child(self, node_id: NodeId) -> tuple[NodeId, int]:
+    def remove_child(self, node_id: NodeId, origin: Origin = None) -> tuple[NodeId, int]:
         """Detach a project or a step; returns where it was, so undo can put it back.
 
         Edges pointing at a removed step are left alone on purpose. Undo has to restore the
@@ -431,12 +436,14 @@ class Product(Node):
         children.remove(node)
         self.reindex()
         self.dirty.emit(parent.id, "structure")
-        self.structure_changed.emit(parent.id)
+        self.structure_changed.emit(parent.id, origin)
         return parent.id, index
 
-    def restore_child(self, parent_id: NodeId, child: Node, index: int) -> None:
+    def restore_child(
+        self, parent_id: NodeId, child: Node, index: int, origin: Origin = None
+    ) -> None:
         """Put a removed project or step back exactly where it was."""
-        self.add_child(parent_id, child, index)
+        self.add_child(parent_id, child, index, origin)
 
     def _children_of(self, parent_id: NodeId, child_type: type) -> list[Any]:
         parent = self._nodes[parent_id]

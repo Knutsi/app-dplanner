@@ -215,7 +215,7 @@ class StepPanel(QWidget):
         if self._step_id is not None:
             self._refresh_links()
 
-    def _on_structure(self, _parent_id: NodeId) -> None:
+    def _on_structure(self, _parent_id: NodeId, _origin: object = None) -> None:
         if self._step_id is None:
             return
         if not self._product.has(self._step_id):

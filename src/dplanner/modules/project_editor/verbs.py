@@ -1,8 +1,13 @@
 """What a person can do to a step, as action specs.
 
-Linking is not here. It needs two entities, and nothing publishes a two-entity context — the
-canvas expresses it far better as a drag, and the CLI as ``dplanner step link``. A menu entry
-that had to open a picker to name its second operand would be worse than both.
+**Linking is here, and it is here rather than in the canvas on purpose.** A drop on the canvas
+runs :data:`steps.link` exactly as the menu does, so the verb is in the command palette too,
+its refusals come from one place, and it can be tested by handing it a constructed ``Context``
+with no widget in sight. See ``ARCHITECTURE.md`` for the chain this is one link of.
+
+It reads **two selected steps, in the order they were selected: the second waits on the
+first.** That is the drag written down — dragging from A's handle onto B means "A, then B" —
+so the canvas and the menu cannot come to mean different things.
 """
 
 from collections.abc import Callable
@@ -10,7 +15,12 @@ from dataclasses import dataclass
 
 from PySide6.QtWidgets import QInputDialog, QWidget
 
-from dplanner.domain.commands import AddNodeCommand, RemoveNodeCommand, SetFieldCommand
+from dplanner.domain.commands import (
+    AddNodeCommand,
+    RemoveNodeCommand,
+    SetEdgesCommand,
+    SetFieldCommand,
+)
 from dplanner.domain.model import NodeId, Product, Step, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -60,6 +70,26 @@ class StepVerbs:
                 run=self._rename,
             ),
             ActionSpec(
+                id="steps.link",
+                label="&Link Steps",
+                menu="Step",
+                group="link",
+                order=10,
+                tip="The second selected step waits on the first",
+                state=self._can_link,
+                run=self._link,
+            ),
+            ActionSpec(
+                id="steps.unlink",
+                label="&Unlink Steps",
+                menu="Step",
+                group="link",
+                order=20,
+                tip="Remove the link between the two selected steps",
+                state=self._can_unlink,
+                run=self._unlink,
+            ),
+            ActionSpec(
                 id="steps.delete",
                 label="&Delete Step",
                 menu="Step",
@@ -87,6 +117,68 @@ class StepVerbs:
         if step_id is None or not self.product.has(step_id):
             return None
         return self.product.step(step_id)
+
+    # -- linking -------------------------------------------------------------------------------
+
+    def _pair(self, context: Context) -> tuple[StepId, StepId] | None:
+        """The two selected steps as ``(waited on, waiting)``, or None if that is not what
+        is selected."""
+        chosen = context.selected_entities("step")
+        if len(chosen) != 2:
+            return None
+        source, waiter = chosen
+        if not (self.product.has(source) and self.product.has(waiter)):
+            return None
+        return source, waiter
+
+    def _existing_link(self, context: Context) -> tuple[StepId, str] | None:
+        """``(waiter, kind)`` for a link between the pair, whichever way round it runs."""
+        pair = self._pair(context)
+        if pair is None:
+            return None
+        source, waiter = pair
+        for waits, other in ((waiter, source), (source, waiter)):
+            for kind, targets in self.product.step(waits).edges.items():
+                if other in targets:
+                    return waits, kind
+        return None
+
+    def _can_link(self, context: Context) -> ActionState:
+        pair = self._pair(context)
+        if pair is None:
+            return HIDDEN
+        if self._existing_link(context) is not None:
+            # Out of the menu, because Unlink is what belongs there instead — but the reason
+            # travels anyway, for the canvas reporting a drop onto an already-linked node.
+            return ActionState(visible=False, enabled=False, label="Already linked")
+        source, waiter = pair
+        refusal = self.product.link_refusal(waiter, "requires", source)
+        if refusal is None:
+            return ENABLED
+        # The label carries the reason, so a greyed entry says why rather than just being
+        # grey — and the canvas reuses it for the status bar after a refused drop.
+        return ActionState(enabled=False, label=f"Cannot Link — {refusal}")
+
+    def _link(self, context: Context) -> None:
+        pair = self._pair(context)
+        if pair is None:
+            return  # The state gate already prevents this; stay honest.
+        source, waiter = pair
+        waiting = self.product.step(waiter).edges.get("requires", [])
+        self.undo.push(SetEdgesCommand(waiter, "requires", [*waiting, source]))
+
+    def _can_unlink(self, context: Context) -> ActionState:
+        return HIDDEN if self._existing_link(context) is None else ENABLED
+
+    def _unlink(self, context: Context) -> None:
+        found = self._existing_link(context)
+        pair = self._pair(context)
+        if found is None or pair is None:
+            return
+        waiter, kind = found
+        other = pair[0] if pair[1] == waiter else pair[1]
+        remaining = [t for t in self.product.step(waiter).edges.get(kind, []) if t != other]
+        self.undo.push(SetEdgesCommand(waiter, kind, remaining))
 
     # -- run -----------------------------------------------------------------------------------
 

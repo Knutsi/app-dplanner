@@ -25,10 +25,10 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     "View": ("panels", "zoom", "theme", "window"),
     # The planner's own vocabulary. "Project" is what the index tree's right-click menu
     # renders and "Step" is what the graph canvas's does — see framework/action_menu.py.
-    # Linking is deliberately not a Step verb: it needs two entities, and nothing publishes
-    # a two-entity context. The canvas expresses it as a drag and the CLI as `step link`.
+    # "link" holds the two-step verbs: the canvas publishes both ends into the selection
+    # scope on a drop and runs the same action the menu does.
     "Project": ("edit", "open"),
-    "Step": ("edit",),
+    "Step": ("edit", "link"),
     "Tools": ("agent",),
     "Debug": ("llm",),
     "Help": ("about",),

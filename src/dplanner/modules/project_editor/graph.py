@@ -74,15 +74,20 @@ class GraphScene(QGraphicsScene):
         # so the two can never disagree.
         self._press_at: dict[StepId, QPointF] = {}
         self._link_from: StepNodeItem | None = None
+        # Click order, which QGraphicsScene.selectedItems() does not preserve. It is what
+        # makes `Context.selected_entities("step")` mean "the first, then the second".
+        self._selection_order: list[StepId] = []
         self._preview = LinkPreviewItem()
         self._preview.hide()
         self.addItem(self._preview)
 
         self.nodes_moved: Signal[list[tuple[StepId, float, float]]] = Signal()
-        self.link_dropped: Signal[StepId, StepId] = Signal()  # (waiter, source)
-        self.link_refused: Signal[str] = Signal()
+        # (source, target): the user dragged from source's handle onto target. Whether that
+        # is a legal link is not this view's business — the action decides.
+        self.link_requested: Signal[StepId, StepId] = Signal()
         self.create_requested: Signal[float, float] = Signal()
-        self.focus_changed: Signal[StepId | None] = Signal()
+        # The whole selection, in the order it was made: two steps is what a link verb reads.
+        self.focus_changed: Signal[list[StepId]] = Signal()
         self.delete_requested: Signal[list[StepId]] = Signal()
 
         self.selectionChanged.connect(self._on_selection)
@@ -129,14 +134,27 @@ class GraphScene(QGraphicsScene):
         return rect
 
     def select_step(self, step_id: StepId | None) -> None:
+        self.select_steps([] if step_id is None else [step_id])
+
+    def select_steps(self, step_ids: list[StepId]) -> None:
+        """Select these, in this order — which is what a two-step verb reads back."""
         self.clearSelection()
-        item = self._nodes.get(step_id) if step_id is not None else None
-        if item is not None:
-            item.setSelected(True)
+        self._selection_order = []
+        for step_id in step_ids:
+            item = self._nodes.get(step_id)
+            if item is not None:
+                item.setSelected(True)
+        # setSelected fires selectionChanged one item at a time and Qt reports the set
+        # unordered, so the order asked for is restored here and announced once.
+        self._selection_order = [s for s in step_ids if s in self._nodes]
+        self.focus_changed.emit(list(self._selection_order))
+
+    def selected_steps(self) -> list[StepId]:
+        return list(self._selection_order)
 
     def selected_step(self) -> StepId | None:
-        chosen = [i for i in self.selectedItems() if isinstance(i, StepNodeItem)]
-        return chosen[0].step_id if len(chosen) == 1 else None
+        """The one selected step, or None when it is none or several."""
+        return self._selection_order[0] if len(self._selection_order) == 1 else None
 
     # -- gestures ----------------------------------------------------------------------------
 
@@ -161,7 +179,7 @@ class GraphScene(QGraphicsScene):
             super().mouseMoveEvent(event)
             return
         target = self._node_at(event.scenePos())
-        ok = target is not None and self._refusal_for(target) is None
+        ok = target is not None and self._refusal_between(self._link_from, target) is None
         for item in self._nodes.values():
             item.set_link_state("")
         if target is not None and target is not self._link_from:
@@ -177,11 +195,7 @@ class GraphScene(QGraphicsScene):
                 item.set_link_state("")
             target = self._node_at(event.scenePos())
             if target is not None and target is not source:
-                refusal = self._refusal_for(target)
-                if refusal is None:
-                    self.link_dropped.emit(target.step_id, source.step_id)
-                else:
-                    self.link_refused.emit(refusal)
+                self.link_requested.emit(source.step_id, target.step_id)
             event.accept()
             return
 
@@ -214,10 +228,16 @@ class GraphScene(QGraphicsScene):
 
     # -- internals ---------------------------------------------------------------------------
 
-    def _refusal_for(self, target: StepNodeItem) -> str | None:
-        if self._link_from is None or target is self._link_from:
+    def _refusal_between(self, source: StepNodeItem, target: StepNodeItem) -> str | None:
+        """Why dragging from ``source`` to ``target`` would not work, for the drag preview.
+
+        Both ends are arguments rather than one of them being read off the gesture: this used
+        to read ``self._link_from``, which the release handler clears on its first line, so
+        every drop refused itself.
+        """
+        if target is source:
             return "a step cannot depend on itself"
-        return self._link_refusal(target.step_id, self._link_from.step_id)
+        return self._link_refusal(target.step_id, source.step_id)
 
     def _node_at(self, scene_pos: QPointF) -> StepNodeItem | None:
         for item in self.items(scene_pos):
@@ -230,7 +250,10 @@ class GraphScene(QGraphicsScene):
         return None
 
     def _on_selection(self) -> None:
-        self.focus_changed.emit(self.selected_step())
+        current = {i.step_id for i in self.selectedItems() if isinstance(i, StepNodeItem)}
+        kept = [step_id for step_id in self._selection_order if step_id in current]
+        self._selection_order = kept + [s for s in current if s not in kept]
+        self.focus_changed.emit(list(self._selection_order))
 
     def _grow_scene_rect(self) -> None:
         bounds = self.itemsBoundingRect()

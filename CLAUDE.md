@@ -41,7 +41,9 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
 - Only add comments that carry durable value for future developers and agents. Otherwise,
   make the code self-documenting.
 - `DESIGN.md` is the standard for all UI work here. `FORMAT.md` is the standard for anything
-  that reaches disk.
+  that reaches disk. `ARCHITECTURE.md` is where a rule's *reasoning* lives — when you settle an
+  architectural question, write the rule here and the why there, and have each point at the
+  other. A decision that lives only in a commit message is one the next feature rediscovers.
 
 ## Checks — run all three before finishing any task
 
@@ -148,6 +150,16 @@ root, stop and look for the registry or capability you have not found yet.
 
 ## Mechanical facts worth knowing
 
+- **Every change follows one chain: `action(context) → command → model → signal → views`.**
+  A gesture is not a special case — a canvas drop runs the same `ActionSpec` the menu does, so
+  the verb exists in the palette too and can be tested by handing it a constructed `Context`
+  with no widget in sight. Nothing pushes an update at a view: the model emits, each view
+  decides what to redraw, and the `origin` is how the view that caused the change knows to
+  ignore its own echo. **`ARCHITECTURE.md` has the diagram and why each link is there** — read
+  it before adding a surface that changes anything.
+- **Work may leave the GUI thread; mutation may not.** `core.signals.Signal` is synchronous
+  and has no thread affinity, so the model is only ever changed on the GUI thread. Anything
+  computed off it returns through `TaskRunner`, the one place that uses real Qt signals.
 - **There is no Save-file action.** Autosave writes 1.5 s after the last change; *Save*
   means recording a version, and it only exists when the storage provider has a history. The
   CLI has no timer: a run is a transaction that flushes once, at the end, and writes nothing
@@ -168,8 +180,10 @@ root, stop and look for the registry or capability you have not found yet.
   exactly. `Product.requires()` skips ids it cannot resolve. Edge kinds this build does not
   know are loaded and written back untouched.
 - **`Product.link_refusal()` is the only authority on a legal edge.** `set_edges` asks it
-  before writing and the canvas asks it under the cursor during a drag, so live feedback and
-  the write can never disagree. Never write a second reachability check in a view.
+  before writing, and `steps.link`'s state asks it to decide whether the menu entry is enabled
+  and what a greyed one says. Never write a second reachability check in a view — the one that
+  existed refused every drop for a fortnight because it read gesture state that had already
+  been cleared.
 - **Automatic graph layout is never persisted.** A node nobody moved is placed by dependency
   depth every time the project opens. Storing that would make merely opening a tab dirty the
   workspace, and every CLI-created step would grow a position file behind the user's back.

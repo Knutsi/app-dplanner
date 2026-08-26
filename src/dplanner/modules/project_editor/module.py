@@ -34,7 +34,6 @@ from dplanner.domain.commands import (
     AddNodeCommand,
     Command,
     CompositeCommand,
-    SetEdgesCommand,
     SetFieldCommand,
     SetModuleDataCommand,
 )
@@ -135,8 +134,7 @@ class ProjectActivity(ActivityBase):
 
         self._scene.focus_changed.connect(self._on_focus)
         self._scene.nodes_moved.connect(self._on_nodes_moved)
-        self._scene.link_dropped.connect(self._on_link_dropped)
-        self._scene.link_refused.connect(lambda why: deps.status.show_status(why, 4000))
+        self._scene.link_requested.connect(self._on_link_requested)
         self._scene.create_requested.connect(self._on_create)
         self._scene.delete_requested.connect(self._verbs.delete_many)
 
@@ -167,7 +165,7 @@ class ProjectActivity(ActivityBase):
             SCOPE_ACTIVITY,
             (ContextNode(self.uri, (("entity", entity_uri("project", self.project_id)),)),),
         )
-        self._publish_selection(self._scene.selected_step())
+        self._publish_selection(self._scene.selected_steps())
 
     def on_deactivated(self) -> None:
         self._deps.undo.break_coalescing()
@@ -255,7 +253,7 @@ class ProjectActivity(ActivityBase):
         ]
         self._scene.sync(nodes, edges)
 
-    def _on_structure(self, _parent_id: NodeId) -> None:
+    def _on_structure(self, _parent_id: NodeId, _origin: object = None) -> None:
         if not self._product.has(self.project_id):
             return
         # Order matters: a step that has gone must leave the panel *before* sync removes its
@@ -279,14 +277,16 @@ class ProjectActivity(ActivityBase):
 
     # -- gestures become commands ----------------------------------------------------------------
 
-    def _on_focus(self, step_id: StepId | None) -> None:
+    def _on_focus(self, selection: list[StepId]) -> None:
         self._deps.undo.break_coalescing()
-        self._publish_selection(step_id)
+        self._publish_selection(selection)
         if self._panel is not None:
-            self._panel.show_step(step_id)
+            # One step is something to edit; none or several is not, and the panel says so
+            # by showing the host's empty page.
+            self._panel.show_step(selection[0] if len(selection) == 1 else None)
 
-    def _publish_selection(self, step_id: StepId | None) -> None:
-        nodes = () if step_id is None else (ContextNode(selection_uri("step", step_id)),)
+    def _publish_selection(self, selection: list[StepId]) -> None:
+        nodes = tuple(ContextNode(selection_uri("step", step_id)) for step_id in selection)
         self._deps.context.set_scope(SCOPE_SELECTION, nodes)
 
     def _move_command(self, step_id: StepId, x: float, y: float) -> Command:
@@ -307,14 +307,16 @@ class ProjectActivity(ActivityBase):
         # would jump back past a move made minutes ago.
         self._deps.undo.break_coalescing()
 
-    def _on_link_dropped(self, waiter: StepId, source: StepId) -> None:
-        step = self._product.step(waiter)
-        targets = [*step.edges.get("requires", []), source]
-        try:
-            self._deps.undo.push(SetEdgesCommand(waiter, "requires", targets))
-        except ValueError as refusal:
-            # The hover check said yes; something wrote between then and the drop.
-            self._deps.status.show_status(str(refusal), 4000)
+    def _on_link_requested(self, source: StepId, target: StepId) -> None:
+        """A drop is not a special case: it selects both ends and runs the same verb the
+        menu does, so the refusal, the label and the command all come from one place."""
+        self._scene.select_steps([source, target])
+        context = self._deps.context.current()
+        state = self._deps.actions.spec("steps.link").state(context)
+        if state.visible and state.enabled:
+            self._deps.actions.run("steps.link", context)
+        else:
+            self._deps.status.show_status(state.label or "Those steps cannot be linked", 4000)
 
     def _on_create(self, x: float, y: float) -> None:
         step = Step(title="New step")
@@ -368,7 +370,7 @@ class ProjectEditorModule:
         deps.tabs.register_factory(PROJECT_KIND, factory)
         self._verbs.register_into(deps.actions)
         # A project that goes away takes its tab with it, and a rename reaches the tab.
-        deps.product.structure_changed.connect(lambda _parent_id: self._close_orphan_tabs())
+        deps.product.structure_changed.connect(lambda *_args: self._close_orphan_tabs())
         deps.product.field_changed.connect(lambda *_args: self._retitle_tabs())
 
     # -- tabs ------------------------------------------------------------------------------------

@@ -41,7 +41,7 @@ class ProjectsSegment:
         self._actions = actions
         self._open_project = open_project
         self._unsubscribe = [
-            product.structure_changed.connect(lambda _parent_id: self.rebuild()),
+            product.structure_changed.connect(lambda *_args: self.rebuild()),
             product.field_changed.connect(lambda *_args: self.rebuild()),
         ]
         self.rebuild()
