@@ -22,6 +22,7 @@ Three seams, all established elsewhere in this application:
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Protocol
 
 from PySide6.QtCore import QPoint, Qt
@@ -89,7 +90,7 @@ def _unscheduled(_project_id: ProjectId, order: Sequence[Placed]) -> list[Schedu
     The honest empty answer is the domain function itself, asked a question with no answer —
     which is why the table needs no branch for a build without estimates.
     """
-    return schedule(order, lambda _step: None)
+    return schedule(order, lambda _step: None, date.today())
 
 
 @dataclass(frozen=True)

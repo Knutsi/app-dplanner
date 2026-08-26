@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.domain.model import StepId
-from dplanner.domain.schedule import Scheduled, format_days
+from dplanner.domain.schedule import Scheduled, format_date, format_days
 
 COLUMNS = ("#", "Step", "Wave", "Estimate", "Accumulated", "Date", "")
 TITLE_COLUMN = 1
@@ -94,7 +94,7 @@ class OrderTable(QTableWidget):
                 self._wave_label(place.wave - 1),
                 format_days(scheduled.days),
                 format_days(scheduled.accumulated),
-                scheduled.finish.isoformat() if scheduled.finish else "",
+                format_date(scheduled.finish) if scheduled.finish else "",
                 " · ".join(self._step_aspects(place.step.id)),
             )
             for column, text in enumerate(cells):
@@ -108,7 +108,7 @@ class OrderTable(QTableWidget):
                     item.setTextAlignment(_RIGHT)
                 self.setItem(row, column, item)
             self.setRowHeight(row, ROW_HEIGHT)
-        # A column of blanks says less than an absent one: no start date, no Date column.
+        # A column of blanks says less than an absent one: nothing estimated, no Date column.
         self.setColumnHidden(DATE_COLUMN, all(s.finish is None for s in order))
         self.resizeColumnToContents(TITLE_COLUMN)
         if selected is not None:

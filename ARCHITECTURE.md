@@ -195,6 +195,15 @@ The detail panels get the first rule for free, and that is the point of where th
 panel reads the context; only the active pane may write to it; so the panel follows the pane
 the user is in without a single line about panes anywhere in it.
 
+The tab bar's right-click is the same rule pointing the other way. **A right-click on a tab
+makes it current before the menu opens** — the move the canvas already makes when it selects
+the node under the cursor — so the menu is built from one notion of "what the user is on" and
+every entry in it is a verb the menu bar and the palette already have. That is why the Tab
+menu exists in `MENU_STRUCTURE` at all: `build_menu` renders a *menu*, and a right-click that
+offered anything else would be a hand-maintained copy waiting to drift. `TabHost` builds none
+of it — it emits `tab_menu_requested` with a position, and the module that owns the tab verbs
+renders them.
+
 ### What this rules out
 
 The graph canvas is the worked example, because it got this wrong first. A drop originally ran
@@ -404,6 +413,13 @@ directions of the rule intact at once: whoever owns a piece of data owns its sha
 whoever derives from it needs one implementation rather than one per surface. It is also why
 the derivation works for a build with no estimation module at all: the honest empty answer is
 the same function, asked a question with no answer.
+
+The start date itself is the smallest case of the same rule. **A project nobody has dated
+starts today**, and that answer is computed (`estimation.schedule.start_of`) rather than
+written when the tab opens. Writing it would dirty a workspace for the act of looking at it,
+and it would be wrong by tomorrow — so the only date on disk is one a person chose, and every
+other plan answers "if you start now". Which also deleted a state: there is no "no start
+date" any more, so no empty Date column to explain and no branch to carry it.
 
 The rule generalises: **derived data may be cached, but it may not be persisted.** A cache
 that is wrong is a bug you find in a session; a file that is wrong is a bug you find in a

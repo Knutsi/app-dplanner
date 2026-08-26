@@ -5,6 +5,7 @@ file exercising them without one is what proves it beyond the import check.
 """
 
 import json
+from datetime import date
 from io import StringIO
 
 import pytest
@@ -208,9 +209,14 @@ def test_the_schedule_dates_each_step_from_the_start(cli, workspace):
     }
 
 
-def test_the_schedule_says_when_it_cannot_give_dates(cli):
+def test_a_project_nobody_dated_starts_today(cli):
+    """ "If you start now" is the useful answer to a plan with no date on it — and it is
+    derived, so the workspace still holds no start date afterwards."""
     cli("estimate", "set", "Read the spec", "--days", "3")
-    assert "no start date" in cli("schedule", "show", "Discovery")
+    shown = json.loads(cli("schedule", "show", "Discovery", "--json"))
+
+    assert shown["start"] == date.today().isoformat()
+    assert shown["steps"][0]["date"]
 
 
 def test_the_schedule_counts_what_nobody_has_sized(cli):

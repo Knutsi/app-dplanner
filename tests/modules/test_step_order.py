@@ -1,6 +1,7 @@
 """The order view: waves and dates on screen, and the seams it reaches other features through."""
 
 import json
+from datetime import date
 from io import StringIO
 
 import pytest
@@ -10,6 +11,7 @@ from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import run
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Project, Step
+from dplanner.domain.schedule import format_date
 from dplanner.framework.context import SCOPE_SELECTION
 from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.step_order.view import (
@@ -100,14 +102,25 @@ def test_the_days_accumulate_down_the_order(services, project, tab):
     assert accumulated == ["1d", "3d", "6d", "2w"]
 
 
-def test_there_is_no_date_column_until_there_is_a_start_date(services, project, tab):
-    """A column of blanks says less than an absent one, and the bar above says why."""
-    services.undo.push(SetModuleDataCommand(project.steps[0].id, "estimation", {"days": 3.0}))
+def test_there_is_no_date_column_until_something_is_estimated(services, project, tab):
+    """A column of blanks says less than an absent one. The blank is now "nobody sized this"
+    rather than "nobody dated the project" — a project with no start date starts today."""
     assert tab.table.isColumnHidden(DATE_COLUMN)
 
-    tab.start_bar.date.setDate(QDate(2026, 9, 7))  # A Monday.
+    services.undo.push(SetModuleDataCommand(project.steps[0].id, "estimation", {"days": 3.0}))
     assert not tab.table.isColumnHidden(DATE_COLUMN)
-    assert tab.table.item(0, DATE_COLUMN).text() == "2026-09-09"
+
+    tab.start_bar.date.setDate(QDate(2026, 9, 7))  # A Monday.
+    # Through the shared formatter, so the table and the terminal cannot read differently.
+    assert tab.table.item(0, DATE_COLUMN).text() == format_date(date(2026, 9, 9))
+
+
+def test_the_bar_opens_on_today_and_writes_nothing(services, project, tab):
+    """A project nobody dated starts today — derived, so opening a tab still dirties nothing.
+    Storing it would be wrong by tomorrow, and would dirty the workspace to say so."""
+    assert tab.start_bar.date.date().toPython() == date.today()
+    assert "estimation" not in project.module_data
+    assert not services.undo.can_undo()
 
 
 def test_the_start_date_is_written_to_the_project_and_undoable(services, project, tab):

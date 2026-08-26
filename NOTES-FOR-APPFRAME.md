@@ -150,6 +150,14 @@ Three things that were not obvious and cost time:
 - **Focus must follow a programmatic move**, or the watcher hears the leftover focus in the
   pane the tab just left and puts the user back where they were not.
 
+**Later addition: the tab bar's right-click.** `TabHost` now sets `CustomContextMenu` on each
+group's tab bar, makes the tab under the cursor current, and emits
+`tab_menu_requested: Signal[QPoint]`. It builds no menu itself — what a tab offers is
+application vocabulary, and a framework that knew the answer would have to know the action
+registry. `after_current()` was added beside it, because "the tabs to the right of this one"
+is the one fact about groups the host cannot hide: a caller working it out would have to be
+told the groups exist. Both belong upstream with the groups, if the groups go.
+
 **A pre-existing bug it surfaced.** `setMovable(True)` means a drag-reorder fires
 `currentChanged` with the *same* page current, and `_on_current_changed` treated it as a
 switch: deactivate, clear both scopes, reactivate, seal the undo burst, flush autosave — for a

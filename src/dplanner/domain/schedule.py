@@ -17,6 +17,11 @@ answer: a dependency-aware schedule, where independent branches run side by side
 refinement and needs nothing here to move — only ``schedule`` to place a step after everything
 it waits on rather than after its predecessor in the list.
 
+**Every plan has a start.** A project nobody has dated starts today — the caller resolves
+that (see ``estimation/schedule.py``'s ``start_of``) and this file is simply handed a date.
+"If you start now" is the useful answer to a plan with no date on it, and it means there is
+one code path here rather than two.
+
 **Nothing here is written to disk**, for ``ordering.py``'s reason: a stored date disagrees
 with the estimate it came from the moment ``dplanner estimate set`` runs with no window open
 to notice.
@@ -74,6 +79,43 @@ def working_days_after(start: date, days: float) -> date:
     return when
 
 
+MONTHS = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+ABBREVIATION = 3  # "September" → "Sep". True of every month in English.
+
+
+def format_date(when: date, today: date | None = None) -> str:
+    """A date as a person reads it: "23 September", or "14 Feb '27" in another year.
+
+    A schedule is read for *when*, and an ISO date makes the reader do the month arithmetic.
+    The year is the part that is usually obvious, so it appears only when it is not — and
+    when it does, the month abbreviates to keep the column from doubling in width.
+
+    The month names are spelled out here rather than taken from ``strftime``, which is
+    locale-dependent: the interface is English, and a date that read "23 september" on one
+    machine and "23 September" on another would be a test that passes where it was written.
+
+    ``today`` is a parameter so the rule can be tested without waiting for a year to pass;
+    the default is the clock, because every caller means "now".
+    """
+    today = today or date.today()
+    if when.year == today.year:
+        return f"{when.day} {MONTHS[when.month - 1]}"
+    return f"{when.day} {MONTHS[when.month - 1][:ABBREVIATION]} '{when.year % 100:02d}"
+
+
 def as_weeks(days: float) -> float:
     """``days`` of work as working weeks. A week is five days, because a day is a working one."""
     return days / WORKING_DAYS_PER_WEEK
@@ -96,21 +138,15 @@ def format_days(days: float | None) -> str:
 def schedule(
     order: Sequence[Placed],
     days_for: Callable[[Step], float | None],
-    start: date | None = None,
+    start: date,
 ) -> list[Scheduled]:
-    """The order with a running total and a date against each step.
-
-    Without a ``start`` the totals are still the answer to "how much work is in front of
-    this" — the dates are simply the part that needs a calendar.
-    """
+    """The order with a running total and a date against each step."""
     scheduled: list[Scheduled] = []
     accumulated = 0.0
     for place in order:
         days = days_for(place.step)
         if days is not None:
             accumulated += days
-        finish = None
-        if days is not None and start is not None and accumulated > 0:
-            finish = working_days_after(start, accumulated)
+        finish = working_days_after(start, accumulated) if days is not None else None
         scheduled.append(Scheduled(place=place, days=days, accumulated=accumulated, finish=finish))
     return scheduled

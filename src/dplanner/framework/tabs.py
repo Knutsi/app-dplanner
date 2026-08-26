@@ -24,7 +24,7 @@ place.
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt
 from PySide6.QtWidgets import QApplication, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 from dplanner.core.signals import Signal
@@ -54,6 +54,10 @@ class TabHost(QWidget):
         self._tab_bars_visible = True
 
         self.activity_changed: Signal[Activity | None] = Signal()
+        # A tab was right-clicked, and it is now the current one. Carries where to pop up.
+        # The host builds no menu of its own: what a tab offers is application vocabulary,
+        # and the module that owns the tab verbs renders them from the action registry.
+        self.tab_menu_requested: Signal[QPoint] = Signal()
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal, self)
         # A group dragged to zero width would be an invisible pane that still holds tabs —
@@ -129,6 +133,21 @@ class TabHost(QWidget):
                 activity = self._activities.get(widget) if widget is not None else None
                 if activity is not None:
                     found.append(activity)
+        return found
+
+    def after_current(self) -> list[Activity]:
+        """The activities in tabs to the right of the current one, in its own bar.
+
+        The one thing about groups the host cannot hide: "to the right" is a fact about a
+        single tab bar, and a caller that wanted to work it out would have to be told the
+        groups exist. So it answers the question instead of exposing them.
+        """
+        found: list[Activity] = []
+        for index in range(self._active.currentIndex() + 1, self._active.count()):
+            widget = self._active.widget(index)
+            activity = self._activities.get(widget) if widget is not None else None
+            if activity is not None:
+                found.append(activity)
         return found
 
     def set_tab_title(self, activity: Activity, title: str) -> None:
@@ -223,6 +242,10 @@ class TabHost(QWidget):
         group.tabBar().setVisible(self._tab_bars_visible)
         group.currentChanged.connect(lambda _index, g=group: self._on_current_changed(g))
         group.tabCloseRequested.connect(lambda index, g=group: self._close(g, index))
+        group.tabBar().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        group.tabBar().customContextMenuRequested.connect(
+            lambda position, g=group: self._on_tab_menu(g, position)
+        )
         self._groups.insert(position, group)
         self._splitter.insertWidget(position, group)
         self._even_sizes()
@@ -323,6 +346,22 @@ class TabHost(QWidget):
                         self._announce()
                     return
             widget = widget.parentWidget()
+
+    def _on_tab_menu(self, group: QTabWidget, position: QPoint) -> None:
+        """A right-click on a tab acts on *that* tab, so it becomes the current one first.
+
+        The same move the graph canvas makes when it selects the node under the cursor: the
+        menu is then built from one notion of "what the user is on", and every entry in it is
+        the verb the menu bar and the palette already have.
+        """
+        bar = group.tabBar()
+        index = bar.tabAt(position)
+        widget = group.widget(index) if index != -1 else None
+        activity = self._activities.get(widget) if widget is not None else None
+        if activity is None:
+            return  # Empty space beside the tabs; there is nothing to act on.
+        self.focus(activity)
+        self.tab_menu_requested.emit(bar.mapToGlobal(position))
 
     def _on_current_changed(self, group: QTabWidget) -> None:
         # Never sets the active group: a tab closing in a background pane must not move the
