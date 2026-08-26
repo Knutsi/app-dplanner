@@ -1,8 +1,11 @@
-"""A project open in a tab: the canvas, the panel beside it, and the gestures between them.
+"""A project open in a tab: the canvas, the panels it steers, and the gestures between them.
 
 The canvas is exercised through the scene's signals rather than through synthetic mouse
 events: what matters is that a gesture becomes the right command on the undo stack, and a
 QTest.mousePress would test Qt rather than this module.
+
+The detail panels are the window's, not the tab's, so they are reached through the window —
+which is the point: however many projects are open, there is one of each.
 """
 
 import pytest
@@ -12,6 +15,8 @@ from PySide6.QtWidgets import QGraphicsSceneMouseEvent
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetFieldCommand
 from dplanner.domain.model import Project, Step
 from dplanner.framework.context import SCOPE_SELECTION
+from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
+from dplanner.modules.step_properties.module import PANEL_ID as STEP_PANEL_ID
 
 
 @pytest.fixture
@@ -27,6 +32,14 @@ def project(services):
 @pytest.fixture
 def tab(services, project):
     return services.tabs.open("project", project.id)
+
+
+def step_panel(services):
+    return services.window.dock.widget_for(STEP_PANEL_ID)
+
+
+def project_panel(services):
+    return services.window.dock.widget_for(PROJECT_PANEL_ID)
 
 
 def scene(tab):
@@ -91,17 +104,47 @@ def test_an_edge_is_drawn_for_a_link(services, project, tab):
 
 
 def test_selecting_a_node_publishes_the_step_and_shows_it(services, project, tab):
+    """Publishing *is* how the panel learns: the canvas never reaches for it."""
     step = project.steps[0]
     scene(tab).select_step(step.id)
     uris = [node.uri for node in services.context.current().scope(SCOPE_SELECTION)]
     assert uris == [f"app://selection/step/{step.id}"]
-    assert tab._panel.current_step_id() == step.id
+    assert step_panel(services).current_step_id() == step.id
 
 
-def test_deselecting_returns_the_panel_to_the_project_form(services, project, tab):
+def test_deselecting_returns_the_area_to_the_project_form(services, project, tab):
+    dock = services.window.dock
     scene(tab).select_step(project.steps[0].id)
+    assert dock.is_panel_showing(STEP_PANEL_ID)
     scene(tab).select_step(None)
-    assert tab._panel.current_step_id() is None
+    assert not dock.is_panel_showing(STEP_PANEL_ID)
+    assert dock.is_panel_showing(PROJECT_PANEL_ID)
+    assert project_panel(services).current_project_id() == project.id
+
+
+def test_two_panes_share_one_detail_panel(services, project, tab):
+    """The reason the panel is the window's. Two projects side by side is two canvases and
+    one editor — and the editor shows whichever pane the user is in, because only that pane
+    may publish a selection."""
+    other = Project(title="Build")
+    AddNodeCommand(services.document.id, other).redo(services.document)
+    AddNodeCommand(other.id, Step(title="Ship it")).redo(services.document)
+    second = services.tabs.open("project", other.id)
+    services.tabs.move_current_right()
+    assert services.tabs.group_count() == 2
+
+    scene(second).select_step(other.steps[0].id)
+    assert step_panel(services).current_step_id() == other.steps[0].id
+
+    # The user moves to the other pane. Its activation republishes what it has selected.
+    second.on_deactivated()
+    tab.on_activated()
+    scene(tab).select_step(project.steps[0].id)
+    assert step_panel(services).current_step_id() == project.steps[0].id
+
+    # And a background pane re-syncing its canvas does not take the panel with it.
+    scene(second).select_step(None)
+    assert step_panel(services).current_step_id() == project.steps[0].id
 
 
 # -- the gestures themselves ---------------------------------------------------------------
@@ -222,7 +265,7 @@ def test_deleting_the_shown_step_leaves_the_panel_empty(services, project, tab, 
     scene(tab).select_step(step.id)
     scene(tab).delete_requested.emit([step.id])
 
-    assert tab._panel.current_step_id() is None
+    assert step_panel(services).current_step_id() is None
     assert len(project.steps) == 1
 
 
@@ -230,8 +273,10 @@ def test_deleting_the_shown_step_leaves_the_panel_empty(services, project, tab, 
 
 
 def test_the_project_form_edits_the_project(services, project, tab):
-    tab._summary_edit.setText("Replace the index")
-    tab._summary_edit.editingFinished.emit()
+    panel = project_panel(services)
+    assert panel.current_project_id() == project.id
+    panel.summary_edit.setText("Replace the index")
+    panel.summary_edit.editingFinished.emit()
     assert project.summary == "Replace the index"
     services.undo.undo()
     assert project.summary == ""

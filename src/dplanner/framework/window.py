@@ -22,16 +22,20 @@ class StatusHost(Protocol):
     def add_status_widget(self, widget: QWidget) -> None: ...
 
 
-class SidebarHost(Protocol):
-    """The window's single sidebar slot: whichever module installs a widget owns it."""
+class PanelHost(Protocol):
+    """Which of the window's anchored panels the user has switched on.
 
-    def set_sidebar(self, widget: QWidget) -> None: ...
+    Where a panel sits, and whether it currently has anything to show, are the dock's own
+    business (:mod:`dplanner.framework.panels`) — this is only the user's on/off, which is what
+    a View menu needs. ``panels_changed`` carries the panel id, and exists because that
+    on/off can also be flipped from a panel's own header menu.
+    """
 
-    def set_sidebar_visible(self, visible: bool) -> None: ...
+    panels_changed: Signal[str]
 
-    def is_sidebar_visible(self) -> bool: ...
+    def set_panel_visible(self, panel_id: str, visible: bool) -> None: ...
 
-    def reset_sidebar_width(self) -> None: ...
+    def is_panel_visible(self, panel_id: str) -> bool: ...
 
 
 class ImmersiveHost(Protocol):

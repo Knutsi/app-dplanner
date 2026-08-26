@@ -123,6 +123,18 @@ class Context:
             if (entity_id := entity_id_from_uri(uri, kind)) is not None
         ]
 
+    def selected_entity(self, kind: str | None = None) -> str | None:
+        """The one selected thing of this kind — None when nothing, or more than one, is.
+
+        Distinct from :meth:`focus_entity`, which falls back to whatever the activity is about
+        and answers *"what should this verb act on"*. This answers *"is there exactly one of
+        these in front of the user"*, which is what a detail editor needs — and it is one
+        definition rather than two, so a panel that shows a step and a panel that steps aside
+        for it cannot disagree about what "a step is selected" means.
+        """
+        selected = self.selected_entities(kind)
+        return selected[0] if len(selected) == 1 else None
+
     def focus_entity(self, kind: str | None = None) -> str | None:
         """The one thing an action should act on: the selection, else the activity's own.
 

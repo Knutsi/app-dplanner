@@ -5,9 +5,9 @@
 aspect module never learns that a panel renders it. The composition root is the only place
 that knows both, which is what lets the fifth aspect cost one registration and nothing else.
 
-**Nor does it learn what a host is.** A host says which step to show and supplies the widget
-to display when there is none — for the project editor that is the project's own form, which
-is how "the project when nothing is selected" happens without this file importing a project.
+**Nor does it learn who is looking at a step.** There is one panel in the window and it reads
+the context: whichever pane the user is in publishes a step selection, and this shows it. A
+canvas, a table and anything added later reach it the same way, and none of them is its host.
 
 The title sits above the tab bar rather than inside a tab of its own: a step's name belongs
 to the step, not to any aspect, and it should stay readable while you move between them.
@@ -28,29 +28,24 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.commands import SetFieldCommand
 from dplanner.domain.model import NodeId, Product, StepId
+from dplanner.framework.context import Context
 from dplanner.framework.inspector import InspectorExtension, InspectorSection
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.theme.themes import Theme
 
 # DESIGN.md: side panels get 16 px outer margins, and more space between blocks than within
-# one — 12 between, 6 from a caption to its field.
+# one — 12 between, 6 from a caption to its field. The panel's own caption is its frame's
+# header, so nothing here prints one.
 PANEL_MARGIN = 16
 BLOCK_GAP = 12
 CAPTION_GAP = 6
 
 
-def _caption(text: str, parent: QWidget) -> QLabel:
-    label = QLabel(text, parent)
-    label.setObjectName("InspectorCaption")
-    return label
-
-
 class StepPanel(QWidget):
-    """The panel a host installs beside its own surface.
+    """THE step detail panel, anchored in one of the window's areas.
 
-    Its own state is one step id; everything else is either the host's (the empty widget) or
-    a contributing module's (the tabs).
+    Its own state is one step id; everything else belongs to a contributing module (the tabs).
     """
 
     def __init__(
@@ -58,7 +53,6 @@ class StepPanel(QWidget):
         product: Product,
         undo: UndoService[Product],
         sections: Sequence[InspectorSection] = (),
-        empty: QWidget | None = None,
         theme: ThemeService | None = None,
         parent: QWidget | None = None,
     ) -> None:
@@ -69,8 +63,6 @@ class StepPanel(QWidget):
         self._product = product
         self._undo = undo
         self._step_id: StepId | None = None
-
-        self._empty = empty if empty is not None else self._placeholder()
 
         self.title_edit = QLineEdit(self)
         self.title_edit.setObjectName("InspectorTitle")
@@ -103,20 +95,14 @@ class StepPanel(QWidget):
             extension.tab_visibility_changed.connect(partial(self._set_tab_visible, index))
             self.tab_bar.setTabVisible(index, extension.tab_visible())
 
-        step_page = QWidget(self)
-        step_layout = QVBoxLayout(step_page)
-        step_layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, 0)
-        step_layout.setSpacing(CAPTION_GAP)
-        step_layout.addWidget(_caption("Step", step_page))
-        step_layout.addWidget(self.title_edit)
-        step_layout.addWidget(self.links)
-        step_layout.addSpacing(BLOCK_GAP)
-        step_layout.addWidget(self.tab_bar)
-        step_layout.addLayout(self._pages, stretch=1)
-
-        self._stack = QStackedLayout(self)
-        self._stack.addWidget(self._empty)
-        self._stack.addWidget(step_page)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(PANEL_MARGIN, 0, PANEL_MARGIN, 0)
+        layout.setSpacing(CAPTION_GAP)
+        layout.addWidget(self.title_edit)
+        layout.addWidget(self.links)
+        layout.addSpacing(BLOCK_GAP)
+        layout.addWidget(self.tab_bar)
+        layout.addLayout(self._pages, stretch=1)
 
         def paint_tab_icons(current: Theme) -> None:
             for index, section in enumerate(sections):
@@ -133,22 +119,25 @@ class StepPanel(QWidget):
             self._unsubscribes.append(theme.changed.connect(paint_tab_icons))
             paint_tab_icons(theme.current)
 
-    # -- what a host says --------------------------------------------------------------------
+    # -- what the context says ---------------------------------------------------------------
 
-    @property
-    def widget(self) -> QWidget:
-        """The panel is its own widget; hosts name this through their own Protocol."""
-        return self
+    def show_context(self, context: Context) -> bool:
+        """One selected step is something to edit; none or several is not.
+
+        The panel says so by going off screen rather than by showing a placeholder — an area
+        with nothing in it is a wider canvas, not a blank column.
+        """
+        self.show_step(context.selected_entity("step"))
+        return self._step_id is not None
 
     def show_step(self, step_id: StepId | None) -> None:
-        """Show one step, or the host's empty widget.
+        """Show one step, or nothing.
 
         The empty path runs *before* the unchanged-id early return: deselecting has to get
         through every time, or the last step stays on screen after the user clicks away.
         """
         if step_id is None or not self._product.has(step_id):
             self._step_id = None
-            self._stack.setCurrentIndex(0)
             self._show_in_extensions(None)
             return
         if step_id == self._step_id:
@@ -156,7 +145,6 @@ class StepPanel(QWidget):
         self._step_id = step_id
         self.title_edit.setText(self._product.step(step_id).title)
         self._refresh_links()
-        self._stack.setCurrentIndex(1)
         self._show_in_extensions(step_id)
 
     def current_step_id(self) -> StepId | None:
@@ -175,13 +163,6 @@ class StepPanel(QWidget):
         self._extensions = []
 
     # -- internals -----------------------------------------------------------------------------
-
-    def _placeholder(self) -> QWidget:
-        label = QLabel("Select a step to edit it.")
-        label.setObjectName("InspectorPlaceholder")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setWordWrap(True)
-        return label
 
     def _show_in_extensions(self, step_id: StepId | None) -> None:
         for extension in self._extensions:

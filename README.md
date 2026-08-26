@@ -147,7 +147,8 @@ src/dplanner/
 │   └── skill.py             the agent skill, generated from the registry
 │
 ├── framework/             ── from the template, and evolved here. The Qt machinery.
-│   ├── index_panel.py       the sidebar: one tree, folders from whoever registered them
+│   ├── panels.py            the window's left/right/bottom areas, and what modules anchor there
+│   ├── index_panel.py       the index tree: folders from whoever registered them
 │   ├── inspector.py         what a module registers to appear in a detail panel
 │   ├── prose_section.py     a panel section over one document, bound to the undo stack
 │   ├── window_watch.py      noticing that another writer changed the workspace
@@ -157,8 +158,8 @@ src/dplanner/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
 │   ├── product/             the product's identity: name, repository, checkout
 │   ├── projects/            the Projects folder in the index, and the project verbs
-│   ├── project_editor/      a project in a tab: the graph canvas, hosting a detail panel
-│   ├── step_properties/     THE step detail panel — built for whoever hosts one
+│   ├── project_editor/      a project in a tab: the graph canvas, and the project form
+│   ├── step_properties/     THE step detail panel — one in the window, following the context
 │   ├── step_estimation/     ── the four step aspects: data, editor and verbs each
 │   ├── step_ticket/
 │   ├── step_description/

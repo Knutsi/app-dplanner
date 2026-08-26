@@ -6,11 +6,12 @@ stack, each ignoring the echo of its own write.
 """
 
 import pytest
-from PySide6.QtWidgets import QLabel
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Project, Step, TextEdit
+from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.step_estimation.aspect import read as read_estimate
+from dplanner.modules.step_properties.module import PANEL_ID
 
 
 @pytest.fixture
@@ -24,10 +25,15 @@ def project(services):
 
 @pytest.fixture
 def panel(services, project):
-    made = next(m for m in services.modules if m.id == "step_properties").create_panel(QLabel())
-    made.show_step(project.steps[0].id)
-    yield made
-    made.dispose()
+    """The one step panel the window anchored — there is no other, and the window owns it.
+
+    Pointed at a step the way the application points it: by publishing a selection. Reaching
+    for ``show_step`` instead would be undone by the next context change.
+    """
+    services.context.set_scope(
+        SCOPE_SELECTION, (ContextNode(selection_uri("step", project.steps[0].id)),)
+    )
+    return services.window.dock.widget_for(PANEL_ID)
 
 
 def section(panel, label):

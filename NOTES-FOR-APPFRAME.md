@@ -30,7 +30,8 @@ upstream, not a decision.
 single `QTreeWidget` whose top-level folders come from an `IndexSegmentRegistry`; a module
 registers an `IndexSegment` and owns one folder and everything under it. `AppServices` lost
 `sidebar_panels` and `utility_tools` and gained `index_segments`; the builder installs the
-panel and pre-registers nothing.
+panel and pre-registers nothing. *(Since revised: there is no sidebar slot at all now — the
+tree is one panel anchored in the left area. See "Panel areas" below.)*
 
 **Why.** A tab set shows one feature at a time and makes every feature a peer; an index shows
 the workspace's *shape* and grows by a folder rather than by another tab. Once the tree
@@ -188,6 +189,12 @@ deliberately did *not* extract `framework/inspector_panel.py`, because extractin
 one caller is speculative and our panel's own title header and host-supplied empty page are
 host concerns that would have to leak in as parameters.
 
+**Since revised, and half the gap is now closed.** `framework/panels.py` (below) supplies the
+*anchoring* host — where the panel sits, whether it is on screen, what its header says — while
+each panel still renders its own sections. That turned out to be the honest split: "where does
+this surface live" is framework, "what does a section look like" is not. It also removed the
+host-supplied empty page, which was the awkward parameter above: there is no host any more.
+
 **Upstream?** The gap is real and worth closing, but the shape is not obvious yet: three
 implementations exist (Writer's two, ours) and none of them is quite the others. Either ship
 a host and make the docstring true, or change the docstring to say the framework supplies the
@@ -195,6 +202,45 @@ a host and make the docstring true, or change the docstring to say the framework
 registry is documented as producing tabs and every implementation produces something else.
 Note also that `tab_visible()` and `tab_visibility_changed` are honoured by **no** host in
 either upstream repo; ours is the first.
+
+### Panel areas: the window learned where a surface can be anchored
+
+**What.** New `framework/panels.py`: `PanelArea` (left/right/bottom), `PanelSpec`,
+`PanelRegistry`, a `ContextPanel` protocol, and `PanelDock` — a `QSplitter` that is the
+window's central widget and holds the tab host in the middle with an area on three sides.
+`AppServices` gained `panels`. `framework/window.py` lost `SidebarHost` and gained `PanelHost`
+(`set_panel_visible` / `is_panel_visible` / `panels_changed`). `main_window.py` lost its
+sidebar slot and its width persistence (~45 lines) and gained three delegates.
+`framework/widgets.py` lost `stored_inspector_width` / `remember_inspector_width`.
+`builder.py` registers the index tree as the framework's own panel rather than calling
+`set_sidebar`, and `WindowFactory` now takes `(TabHost, PanelDock)`.
+
+**Why.** DPlanner's step detail panel was built inside `ProjectActivity`, so a split window
+showed two of it. The template has the same shape available to it — one hard-coded sidebar
+slot, and any other anchored surface built inside a tab — so it has the same bug waiting.
+
+**Three things that were not obvious and cost time.**
+
+- **`isVisible()` is the wrong question while a window is being built.** Panels are installed
+  during module registration, long before anything is shown, and a widget whose window is not
+  visible is not visible however it was set. Every visibility decision in the dock is
+  `isHidden()`.
+- **A `QSplitter` normalises `setSizes` against its own current width**, so sizing the areas
+  before the first layout pass silently turns pixel widths into ratios — a 275 px sidebar
+  becomes 29 px in a 1100 px window. The dock therefore *is* the splitter rather than holding
+  one (no layout pass in between), caches the stored sizes in memory, and re-applies them from
+  `resizeEvent`. Re-applying is safe because what it applies is what the user last dragged to,
+  and with stretch factors `[0, 1, 0]` a wider window is simply a wider centre.
+- **The border belongs to the area, not the panel.** `#IndexPanel` had `border-right` and
+  `#InspectorPanel` had `border-left`; a panel that can move between areas cannot carry a
+  side. Three `#PanelArea*` rules now own it.
+
+**Upstream?** Yes, and this is the one we would push hardest. It subsumes the sidebar slot
+rather than sitting beside it, deletes two copies of "remember a splitter width", and gives
+the template an answer to "my feature needs a surface that is not a tab" that does not end in
+a widget built inside an activity. The `ContextPanel` contract is the interesting half: one
+subscription in the dock, and a panel that already reads the context follows the active pane
+for free, given the "only the active pane publishes" rule the tab groups needed anyway.
 
 ### One mutator that broke the framework's own convention
 
@@ -391,8 +437,10 @@ and both traps.
   `#InspectorCaption`, `#PrimaryButton`, the scrollbars, the menus) is genuinely good and
   worth keeping; the rest is confusing to a new developer, who cannot tell which names are
   contract and which are leftovers. This change legitimised three more of them —
-  `#InspectorTabs`, `#InspectorPanel`, `#InspectorPlaceholder`, `#InspectorTitle` and
-  `#InspectorNotes` now have real users — which makes the remaining orphans easier to name:
+  `#InspectorTabs`, `#InspectorPanel`, `#InspectorTitle` and `#InspectorNotes` now have real
+  users (`#InspectorPlaceholder` briefly did too, and was deleted along with the panel's empty
+  page — a panel with nothing to show goes off screen instead) — which makes the remaining
+  orphans easier to name:
   `#BinderResults`, `#ReadthroughTable`, `#InspectorSynopsis`, `#InspectorName`,
   `#InspectorStats`, the Corkboard block and the Zen block.
 - **`SidebarShell._add_panel` ended with an unconditional `setCurrentIndex(0)`.** Correct,
@@ -414,9 +462,11 @@ Recording these so a future backport does not over-reach:
   a registry first and deleted it: there was nobody to arbitrate, and a registry in `domain/`
   fed entirely from `modules/` is an inverted dependency wearing a type.
 - **The step detail panel's tab host stayed in its module** rather than becoming
-  `framework/inspector_panel.py`. One caller, and two of its concerns — the title header and
-  the host-supplied empty page — are not the framework's. See §1 for why the gap upstream is
-  still worth closing.
+  `framework/inspector_panel.py`. What *did* go into the framework is where the panel is
+  anchored, not what it renders — `framework/panels.py` owns the area, the header and the
+  visibility, and the `QTabBar`-over-`QStackedLayout` loop is still the module's. That split
+  held up: the two concerns that made extraction awkward were both about placement, and one
+  of them (the host-supplied empty page) stopped existing once there was no host. See §1.
 - **Lookup by "an id, a folder name, or part of a title" lives in `cli/`**, not in the model.
   It is a command-line affordance — resolving what a person typed — and the model should not
   have opinions about fuzzy matching.

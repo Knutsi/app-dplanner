@@ -1,20 +1,19 @@
 """Small shared widget helpers.
 
-Nothing here is a framework concept — these are the four or five things every second
+Nothing here is a framework concept — these are the three or four things every second
 feature would otherwise reimplement slightly differently: a confirmation whose default is
-"no", a centred column at a readable measure, Ctrl+wheel zoom, and a remembered splitter
-width. Add to it sparingly; a helper that only one feature uses belongs in that feature.
+"no", a centred column at a readable measure, and Ctrl+wheel zoom. Add to it sparingly;
+a helper that only one feature uses belongs in that feature.
 """
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QEvent, QObject, QSettings, Qt
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QHBoxLayout,
     QMessageBox,
-    QSplitter,
     QWidget,
 )
 
@@ -70,38 +69,3 @@ def install_ctrl_wheel_zoom(editor: QAbstractScrollArea, on_steps: Callable[[int
     """
     viewport = editor.viewport()
     viewport.installEventFilter(_CtrlWheelFilter(viewport, on_steps))
-
-
-# A detail panel's width: one shared per-user value, so every tab that shows one feels
-# like the same surface, mirroring the sidebar-width behaviour in AppWindow. Logical
-# pixels; the clamp keeps a stale stored value from leaving the panel invisible or
-# window-filling.
-INSPECTOR_WIDTH_KEY = "appearance/inspector_width"
-INSPECTOR_DEFAULT_WIDTH = 360
-INSPECTOR_MIN_WIDTH = 200
-INSPECTOR_MAX_WIDTH = 600
-
-
-def stored_inspector_width() -> int:
-    raw = QSettings().value(INSPECTOR_WIDTH_KEY, INSPECTOR_DEFAULT_WIDTH)
-    try:
-        saved = int(raw) if isinstance(raw, int | float | str) else INSPECTOR_DEFAULT_WIDTH
-    except ValueError:
-        saved = INSPECTOR_DEFAULT_WIDTH
-    return max(INSPECTOR_MIN_WIDTH, min(INSPECTOR_MAX_WIDTH, saved))
-
-
-def remember_inspector_width(splitter: QSplitter) -> None:
-    """Give a "content | detail panel" splitter the persistent panel width: applies the
-    stored width now and saves every user resize. Newly opened editors pick the value
-    up; already open ones keep their current size (same contract as the sidebar)."""
-    splitter.setSizes([900, stored_inspector_width()])
-
-    def persist(_pos: int, _index: int) -> None:
-        # 0 means the panel was dragged shut — persisting that would restore a
-        # seemingly missing panel next time, so only real widths are remembered.
-        width = splitter.sizes()[1]
-        if width > 0:
-            QSettings().setValue(INSPECTOR_WIDTH_KEY, width)
-
-    splitter.splitterMoved.connect(persist)

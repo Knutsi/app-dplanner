@@ -1,8 +1,9 @@
-"""The application's main window: a shell around the tab host.
+"""The application's main window: a shell around the tab host and its panel areas.
 
 The menu bar's content lives in :mod:`dplanner.framework.menubar`, driven by module-registered
-actions — this class is layout and window-level behaviour: immersive (distraction-free)
-mode and, later, the quit-time flush.
+actions; where an anchored panel sits lives in :mod:`dplanner.framework.panels`. This class is
+layout and window-level behaviour: immersive (distraction-free) mode and, later, the quit-time
+flush.
 """
 
 from __future__ import annotations
@@ -10,38 +11,22 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
-from PySide6.QtWidgets import QMainWindow, QSplitter, QWidget
+from PySide6.QtWidgets import QMainWindow, QWidget
 
 from dplanner.core.signals import Signal
 from dplanner.framework.activity import Activity
+from dplanner.framework.panels import PanelDock
 from dplanner.framework.tabs import TabHost
 from dplanner.identity import APP_NAME
 
 if TYPE_CHECKING:
     from dplanner.framework.menubar import DynamicMenuBar
 
-# Sidebar widths are logical pixels — Qt 6 scales them per monitor, so the stored value
-# stays meaningful across DPI changes. The clamp keeps a stale or corrupt stored value
-# from ever leaving the panel invisible or window-filling.
-SIDEBAR_WIDTH_KEY = "appearance/sidebar_width"
-SIDEBAR_DEFAULT_WIDTH = 275
-SIDEBAR_MIN_WIDTH = 150
-SIDEBAR_MAX_WIDTH = 600
-
-
-def _stored_sidebar_width() -> int:
-    raw = QSettings().value(SIDEBAR_WIDTH_KEY, SIDEBAR_DEFAULT_WIDTH)
-    try:
-        saved = int(raw) if isinstance(raw, int | float | str) else SIDEBAR_DEFAULT_WIDTH
-    except ValueError:
-        saved = SIDEBAR_DEFAULT_WIDTH
-    return max(SIDEBAR_MIN_WIDTH, min(SIDEBAR_MAX_WIDTH, saved))
-
 
 class AppWindow(QMainWindow):
-    def __init__(self, tabs: TabHost, parent: QWidget | None = None) -> None:
+    def __init__(self, tabs: TabHost, dock: PanelDock, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("MainWindow")
         self.setWindowTitle(APP_NAME)
@@ -60,13 +45,11 @@ class AppWindow(QMainWindow):
         self._title_base = APP_NAME
 
         self.tabs = tabs
-        # A slot, not a panel: whichever module installs a widget owns its content, and the
-        # window only owns layout and visibility.
-        self._splitter = QSplitter(Qt.Orientation.Horizontal)
-        self._splitter.addWidget(tabs)
-        self._sidebar: QWidget | None = None
-        self._sidebar_was_visible = True
-        self.setCentralWidget(self._splitter)
+        # The window owns no panel slot of its own: every anchored surface is a registered
+        # panel, and the dock decides which area it is in.
+        self.dock = dock
+        self.panels_changed: Signal[str] = dock.panels_changed
+        self.setCentralWidget(dock)
         self.statusBar().showMessage("Ready")
 
         self._immersive = False
@@ -89,34 +72,13 @@ class AppWindow(QMainWindow):
     def add_status_widget(self, widget: QWidget) -> None:
         self.statusBar().addPermanentWidget(widget)
 
-    # -- sidebar (SidebarHost) ---------------------------------------------------------------
+    # -- panels (PanelHost) ------------------------------------------------------------------
 
-    def set_sidebar(self, widget: QWidget) -> None:
-        if self._sidebar is not None:
-            raise ValueError("a sidebar is already installed")
-        self._sidebar = widget
-        self._splitter.insertWidget(0, widget)
-        self._splitter.setStretchFactor(0, 0)
-        self._splitter.setStretchFactor(1, 1)
-        self._apply_sidebar_width(_stored_sidebar_width())
-        self._splitter.splitterMoved.connect(self._on_splitter_moved)
+    def set_panel_visible(self, panel_id: str, visible: bool) -> None:
+        self.dock.set_panel_visible(panel_id, visible)
 
-    def sidebar(self) -> QWidget | None:
-        return self._sidebar
-
-    def reset_sidebar_width(self) -> None:
-        QSettings().remove(SIDEBAR_WIDTH_KEY)
-        self._apply_sidebar_width(SIDEBAR_DEFAULT_WIDTH)
-
-    def _apply_sidebar_width(self, width: int) -> None:
-        self._splitter.setSizes([width, max(1, self.width() - width)])
-
-    def _on_splitter_moved(self, _pos: int, _index: int) -> None:
-        # A width of 0 means the panel was dragged shut — persisting it would restore a
-        # seemingly missing sidebar, so only real widths are remembered.
-        width = self._splitter.sizes()[0]
-        if width > 0:
-            QSettings().setValue(SIDEBAR_WIDTH_KEY, width)
+    def is_panel_visible(self, panel_id: str) -> bool:
+        return self.dock.is_panel_visible(panel_id)
 
     # -- unsaved changes (UnsavedChangesHost) -------------------------------------------------
 
@@ -129,13 +91,6 @@ class AppWindow(QMainWindow):
 
     def add_close_guard(self, guard: Callable[[], bool]) -> None:
         self.close_guards.append(guard)
-
-    def set_sidebar_visible(self, visible: bool) -> None:
-        if self._sidebar is not None:
-            self._sidebar.setVisible(visible)
-
-    def is_sidebar_visible(self) -> bool:
-        return self._sidebar is not None and not self._sidebar.isHidden()
 
     # -- immersive (ImmersiveHost): distraction-free mode ------------------------------------
 
@@ -153,8 +108,7 @@ class AppWindow(QMainWindow):
             return
         self._immersive = True
         self._was_full_screen = self.isFullScreen()
-        self._sidebar_was_visible = self.is_sidebar_visible()
-        self.set_sidebar_visible(False)
+        self.dock.set_chrome_visible(False)
         self.menuBar().hide()
         self.statusBar().hide()
         self.tabs.set_tab_bar_visible(False)
@@ -165,7 +119,7 @@ class AppWindow(QMainWindow):
         if not self._immersive:
             return
         self._immersive = False
-        self.set_sidebar_visible(self._sidebar_was_visible)
+        self.dock.set_chrome_visible(True)
         self.menuBar().show()
         self.statusBar().show()
         self.tabs.set_tab_bar_visible(True)
