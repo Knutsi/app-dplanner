@@ -277,6 +277,18 @@ project_editor = ProjectEditorModule(ProjectEditorDeps(..., panels=services.pane
 projects = ProjectsModule(ProjectsDeps(..., open_project=project_editor.open))
 ```
 
+**Where provider-and-Protocol is still the answer.** The order view's start-date bar is
+exactly the shape the panel used to have, and it survives the panel's move because the two
+questions are different: a *widget one surface hosts* is not a *surface the window anchors*.
+`estimation` provides a `create_start_bar()` and registers nothing for it, `step_order`
+declares a `StartBar` Protocol of its own and takes a `Callable[..., StartBar] | None`, and
+the composition root is the only file that knows both names. Why a `create_…` rather than a
+registry entry is worth stating too: a registry is for *whoever turns up*, and this control
+belongs to exactly one surface. When there is only one host, a registry is ceremony that hides
+which module supplies what. (This is Writer's arrangement, borrowed wholesale — its
+`segment_properties` serves a corkboard, a segment editor and a continuous editor the same
+way, which is the evidence that the shape survives a second host and a third.)
+
 **What the panel is not.** The project's name and summary are not a section. An
 `InspectorExtension`'s whole contract is `show_target(step_id | None)` — one target vocabulary —
 and making the project form a peer of the aspects would force every aspect editor to answer
@@ -379,6 +391,20 @@ reach. So the walk lives in the domain, and the canvas layout, the order view an
 `dplanner order show --json` are three readers of one implementation. Nothing can disagree
 with the graph, because there is nothing else to disagree.
 
+`domain/schedule.py` is the second reader of that same walk, and the one that shows what the
+shape was for. "When does this land" is "in what order can this be done", carrying estimates
+instead of counting hops — so it takes `ordering.placed()`'s answer and lays the days end to
+end from a start date. The order table, `dplanner schedule show` and its `--json` are three
+renderings of one function, and none of them can date a step differently from another.
+
+**It is handed a function, not a schema.** An estimate is a module's `module_data`, and the
+domain must not learn what key it lives under — so `schedule()` asks for `days_for(step)` and
+the composition root closes over the estimation module's reader. That keeps the two
+directions of the rule intact at once: whoever owns a piece of data owns its shape, and
+whoever derives from it needs one implementation rather than one per surface. It is also why
+the derivation works for a build with no estimation module at all: the honest empty answer is
+the same function, asked a question with no answer.
+
 The rule generalises: **derived data may be cached, but it may not be persisted.** A cache
 that is wrong is a bug you find in a session; a file that is wrong is a bug you find in a
 diff, months later, in a workspace nobody can reconstruct.
@@ -387,7 +413,9 @@ diff, months later, in a workspace nobody can reconstruct.
 
 - **More of the canvas** — panning beyond the scroll bars, edge selection and deletion, and
   a second edge kind that can be drawn rather than only typed.
-- **Estimation over the graph** — `estimate rollup` and `domain/ordering.py` are the two
-  halves. "What can I start now" is answered; "when does this land" is the same walk carrying
-  estimates instead of counting hops.
+- **A schedule that knows about parallelism** — today's dates run the steps one after
+  another down the order. The waves already say which of them could run side by side, so an
+  earliest-finish walk is a change to `domain/schedule.py` and to nothing else.
 - **Reports** — new folders in the index tree, which is the shape the registry was built for.
+  `dplanner schedule show` is the first of them, and it lives in the module that owns the
+  numbers rather than in the one that owns the table.

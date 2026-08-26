@@ -386,6 +386,33 @@ QScrollBar::sub-page {
     font-weight: bold;
 }
 
+/* The estimate quick-picks: the sizes a step usually is, as one-tap buttons under the day
+   box. The quiet bordered look, with the accent only on the one matching the current value —
+   DESIGN.md's checked state, and never the surface's primary action. */
+#EstimateChip {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_SECONDARY;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    padding: 4px 8px;
+    min-width: 20px;
+}
+
+#EstimateChip:hover:!checked {
+    color: $TEXT_PRIMARY;
+    border-color: $BORDER_STRONG;
+}
+
+#EstimateChip:checked {
+    background-color: $ACCENT;
+    color: $ON_ACCENT;
+    border-color: $ACCENT;
+}
+
+#EstimateChip:disabled {
+    color: $TEXT_DISABLED;
+}
+
 /* A prose field inside a detail panel: framed like the panel's other inputs. */
 #InspectorNotes {
     background-color: $BG_BASE;

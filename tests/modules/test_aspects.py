@@ -16,7 +16,7 @@ from dplanner.core.storage.local import LocalStorage
 from dplanner.domain.seed import create_product
 from dplanner.domain.store import ProductStore
 from dplanner.modules import default_cli_commands, default_module_formats
-from dplanner.modules.step_estimation.aspect import DATA_FORMAT, Estimate, read, write
+from dplanner.modules.estimation.aspect import DATA_FORMAT, read, write
 
 
 @pytest.fixture
@@ -58,7 +58,7 @@ def first_step(product):
 def test_aspect_list_names_every_aspect(cli):
     ids = {row["id"] for row in json.loads(cli("aspect", "list", "--json"))["aspects"]}
     assert ids == {
-        "step_estimation",
+        "estimation",
         "step_ticket",
         "step_description",
         "step_agent_instruction",
@@ -78,9 +78,8 @@ def test_aspect_list_needs_no_product(tmp_path):
 
 
 def test_an_estimate_is_written_and_read_back(cli, workspace):
-    cli("estimate", "set", "Read the spec", "--days", "3", "--confidence", "low")
-    estimate = read(first_step(reload(workspace)))
-    assert estimate == Estimate(days=3.0, confidence="low")
+    cli("estimate", "set", "Read the spec", "--days", "3")
+    assert read(first_step(reload(workspace))) == 3.0
 
 
 def test_an_integer_estimate_is_stored_as_a_float(cli, workspace):
@@ -89,9 +88,9 @@ def test_an_integer_estimate_is_stored_as_a_float(cli, workspace):
     An int would write as `3` where a reloaded float writes as `3.0`, making a file's bytes
     depend on whether the workspace had been reopened since it was written.
     """
-    assert write(Estimate(days=3))["days"] == 3.0
+    assert write(3)["days"] == 3.0
     cli("estimate", "set", "Read the spec", "--days", "3")
-    path = workspace / "projects/discovery/steps/read-the-spec/modules/step_estimation.json"
+    path = workspace / "projects/discovery/steps/read-the-spec/modules/estimation.json"
     assert json.loads(path.read_text())["days"] == 3.0
     assert '"days": 3.0' in path.read_text()
 
@@ -105,7 +104,7 @@ def test_unestimated_is_not_zero(cli, workspace):
 def test_clearing_an_estimate_leaves_no_file(cli, workspace):
     modules = workspace / "projects/discovery/steps/read-the-spec/modules"
     cli("estimate", "set", "Read the spec", "--days", "3")
-    assert (modules / "step_estimation.json").is_file()
+    assert (modules / "estimation.json").is_file()
     cli("estimate", "clear", "Read the spec")
     assert not modules.exists()
 
@@ -116,13 +115,45 @@ def test_a_negative_estimate_is_refused(cli):
 
 def test_data_newer_than_this_build_is_left_alone(cli, workspace):
     """An older build must keep a shared workspace readable and never overwrite newer data."""
-    path = workspace / "projects/discovery/steps/read-the-spec/modules/step_estimation.json"
+    path = workspace / "projects/discovery/steps/read-the-spec/modules/estimation.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     future = {"days": 4.0, "invented_later": True, "format": DATA_FORMAT.version + 5}
     path.write_text(json.dumps(future))
 
     cli("project", "list")  # Any verb: opening runs the module-data migrations.
     assert json.loads(path.read_text()) == future
+
+
+def test_a_step_estimation_entry_is_taken_over_and_loses_its_confidence(cli, workspace):
+    """`step_estimation` retired into `estimation`; its data comes with, its confidence does not.
+
+    The on-disk id was always the contract between the two modules, which is why the rename
+    needs no import and no product-format migration.
+    """
+    modules = workspace / "projects/discovery/steps/read-the-spec/modules"
+    modules.mkdir(parents=True, exist_ok=True)
+    (modules / "step_estimation.json").write_text(
+        json.dumps({"days": 3.0, "confidence": "low", "format": 1})
+    )
+
+    cli("project", "list")  # Any verb: opening runs the module-data migrations.
+    assert not (modules / "step_estimation.json").exists()
+    assert json.loads((modules / "estimation.json").read_text()) == {"days": 3.0, "format": 1}
+    assert read(first_step(reload(workspace))) == 3.0
+
+
+def test_a_step_estimation_entry_newer_than_that_module_ever_wrote_is_not_taken_over(
+    cli, workspace
+):
+    """Somebody else's newer data is not ours to convert, however familiar the name."""
+    modules = workspace / "projects/discovery/steps/read-the-spec/modules"
+    modules.mkdir(parents=True, exist_ok=True)
+    future = {"days": 3.0, "format": 9}
+    (modules / "step_estimation.json").write_text(json.dumps(future))
+
+    cli("project", "list")
+    assert json.loads((modules / "step_estimation.json").read_text()) == future
+    assert not (modules / "estimation.json").exists()
 
 
 def test_older_data_is_migrated_by_the_cli_too(cli, workspace, monkeypatch):
@@ -140,6 +171,52 @@ def test_older_data_is_migrated_by_the_cli_too(cli, workspace, monkeypatch):
     registry.register_all(default_cli_commands())
     assert run(registry, [bumped], ["--workspace", str(workspace), "project", "list"]) == 0
     assert json.loads(path.read_text()) == stamped({"new": 1}, 2)
+
+
+# -- the schedule ------------------------------------------------------------------------------
+
+
+def test_a_start_date_is_stored_on_the_project_not_the_step(cli, workspace):
+    """A step's estimate and a project's start date are one module, on two node kinds."""
+    cli("schedule", "start", "Discovery", "--date", "2026-09-07")
+    path = workspace / "projects/discovery/modules/estimation.json"
+    assert json.loads(path.read_text()) == {"start": "2026-09-07", "format": 1}
+
+    cli("schedule", "start", "Discovery", "--clear")
+    assert not path.exists()
+
+
+def test_a_start_date_has_to_be_a_date(cli):
+    assert "ISO-8601" in cli("schedule", "start", "Discovery", "--date", "soon", expect=1)
+    assert "either --date or --clear" in cli("schedule", "start", "Discovery", expect=1)
+
+
+def test_the_schedule_dates_each_step_from_the_start(cli, workspace):
+    cli("estimate", "set", "Read the spec", "--days", "3")
+    cli("schedule", "start", "Discovery", "--date", "2026-09-07")  # A Monday.
+
+    report = json.loads(cli("schedule", "show", "Discovery", "--json"))
+    assert report["start"] == "2026-09-07"
+    assert report["finish"] == "2026-09-09"
+    assert report["steps"][0] == {
+        "index": 1,
+        "id": first_step(reload(workspace)).id,
+        "title": "Read the spec",
+        "days": 3.0,
+        "accumulated": 3.0,
+        "date": "2026-09-09",
+    }
+
+
+def test_the_schedule_says_when_it_cannot_give_dates(cli):
+    cli("estimate", "set", "Read the spec", "--days", "3")
+    assert "no start date" in cli("schedule", "show", "Discovery")
+
+
+def test_the_schedule_counts_what_nobody_has_sized(cli):
+    """A total that silently treats an unestimated step as free understates the plan."""
+    assert "1 unestimated" in cli("schedule", "show", "Discovery")
+    assert json.loads(cli("schedule", "show", "Discovery", "--json"))["unestimated"] == 1
 
 
 # -- ticket ------------------------------------------------------------------------------------

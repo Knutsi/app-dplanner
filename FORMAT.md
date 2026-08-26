@@ -51,7 +51,7 @@ widget/
             └── read-the-spec/
                 ├── step.json  id, title, edges
                 └── modules/
-                    ├── step_estimation.json    structured data
+                    ├── estimation.json         structured data
                     ├── step_description.md     prose
                     └── step_description/       files this module owns
                         └── assets/diagram.png
@@ -138,6 +138,12 @@ Two behaviours follow, and both matter once a workspace is shared:
   would be the only key, an empty entry removes the file, an emptied file area is removed
   with its directories, and `modules/` goes when it empties.
 
+**A module's namespace may span node kinds.** `estimation` writes `{"days": 3.0}` beside a
+step and `{"start": "2026-09-01"}` beside the project those steps belong to — one module id,
+one `ModuleDataFormat`, two shapes. `module_data` is on every node and `set_module_data` is
+flat over ids, so nothing in the model has to know. The cost is on whoever writes the next
+migration for that format: it sees both shapes and owes both a thought.
+
 **Not every module entry is an aspect.** The graph editor stores each node's position as
 `modules/project_editor.json` beside the step, and it is deliberately *not* an `AspectSpec`:
 an aspect is a fact about the work that an agent may want to write, and a layout is
@@ -152,7 +158,7 @@ at the model boundary, because an `int` writes as `5` where a reloaded float wri
 — making a file's bytes depend on whether the workspace had been reopened since it was
 written. Module data is opaque to the model and `stamped()` writes whatever dict it is
 handed, so on this axis the duty belongs to whoever owns the number. See
-`modules/step_estimation/aspect.py`, which is the reference for it, and
+`modules/estimation/aspect.py`, which is the reference for it, and
 `modules/project_editor/positions.py`, which owes it for a coordinate.
 
 ## Two writers, one folder
@@ -175,3 +181,18 @@ format and a converter — as a `Takeover`. At open, the old entry is brought up
 format through the carried chain, converted, merged into the successor's entry, and removed.
 The retired module's *code* is gone; only its data contract survives, in the package that
 inherited it. Modules never import each other, and this is why they do not have to.
+
+`modules/estimation/aspect.py` is the worked example: `step_estimation` became `estimation`
+when it grew a project's start date, and the rename cost no product-format migration and no
+import. Three rules it makes concrete:
+
+- **The retired format's version is frozen forever.** `RETIRED_STEP_ESTIMATION` is format 1
+  because that is what that module last wrote, whatever the successor does next.
+- **`convert` must emit the successor's *current* shape.** The engine stamps the result with
+  the successor's version and does **not** run the successor's own chain over it. So a
+  successor that later goes to format 2 edits its converter too. This is also the cheap way
+  to retire a field: `estimation` drops the old `confidence` simply by rebuilding the entry
+  from `days`, and needs no migration of its own to do it.
+- **A takeover is one-way.** The old file is deleted at the first open by a build that has
+  the change, so an older build opening the workspace afterwards sees that feature as empty.
+  That is the same trade as any format change, and worth saying out loud before a rename.

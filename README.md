@@ -31,8 +31,9 @@ learning anything about it. `dplanner aspect list` says which exist in a build.
 Early, and honest about it. The model, the storage layer, the index tree, the whole CLI, the
 graph editor and the order view are in place and tested. Four aspects ship — estimate,
 ticket, description, agent instruction — each with a tab in the step panel and verbs in the
-CLI. Estimation over the graph and reports are not written, and the canvas has no pan beyond
-scrolling.
+CLI. Estimation runs over the graph: a project start date and the estimates give every step
+a running total and a date, in the order table and in `dplanner schedule show`. Reports
+beyond that one are not written, and the canvas has no pan beyond scrolling.
 
 ## Running
 
@@ -71,6 +72,8 @@ dplanner describe set "Read the spec" --file notes.md
 dplanner agent set "Draft the model" --file how-to.md   # what an agent should know first
 dplanner order show search               # every step, numbered, in dependency order
 dplanner order show search --ready       # just what can be started right now
+dplanner schedule start search --date 2026-09-01
+dplanner schedule show search            # the same order, with running totals and dates
 dplanner project export search > plan.json   # and `import` reads the same shape back
 ```
 
@@ -91,7 +94,7 @@ widget/
             └── read-the-spec/
                 ├── step.json  id, title, edges: {"requires": [ids]}
                 └── modules/
-                    ├── step_estimation.json    a module's data
+                    ├── estimation.json         a module's data
                     ├── step_description.md     a module's prose
                     └── step_description/       a module's files
 ```
@@ -160,8 +163,8 @@ src/dplanner/
 │   ├── projects/            the Projects folder in the index, and the project verbs
 │   ├── project_editor/      a project in a tab: the graph canvas, and the project form
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
-│   ├── step_estimation/     ── the four step aspects: data, editor and verbs each
-│   ├── step_ticket/
+│   ├── estimation/          estimates, the schedule they imply, and its reports
+│   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
 │   ├── step_agent_instruction/
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`

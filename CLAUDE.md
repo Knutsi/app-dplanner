@@ -199,17 +199,27 @@ root, stop and look for the registry or capability you have not found yet.
   existed refused every drop for a fortnight because it read gesture state that had already
   been cleared.
 - **Derived facts are computed, never stored** — the topological order in
-  `domain/ordering.py` is the reference. Storing one means it can disagree with what it came
-  from, and the CLI is what catches you out: `dplanner step link` changes a graph with no
-  window running to notice. Availability comes from exposing the function everywhere — the
-  view, `dplanner order show`, `--json` — not from writing the answer down.
+  `domain/ordering.py` is the reference, and `domain/schedule.py` is the same walk carrying
+  estimates. Storing one means it can disagree with what it came from, and the CLI is what
+  catches you out: `dplanner step link` changes a graph with no window running to notice.
+  Availability comes from exposing the function everywhere — the view, `dplanner order show`,
+  `--json` — not from writing the answer down.
+- **A domain derivation is handed a function, never a schema.** `domain/schedule.py` asks for
+  `days_for(step)` rather than reading `module_data["estimation"]`, so the module that owns
+  the estimate still owns its shape and the domain works for whatever answers next. That is
+  the same seam a module's `Deps` uses on the module layer, one level down.
+- **Renaming a module is a `Takeover`, not a migration.** The on-disk id is the contract
+  between the old module and the new one, so the successor's package carries the retired
+  id and a converter and the data moves at open — see `modules/estimation/aspect.py` and
+  `FORMAT.md`'s *Retiring a module*. No product-format change, and no module importing
+  another.
 - **Automatic graph layout is never persisted.** A node nobody moved is placed by dependency
   depth every time the project opens. Storing that would make merely opening a tab dirty the
   workspace, and every CLI-created step would grow a position file behind the user's back.
 - **A module that writes a number owes it a `float`.** An `int` writes as `5` where a
   reloaded float writes as `5.0`, making a file's bytes depend on whether the workspace had
   been reopened. `module_data` is opaque to the model, so the coercion belongs in the
-  aspect's `write()` — see `modules/step_estimation/aspect.py`.
+  aspect's `write()` — see `modules/estimation/aspect.py`.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.

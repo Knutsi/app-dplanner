@@ -43,7 +43,7 @@ def write_position(x: float, y: float) -> dict[str, Any]:
 
     Coerced to ``float`` like every number that reaches disk: an int would write as ``8``
     where a reloaded float writes as ``8.0``, making the file's bytes depend on whether the
-    workspace had been reopened. ``FORMAT.md`` states the rule; ``step_estimation`` is the
+    workspace had been reopened. ``FORMAT.md`` states the rule; ``estimation`` is the
     other place that owes it.
     """
     return stamped(

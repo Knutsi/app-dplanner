@@ -1,16 +1,23 @@
-"""The order view: waves on screen, and the two seams it reaches other features through."""
+"""The order view: waves and dates on screen, and the seams it reaches other features through."""
 
 import json
 from io import StringIO
 
 import pytest
+from PySide6.QtCore import QDate
 
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import run
-from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand
+from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Project, Step
 from dplanner.framework.context import SCOPE_SELECTION
 from dplanner.modules import default_cli_commands, default_module_formats
+from dplanner.modules.step_order.view import (
+    ACCUMULATED_COLUMN,
+    ASPECTS_COLUMN,
+    DATE_COLUMN,
+    ESTIMATE_COLUMN,
+)
 
 
 @pytest.fixture
@@ -72,8 +79,44 @@ def test_a_row_carries_what_the_aspects_say(services, project, tab):
     from dplanner.domain.commands import SetModuleDataCommand
 
     a = project.steps[0]
-    services.undo.push(SetModuleDataCommand(a.id, "step_estimation", {"days": 3.0, "format": 1}))
-    assert "3d" in tab.table.item(0, 3).text()
+    services.undo.push(SetModuleDataCommand(a.id, "step_ticket", {"key": "WID-14", "format": 1}))
+    assert "WID-14" in tab.table.item(0, ASPECTS_COLUMN).text()
+
+
+def test_the_estimate_has_a_column_and_is_not_repeated_in_the_summary(services, project, tab):
+    """One number, one place: the trailing summary is for aspects with no column of their own."""
+    a = project.steps[0]
+    services.undo.push(SetModuleDataCommand(a.id, "estimation", {"days": 3.0, "format": 1}))
+
+    assert tab.table.item(0, ESTIMATE_COLUMN).text() == "3d"
+    assert "3d" not in tab.table.item(0, ASPECTS_COLUMN).text()
+
+
+def test_the_days_accumulate_down_the_order(services, project, tab):
+    for step, days in zip(project.steps, (1.0, 2.0, 3.0, 4.0), strict=True):
+        services.undo.push(SetModuleDataCommand(step.id, "estimation", {"days": days}))
+
+    accumulated = [tab.table.item(row, ACCUMULATED_COLUMN).text() for row in range(4)]
+    assert accumulated == ["1d", "3d", "6d", "2w"]
+
+
+def test_there_is_no_date_column_until_there_is_a_start_date(services, project, tab):
+    """A column of blanks says less than an absent one, and the bar above says why."""
+    services.undo.push(SetModuleDataCommand(project.steps[0].id, "estimation", {"days": 3.0}))
+    assert tab.table.isColumnHidden(DATE_COLUMN)
+
+    tab.start_bar.date.setDate(QDate(2026, 9, 7))  # A Monday.
+    assert not tab.table.isColumnHidden(DATE_COLUMN)
+    assert tab.table.item(0, DATE_COLUMN).text() == "2026-09-09"
+
+
+def test_the_start_date_is_written_to_the_project_and_undoable(services, project, tab):
+    """The bar belongs to another module; the order view only lends it a place to stand."""
+    tab.start_bar.date.setDate(QDate(2026, 9, 7))
+    assert project.module_data["estimation"]["start"] == "2026-09-07"
+
+    services.undo.undo()
+    assert "estimation" not in project.module_data
 
 
 def test_the_tab_is_titled_for_its_project_and_follows_a_rename(services, project, tab):
