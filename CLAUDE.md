@@ -247,6 +247,14 @@ root, stop and look for the registry or capability you have not found yet.
   reloaded float writes as `5.0`, making a file's bytes depend on whether the workspace had
   been reopened. `module_data` is opaque to the model, so the coercion belongs in the
   aspect's `write()` — see `modules/estimation/aspect.py`.
+- **Running an agent launches a peer, never a task.** *Run Agent* spawns a detached terminal
+  the user owns — not a `TaskRunner` body, which would promise cancel and progress nobody
+  can honestly deliver. The prompt goes to a per-run temp directory, never the workspace.
+  The agent reports back through the CLI (`status set`, `handoff set`). `ARCHITECTURE.md`'s
+  *Running an agent launches a peer, not a task* has the reasoning.
+- **Inherited handoffs are computed, never stored** — `step_handoff/handoff.py` is one
+  function with three readers (tab, CLI, agent prompt). Same rule as the ordering, and the
+  reasoning is in `ARCHITECTURE.md`'s *Pass-forward is derived at read time*.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.

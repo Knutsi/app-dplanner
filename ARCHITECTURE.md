@@ -523,6 +523,65 @@ The rule generalises: **derived data may be cached, but it may not be persisted.
 that is wrong is a bug you find in a session; a file that is wrong is a bug you find in a
 diff, months later, in a workspace nobody can reconstruct.
 
+## Status is an aspect, and step types are emergent
+
+There is no `type` field on a step, and none is coming. A *release* is a step carrying the
+`step_release` aspect; an *agent task* is one carrying `step_agent_instruction`; a step can
+be both at once, which no exclusive type field could say. What a step "is" emerges from
+which aspects have something to say about it — the same way its subtitle on the canvas
+already does.
+
+Status went the same way after being weighed as a model field. It is a stored fact, not a
+derivation — the graph can say what is *ready*, but only a person or an agent can say what
+is *finished* or *stuck* — yet storing it does not make it a field: `VALUE_FIELDS["step"]`
+is still `("title",)`, and that is the central design decision of the model holding. As an
+aspect it costs no product-format migration, absence encodes `pending`, both surfaces got
+the verb from one declaration (`dplanner status set '<step>' done` is how an agent reports
+back), and a derivation that one day wants it — a status-aware `ready()` — will be handed a
+`status_for(step)` function, exactly as `schedule()` is handed `days_for`.
+
+The one enum also shows where an aspect's GUI does not have to be a tab: status registers a
+*Status* submenu of checkable Step verbs instead, and the canvas right-click, the order
+table, the menu bar and the palette all grew it from that single registration. The canvas
+never learned the vocabulary either — it renders a neutral `NodeAccent(muted, badge)`, and
+the composition root translates "done" into muted and a release label into the badge.
+
+## Pass-forward is derived at read time
+
+A handoff (`modules/step_handoff/`) stores only what the step itself says: a note, a scope
+(`downstream` by default, `project` to reach everyone), files. Who *receives* it is never
+written down. `handoff.inherited()` walks the topological order collecting the transitive
+`requires` ancestors plus every project-scoped entry — the same rule as ordering, for the
+same reason: `dplanner step link` rewires inheritance with no window running to notice, and
+a stored answer would be wrong exactly when an agent is driving. The Handoff tab, `dplanner
+handoff show --inherited` and the assembled agent prompt are three readers of that one
+function, sharing even the text rendering, so no surface can describe an inheritance
+another surface would dispute.
+
+The seam repeats one level down: `inherited()` is handed a `files(step_id, module_id)`
+function rather than a store, so the derivation runs headless and never learns where a
+workspace lives.
+
+## Running an agent launches a peer, not a task
+
+*Run Agent* writes the briefing to a per-run temp directory — never the workspace, which
+would dirty it and end up in version control — and spawns a terminal detached
+(`start_new_session`). Deliberately **not** through `TaskRunner`: a task promises progress,
+cancellation and a completion that returns to the GUI thread, and none of those are honest
+about a terminal the user owns from the moment it opens. The agent reports back through the
+CLI instead (`status set`, `handoff set`), which the two-writers machinery already handles.
+
+Resolution is settings template first (`{script}`, `{prompt_file}`, `{workdir}`), then a
+platform table, then `None` — and `None` is an answer: the fallback dialog delivers the
+prompt itself, because the prompt is the product and the terminal was only one way to hand
+it over. `dplanner agent prompt` prints the same assembly.
+
+The assembly is also where the CLI grew the composition root's other seam:
+`agent_cli.commands(prompt_parts=…, epilogue=…)` takes typed callables the way a module's
+`Deps` does, supplied by `default_cli_commands()`. A `cli.py` never imports another module;
+what crosses modules arrives as arguments — `skill_commands(specs, described)` made that
+shape first, and this is its second use.
+
 ## Where this is going
 
 - **A second edge kind that can be drawn rather than only typed.** The mode stack is where it
@@ -535,3 +594,6 @@ diff, months later, in a workspace nobody can reconstruct.
 - **Reports** — new folders in the index tree, which is the shape the registry was built for.
   `dplanner schedule show` is the first of them, and it lives in the module that owns the
   numbers rather than in the one that owns the table.
+- **Status-aware readiness.** `ordering.ready()` is still a pure graph fact; "ready and not
+  done" is a `status_for(step)` parameter away, handed in by the composition root the way
+  `days_for` is — the seam exists, nothing threads it yet.

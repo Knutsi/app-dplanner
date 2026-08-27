@@ -166,7 +166,10 @@ src/dplanner/
 │   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
-│   ├── step_agent_instruction/
+│   ├── step_agent_instruction/   … this one also assembles and launches Run Agent
+│   ├── step_status/         where a step stands — a Status submenu, no tab
+│   ├── step_release/        the steps that mark a release point
+│   ├── step_handoff/        what a step passes forward, and who inherits it
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── workspace_watch/     reloading when something else writes to the workspace
 │   ├── agent_skill/         installing the generated skill from the window

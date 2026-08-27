@@ -52,8 +52,10 @@ widget/
                 ├── step.json  id, title, edges
                 └── modules/
                     ├── estimation.json         structured data
+                    ├── step_status.json        {"status": "done"} — absent means pending
                     ├── step_description.md     prose
-                    └── step_description/       files this module owns
+                    ├── step_handoff.md         what this step passes forward
+                    └── step_handoff/           files this module owns
                         └── assets/diagram.png
 ```
 
