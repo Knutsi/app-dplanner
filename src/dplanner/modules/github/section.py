@@ -9,6 +9,7 @@ a step can be pointed at work that already landed.
 import threading
 from collections.abc import Callable
 from dataclasses import replace
+from functools import partial
 
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtCore import Signal as QtSignal
@@ -79,14 +80,22 @@ class _GhLoader(QObject):
 
 
 class GithubSection(QWidget):
-    def __init__(self, product: Product, undo: UndoService[Product]) -> None:
+    def __init__(
+        self,
+        product: Product,
+        undo: UndoService[Product],
+        repository_for: Callable[[StepId], str],
+    ) -> None:
         super().__init__()
         self._product = product
         self._undo = undo
+        self._repository_for = repository_for
         self._step_id: StepId | None = None
         self._loading = False
         self._prs: dict[int, PrInfo] = {}
-        self._lists_requested = False
+        # Which repo the pickers were (or are being) fetched for. Projects can carry their
+        # own repository, so showing a step from another project may mean a refetch.
+        self._loaded_repo: str | None = None
         self.tab_visibility_changed: Signal[bool] = Signal()
 
         layout = QFormLayout(self)
@@ -134,22 +143,28 @@ class GithubSection(QWidget):
     # -- the pickers -----------------------------------------------------------------------
 
     def _request_lists(self) -> None:
-        """Start the one background fetch, the first time a step is shown.
+        """Start a background fetch for the shown step's repository, when it needs one.
 
-        A product with no parseable GitHub repository never spawns a subprocess — which is
+        A step with no parseable GitHub repository never spawns a subprocess — which is
         also what keeps a test building the real panel deterministic.
         """
-        if self._lists_requested or self._step_id is None:
+        if self._step_id is None or not self._product.has(self._step_id):
             return
-        repo = parse_repo(self._product.repository)
+        repo = parse_repo(self._repository_for(self._step_id))
         if repo is None:
-            self.status.setText("Set the product's repository URL to list branches and PRs")
+            self.status.setText("Set a repository URL on the product to list branches and PRs")
             return
-        self._lists_requested = True
+        if repo == self._loaded_repo:
+            return
+        self._loaded_repo = repo
         self.status.setText("Fetching branches and PRs…")
-        _GhLoader(repo, self._on_lists, self).start()
+        self.status.show()
+        deliver = partial(self._on_lists, repo)
+        _GhLoader(repo, deliver, self).start()
 
-    def _on_lists(self, branches: list[str], prs: list[PrInfo], message: str) -> None:
+    def _on_lists(self, repo: str, branches: list[str], prs: list[PrInfo], message: str) -> None:
+        if repo != self._loaded_repo:
+            return  # The shown step moved to another repo while this fetch was out.
         if message:
             self.status.setText(f"{message} — type values manually")
             return

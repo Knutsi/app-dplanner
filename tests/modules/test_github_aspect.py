@@ -195,6 +195,34 @@ def test_refresh_rechecks_only_open_and_unknown_prs(cli, workspace, gh_present, 
     assert json.loads(cli("github", "refresh", "--json")) == {"checked": 0, "updated": 0}
 
 
+def test_a_projects_own_repository_wins_for_its_steps(cli, gh_present, monkeypatch):
+    """project_repo's resolution rule, arriving through the composition root's wiring."""
+    asked = []
+
+    def view_pr(repo, _number):
+        asked.append(repo)
+        return OPEN
+
+    monkeypatch.setattr(github_cli, "view_pr", view_pr)
+    cli("product", "set", "--repository", "https://github.com/acme/widget")
+    cli("repo", "set", "Discovery", "--repository", "https://github.com/acme/satellite")
+    cli("github", "set", "Read the spec", "--pr", "7")
+    assert asked == ["acme/satellite"]
+
+
+def test_prs_can_ask_a_projects_repository(cli, gh_present, monkeypatch):
+    asked = []
+
+    def list_prs(repo):
+        asked.append(repo)
+        return []
+
+    monkeypatch.setattr(github_cli, "list_prs", list_prs)
+    cli("repo", "set", "Discovery", "--repository", "https://github.com/acme/satellite")
+    cli("github", "prs", "--project", "Discovery")
+    assert asked == ["acme/satellite"]
+
+
 def test_refresh_without_changes_reports_zero_updates(cli, gh_present, monkeypatch):
     cli("product", "set", "--repository", "https://github.com/acme/widget")
     monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: OPEN)

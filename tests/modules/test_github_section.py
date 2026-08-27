@@ -66,8 +66,14 @@ def test_clearing_both_fields_removes_the_entry(services, project, editor):
     assert MODULE_ID not in services.document.step(step.id).module_data
 
 
+def loaded(editor, branches, prs, message=""):
+    """Hand the editor a fetch result the way its loader would, for its current repo."""
+    editor._loaded_repo = "acme/widget"
+    editor._on_lists("acme/widget", branches, prs, message)
+
+
 def test_fetched_lists_fill_the_pickers_and_mark_merged_prs_green(editor):
-    editor._on_lists(["main", "feat/login"], [OPEN, MERGED], "")
+    loaded(editor, ["main", "feat/login"], [OPEN, MERGED])
     assert [editor.branch_edit.itemText(i) for i in range(editor.branch_edit.count())] == [
         "main",
         "feat/login",
@@ -81,7 +87,7 @@ def test_fetched_lists_fill_the_pickers_and_mark_merged_prs_green(editor):
 
 def test_picking_a_listed_pr_records_its_state_title_url_and_branch(services, project, editor):
     step = project.steps[0]
-    editor._on_lists([], [OPEN, MERGED], "")
+    loaded(editor, [], [OPEN, MERGED])
     editor.pr_edit.setCurrentIndex(1)
     editor.pr_edit.activated.emit(1)
 
@@ -91,7 +97,7 @@ def test_picking_a_listed_pr_records_its_state_title_url_and_branch(services, pr
 
 
 def test_a_failed_fetch_leaves_the_fields_typeable_and_says_why(editor):
-    editor._on_lists([], [], "gh not found on PATH")
+    loaded(editor, [], [], "gh not found on PATH")
     assert "type values manually" in editor.status.text()
     assert editor.pr_edit.isEditable() and editor.branch_edit.isEditable()
 
@@ -99,5 +105,5 @@ def test_a_failed_fetch_leaves_the_fields_typeable_and_says_why(editor):
 def test_no_repository_means_no_fetch_and_a_hint(editor):
     """The fixture product has no repository URL, so showing a step must not have started
     a loader — the status explains what to set instead."""
-    assert not editor._lists_requested
+    assert editor._loaded_repo is None
     assert "repository" in editor.status.text()

@@ -48,6 +48,8 @@ __all__ = [
 
 
 def default_modules(services: "AppServices") -> list["Module"]:
+    from dplanner.core.storage.git import find_repo_root
+    from dplanner.core.storage.github import gh_authenticated, gh_path
     from dplanner.domain.model import Product
     from dplanner.domain.schedule import schedule
     from dplanner.domain.store import ProductStore
@@ -65,8 +67,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.product.module import ProductDeps, ProductModule
-    from dplanner.modules.project_editor.items import StepDecoration
+    from dplanner.modules.project_editor.items import NodeAccent
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
+    from dplanner.modules.project_repo.module import ProjectRepoDeps, ProjectRepoModule
+    from dplanner.modules.project_repo.repo import checkout_for as repo_checkout_for
+    from dplanner.modules.project_repo.repo import repository_for as repo_repository_for
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
@@ -75,17 +80,25 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
     )
+    from dplanner.modules.step_agent_instruction.prompt import PromptPart
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_description.aspect import summary as description_summary
     from dplanner.modules.step_description.module import (
         StepDescriptionDeps,
         StepDescriptionModule,
     )
+    from dplanner.modules.step_handoff.handoff import inherited as inherited_handoffs
+    from dplanner.modules.step_handoff.module import StepHandoffDeps, StepHandoffModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
     from dplanner.modules.step_properties.module import (
         StepPropertiesDeps,
         StepPropertiesModule,
     )
+    from dplanner.modules.step_release.aspect import MODULE_ID as RELEASE_ID
+    from dplanner.modules.step_release.aspect import read as release_label
+    from dplanner.modules.step_release.module import StepReleaseDeps, StepReleaseModule
+    from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
@@ -116,20 +129,25 @@ def default_modules(services: "AppServices") -> list["Module"]:
         summaries = aspect_summaries(skip)
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
 
-    def step_decoration(step_id: str) -> "StepDecoration":
-        """What a step's node wears: a pill for its PR, a glyph for its branch.
+    def step_accent(step_id: str) -> "NodeAccent":
+        """How a step looks on the canvas, translated from aspects the canvas never learns.
 
-        The canvas speaks in tones ("good", "bad"), so the mapping from PR states lives
-        here — the one file that knows both vocabularies.
+        A done step is muted; a release wears its label as a badge; a PR is a pill on the
+        second line with its state as a tone, and a branch the small fork glyph — which is
+        why the canvas subtitle skips the release and GitHub phrases below.
         """
-        refs = github_read(product.step(step_id))
-        if refs is None:
-            return StepDecoration()
+        step = product.step(step_id)
+        refs = github_read(step)
         pill = ""
-        if refs.has_pr():
+        if refs is not None and refs.has_pr():
             pill = f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
-        tone = {"merged": "good", "closed": "bad"}.get(refs.pr_state, "")
-        return StepDecoration(pill_text=pill, pill_tone=tone, branch=bool(refs.branch))
+        return NodeAccent(
+            muted=step_status(step) == "done",
+            badge=release_label(step),
+            pill_text=pill,
+            pill_tone={"merged": "good", "closed": "bad"}.get(refs.pr_state, "") if refs else "",
+            branch=bool(refs is not None and refs.branch),
+        )
 
     def step_schedule(project_id: str, order: "Sequence[Placed]") -> "list[Scheduled]":
         """The order carrying days and dates: the domain's walk, over one module's numbers.
@@ -138,6 +156,18 @@ def default_modules(services: "AppServices") -> list["Module"]:
         answers for a step — and the order view never learns that estimates exist.
         """
         return schedule(order, estimated_days, start_of(product.project(project_id)))
+
+    def agent_prompt_parts(step_id: str) -> list["PromptPart"]:
+        """The briefing's context blocks: the step's inherited handoffs, as prompt parts.
+
+        The agent module never learns what a handoff is, and the handoff module never
+        learns there is a prompt — this adapter is the whole acquaintance.
+        """
+        step = product.step(step_id)
+        return [
+            PromptPart(heading=h.title, body=h.note, files=h.assets)
+            for h in inherited_handoffs(product, step, store.files)
+        ]
 
     # Three modules constructed before the list, because what each one hands the others
     # reads better as wiring than as ordering:
@@ -163,6 +193,17 @@ def default_modules(services: "AppServices") -> list["Module"]:
             theme=services.theme,
         )
     )
+    # Constructed before project_editor: the project panel hosts its fields widget. The
+    # probes are advisory status only; the github module makes its own checks.
+    project_repo = ProjectRepoModule(
+        ProjectRepoDeps(
+            product=product,
+            undo=services.undo,
+            is_git_repo=lambda path: find_repo_root(path) is not None,
+            gh_installed=lambda: gh_path() is not None,
+            gh_signed_in=gh_authenticated,
+        )
+    )
     project_editor = ProjectEditorModule(
         ProjectEditorDeps(
             product=product,
@@ -174,10 +215,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
             parent=services.window,
             panels=services.panels,
             theme=services.theme,
-            # A node's second line: whatever the aspects have to say about that step —
-            # except GitHub's, which the node wears as a pill and glyph instead.
-            step_aspects=lambda step_id: step_aspects(step_id, skip={GITHUB_ID}),
-            step_decoration=step_decoration,
+            # A node's second line: whatever the aspects have to say about that step. The
+            # release and GitHub phrases are skipped because the accent already wears them
+            # — the badge the label, the pill and glyph the PR and branch.
+            step_aspects=lambda step_id: step_aspects(step_id, skip={RELEASE_ID, GITHUB_ID}),
+            step_accent=step_accent,
+            # The repo association's fields, hosted in the project panel — the widget
+            # provider registers nothing and is handed over here.
+            repo_fields=project_repo.create_fields,
         )
     )
     # Constructed before the list because the projects index opens Specs through it — the
@@ -347,6 +392,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             )
         ),
         spec,
+        # Position free: registers nothing. In the list so the builder reads data_format.
+        project_repo,
         # -- the step aspects --------------------------------------------------------------
         # Each registers one tab into the step detail panel. They must come before
         # step_properties, which builds the panel from whatever has registered by then.
@@ -363,8 +410,40 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         StepAgentInstructionModule(
             StepAgentInstructionDeps(
+                product=product,
+                undo=services.undo,
+                sections=services.inspector_sections,
+                actions=services.actions,
+                context=services.context,
+                settings_sections=services.settings_sections,
+                status=services.window,
+                parent=services.window,
+                prompt_parts=agent_prompt_parts,
+                epilogue=lambda step_id: _agent_epilogue(product.step(step_id).title),
+                preamble=_agent_preamble(),
+                # Where the agent runs: the project's checkout over the product's — the
+                # one resolution rule, closed over step → project here.
+                checkout_for=lambda step_id: repo_checkout_for(
+                    product, product.project_of(step_id)
+                ),
+            )
+        ),
+        StepHandoffModule(
+            StepHandoffDeps(
+                product=product,
+                undo=services.undo,
+                sections=services.inspector_sections,
+                files=store.files,
+            )
+        ),
+        StepReleaseModule(
+            StepReleaseDeps(
                 product=product, undo=services.undo, sections=services.inspector_sections
             )
+        ),
+        # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
+        StepStatusModule(
+            StepStatusDeps(product=product, undo=services.undo, actions=services.actions)
         ),
         GithubModule(
             GithubDeps(
@@ -373,6 +452,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 sections=services.inspector_sections,
                 tasks=services.tasks,
                 parent=services.window,
+                # Which repository a step's refs belong to: the project's own over the
+                # product's — the one resolution rule, closed over step → project here.
+                repository_for=lambda step_id: repo_repository_for(
+                    product, product.project_of(step_id)
+                ),
             )
         ),
         step_properties,
@@ -418,6 +502,41 @@ def default_modules(services: "AppServices") -> list["Module"]:
     ]
 
 
+def _agent_preamble() -> str:
+    """The briefing's preflight: the agent proves it can report back before it starts.
+
+    An agent without the DPlanner skill would do the work and leave the plan blind — no
+    status, no handoff — so the briefing makes the check the first move and stopping the
+    honest fallback. Root prose for the same reason as the epilogue: it names another
+    module's verbs.
+    """
+    return (
+        "First, confirm you can drive DPlanner: run `dplanner skill status`. If the"
+        " command is missing or the skill is not installed, STOP — do not carry out the"
+        " step — and tell the developer this step needs the DPlanner skill"
+        " (`dplanner skill install`)."
+    )
+
+
+def _agent_epilogue(step_title: str) -> str:
+    """The briefing's closing words: how the agent reports back through the CLI.
+
+    Cross-module prose — it names the status and handoff verbs — so it is written here, in
+    the one file allowed to know every module's vocabulary, and handed to the agent module
+    as a callback on both surfaces.
+    """
+    title = step_title or "Untitled step"
+    return (
+        "When the work is finished, record it in DPlanner:\n"
+        f"- `dplanner status set '{title}' done`\n"
+        f"- `dplanner handoff set '{title}' --file -` with anything later steps should"
+        " know (add `--scope project` to reach the whole project;"
+        f" `dplanner handoff attach '{title}' <file>` for files).\n"
+        f"If you cannot finish, `dplanner status set '{title}' blocked` and say why in the"
+        " handoff."
+    )
+
+
 def default_cli_commands() -> list["CliCommand"]:
     """Every ``dplanner <noun> <verb>``, from the same modules the window is built from.
 
@@ -428,27 +547,56 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.cli.aspects import commands as aspect_commands
     from dplanner.cli.command import CliRegistry
     from dplanner.cli.skill import commands as skill_commands
+    from dplanner.domain.model import Product, Step
+    from dplanner.domain.store import ModuleFileArea
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.github import cli as github_cli
     from dplanner.modules.product import cli as product_cli
+    from dplanner.modules.project_repo import cli as repo_cli
+    from dplanner.modules.project_repo.repo import repository_for as repo_repository_for
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
+    from dplanner.modules.step_agent_instruction.prompt import PromptPart
     from dplanner.modules.step_description import cli as description_cli
+    from dplanner.modules.step_handoff import cli as handoff_cli
+    from dplanner.modules.step_handoff.handoff import inherited as inherited_handoffs
     from dplanner.modules.step_order import cli as order_cli
+    from dplanner.modules.step_release import cli as release_cli
+    from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
+
+    def agent_prompt_parts(
+        product: Product, step: Step, files: "Callable[[str, str], ModuleFileArea]"
+    ) -> list[PromptPart]:
+        # The same acquaintance the window makes: handoffs become prompt parts here, and
+        # neither module learns the other's name.
+        return [
+            PromptPart(heading=h.title, body=h.note, files=h.assets)
+            for h in inherited_handoffs(product, step, files)
+        ]
 
     specs = aspect_specs()
     commands = [
         *product_cli.commands(),
         *projects_cli.commands(),
+        *repo_cli.commands(),
         *spec_cli.commands(),
         *estimation_cli.commands(),
         *ticket_cli.commands(),
         *description_cli.commands(),
-        *agent_cli.commands(),
+        *agent_cli.commands(
+            prompt_parts=agent_prompt_parts,
+            epilogue=lambda step: _agent_epilogue(step.title),
+            preamble=_agent_preamble(),
+        ),
+        *status_cli.commands(),
+        *release_cli.commands(),
+        *handoff_cli.commands(),
         *order_cli.commands(),
-        *github_cli.commands(),
+        # Which repository a step's refs belong to is project_repo's rule — the project's
+        # own over the product's — handed over here so neither cli.py imports the other.
+        *github_cli.commands(repository_for=repo_repository_for),
         *aspect_commands(specs),
     ]
     # The skill describes the registry it is registered into, so the loop is closed here
@@ -472,9 +620,22 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
+    from dplanner.modules.step_handoff import aspect as handoff
+    from dplanner.modules.step_release import aspect as release
+    from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
 
-    return [agent.SPEC, description.SPEC, estimation.SPEC, github.SPEC, spec.SPEC, ticket.SPEC]
+    return [
+        agent.SPEC,
+        description.SPEC,
+        estimation.SPEC,
+        github.SPEC,
+        handoff.SPEC,
+        release.SPEC,
+        spec.SPEC,
+        status.SPEC,
+        ticket.SPEC,
+    ]
 
 
 def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str]]:
@@ -488,15 +649,21 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
+    from dplanner.modules.step_handoff import aspect as handoff
+    from dplanner.modules.step_release import aspect as release
+    from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
 
     pairs = [
+        (status.SPEC.id, status.summary),
+        (release.SPEC.id, release.summary),
         (estimation.SPEC.id, estimation.summary),
         (ticket.SPEC.id, ticket.summary),
         (github.SPEC.id, github.summary),
         (spec.SPEC.id, spec.summary),
         (description.SPEC.id, description.summary),
         (agent.SPEC.id, agent.summary),
+        (handoff.SPEC.id, handoff.summary),
     ]
     return [render for aspect_id, render in pairs if aspect_id not in skip]
 
@@ -510,12 +677,16 @@ def default_module_formats() -> list[ModuleDataFormat]:
     format missing here is data the CLI silently declines to bring forward.
     """
     from dplanner.modules.project_editor import positions
+    from dplanner.modules.project_repo import repo
 
-    # The aspects, plus the one module data that is not an aspect: the graph's node
-    # positions. Deriving this list from aspect_specs() alone would silently omit it.
-    # A project's start date needs no entry: it rides on the estimation aspect's format,
-    # which is the same module writing under the same id on a different node.
-    return [spec.data_format for spec in aspect_specs()] + [positions.DATA_FORMAT]
+    # The aspects, plus the module data that is not an aspect: the graph's node positions
+    # and a project's repo association. Deriving this list from aspect_specs() alone would
+    # silently omit them. A project's start date needs no entry: it rides on the estimation
+    # aspect's format, which is the same module writing under the same id on another node.
+    return [spec.data_format for spec in aspect_specs()] + [
+        positions.DATA_FORMAT,
+        repo.DATA_FORMAT,
+    ]
 
 
 def choose_workspace() -> StorageLocation | None:

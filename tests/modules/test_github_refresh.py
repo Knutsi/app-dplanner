@@ -29,7 +29,12 @@ def step(services):
 def refresher(services, monkeypatch):
     monkeypatch.setattr(refresh_mod, "parse_repo", lambda _url: "acme/widget")
     monkeypatch.setattr(refresh_mod, "gh_refusal", lambda **_kw: None)
-    return PrRefresher(services.document, services.tasks, parent=services.window)
+    return PrRefresher(
+        services.document,
+        services.tasks,
+        repository_for=lambda _step_id: "https://github.com/acme/widget",
+        parent=services.window,
+    )
 
 
 def wait_for(app, predicate, timeout=5.0):

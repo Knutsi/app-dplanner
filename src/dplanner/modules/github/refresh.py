@@ -15,6 +15,7 @@ the reasoning.
 """
 
 import logging
+from collections.abc import Callable
 
 from PySide6.QtCore import QObject, QTimer
 from PySide6.QtCore import Signal as QtSignal
@@ -42,9 +43,16 @@ class PrRefresher(QObject):
     _fetched = QtSignal(object)  # list[tuple[StepId, PrInfo]]
     _refused = QtSignal(str)
 
-    def __init__(self, product: Product, tasks: TaskService, parent: QObject) -> None:
+    def __init__(
+        self,
+        product: Product,
+        tasks: TaskService,
+        repository_for: Callable[[StepId], str],
+        parent: QObject,
+    ) -> None:
         super().__init__(parent)
         self._product = product
+        self._repository_for = repository_for
         self._runner = TaskRunner(tasks, parent=self)
         self._timer = QTimer(self)
         self._timer.setInterval(REFRESH_INTERVAL_MS)
@@ -58,18 +66,18 @@ class PrRefresher(QObject):
         self._timer.start()
 
     def _tick(self) -> None:
-        repo = parse_repo(self._product.repository)
-        if repo is None:
-            return
         # Snapshot on the GUI thread: the model has no thread affinity and may only be
-        # read here — the worker body sees plain ids and numbers, never the product.
+        # read here — the worker body sees plain ids, numbers and repo names, never the
+        # product. Each step carries its own repo, because a project can override the
+        # product's repository.
         targets = [
-            (step.id, refs.pr_number)
+            (step.id, refs.pr_number, repo)
             for project in self._product.projects
             for step in project.steps
             if (refs := read(step)) is not None
             and refs.pr_number is not None
             and refs.pr_state in ("open", "")
+            and (repo := parse_repo(self._repository_for(step.id))) is not None
         ]
         if not targets:
             return
@@ -80,7 +88,7 @@ class PrRefresher(QObject):
                 self._refused.emit(refusal)
                 return
             found: list[tuple[StepId, PrInfo]] = []
-            for step_id, number in targets:
+            for step_id, number, repo in targets:
                 if self._runner.cancel_requested():
                     return
                 try:

@@ -1,10 +1,11 @@
 """The GitHub aspect, in the running application: the GitHub tab and the PR refresher."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from PySide6.QtCore import QObject
 
-from dplanner.domain.model import Product
+from dplanner.domain.model import Product, StepId
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.undo import UndoService
@@ -20,6 +21,9 @@ class GithubDeps:
     sections: InspectorSectionRegistry
     tasks: TaskService
     parent: QObject  # Owns the refresher, so its timer dies with the window.
+    # step id -> the repository URL that step's refs belong to. project_repo's rule (the
+    # project's own repository over the product's), arriving through the composition root.
+    repository_for: Callable[[StepId], str]
 
 
 class GithubModule:
@@ -35,8 +39,8 @@ class GithubModule:
             InspectorSection(
                 id=f"{MODULE_ID}.tab",
                 label=SPEC.label,
-                order=50,
-                factory=lambda: GithubSection(deps.product, deps.undo),
+                order=70,  # After Release (50) and Handoff (60).
+                factory=lambda: GithubSection(deps.product, deps.undo, deps.repository_for),
             )
         )
-        PrRefresher(deps.product, deps.tasks, parent=deps.parent).start()
+        PrRefresher(deps.product, deps.tasks, deps.repository_for, parent=deps.parent).start()

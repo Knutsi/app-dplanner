@@ -50,6 +50,8 @@ def test_every_registered_aspect_became_a_tab(services, panel):
         "Ticket",
         "Description",
         "Agent",
+        "Release",
+        "Handoff",
         "GitHub",
     ]
 
@@ -57,7 +59,8 @@ def test_every_registered_aspect_became_a_tab(services, panel):
 def test_an_editor_stays_usable_when_its_value_is_empty(panel):
     """`tab_visible()` gates informational sections. An editor that hid itself while the
     value was empty would be a tab you could never use to set one."""
-    for label in ("Estimate", "Ticket", "Description", "Agent", "GitHub"):
+    labels = ("Estimate", "Ticket", "Description", "Agent", "Release", "Handoff", "GitHub")
+    for label in labels:
         assert section(panel, label).tab_visible()
 
 

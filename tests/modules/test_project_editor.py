@@ -153,13 +153,13 @@ def test_a_steps_github_refs_decorate_its_node(services, project, tab):
     step = project.steps[0]
     refs = GithubRefs(branch="feat/login", pr_number=12, pr_state="merged")
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write(refs)))
-    decoration = scene(tab)._nodes[step.id]._decoration
-    assert decoration.pill_text == "PR #12"
-    assert decoration.pill_tone == "good"
-    assert decoration.branch is True
+    accent = scene(tab)._nodes[step.id]._accent
+    assert accent.pill_text == "PR #12"
+    assert accent.pill_tone == "good"
+    assert accent.branch is True
 
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, {}))
-    assert scene(tab)._nodes[step.id]._decoration.pill_text == ""
+    assert scene(tab)._nodes[step.id]._accent.pill_text == ""
 
 
 def test_a_branch_alone_is_a_glyph_not_a_pill(services, project, tab):
@@ -168,8 +168,8 @@ def test_a_branch_alone_is_a_glyph_not_a_pill(services, project, tab):
 
     step = project.steps[0]
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write(GithubRefs(branch="b"))))
-    decoration = scene(tab)._nodes[step.id]._decoration
-    assert decoration.pill_text == "" and decoration.branch is True
+    accent = scene(tab)._nodes[step.id]._accent
+    assert accent.pill_text == "" and accent.branch is True
 
 
 def test_an_edge_is_drawn_for_a_link(services, project, tab):

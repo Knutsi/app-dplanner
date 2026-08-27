@@ -37,7 +37,7 @@ from dplanner.framework.widgets import install_ctrl_wheel_zoom
 from dplanner.modules.project_editor.items import (
     EdgeItem,
     LinkPreviewItem,
-    StepDecoration,
+    NodeAccent,
     StepNodeItem,
 )
 from dplanner.modules.project_editor.keymap import bound_actions
@@ -73,7 +73,7 @@ class NodeSpec:
     subtitle: str
     x: float
     y: float
-    decoration: StepDecoration = field(default_factory=StepDecoration)
+    accent: NodeAccent = field(default_factory=NodeAccent)
 
 
 class GraphScene(QGraphicsScene):
@@ -117,7 +117,7 @@ class GraphScene(QGraphicsScene):
                 item = self._nodes[spec.step_id] = StepNodeItem(spec.step_id)
                 self.addItem(item)
             item.set_text(spec.title, spec.subtitle)
-            item.set_decoration(spec.decoration)
+            item.set_accent(spec.accent)
             # A node being dragged owns its position until the gesture ends. The model is
             # authoritative everywhere else — including when the CLI writes mid-drag.
             if spec.step_id not in self._press_at:

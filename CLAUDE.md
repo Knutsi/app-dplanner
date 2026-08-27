@@ -36,6 +36,11 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
   name say what that module is? Is the separation of concerns obvious? Could they find where
   to add the next feature without asking? If not, the fix is renaming and moving, not a
   comment.
+- **Sane defaults, options laid out.** Anything configurable whose right value the user
+  would otherwise have to research — an agent CLI's invocation, a terminal's exec flag —
+  offers the known choices up front (a dropdown of presets pre-filling an editable field)
+  and works untouched on the default. A bare free-text setting is a lookup pushed onto the
+  user. `modules/step_agent_instruction/settings_page.py` is the worked example.
 - When you spot cleanup that reduces entropy without adding over-engineering or "magic",
   suggest it.
 - Only add comments that carry durable value for future developers and agents. Otherwise,
@@ -251,6 +256,18 @@ root, stop and look for the registry or capability you have not found yet.
   reloaded float writes as `5.0`, making a file's bytes depend on whether the workspace had
   been reopened. `module_data` is opaque to the model, so the coercion belongs in the
   aspect's `write()` — see `modules/estimation/aspect.py`.
+- **Running an agent launches a peer, never a task.** *Run Agent* spawns a detached terminal
+  the user owns — not a `TaskRunner` body, which would promise cancel and progress nobody
+  can honestly deliver. The prompt goes to a per-run temp directory, never the workspace.
+  The agent reports back through the CLI (`status set`, `handoff set`). `ARCHITECTURE.md`'s
+  *Running an agent launches a peer, not a task* has the reasoning.
+- **Inherited handoffs are computed, never stored** — `step_handoff/handoff.py` is one
+  function with three readers (tab, CLI, agent prompt). Same rule as the ordering, and the
+  reasoning is in `ARCHITECTURE.md`'s *Pass-forward is derived at read time*.
+- **A project may carry its own repository and checkout.** Resolution — the project's, else
+  the product's — is one function in `modules/project_repo/repo.py`, and Run Agent is wired
+  through it; never write a second copy. `ARCHITECTURE.md`'s *A project's repository
+  overrides the product's* has the reasoning.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.
