@@ -175,7 +175,7 @@ src/dplanner/
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── spec/                spec documents beside a project, their requirements, `dplanner spec`
 │   ├── workspace_watch/     reloading when something else writes to the workspace
-│   ├── agent_skill/         installing the generated skill from the window
+│   ├── agent_skill/         the skill dialog, and the install that puts dplanner on PATH
 │   ├── appshell/  workspaces/  sync/  settings/  taskcenter/  debug/
 │   └── llm/  llm_openai/  llm_anthropic/
 │

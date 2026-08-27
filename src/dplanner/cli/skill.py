@@ -15,6 +15,9 @@ are built at a fixed width instead. The generated files go into version control,
 that depends on who ran it is a diff nobody reads.
 """
 
+import contextlib
+import shlex
+import shutil
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -127,6 +130,62 @@ def target_dir(*, user: bool, here: Path | None = None) -> Path:
     return base / SKILL_DIR
 
 
+def install_command() -> list[str]:
+    """The command that puts ``dplanner`` on PATH, as argv.
+
+    From a source checkout that is an editable tool install, which tracks the checkout
+    instead of freezing a copy.
+    """
+    root = Path(__file__).resolve().parents[3]
+    if (root / "pyproject.toml").is_file():
+        return ["uv", "tool", "install", "--editable", str(root)]
+    return ["uv", "tool", "install", PROG]
+
+
+def uninstall_command() -> list[str]:
+    """The command that takes the installed ``dplanner`` tool back out, as argv."""
+    return ["uv", "tool", "uninstall", PROG]
+
+
+def path_hint() -> str | None:
+    """None when ``dplanner`` resolves on PATH; otherwise the command that puts it there.
+
+    The skill tells agents to run ``dplanner``, so a machine where that command does not
+    resolve has half an install.
+    """
+    if shutil.which(PROG) is not None:
+        return None
+    return shlex.join(install_command())
+
+
+def worktree_warning(root: Path | None = None) -> str | None:
+    """A caution when the editable install would track a git worktree, else None.
+
+    A worktree is often temporary — a branch's scratch checkout — and an editable install
+    pointing into one breaks the moment the worktree is removed. The warning names the main
+    checkout when the worktree's ``.git`` file says where it is.
+    """
+    if root is None:
+        root = Path(__file__).resolve().parents[3]
+    gitfile = root / ".git"
+    if not gitfile.is_file():  # A directory means a main checkout; a file marks a worktree.
+        return None
+    message = (
+        f"This build runs from a git worktree ({root}) — the installed command would "
+        "break when the worktree is removed."
+    )
+    content = gitfile.read_text().strip()
+    if content.startswith("gitdir:"):
+        gitdir = Path(content.removeprefix("gitdir:").strip())
+        # A linked worktree's gitdir is <main>/.git/worktrees/<name>.
+        if gitdir.parent.name == "worktrees" and gitdir.parents[1].name == ".git":
+            main = gitdir.parents[2]
+            message += (
+                f" Consider installing from the main checkout:  uv tool install --editable {main}"
+            )
+    return message
+
+
 def status(files: dict[str, str], directory: Path) -> str:
     """``installed``, ``stale`` or ``missing`` — what an "Update…" label reads from."""
     for name, content in files.items():
@@ -148,8 +207,25 @@ def install(files: dict[str, str], directory: Path) -> list[Path]:
     return written
 
 
+def uninstall(files: dict[str, str], directory: Path) -> list[Path]:
+    """Remove exactly the files install would write — never anything the user added.
+
+    The directory goes too once it is empty; a directory holding somebody's own files
+    survives.
+    """
+    removed = []
+    for name in sorted(files):
+        path = directory / name
+        if path.is_file():
+            path.unlink()
+            removed.append(path)
+    with contextlib.suppress(OSError):
+        directory.rmdir()
+    return removed
+
+
 def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCommand]:
-    """The three skill verbs.
+    """The skill verbs: show, install, uninstall, status.
 
     They take the registry they describe, which is the same registry they are registered
     into — the composition root closes the loop, and nothing here has to go looking.
@@ -189,10 +265,25 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
         )
         return 0
 
+    def do_uninstall(context: CliContext, args: Namespace) -> int:
+        removed = uninstall(files(), where(args))
+        context.report(
+            {"removed": [str(path) for path in removed]},
+            "\n".join(str(path) for path in removed) if removed else "nothing installed",
+        )
+        return 0
+
     def do_status(context: CliContext, args: Namespace) -> int:
         directory = where(args)
         state = status(files(), directory)
-        context.report({"status": state, "directory": str(directory)}, f"{state}  {directory}")
+        hint = path_hint()
+        text = f"{state}  {directory}"
+        if hint is not None:
+            text += f"\ndplanner is not on PATH — fix with: {hint}"
+        context.report(
+            {"status": state, "directory": str(directory), "cli_on_path": hint is None},
+            text,
+        )
         return 0
 
     return [
@@ -210,6 +301,14 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
             run=do_install,
             needs_workspace=False,
             examples=(f"{PROG} skill install", f"{PROG} skill install --project"),
+        ),
+        CliCommand(
+            path=("skill", "uninstall"),
+            summary="Remove the installed agent skill.",
+            configure=configure,
+            run=do_uninstall,
+            needs_workspace=False,
+            examples=(f"{PROG} skill uninstall",),
         ),
         CliCommand(
             path=("skill", "status"),
