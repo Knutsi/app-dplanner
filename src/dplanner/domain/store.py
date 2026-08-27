@@ -306,8 +306,33 @@ class ProductStore:
 
     def files(self, node_id: NodeId, module_id: str) -> ModuleFileArea:
         """The directory ``module_id`` owns beside ``node_id``'s module data."""
-        directory = _join(self._dirs[node_id], MODULES_DIR, module_id)
+        directory = _join(self._locate(node_id), MODULES_DIR, module_id)
         return ModuleFileArea(self.storage, directory, self._note_written)
+
+    def _locate(self, node_id: NodeId) -> str:
+        """The node's directory, settled early for a node created since the last flush.
+
+        ``_dirs`` is normally filled at load and flush, but a file area can be asked for in
+        the window between creating a node and the autosave that writes it. Settling the
+        folder name here is safe because it is the same choice ``_sync_dir`` would make —
+        that method keeps any name already on the node — and a folder name is frozen at
+        creation anyway.
+        """
+        known = self._dirs.get(node_id)
+        if known is not None:
+            return known
+        assert self.product is not None
+        node = self.product.node(node_id)
+        parent = self.product.parent_of(node_id)
+        assert parent is not None, "the product's own directory is recorded at load"
+        container = _join(self._locate(parent.id), CONTAINER[parent.kind])
+        if not node.folder_name:
+            node.folder_name = unique_folder_name(
+                node.title_for_folder(), set(self.storage.list_dir(container))
+            )
+        directory = _join(container, node.folder_name)
+        self._dirs[node_id] = directory
+        return directory
 
     def close(self) -> None:
         self.product = None

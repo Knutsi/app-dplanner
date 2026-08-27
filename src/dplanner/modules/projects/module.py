@@ -15,7 +15,12 @@ from dplanner.domain.model import NodeId, Product
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
+from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+
+# ProjectEntry is re-exported: contributors are wired through this module's Deps, and the
+# composition root imports a module's surface from its module.py alone.
+from dplanner.modules.projects.index import ProjectEntry as ProjectEntry
 from dplanner.modules.projects.index import ProjectsSegment
 from dplanner.modules.projects.verbs import ProjectVerbs
 from dplanner.theme.icons import container_icon
@@ -30,10 +35,14 @@ class ProjectsDeps:
     context: ContextService
     undo: UndoService[Product]
     segments: IndexSegmentRegistry
+    theme: ThemeService
     parent: QWidget
-    # Show a project. Wired by the composition root to the project editor, which this
-    # module never imports.
+    # Show a project — the "Open Project" verb's callback, wired by the composition root
+    # to the project editor, which this module never imports. In the tree, opening the
+    # graph is the Steps entry's job, not the project row's.
     open_project: Callable[[NodeId], None]
+    # Rows other modules put under each project, wired by the composition root.
+    entries: tuple[ProjectEntry, ...] = ()
 
 
 class ProjectsModule:
@@ -57,7 +66,8 @@ class ProjectsModule:
                 product=deps.product,
                 context=deps.context,
                 actions=deps.actions,
-                open_project=deps.open_project,
+                theme=deps.theme,
+                entries=deps.entries,
             )
 
         deps.segments.register(

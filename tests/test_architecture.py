@@ -52,6 +52,7 @@ HEADLESS_FILES = (
     "aspect.py",
     "positions.py",
     "schedule.py",
+    "documents.py",
     "handoff.py",
     "prompt.py",
     "launcher.py",

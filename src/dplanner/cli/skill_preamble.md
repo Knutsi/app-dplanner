@@ -24,20 +24,31 @@ you work. So:
 - **Do not invent structure the user did not ask for.** A plan with twenty imagined steps is
   harder to correct than an empty one.
 
-## Importing a specification
+## Working from a specification
 
-You read the document — a PDF, a wiki page, a thread. DPlanner does not parse it, because
-you have already understood it better than a parser would. Turn what you read into the shape
-`dplanner project export` writes, and pipe it in:
+A project can carry the documents it answers to — a PDF, a markdown file, plain text —
+and the workflow runs from import to updated steps:
 
-```bash
-dplanner project export <existing> | head -40   # to see the shape
-cat plan.json | dplanner project import
-```
+1. **Import it.** `dplanner spec import <project> spec.pdf` stores the document beside the
+   project. Importing under the same name again *replaces* it and keeps the previous
+   version, which is what makes step 5 possible.
+2. **Read it yourself.** `spec show` prints text and markdown; for a PDF, `spec path`
+   prints the file's absolute path and you read it directly. DPlanner does not parse the
+   document, because you have already understood it better than a parser would.
+3. **Mark the requirements.** One `dplanner spec mark <project> <doc> --title … --quote …`
+   per named obligation you find, with the passage that anchors it. Requirements are the
+   durable trace of your reading — the next agent starts from them, not from scratch.
+4. **Create the steps and link them.** `step add` and `step link` build the graph;
+   `dplanner spec link <step> <requirement>` records *why* each step exists.
+5. **When the spec changes**, import it again, then `spec diff <project> <doc>` to see what
+   moved, and `spec requirements <project> --document <doc> --json` to find the linked
+   steps. Update the steps and requirements the diff actually touches, and say what you
+   changed.
 
 Prefer building the project up with `project create` and `step add` when there are only a
-few steps: the user sees each one arrive and can stop you. Use `import` for something large
-that you have already agreed on.
+few steps: the user sees each one arrive and can stop you. For something large you have
+already agreed on, `dplanner project export | dplanner project import` moves whole
+projects as JSON.
 
 ## Conventions
 
