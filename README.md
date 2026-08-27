@@ -168,6 +168,7 @@ src/dplanner/
 │   ├── step_description/
 │   ├── step_agent_instruction/
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
+│   ├── spec/                spec documents beside a project, their requirements, `dplanner spec`
 │   ├── workspace_watch/     reloading when something else writes to the workspace
 │   ├── agent_skill/         installing the generated skill from the window
 │   ├── appshell/  workspaces/  sync/  settings/  taskcenter/  debug/

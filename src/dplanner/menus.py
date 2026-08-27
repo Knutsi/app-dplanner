@@ -33,7 +33,8 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # renders and "Step" is what the graph canvas's does — see framework/action_menu.py.
     # "link" holds the two-step verbs: the canvas publishes both ends into the selection
     # scope on a drop and runs the same action the menu does.
-    "Project": ("edit", "open"),
+    # "documents" is the spec module's: what a project carries beside its steps.
+    "Project": ("edit", "documents", "open"),
     # "open" is a surface about the selection — the Step-side mirror of Project's
     # "Show Order". "navigate" is where the canvas's movement verbs live: they select
     # rather than change, so they belong beside the step verbs but not among them.

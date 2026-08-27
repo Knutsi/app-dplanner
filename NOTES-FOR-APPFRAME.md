@@ -520,6 +520,12 @@ and both traps.
   because registration only happens at startup — but it is the kind of thing that stops being
   correct silently if registration ever becomes dynamic. Worth a comment upstream if the tab
   set survives.
+- **Non-root index rows have no framework re-tint path.** `IndexPanel.set_icon_color` covers
+  the segment roots; a segment that puts icons on its own rows (DPlanner's projects segment
+  nests entry rows under each project) has to subscribe to `theme.changed` itself and
+  repaint. That is workable — the segment already owns a rebuild — but if a second segment
+  grows row icons, an optional `set_icon_color` on `IndexSegmentView` that the panel calls
+  alongside its root repaint would be the upstream shape.
 
 ---
 

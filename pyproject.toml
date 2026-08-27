@@ -8,6 +8,9 @@ dependencies = [
     "keyring>=25.0",
     "openai>=1.50",
     "anthropic>=0.40",
+    # In-app PDF rendering for spec documents. Deliberately not the full PySide6 (QtPdf
+    # lives in the hundreds-of-MB Addons package); pdfium is one small native wheel.
+    "pypdfium2>=5",
 ]
 
 [project.scripts]
@@ -38,6 +41,11 @@ explicit_package_bases = true
 strict = true
 warn_unreachable = true
 pretty = true
+
+[[tool.mypy.overrides]]
+# pypdfium2 ships no py.typed; its objects are used behind our own typed wrappers.
+module = "pypdfium2.*"
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 # Tests may skip annotations; everything they call is still checked.

@@ -145,6 +145,50 @@ def leaf_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
+def project_icon(color: str) -> QIcon:
+    """A card holding a tiny two-node graph: a project row in the index."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(2.5, 3.0, 11.0, 10.0), 1.5, 1.5)
+    painter.drawLine(QPointF(6.6, 6.7), QPointF(9.4, 9.3))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(color))
+    painter.drawEllipse(QPointF(5.5, 5.8), 1.5, 1.5)
+    painter.drawEllipse(QPointF(10.5, 10.2), 1.5, 1.5)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def graph_icon(color: str) -> QIcon:
+    """Three joined nodes: a project's step graph."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.drawLine(QPointF(4.5, 4.5), QPointF(11.5, 4.5))
+    painter.drawLine(QPointF(4.5, 4.5), QPointF(8.0, 11.5))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(color))
+    painter.drawEllipse(QPointF(4.5, 4.5), 1.8, 1.8)
+    painter.drawEllipse(QPointF(11.5, 4.5), 1.8, 1.8)
+    painter.drawEllipse(QPointF(8.0, 11.5), 1.8, 1.8)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def spec_icon(color: str) -> QIcon:
+    """A page with a check over its lower lines: a specification with marked requirements."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(3.5, 2.0, 9.0, 12.0), 1.5, 1.5)
+    painter.drawLine(QPointF(5.5, 5.0), QPointF(10.5, 5.0))
+    painter.drawLine(QPointF(5.5, 7.5), QPointF(10.5, 7.5))
+    painter.setPen(_pen(color, 1.5))
+    painter.drawPolyline(QPolygonF([QPointF(5.5, 10.5), QPointF(7.2, 12.2), QPointF(10.5, 8.8)]))
+    painter.end()
+    return QIcon(pixmap)
+
+
 def dot_icon(color: str) -> QIcon:
     """A filled dot: the active item in a list."""
     pixmap, painter = _canvas()
