@@ -35,7 +35,7 @@ _STATUS_NOTES = {
 
 _PROJECT_HINT = "`dplanner skill install --project` installs into a repository instead."
 
-PRIMARY_LABELS = {
+_PRIMARY_LABELS = {
     "missing": "Install",
     "stale": "Update",
     "installed": "Update",
@@ -100,7 +100,7 @@ class AgentSkillDialog(QDialog):
 
     def _refresh(self) -> None:
         state = status(self._files, self._directory)
-        self.primary.setText(PRIMARY_LABELS[state])
+        self.primary.setText(_PRIMARY_LABELS[state])
         self.primary.setEnabled(state != "installed")
         self.remove_button.setEnabled(state != "missing")
         self.status_note.setText(f"{_STATUS_NOTES[state]} {_PROJECT_HINT}")
