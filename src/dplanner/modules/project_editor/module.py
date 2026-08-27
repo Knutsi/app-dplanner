@@ -56,7 +56,7 @@ from dplanner.framework.window import StatusHost
 from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
-from dplanner.modules.project_editor.items import StepNodeItem
+from dplanner.modules.project_editor.items import NodeAccent, StepNodeItem
 from dplanner.modules.project_editor.layout import positions
 from dplanner.modules.project_editor.modes import CONNECT, ConnectMode, IdleMode
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
@@ -77,6 +77,10 @@ def _no_aspects(_step_id: StepId) -> list[str]:
     return []
 
 
+def _no_accent(_step_id: StepId) -> NodeAccent:
+    return NodeAccent()
+
+
 @dataclass(frozen=True)
 class ProjectEditorDeps:
     product: Product
@@ -90,6 +94,9 @@ class ProjectEditorDeps:
     theme: ThemeService
     # What the aspect modules have to say about a step, one short phrase each.
     step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
+    # How a step should look beyond its text — muted, badged — in the canvas's own
+    # vocabulary, so the editor never learns which aspects mean what.
+    step_accent: Callable[[StepId], NodeAccent] = field(default=_no_accent)
 
 
 class ProjectActivity(ActivityBase):
@@ -230,6 +237,7 @@ class ProjectActivity(ActivityBase):
                 subtitle=" · ".join(self._deps.step_aspects(step.id)),
                 x=placed[step.id][0],
                 y=placed[step.id][1],
+                accent=self._deps.step_accent(step.id),
             )
             for step in project.steps
         ]

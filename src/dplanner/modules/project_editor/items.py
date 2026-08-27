@@ -4,6 +4,8 @@ Each item owns its geometry and its paint and nothing else. Interaction lives in
 one mode per behaviour, so no item and no scene grows a state machine.
 """
 
+from dataclasses import dataclass
+
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QColor,
@@ -50,6 +52,31 @@ EDGE_GRAB = 14.0
 # Low-alpha semantic tints that read on every theme (DESIGN.md exception #2).
 VALID_TINT = QColor(120, 200, 140, 180)
 INVALID_TINT = QColor(220, 110, 110, 180)
+BADGE_TINT = QColor(150, 130, 220, 70)
+BADGE_BORDER = QColor(150, 130, 220, 160)
+
+# A muted node: the same colours, further faded. What "muted" means is the caller's business.
+MUTED_TEXT_ALPHA = 110
+MUTED_SECONDARY_ALPHA = 80
+MUTED_FILL_ALPHA = 14
+MUTED_BORDER_ALPHA = 50
+
+BADGE_H = 14.0
+BADGE_PAD = 6.0
+BADGE_INSET = 10.0  # From the node's right edge, clear of the link handle's corner.
+
+
+@dataclass(frozen=True)
+class NodeAccent:
+    """How a node should look beyond its text, in the canvas's own vocabulary.
+
+    The canvas never learns which aspect means "muted" or what a badge says — the
+    composition root translates aspects into this, the same seam ``step_aspects`` uses
+    for the subtitle.
+    """
+
+    muted: bool = False
+    badge: str = ""
 
 
 def live_palette(item: QGraphicsItem) -> QPalette:
@@ -73,6 +100,7 @@ class StepNodeItem(QGraphicsItem):
         self._title = ""
         self._subtitle = ""
         self._link_state = ""
+        self._accent = NodeAccent()
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
@@ -82,6 +110,11 @@ class StepNodeItem(QGraphicsItem):
     def set_text(self, title: str, subtitle: str) -> None:
         if (title, subtitle) != (self._title, self._subtitle):
             self._title, self._subtitle = title, subtitle
+            self.update()
+
+    def set_accent(self, accent: NodeAccent) -> None:
+        if accent != self._accent:
+            self._accent = accent
             self.update()
 
     def set_link_state(self, state: str) -> None:
@@ -103,7 +136,9 @@ class StepNodeItem(QGraphicsItem):
         return self.mapToScene(QPointF(NODE_W if other.x() >= centre.x() else 0.0, NODE_H / 2))
 
     def boundingRect(self) -> QRectF:  # noqa: N802 - Qt override
-        margin = HANDLE_R + 2
+        # Constant, whatever the accent: room for the handle and for a badge's rise above
+        # the top edge (BADGE_H / 2 plus its stroke), so paint never leaves the rect.
+        margin = HANDLE_R + 4
         return QRectF(-margin, -margin, NODE_W + 2 * margin, NODE_H + 2 * margin)
 
     def itemChange(self, change: object, value: object) -> object:  # noqa: N802 - Qt override
@@ -127,33 +162,48 @@ class StepNodeItem(QGraphicsItem):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         palette = live_palette(self)
         body = QRectF(0, 0, NODE_W, NODE_H)
+        muted = self._accent.muted
         text_colour = QColor(palette.text().color())
+        if muted:
+            text_colour.setAlpha(MUTED_TEXT_ALPHA)
 
-        fill = QColor(text_colour)
-        fill.setAlpha(FILL_ALPHA)
+        fill = QColor(palette.text().color())
+        fill.setAlpha(MUTED_FILL_ALPHA if muted else FILL_ALPHA)
         border = QColor(palette.highlight().color())
         if self._link_state == "valid":
             border = VALID_TINT
         elif self._link_state == "invalid":
             border = INVALID_TINT
         elif not self.isSelected():
-            border = QColor(text_colour)
-            border.setAlpha(90)
+            border = QColor(palette.text().color())
+            border.setAlpha(MUTED_BORDER_ALPHA if muted else 90)
         painter.setBrush(fill)
         painter.setPen(QPen(border, 2.0 if self.isSelected() or self._link_state else 1.0))
         painter.drawRoundedRect(body, RADIUS, RADIUS)
 
         metrics = painter.fontMetrics()
         inner = body.adjusted(PADDING, PADDING, -PADDING, -PADDING)
+        title_left = inner.left()
+        if muted:
+            # A check before the title says "done" without a word taking subtitle space.
+            check = "✓"
+            painter.setPen(text_colour)
+            painter.drawText(
+                QRectF(title_left, inner.top(), inner.width(), metrics.height()),
+                int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                check,
+            )
+            title_left += metrics.horizontalAdvance(check + " ")
         painter.setPen(text_colour)
+        title_width = inner.right() - title_left
         painter.drawText(
-            QRectF(inner.left(), inner.top(), inner.width(), metrics.height()),
+            QRectF(title_left, inner.top(), title_width, metrics.height()),
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-            metrics.elidedText(self._title, Qt.TextElideMode.ElideRight, int(inner.width())),
+            metrics.elidedText(self._title, Qt.TextElideMode.ElideRight, int(title_width)),
         )
         if self._subtitle:
-            faded = QColor(text_colour)
-            faded.setAlpha(SECONDARY_ALPHA)
+            faded = QColor(palette.text().color())
+            faded.setAlpha(MUTED_SECONDARY_ALPHA if muted else SECONDARY_ALPHA)
             painter.setPen(faded)
             top = inner.top() + metrics.height() + LINE_GAP
             painter.drawText(
@@ -162,11 +212,37 @@ class StepNodeItem(QGraphicsItem):
                 metrics.elidedText(self._subtitle, Qt.TextElideMode.ElideRight, int(inner.width())),
             )
 
+        if self._accent.badge:
+            self._paint_badge(painter, palette)
+
         if self._hovered or self._link_state:
             handle = QColor(palette.highlight().color())
             painter.setBrush(handle)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(QPointF(NODE_W, NODE_H / 2), HANDLE_R, HANDLE_R)
+
+    def _paint_badge(self, painter: QPainter, palette: QPalette) -> None:
+        """A pill on the top edge, right end: the release label, sitting on the border.
+
+        It rises half its height above the node, which is why it must stay inside the
+        ``boundingRect`` margin — ``BADGE_H / 2 <= HANDLE_R + 2`` keeps that true.
+        """
+        font = painter.font()
+        small = painter.font()
+        small.setPointSizeF(max(6.0, font.pointSizeF() - 2.0))
+        painter.setFont(small)
+        metrics = painter.fontMetrics()
+        text = metrics.elidedText(
+            self._accent.badge, Qt.TextElideMode.ElideRight, int(NODE_W * 0.6)
+        )
+        width = metrics.horizontalAdvance(text) + 2 * BADGE_PAD
+        pill = QRectF(NODE_W - BADGE_INSET - width, -BADGE_H / 2, width, BADGE_H)
+        painter.setBrush(BADGE_TINT)
+        painter.setPen(QPen(BADGE_BORDER, 1.0))
+        painter.drawRoundedRect(pill, BADGE_H / 2, BADGE_H / 2)
+        painter.setPen(QColor(palette.text().color()))
+        painter.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), text)
+        painter.setFont(font)
 
     def hoverEnterEvent(self, event: object) -> None:  # noqa: N802 - Qt override
         self._hovered = True

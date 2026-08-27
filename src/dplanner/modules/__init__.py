@@ -61,6 +61,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.product.module import ProductDeps, ProductModule
+    from dplanner.modules.project_editor.items import NodeAccent
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.projects.module import ProjectsDeps, ProjectsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
@@ -79,7 +80,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepPropertiesDeps,
         StepPropertiesModule,
     )
+    from dplanner.modules.step_release.aspect import MODULE_ID as RELEASE_ID
+    from dplanner.modules.step_release.aspect import read as release_label
     from dplanner.modules.step_release.module import StepReleaseDeps, StepReleaseModule
+    from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
@@ -105,6 +109,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
         step = product.step(step_id)
         summaries = aspect_summaries(skip)
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
+
+    def step_accent(step_id: str) -> "NodeAccent":
+        """How a step looks on the canvas, translated from aspects the canvas never learns.
+
+        A done step is muted; a release wears its label as a badge, which is why the
+        canvas subtitle skips the release phrase below.
+        """
+        step = product.step(step_id)
+        return NodeAccent(muted=step_status(step) == "done", badge=release_label(step))
 
     def step_schedule(project_id: str, order: "Sequence[Placed]") -> "list[Scheduled]":
         """The order carrying days and dates: the domain's walk, over one module's numbers.
@@ -149,8 +162,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
             parent=services.window,
             panels=services.panels,
             theme=services.theme,
-            # A node's second line: whatever the aspects have to say about that step.
-            step_aspects=step_aspects,
+            # A node's second line: whatever the aspects have to say about that step. The
+            # release phrase is skipped because the badge already wears the label.
+            step_aspects=lambda step_id: step_aspects(step_id, skip={RELEASE_ID}),
+            step_accent=step_accent,
         )
     )
     estimation = EstimationModule(

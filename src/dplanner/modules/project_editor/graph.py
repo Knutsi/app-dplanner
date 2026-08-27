@@ -19,7 +19,7 @@ dragging for free, because the scene never sees it.
 """
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QKeyEvent, QMouseEvent, QPainter, QResizeEvent
@@ -34,7 +34,12 @@ from PySide6.QtWidgets import (
 from dplanner.core.signals import Signal
 from dplanner.domain.model import StepId
 from dplanner.framework.widgets import install_ctrl_wheel_zoom
-from dplanner.modules.project_editor.items import EdgeItem, LinkPreviewItem, StepNodeItem
+from dplanner.modules.project_editor.items import (
+    EdgeItem,
+    LinkPreviewItem,
+    NodeAccent,
+    StepNodeItem,
+)
 from dplanner.modules.project_editor.keymap import bound_actions
 from dplanner.modules.project_editor.minimap import Minimap
 from dplanner.modules.project_editor.modes import (
@@ -68,6 +73,7 @@ class NodeSpec:
     subtitle: str
     x: float
     y: float
+    accent: NodeAccent = field(default_factory=NodeAccent)
 
 
 class GraphScene(QGraphicsScene):
@@ -111,6 +117,7 @@ class GraphScene(QGraphicsScene):
                 item = self._nodes[spec.step_id] = StepNodeItem(spec.step_id)
                 self.addItem(item)
             item.set_text(spec.title, spec.subtitle)
+            item.set_accent(spec.accent)
             # A node being dragged owns its position until the gesture ends. The model is
             # authoritative everywhere else — including when the CLI writes mid-drag.
             if spec.step_id not in self._press_at:
