@@ -50,6 +50,7 @@ __all__ = [
 def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.domain.model import Product
     from dplanner.domain.schedule import schedule
+    from dplanner.domain.store import ProductStore
     from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
@@ -75,6 +76,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepDescriptionDeps,
         StepDescriptionModule,
     )
+    from dplanner.modules.step_handoff.module import StepHandoffDeps, StepHandoffModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
     from dplanner.modules.step_properties.module import (
         StepPropertiesDeps,
@@ -95,6 +97,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.workspaces.module import WorkspacesDeps, WorkspacesModule
 
     product: Product = services.document
+    # The composition root knows the concrete store; modules are handed only its `files`.
+    store = services.repo
+    assert isinstance(store, ProductStore)
 
     def skill_files() -> dict[str, str]:
         from dplanner.cli.command import CliRegistry
@@ -318,6 +323,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 product=product, undo=services.undo, sections=services.inspector_sections
             )
         ),
+        StepHandoffModule(
+            StepHandoffDeps(
+                product=product,
+                undo=services.undo,
+                sections=services.inspector_sections,
+                files=store.files,
+            )
+        ),
         StepReleaseModule(
             StepReleaseDeps(
                 product=product, undo=services.undo, sections=services.inspector_sections
@@ -385,6 +398,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_description import cli as description_cli
+    from dplanner.modules.step_handoff import cli as handoff_cli
     from dplanner.modules.step_order import cli as order_cli
     from dplanner.modules.step_release import cli as release_cli
     from dplanner.modules.step_status import cli as status_cli
@@ -400,6 +414,7 @@ def default_cli_commands() -> list["CliCommand"]:
         *agent_cli.commands(),
         *status_cli.commands(),
         *release_cli.commands(),
+        *handoff_cli.commands(),
         *order_cli.commands(),
         *aspect_commands(specs),
     ]
@@ -422,6 +437,7 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.estimation import aspect as estimation
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
+    from dplanner.modules.step_handoff import aspect as handoff
     from dplanner.modules.step_release import aspect as release
     from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
@@ -430,6 +446,7 @@ def aspect_specs() -> list["AspectSpec"]:
         agent.SPEC,
         description.SPEC,
         estimation.SPEC,
+        handoff.SPEC,
         release.SPEC,
         status.SPEC,
         ticket.SPEC,
@@ -445,6 +462,7 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
     from dplanner.modules.estimation import aspect as estimation
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
+    from dplanner.modules.step_handoff import aspect as handoff
     from dplanner.modules.step_release import aspect as release
     from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
@@ -456,6 +474,7 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
         (ticket.SPEC.id, ticket.summary),
         (description.SPEC.id, description.summary),
         (agent.SPEC.id, agent.summary),
+        (handoff.SPEC.id, handoff.summary),
     ]
     return [render for aspect_id, render in pairs if aspect_id not in skip]
 
