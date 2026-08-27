@@ -64,6 +64,19 @@ def test_a_hand_edited_skill_reads_as_stale(services, skill_home):
     assert (skill_home / SKILL_FILE).read_text() == files[SKILL_FILE]
 
 
+def test_the_dialog_says_when_the_command_is_not_on_path(services, skill_home, monkeypatch):
+    monkeypatch.setattr(
+        "dplanner.modules.agent_skill.dialog.path_hint", lambda: "uv tool install --editable /x"
+    )
+    dialog = AgentSkillDialog(composition_root_files(), skill_home, None)
+    assert "not on PATH" in dialog.path_note.text()
+    assert "uv tool install --editable /x" in dialog.path_note.text()
+
+    monkeypatch.setattr("dplanner.modules.agent_skill.dialog.path_hint", lambda: None)
+    quiet = AgentSkillDialog(composition_root_files(), skill_home, None)
+    assert quiet.path_note.isHidden()
+
+
 def test_remove_deletes_the_skill(services, skill_home):
     files = composition_root_files()
     dialog = AgentSkillDialog(files, skill_home, None)

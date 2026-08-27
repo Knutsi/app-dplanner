@@ -16,6 +16,7 @@ that depends on who ran it is a diff nobody reads.
 """
 
 import contextlib
+import shutil
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -128,6 +129,21 @@ def target_dir(*, user: bool, here: Path | None = None) -> Path:
     return base / SKILL_DIR
 
 
+def path_hint() -> str | None:
+    """None when ``dplanner`` resolves on PATH; otherwise a command that puts it there.
+
+    The skill tells agents to run ``dplanner``, so a machine where that command does not
+    resolve has half an install. From a source checkout the fix is an editable tool
+    install, which tracks the checkout instead of freezing a copy.
+    """
+    if shutil.which(PROG) is not None:
+        return None
+    root = Path(__file__).resolve().parents[3]
+    if (root / "pyproject.toml").is_file():
+        return f"uv tool install --editable {root}"
+    return f"uv tool install {PROG}"
+
+
 def status(files: dict[str, str], directory: Path) -> str:
     """``installed``, ``stale`` or ``missing`` — what an "Update…" label reads from."""
     for name, content in files.items():
@@ -218,7 +234,14 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
     def do_status(context: CliContext, args: Namespace) -> int:
         directory = where(args)
         state = status(files(), directory)
-        context.report({"status": state, "directory": str(directory)}, f"{state}  {directory}")
+        hint = path_hint()
+        text = f"{state}  {directory}"
+        if hint is not None:
+            text += f"\ndplanner is not on PATH — fix with: {hint}"
+        context.report(
+            {"status": state, "directory": str(directory), "cli_on_path": hint is None},
+            text,
+        )
         return 0
 
     return [

@@ -9,6 +9,7 @@ same ``install``/``uninstall``/``status`` functions the CLI uses.
 
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -20,7 +21,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.cli.skill import REFERENCE_FILE, SKILL_FILE, install, status, uninstall
+from dplanner.cli.skill import REFERENCE_FILE, SKILL_FILE, install, path_hint, status, uninstall
+from dplanner.theme.fonts import mono_font
 
 _TAB_TITLES = {
     SKILL_FILE: "Skill",
@@ -47,7 +49,7 @@ class AgentSkillDialog(QDialog):
         super().__init__(parent)
         self.setObjectName("AgentSkillDialog")
         self.setWindowTitle("Agent Skill")
-        self.resize(640, 520)
+        self.resize(760, 560)
         self._files = files
         self._directory = directory
 
@@ -60,11 +62,28 @@ class AgentSkillDialog(QDialog):
         self.status_note.setObjectName("InspectorNote")
         self.status_note.setWordWrap(True)
 
+        self.path_note = QLabel("", self)
+        self.path_note.setObjectName("InspectorNote")
+        self.path_note.setWordWrap(True)
+        self.path_note.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        hint = path_hint()
+        if hint is None:
+            self.path_note.hide()
+        else:
+            self.path_note.setText(
+                "The skill tells agents to run `dplanner`, which is not on PATH — "
+                f"put it there with:  {hint}"
+            )
+
+        # The generated files are hard-wrapped by the generator (HELP_WIDTH), so the
+        # preview shows them as authored: monospace, no soft wrapping on top.
         self.tabs = QTabWidget(self)
         for name, content in files.items():
             view = QPlainTextEdit(self)
             view.setPlainText(content)
             view.setReadOnly(True)
+            view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+            view.setFont(mono_font())
             view.document().setDocumentMargin(12)
             self.tabs.addTab(view, _TAB_TITLES.get(name, name))
 
@@ -85,6 +104,7 @@ class AgentSkillDialog(QDialog):
         layout.addWidget(caption)
         layout.addWidget(destination)
         layout.addWidget(self.status_note)
+        layout.addWidget(self.path_note)
         layout.addWidget(self.tabs, 1)
         layout.addWidget(buttons)
 

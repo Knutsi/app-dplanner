@@ -14,6 +14,7 @@ from dplanner.cli.skill import (
     SKILL_FILE,
     generate,
     install,
+    path_hint,
     status,
     target_dir,
     uninstall,
@@ -121,6 +122,26 @@ def test_project_install_travels_with_the_repository(registry, tmp_path, monkeyp
 def test_user_install_goes_to_the_home_directory(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     assert target_dir(user=True) == tmp_path / ".claude" / "skills" / "dplanner"
+
+
+def test_path_hint_is_quiet_when_the_command_resolves(monkeypatch):
+    monkeypatch.setattr("dplanner.cli.skill.shutil.which", lambda _name: "/usr/bin/dplanner")
+    assert path_hint() is None
+
+
+def test_path_hint_names_an_editable_install_from_a_checkout(monkeypatch):
+    """A skill that tells agents to run a command they do not have is half an install."""
+    monkeypatch.setattr("dplanner.cli.skill.shutil.which", lambda _name: None)
+    hint = path_hint()
+    assert hint is not None
+    assert hint.startswith("uv tool install --editable ")
+
+
+def test_status_verb_reports_whether_the_command_resolves(registry, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("dplanner.cli.skill.shutil.which", lambda _name: None)
+    out = invoke(registry, "skill", "status", "--project")
+    assert "not on PATH" in out
 
 
 def test_uninstall_removes_only_what_install_wrote(files, tmp_path):
