@@ -138,11 +138,14 @@ class AppShellModule:
             )
         )
 
-        # -- the Tab menu, which the tab bar's right-click also renders --------------------
+        # -- View's Tabs submenu, which the tab bar's right-click also renders -------------
         # Moving a tab is what splits the window: the group appears to receive it and
         # disappears when the last tab leaves, so there is no split mode and never an empty
         # pane. Every state here depends on the tab host rather than on the context graph,
         # which is what poke_context() below is for — the same shape as Undo's label.
+        # One group for all six: the submenu collapse keys on (menu, group, submenu), so a
+        # second group would open a second "Tabs" child menu. The move verbs come first by
+        # order alone; the move/close separator is the price of the fold.
         def close_all(activities: list[Any]) -> None:
             # A list, not the live one: closing mutates what activities() returns.
             for activity in activities:
@@ -156,8 +159,9 @@ class AppShellModule:
             ActionSpec(
                 id="appshell.move_tab_right",
                 label="Move Tab &Right",
-                menu="Tab",
-                group="move",
+                menu="View",
+                group="tabs",
+                submenu="Tabs",
                 order=10,
                 tip="Put this tab in the group to its right, making one if there is room",
                 state=lambda _context: ENABLED if deps.tabs.can_move_right() else DISABLED,
@@ -168,8 +172,9 @@ class AppShellModule:
             ActionSpec(
                 id="appshell.move_tab_left",
                 label="Move Tab &Left",
-                menu="Tab",
-                group="move",
+                menu="View",
+                group="tabs",
+                submenu="Tabs",
                 order=20,
                 tip="Put this tab back in the group to its left",
                 state=lambda _context: ENABLED if deps.tabs.can_move_left() else DISABLED,
@@ -180,9 +185,10 @@ class AppShellModule:
             ActionSpec(
                 id="appshell.close_tab",
                 label="&Close Tab",
-                menu="Tab",
-                group="close",
-                order=10,
+                menu="View",
+                group="tabs",
+                submenu="Tabs",
+                order=30,
                 shortcut=QKeySequence.StandardKey.Close,
                 tip="Close the current tab",
                 state=lambda _context: (
@@ -195,9 +201,10 @@ class AppShellModule:
             ActionSpec(
                 id="appshell.close_other_tabs",
                 label="Close &Other Tabs",
-                menu="Tab",
-                group="close",
-                order=20,
+                menu="View",
+                group="tabs",
+                submenu="Tabs",
+                order=40,
                 tip="Close every tab but this one, in every group",
                 state=lambda _context: ENABLED if others() else DISABLED,
                 run=lambda _context: close_all(others()),
@@ -207,9 +214,10 @@ class AppShellModule:
             ActionSpec(
                 id="appshell.close_tabs_right",
                 label="Close Tabs to the &Right",
-                menu="Tab",
-                group="close",
-                order=30,
+                menu="View",
+                group="tabs",
+                submenu="Tabs",
+                order=50,
                 tip="Close the tabs after this one in its own group",
                 state=lambda _context: ENABLED if deps.tabs.after_current() else DISABLED,
                 run=lambda _context: close_all(deps.tabs.after_current()),
@@ -219,9 +227,10 @@ class AppShellModule:
             ActionSpec(
                 id="appshell.close_all_tabs",
                 label="Close &All Tabs",
-                menu="Tab",
-                group="close",
-                order=40,
+                menu="View",
+                group="tabs",
+                submenu="Tabs",
+                order=60,
                 tip="Empty the window",
                 state=lambda _context: ENABLED if deps.tabs.activities() else DISABLED,
                 run=lambda _context: close_all(deps.tabs.activities()),
@@ -234,7 +243,7 @@ class AppShellModule:
         # The tab bar has made the tab current by the time this arrives, so the menu is built
         # from the same context every other presenter reads.
         def show_tab_menu(at: QPoint) -> None:
-            build_menu(deps.actions, deps.context, "Tab", window).exec(at)
+            build_menu(deps.actions, deps.context, "View", window, submenu="Tabs").exec(at)
 
         deps.tabs.tab_menu_requested.connect(show_tab_menu)
 

@@ -312,6 +312,21 @@ two-specs shape is plainly simpler.
 **Upstream?** Yes, whenever a verb belongs in two noun menus — which any application with
 context menus per noun will eventually hit.
 
+### `build_menu` can render just one submenu
+
+**What.** An optional `submenu: str | None = None` parameter. `None` is today's behaviour —
+the whole menu, flattened. Naming a submenu renders only the specs carrying that `submenu`,
+still flat.
+
+**Why.** DPlanner's tab verbs moved from a top-level Tab menu into View ▸ Tabs, and the tab
+bar's right-click renders those verbs. Building "View" for that popup would drag in panels,
+zoom and themes; building the child menu is what the gesture means. Popups deliberately
+flatten submenus already (the canvas's Step popup flattens Status and Go), so "render just
+this submenu, flat" is the same shape one notch narrower.
+
+**Upstream?** Yes — any application that folds a noun's verbs into a submenu and gives that
+noun a right-click needs exactly this.
+
 ### A theme change is not one event, and three surfaces missed it
 
 **What.** Three changes, all found by switching the theme with a graph on screen.
@@ -540,6 +555,13 @@ and both traps.
   because registration only happens at startup — but it is the kind of thing that stops being
   correct silently if registration ever becomes dynamic. Worth a comment upstream if the tab
   set survives.
+- **A submenu flattens its members' groups.** The child-menu collapse keys on
+  `(menu, group, submenu)`, so every entry of one submenu must share one group — two groups
+  with the same submenu title would open two identical child menus — and there are no
+  separators *inside* a child menu. Fine at the six tab verbs that hit it (ordering keeps the
+  move verbs ahead of the close verbs); supporting it would mean keying the collapse on
+  `(menu, submenu)` and pre-creating per-child separators in `DynamicMenuBar`'s decoration
+  pass. Worth knowing before someone designs a fifteen-entry submenu around groups.
 - **Non-root index rows have no framework re-tint path.** `IndexPanel.set_icon_color` covers
   the segment roots; a segment that puts icons on its own rows (DPlanner's projects segment
   nests entry rows under each project) has to subscribe to `theme.changed` itself and
