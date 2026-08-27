@@ -61,6 +61,7 @@ class CommandPalette(QDialog):
         self._entries = [
             (spec, _plain_label(spec, state.label))
             for spec, state in registry.runnable(context.current())
+            if spec.palette
         ]
 
         self._line = QLineEdit(self)

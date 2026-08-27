@@ -264,6 +264,21 @@ class StepOrderModule:
                 run=self._open,
             )
         )
+        # The same verb placed in the Step menu — menus.py names its "open" group the
+        # Step-side mirror of Project's "Show Order". palette=False: one palette entry.
+        deps.actions.register(
+            ActionSpec(
+                id="order.open_step",
+                label="Show &Order",
+                menu="Step",
+                group="open",
+                order=20,
+                tip="What can be started now, and what waits for what",
+                palette=False,
+                state=self._on_a_project,
+                run=self._open,
+            )
+        )
         deps.product.structure_changed.connect(lambda *_a: self._close_orphan_tabs())
         deps.product.field_changed.connect(lambda *_a: self._retitle_tabs())
 

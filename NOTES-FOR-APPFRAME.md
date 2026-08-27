@@ -292,6 +292,26 @@ problem with a `_loading` flag. That works, and it is the wrong lesson: the fram
 has a mechanism for this and the example quietly declines to use it. Worth fixing in the
 example even if the model change is the application's business.
 
+### `ActionSpec.palette`: a verb in two menus is two specs, and the palette lists verbs
+
+**What.** A `palette: bool = True` field on `ActionSpec`; `CommandPalette` skips specs that
+set it False. Nothing else reads it.
+
+**Why.** "Show Order" belongs in the Project menu *and* in the Step menu (the canvas
+right-click renders Step). A spec has one `(menu, group, order)` placement, so the second
+placement is a second spec sharing the same `state`/`run` — twelve declarative lines. But the
+palette lists *verbs*, not placements, and two specs with the same label would show as two
+identical adjacent rows. The flag lets the mirror opt out.
+
+**The rejected generalisation, for the record.** Letting one spec name several menus needs a
+per-menu `(group, order)`, a per-placement sort key, and a rework of `DynamicMenuBar`'s
+bookkeeping — `_keys` holds one sort key per QAction and `_refresh_decorations` reads that
+key's group index for *its* menu. All of that to avoid one shared-callback spec; the
+two-specs shape is plainly simpler.
+
+**Upstream?** Yes, whenever a verb belongs in two noun menus — which any application with
+context menus per noun will eventually hit.
+
 ### A theme change is not one event, and three surfaces missed it
 
 **What.** Three changes, all found by switching the theme with a graph on screen.
