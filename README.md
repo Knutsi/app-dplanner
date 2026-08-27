@@ -162,12 +162,14 @@ src/dplanner/
 │   ├── product/             the product's identity: name, repository, checkout
 │   ├── projects/            the Projects folder in the index, and the project verbs
 │   ├── project_editor/      a project in a tab: the graph canvas, its modes, toolbar and map
+│   │                        (its panel also hosts the modules' project-level cards)
 │   ├── project_repo/        which repo and checkout a project works against (overrides the product's)
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
 │   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
-│   ├── step_agent_instruction/   … this one also assembles and launches Run Agent
+│   ├── step_agent_instruction/   … this one also holds the project's standing instruction
+│   │                             and assembles and launches Run Agent
 │   ├── step_status/         where a step stands — a Status submenu, no tab
 │   ├── step_release/        the steps that mark a release point
 │   ├── step_handoff/        what a step passes forward, and who inherits it

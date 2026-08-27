@@ -1,57 +1,401 @@
-"""The Agent tab: the instruction, with the trigger right under it.
+"""The Agent tab: the whole briefing, part by part, with the trigger under it.
 
-The button is not a second implementation of anything — it evaluates and runs the same
-``agent.run`` :class:`ActionSpec` the menus do, so the two can never disagree about when a
-run is possible, and the state's reason label becomes the disabled button's tooltip.
+Three collapsible parts, in the order the prompt is assembled: the project's standing
+instruction (editable here and in the project panel's Agent card — one field, one undo
+stack), what earlier steps handed forward (read-only, rendered by the same
+``prompt.part_lines`` the prompt is built with, so the pane and the prompt cannot drift),
+and this step's own instruction. Expanding everything *is* the whole prompt in reading
+order; Preview Prompt shows the exact assembled text.
+
+The buttons are not second implementations of anything — each evaluates and runs the same
+``ActionSpec`` the menus do, so the tab and the menu can never disagree about when a run
+or a preview is possible, and the state's reason label becomes the disabled tooltip.
 """
 
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Sequence
 
-from PySide6.QtWidgets import QHBoxLayout, QPushButton, QVBoxLayout
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QColor, QIcon
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QPushButton,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
+from dplanner.core.signals import Signal
+from dplanner.domain.fields import ModuleTextField
+from dplanner.domain.model import NodeId, Product, StepId
+from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import ActionState
-from dplanner.framework.prose_section import ProseSection
-from dplanner.framework.text_binding import TextField
+from dplanner.framework.text_binding import TextBinding
 from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import make_text_well, space_lines
+from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
+from dplanner.modules.step_agent_instruction.asset_strip import AssetStrip
+from dplanner.modules.step_agent_instruction.prompt import PromptPart, part_lines
+from dplanner.theme.icons import ICON_SIZE, graph_icon, leaf_icon, project_icon
+
+PANEL_MARGIN = 16
+BLOCK_GAP = 12  # DESIGN.md: between blocks; FIELD_GAP is within one.
+FIELD_GAP = 6
+LEAD_WIDTH = 22  # The chevron column, fixed so part titles align (the task-centre idiom).
+
+PROJECT_PLACEHOLDER = "Standing instructions for every step in this project."
 
 
-class AgentSection(ProseSection):
-    """The instruction editor, plus Run Agent — enabled exactly when the action is."""
+class PartRow(QWidget):
+    """One collapsible part: chevron, glyph, caption and summary over a body."""
 
     def __init__(
         self,
-        field_for: Callable[[str], TextField[Any] | None],
-        undo: UndoService[Any],
+        title: str,
+        icon: Callable[[str], QIcon],
+        body: QWidget,
+        expanded: bool = False,
+    ) -> None:
+        super().__init__()
+        self._icon = icon
+        self._expanded = False  # Own state: isVisible() is false while the tab is offscreen.
+        self.toggled: Signal[bool] = Signal()
+
+        self.chevron = QToolButton(self)
+        self.chevron.setAutoRaise(True)
+        self.chevron.setFixedWidth(LEAD_WIDTH)
+        self.chevron.clicked.connect(lambda: self.set_expanded(not self.expanded()))
+
+        self.glyph = QLabel(self)
+        self.glyph.setFixedSize(ICON_SIZE, ICON_SIZE)
+
+        caption = QLabel(title, self)
+        caption.setObjectName("InspectorCaption")
+
+        self.summary = QLabel("", self)
+        self.summary.setObjectName("InspectorNote")
+
+        header = QHBoxLayout()
+        header.setSpacing(FIELD_GAP)
+        header.addWidget(self.chevron)
+        header.addWidget(self.glyph)
+        header.addWidget(caption)
+        header.addStretch(1)
+        header.addWidget(self.summary)
+
+        self.body = body
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(FIELD_GAP)
+        column.addLayout(header)
+        # The body keeps the chevron column's width so it aligns under the caption.
+        indented = QHBoxLayout()
+        indented.setContentsMargins(LEAD_WIDTH, 0, 0, 0)
+        indented.addWidget(body)
+        column.addLayout(indented, stretch=1)
+
+        self._paint_glyph()
+        self.set_expanded(expanded)
+
+    def expanded(self) -> bool:
+        return self._expanded
+
+    def set_expanded(self, expanded: bool) -> None:
+        self._expanded = expanded
+        self.body.setVisible(expanded)
+        self.chevron.setArrowType(
+            Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
+        )
+        self.toggled.emit(expanded)
+
+    def set_summary(self, text: str) -> None:
+        self.summary.setText(text)
+
+    def _paint_glyph(self) -> None:
+        # DESIGN.md's sanctioned exception: secondary is the palette's text at ~63 % alpha.
+        # Painted from the live palette and repainted on PaletteChange, never stored.
+        ink = QColor(self.palette().text().color())
+        ink.setAlpha(160)
+        icon = self._icon(ink.name(QColor.NameFormat.HexArgb))
+        self.glyph.setPixmap(icon.pixmap(ICON_SIZE, ICON_SIZE))
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange:
+            self._paint_glyph()
+
+
+class AgentSection(QWidget):
+    """The three prompt parts, stacked; Preview and Run under them."""
+
+    def __init__(
+        self,
+        product: Product,
+        undo: UndoService[Product],
         placeholder: str,
+        prompt_parts: Callable[[StepId], Sequence[PromptPart]],
+        files: Callable[[NodeId, str], ModuleFileArea] | None,
         run_state: Callable[[], ActionState],
         run: Callable[[], None],
+        preview_state: Callable[[], ActionState],
+        preview: Callable[[], None],
     ) -> None:
-        super().__init__(field_for, undo, placeholder)
+        super().__init__()
+        self._product = product
+        self._undo = undo
+        self._prompt_parts = prompt_parts
+        self._files = files
         self._run_state = run_state
+        self._preview_state = preview_state
+        self._step_id: StepId | None = None
+        self._project_id: NodeId | None = None
+        self._step_binding: TextBinding[Product] | None = None
+        self._project_binding: TextBinding[Product] | None = None
+        self.tab_visibility_changed: Signal[bool] = Signal()
 
+        # -- Project: the standing instruction, editable here and in the project panel.
+        self.project_edit = QPlainTextEdit(self)
+        self.project_edit.setObjectName("InspectorNotes")
+        self.project_edit.setPlaceholderText(PROJECT_PLACEHOLDER)
+        self.project_edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        self.project_assets = AssetStrip(self)
+        project_body = _body(self.project_edit, self.project_assets)
+        self.project_part = PartRow("Project", project_icon, project_body)
+
+        # -- Inherited: read-only, derived on every relevant change, never stored.
+        self.inherited_view = QPlainTextEdit(self)
+        self.inherited_view.setObjectName("InspectorNotes")
+        self.inherited_view.setReadOnly(True)
+        self.inherited_view.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        self.inherited_view.setPlaceholderText("Nothing handed forward to this step yet.")
+        make_text_well(self.inherited_view)
+        self.inherited_part = PartRow("Inherited", graph_icon, self.inherited_view)
+
+        # -- This step: the instruction itself, expanded by default — it is why you came.
+        self.edit = QPlainTextEdit(self)
+        self.edit.setObjectName("InspectorNotes")
+        self.edit.setPlaceholderText(placeholder)
+        self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        self.step_assets = AssetStrip(self)
+        step_body = _body(self.edit, self.step_assets)
+        self.step_part = PartRow("This step", leaf_icon, step_body, expanded=True)
+
+        self.preview_button = QPushButton("Preview Prompt…", self)
+        self.preview_button.clicked.connect(lambda: preview())
         self.run_button = QPushButton("Run Agent…", self)
         self.run_button.setObjectName("AgentRunButton")
         self.run_button.clicked.connect(lambda: run())
+        buttons = QHBoxLayout()
+        buttons.setSpacing(FIELD_GAP)
+        buttons.addStretch(1)
+        buttons.addWidget(self.preview_button)
+        buttons.addWidget(self.run_button)
 
-        row = QHBoxLayout()
-        row.addStretch(1)
-        row.addWidget(self.run_button)
-        layout = self.layout()
-        assert isinstance(layout, QVBoxLayout)  # ProseSection's own layout.
-        layout.setSpacing(6)  # DESIGN.md: the button belongs with its editor — within-block.
-        layout.addLayout(row)
+        self._column = QVBoxLayout(self)
+        self._column.setContentsMargins(
+            PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN
+        )
+        self._column.setSpacing(BLOCK_GAP)
+        self._column.addWidget(self.project_part)
+        self._column.addWidget(self.inherited_part)
+        self._column.addWidget(self.step_part, stretch=1)
+        self._column.addLayout(buttons)
 
-        # Typing the first instruction is what arms the button, so it follows the editor.
-        self.edit.textChanged.connect(self._refresh_run)
+        # A collapsed part must not keep its share of the height; the expanded ones split it.
+        for part in (self.project_part, self.inherited_part, self.step_part):
+            part.toggled.connect(lambda _expanded: self._restretch())
+        self._restretch()
+
+        # Typing the first instruction is what arms the buttons; the summaries follow too.
+        self.edit.textChanged.connect(self._refresh_buttons)
+        self.edit.textChanged.connect(self._refresh_summaries)
+        self.project_edit.textChanged.connect(self._refresh_summaries)
+
+        self._unsubscribes = [
+            product.text_edited.connect(lambda *_a: self._refresh_inherited()),
+            product.module_data_changed.connect(lambda *_a: self._refresh_inherited()),
+            product.edges_changed.connect(lambda *_a: self._refresh_inherited()),
+        ]
+
+    # -- the panel's side of the contract ------------------------------------------------------
+
+    @property
+    def widget(self) -> QWidget:
+        return self
+
+    def tab_visible(self) -> bool:
+        return True
 
     def show_target(self, target_id: str | None) -> None:
-        super().show_target(target_id)
-        self._refresh_run()
+        self._close_bindings()
+        self._step_id = target_id if target_id and self._product.has(target_id) else None
+        self._project_id = None
+        self.setEnabled(self._step_id is not None)
+        if self._step_id is not None:
+            self._project_id = self._product.project_of(self._step_id).id
+            self._step_binding = TextBinding(
+                self.edit, ModuleTextField(self._product, self._step_id, MODULE_ID), self._undo
+            )
+            self._project_binding = TextBinding(
+                self.project_edit,
+                ModuleTextField(self._product, self._project_id, MODULE_ID),
+                self._undo,
+            )
+        else:
+            self.edit.setPlainText("")
+            self.project_edit.setPlainText("")
+        self._retarget_assets()
+        self._refresh_inherited()
+        self._refresh_buttons()
 
-    def _refresh_run(self) -> None:
+    def dispose(self) -> None:
+        self._close_bindings()
+        for unsubscribe in self._unsubscribes:
+            unsubscribe()
+        self._unsubscribes.clear()
+
+    # -- reading -------------------------------------------------------------------------------
+
+    def _retarget_assets(self) -> None:
+        files = self._files
+        step_id, project_id = self._step_id, self._project_id
+        if files is None or step_id is None or project_id is None:
+            self.step_assets.set_source(None)
+            self.project_assets.set_source(None)
+            return
+        self.step_assets.set_source(lambda: files(step_id, MODULE_ID))
+        self.project_assets.set_source(lambda: files(project_id, MODULE_ID))
+
+    def _refresh_inherited(self) -> None:
+        parts: Sequence[PromptPart] = ()
+        if self._step_id is not None and self._product.has(self._step_id):
+            parts = self._prompt_parts(self._step_id)
+        lines = [line for part in parts for line in part_lines(part)]
+        self.inherited_view.setPlainText("\n".join(lines).strip())
+        make_text_well(self.inherited_view)
+        space_lines(self.inherited_view)
+        self._refresh_summaries()
+
+    def _refresh_summaries(self) -> None:
+        self.project_part.set_summary(_prose_summary(self.project_edit.toPlainText()))
+        self.step_part.set_summary(_prose_summary(self.edit.toPlainText()))
+        count = 0
+        if self._step_id is not None and self._product.has(self._step_id):
+            count = len(self._prompt_parts(self._step_id))
+        self.inherited_part.set_summary(
+            "nothing yet" if count == 0 else f"{count} block{'s' if count != 1 else ''}"
+        )
+
+    def _refresh_buttons(self) -> None:
         state = self._run_state()
         self.run_button.setEnabled(state.enabled)
         self.run_button.setToolTip(
             state.label or "Open a terminal with the agent briefed on this step"
         )
+        preview = self._preview_state()
+        self.preview_button.setEnabled(preview.enabled)
+        self.preview_button.setToolTip(
+            preview.label or "See the exact briefing Run Agent will launch with"
+        )
+
+    # -- internals -----------------------------------------------------------------------------
+
+    def _restretch(self) -> None:
+        for part in (self.project_part, self.inherited_part, self.step_part):
+            self._column.setStretchFactor(part, 1 if part.expanded() else 0)
+
+    def _close_bindings(self) -> None:
+        for binding in (self._step_binding, self._project_binding):
+            if binding is not None:
+                binding.close()
+                # close() only disconnects; the binding is parented to the editor, which
+                # outlives it, so without this every retarget would leave one behind.
+                binding.setParent(None)
+        self._step_binding = None
+        self._project_binding = None
+
+
+class ProjectInstructionCard(QWidget):
+    """The project panel's Agent card: the standing instruction, the tab's same field.
+
+    Two editors over one ``ModuleTextField`` — the binding's per-view origin keeps them
+    from echoing each other, and one undo stack serves both.
+    """
+
+    def __init__(
+        self,
+        product: Product,
+        undo: UndoService[Product],
+        files: Callable[[NodeId, str], ModuleFileArea] | None,
+    ) -> None:
+        super().__init__()
+        self._product = product
+        self._undo = undo
+        self._files = files
+        self._binding: TextBinding[Product] | None = None
+        self.tab_visibility_changed: Signal[bool] = Signal()
+
+        self.edit = QPlainTextEdit(self)
+        self.edit.setObjectName("InspectorNotes")
+        self.edit.setPlaceholderText(PROJECT_PLACEHOLDER)
+        self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        # A card grows down the stack, not with its content: a few lines here, the Agent
+        # tab for serious writing. The inner scroller is DESIGN.md's accepted trade.
+        self.edit.setFixedHeight(self.edit.fontMetrics().lineSpacing() * 6 + 16)
+        self.assets = AssetStrip(self)
+
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(FIELD_GAP)
+        column.addWidget(self.edit)
+        column.addWidget(self.assets)
+
+    @property
+    def widget(self) -> QWidget:
+        return self
+
+    def tab_visible(self) -> bool:
+        # Always: a card that hid itself while the instruction was empty would be a card
+        # you could never use to write one.
+        return True
+
+    def show_target(self, target_id: str | None) -> None:
+        self._close_binding()
+        project_id = target_id if target_id and self._product.has(target_id) else None
+        self.setEnabled(project_id is not None)
+        if project_id is not None:
+            self._binding = TextBinding(
+                self.edit, ModuleTextField(self._product, project_id, MODULE_ID), self._undo
+            )
+            files, pid = self._files, project_id
+            self.assets.set_source(
+                (lambda: files(pid, MODULE_ID)) if files is not None else None
+            )
+        else:
+            self.edit.setPlainText("")
+            self.assets.set_source(None)
+
+    def dispose(self) -> None:
+        self._close_binding()
+
+    def _close_binding(self) -> None:
+        if self._binding is not None:
+            self._binding.close()
+            self._binding.setParent(None)
+            self._binding = None
+
+
+def _body(edit: QPlainTextEdit, assets: AssetStrip) -> QWidget:
+    """An editor with its asset strip under it, as one collapsible body."""
+    body = QWidget()
+    column = QVBoxLayout(body)
+    column.setContentsMargins(0, 0, 0, 0)
+    column.setSpacing(FIELD_GAP)
+    column.addWidget(edit, stretch=1)
+    column.addWidget(assets)
+    return body
+
+
+def _prose_summary(text: str) -> str:
+    return "empty" if not text.strip() else f"{len(text)} chars"

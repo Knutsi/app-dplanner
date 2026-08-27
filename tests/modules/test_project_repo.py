@@ -79,14 +79,25 @@ def panel(services, project):
     return services.window.dock.widget_for("project_editor.project")
 
 
-def test_the_panel_hosts_the_fields(services, project, panel):
-    assert panel._repo_fields is not None
-    fields = panel._repo_fields
+def repo_fields_in(panel):
+    from dplanner.modules.project_repo.fields import RepoFieldsWidget
+
+    return next(e for e in panel._extensions if isinstance(e, RepoFieldsWidget))
+
+
+def test_the_repository_card_registers_into_detail_cards(services):
+    assert any(s.id == f"{MODULE_ID}.card" for s in services.detail_cards.sections())
+
+
+def test_the_panel_hosts_the_fields_as_a_card(services, project, panel):
+    fields = repo_fields_in(panel)
     assert fields.checkout.isEnabled()
+    card = next(c for c in panel._cards if c.title.text() == "Repository")
+    assert card.isVisibleTo(panel)
 
 
 def test_typing_a_checkout_commits_one_undoable_command(services, project, panel):
-    fields = panel._repo_fields
+    fields = repo_fields_in(panel)
     fields.checkout.setText("~/Code/widget")
     fields.checkout.editingFinished.emit()
     assert read_checkout(project) == "~/Code/widget"
@@ -96,7 +107,7 @@ def test_typing_a_checkout_commits_one_undoable_command(services, project, panel
 
 
 def test_an_external_write_echoes_into_the_fields(services, project, panel):
-    fields = panel._repo_fields
+    fields = repo_fields_in(panel)
     services.document.set_module_data(
         project.id, MODULE_ID, write_association("https://sat", "")
     )
@@ -107,17 +118,17 @@ def test_retargeting_swaps_values(services, project, panel):
     other = Project(title="Second")
     AddNodeCommand(services.document.id, other).redo(services.document)
     services.document.set_module_data(other.id, MODULE_ID, write_association("", "~/two"))
-    fields = panel._repo_fields
-    fields.set_project(other.id)
+    fields = repo_fields_in(panel)
+    fields.show_target(other.id)
     assert fields.checkout.text() == "~/two"
-    fields.set_project(project.id)
+    fields.show_target(project.id)
     assert fields.checkout.text() == ""
 
 
 def test_the_product_fallback_shows_as_placeholder_not_text(services, project, panel):
     services.document.set_field(services.document.id, "checkout", "~/Code/mono")
-    fields = panel._repo_fields
-    fields.set_project(project.id)
+    fields = repo_fields_in(panel)
+    fields.show_target(project.id)
     assert fields.checkout.text() == ""
     assert "~/Code/mono" in fields.checkout.placeholderText()
     # Absence stays absence: showing the fallback wrote nothing.
@@ -145,28 +156,28 @@ def test_the_status_line_reports_git_and_gh_facts(services, project, tmp_path):
         gh_installed=lambda: True,
         gh_signed_in=lambda: True,  # Answered from the pre-set cache; never actually run.
     )
-    fields.set_project(project.id)
+    fields.show_target(project.id)
     fields.checkout.setText(str(tmp_path))
     fields.checkout.editingFinished.emit()
     assert "not a git repository" in fields.status.text()
     assert "gh is signed in" in fields.status.text()
 
     git_answer["value"] = True
-    fields.set_project(project.id)
+    fields.show_target(project.id)
     assert "is a git repository" in fields.status.text()
     fields.dispose()
 
 
 def test_a_missing_gh_is_said_plainly(services, project, tmp_path):
     fields = make_fields(services, gh_installed=lambda: False)
-    fields.set_project(project.id)
+    fields.show_target(project.id)
     assert "not installed" in fields.status.text()
     fields.dispose()
 
 
 def test_a_missing_folder_is_said_plainly(services, project, tmp_path):
     fields = make_fields(services)
-    fields.set_project(project.id)
+    fields.show_target(project.id)
     fields.checkout.setText(str(tmp_path / "nowhere"))
     fields.checkout.editingFinished.emit()
     assert "does not exist" in fields.status.text()
@@ -176,7 +187,7 @@ def test_a_missing_folder_is_said_plainly(services, project, tmp_path):
 def test_an_unwired_probe_says_nothing(services, project, tmp_path):
     """No probe, no claim — an unwired build must not report false facts."""
     fields = make_fields(services)
-    fields.set_project(project.id)
+    fields.show_target(project.id)
     fields.checkout.setText(str(tmp_path))
     fields.checkout.editingFinished.emit()
     assert "git repository" not in fields.status.text()

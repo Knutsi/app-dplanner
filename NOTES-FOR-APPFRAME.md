@@ -368,6 +368,28 @@ follow the application. Worth a line wherever the template talks about custom pa
 
 ---
 
+### `framework/widgets.py` grew the text-well helpers
+
+**What.** `make_text_well(pane)` (12 px document margin) and `space_lines(pane)` (~130 %
+proportional line height, reapplied per `setPlainText`) moved up from
+`modules/step_handoff/section.py` when a second module (`step_agent_instruction`'s Agent tab)
+needed the same read-only-well treatment and modules may not import each other. The metrics
+are DESIGN.md's text-well rules, which is why they read like constants rather than options.
+
+**Why it belongs upstream.** The well treatment is the template's own DESIGN.md speaking; any
+application with a read-only prose pane wants both, and each is four lines someone will
+otherwise re-derive slightly differently.
+
+### `services.detail_cards` found its first consumer
+
+**What.** No code change — the second `InspectorSectionRegistry` the template ships on
+`AppServices` was unused here until the project panel started rendering its sections as
+`ToolCard`s in a `CardStack` (see `modules/project_editor/project_panel.py`). The
+tab-vs-card split the `framework/inspector.py` docstring promised held up exactly as written:
+the host differs, the extension contract does not. Worth a line in the template's docs that
+the card host drives `show_target` with a *project* id — the contract's target vocabulary is
+whatever the host says it is, and that turned out to be the feature, not a loophole.
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class

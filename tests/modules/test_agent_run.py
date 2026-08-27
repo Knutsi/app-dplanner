@@ -52,6 +52,66 @@ def test_the_preamble_opens_the_briefing_before_the_instructions():
     assert "Check first." in assembled.text
 
 
+def test_the_project_instruction_opens_its_own_section_ahead_of_the_steps():
+    assembled = assemble(
+        "Deploy",
+        "Discovery",
+        "Ship it.",
+        [],
+        "",
+        project_instruction="House rules.",
+        project_files=("p/a.png",),
+        instruction_files=("s/b.png",),
+    )
+    text = assembled.text
+    assert "## Project instructions" in text and "House rules." in text
+    assert text.index("Project instructions") < text.index("## Instructions")
+    assert "- p/a.png" in text and "- s/b.png" in text
+
+
+def test_no_project_instruction_leaves_no_section():
+    assert "Project instructions" not in assemble("D", "P", "x", [], "").text
+
+
+def test_referenced_files_keep_reading_order():
+    assembled = assemble(
+        "D",
+        "P",
+        "x",
+        [PromptPart(heading="H", body="", files=("h/c.png",))],
+        "",
+        project_files=("p/a.png",),
+        instruction_files=("s/b.png",),
+    )
+    assert assembled.files == ("p/a.png", "s/b.png", "h/c.png")
+
+
+# -- staging -----------------------------------------------------------------------------------
+
+
+def test_stage_assets_copies_beside_the_prompt(tmp_path):
+    source = "projects/p/modules/x/assets/ab12.png"
+    staged = launcher.stage_assets(tmp_path, [source], {source: b"png-bytes"}.get)
+    target = Path(staged[source])
+    assert target.parent == tmp_path / "assets"
+    assert target.is_absolute()
+    assert target.read_bytes() == b"png-bytes"
+
+
+def test_an_unreadable_asset_stays_itself_in_the_prompt(tmp_path):
+    staged = launcher.stage_assets(tmp_path, ["gone.png"], lambda _path: None)
+    assert staged == {"gone.png": "gone.png"}
+    assert not (tmp_path / "assets").exists()
+
+
+def test_prepare_writes_into_a_given_run_directory(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    files = prepare("p", tmp_path, platform="linux", directory=run_dir)
+    assert files.directory == run_dir
+    assert files.prompt_file == run_dir / "prompt.md"
+
+
 # -- prepare -----------------------------------------------------------------------------------
 
 
@@ -331,6 +391,43 @@ def test_running_spawns_a_terminal_in_the_checkout(services, step, tmp_path, mon
     ((command, cwd),) = calls
     assert command[0] == "fake-term"
     assert cwd == tmp_path
+
+
+def test_a_run_stages_attached_images_beside_the_prompt(services, step, tmp_path, monkeypatch):
+    """The agent runs in the checkout, so the prompt must reference copies it can reach."""
+    from dplanner.domain.assets import attach
+
+    services.document.set_field(services.document.id, "checkout", str(tmp_path))
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    project = services.document.project_of(step.id)
+    services.document.set_text(project.id, "step_agent_instruction", "House rules.")
+    attach(services.repo.files(step.id, "step_agent_instruction"), b"step-bytes", "mock.png")
+    attach(services.repo.files(project.id, "step_agent_instruction"), b"proj-bytes", "logo.png")
+    select(services, step)
+
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: None)
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+    captured = {}
+    real_prepare = launcher.prepare
+
+    def capture(*args, **kwargs):
+        captured["files"] = real_prepare(*args, **kwargs)
+        return captured["files"]
+
+    monkeypatch.setattr(launcher, "prepare", capture)
+    services.actions.run("agent.run", services.context.current())
+
+    files = captured["files"]
+    prompt = files.prompt_file.read_text()
+    assert "House rules." in prompt
+    assert prompt.index("House rules.") < prompt.index("Ship it.")
+    staged = sorted((files.directory / "assets").iterdir())
+    assert [path.read_bytes() for path in staged] in (
+        [b"proj-bytes", b"step-bytes"],
+        [b"step-bytes", b"proj-bytes"],
+    )
+    for path in staged:
+        assert str(path) in prompt  # Absolute, inside the run dir — reachable from anywhere.
 
 
 # -- the CLI -----------------------------------------------------------------------------------

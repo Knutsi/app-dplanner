@@ -265,6 +265,12 @@ root, stop and look for the registry or capability you have not found yet.
 - **Inherited handoffs are computed, never stored** — `step_handoff/handoff.py` is one
   function with three readers (tab, CLI, agent prompt). Same rule as the ordering, and the
   reasoning is in `ARCHITECTURE.md`'s *Pass-forward is derived at read time*.
+- **A module's project-level editor is a card, registered into `services.detail_cards`.**
+  Same `InspectorSection` contract as a step tab, with a project id in `show_target`; the
+  project panel renders the stack. Register before `project_editor` in `default_modules()` —
+  the panel is built from whatever has registered by then. `modules/project_repo/` and the
+  agent instruction's card are the examples; `ARCHITECTURE.md`'s *The project panel hosts
+  the same contract, as cards* has the reasoning.
 - **A project may carry its own repository and checkout.** Resolution — the project's, else
   the product's — is one function in `modules/project_repo/repo.py`, and Run Agent is wired
   through it; never write a second copy. `ARCHITECTURE.md`'s *A project's repository

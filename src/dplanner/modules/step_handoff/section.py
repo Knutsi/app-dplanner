@@ -8,7 +8,6 @@ function the CLI prints with, and never stored.
 
 from pathlib import Path
 
-from PySide6.QtGui import QTextBlockFormat, QTextCursor
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -28,6 +27,7 @@ from dplanner.domain.model import NodeId, Product, StepId, TextEdit
 from dplanner.framework.cards import card_rule
 from dplanner.framework.text_binding import TextBinding
 from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import make_text_well, space_lines
 from dplanner.modules.step_handoff.aspect import MODULE_ID, read_scope, write_scope
 from dplanner.modules.step_handoff.handoff import (
     FilesFor,
@@ -40,26 +40,7 @@ FIELD_GAP = 6
 PANEL_MARGIN = 16
 BLOCK_GAP = 12  # DESIGN.md: between blocks; FIELD_GAP is within one.
 
-# DESIGN.md's text-well metrics: the text never touches the frame.
-DOCUMENT_MARGIN = 12
-LINE_HEIGHT_PERCENT = 130
-
 NOTE_PLACEHOLDER = "What the next step's worker should know: decisions, keys, gotchas."
-
-
-def _make_well(pane: QPlainTextEdit) -> None:
-    pane.document().setDocumentMargin(DOCUMENT_MARGIN)
-
-
-def _space_lines(pane: QPlainTextEdit) -> None:
-    """~130 % line height for anything longer than a label — reapplied per setPlainText."""
-    block = QTextBlockFormat()
-    block.setLineHeight(
-        LINE_HEIGHT_PERCENT, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value
-    )
-    cursor = QTextCursor(pane.document())
-    cursor.select(QTextCursor.SelectionType.Document)
-    cursor.mergeBlockFormat(block)
 
 
 class HandoffSection(QWidget):
@@ -99,7 +80,7 @@ class HandoffSection(QWidget):
         self.inherited_view.setObjectName("InspectorNotes")
         self.inherited_view.setReadOnly(True)
         self.inherited_view.setFrameShape(QPlainTextEdit.Shape.NoFrame)
-        _make_well(self.inherited_view)
+        make_text_well(self.inherited_view)
 
         # DESIGN.md: more space between blocks (12) than within one (6), and the rule
         # that splits what-you-write from what-you-inherit gets 12 on both sides.
@@ -206,8 +187,8 @@ class HandoffSection(QWidget):
         step = self._product.step(self._step_id)
         handoffs = inherited(self._product, step, self._files)
         self.inherited_view.setPlainText(inherited_text(handoffs))
-        _make_well(self.inherited_view)
-        _space_lines(self.inherited_view)
+        make_text_well(self.inherited_view)
+        space_lines(self.inherited_view)
 
     # -- staying current -----------------------------------------------------------------------
 

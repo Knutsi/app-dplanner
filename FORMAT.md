@@ -145,8 +145,11 @@ Two behaviours follow, and both matter once a workspace is shared:
 
 **A module's namespace may span node kinds.** `estimation` writes `{"days": 3.0}` beside a
 step and `{"start": "2026-09-01"}` beside the project those steps belong to — one module id,
-one `ModuleDataFormat`, two shapes. `module_data` is on every node and `set_module_data` is
-flat over ids, so nothing in the model has to know. The cost is on whoever writes the next
+one `ModuleDataFormat`, two shapes. `step_agent_instruction` does the same with prose: the
+step's own instruction beside the step, the project's standing instruction (prepended to
+every briefing) as `modules/step_agent_instruction.md` beside the project, images in the
+file area at either level. `module_data` is on every node and `set_module_data` is flat
+over ids, so nothing in the model has to know. The cost is on whoever writes the next
 migration for that format: it sees both shapes and owes both a thought.
 
 **Not every module entry is an aspect.** The graph editor stores each node's position as
