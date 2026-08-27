@@ -5,14 +5,10 @@ from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_step
+from dplanner.domain.assets import assets, attach
 from dplanner.domain.commands import EditTextCommand
 from dplanner.domain.model import Step, TextEdit
-from dplanner.modules.step_description.aspect import (
-    MODULE_ID,
-    assets,
-    attach,
-    read,
-)
+from dplanner.modules.step_description.aspect import MODULE_ID, read
 
 
 def commands() -> list[CliCommand]:

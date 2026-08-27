@@ -63,7 +63,10 @@ class ProductActivity(ActivityBase):
         caption.setObjectName("InspectorCaption")
         layout.addWidget(caption)
 
-        note = QLabel("What this workspace plans, and where the code for it lives.")
+        note = QLabel(
+            "What this workspace plans, and where the code for it lives. A project can"
+            " carry its own repository and checkout — set them in the project's panel."
+        )
         note.setObjectName("InspectorNote")
         note.setWordWrap(True)
         layout.addWidget(note)

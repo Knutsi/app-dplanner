@@ -56,13 +56,13 @@ from dplanner.framework.window import StatusHost
 from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
-from dplanner.modules.project_editor.items import StepNodeItem
+from dplanner.modules.project_editor.items import NodeAccent, StepNodeItem
 from dplanner.modules.project_editor.layout import positions
 from dplanner.modules.project_editor.modes import CONNECT, ConnectMode, IdleMode
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
 from dplanner.modules.project_editor.positions import DATA_FORMAT, write_position
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
-from dplanner.modules.project_editor.project_panel import ProjectPanel
+from dplanner.modules.project_editor.project_panel import ProjectPanel, RepoFields
 from dplanner.modules.project_editor.selection import EDGE_KIND, CanvasSelection, EdgeRef
 from dplanner.modules.project_editor.verbs import StepVerbs
 
@@ -75,6 +75,10 @@ PANEL_ID = f"{MODULE_ID}.project"
 
 def _no_aspects(_step_id: StepId) -> list[str]:
     return []
+
+
+def _no_accent(_step_id: StepId) -> NodeAccent:
+    return NodeAccent()
 
 
 @dataclass(frozen=True)
@@ -90,6 +94,11 @@ class ProjectEditorDeps:
     theme: ThemeService
     # What the aspect modules have to say about a step, one short phrase each.
     step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
+    # How a step should look beyond its text — muted, badged — in the canvas's own
+    # vocabulary, so the editor never learns which aspects mean what.
+    step_accent: Callable[[StepId], NodeAccent] = field(default=_no_accent)
+    # The repo-association fields the project panel hosts; None is a legitimate build.
+    repo_fields: Callable[[QWidget], RepoFields] | None = None
 
 
 class ProjectActivity(ActivityBase):
@@ -230,6 +239,7 @@ class ProjectActivity(ActivityBase):
                 subtitle=" · ".join(self._deps.step_aspects(step.id)),
                 x=placed[step.id][0],
                 y=placed[step.id][1],
+                accent=self._deps.step_accent(step.id),
             )
             for step in project.steps
         ]
@@ -397,7 +407,9 @@ class ProjectEditorModule:
             PanelSpec(
                 id=PANEL_ID,
                 title="Project",
-                factory=lambda: ProjectPanel(deps.product, deps.undo),
+                factory=lambda: ProjectPanel(
+                    deps.product, deps.undo, repo_fields=deps.repo_fields
+                ),
                 area=PanelArea.RIGHT,
                 order=10,
             )

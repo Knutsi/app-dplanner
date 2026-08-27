@@ -64,6 +64,9 @@ def test_aspect_list_names_every_aspect(cli):
         "step_ticket",
         "step_description",
         "step_agent_instruction",
+        "step_status",
+        "step_release",
+        "step_handoff",
     }
 
 
