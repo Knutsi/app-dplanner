@@ -12,19 +12,27 @@ from dplanner.framework.context import ContextService
 
 
 def build_menu(
-    actions: ActionRegistry, context_service: ContextService, menu: str, parent: QWidget
+    actions: ActionRegistry,
+    context_service: ContextService,
+    menu: str,
+    parent: QWidget,
+    submenu: str | None = None,
 ) -> QMenu:
     """One menu's currently-runnable actions as a context menu.
 
     The context is snapshotted for the labels ("Delete 3 Items") but re-read when an entry
     is triggered, so a menu left open across a selection change still acts on what the user
     has *now* rather than on what they had when it opened.
+
+    ``submenu=None`` (the norm) renders the whole menu, flattening any child menus. Naming a
+    submenu renders just that child menu's entries — for a popup on a thing whose verbs live
+    in a submenu, like the tab bar's right-click.
     """
     context = context_service.current()
     popup = QMenu(parent)
     previous_group: str | None = None
     for spec, state in actions.runnable(context):
-        if spec.menu != menu:
+        if spec.menu != menu or (submenu is not None and spec.submenu != submenu):
             continue
         if previous_group is not None and spec.group != previous_group:
             popup.addSeparator()

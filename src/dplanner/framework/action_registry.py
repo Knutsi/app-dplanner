@@ -104,6 +104,9 @@ class ActionSpec:
     # Actions sharing a (menu, group, submenu) title collapse into one child menu placed
     # at the first such action's sort position. None (the norm) stays a flat entry.
     submenu: str | None = None
+    # False keeps a spec out of the command palette: for a verb's second menu placement,
+    # whose original already appears there under the same label.
+    palette: bool = True
     # A tuple binds several equivalent keys (e.g. Ctrl++ and Ctrl+=, whichever the
     # keyboard layout can reach); the first one is what the palette displays.
     shortcut: QKeySequence.StandardKey | str | tuple[str, ...] | None = None

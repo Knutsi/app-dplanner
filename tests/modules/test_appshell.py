@@ -1,4 +1,4 @@
-"""The shell's tab verbs: what the Tab menu offers, and what each entry does.
+"""The shell's tab verbs: what View's Tabs submenu offers, and what each entry does.
 
 Tested as pure functions of a constructed ``Context`` and through ``actions.run``, like every
 other verb — which is the property that makes the tab bar's right-click menu correct for
@@ -46,9 +46,18 @@ def titles(services):
 # -- what the menu offers ------------------------------------------------------------------
 
 
+def test_the_tab_verbs_live_in_the_view_menus_tabs_submenu(services):
+    """The placement the tab bar's right-click depends on: show_tab_menu asks build_menu for
+    View's Tabs submenu, so a spec that drifts elsewhere silently leaves that popup."""
+    for action_id in ("appshell.move_tab_right", "appshell.move_tab_left",
+                      CLOSE_TAB, CLOSE_OTHERS, CLOSE_RIGHT, CLOSE_ALL):
+        spec = services.actions.spec(action_id)
+        assert (spec.menu, spec.group, spec.submenu) == ("View", "tabs", "Tabs")
+
+
 def test_every_tab_verb_is_off_in_an_empty_window(services):
-    """The Tab menu is honest about a window with nothing in it rather than offering four
-    entries that do nothing."""
+    """The Tabs submenu is honest about a window with nothing in it rather than offering
+    four entries that do nothing."""
     for action_id in (CLOSE_TAB, CLOSE_OTHERS, CLOSE_RIGHT, CLOSE_ALL):
         assert not state(services, action_id).enabled
 

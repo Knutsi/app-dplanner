@@ -198,11 +198,12 @@ the user is in without a single line about panes anywhere in it.
 The tab bar's right-click is the same rule pointing the other way. **A right-click on a tab
 makes it current before the menu opens** — the move the canvas already makes when it selects
 the node under the cursor — so the menu is built from one notion of "what the user is on" and
-every entry in it is a verb the menu bar and the palette already have. That is why the Tab
-menu exists in `MENU_STRUCTURE` at all: `build_menu` renders a *menu*, and a right-click that
-offered anything else would be a hand-maintained copy waiting to drift. `TabHost` builds none
-of it — it emits `tab_menu_requested` with a position, and the module that owns the tab verbs
-renders them.
+every entry in it is a verb the menu bar and the palette already have. That is why the tab
+verbs live in View's Tabs submenu rather than in a hand-built popup: `build_menu` renders a
+*menu* (its `submenu` filter renders just that child menu), and a right-click that offered
+anything else would be a hand-maintained copy waiting to drift. `TabHost` builds none of it —
+it emits `tab_menu_requested` with a position, and the module that owns the tab verbs renders
+them.
 
 ### What this rules out
 
