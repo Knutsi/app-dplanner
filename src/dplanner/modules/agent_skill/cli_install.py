@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.cli.main import PROG
-from dplanner.cli.skill import install_command
+from dplanner.cli.skill import install_command, uninstall_command, worktree_warning
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.theme.fonts import mono_font
@@ -53,6 +53,16 @@ class CliInstallDialog(QDialog):
         self.status_note.setObjectName("InspectorNote")
         self.status_note.setWordWrap(True)
 
+        self.worktree_note = QLabel("", self)
+        self.worktree_note.setObjectName("InspectorNote")
+        self.worktree_note.setWordWrap(True)
+        self.worktree_note.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        warning = worktree_warning()
+        if warning is None:
+            self.worktree_note.hide()
+        else:
+            self.worktree_note.setText(f"Warning: {warning}")
+
         self.output = QPlainTextEdit(self)
         self.output.setReadOnly(True)
         self.output.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
@@ -63,9 +73,12 @@ class CliInstallDialog(QDialog):
         self.primary = QPushButton(self)
         self.primary.setObjectName("PrimaryButton")
         self.primary.clicked.connect(self._install)
+        self.uninstall_button = QPushButton("Uninstall", self)
+        self.uninstall_button.clicked.connect(self._uninstall)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
         buttons.addButton(self.primary, QDialogButtonBox.ButtonRole.ActionRole)
+        buttons.addButton(self.uninstall_button, QDialogButtonBox.ButtonRole.ActionRole)
         buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
@@ -74,6 +87,7 @@ class CliInstallDialog(QDialog):
         layout.addWidget(caption)
         layout.addWidget(self.command)
         layout.addWidget(self.status_note)
+        layout.addWidget(self.worktree_note)
         layout.addWidget(self.output, 1)
         layout.addWidget(buttons)
 
@@ -91,10 +105,16 @@ class CliInstallDialog(QDialog):
                 f"dplanner resolves at {found} — installing again refreshes it."
             )
             self.primary.setText("Reinstall")
+        self.primary.setEnabled(True)
+        self.uninstall_button.setEnabled(found is not None)
 
     def _install(self) -> None:
-        command = self._command
+        self._run_command("Installing the dplanner command", self._command)
 
+    def _uninstall(self) -> None:
+        self._run_command("Uninstalling the dplanner command", uninstall_command())
+
+    def _run_command(self, label: str, command: list[str]) -> None:
         def body() -> None:
             result = subprocess.run(command, capture_output=True, text=True)
             output = (result.stdout + result.stderr).strip()
@@ -102,18 +122,14 @@ class CliInstallDialog(QDialog):
                 raise RuntimeError(output or f"{command[0]} exited with {result.returncode}")
             self._done.emit(output)
 
-        started = self._runner.run(
-            "Installing the dplanner command", body, key="agent_skill.cli_install"
-        )
-        if started:
+        if self._runner.run(label, body, key="agent_skill.cli_install"):
             self.primary.setEnabled(False)
+            self.uninstall_button.setEnabled(False)
 
     def _finished(self, output: str) -> None:
         self.output.setPlainText(output)
-        self.primary.setEnabled(True)
         self._refresh()
 
     def _failed(self, error: str) -> None:
         self.output.setPlainText(error)
-        self.primary.setEnabled(True)
         self._refresh()

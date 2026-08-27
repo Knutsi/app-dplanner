@@ -19,6 +19,7 @@ from dplanner.cli.skill import (
     status,
     target_dir,
     uninstall,
+    worktree_warning,
 )
 from dplanner.modules import aspect_specs, default_cli_commands, default_module_formats
 
@@ -146,6 +147,26 @@ def test_status_verb_reports_whether_the_command_resolves(registry, tmp_path, mo
     monkeypatch.setattr("dplanner.cli.skill.shutil.which", lambda _name: None)
     out = invoke(registry, "skill", "status", "--project")
     assert "not on PATH" in out
+
+
+def test_a_worktree_checkout_warns_and_names_the_main_one(tmp_path):
+    """An editable install into a worktree breaks when the worktree is removed."""
+    main = tmp_path / "main"
+    (main / ".git" / "worktrees" / "wt").mkdir(parents=True)
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    (worktree / ".git").write_text(f"gitdir: {main / '.git' / 'worktrees' / 'wt'}\n")
+
+    warning = worktree_warning(worktree)
+    assert warning is not None
+    assert str(worktree) in warning
+    assert f"uv tool install --editable {main}" in warning
+
+
+def test_a_main_checkout_raises_no_worktree_warning(tmp_path):
+    (tmp_path / ".git").mkdir()
+    assert worktree_warning(tmp_path) is None
+    assert worktree_warning(tmp_path / "no-git-at-all") is None
 
 
 def test_uninstall_removes_only_what_install_wrote(files, tmp_path):

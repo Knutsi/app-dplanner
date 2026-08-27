@@ -142,6 +142,11 @@ def install_command() -> list[str]:
     return ["uv", "tool", "install", PROG]
 
 
+def uninstall_command() -> list[str]:
+    """The command that takes the installed ``dplanner`` tool back out, as argv."""
+    return ["uv", "tool", "uninstall", PROG]
+
+
 def path_hint() -> str | None:
     """None when ``dplanner`` resolves on PATH; otherwise the command that puts it there.
 
@@ -151,6 +156,34 @@ def path_hint() -> str | None:
     if shutil.which(PROG) is not None:
         return None
     return shlex.join(install_command())
+
+
+def worktree_warning(root: Path | None = None) -> str | None:
+    """A caution when the editable install would track a git worktree, else None.
+
+    A worktree is often temporary — a branch's scratch checkout — and an editable install
+    pointing into one breaks the moment the worktree is removed. The warning names the main
+    checkout when the worktree's ``.git`` file says where it is.
+    """
+    if root is None:
+        root = Path(__file__).resolve().parents[3]
+    gitfile = root / ".git"
+    if not gitfile.is_file():  # A directory means a main checkout; a file marks a worktree.
+        return None
+    message = (
+        f"This build runs from a git worktree ({root}) — the installed command would "
+        "break when the worktree is removed."
+    )
+    content = gitfile.read_text().strip()
+    if content.startswith("gitdir:"):
+        gitdir = Path(content.removeprefix("gitdir:").strip())
+        # A linked worktree's gitdir is <main>/.git/worktrees/<name>.
+        if gitdir.parent.name == "worktrees" and gitdir.parents[1].name == ".git":
+            main = gitdir.parents[2]
+            message += (
+                f" Consider installing from the main checkout:  uv tool install --editable {main}"
+            )
+    return message
 
 
 def status(files: dict[str, str], directory: Path) -> str:
