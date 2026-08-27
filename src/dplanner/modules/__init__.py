@@ -70,12 +70,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
     )
+    from dplanner.modules.step_agent_instruction.prompt import PromptPart
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_description.aspect import summary as description_summary
     from dplanner.modules.step_description.module import (
         StepDescriptionDeps,
         StepDescriptionModule,
     )
+    from dplanner.modules.step_handoff.handoff import inherited as inherited_handoffs
     from dplanner.modules.step_handoff.module import StepHandoffDeps, StepHandoffModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
     from dplanner.modules.step_properties.module import (
@@ -131,6 +133,18 @@ def default_modules(services: "AppServices") -> list["Module"]:
         answers for a step — and the order view never learns that estimates exist.
         """
         return schedule(order, estimated_days, start_of(product.project(project_id)))
+
+    def agent_prompt_parts(step_id: str) -> list["PromptPart"]:
+        """The briefing's context blocks: the step's inherited handoffs, as prompt parts.
+
+        The agent module never learns what a handoff is, and the handoff module never
+        learns there is a prompt — this adapter is the whole acquaintance.
+        """
+        step = product.step(step_id)
+        return [
+            PromptPart(heading=h.title, body=h.note, files=h.assets)
+            for h in inherited_handoffs(product, step, store.files)
+        ]
 
     # Three modules constructed before the list, because what each one hands the others
     # reads better as wiring than as ordering:
@@ -320,7 +334,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         StepAgentInstructionModule(
             StepAgentInstructionDeps(
-                product=product, undo=services.undo, sections=services.inspector_sections
+                product=product,
+                undo=services.undo,
+                sections=services.inspector_sections,
+                actions=services.actions,
+                settings_sections=services.settings_sections,
+                status=services.window,
+                parent=services.window,
+                prompt_parts=agent_prompt_parts,
+                epilogue=lambda step_id: _agent_epilogue(product.step(step_id).title),
             )
         ),
         StepHandoffModule(
@@ -383,6 +405,25 @@ def default_modules(services: "AppServices") -> list["Module"]:
     ]
 
 
+def _agent_epilogue(step_title: str) -> str:
+    """The briefing's closing words: how the agent reports back through the CLI.
+
+    Cross-module prose — it names the status and handoff verbs — so it is written here, in
+    the one file allowed to know every module's vocabulary, and handed to the agent module
+    as a callback on both surfaces.
+    """
+    title = step_title or "Untitled step"
+    return (
+        "When the work is finished, record it in DPlanner:\n"
+        f"- `dplanner status set '{title}' done`\n"
+        f"- `dplanner handoff set '{title}' --file -` with anything later steps should"
+        " know (add `--scope project` to reach the whole project;"
+        f" `dplanner handoff attach '{title}' <file>` for files).\n"
+        f"If you cannot finish, `dplanner status set '{title}' blocked` and say why in the"
+        " handoff."
+    )
+
+
 def default_cli_commands() -> list["CliCommand"]:
     """Every ``dplanner <noun> <verb>``, from the same modules the window is built from.
 
@@ -393,16 +434,30 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.cli.aspects import commands as aspect_commands
     from dplanner.cli.command import CliRegistry
     from dplanner.cli.skill import commands as skill_commands
+    from dplanner.domain.model import Product, Step
+    from dplanner.domain.store import ModuleFileArea
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.product import cli as product_cli
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
+    from dplanner.modules.step_agent_instruction.prompt import PromptPart
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_handoff import cli as handoff_cli
+    from dplanner.modules.step_handoff.handoff import inherited as inherited_handoffs
     from dplanner.modules.step_order import cli as order_cli
     from dplanner.modules.step_release import cli as release_cli
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
+
+    def agent_prompt_parts(
+        product: Product, step: Step, files: "Callable[[str, str], ModuleFileArea]"
+    ) -> list[PromptPart]:
+        # The same acquaintance the window makes: handoffs become prompt parts here, and
+        # neither module learns the other's name.
+        return [
+            PromptPart(heading=h.title, body=h.note, files=h.assets)
+            for h in inherited_handoffs(product, step, files)
+        ]
 
     specs = aspect_specs()
     commands = [
@@ -411,7 +466,10 @@ def default_cli_commands() -> list["CliCommand"]:
         *estimation_cli.commands(),
         *ticket_cli.commands(),
         *description_cli.commands(),
-        *agent_cli.commands(),
+        *agent_cli.commands(
+            prompt_parts=agent_prompt_parts,
+            epilogue=lambda step: _agent_epilogue(step.title),
+        ),
         *status_cli.commands(),
         *release_cli.commands(),
         *handoff_cli.commands(),

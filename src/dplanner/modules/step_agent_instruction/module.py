@@ -1,24 +1,58 @@
-"""The agent-instruction aspect, in the running application: one registration, the Agent tab.
+"""The agent-instruction aspect, in the running application: the Agent tab, and Run Agent.
 
-Deliberately a near-twin of ``step_description``'s module, and that is the price of "modules
-never import each other". The part worth sharing is already shared:
-:class:`~dplanner.framework.prose_section.ProseSection` and ``ModuleTextField`` do all the
-work, and what is left here is the three facts that make this aspect itself — which document,
-what to call it, and where it sits among the tabs.
+The tab is the writing half — :class:`ProseSection` and ``ModuleTextField`` do all the work,
+and what is left here is which document, what to call it, and where it sits among the tabs.
+
+Run Agent is the reading half: assemble the step's briefing (the instruction, plus whatever
+context the composition root hands in — this module never learns what a handoff is), write
+it to a temp directory, and open a terminal on it. The terminal is a **peer process the
+user owns**, deliberately not a TaskRunner task — see ``launcher.py``. When no terminal can
+be opened, the fallback dialog delivers the prompt itself, because the prompt is the
+product and the terminal was only one way to hand it over.
 """
 
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
+from PySide6.QtWidgets import QWidget
+
 from dplanner.domain.fields import ModuleTextField
-from dplanner.domain.model import Product
+from dplanner.domain.model import Product, Step, StepId
+from dplanner.framework.action_registry import (
+    ENABLED,
+    HIDDEN,
+    ActionRegistry,
+    ActionSpec,
+    ActionState,
+)
+from dplanner.framework.context import Context
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.prose_section import ProseSection
+from dplanner.framework.settings_registry import (
+    SettingsScope,
+    SettingsSection,
+    SettingsSectionRegistry,
+)
 from dplanner.framework.text_binding import TextField
 from dplanner.framework.undo import UndoService
-from dplanner.modules.step_agent_instruction.aspect import DATA_FORMAT, MODULE_ID, SPEC
+from dplanner.framework.window import StatusHost
+from dplanner.modules.step_agent_instruction import launcher
+from dplanner.modules.step_agent_instruction.aspect import DATA_FORMAT, MODULE_ID, SPEC, read
+from dplanner.modules.step_agent_instruction.prompt import PromptPart, assemble
+from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog
+from dplanner.modules.step_agent_instruction.settings_page import build_page, launch_command
 
 PLACEHOLDER = "How to carry this step out: which files, which conventions, what done means."
+
+
+def _no_parts(_step_id: StepId) -> Sequence[PromptPart]:
+    return ()
+
+
+def _no_epilogue(_step_id: StepId) -> str:
+    return ""
 
 
 @dataclass(frozen=True)
@@ -26,6 +60,14 @@ class StepAgentInstructionDeps:
     product: Product
     undo: UndoService[Product]
     sections: InspectorSectionRegistry
+    actions: ActionRegistry
+    settings_sections: SettingsSectionRegistry
+    status: StatusHost
+    parent: QWidget
+    # The briefing's context blocks and its closing words, assembled by the composition
+    # root — the one place allowed to know what the other aspects store.
+    prompt_parts: Callable[[StepId], Sequence[PromptPart]] = field(default=_no_parts)
+    epilogue: Callable[[StepId], str] = field(default=_no_epilogue)
 
 
 class StepAgentInstructionModule:
@@ -51,3 +93,63 @@ class StepAgentInstructionModule:
                 factory=lambda: ProseSection(field_for, deps.undo, PLACEHOLDER),
             )
         )
+        deps.actions.register(
+            ActionSpec(
+                id="agent.run",
+                label="Run &Agent…",
+                menu="Step",
+                group="agent",
+                order=10,
+                tip="Open a terminal with the agent briefed on this step",
+                state=self._can_run,
+                run=self._run,
+            )
+        )
+        deps.settings_sections.register(
+            SettingsSection(
+                id=f"{MODULE_ID}.launch",
+                category=("Agent",),
+                scope=SettingsScope.GLOBAL,
+                factory=build_page,
+            )
+        )
+
+    # -- running -------------------------------------------------------------------------------
+
+    def _can_run(self, context: Context) -> ActionState:
+        step = self._focused(context)
+        if step is None or not read(step):
+            return HIDDEN  # No instruction, nothing to brief an agent with.
+        if not self._deps.product.checkout:
+            return ActionState(enabled=False, label="Run Agent — set the product's checkout first")
+        return ENABLED
+
+    def _run(self, context: Context) -> None:
+        step = self._focused(context)
+        if step is None:
+            return
+        deps = self._deps
+        project = deps.product.project_of(step.id)
+        assembled = assemble(
+            step_title=step.title or "Untitled step",
+            project_title=project.title or "Untitled project",
+            instruction=read(step),
+            parts=deps.prompt_parts(step.id),
+            epilogue=deps.epilogue(step.id),
+        )
+        workdir = Path(deps.product.checkout).expanduser()
+        prepared = launcher.prepare(assembled.text, workdir)
+        command = None
+        if workdir.is_dir():
+            command = launcher.resolve_command(launch_command(), prepared, workdir)
+        if command is not None:
+            launcher.spawn(command, workdir)
+            deps.status.show_status(f"Agent launched on “{step.title}”", 4000)
+            return
+        PromptFallbackDialog(assembled.text, str(prepared.prompt_file), deps.parent).exec()
+
+    def _focused(self, context: Context) -> Step | None:
+        step_id = context.focus_entity("step")
+        if step_id is None or not self._deps.product.has(step_id):
+            return None
+        return self._deps.product.step(step_id)

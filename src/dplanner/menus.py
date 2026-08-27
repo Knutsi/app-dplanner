@@ -37,8 +37,8 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "open" is a surface about the selection — the Step-side mirror of Project's
     # "Show Order". "navigate" is where the canvas's movement verbs live: they select
     # rather than change, so they belong beside the step verbs but not among them.
-    # "status" is the step_status module's submenu of states.
-    "Step": ("edit", "link", "status", "open", "navigate"),
+    # "status" is the step_status module's submenu of states; "agent" is Run Agent.
+    "Step": ("edit", "link", "status", "agent", "open", "navigate"),
     "Tools": ("agent",),
     "Debug": ("llm",),
     "Help": ("about",),
