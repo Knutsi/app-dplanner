@@ -52,6 +52,7 @@ class CanvasVerbs:
     current_project: Callable[[], NodeId | None]
     # The window capabilities these steer. Each is a no-op when no canvas is current.
     select_step: Callable[[StepId], None]
+    select_steps: Callable[[list[StepId]], None]
     set_connect_mode: Callable[[bool], None]
     frame: Callable[[], None]
 
@@ -87,6 +88,17 @@ class CanvasVerbs:
                 for index, name in enumerate(DIRECTIONS)
             ],
             ActionSpec(
+                id="steps.select_all",
+                label="Select &All Steps",
+                menu="Step",
+                group="navigate",
+                # After the Go verbs: they walk the selection, this replaces it.
+                order=50,
+                tip="Select every step in this project",
+                state=self._has_steps,
+                run=self._select_all,
+            ),
+            ActionSpec(
                 id="canvas.frame",
                 label="&Frame Graph",
                 menu="View",
@@ -111,6 +123,12 @@ class CanvasVerbs:
         if self.current_project() is None:
             return DISABLED
         return ActionState(checked=context.edge("mode") == mode_uri(CONNECT))
+
+    def _has_steps(self, _context: Context) -> ActionState:
+        project_id = self.current_project()
+        if project_id is None or not self.product.has(project_id):
+            return DISABLED
+        return ENABLED if self.product.project(project_id).steps else DISABLED
 
     def _can_go(self, name: str) -> Callable[[Context], ActionState]:
         def state(context: Context) -> ActionState:
@@ -160,3 +178,9 @@ class CanvasVerbs:
 
     def _connect(self, context: Context) -> None:
         self.set_connect_mode(context.edge("mode") != mode_uri(CONNECT))
+
+    def _select_all(self, _context: Context) -> None:
+        project_id = self.current_project()
+        if project_id is None or not self.product.has(project_id):
+            return
+        self.select_steps([step.id for step in self.product.project(project_id).steps])

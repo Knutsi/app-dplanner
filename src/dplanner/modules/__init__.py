@@ -68,6 +68,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
     )
+    from dplanner.modules.step_description.aspect import read as description_read
+    from dplanner.modules.step_description.aspect import summary as description_summary
     from dplanner.modules.step_description.module import (
         StepDescriptionDeps,
         StepDescriptionModule,
@@ -116,7 +118,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     #   step_properties  anchors THE step detail panel in the window's right area
     #   project_editor   anchors the project form beside it, and opens projects into tabs
     #   projects         puts projects in the index and opens them through the editor
-    #   estimation       owns the estimate and the start date; the order view hosts its bar
+    #   estimation       owns the estimate, the start date and the bulk Estimates tab; the
+    #                    order view hosts its bar, and its rows reveal steps on the canvas
     #
     # None of them imports any other, and the two panel modules do not even wire to each
     # other: each registers a panel and the dock decides what is on screen, so neither knows
@@ -124,9 +127,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # about legibility; what matters at run time is that the aspect modules have registered
     # their sections before step_properties builds the panel, which is a position in the list
     # below.
-    estimation = EstimationModule(
-        EstimationDeps(product=product, undo=services.undo, sections=services.inspector_sections)
-    )
     step_properties = StepPropertiesModule(
         StepPropertiesDeps(
             product=product,
@@ -149,6 +149,22 @@ def default_modules(services: "AppServices") -> list["Module"]:
             theme=services.theme,
             # A node's second line: whatever the aspects have to say about that step.
             step_aspects=step_aspects,
+        )
+    )
+    estimation = EstimationModule(
+        EstimationDeps(
+            product=product,
+            undo=services.undo,
+            sections=services.inspector_sections,
+            actions=services.actions,
+            context=services.context,
+            tabs=services.tabs,
+            # A step's description, one line for the row and the prose for its tooltip.
+            # Handed as answers, so the estimation module never learns where prose lives.
+            step_summary=lambda step_id: description_summary(product.step(step_id)),
+            describe_step=lambda step_id: description_read(product.step(step_id)),
+            # An Estimates row reveals its step the same way an order row does.
+            reveal_step=project_editor.reveal,
         )
     )
 

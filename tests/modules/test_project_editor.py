@@ -13,7 +13,12 @@ from PySide6.QtCore import QEvent, QPointF, QRectF, QSizeF, Qt
 from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter
 from PySide6.QtWidgets import QGraphicsView
 
-from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetFieldCommand
+from dplanner.domain.commands import (
+    AddNodeCommand,
+    RemoveNodeCommand,
+    SetEdgesCommand,
+    SetFieldCommand,
+)
 from dplanner.domain.model import Project, Step
 from dplanner.framework.context import SCOPE_SELECTION
 from dplanner.modules.project_editor.items import FILL_ALPHA, NODE_H, NODE_W
@@ -834,3 +839,43 @@ def test_closing_the_tab_lets_its_toolbars_go(services, project, tab):
     before = len(services.context.changed._slots)
     tab.close()
     assert len(services.context.changed._slots) < before
+
+
+# -- selecting everything ----------------------------------------------------------------------
+
+
+def test_select_all_selects_every_step(app, services, project, tab):
+    press_key(app, tab, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    assert set(scene(tab).selection().steps) == {step.id for step in project.steps}
+    published = services.context.current().selected_entities("step")
+    assert set(published) == {step.id for step in project.steps}
+
+
+def test_select_all_is_disabled_off_a_canvas(services):
+    state = services.actions.spec("steps.select_all").state(services.context.current())
+    assert not state.enabled
+
+
+def test_select_all_is_disabled_on_an_empty_project(services, project, tab):
+    for step in list(project.steps):
+        services.undo.push(RemoveNodeCommand(step.id))
+    state = services.actions.spec("steps.select_all").state(services.context.current())
+    assert not state.enabled
+
+
+def test_right_clicking_inside_a_multi_selection_keeps_it(services, project, tab):
+    """The menu must read the selection the user made, not collapse it to the node under
+    the cursor — or "Delete 2 Steps" could never be said."""
+    first, second = project.steps
+    scene(tab).select_steps([first.id, second.id])
+
+    tab._select_for_menu(scene(tab).node(first.id))
+    assert set(scene(tab).selection().steps) == {first.id, second.id}
+
+
+def test_right_clicking_an_unselected_step_makes_it_current(services, project, tab):
+    first, second = project.steps
+    scene(tab).select_step(first.id)
+
+    tab._select_for_menu(scene(tab).node(second.id))
+    assert scene(tab).selection().steps == (second.id,)
