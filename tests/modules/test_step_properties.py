@@ -48,7 +48,8 @@ def test_one_step_selected_is_something_to_edit(services, project, panel):
 def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
     select(services, project.steps[0].id)
     labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
-    assert labels == ["Estimate", "Ticket", "Description", "Agent", "Release", "Handoff"]
+    expected = ["Estimate", "Ticket", "Description", "Agent", "Release", "Handoff", "GitHub"]
+    assert labels == expected
 
 
 def test_the_title_is_shown_and_edited_undoably(services, project, panel):

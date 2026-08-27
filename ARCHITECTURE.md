@@ -459,6 +459,31 @@ Around that one check:
 The same check is why **two CLI runs need no lock between them**: the second is refused for
 exactly the same reason and can be run again. One mechanism, three cases.
 
+## Syncing an external fact
+
+The GitHub aspect stores each PR's *last-seen* state so a merged PR stays green offline —
+which means something has to keep that cache current, and in a window that something is a
+background refresher, not the user.
+
+The refresher builds the same `SetModuleDataCommand` every other writer builds, but calls
+`redo()` directly instead of pushing it onto the undo stack, with an origin of its own
+(`REFRESH_ORIGIN` in `modules/github/refresh.py`). The reasoning:
+
+- **Undo is for decisions.** The stored state is a cache of something GitHub decided; an
+  undo entry here would make Ctrl+Z restore a *stale* state instead of undoing the user's
+  last edit, and the user never asked for the refresh in the first place.
+- **The stack is not what persists.** Autosave flushes on the store's dirty signal, which
+  `Product` emits for every model change regardless of who applied it — so the write
+  reaches disk without the stack's help.
+- **There is precedent, not exception.** The CLI applies commands the same way (a run is a
+  transaction; version control is the undo), and so do the format migrations at open. The
+  rule "every model change goes through a command" is about having one vocabulary of
+  change, not about the stack: the stack is the *GUI user's* journal, and a background
+  sync is not the GUI user.
+
+The concurrent-writer story needs nothing new: the refresh dirties the workspace like any
+edit, and *Two writers, one workspace* above already covers an agent flushing underneath.
+
 ## The skill is a projection, not a document
 
 An agent has to be told what DPlanner is and what it can do. Writing that by hand means

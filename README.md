@@ -171,6 +171,7 @@ src/dplanner/
 │   ├── step_status/         where a step stands — a Status submenu, no tab
 │   ├── step_release/        the steps that mark a release point
 │   ├── step_handoff/        what a step passes forward, and who inherits it
+│   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── spec/                spec documents beside a project, their requirements, `dplanner spec`
 │   ├── workspace_watch/     reloading when something else writes to the workspace

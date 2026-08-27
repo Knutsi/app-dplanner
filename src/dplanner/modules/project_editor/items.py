@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QColor,
+    QFont,
+    QFontMetricsF,
     QPainter,
     QPainterPath,
     QPainterPathStroker,
@@ -65,18 +67,32 @@ BADGE_H = 14.0
 BADGE_PAD = 6.0
 BADGE_INSET = 10.0  # From the node's right edge, clear of the link handle's corner.
 
+# The pill on the second line: a small status label (a PR, say) beside the subtitle.
+PILL_H = 14.0
+PILL_RADIUS = PILL_H / 2
+PILL_PAD_X = 6.0
+PILL_MARGIN = 6.0
+PILL_FILL_ALPHA = 46
+GLYPH_SIZE = 9.0
+GLYPH_GAP = 5.0
+
 
 @dataclass(frozen=True)
 class NodeAccent:
     """How a node should look beyond its text, in the canvas's own vocabulary.
 
-    The canvas never learns which aspect means "muted" or what a badge says — the
-    composition root translates aspects into this, the same seam ``step_aspects`` uses
-    for the subtitle.
+    The canvas never learns which aspect means "muted", what a badge says, or which
+    aspect a pill stands for — the composition root translates aspects into this, the
+    same seam ``step_aspects`` uses for the subtitle. A ``badge`` sits on the top edge
+    (a release label); a ``pill`` sits on the second line with a tone that is "good" or
+    "bad", never "merged"; ``branch`` asks for the small fork glyph beside it.
     """
 
     muted: bool = False
     badge: str = ""
+    pill_text: str = ""  # "" → no pill.
+    pill_tone: str = ""  # "" neutral | "good" | "bad".
+    branch: bool = False  # Paint the branch glyph.
 
 
 def live_palette(item: QGraphicsItem) -> QPalette:
@@ -201,15 +217,58 @@ class StepNodeItem(QGraphicsItem):
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
             metrics.elidedText(self._title, Qt.TextElideMode.ElideRight, int(title_width)),
         )
+        # The second line: subtitle on the left, the pill and glyph on the right. The
+        # decorations take their width first so the subtitle's elision stays honest.
+        faded = QColor(palette.text().color())
+        faded.setAlpha(MUTED_SECONDARY_ALPHA if muted else SECONDARY_ALPHA)
+        second_top = inner.top() + metrics.height() + LINE_GAP
+        pill_font = QFont(painter.font())
+        pill_font.setPointSizeF(max(6.0, pill_font.pointSizeF() - 1))
+        pill_w = (
+            QFontMetricsF(pill_font).horizontalAdvance(self._accent.pill_text) + 2 * PILL_PAD_X
+            if self._accent.pill_text
+            else 0.0
+        )
+        glyph_w = GLYPH_SIZE + (GLYPH_GAP if pill_w else 0.0) if self._accent.branch else 0.0
+        reserved = pill_w + glyph_w + (PILL_MARGIN if pill_w or glyph_w else 0.0)
+
         if self._subtitle:
-            faded = QColor(palette.text().color())
-            faded.setAlpha(MUTED_SECONDARY_ALPHA if muted else SECONDARY_ALPHA)
             painter.setPen(faded)
-            top = inner.top() + metrics.height() + LINE_GAP
+            width = inner.width() - reserved
             painter.drawText(
-                QRectF(inner.left(), top, inner.width(), metrics.height()),
+                QRectF(inner.left(), second_top, width, metrics.height()),
                 int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop),
-                metrics.elidedText(self._subtitle, Qt.TextElideMode.ElideRight, int(inner.width())),
+                metrics.elidedText(self._subtitle, Qt.TextElideMode.ElideRight, int(width)),
+            )
+        if pill_w:
+            pill = QRectF(
+                inner.right() - pill_w,
+                second_top + (metrics.height() - PILL_H) / 2,
+                pill_w,
+                PILL_H,
+            )
+            tone = {"good": VALID_TINT, "bad": INVALID_TINT}.get(self._accent.pill_tone)
+            pill_fill = QColor(tone if tone is not None else text_colour)
+            pill_fill.setAlpha(PILL_FILL_ALPHA)
+            painter.setBrush(pill_fill)
+            painter.setPen(QPen(QColor(tone) if tone is not None else faded, 1.0))
+            painter.drawRoundedRect(pill, PILL_RADIUS, PILL_RADIUS)
+            painter.save()
+            painter.setFont(pill_font)
+            painter.setPen(text_colour)
+            painter.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), self._accent.pill_text)
+            painter.restore()
+        if self._accent.branch:
+            glyph_right = inner.right() - (pill_w + GLYPH_GAP if pill_w else 0.0)
+            self._paint_branch_glyph(
+                painter,
+                QRectF(
+                    glyph_right - GLYPH_SIZE,
+                    second_top + (metrics.height() - GLYPH_SIZE) / 2,
+                    GLYPH_SIZE,
+                    GLYPH_SIZE,
+                ),
+                faded,
             )
 
         if self._accent.badge:
@@ -243,6 +302,22 @@ class StepNodeItem(QGraphicsItem):
         painter.setPen(QColor(palette.text().color()))
         painter.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), text)
         painter.setFont(font)
+
+    @staticmethod
+    def _paint_branch_glyph(painter: QPainter, rect: QRectF, colour: QColor) -> None:
+        """A tiny git-branch fork: a trunk, a curve out, and a dot at each tip."""
+        radius = 1.5
+        trunk = QPointF(rect.left() + radius, rect.bottom() - radius)
+        tip = QPointF(rect.right() - radius, rect.top() + radius)
+        path = QPainterPath(trunk)
+        path.quadTo(QPointF(trunk.x(), tip.y()), tip)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(colour, 1.2))
+        painter.drawPath(path)
+        painter.setBrush(colour)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(trunk, radius, radius)
+        painter.drawEllipse(tip, radius, radius)
 
     def hoverEnterEvent(self, event: object) -> None:  # noqa: N802 - Qt override
         self._hovered = True

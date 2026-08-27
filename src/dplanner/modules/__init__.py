@@ -60,6 +60,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.estimation.schedule import start_of
+    from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
+    from dplanner.modules.github.aspect import read as github_read
+    from dplanner.modules.github.module import GithubDeps, GithubModule
     from dplanner.modules.llm.module import LlmDeps, LlmModule
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
@@ -68,6 +71,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_repo.module import ProjectRepoDeps, ProjectRepoModule
     from dplanner.modules.project_repo.repo import checkout_for as repo_checkout_for
+    from dplanner.modules.project_repo.repo import repository_for as repo_repository_for
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
@@ -128,11 +132,22 @@ def default_modules(services: "AppServices") -> list["Module"]:
     def step_accent(step_id: str) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
-        A done step is muted; a release wears its label as a badge, which is why the
-        canvas subtitle skips the release phrase below.
+        A done step is muted; a release wears its label as a badge; a PR is a pill on the
+        second line with its state as a tone, and a branch the small fork glyph — which is
+        why the canvas subtitle skips the release and GitHub phrases below.
         """
         step = product.step(step_id)
-        return NodeAccent(muted=step_status(step) == "done", badge=release_label(step))
+        refs = github_read(step)
+        pill = ""
+        if refs is not None and refs.has_pr():
+            pill = f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
+        return NodeAccent(
+            muted=step_status(step) == "done",
+            badge=release_label(step),
+            pill_text=pill,
+            pill_tone={"merged": "good", "closed": "bad"}.get(refs.pr_state, "") if refs else "",
+            branch=bool(refs is not None and refs.branch),
+        )
 
     def step_schedule(project_id: str, order: "Sequence[Placed]") -> "list[Scheduled]":
         """The order carrying days and dates: the domain's walk, over one module's numbers.
@@ -179,7 +194,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
     )
     # Constructed before project_editor: the project panel hosts its fields widget. The
-    # probes are advisory status only; the future github module makes its own checks.
+    # probes are advisory status only; the github module makes its own checks.
     project_repo = ProjectRepoModule(
         ProjectRepoDeps(
             product=product,
@@ -201,8 +216,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
             panels=services.panels,
             theme=services.theme,
             # A node's second line: whatever the aspects have to say about that step. The
-            # release phrase is skipped because the badge already wears the label.
-            step_aspects=lambda step_id: step_aspects(step_id, skip={RELEASE_ID}),
+            # release and GitHub phrases are skipped because the accent already wears them
+            # — the badge the label, the pill and glyph the PR and branch.
+            step_aspects=lambda step_id: step_aspects(step_id, skip={RELEASE_ID, GITHUB_ID}),
             step_accent=step_accent,
             # The repo association's fields, hosted in the project panel — the widget
             # provider registers nothing and is handed over here.
@@ -429,6 +445,20 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepStatusModule(
             StepStatusDeps(product=product, undo=services.undo, actions=services.actions)
         ),
+        GithubModule(
+            GithubDeps(
+                product=product,
+                undo=services.undo,
+                sections=services.inspector_sections,
+                tasks=services.tasks,
+                parent=services.window,
+                # Which repository a step's refs belong to: the project's own over the
+                # product's — the one resolution rule, closed over step → project here.
+                repository_for=lambda step_id: repo_repository_for(
+                    product, product.project_of(step_id)
+                ),
+            )
+        ),
         step_properties,
         project_editor,
         StepOrderModule(
@@ -520,8 +550,10 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.domain.model import Product, Step
     from dplanner.domain.store import ModuleFileArea
     from dplanner.modules.estimation import cli as estimation_cli
+    from dplanner.modules.github import cli as github_cli
     from dplanner.modules.product import cli as product_cli
     from dplanner.modules.project_repo import cli as repo_cli
+    from dplanner.modules.project_repo.repo import repository_for as repo_repository_for
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
@@ -562,6 +594,9 @@ def default_cli_commands() -> list["CliCommand"]:
         *release_cli.commands(),
         *handoff_cli.commands(),
         *order_cli.commands(),
+        # Which repository a step's refs belong to is project_repo's rule — the project's
+        # own over the product's — handed over here so neither cli.py imports the other.
+        *github_cli.commands(repository_for=repo_repository_for),
         *aspect_commands(specs),
     ]
     # The skill describes the registry it is registered into, so the loop is closed here
@@ -581,6 +616,7 @@ def aspect_specs() -> list["AspectSpec"]:
     this is only the list of packages, in the order a person would read them.
     """
     from dplanner.modules.estimation import aspect as estimation
+    from dplanner.modules.github import aspect as github
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
@@ -593,6 +629,7 @@ def aspect_specs() -> list["AspectSpec"]:
         agent.SPEC,
         description.SPEC,
         estimation.SPEC,
+        github.SPEC,
         handoff.SPEC,
         release.SPEC,
         spec.SPEC,
@@ -608,6 +645,7 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
     order table and its Estimate column — so the phrase is not printed twice.
     """
     from dplanner.modules.estimation import aspect as estimation
+    from dplanner.modules.github import aspect as github
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
@@ -621,6 +659,7 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
         (release.SPEC.id, release.summary),
         (estimation.SPEC.id, estimation.summary),
         (ticket.SPEC.id, ticket.summary),
+        (github.SPEC.id, github.summary),
         (spec.SPEC.id, spec.summary),
         (description.SPEC.id, description.summary),
         (agent.SPEC.id, agent.summary),
