@@ -109,3 +109,30 @@ def test_close_all_tabs_empties_the_window(services, projects):
     run(services, CLOSE_ALL)
     assert titles(services) == []
     assert services.tabs.current_activity() is None
+
+
+def test_the_move_shortcut_yields_to_word_selection_in_a_text_editor(session, projects):
+    """Ctrl+Shift+Right moves the tab — except in an editable field, where it must keep
+    selecting the next word. Qt's text controls claim the key through ShortcutOverride, and
+    this pins that down: a future shortcut that editors do *not* claim would eat a standard
+    editing key application-wide, which is the trap CLAUDE.md's canvas-keymap rule is about.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QPlainTextEdit
+
+    services = session.services
+    session.window.show()
+    open_all(services, projects[:2])
+    ctrl_shift = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+
+    QTest.keyClick(session.window, Qt.Key.Key_Right, ctrl_shift)
+    assert services.tabs.group_count() == 2  # The shortcut fired: the window split.
+
+    editor = QPlainTextEdit(session.window)
+    editor.setPlainText("two words")
+    editor.show()
+    editor.setFocus()
+    QTest.keyClick(editor, Qt.Key.Key_Right, ctrl_shift)
+    assert services.tabs.group_count() == 2  # Unchanged: the editor claimed the key…
+    assert editor.textCursor().selectedText()  # …and spent it on selecting a word.
