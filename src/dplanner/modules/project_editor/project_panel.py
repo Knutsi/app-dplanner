@@ -125,6 +125,12 @@ class ProjectPanel(QWidget):
         return True
 
     def _set_project(self, project_id: NodeId | None) -> None:
+        # Unchanged target, unchanged cards — the same guard the step panel has. The dock
+        # calls show_context on every context change, and a model edit can republish the
+        # context mid-typing; re-targeting then would rebuild each card's binding and throw
+        # the user's cursor to the start of the text.
+        if project_id == self._project_id:
+            return
         self._project_id = project_id
         for card, extension in zip(self._cards, self._extensions, strict=True):
             extension.show_target(project_id)

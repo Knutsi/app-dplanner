@@ -131,6 +131,27 @@ def test_the_card_registers_into_detail_cards(services):
     )
 
 
+def test_typing_in_the_panels_card_survives_context_republishes(services, step):
+    """A model edit can republish the context mid-typing; the panel must not re-target its
+    cards then — a rebind resets the editor's cursor and typing comes out scrambled."""
+    from PySide6.QtTest import QTest
+
+    from dplanner.modules.step_agent_instruction.section import ProjectInstructionCard
+
+    project = services.document.project_of(step.id)
+    services.tabs.open("project", project.id)
+    services.context.set_scope(
+        SCOPE_SELECTION, (ContextNode(selection_uri("project", project.id)),)
+    )
+    panel = services.window.dock.widget_for("project_editor.project")
+    card = next(e for e in panel._extensions if isinstance(e, ProjectInstructionCard))
+
+    QTest.keyClicks(card.edit, "hello world")
+    assert card.edit.toPlainText() == "hello world"
+    assert project.module_text[MODULE_ID] == "hello world"
+    assert card.edit.textCursor().position() == len("hello world")
+
+
 def test_the_project_panel_shows_the_agent_card(services, step):
     project = services.document.project_of(step.id)
     services.context.set_scope(
