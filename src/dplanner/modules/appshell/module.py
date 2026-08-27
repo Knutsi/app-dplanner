@@ -163,8 +163,11 @@ class AppShellModule:
                 group="tabs",
                 submenu="Tabs",
                 order=10,
-                # The browsers' move-tab keys: no AltGr anywhere, so layout-proof.
-                shortcut="Ctrl+Shift+PgDown",
+                # Arrows first — reachable on any laptop — with the browsers' move-tab keys
+                # as a synonym. No AltGr anywhere, so layout-proof. Text editors keep
+                # word-selection: an editable field claims these via ShortcutOverride, which
+                # test_appshell's word-selection test pins down.
+                shortcut=("Ctrl+Shift+Right", "Ctrl+Shift+PgDown"),
                 tip="Put this tab in the group to its right, making one if there is room",
                 state=lambda _context: ENABLED if deps.tabs.can_move_right() else DISABLED,
                 run=lambda _context: deps.tabs.move_current_right(),
@@ -178,7 +181,7 @@ class AppShellModule:
                 group="tabs",
                 submenu="Tabs",
                 order=20,
-                shortcut="Ctrl+Shift+PgUp",
+                shortcut=("Ctrl+Shift+Left", "Ctrl+Shift+PgUp"),
                 tip="Put this tab back in the group to its left",
                 state=lambda _context: ENABLED if deps.tabs.can_move_left() else DISABLED,
                 run=lambda _context: deps.tabs.move_current_left(),
@@ -328,7 +331,7 @@ class AppShellModule:
                 id="appshell.command_palette",
                 label="&Command Palette…",
                 menu="View",
-                group="panels",
+                group="palette",
                 order=20,
                 shortcut="Ctrl+Shift+P",
                 tip="Search and run any available command",
@@ -353,9 +356,9 @@ class AppShellModule:
                     label=spec.title,
                     menu="View",
                     group="panels",
-                    # After the palette and the task centre: those are things to open, these
-                    # are what the window is currently made of. One order for all of them, so
-                    # the registry's (order, id) tie-break lists them alphabetically — a
+                    # After the task centre: that is a thing to open, these are what the
+                    # window is currently made of. One order for all of them, so the
+                    # registry's (order, id) tie-break lists them alphabetically — a
                     # panel's own `order` is its position in an area and means nothing here.
                     order=100,
                     tip=f"Show or hide the {spec.title} panel",
