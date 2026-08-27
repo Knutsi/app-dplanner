@@ -50,6 +50,7 @@ __all__ = [
 def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.domain.model import Product
     from dplanner.domain.schedule import schedule
+    from dplanner.domain.store import ProductStore
     from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
@@ -62,8 +63,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.product.module import ProductDeps, ProductModule
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
-    from dplanner.modules.projects.module import ProjectsDeps, ProjectsModule
+    from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
+    from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
+    from dplanner.modules.spec.module import SpecDeps, SpecModule
     from dplanner.modules.step_agent_instruction.module import (
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
@@ -87,8 +90,13 @@ def default_modules(services: "AppServices") -> list["Module"]:
         WorkspaceWatchModule,
     )
     from dplanner.modules.workspaces.module import WorkspacesDeps, WorkspacesModule
+    from dplanner.theme.icons import spec_icon
 
     product: Product = services.document
+    # The composition root knows the concrete store, exactly as it knows the concrete
+    # document — modules reach a file area only through the typed callback on their Deps.
+    store = services.repo
+    assert isinstance(store, ProductStore)
 
     def skill_files() -> dict[str, str]:
         from dplanner.cli.command import CliRegistry
@@ -149,6 +157,19 @@ def default_modules(services: "AppServices") -> list["Module"]:
             theme=services.theme,
             # A node's second line: whatever the aspects have to say about that step.
             step_aspects=step_aspects,
+        )
+    )
+    # Constructed before the list because the projects index opens Specs through it — the
+    # same seam as open_project, one level down.
+    spec = SpecModule(
+        SpecDeps(
+            product=product,
+            actions=services.actions,
+            context=services.context,
+            tabs=services.tabs,
+            undo=services.undo,
+            parent=services.window,
+            files=lambda node_id: store.files(node_id, SPEC_ID),
         )
     )
     estimation = EstimationModule(
@@ -281,8 +302,21 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 parent=services.window,
                 # The index opens a project without knowing what an editor is.
                 open_project=project_editor.open,
+                # Rows under each project. The Specs entry renders the Project menu — the
+                # row stands for its project, and spec.add / spec.open live there.
+                entries=(
+                    ProjectEntry(
+                        id="spec",
+                        label="Specs",
+                        open=spec.open,
+                        icon=spec_icon,
+                        menu="Project",
+                        order=10,
+                    ),
+                ),
             )
         ),
+        spec,
         # -- the step aspects --------------------------------------------------------------
         # Each registers one tab into the step detail panel. They must come before
         # step_properties, which builds the panel from whatever has registered by then.

@@ -17,7 +17,11 @@ from dplanner.framework.context import ContextService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
-from dplanner.modules.projects.index import ProjectEntry, ProjectsSegment
+
+# ProjectEntry is re-exported: contributors are wired through this module's Deps, and the
+# composition root imports a module's surface from its module.py alone.
+from dplanner.modules.projects.index import ProjectEntry as ProjectEntry
+from dplanner.modules.projects.index import ProjectsSegment
 from dplanner.modules.projects.verbs import ProjectVerbs
 from dplanner.theme.icons import container_icon
 
