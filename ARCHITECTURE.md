@@ -582,6 +582,28 @@ The assembly is also where the CLI grew the composition root's other seam:
 what crosses modules arrives as arguments — `skill_commands(specs, described)` made that
 shape first, and this is its second use.
 
+## A project's repository overrides the product's
+
+A product names one codebase, but a project can work against its own — a satellite repo, a
+fork, a different clone. The association lives in `modules/project_repo/` as module data on
+the project node, not as model fields: the same argument the aspects make one level up — the
+model stays fact-free, and a build without the module round-trips the file untouched. It is
+not an `AspectSpec` either, because an aspect is a fact about a *step*.
+
+The resolution — the project's checkout, else the product's — is **one function**,
+`project_repo/repo.py::checkout_for`, with exactly two readers: the composition root closes
+it over step → project and hands it to Run Agent as a typed callback (the agent module never
+imports `project_repo`; its unwired default is the old product-only behaviour, not a second
+copy of the rule), and `dplanner repo show` prints it with the fallback marked. Nothing else
+may re-derive the answer, for the same reason nothing re-derives the topological order.
+
+The git/gh facts under the fields are **advisory, never gating** — a plain folder is a
+legitimate checkout. The probes reach the widget as callables wired by the root, because a
+feature may not name a concrete storage provider; the instant ones run per refresh, and the
+signed-in check (a network round trip with no timeout) runs once per process on a daemon
+thread with its answer cached. The future `github` module will make its own checks —
+deliberately: a shared probe would be coupling, and the check is two lines.
+
 ## Where this is going
 
 - **A second edge kind that can be drawn rather than only typed.** The mode stack is where it

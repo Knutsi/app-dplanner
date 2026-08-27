@@ -212,12 +212,41 @@ def test_without_an_instruction_the_action_is_greyed_with_the_reason(services, s
     assert state.label is not None and "instruction" in state.label
 
 
-def test_without_a_checkout_the_reason_is_in_the_label(services, step):
+def test_without_a_checkout_the_reason_names_both_places(services, step):
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
     state = services.actions.spec("agent.run").state(services.context.current())
     assert state.visible and not state.enabled
-    assert state.label is not None and "checkout" in state.label
+    assert state.label is not None and "project or the product" in state.label
+
+
+def test_the_project_checkout_wins_over_the_products(services, step, tmp_path, monkeypatch):
+    from dplanner.modules.project_repo.repo import MODULE_ID as REPO_ID
+    from dplanner.modules.project_repo.repo import write_association
+
+    product_dir = tmp_path / "mono"
+    project_dir = tmp_path / "satellite"
+    product_dir.mkdir()
+    project_dir.mkdir()
+    services.document.set_field(services.document.id, "checkout", str(product_dir))
+    project = services.document.project_of(step.id)
+    services.document.set_module_data(
+        project.id, REPO_ID, write_association("", str(project_dir))
+    )
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+
+    calls: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+    services.actions.run("agent.run", services.context.current())
+    ((_command, cwd),) = calls
+    assert cwd == project_dir
+
+    # Clearing the project's association falls back to the product's.
+    services.document.set_module_data(project.id, REPO_ID, {})
+    services.actions.run("agent.run", services.context.current())
+    assert calls[-1][1] == product_dir
 
 
 def _agent_section(services):

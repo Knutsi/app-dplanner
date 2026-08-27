@@ -56,6 +56,7 @@ HEADLESS_FILES = (
     "handoff.py",
     "prompt.py",
     "launcher.py",
+    "repo.py",
 )
 CONCRETE_STORAGE = (
     f"{PACKAGE}.core.storage.local",

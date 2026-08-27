@@ -48,6 +48,8 @@ __all__ = [
 
 
 def default_modules(services: "AppServices") -> list["Module"]:
+    from dplanner.core.storage.git import find_repo_root
+    from dplanner.core.storage.github import gh_authenticated, gh_path
     from dplanner.domain.model import Product
     from dplanner.domain.schedule import schedule
     from dplanner.domain.store import ProductStore
@@ -64,6 +66,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.product.module import ProductDeps, ProductModule
     from dplanner.modules.project_editor.items import NodeAccent
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
+    from dplanner.modules.project_repo.module import ProjectRepoDeps, ProjectRepoModule
+    from dplanner.modules.project_repo.repo import checkout_for as repo_checkout_for
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
@@ -174,6 +178,17 @@ def default_modules(services: "AppServices") -> list["Module"]:
             theme=services.theme,
         )
     )
+    # Constructed before project_editor: the project panel hosts its fields widget. The
+    # probes are advisory status only; the future github module makes its own checks.
+    project_repo = ProjectRepoModule(
+        ProjectRepoDeps(
+            product=product,
+            undo=services.undo,
+            is_git_repo=lambda path: find_repo_root(path) is not None,
+            gh_installed=lambda: gh_path() is not None,
+            gh_signed_in=gh_authenticated,
+        )
+    )
     project_editor = ProjectEditorModule(
         ProjectEditorDeps(
             product=product,
@@ -189,6 +204,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # release phrase is skipped because the badge already wears the label.
             step_aspects=lambda step_id: step_aspects(step_id, skip={RELEASE_ID}),
             step_accent=step_accent,
+            # The repo association's fields, hosted in the project panel — the widget
+            # provider registers nothing and is handed over here.
+            repo_fields=project_repo.create_fields,
         )
     )
     # Constructed before the list because the projects index opens Specs through it — the
@@ -358,6 +376,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             )
         ),
         spec,
+        # Position free: registers nothing. In the list so the builder reads data_format.
+        project_repo,
         # -- the step aspects --------------------------------------------------------------
         # Each registers one tab into the step detail panel. They must come before
         # step_properties, which builds the panel from whatever has registered by then.
@@ -385,6 +405,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 prompt_parts=agent_prompt_parts,
                 epilogue=lambda step_id: _agent_epilogue(product.step(step_id).title),
                 preamble=_agent_preamble(),
+                # Where the agent runs: the project's checkout over the product's — the
+                # one resolution rule, closed over step → project here.
+                checkout_for=lambda step_id: repo_checkout_for(
+                    product, product.project_of(step_id)
+                ),
             )
         ),
         StepHandoffModule(
@@ -496,6 +521,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.domain.store import ModuleFileArea
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.product import cli as product_cli
+    from dplanner.modules.project_repo import cli as repo_cli
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
@@ -522,6 +548,7 @@ def default_cli_commands() -> list["CliCommand"]:
     commands = [
         *product_cli.commands(),
         *projects_cli.commands(),
+        *repo_cli.commands(),
         *spec_cli.commands(),
         *estimation_cli.commands(),
         *ticket_cli.commands(),
@@ -611,12 +638,16 @@ def default_module_formats() -> list[ModuleDataFormat]:
     format missing here is data the CLI silently declines to bring forward.
     """
     from dplanner.modules.project_editor import positions
+    from dplanner.modules.project_repo import repo
 
-    # The aspects, plus the one module data that is not an aspect: the graph's node
-    # positions. Deriving this list from aspect_specs() alone would silently omit it.
-    # A project's start date needs no entry: it rides on the estimation aspect's format,
-    # which is the same module writing under the same id on a different node.
-    return [spec.data_format for spec in aspect_specs()] + [positions.DATA_FORMAT]
+    # The aspects, plus the module data that is not an aspect: the graph's node positions
+    # and a project's repo association. Deriving this list from aspect_specs() alone would
+    # silently omit them. A project's start date needs no entry: it rides on the estimation
+    # aspect's format, which is the same module writing under the same id on another node.
+    return [spec.data_format for spec in aspect_specs()] + [
+        positions.DATA_FORMAT,
+        repo.DATA_FORMAT,
+    ]
 
 
 def choose_workspace() -> StorageLocation | None:

@@ -260,6 +260,10 @@ root, stop and look for the registry or capability you have not found yet.
 - **Inherited handoffs are computed, never stored** — `step_handoff/handoff.py` is one
   function with three readers (tab, CLI, agent prompt). Same rule as the ordering, and the
   reasoning is in `ARCHITECTURE.md`'s *Pass-forward is derived at read time*.
+- **A project may carry its own repository and checkout.** Resolution — the project's, else
+  the product's — is one function in `modules/project_repo/repo.py`, and Run Agent is wired
+  through it; never write a second copy. `ARCHITECTURE.md`'s *A project's repository
+  overrides the product's* has the reasoning.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.

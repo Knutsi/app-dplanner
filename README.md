@@ -162,6 +162,7 @@ src/dplanner/
 │   ├── product/             the product's identity: name, repository, checkout
 │   ├── projects/            the Projects folder in the index, and the project verbs
 │   ├── project_editor/      a project in a tab: the graph canvas, its modes, toolbar and map
+│   ├── project_repo/        which repo and checkout a project works against (overrides the product's)
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
 │   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each

@@ -62,7 +62,7 @@ from dplanner.modules.project_editor.modes import CONNECT, ConnectMode, IdleMode
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
 from dplanner.modules.project_editor.positions import DATA_FORMAT, write_position
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
-from dplanner.modules.project_editor.project_panel import ProjectPanel
+from dplanner.modules.project_editor.project_panel import ProjectPanel, RepoFields
 from dplanner.modules.project_editor.selection import EDGE_KIND, CanvasSelection, EdgeRef
 from dplanner.modules.project_editor.verbs import StepVerbs
 
@@ -97,6 +97,8 @@ class ProjectEditorDeps:
     # How a step should look beyond its text — muted, badged — in the canvas's own
     # vocabulary, so the editor never learns which aspects mean what.
     step_accent: Callable[[StepId], NodeAccent] = field(default=_no_accent)
+    # The repo-association fields the project panel hosts; None is a legitimate build.
+    repo_fields: Callable[[QWidget], RepoFields] | None = None
 
 
 class ProjectActivity(ActivityBase):
@@ -405,7 +407,9 @@ class ProjectEditorModule:
             PanelSpec(
                 id=PANEL_ID,
                 title="Project",
-                factory=lambda: ProjectPanel(deps.product, deps.undo),
+                factory=lambda: ProjectPanel(
+                    deps.product, deps.undo, repo_fields=deps.repo_fields
+                ),
                 area=PanelArea.RIGHT,
                 order=10,
             )

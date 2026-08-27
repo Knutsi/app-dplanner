@@ -77,6 +77,9 @@ class StepAgentInstructionDeps:
     prompt_parts: Callable[[StepId], Sequence[PromptPart]] = field(default=_no_parts)
     epilogue: Callable[[StepId], str] = field(default=_no_epilogue)
     preamble: str = ""
+    # Where the agent runs. The root resolves the project's checkout over the product's;
+    # None is the product-only build, not a second copy of that rule.
+    checkout_for: Callable[[StepId], str] | None = None
 
 
 class StepAgentInstructionModule:
@@ -149,9 +152,16 @@ class StepAgentInstructionModule:
             return ActionState(
                 enabled=False, label="Run Agent — write an agent instruction first"
             )
-        if not self._deps.product.checkout:
-            return ActionState(enabled=False, label="Run Agent — set the product's checkout first")
+        if not self._checkout(step.id):
+            return ActionState(
+                enabled=False,
+                label="Run Agent — set a checkout on the project or the product first",
+            )
         return ENABLED
+
+    def _checkout(self, step_id: StepId) -> str:
+        deps = self._deps
+        return deps.checkout_for(step_id) if deps.checkout_for else deps.product.checkout
 
     def _run(self, context: Context) -> None:
         step = self._focused(context)
@@ -167,7 +177,7 @@ class StepAgentInstructionModule:
             epilogue=deps.epilogue(step.id),
             preamble=deps.preamble,
         )
-        workdir = Path(deps.product.checkout).expanduser()
+        workdir = Path(self._checkout(step.id)).expanduser()
         # The slug carries a short id so two steps with one title never share a worktree.
         worktree = f"{slugify(step.title, fallback='step')}-{step.id[:6]}" if use_worktree() else ""
         prepared = launcher.prepare(

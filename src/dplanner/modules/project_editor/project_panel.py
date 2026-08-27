@@ -9,6 +9,9 @@ panel it is a peer of the *step panel* instead: two surfaces in one area, each d
 the context whether it has anything to show, and neither aware of the other's contents.
 """
 
+from collections.abc import Callable
+from typing import Protocol
+
 from PySide6.QtWidgets import QFormLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from dplanner.domain.commands import SetFieldCommand
@@ -22,6 +25,21 @@ CAPTION_GAP = 6
 FIELD_GAP = 8
 
 
+class RepoFields(Protocol):
+    """What this panel needs from the repo-association widget it hosts.
+
+    Consumer-owned, so the module that provides the widget is never imported here — the
+    composition root hands a factory in, exactly as the order view hosts the start bar.
+    """
+
+    @property
+    def widget(self) -> QWidget: ...
+
+    def set_project(self, project_id: NodeId | None) -> None: ...
+
+    def dispose(self) -> None: ...
+
+
 class ProjectPanel(QWidget):
     """The current project's name and summary, wherever the user is looking at one."""
 
@@ -30,6 +48,7 @@ class ProjectPanel(QWidget):
         product: Product,
         undo: UndoService[Product],
         parent: QWidget | None = None,
+        repo_fields: Callable[[QWidget], RepoFields] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("InspectorPanel")
@@ -59,6 +78,12 @@ class ProjectPanel(QWidget):
         layout.setContentsMargins(PANEL_MARGIN, 0, PANEL_MARGIN, PANEL_MARGIN)
         layout.setSpacing(CAPTION_GAP)
         layout.addLayout(fields)
+        # The repo association, when a provider is wired: it re-targets with the panel and
+        # keeps itself current from its own subscriptions.
+        self._repo_fields = repo_fields(self) if repo_fields is not None else None
+        if self._repo_fields is not None:
+            layout.addSpacing(CAPTION_GAP)
+            layout.addWidget(self._repo_fields.widget)
         layout.addSpacing(CAPTION_GAP)
         layout.addWidget(hint)
         layout.addStretch(1)
@@ -70,22 +95,29 @@ class ProjectPanel(QWidget):
     def show_context(self, context: Context) -> bool:
         """The project, unless there is one step to edit — then the step panel has the area."""
         if context.selected_entity("step") is not None:
-            self._project_id = None
+            self._set_project(None)
             return False
         # focus_entity falls back from the selection to the activity's own entity, so this is
         # the same answer for the graph tab, the order table and anything opened later.
         project_id = context.focus_entity("project")
         if project_id is None or not self._product.has(project_id):
-            self._project_id = None
+            self._set_project(None)
             return False
-        self._project_id = project_id
+        self._set_project(project_id)
         self._refresh()
         return True
+
+    def _set_project(self, project_id: NodeId | None) -> None:
+        self._project_id = project_id
+        if self._repo_fields is not None:
+            self._repo_fields.set_project(project_id)
 
     def current_project_id(self) -> NodeId | None:
         return self._project_id
 
     def dispose(self) -> None:
+        if self._repo_fields is not None:
+            self._repo_fields.dispose()
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()

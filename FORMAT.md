@@ -33,6 +33,8 @@ repository cloned — is a per-machine value and is stored in the workspace anyw
 has to resolve it, `framework/user_config.py` is QSettings, and the CLI is below the
 framework and loads no Qt. Storing it is the honest trade; if it turns out to churn in
 shared repositories the fix is a Qt-free per-user config in `core/`, not a hidden field.
+The per-project checkout in `modules/project_repo.json` rides the same trade for the same
+reason.
 
 ## The product format
 
@@ -47,6 +49,7 @@ widget/
     └── search-rewrite/        folder name, frozen at creation
         ├── project.json       id, title, summary, children
         ├── modules/
+        │   └── project_repo.json   this project's own repository/checkout, if any
         └── steps/
             └── read-the-spec/
                 ├── step.json  id, title, edges
