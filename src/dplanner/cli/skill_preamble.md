@@ -45,6 +45,20 @@ and the workflow runs from import to updated steps:
    steps. Update the steps and requirements the diff actually touches, and say what you
    changed.
 
+## Recording your work on GitHub
+
+A step can carry the branch its work lives on and the PR that lands it, so the plan always
+says where the code is:
+
+- **When you start working on a step**, record the branch:
+  `dplanner github set <step> --branch $(git branch --show-current)`.
+- **The moment a PR exists**, add it: `dplanner github set <step> --pr <number>`. With the
+  GitHub CLI (`gh`) installed, DPlanner fills in the PR's title and state for you.
+- `dplanner github refresh` updates the stored state of open PRs; `dplanner github prs`
+  and `dplanner github branches` list what the repository has, for finding the right ref.
+- Without `gh`, recording still works — the refs are stored as written, and the state
+  fills in when a machine with `gh` refreshes.
+
 Prefer building the project up with `project create` and `step add` when there are only a
 few steps: the user sees each one arrive and can stop you. For something large you have
 already agreed on, `dplanner project export | dplanner project import` moves whole

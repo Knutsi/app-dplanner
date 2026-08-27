@@ -167,6 +167,7 @@ src/dplanner/
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
 │   ├── step_agent_instruction/
+│   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── spec/                spec documents beside a project, their requirements, `dplanner spec`
 │   ├── workspace_watch/     reloading when something else writes to the workspace

@@ -4,9 +4,13 @@ Each item owns its geometry and its paint and nothing else. Interaction lives in
 one mode per behaviour, so no item and no scene grows a state machine.
 """
 
+from dataclasses import dataclass
+
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QColor,
+    QFont,
+    QFontMetricsF,
     QPainter,
     QPainterPath,
     QPainterPathStroker,
@@ -51,6 +55,29 @@ EDGE_GRAB = 14.0
 VALID_TINT = QColor(120, 200, 140, 180)
 INVALID_TINT = QColor(220, 110, 110, 180)
 
+# The pill and the branch glyph: small enough to decorate, never to compete with the title.
+PILL_H = 14.0
+PILL_RADIUS = PILL_H / 2
+PILL_PAD_X = 6.0
+PILL_MARGIN = 6.0
+PILL_FILL_ALPHA = 46
+GLYPH_SIZE = 9.0
+GLYPH_GAP = 5.0
+
+
+@dataclass(frozen=True)
+class StepDecoration:
+    """What a node wears beside its text: a pill and/or a small branch glyph.
+
+    The vocabulary is deliberately the canvas's, not any aspect's — a tone is "good" or
+    "bad", never "merged" — so whoever supplies decorations (the composition root, from
+    whatever aspects exist) owns the mapping and this view stays feature-blind.
+    """
+
+    pill_text: str = ""  # "" → no pill.
+    pill_tone: str = ""  # "" neutral | "good" | "bad".
+    branch: bool = False  # Paint the branch glyph.
+
 
 def live_palette(item: QGraphicsItem) -> QPalette:
     """The colours to paint from, as they are now.
@@ -72,6 +99,7 @@ class StepNodeItem(QGraphicsItem):
         self.step_id = step_id
         self._title = ""
         self._subtitle = ""
+        self._decoration = StepDecoration()
         self._link_state = ""
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
@@ -82,6 +110,11 @@ class StepNodeItem(QGraphicsItem):
     def set_text(self, title: str, subtitle: str) -> None:
         if (title, subtitle) != (self._title, self._subtitle):
             self._title, self._subtitle = title, subtitle
+            self.update()
+
+    def set_decoration(self, decoration: StepDecoration) -> None:
+        if decoration != self._decoration:
+            self._decoration = decoration
             self.update()
 
     def set_link_state(self, state: str) -> None:
@@ -145,21 +178,66 @@ class StepNodeItem(QGraphicsItem):
 
         metrics = painter.fontMetrics()
         inner = body.adjusted(PADDING, PADDING, -PADDING, -PADDING)
+        faded = QColor(text_colour)
+        faded.setAlpha(SECONDARY_ALPHA)
         painter.setPen(text_colour)
         painter.drawText(
             QRectF(inner.left(), inner.top(), inner.width(), metrics.height()),
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
             metrics.elidedText(self._title, Qt.TextElideMode.ElideRight, int(inner.width())),
         )
+
+        # The second line: subtitle on the left, decorations on the right. The decorations
+        # take their width first so the subtitle's elision stays honest.
+        deco = self._decoration
+        second_top = inner.top() + metrics.height() + LINE_GAP
+        pill_font = QFont(painter.font())
+        pill_font.setPointSizeF(max(6.0, pill_font.pointSizeF() - 1))
+        pill_w = (
+            QFontMetricsF(pill_font).horizontalAdvance(deco.pill_text) + 2 * PILL_PAD_X
+            if deco.pill_text
+            else 0.0
+        )
+        glyph_w = GLYPH_SIZE + (GLYPH_GAP if pill_w else 0.0) if deco.branch else 0.0
+        reserved = pill_w + glyph_w + (PILL_MARGIN if pill_w or glyph_w else 0.0)
+
         if self._subtitle:
-            faded = QColor(text_colour)
-            faded.setAlpha(SECONDARY_ALPHA)
             painter.setPen(faded)
-            top = inner.top() + metrics.height() + LINE_GAP
+            width = inner.width() - reserved
             painter.drawText(
-                QRectF(inner.left(), top, inner.width(), metrics.height()),
+                QRectF(inner.left(), second_top, width, metrics.height()),
                 int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop),
-                metrics.elidedText(self._subtitle, Qt.TextElideMode.ElideRight, int(inner.width())),
+                metrics.elidedText(self._subtitle, Qt.TextElideMode.ElideRight, int(width)),
+            )
+        if pill_w:
+            pill = QRectF(
+                inner.right() - pill_w,
+                second_top + (metrics.height() - PILL_H) / 2,
+                pill_w,
+                PILL_H,
+            )
+            tone = {"good": VALID_TINT, "bad": INVALID_TINT}.get(deco.pill_tone)
+            pill_fill = QColor(tone if tone is not None else text_colour)
+            pill_fill.setAlpha(PILL_FILL_ALPHA)
+            painter.setBrush(pill_fill)
+            painter.setPen(QPen(QColor(tone) if tone is not None else faded, 1.0))
+            painter.drawRoundedRect(pill, PILL_RADIUS, PILL_RADIUS)
+            painter.save()
+            painter.setFont(pill_font)
+            painter.setPen(text_colour)
+            painter.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), deco.pill_text)
+            painter.restore()
+        if deco.branch:
+            glyph_right = inner.right() - (pill_w + GLYPH_GAP if pill_w else 0.0)
+            self._paint_branch_glyph(
+                painter,
+                QRectF(
+                    glyph_right - GLYPH_SIZE,
+                    second_top + (metrics.height() - GLYPH_SIZE) / 2,
+                    GLYPH_SIZE,
+                    GLYPH_SIZE,
+                ),
+                faded,
             )
 
         if self._hovered or self._link_state:
@@ -167,6 +245,22 @@ class StepNodeItem(QGraphicsItem):
             painter.setBrush(handle)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(QPointF(NODE_W, NODE_H / 2), HANDLE_R, HANDLE_R)
+
+    @staticmethod
+    def _paint_branch_glyph(painter: QPainter, rect: QRectF, colour: QColor) -> None:
+        """A tiny git-branch fork: a trunk, a curve out, and a dot at each tip."""
+        radius = 1.5
+        trunk = QPointF(rect.left() + radius, rect.bottom() - radius)
+        tip = QPointF(rect.right() - radius, rect.top() + radius)
+        path = QPainterPath(trunk)
+        path.quadTo(QPointF(trunk.x(), tip.y()), tip)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(colour, 1.2))
+        painter.drawPath(path)
+        painter.setBrush(colour)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(trunk, radius, radius)
+        painter.drawEllipse(tip, radius, radius)
 
     def hoverEnterEvent(self, event: object) -> None:  # noqa: N802 - Qt override
         self._hovered = True

@@ -144,6 +144,34 @@ def test_a_new_step_appears_without_disturbing_the_others(services, project, tab
     assert scene(tab)._nodes[project.steps[0].id] is before
 
 
+def test_a_steps_github_refs_decorate_its_node(services, project, tab):
+    """A PR wears a pill, a branch a glyph — supplied through the composition root, so this
+    exercises the wiring, not just the seam."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.github.aspect import MODULE_ID, GithubRefs, write
+
+    step = project.steps[0]
+    refs = GithubRefs(branch="feat/login", pr_number=12, pr_state="merged")
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write(refs)))
+    decoration = scene(tab)._nodes[step.id]._decoration
+    assert decoration.pill_text == "PR #12"
+    assert decoration.pill_tone == "good"
+    assert decoration.branch is True
+
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, {}))
+    assert scene(tab)._nodes[step.id]._decoration.pill_text == ""
+
+
+def test_a_branch_alone_is_a_glyph_not_a_pill(services, project, tab):
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.github.aspect import MODULE_ID, GithubRefs, write
+
+    step = project.steps[0]
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write(GithubRefs(branch="b"))))
+    decoration = scene(tab)._nodes[step.id]._decoration
+    assert decoration.pill_text == "" and decoration.branch is True
+
+
 def test_an_edge_is_drawn_for_a_link(services, project, tab):
     first, second = project.steps
     services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
@@ -606,6 +634,33 @@ def ink_over(background: str, ink: str, alpha: int) -> QColor:
             for channel in ("red", "green", "blue")
         )
     )
+
+
+def rendered_node(tab, step_id) -> QImage:
+    node = scene(tab)._nodes[step_id]
+    image = QImage(int(NODE_W), int(NODE_H), QImage.Format.Format_ARGB32)
+    image.fill(QColor("white"))
+    painter = QPainter(image)
+    scene(tab).render(
+        painter, QRectF(image.rect()), QRectF(node.scenePos(), QSizeF(NODE_W, NODE_H))
+    )
+    painter.end()
+    return image
+
+
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=lambda t: t.name)
+def test_a_decorated_node_actually_paints_its_pill(themed, services, project, tab, theme):
+    """Not a pixel-perfect check — just that the pill and glyph reach the canvas in both
+    themes rather than erroring or painting nothing."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.github.aspect import MODULE_ID, GithubRefs, write
+
+    apply_theme(themed, theme)
+    step = project.steps[0]
+    plain = rendered_node(tab, step.id)
+    refs = GithubRefs(branch="feat/login", pr_number=12, pr_state="merged")
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write(refs)))
+    assert rendered_node(tab, step.id) != plain
 
 
 @pytest.mark.parametrize("theme", (DARK, LIGHT), ids=lambda t: t.name)

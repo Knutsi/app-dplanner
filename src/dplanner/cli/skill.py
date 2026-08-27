@@ -30,8 +30,8 @@ REFERENCE_FILE = "reference.md"
 
 DESCRIPTION = (
     "Plan software work as a product of projects, each a graph of steps carrying "
-    "estimates, tickets and descriptions. Use when asked to plan, break down or "
-    "estimate development work, or when a DPlanner product is present."
+    "estimates, tickets, descriptions and GitHub branch/PR refs. Use when asked to plan, "
+    "break down or estimate development work, or when a DPlanner product is present."
 )
 
 

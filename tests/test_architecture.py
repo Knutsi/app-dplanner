@@ -47,7 +47,7 @@ QT_PACKAGES = ("PySide6", "shiboken6")
 # Files inside a module package that the CLI reaches, and which must therefore load no Qt.
 # Checked by name because that is what makes the rule visible from the filename: if the
 # composition root imports a file at CLI time, it belongs in this tuple.
-HEADLESS_FILES = ("cli.py", "aspect.py", "positions.py", "schedule.py", "documents.py")
+HEADLESS_FILES = ("cli.py", "aspect.py", "positions.py", "schedule.py", "documents.py", "gh.py")
 CONCRETE_STORAGE = (
     f"{PACKAGE}.core.storage.local",
     f"{PACKAGE}.core.storage.git",

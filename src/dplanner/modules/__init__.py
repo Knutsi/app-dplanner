@@ -58,10 +58,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.estimation.schedule import start_of
+    from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
+    from dplanner.modules.github.aspect import read as github_read
+    from dplanner.modules.github.module import GithubDeps, GithubModule
     from dplanner.modules.llm.module import LlmDeps, LlmModule
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.product.module import ProductDeps, ProductModule
+    from dplanner.modules.project_editor.items import StepDecoration
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
@@ -112,6 +116,21 @@ def default_modules(services: "AppServices") -> list["Module"]:
         summaries = aspect_summaries(skip)
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
 
+    def step_decoration(step_id: str) -> "StepDecoration":
+        """What a step's node wears: a pill for its PR, a glyph for its branch.
+
+        The canvas speaks in tones ("good", "bad"), so the mapping from PR states lives
+        here — the one file that knows both vocabularies.
+        """
+        refs = github_read(product.step(step_id))
+        if refs is None:
+            return StepDecoration()
+        pill = ""
+        if refs.has_pr():
+            pill = f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
+        tone = {"merged": "good", "closed": "bad"}.get(refs.pr_state, "")
+        return StepDecoration(pill_text=pill, pill_tone=tone, branch=bool(refs.branch))
+
     def step_schedule(project_id: str, order: "Sequence[Placed]") -> "list[Scheduled]":
         """The order carrying days and dates: the domain's walk, over one module's numbers.
 
@@ -155,8 +174,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
             parent=services.window,
             panels=services.panels,
             theme=services.theme,
-            # A node's second line: whatever the aspects have to say about that step.
-            step_aspects=step_aspects,
+            # A node's second line: whatever the aspects have to say about that step —
+            # except GitHub's, which the node wears as a pill and glyph instead.
+            step_aspects=lambda step_id: step_aspects(step_id, skip={GITHUB_ID}),
+            step_decoration=step_decoration,
         )
     )
     # Constructed before the list because the projects index opens Specs through it — the
@@ -345,6 +366,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 product=product, undo=services.undo, sections=services.inspector_sections
             )
         ),
+        GithubModule(
+            GithubDeps(
+                product=product,
+                undo=services.undo,
+                sections=services.inspector_sections,
+                tasks=services.tasks,
+                parent=services.window,
+            )
+        ),
         step_properties,
         project_editor,
         StepOrderModule(
@@ -399,6 +429,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.cli.command import CliRegistry
     from dplanner.cli.skill import commands as skill_commands
     from dplanner.modules.estimation import cli as estimation_cli
+    from dplanner.modules.github import cli as github_cli
     from dplanner.modules.product import cli as product_cli
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
@@ -417,6 +448,7 @@ def default_cli_commands() -> list["CliCommand"]:
         *description_cli.commands(),
         *agent_cli.commands(),
         *order_cli.commands(),
+        *github_cli.commands(),
         *aspect_commands(specs),
     ]
     # The skill describes the registry it is registered into, so the loop is closed here
@@ -436,12 +468,13 @@ def aspect_specs() -> list["AspectSpec"]:
     this is only the list of packages, in the order a person would read them.
     """
     from dplanner.modules.estimation import aspect as estimation
+    from dplanner.modules.github import aspect as github
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_ticket import aspect as ticket
 
-    return [agent.SPEC, description.SPEC, estimation.SPEC, spec.SPEC, ticket.SPEC]
+    return [agent.SPEC, description.SPEC, estimation.SPEC, github.SPEC, spec.SPEC, ticket.SPEC]
 
 
 def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str]]:
@@ -451,6 +484,7 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
     order table and its Estimate column — so the phrase is not printed twice.
     """
     from dplanner.modules.estimation import aspect as estimation
+    from dplanner.modules.github import aspect as github
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
@@ -459,6 +493,7 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
     pairs = [
         (estimation.SPEC.id, estimation.summary),
         (ticket.SPEC.id, ticket.summary),
+        (github.SPEC.id, github.summary),
         (spec.SPEC.id, spec.summary),
         (description.SPEC.id, description.summary),
         (agent.SPEC.id, agent.summary),

@@ -203,6 +203,10 @@ root, stop and look for the registry or capability you have not found yet.
   if the verb failed.
 - **Every model change goes through a command** on the single undo stack, and carries an
   `origin` so the view that made the edit can ignore its own echo.
+- **A background sync of an external fact applies its command directly, off the undo
+  stack, with its own origin** — undoing the user's edit must never restore a stale PR
+  state instead. `modules/github/refresh.py` is the example; `ARCHITECTURE.md`'s *Syncing
+  an external fact* has the reasoning.
 - **Two writers are expected.** An agent runs `dplanner` against a folder a window has open.
   The store records what it last read or wrote and **refuses to flush over anything that
   changed underneath** (`StaleWorkspaceError`); the window notices and reloads when it owes

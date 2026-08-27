@@ -60,6 +60,7 @@ def test_aspect_list_names_every_aspect(cli):
     ids = {row["id"] for row in json.loads(cli("aspect", "list", "--json"))["aspects"]}
     assert ids == {
         "estimation",
+        "github",
         "spec",
         "step_ticket",
         "step_description",
