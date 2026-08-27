@@ -358,6 +358,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.product import cli as product_cli
     from dplanner.modules.projects import cli as projects_cli
+    from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_order import cli as order_cli
@@ -367,6 +368,7 @@ def default_cli_commands() -> list["CliCommand"]:
     commands = [
         *product_cli.commands(),
         *projects_cli.commands(),
+        *spec_cli.commands(),
         *estimation_cli.commands(),
         *ticket_cli.commands(),
         *description_cli.commands(),
@@ -391,11 +393,12 @@ def aspect_specs() -> list["AspectSpec"]:
     this is only the list of packages, in the order a person would read them.
     """
     from dplanner.modules.estimation import aspect as estimation
+    from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_ticket import aspect as ticket
 
-    return [agent.SPEC, description.SPEC, estimation.SPEC, ticket.SPEC]
+    return [agent.SPEC, description.SPEC, estimation.SPEC, spec.SPEC, ticket.SPEC]
 
 
 def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str]]:
@@ -405,6 +408,7 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
     order table and its Estimate column — so the phrase is not printed twice.
     """
     from dplanner.modules.estimation import aspect as estimation
+    from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_ticket import aspect as ticket
@@ -412,6 +416,7 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
     pairs = [
         (estimation.SPEC.id, estimation.summary),
         (ticket.SPEC.id, ticket.summary),
+        (spec.SPEC.id, spec.summary),
         (description.SPEC.id, description.summary),
         (agent.SPEC.id, agent.summary),
     ]
