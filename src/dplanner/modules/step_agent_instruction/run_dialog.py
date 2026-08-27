@@ -20,12 +20,22 @@ DIALOG_MARGIN = 16
 
 
 class PromptFallbackDialog(QDialog):
-    def __init__(self, prompt_text: str, prompt_path: str, parent: QWidget | None) -> None:
+    """Also the Preview Prompt dialog: same prompt, a different note over it."""
+
+    def __init__(
+        self,
+        prompt_text: str,
+        prompt_path: str,
+        parent: QWidget | None,
+        note_text: str = "",
+        title: str = "Run Agent",
+    ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Run Agent")
+        self.setWindowTitle(title)
 
         note = QLabel(
-            "No terminal could be opened, so here is the prompt itself. It is also saved"
+            note_text
+            or "No terminal could be opened, so here is the prompt itself. It is also saved"
             f" at {prompt_path} — and `dplanner agent prompt` prints the same thing.",
             self,
         )

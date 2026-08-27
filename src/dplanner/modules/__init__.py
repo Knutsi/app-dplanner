@@ -193,12 +193,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
             theme=services.theme,
         )
     )
-    # Constructed before project_editor: the project panel hosts its fields widget. The
-    # probes are advisory status only; the github module makes its own checks.
+    # The probes are advisory status only; the github module makes its own checks.
     project_repo = ProjectRepoModule(
         ProjectRepoDeps(
             product=product,
             undo=services.undo,
+            cards=services.detail_cards,
             is_git_repo=lambda path: find_repo_root(path) is not None,
             gh_installed=lambda: gh_path() is not None,
             gh_signed_in=gh_authenticated,
@@ -220,9 +220,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # — the badge the label, the pill and glyph the PR and branch.
             step_aspects=lambda step_id: step_aspects(step_id, skip={RELEASE_ID, GITHUB_ID}),
             step_accent=step_accent,
-            # The repo association's fields, hosted in the project panel — the widget
-            # provider registers nothing and is handed over here.
-            repo_fields=project_repo.create_fields,
+            # The project panel renders whatever registered a card here — the project-level
+            # counterpart of the step panel's inspector_sections.
+            cards=services.detail_cards,
         )
     )
     # Constructed before the list because the projects index opens Specs through it — the
@@ -392,7 +392,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             )
         ),
         spec,
-        # Position free: registers nothing. In the list so the builder reads data_format.
+        # Before project_editor: its Repository card must be registered when the project
+        # panel is built. The builder also reads its data_format from the list.
         project_repo,
         # -- the step aspects --------------------------------------------------------------
         # Each registers one tab into the step detail panel. They must come before
@@ -418,6 +419,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 settings_sections=services.settings_sections,
                 status=services.window,
                 parent=services.window,
+                # Its project-level card: the standing instruction every briefing opens with.
+                cards=services.detail_cards,
+                files=store.files,
+                # How staged assets are read at launch — bytes by workspace-relative path.
+                read_asset=store.storage.read_bytes,
                 prompt_parts=agent_prompt_parts,
                 epilogue=lambda step_id: _agent_epilogue(product.step(step_id).title),
                 preamble=_agent_preamble(),

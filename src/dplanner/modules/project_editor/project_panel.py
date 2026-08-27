@@ -7,48 +7,42 @@ Estimate and Ticket would force every aspect editor to answer "what if this is a
 hide itself, which is precisely the conditional the section registry exists to delete. As a
 panel it is a peer of the *step panel* instead: two surfaces in one area, each deciding from
 the context whether it has anything to show, and neither aware of the other's contents.
+
+**The cards are the modules'.** Below its own form the panel renders every
+:class:`InspectorSection` registered into ``services.detail_cards`` as a
+:class:`~dplanner.framework.cards.ToolCard` — the same contract the step panel's tabs use,
+with a card stack as the host instead of a tab bar. This module never learns what a card
+holds; a module with something to say about a *project* registers there and appears here.
 """
 
-from collections.abc import Callable
-from typing import Protocol
+from collections.abc import Sequence
 
 from PySide6.QtWidgets import QFormLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from dplanner.domain.commands import SetFieldCommand
 from dplanner.domain.model import NodeId, Product
+from dplanner.framework.cards import CardStack, ToolCard
 from dplanner.framework.context import Context
+from dplanner.framework.inspector import InspectorExtension, InspectorSection
+from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.theme.themes import Theme
 
 # DESIGN.md's side-panel spacing; the caption is the panel frame's header, not ours.
 PANEL_MARGIN = 16
 CAPTION_GAP = 6
-FIELD_GAP = 8
-
-
-class RepoFields(Protocol):
-    """What this panel needs from the repo-association widget it hosts.
-
-    Consumer-owned, so the module that provides the widget is never imported here — the
-    composition root hands a factory in, exactly as the order view hosts the start bar.
-    """
-
-    @property
-    def widget(self) -> QWidget: ...
-
-    def set_project(self, project_id: NodeId | None) -> None: ...
-
-    def dispose(self) -> None: ...
 
 
 class ProjectPanel(QWidget):
-    """The current project's name and summary, wherever the user is looking at one."""
+    """The current project's name and summary, plus a card per module with more to say."""
 
     def __init__(
         self,
         product: Product,
         undo: UndoService[Product],
+        cards: Sequence[InspectorSection] = (),
+        theme: ThemeService | None = None,
         parent: QWidget | None = None,
-        repo_fields: Callable[[QWidget], RepoFields] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("InspectorPanel")
@@ -66,7 +60,7 @@ class ProjectPanel(QWidget):
 
         fields = QFormLayout()
         fields.setContentsMargins(0, 0, 0, 0)
-        fields.setSpacing(FIELD_GAP)
+        fields.setSpacing(8)
         fields.addRow("Name", self.title_edit)
         fields.addRow("Summary", self.summary_edit)
 
@@ -74,21 +68,44 @@ class ProjectPanel(QWidget):
         hint.setObjectName("InspectorNote")
         hint.setWordWrap(True)
 
+        # The form keeps the panel's own margins; the card stack carries the same 16 px
+        # inside itself, so the cards line up with the fields above them.
+        form_box = QWidget(self)
+        form_column = QVBoxLayout(form_box)
+        form_column.setContentsMargins(PANEL_MARGIN, 0, PANEL_MARGIN, 0)
+        form_column.setSpacing(CAPTION_GAP)
+        form_column.addLayout(fields)
+        form_column.addWidget(hint)
+
+        # One extension per registered section, built once for this panel — the step
+        # panel's lifecycle, with cards for tabs.
+        self._sections = list(cards)
+        self._extensions: list[InspectorExtension] = [
+            section.factory() for section in self._sections
+        ]
+        self._stack = CardStack(self)
+        self._cards: list[ToolCard] = []
+        for section, extension in zip(self._sections, self._extensions, strict=True):
+            card = ToolCard(section.label, extension.widget)
+            self._cards.append(card)
+            self._stack.add_card(card)
+            extension.tab_visibility_changed.connect(card.setVisible)
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(PANEL_MARGIN, 0, PANEL_MARGIN, PANEL_MARGIN)
-        layout.setSpacing(CAPTION_GAP)
-        layout.addLayout(fields)
-        # The repo association, when a provider is wired: it re-targets with the panel and
-        # keeps itself current from its own subscriptions.
-        self._repo_fields = repo_fields(self) if repo_fields is not None else None
-        if self._repo_fields is not None:
-            layout.addSpacing(CAPTION_GAP)
-            layout.addWidget(self._repo_fields.widget)
-        layout.addSpacing(CAPTION_GAP)
-        layout.addWidget(hint)
-        layout.addStretch(1)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(form_box)
+        layout.addWidget(self._stack, stretch=1)
+
+        def paint_glyphs(current: Theme) -> None:
+            for section, card in zip(self._sections, self._cards, strict=True):
+                if section.icon is not None:
+                    card.set_glyph(section.icon(current.text_secondary))
 
         self._unsubscribes = [product.field_changed.connect(self._on_field)]
+        if theme is not None:
+            self._unsubscribes.append(theme.changed.connect(paint_glyphs))
+            paint_glyphs(theme.current)
 
     # -- what the context says ---------------------------------------------------------------
 
@@ -109,15 +126,17 @@ class ProjectPanel(QWidget):
 
     def _set_project(self, project_id: NodeId | None) -> None:
         self._project_id = project_id
-        if self._repo_fields is not None:
-            self._repo_fields.set_project(project_id)
+        for card, extension in zip(self._cards, self._extensions, strict=True):
+            extension.show_target(project_id)
+            card.setVisible(extension.tab_visible())
 
     def current_project_id(self) -> NodeId | None:
         return self._project_id
 
     def dispose(self) -> None:
-        if self._repo_fields is not None:
-            self._repo_fields.dispose()
+        for extension in self._extensions:
+            extension.dispose()
+        self._extensions = []
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()

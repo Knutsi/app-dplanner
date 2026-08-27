@@ -9,13 +9,34 @@ a helper that only one feature uses belongs in that feature.
 from collections.abc import Callable
 
 from PySide6.QtCore import QEvent, QObject, Qt
-from PySide6.QtGui import QWheelEvent
+from PySide6.QtGui import QTextBlockFormat, QTextCursor, QWheelEvent
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QHBoxLayout,
     QMessageBox,
+    QPlainTextEdit,
     QWidget,
 )
+
+# DESIGN.md's text-well metrics: the text never touches the frame.
+DOCUMENT_MARGIN = 12
+LINE_HEIGHT_PERCENT = 130
+
+
+def make_text_well(pane: QPlainTextEdit) -> None:
+    """DESIGN.md's text well: the document keeps 12 px from the frame on every side."""
+    pane.document().setDocumentMargin(DOCUMENT_MARGIN)
+
+
+def space_lines(pane: QPlainTextEdit) -> None:
+    """~130 % line height for anything longer than a label — reapplied per setPlainText."""
+    block = QTextBlockFormat()
+    block.setLineHeight(
+        LINE_HEIGHT_PERCENT, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value
+    )
+    cursor = QTextCursor(pane.document())
+    cursor.select(QTextCursor.SelectionType.Document)
+    cursor.mergeBlockFormat(block)
 
 
 def confirm(parent: QWidget | None, title: str, question: str) -> bool:

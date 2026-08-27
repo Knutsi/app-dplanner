@@ -306,6 +306,18 @@ exists to delete. It is a peer of the *panel* instead: a second panel in the sam
 own answer to `show_context`. Both ask `Context.selected_entity("step")`, so "there is exactly
 one step in front of the user" has one definition rather than two that can drift apart.
 
+**The project panel hosts the same contract, as cards.** A module with something to say about
+a *project* registers an `InspectorSection` into `services.detail_cards` — the registry type
+is deliberately instantiated twice, because "a module-owned surface that appears when it has
+something to say" turned out to be identical for a panel tab and for a card stacked inside
+one. The project panel renders each as a `ToolCard` and drives the same lifecycle the step
+panel does, with a project id in `show_target`. That is what retired `project_repo`'s
+provider-and-Protocol handover (`RepoFields` + a `repo_fields` factory on the editor's Deps):
+the moment a second module wanted a project surface, "whoever turns up" became the right
+question, and a registry is for whoever turns up. The `step_agent_instruction` card — the
+project's standing instruction — is the second registrant, and each card must be registered
+before `project_editor` builds the panel, which the composition root's list order says.
+
 ## The graph, and what it stores
 
 A project is a graph, so the tab is a canvas: `QGraphicsView` gives selection, dragging,
@@ -596,10 +608,20 @@ cancellation and a completion that returns to the GUI thread, and none of those 
 about a terminal the user owns from the moment it opens. The agent reports back through the
 CLI instead (`status set`, `handoff set`), which the two-writers machinery already handles.
 
+The briefing opens with the **project's standing instruction** — the same module's prose on
+the project node, edited in the project panel's Agent card and in the Agent tab's Project
+part (two bindings over one field, one undo stack) — ahead of the step's own instruction and
+the inherited context. Files attached at either level are **staged into the per-run
+directory** beside `prompt.md` and referenced by their staged absolute paths: the agent runs
+in the checkout, not the workspace, so a workspace-relative path in the prompt would point at
+nothing it can reach. Asset names are content-addressed, so staging is a flat, collision-safe
+copy; an unreadable path stays in the prompt as itself rather than vanishing.
+
 Resolution is settings template first (`{script}`, `{prompt_file}`, `{workdir}`), then a
 platform table, then `None` — and `None` is an answer: the fallback dialog delivers the
 prompt itself, because the prompt is the product and the terminal was only one way to hand
-it over. `dplanner agent prompt` prints the same assembly.
+it over. `dplanner agent prompt` prints the same assembly (with workspace-relative paths —
+the run directory does not exist yet), and *Preview Agent Prompt* shows it in the window.
 
 The assembly is also where the CLI grew the composition root's other seam:
 `agent_cli.commands(prompt_parts=…, epilogue=…)` takes typed callables the way a module's

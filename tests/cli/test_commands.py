@@ -144,6 +144,63 @@ def test_unlink_removes_only_that_edge(cli):
     assert len(data(cli("step", "show", "C", "--json"))["requires"]) == 1
 
 
+# -- the agent instruction at both levels ------------------------------------------------------
+
+
+@pytest.fixture
+def cli_stdin(registry, workspace):
+    def invoke(*argv, expect=0, stdin=""):
+        import sys
+
+        out, err = StringIO(), StringIO()
+        real = sys.stdin
+        sys.stdin = StringIO(stdin)
+        try:
+            code = run(
+                registry,
+                default_module_formats(),
+                ["--workspace", str(workspace), *argv],
+                out,
+                err,
+            )
+        finally:
+            sys.stdin = real
+        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
+        return out.getvalue() + err.getvalue()
+
+    return invoke
+
+
+def test_agent_set_and_show_take_a_project(cli, cli_stdin, workspace):
+    cli("project", "create", "Discovery")
+    cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
+    assert (
+        workspace / "projects" / "discovery" / "modules" / "step_agent_instruction.md"
+    ).is_file()
+    shown = data(cli("agent", "show", "--project", "Discovery", "--json"))
+    assert shown["markdown"] == "House rules."
+    assert "project" in shown
+
+
+def test_agent_show_needs_exactly_one_target(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    message = cli("agent", "show", expect=1)
+    assert "but not both" in message
+    message = cli("agent", "show", "Deploy", "--project", "Discovery", expect=1)
+    assert "but not both" in message
+
+
+def test_agent_prompt_opens_with_the_project_instruction(cli, cli_stdin):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
+    shown = data(cli("agent", "prompt", "Deploy", "--json"))
+    assert "## Project instructions" in shown["prompt"]
+    assert shown["prompt"].index("House rules.") < shown["prompt"].index("Ship it.")
+
+
 # -- export and import -------------------------------------------------------------------------
 
 

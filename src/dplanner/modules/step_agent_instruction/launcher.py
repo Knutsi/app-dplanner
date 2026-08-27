@@ -33,7 +33,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -67,6 +67,37 @@ class LaunchFiles:
     script: Path
 
 
+def new_run_dir() -> Path:
+    """A fresh per-run directory for the prompt, the wrapper and any staged assets."""
+    return Path(tempfile.mkdtemp(prefix="dplanner-agent-"))
+
+
+def stage_assets(
+    directory: Path,
+    paths: Sequence[str],
+    read: Callable[[str], bytes | None],
+) -> dict[str, str]:
+    """Copy workspace assets beside the prompt; original path -> absolute staged path.
+
+    The agent runs in the checkout, not the workspace, so a workspace-relative path in the
+    prompt would point at nothing it can reach. Asset names are content-addressed, so a
+    basename collision means identical bytes and the flat copy is safe. An unreadable path
+    maps to itself — a broken attachment stays visible in the prompt instead of vanishing.
+    """
+    staged: dict[str, str] = {}
+    assets_dir = directory / "assets"
+    for path in paths:
+        data = read(path)
+        if data is None:
+            staged[path] = path
+            continue
+        assets_dir.mkdir(exist_ok=True)
+        target = assets_dir / Path(path).name
+        target.write_bytes(data)
+        staged[path] = str(target)
+    return staged
+
+
 def _agent_line(agent_command: str, prompt_expansion: str) -> str:
     """The command with the briefing substituted; appended when no placeholder names it."""
     command = agent_command.strip() or DEFAULT_AGENT_COMMAND
@@ -81,13 +112,15 @@ def prepare(
     agent_command: str = DEFAULT_AGENT_COMMAND,
     worktree: str = "",
     platform: str = sys.platform,
+    directory: Path | None = None,
 ) -> LaunchFiles:
-    """Write the prompt and a wrapper script to a fresh temp directory.
+    """Write the prompt and a wrapper script to ``directory``, or a fresh temp directory.
 
     ``worktree`` is a slug; when non-empty and the workdir is a git repository, the script
     moves into ``.dplanner/worktrees/<slug>`` (branch ``agent/<slug>``) before starting.
     """
-    directory = Path(tempfile.mkdtemp(prefix="dplanner-agent-"))
+    if directory is None:
+        directory = new_run_dir()
     prompt_file = directory / "prompt.md"
     prompt_file.write_text(prompt_text)
     if platform.startswith("win"):

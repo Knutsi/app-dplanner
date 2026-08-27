@@ -7,13 +7,24 @@ instruction says how to carry it out in this codebase: which files, which conven
 "done" has to satisfy. Keeping them apart means a plan stays readable to people while still
 carrying everything an agent needs, instead of one field trying to be both.
 
-Prose, so it lives in ``module_text`` and diffs line by line. There are no images and no file
-area: an instruction that needs a diagram is describing the work, not directing it.
+Prose, so it lives in ``module_text`` and diffs line by line. An instruction may carry
+images in its file area — a mockup, an annotated screenshot — handed to the agent beside
+the prompt at launch.
+
+The namespace spans node kinds (FORMAT.md's rule, like ``estimation``): beside a step it is
+that step's instruction; beside the *project* it is the project's standing instruction,
+prepended to every step's briefing. The id keeps its historical ``step_`` prefix — renaming
+a module is a Takeover that churns every workspace, and the prefix only names where the
+aspect began.
 """
+
+from collections.abc import Callable
 
 from dplanner.core.module_data import ModuleDataFormat
 from dplanner.domain.aspects import AspectSpec
-from dplanner.domain.model import Step
+from dplanner.domain.assets import assets
+from dplanner.domain.model import NodeId, Project, Step
+from dplanner.domain.store import ModuleFileArea
 
 MODULE_ID = "step_agent_instruction"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
@@ -28,6 +39,26 @@ SPEC = AspectSpec(
 
 def read(step: Step) -> str:
     return step.module_text.get(MODULE_ID, "")
+
+
+def read_project(project: Project) -> str:
+    """The project's standing instruction — the part of every briefing that is the same."""
+    return project.module_text.get(MODULE_ID, "")
+
+
+def asset_paths(
+    files: Callable[[NodeId, str], ModuleFileArea], node_id: NodeId
+) -> tuple[str, ...]:
+    """A node's instruction files as workspace-relative paths.
+
+    A node the store has never flushed has no directory yet, and the store says so with a
+    ``KeyError`` — a node created this run simply has no files to list.
+    """
+    try:
+        area = files(node_id, MODULE_ID)
+    except KeyError:
+        return ()
+    return tuple(f"{area.directory}/{name}" for name in assets(area))
 
 
 def summary(step: Step) -> str:
