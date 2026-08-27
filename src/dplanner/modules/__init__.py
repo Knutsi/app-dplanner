@@ -378,6 +378,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 undo=services.undo,
                 sections=services.inspector_sections,
                 actions=services.actions,
+                context=services.context,
                 settings_sections=services.settings_sections,
                 status=services.window,
                 parent=services.window,

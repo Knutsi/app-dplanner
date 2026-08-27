@@ -197,18 +197,71 @@ def select(services, step):
     )
 
 
-def test_without_an_instruction_the_action_is_hidden(services, step):
+def test_without_an_instruction_the_action_is_greyed_with_the_reason(services, step):
+    """Present, not hidden: a greyed entry that says what to do beats a missing one."""
     select(services, step)
     state = services.actions.spec("agent.run").state(services.context.current())
-    assert not state.visible
+    assert state.visible and not state.enabled
+    assert state.label is not None and "instruction" in state.label
 
 
 def test_without_a_checkout_the_reason_is_in_the_label(services, step):
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
     state = services.actions.spec("agent.run").state(services.context.current())
-    assert not state.enabled
+    assert state.visible and not state.enabled
     assert state.label is not None and "checkout" in state.label
+
+
+def _agent_section(services):
+    spec = next(
+        s
+        for s in services.inspector_sections.sections()
+        if s.id == "step_agent_instruction.tab"
+    )
+    return spec.factory()
+
+
+def test_the_agent_tab_has_the_trigger_following_the_action_state(services, step, tmp_path):
+    select(services, step)
+    section = _agent_section(services)
+    section.show_target(step.id)
+    assert not section.run_button.isEnabled()
+    assert "instruction" in section.run_button.toolTip()
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    section.show_target(step.id)  # A reselect re-evaluates, as the panel does.
+    assert "checkout" in section.run_button.toolTip()
+
+    services.document.set_field(services.document.id, "checkout", str(tmp_path))
+    section.show_target(step.id)
+    assert section.run_button.isEnabled()
+    section.dispose()
+
+
+def test_typing_the_first_instruction_arms_the_button(services, step, tmp_path):
+    services.document.set_field(services.document.id, "checkout", str(tmp_path))
+    select(services, step)
+    section = _agent_section(services)
+    section.show_target(step.id)
+    assert not section.run_button.isEnabled()
+    section.edit.setPlainText("Ship it.")  # Through the binding: the model now has it.
+    assert section.run_button.isEnabled()
+    section.dispose()
+
+
+def test_the_button_runs_the_same_action(services, step, tmp_path, monkeypatch):
+    services.document.set_field(services.document.id, "checkout", str(tmp_path))
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append(cmd))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+    section = _agent_section(services)
+    section.show_target(step.id)
+    section.run_button.click()
+    assert calls == [["fake-term"]]
+    section.dispose()
 
 
 def test_running_spawns_a_terminal_in_the_checkout(services, step, tmp_path, monkeypatch):

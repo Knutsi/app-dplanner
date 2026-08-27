@@ -1,7 +1,8 @@
 """The agent-instruction aspect, in the running application: the Agent tab, and Run Agent.
 
-The tab is the writing half — :class:`ProseSection` and ``ModuleTextField`` do all the work,
-and what is left here is which document, what to call it, and where it sits among the tabs.
+The tab is the writing half — :class:`AgentSection` is ``ProseSection`` plus the Run
+button, and ``ModuleTextField`` does the binding work; what is left here is which document,
+what to call it, and where it sits among the tabs.
 
 Run Agent is the reading half: assemble the step's briefing (the instruction, plus whatever
 context the composition root hands in — this module never learns what a handoff is), write
@@ -22,15 +23,14 @@ from dplanner.core.fsio import slugify
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Product, Step, StepId
 from dplanner.framework.action_registry import (
+    DISABLED,
     ENABLED,
-    HIDDEN,
     ActionRegistry,
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.context import Context
+from dplanner.framework.context import Context, ContextService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
-from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.settings_registry import (
     SettingsScope,
     SettingsSection,
@@ -43,6 +43,7 @@ from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.aspect import DATA_FORMAT, MODULE_ID, SPEC, read
 from dplanner.modules.step_agent_instruction.prompt import PromptPart, assemble
 from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog
+from dplanner.modules.step_agent_instruction.section import AgentSection
 from dplanner.modules.step_agent_instruction.settings_page import (
     agent_command,
     build_page,
@@ -67,6 +68,7 @@ class StepAgentInstructionDeps:
     undo: UndoService[Product]
     sections: InspectorSectionRegistry
     actions: ActionRegistry
+    context: ContextService  # The Agent tab's button evaluates agent.run against it.
     settings_sections: SettingsSectionRegistry
     status: StatusHost
     parent: QWidget
@@ -91,12 +93,23 @@ class StepAgentInstructionModule:
                 return None
             return ModuleTextField(deps.product, step_id, MODULE_ID)
 
+        def make_section() -> AgentSection:
+            # The tab's button is the same verb the menus run — evaluated lazily, so the
+            # registration order of action and section never matters.
+            return AgentSection(
+                field_for,
+                deps.undo,
+                PLACEHOLDER,
+                run_state=lambda: deps.actions.spec("agent.run").state(deps.context.current()),
+                run=lambda: deps.actions.run("agent.run", deps.context.current()),
+            )
+
         deps.sections.register(
             InspectorSection(
                 id=f"{MODULE_ID}.tab",
                 label=SPEC.label,
                 order=40,
-                factory=lambda: ProseSection(field_for, deps.undo, PLACEHOLDER),
+                factory=make_section,
             )
         )
         deps.actions.register(
@@ -123,9 +136,18 @@ class StepAgentInstructionModule:
     # -- running -------------------------------------------------------------------------------
 
     def _can_run(self, context: Context) -> ActionState:
+        """Present whenever a step is; greyed with the reason when a prerequisite is not.
+
+        The idiom from `CLAUDE.md`: a disabled entry carries what to do about it. The same
+        state drives the menu bar, the palette and the Agent tab's button.
+        """
         step = self._focused(context)
-        if step is None or not read(step):
-            return HIDDEN  # No instruction, nothing to brief an agent with.
+        if step is None:
+            return DISABLED
+        if not read(step):
+            return ActionState(
+                enabled=False, label="Run Agent — write an agent instruction first"
+            )
         if not self._deps.product.checkout:
             return ActionState(enabled=False, label="Run Agent — set the product's checkout first")
         return ENABLED
