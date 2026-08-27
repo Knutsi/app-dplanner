@@ -56,6 +56,7 @@ from dplanner.framework.window import StatusHost
 from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
+from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.layout import positions
 from dplanner.modules.project_editor.modes import CONNECT, ConnectMode, IdleMode
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
@@ -154,6 +155,10 @@ class ProjectActivity(ActivityBase):
     def select_step(self, step_id: StepId) -> None:
         """Select one step on the canvas — how another view reveals something here."""
         self._scene.select_step(step_id)
+
+    def select_steps(self, step_ids: list[StepId]) -> None:
+        """Replace the selection with these steps — Select All's way in."""
+        self._scene.select_steps(step_ids)
 
     def set_connect_mode(self, on: bool) -> None:
         """Enter or leave connect mode. Escape does the same thing from the keyboard."""
@@ -324,14 +329,18 @@ class ProjectActivity(ActivityBase):
         )
         self._scene.select_step(step.id)
 
+    def _select_for_menu(self, node: StepNodeItem | None) -> None:
+        """Make the thing under the cursor current — without collapsing a multi-selection
+        the click landed inside, or the menu's verbs would lose the other N-1 steps."""
+        if node is not None and node.step_id not in self._scene.selection().steps:
+            self._scene.select_step(node.step_id)
+
     def _on_context_menu(self, position: object) -> None:
         from PySide6.QtCore import QPoint
 
         assert isinstance(position, QPoint)
         scene_pos = self._view.mapToScene(position)
-        node = self._scene.node_at(scene_pos)
-        if node is not None:
-            self._scene.select_step(node.step_id)
+        self._select_for_menu(self._scene.node_at(scene_pos))
         menu: QMenu = build_menu(self._deps.actions, self._deps.context, "Step", self._view)
         menu.exec(self._view.viewport().mapToGlobal(position))
 
@@ -352,6 +361,7 @@ class ProjectEditorModule:
             product=deps.product,
             current_project=self._current_project,
             select_step=self.reveal,
+            select_steps=self._select_steps,
             set_connect_mode=self._set_connect_mode,
             frame=self._frame,
         )
@@ -415,6 +425,11 @@ class ProjectEditorModule:
         current = self._current_activity()
         if current is not None:
             current.set_connect_mode(on)
+
+    def _select_steps(self, step_ids: list[StepId]) -> None:
+        current = self._current_activity()
+        if current is not None:
+            current.select_steps(step_ids)
 
     def _frame(self) -> None:
         current = self._current_activity()

@@ -163,7 +163,7 @@ src/dplanner/
 │   ├── projects/            the Projects folder in the index, and the project verbs
 │   ├── project_editor/      a project in a tab: the graph canvas, its modes, toolbar and map
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
-│   ├── estimation/          estimates, the schedule they imply, and its reports
+│   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
 │   ├── step_agent_instruction/
