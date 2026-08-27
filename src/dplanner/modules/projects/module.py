@@ -15,8 +15,9 @@ from dplanner.domain.model import NodeId, Product
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
+from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
-from dplanner.modules.projects.index import ProjectsSegment
+from dplanner.modules.projects.index import ProjectEntry, ProjectsSegment
 from dplanner.modules.projects.verbs import ProjectVerbs
 from dplanner.theme.icons import container_icon
 
@@ -30,10 +31,13 @@ class ProjectsDeps:
     context: ContextService
     undo: UndoService[Product]
     segments: IndexSegmentRegistry
+    theme: ThemeService
     parent: QWidget
     # Show a project. Wired by the composition root to the project editor, which this
     # module never imports.
     open_project: Callable[[NodeId], None]
+    # Rows other modules put under each project, wired by the composition root.
+    entries: tuple[ProjectEntry, ...] = ()
 
 
 class ProjectsModule:
@@ -57,7 +61,9 @@ class ProjectsModule:
                 product=deps.product,
                 context=deps.context,
                 actions=deps.actions,
+                theme=deps.theme,
                 open_project=deps.open_project,
+                entries=deps.entries,
             )
 
         deps.segments.register(

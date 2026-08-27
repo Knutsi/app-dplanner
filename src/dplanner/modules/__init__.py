@@ -277,6 +277,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 context=services.context,
                 undo=services.undo,
                 segments=services.index_segments,
+                theme=services.theme,
                 parent=services.window,
                 # The index opens a project without knowing what an editor is.
                 open_project=project_editor.open,

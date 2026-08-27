@@ -12,6 +12,8 @@ from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Project, Step
 from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+from dplanner.modules.projects import index
+from dplanner.modules.projects.index import ProjectEntry, ProjectsSegment
 
 
 @pytest.fixture
@@ -41,12 +43,17 @@ def test_the_module_contributes_one_index_folder(services):
 
 def test_the_folder_shows_projects_and_not_their_steps(services, project):
     """Steps left the index when the graph arrived: a step is a position in a graph, which
-    a list of rows cannot show."""
+    a list of rows cannot show. What may nest under a project is a ProjectEntry — a door
+    into a project-scoped surface, not the project's content."""
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
     root = panel.tree.topLevelItem(0)
     assert root.text(0) == "Projects"
     assert root.child(0).text(0) == "Discovery"
-    assert root.child(0).childCount() == 0
+    kinds = {
+        root.child(0).child(i).data(0, index.KIND_ROLE)
+        for i in range(root.child(0).childCount())
+    }
+    assert "step" not in kinds and kinds <= {"entry"}
 
 
 def test_the_folder_follows_the_model(services, project):
@@ -70,6 +77,89 @@ def test_activating_a_project_opens_its_tab(services, project):
     row = panel.tree.topLevelItem(0).child(0)
     panel.tree.itemActivated.emit(row, 0)
     assert [a.title for a in services.tabs.activities()] == ["Discovery"]
+
+
+# -- entry rows under a project ----------------------------------------------------------------
+
+
+@pytest.fixture
+def entry_segment(services, project):
+    """A ProjectsSegment driven directly, with two stub entries and a record of opens."""
+    from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
+
+    tree = QTreeWidget()
+    root = QTreeWidgetItem(["Projects"])
+    tree.addTopLevelItem(root)
+    opened = []
+    segment = ProjectsSegment(
+        root=root,
+        product=services.document,
+        context=services.context,
+        actions=services.actions,
+        theme=services.theme,
+        open_project=lambda node_id: opened.append(("project", node_id)),
+        entries=(
+            ProjectEntry(
+                id="specs",
+                label="Specs",
+                open=lambda node_id: opened.append(("specs", node_id)),
+                menu="Project",
+                order=20,
+            ),
+            ProjectEntry(
+                id="alpha",
+                label="Alpha",
+                open=lambda node_id: opened.append(("alpha", node_id)),
+                order=10,
+            ),
+        ),
+    )
+    yield segment, root, opened
+    segment.dispose()
+    tree.deleteLater()
+
+
+def test_entries_nest_under_each_project_in_order(entry_segment, project):
+    from PySide6.QtCore import Qt
+
+    _segment, root, _opened = entry_segment
+    row = root.child(0)
+    assert [row.child(i).text(0) for i in range(row.childCount())] == ["Alpha", "Specs"]
+    # Expansion keys must be unique per row — the bare project id is the project row's own.
+    keys = {row.child(i).data(0, Qt.ItemDataRole.UserRole) for i in range(row.childCount())}
+    assert keys == {f"{project.id}:alpha", f"{project.id}:specs"}
+
+
+def test_activating_an_entry_opens_it_for_its_project(entry_segment, project):
+    segment, root, opened = entry_segment
+    segment.activated(root.child(0).child(1))
+    assert opened == [("specs", project.id)]
+
+
+def test_an_entry_row_stands_for_its_project_in_the_selection(entry_segment, project):
+    """Publishing the project's URI is what keeps the Project verbs live on an entry row —
+    and a project selected together with its entry is still one project, not two."""
+    segment, root, _opened = entry_segment
+    row, entry_row = root.child(0), root.child(0).child(0)
+    nodes = segment.selection_nodes([entry_row])
+    assert [node.uri for node in nodes] == [selection_uri("project", project.id)]
+    nodes = segment.selection_nodes([row, entry_row])
+    assert [node.uri for node in nodes] == [selection_uri("project", project.id)]
+
+
+def test_an_entry_menu_is_the_one_it_names(entry_segment):
+    segment, root, _opened = entry_segment
+    with_menu, without = root.child(0).child(1), root.child(0).child(0)
+    assert segment.context_menu(with_menu) is not None
+    assert segment.context_menu(without) is None
+
+
+def test_a_theme_change_repaints_without_collapsing_expansion(entry_segment, services):
+    _segment, root, _opened = entry_segment
+    root.child(0).setExpanded(True)
+    services.theme.changed.emit(services.theme.current)
+    assert root.child(0).isExpanded()
+    assert not root.child(0).icon(0).isNull()
 
 
 # -- the verbs ---------------------------------------------------------------------------------
