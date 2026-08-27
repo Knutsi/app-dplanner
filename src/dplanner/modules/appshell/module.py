@@ -163,6 +163,8 @@ class AppShellModule:
                 group="tabs",
                 submenu="Tabs",
                 order=10,
+                # The browsers' move-tab keys: no AltGr anywhere, so layout-proof.
+                shortcut="Ctrl+Shift+PgDown",
                 tip="Put this tab in the group to its right, making one if there is room",
                 state=lambda _context: ENABLED if deps.tabs.can_move_right() else DISABLED,
                 run=lambda _context: deps.tabs.move_current_right(),
@@ -176,6 +178,7 @@ class AppShellModule:
                 group="tabs",
                 submenu="Tabs",
                 order=20,
+                shortcut="Ctrl+Shift+PgUp",
                 tip="Put this tab back in the group to its left",
                 state=lambda _context: ENABLED if deps.tabs.can_move_left() else DISABLED,
                 run=lambda _context: deps.tabs.move_current_left(),
