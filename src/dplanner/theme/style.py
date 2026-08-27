@@ -1,12 +1,16 @@
-"""A thin proxy over Fusion for platform conventions the stylesheet cannot express.
+"""A thin proxy over Fusion for what neither the palette nor the stylesheet can reach.
 
-Style hints are decided in C++ by the ``QStyle``, so they are reachable neither from a QPalette
-nor from a stylesheet — a proxy style is the supported way to override them.
+Style hints are decided in C++ by the ``QStyle``, and so are the standard icons Qt draws
+without asking anyone — a proxy style is the supported way to override either.
 """
 
 import sys
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QProxyStyle, QStyle, QStyleHintReturn, QStyleOption, QWidget
+
+from dplanner.theme.icons import close_icon
+from dplanner.theme.themes import DEFAULT, Theme
 
 
 class WriterStyle(QProxyStyle):
@@ -21,6 +25,10 @@ class WriterStyle(QProxyStyle):
 
     _HIDE_MNEMONIC_UNDERLINES = sys.platform == "darwin"
 
+    def __init__(self, close_glyph: QIcon) -> None:
+        super().__init__("Fusion")
+        self._close_glyph = close_glyph
+
     def styleHint(
         self,
         hint: QStyle.StyleHint,
@@ -32,7 +40,23 @@ class WriterStyle(QProxyStyle):
             return 0
         return super().styleHint(hint, option, widget, returnData)
 
+    def standardIcon(
+        self,
+        standardIcon: QStyle.StandardPixmap,
+        option: QStyleOption | None = None,
+        widget: QWidget | None = None,
+    ) -> QIcon:
+        """Theme the cross on a tab, which a style otherwise draws from a bundled bitmap.
 
-def build_style() -> WriterStyle:
-    """Return the application style, wrapping Fusion."""
-    return WriterStyle("Fusion")
+        Qt's own is a red ✕ that reads as an error badge on every theme, and no palette or
+        stylesheet reaches it: ``PE_IndicatorTabClose`` asks the style for this icon and
+        caches the answer, which is why the style is rebuilt on each theme change.
+        """
+        if standardIcon == QStyle.StandardPixmap.SP_TabCloseButton:
+            return self._close_glyph
+        return super().standardIcon(standardIcon, option, widget)
+
+
+def build_style(theme: Theme = DEFAULT) -> WriterStyle:
+    """Return the application style for ``theme``, wrapping Fusion."""
+    return WriterStyle(close_icon(theme.text_secondary))

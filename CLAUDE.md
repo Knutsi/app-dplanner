@@ -182,9 +182,18 @@ root, stop and look for the registry or capability you have not found yet.
   menu-bar QAction fires application-wide and eats a keystroke in the step editor. Bind it in
   `modules/project_editor/keymap.py`, where a key names the verbs it means in order and the
   first the context allows runs — that is how one Delete key covers links and steps.
-- **A scrollable area's extent must never depend on what the user is moving.** The canvas's
-  scene rect is a floor that only grows and is left alone mid-drag; recomputing it from the
-  items on every change is what made moving a node look like panning the canvas.
+- **A scrollable area's extent must never depend on what the user is moving.** The canvas is
+  a *plane*: a constant scene rect centred on the origin, far larger than any graph. That is
+  what lets panning go on for as long as anybody wants, and it is also the answer to the older
+  bug — an extent recomputed from the items moved under every node drag, and the canvas
+  appeared to pan away under it. A constant cannot. The scroll bars are hidden with it (a
+  handle a two-hundredth of its groove says nothing true) and the minimap orients instead.
+- **A painter never trusts `option.palette`.** Qt fills `QStyleOptionGraphicsItem.palette`
+  once, when the scene is created, and never refreshes it, so every canvas item kept the
+  colours of whatever theme its tab opened in. `items.live_palette()` is the only source of
+  colour on the canvas. Its cousin: **a colour copied out of the palette onto a widget goes
+  stale** — `TabHost` tints its tab titles, so it re-tints on `QEvent.PaletteChange`. If a
+  surface stores a colour, it owes that hook.
 - **Work may leave the GUI thread; mutation may not.** `core.signals.Signal` is synchronous
   and has no thread affinity, so the model is only ever changed on the GUI thread. Anything
   computed off it returns through `TaskRunner`, the one place that uses real Qt signals.

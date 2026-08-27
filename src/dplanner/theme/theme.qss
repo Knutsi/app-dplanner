@@ -369,6 +369,15 @@ QScrollBar::sub-page {
     background-color: $BORDER;
 }
 
+/* The map in the canvas's lower-left corner. Chrome floating over the drawing surface, so it
+   takes the toolbar's colour rather than a well's — the canvas itself is $BG_BASE, and a
+   well of the same colour would be a border with nothing inside it. */
+#CanvasMinimap {
+    background-color: $BG_ELEVATED;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
+}
+
 /* The order table: steps in the sequence they can be done. A well on the window colour,
    like the step list it replaces, with the row metrics DESIGN.md gives a list of rich
    items. No grid — the alignment is the structure. */

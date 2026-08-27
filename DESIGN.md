@@ -40,6 +40,19 @@ A panel with nothing to show goes off screen rather than showing a placeholder, 
 with nothing in it takes no width at all. The reasoning is the card rule one level up: an empty
 box is worse than no box.
 
+## Overlays on a canvas
+
+A surface that floats *inside* a drawing area — the minimap in the graph editor's lower-left
+corner — is chrome, not content, and is read as such: `$BG_ELEVATED` with a 1 px `$BORDER`
+and `RADIUS_MD`, the same look as the strip of verbs above the canvas. It is not a well; a
+well is `$BG_BASE`, and the canvas already is.
+
+- 12 px from the canvas's corner, 8 px inside its own frame.
+- It goes off screen when it has nothing to show, exactly as a panel does.
+- What it paints comes from the palette, so it follows the theme with the graph.
+- It is a child of the *view*, never of the viewport: a `QGraphicsView` pans by scrolling its
+  viewport, and that carries the viewport's children away with the pixels.
+
 ## Cards
 
 The one sanctioned box. A panel that hosts *independent features contributed by different

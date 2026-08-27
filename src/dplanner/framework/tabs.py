@@ -396,6 +396,17 @@ class TabHost(QWidget):
         self._paint_active()
         self.activity_changed.emit(activity)
 
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        """Re-tint the titles when the palette moves under them.
+
+        :meth:`_paint_active` copies a colour out of the palette onto every tab, and a copy
+        is a thing that goes stale: without this, switching the theme left each title in the
+        colour of the theme its pane was last activated in.
+        """
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange:
+            self._paint_active()
+
     def _paint_active(self) -> None:
         """Dim the inactive groups' tabs, so the pane whose menus you are seeing is obvious.
 
