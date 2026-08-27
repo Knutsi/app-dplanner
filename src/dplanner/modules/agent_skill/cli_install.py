@@ -38,7 +38,7 @@ class CliInstallDialog(QDialog):
         super().__init__(parent)
         self.setObjectName("CliInstallDialog")
         self.setWindowTitle("Install dplanner Command")
-        self.resize(560, 360)
+        self.resize(560, 460)
         self._runner = TaskRunner(tasks, parent=self)
         self._command = install_command()
 
