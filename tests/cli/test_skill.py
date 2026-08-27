@@ -14,6 +14,7 @@ from dplanner.cli.skill import (
     SKILL_FILE,
     generate,
     install,
+    install_command,
     path_hint,
     status,
     target_dir,
@@ -131,10 +132,13 @@ def test_path_hint_is_quiet_when_the_command_resolves(monkeypatch):
 
 def test_path_hint_names_an_editable_install_from_a_checkout(monkeypatch):
     """A skill that tells agents to run a command they do not have is half an install."""
+    import shlex
+
     monkeypatch.setattr("dplanner.cli.skill.shutil.which", lambda _name: None)
     hint = path_hint()
     assert hint is not None
     assert hint.startswith("uv tool install --editable ")
+    assert hint == shlex.join(install_command())
 
 
 def test_status_verb_reports_whether_the_command_resolves(registry, tmp_path, monkeypatch):

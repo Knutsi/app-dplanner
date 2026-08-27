@@ -72,7 +72,8 @@ class AgentSkillDialog(QDialog):
         else:
             self.path_note.setText(
                 "The skill tells agents to run `dplanner`, which is not on PATH — "
-                f"put it there with:  {hint}"
+                f"put it there with:  {hint}  "
+                "(Tools ▸ Install dplanner Command… runs it for you.)"
             )
 
         # The generated files are hard-wrapped by the generator (HELP_WIDTH), so the

@@ -856,7 +856,7 @@ QScrollBar::sub-page {
 
 /* Dialog footer buttons: quiet bordered secondaries, at most one accent primary. */
 #EditReviewDialog QPushButton, #TaskBrowserDialog QPushButton, #CardPreviewDialog QPushButton,
-#AgentSkillDialog QPushButton {
+#AgentSkillDialog QPushButton, #CliInstallDialog QPushButton {
     background-color: $BG_OVERLAY;
     color: $TEXT_PRIMARY;
     border: 1px solid $BORDER;
@@ -867,19 +867,21 @@ QScrollBar::sub-page {
 #EditReviewDialog QPushButton:hover,
 #TaskBrowserDialog QPushButton:hover,
 #CardPreviewDialog QPushButton:hover,
-#AgentSkillDialog QPushButton:hover {
+#AgentSkillDialog QPushButton:hover,
+#CliInstallDialog QPushButton:hover {
     border-color: $BORDER_STRONG;
 }
 
 #EditReviewDialog QPushButton:disabled,
 #TaskBrowserDialog QPushButton:disabled,
 #CardPreviewDialog QPushButton:disabled,
-#AgentSkillDialog QPushButton:disabled {
+#AgentSkillDialog QPushButton:disabled,
+#CliInstallDialog QPushButton:disabled {
     color: $TEXT_DISABLED;
 }
 
 #EditReviewDialog #PrimaryButton, #CardPreviewDialog #PrimaryButton,
-#AgentSkillDialog #PrimaryButton {
+#AgentSkillDialog #PrimaryButton, #CliInstallDialog #PrimaryButton {
     background-color: $ACCENT;
     color: $ON_ACCENT;
     border-color: $ACCENT;
@@ -888,12 +890,13 @@ QScrollBar::sub-page {
 }
 
 #EditReviewDialog #PrimaryButton:hover, #CardPreviewDialog #PrimaryButton:hover,
-#AgentSkillDialog #PrimaryButton:hover {
+#AgentSkillDialog #PrimaryButton:hover, #CliInstallDialog #PrimaryButton:hover {
     background-color: $ACCENT_HOVER;
     border-color: $ACCENT_HOVER;
 }
 
-#EditReviewDialog #PrimaryButton:disabled, #AgentSkillDialog #PrimaryButton:disabled {
+#EditReviewDialog #PrimaryButton:disabled, #AgentSkillDialog #PrimaryButton:disabled,
+#CliInstallDialog #PrimaryButton:disabled {
     background-color: $BG_OVERLAY;
     color: $TEXT_DISABLED;
     border-color: $BORDER;

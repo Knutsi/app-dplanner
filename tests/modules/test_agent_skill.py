@@ -1,10 +1,23 @@
-"""The Tools action that previews, installs and removes the skill the CLI writes."""
+"""The Tools actions: the skill dialog, and the install that puts dplanner on PATH."""
+
+import shlex
+import subprocess
+import time
 
 import pytest
 
 from dplanner.cli.command import CliRegistry
-from dplanner.cli.skill import REFERENCE_FILE, SKILL_FILE, generate
+from dplanner.cli.skill import REFERENCE_FILE, SKILL_FILE, generate, install_command
+from dplanner.modules.agent_skill.cli_install import CliInstallDialog
 from dplanner.modules.agent_skill.dialog import AgentSkillDialog
+
+
+def wait_for(app, predicate, timeout=5.0):
+    deadline = time.time() + timeout
+    while not predicate():
+        assert time.time() < deadline, "the install never finished"
+        app.processEvents()
+        time.sleep(0.01)
 
 
 @pytest.fixture
@@ -88,3 +101,40 @@ def test_remove_deletes_the_skill(services, skill_home):
     assert dialog.primary.text() == "Install"
     assert dialog.primary.isEnabled()
     assert not dialog.remove_button.isEnabled()
+
+
+# -- the command install -----------------------------------------------------------------------
+
+
+def test_the_cli_install_dialog_shows_and_runs_the_command(app, services, monkeypatch):
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="Installed dplanner\n", stderr="")
+
+    monkeypatch.setattr("dplanner.modules.agent_skill.cli_install.subprocess.run", fake_run)
+    dialog = CliInstallDialog(services.tasks, None)
+    assert dialog.command.text() == shlex.join(install_command())
+
+    dialog.primary.click()
+    wait_for(app, lambda: not dialog._runner.is_busy())
+
+    assert calls == [install_command()]
+    assert "Installed dplanner" in dialog.output.toPlainText()
+    assert dialog.primary.isEnabled()
+
+
+def test_a_failed_install_lands_in_the_dialog(app, services, monkeypatch):
+    def fake_run(command, **_kwargs):
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="no network\n")
+
+    monkeypatch.setattr("dplanner.modules.agent_skill.cli_install.subprocess.run", fake_run)
+    dialog = CliInstallDialog(services.tasks, None)
+
+    dialog.primary.click()
+    wait_for(app, lambda: not dialog._runner.is_busy())
+    wait_for(app, lambda: dialog.output.toPlainText() != "")
+
+    assert "no network" in dialog.output.toPlainText()
+    assert dialog.primary.isEnabled()

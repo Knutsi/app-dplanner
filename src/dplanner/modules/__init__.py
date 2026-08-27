@@ -483,6 +483,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         AgentSkillModule(
             AgentSkillDeps(
                 actions=services.actions,
+                tasks=services.tasks,
                 parent=services.window,
                 # The window writes exactly what `dplanner skill install` writes, from the
                 # same generator over the same registry.

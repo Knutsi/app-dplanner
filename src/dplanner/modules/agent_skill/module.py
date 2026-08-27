@@ -15,6 +15,8 @@ from PySide6.QtWidgets import QWidget
 from dplanner.cli.skill import target_dir
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.context import Context
+from dplanner.framework.tasks import TaskService
+from dplanner.modules.agent_skill.cli_install import CliInstallDialog
 from dplanner.modules.agent_skill.dialog import AgentSkillDialog
 
 MODULE_ID = "agent_skill"
@@ -23,6 +25,7 @@ MODULE_ID = "agent_skill"
 @dataclass(frozen=True)
 class AgentSkillDeps:
     actions: ActionRegistry
+    tasks: TaskService
     parent: QWidget
     # The files to write, from the same generator the CLI uses. A callable rather than the
     # content, because the composition root builds it from the registry and this module has
@@ -48,9 +51,23 @@ class AgentSkillModule:
                 run=self._run,
             )
         )
+        self._deps.actions.register(
+            ActionSpec(
+                id="agent_skill.install_cli",
+                label="Install &dplanner Command…",
+                menu="Tools",
+                group="agent",
+                order=20,
+                tip="Put the dplanner command on PATH, so agents and terminals can run it",
+                run=self._run_install_cli,
+            )
+        )
 
     def _run(self, _context: Context) -> None:
         dialog = AgentSkillDialog(
             self._deps.skill_files(), target_dir(user=True), self._deps.parent
         )
         dialog.exec()
+
+    def _run_install_cli(self, _context: Context) -> None:
+        CliInstallDialog(self._deps.tasks, self._deps.parent).exec()
