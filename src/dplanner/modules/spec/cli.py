@@ -21,6 +21,7 @@ from dplanner.modules.spec.documents import (
     Requirement,
     SpecDocument,
     attach_asset,
+    binary_refusal,
     default_name,
     import_document,
     linked_steps,
@@ -210,14 +211,9 @@ def _import(context: CliContext, args: Namespace) -> int:
         raise CliError(f"no such file: {args.file}")
     data = source.read_bytes()
     name = args.name or default_name(source.name)
-    if not source.name.lower().endswith(".pdf"):
-        try:
-            data.decode("utf-8")
-        except UnicodeDecodeError:
-            raise CliError(
-                f"{source.name} is neither a PDF nor UTF-8 text — "
-                "a spec document has to be one or the other"
-            ) from None
+    refusal = binary_refusal(data, source.name)
+    if refusal is not None:
+        raise CliError(refusal)
 
     project = find_project(context.product, args.project)
     docs, requirements = read_index(project)

@@ -114,6 +114,23 @@ def write_index(
     return stamped(data, DATA_FORMAT.version)
 
 
+def binary_refusal(data: bytes, filename: str) -> str | None:
+    """Why these bytes cannot be a spec document — None when they can.
+
+    One sentence shared by both surfaces, so the dialog and the CLI cannot drift.
+    """
+    if document_kind(filename) == KIND_PDF:
+        return None
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return (
+            f"{filename} is neither a PDF nor UTF-8 text — "
+            "a spec document has to be one or the other"
+        )
+    return None
+
+
 def document_kind(filename: str) -> str:
     suffix = PurePosixPath(filename).suffix.lower()
     if suffix == ".pdf":

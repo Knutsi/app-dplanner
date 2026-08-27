@@ -27,7 +27,13 @@ from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
 from dplanner.modules.spec.activity import SPECS_KIND, SpecsActivity
 from dplanner.modules.spec.aspect import DATA_FORMAT, MODULE_ID
-from dplanner.modules.spec.documents import default_name, import_document, read_index, write_index
+from dplanner.modules.spec.documents import (
+    binary_refusal,
+    default_name,
+    import_document,
+    read_index,
+    write_index,
+)
 
 FILE_FILTER = "Spec documents (*.pdf *.md *.markdown *.txt);;All files (*)"
 
@@ -114,17 +120,10 @@ class SpecModule:
             return
         source = Path(filename)
         data = source.read_bytes()
-        if not source.name.lower().endswith(".pdf"):
-            try:
-                data.decode("utf-8")
-            except UnicodeDecodeError:
-                QMessageBox.warning(
-                    self._deps.parent,
-                    "Spec Documents",
-                    f"{source.name} is neither a PDF nor UTF-8 text — "
-                    "a spec document has to be one or the other.",
-                )
-                return
+        refusal = binary_refusal(data, source.name)
+        if refusal is not None:
+            QMessageBox.warning(self._deps.parent, "Spec Documents", refusal)
+            return
 
         project = self._deps.product.project(project_id)
         documents, requirements = read_index(project)
