@@ -8,10 +8,11 @@ function the CLI prints with, and never stored.
 
 from pathlib import Path
 
+from PySide6.QtGui import QTextBlockFormat, QTextCursor
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
-    QFrame,
+    QHBoxLayout,
     QLabel,
     QPlainTextEdit,
     QPushButton,
@@ -24,6 +25,7 @@ from dplanner.domain.assets import attach
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import NodeId, Product, StepId, TextEdit
+from dplanner.framework.cards import card_rule
 from dplanner.framework.text_binding import TextBinding
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_handoff.aspect import MODULE_ID, read_scope, write_scope
@@ -36,8 +38,28 @@ from dplanner.modules.step_handoff.handoff import (
 
 FIELD_GAP = 6
 PANEL_MARGIN = 16
+BLOCK_GAP = 12  # DESIGN.md: between blocks; FIELD_GAP is within one.
+
+# DESIGN.md's text-well metrics: the text never touches the frame.
+DOCUMENT_MARGIN = 12
+LINE_HEIGHT_PERCENT = 130
 
 NOTE_PLACEHOLDER = "What the next step's worker should know: decisions, keys, gotchas."
+
+
+def _make_well(pane: QPlainTextEdit) -> None:
+    pane.document().setDocumentMargin(DOCUMENT_MARGIN)
+
+
+def _space_lines(pane: QPlainTextEdit) -> None:
+    """~130 % line height for anything longer than a label — reapplied per setPlainText."""
+    block = QTextBlockFormat()
+    block.setLineHeight(
+        LINE_HEIGHT_PERCENT, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value
+    )
+    cursor = QTextCursor(pane.document())
+    cursor.select(QTextCursor.SelectionType.Document)
+    cursor.mergeBlockFormat(block)
 
 
 class HandoffSection(QWidget):
@@ -59,30 +81,39 @@ class HandoffSection(QWidget):
         self.share = QCheckBox("Share with the whole project", self)
         self.share.toggled.connect(self._commit_scope)
 
+        # A plain button, its own width — a full-width bar would read as the surface's
+        # one action, and this is not that.
         self.attach_button = QPushButton("Attach…", self)
         self.attach_button.clicked.connect(self._attach)
+        attach_row = QHBoxLayout()
+        attach_row.setSpacing(FIELD_GAP)
+        attach_row.addWidget(self.attach_button)
+        attach_row.addStretch(1)
         self.assets_label = QLabel("", self)
         self.assets_label.setObjectName("InspectorNote")
         self.assets_label.setWordWrap(True)
 
-        rule = QFrame(self)
-        rule.setFrameShape(QFrame.Shape.HLine)
-
         inherited_caption = QLabel("Inherited", self)
-        inherited_caption.setObjectName("InspectorNote")
+        inherited_caption.setObjectName("InspectorCaption")
         self.inherited_view = QPlainTextEdit(self)
         self.inherited_view.setObjectName("InspectorNotes")
         self.inherited_view.setReadOnly(True)
         self.inherited_view.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        _make_well(self.inherited_view)
 
+        # DESIGN.md: more space between blocks (12) than within one (6), and the rule
+        # that splits what-you-write from what-you-inherit gets 12 on both sides.
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
         layout.setSpacing(FIELD_GAP)
         layout.addWidget(self.note, 1)
         layout.addWidget(self.share)
-        layout.addWidget(self.attach_button)
+        layout.addSpacing(BLOCK_GAP - FIELD_GAP)
+        layout.addLayout(attach_row)
         layout.addWidget(self.assets_label)
-        layout.addWidget(rule)
+        layout.addSpacing(BLOCK_GAP - FIELD_GAP)
+        layout.addWidget(card_rule(self))
+        layout.addSpacing(BLOCK_GAP - FIELD_GAP)
         layout.addWidget(inherited_caption)
         layout.addWidget(self.inherited_view, 1)
 
@@ -175,6 +206,8 @@ class HandoffSection(QWidget):
         step = self._product.step(self._step_id)
         handoffs = inherited(self._product, step, self._files)
         self.inherited_view.setPlainText(inherited_text(handoffs))
+        _make_well(self.inherited_view)
+        _space_lines(self.inherited_view)
 
     # -- staying current -----------------------------------------------------------------------
 

@@ -39,6 +39,7 @@ class AgentSection(ProseSection):
         row.addWidget(self.run_button)
         layout = self.layout()
         assert isinstance(layout, QVBoxLayout)  # ProseSection's own layout.
+        layout.setSpacing(6)  # DESIGN.md: the button belongs with its editor — within-block.
         layout.addLayout(row)
 
         # Typing the first instruction is what arms the button, so it follows the editor.
