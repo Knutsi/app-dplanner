@@ -31,9 +31,16 @@ def assemble(
     instruction: str,
     parts: Sequence[PromptPart],
     epilogue: str,
+    preamble: str = "",
 ) -> AssembledPrompt:
-    """The whole prompt as markdown, and the files it points at."""
+    """The whole prompt as markdown, and the files it points at.
+
+    ``preamble`` opens the briefing — preflight checks the agent must pass before touching
+    the work, worded by the composition root like the epilogue is.
+    """
     lines = [f"# Step: {step_title}", "", f"Project: {project_title}", ""]
+    if preamble:
+        lines += ["## Before you start", "", preamble.rstrip(), ""]
     lines += ["## Instructions", "", instruction.rstrip(), ""]
     if parts:
         lines += ["## Context handed forward from earlier steps", ""]

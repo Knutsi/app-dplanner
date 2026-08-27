@@ -72,10 +72,11 @@ class StepAgentInstructionDeps:
     settings_sections: SettingsSectionRegistry
     status: StatusHost
     parent: QWidget
-    # The briefing's context blocks and its closing words, assembled by the composition
-    # root — the one place allowed to know what the other aspects store.
+    # The briefing's context blocks and its opening and closing words, assembled by the
+    # composition root — the one place allowed to know what the other aspects store.
     prompt_parts: Callable[[StepId], Sequence[PromptPart]] = field(default=_no_parts)
     epilogue: Callable[[StepId], str] = field(default=_no_epilogue)
+    preamble: str = ""
 
 
 class StepAgentInstructionModule:
@@ -164,6 +165,7 @@ class StepAgentInstructionModule:
             instruction=read(step),
             parts=deps.prompt_parts(step.id),
             epilogue=deps.epilogue(step.id),
+            preamble=deps.preamble,
         )
         workdir = Path(deps.product.checkout).expanduser()
         # The slug carries a short id so two steps with one title never share a worktree.

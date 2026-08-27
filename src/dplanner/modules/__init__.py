@@ -384,6 +384,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 parent=services.window,
                 prompt_parts=agent_prompt_parts,
                 epilogue=lambda step_id: _agent_epilogue(product.step(step_id).title),
+                preamble=_agent_preamble(),
             )
         ),
         StepHandoffModule(
@@ -444,6 +445,22 @@ def default_modules(services: "AppServices") -> list["Module"]:
             )
         ),
     ]
+
+
+def _agent_preamble() -> str:
+    """The briefing's preflight: the agent proves it can report back before it starts.
+
+    An agent without the DPlanner skill would do the work and leave the plan blind — no
+    status, no handoff — so the briefing makes the check the first move and stopping the
+    honest fallback. Root prose for the same reason as the epilogue: it names another
+    module's verbs.
+    """
+    return (
+        "First, confirm you can drive DPlanner: run `dplanner skill status`. If the"
+        " command is missing or the skill is not installed, STOP — do not carry out the"
+        " step — and tell the developer this step needs the DPlanner skill"
+        " (`dplanner skill install`)."
+    )
 
 
 def _agent_epilogue(step_title: str) -> str:
@@ -512,6 +529,7 @@ def default_cli_commands() -> list["CliCommand"]:
         *agent_cli.commands(
             prompt_parts=agent_prompt_parts,
             epilogue=lambda step: _agent_epilogue(step.title),
+            preamble=_agent_preamble(),
         ),
         *status_cli.commands(),
         *release_cli.commands(),

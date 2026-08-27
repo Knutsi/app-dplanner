@@ -43,6 +43,13 @@ def test_an_empty_context_leaves_no_empty_section():
     assembled = assemble("Deploy", "Discovery", "Ship it.", [], "")
     assert "Context handed forward" not in assembled.text
     assert "When you are done" not in assembled.text
+    assert "Before you start" not in assembled.text
+
+
+def test_the_preamble_opens_the_briefing_before_the_instructions():
+    assembled = assemble("Deploy", "Discovery", "Ship it.", [], "", preamble="Check first.")
+    assert assembled.text.index("Before you start") < assembled.text.index("Instructions")
+    assert "Check first." in assembled.text
 
 
 # -- prepare -----------------------------------------------------------------------------------
@@ -250,6 +257,23 @@ def test_typing_the_first_instruction_arms_the_button(services, step, tmp_path):
     section.dispose()
 
 
+def test_the_order_view_selection_reaches_run_agent(services, step, tmp_path, monkeypatch):
+    """No coupling needed: the order tab publishes the step, the action reads the context."""
+    services.document.set_field(services.document.id, "checkout", str(tmp_path))
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    project = services.document.project_of(step.id)
+    tab = services.tabs.open("order", project.id)
+    tab.table.selectRow(0)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.enabled
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append(cmd))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+    services.actions.run("agent.run", services.context.current())
+    assert calls == [["fake-term"]]
+
+
 def test_the_button_runs_the_same_action(services, step, tmp_path, monkeypatch):
     services.document.set_field(services.document.id, "checkout", str(tmp_path))
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
@@ -317,4 +341,7 @@ def test_agent_prompt_carries_handoffs_and_the_epilogue(tmp_path):
     assert 'From "Set up CI"' in shown["prompt"]
     assert "Keys in vault." in shown["prompt"]
     assert "dplanner status set 'Deploy' done" in shown["prompt"]
+    # The preflight comes first: no skill, no work.
+    assert "dplanner skill status" in shown["prompt"]
+    assert shown["prompt"].index("skill status") < shown["prompt"].index("Ship it.")
     assert shown["root"] == str(root)

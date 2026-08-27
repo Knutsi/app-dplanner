@@ -42,7 +42,9 @@ def _no_epilogue(_step: Step) -> str:
 
 
 def commands(
-    prompt_parts: PartsFor = _no_parts, epilogue: EpilogueFor = _no_epilogue
+    prompt_parts: PartsFor = _no_parts,
+    epilogue: EpilogueFor = _no_epilogue,
+    preamble: str = "",
 ) -> list[CliCommand]:
     def _prompt(context: CliContext, args: Namespace) -> int:
         step = find_step(context.product, args.step)
@@ -56,6 +58,7 @@ def commands(
             instruction=instruction,
             parts=prompt_parts(context.product, step, context.store.files),
             epilogue=epilogue(step),
+            preamble=preamble,
         )
         data = {
             "step": step.id,
