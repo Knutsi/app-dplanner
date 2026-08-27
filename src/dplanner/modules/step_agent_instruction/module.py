@@ -18,6 +18,7 @@ from typing import Any
 
 from PySide6.QtWidgets import QWidget
 
+from dplanner.core.fsio import slugify
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Product, Step, StepId
 from dplanner.framework.action_registry import (
@@ -42,7 +43,12 @@ from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.aspect import DATA_FORMAT, MODULE_ID, SPEC, read
 from dplanner.modules.step_agent_instruction.prompt import PromptPart, assemble
 from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog
-from dplanner.modules.step_agent_instruction.settings_page import build_page, launch_command
+from dplanner.modules.step_agent_instruction.settings_page import (
+    agent_command,
+    build_page,
+    launch_command,
+    use_worktree,
+)
 
 PLACEHOLDER = "How to carry this step out: which files, which conventions, what done means."
 
@@ -138,7 +144,11 @@ class StepAgentInstructionModule:
             epilogue=deps.epilogue(step.id),
         )
         workdir = Path(deps.product.checkout).expanduser()
-        prepared = launcher.prepare(assembled.text, workdir)
+        # The slug carries a short id so two steps with one title never share a worktree.
+        worktree = f"{slugify(step.title, fallback='step')}-{step.id[:6]}" if use_worktree() else ""
+        prepared = launcher.prepare(
+            assembled.text, workdir, agent_command=agent_command(), worktree=worktree
+        )
         command = None
         if workdir.is_dir():
             command = launcher.resolve_command(launch_command(), prepared, workdir)

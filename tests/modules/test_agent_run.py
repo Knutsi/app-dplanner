@@ -63,6 +63,53 @@ def test_prepare_writes_a_cmd_wrapper_on_windows(tmp_path):
     assert str(tmp_path) in files.script.read_text()
 
 
+def test_the_default_is_claude_code_in_plan_mode_interactively(tmp_path):
+    script = prepare("p", tmp_path, platform="linux").script.read_text()
+    assert "exec claude --permission-mode plan" in script
+    assert "prompt.md" in script
+
+
+def test_a_worktree_slug_isolates_the_run(tmp_path):
+    script = prepare("p", tmp_path, worktree="build-it-abc123", platform="linux").script.read_text()
+    assert f'git worktree add "{tmp_path}/.dplanner/worktrees/build-it-abc123"' in script
+    assert '-b "agent/build-it-abc123"' in script
+    assert "info/exclude" in script  # The worktree dir never pollutes git status.
+    assert f'cd "{tmp_path}/.dplanner/worktrees/build-it-abc123"' in script
+
+
+def test_no_worktree_slug_means_no_git_lines(tmp_path):
+    assert "git worktree add" not in prepare("p", tmp_path, platform="linux").script.read_text()
+
+
+def test_a_command_without_the_placeholder_still_gets_the_prompt(tmp_path):
+    script = prepare("p", tmp_path, agent_command="my-agent", platform="linux").script.read_text()
+    assert "exec my-agent \"$(cat" in script
+
+
+def test_the_presets_cover_the_known_agents():
+    from dplanner.modules.step_agent_instruction.launcher import PRESETS
+
+    assert [preset.id for preset in PRESETS] == ["claude", "codex", "opencode"]
+    assert all("{prompt}" in preset.command for preset in PRESETS)
+
+
+def test_picking_a_preset_prefills_the_command(app):
+    from PySide6.QtWidgets import QComboBox, QLineEdit
+
+    from dplanner.modules.step_agent_instruction.launcher import PRESETS
+    from dplanner.modules.step_agent_instruction.settings_page import agent_command, build_page
+
+    page = build_page(None)
+    combo = page.findChild(QComboBox, "AgentPresetCombo")
+    edit = page.findChild(QLineEdit, "AgentCommandEdit")
+    assert combo is not None and edit is not None
+    codex = next(i for i in range(combo.count()) if combo.itemText(i) == "Codex")
+    combo.setCurrentIndex(codex)
+    combo.activated.emit(codex)
+    assert edit.text() == PRESETS[1].command
+    assert agent_command() == PRESETS[1].command
+
+
 # -- resolution --------------------------------------------------------------------------------
 
 

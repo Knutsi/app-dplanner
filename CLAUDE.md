@@ -36,6 +36,11 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
   name say what that module is? Is the separation of concerns obvious? Could they find where
   to add the next feature without asking? If not, the fix is renaming and moving, not a
   comment.
+- **Sane defaults, options laid out.** Anything configurable whose right value the user
+  would otherwise have to research — an agent CLI's invocation, a terminal's exec flag —
+  offers the known choices up front (a dropdown of presets pre-filling an editable field)
+  and works untouched on the default. A bare free-text setting is a lookup pushed onto the
+  user. `modules/step_agent_instruction/settings_page.py` is the worked example.
 - When you spot cleanup that reduces entropy without adding over-engineering or "magic",
   suggest it.
 - Only add comments that carry durable value for future developers and agents. Otherwise,
