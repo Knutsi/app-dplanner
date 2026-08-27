@@ -9,7 +9,15 @@ import pytest
 
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import run
-from dplanner.cli.skill import REFERENCE_FILE, SKILL_FILE, generate, install, status, target_dir
+from dplanner.cli.skill import (
+    REFERENCE_FILE,
+    SKILL_FILE,
+    generate,
+    install,
+    status,
+    target_dir,
+    uninstall,
+)
 from dplanner.modules import aspect_specs, default_cli_commands, default_module_formats
 
 
@@ -113,3 +121,27 @@ def test_project_install_travels_with_the_repository(registry, tmp_path, monkeyp
 def test_user_install_goes_to_the_home_directory(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     assert target_dir(user=True) == tmp_path / ".claude" / "skills" / "dplanner"
+
+
+def test_uninstall_removes_only_what_install_wrote(files, tmp_path):
+    directory = tmp_path / "skill"
+    install(files, directory)
+    (directory / "notes.md").write_text("mine\n")
+
+    uninstall(files, directory)
+
+    assert status(files, directory) == "missing"
+    assert (directory / "notes.md").read_text() == "mine\n"
+
+    plain = tmp_path / "plain"
+    install(files, plain)
+    uninstall(files, plain)
+    assert not plain.exists()
+
+
+def test_uninstall_verb(registry, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    invoke(registry, "skill", "install", "--project")
+    invoke(registry, "skill", "uninstall", "--project")
+    assert not (tmp_path / ".claude" / "skills" / "dplanner").exists()
+    assert "nothing installed" in invoke(registry, "skill", "uninstall", "--project")

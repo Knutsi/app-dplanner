@@ -15,6 +15,7 @@ are built at a fixed width instead. The generated files go into version control,
 that depends on who ran it is a diff nobody reads.
 """
 
+import contextlib
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -148,8 +149,25 @@ def install(files: dict[str, str], directory: Path) -> list[Path]:
     return written
 
 
+def uninstall(files: dict[str, str], directory: Path) -> list[Path]:
+    """Remove exactly the files install would write — never anything the user added.
+
+    The directory goes too once it is empty; a directory holding somebody's own files
+    survives.
+    """
+    removed = []
+    for name in sorted(files):
+        path = directory / name
+        if path.is_file():
+            path.unlink()
+            removed.append(path)
+    with contextlib.suppress(OSError):
+        directory.rmdir()
+    return removed
+
+
 def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCommand]:
-    """The three skill verbs.
+    """The skill verbs: show, install, uninstall, status.
 
     They take the registry they describe, which is the same registry they are registered
     into — the composition root closes the loop, and nothing here has to go looking.
@@ -189,6 +207,14 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
         )
         return 0
 
+    def do_uninstall(context: CliContext, args: Namespace) -> int:
+        removed = uninstall(files(), where(args))
+        context.report(
+            {"removed": [str(path) for path in removed]},
+            "\n".join(str(path) for path in removed) if removed else "nothing installed",
+        )
+        return 0
+
     def do_status(context: CliContext, args: Namespace) -> int:
         directory = where(args)
         state = status(files(), directory)
@@ -210,6 +236,14 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
             run=do_install,
             needs_workspace=False,
             examples=(f"{PROG} skill install", f"{PROG} skill install --project"),
+        ),
+        CliCommand(
+            path=("skill", "uninstall"),
+            summary="Remove the installed agent skill.",
+            configure=configure,
+            run=do_uninstall,
+            needs_workspace=False,
+            examples=(f"{PROG} skill uninstall",),
         ),
         CliCommand(
             path=("skill", "status"),
