@@ -79,6 +79,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepPropertiesDeps,
         StepPropertiesModule,
     )
+    from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
@@ -301,6 +302,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 product=product, undo=services.undo, sections=services.inspector_sections
             )
         ),
+        # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
+        StepStatusModule(
+            StepStatusDeps(product=product, undo=services.undo, actions=services.actions)
+        ),
         step_properties,
         project_editor,
         StepOrderModule(
@@ -360,6 +365,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_order import cli as order_cli
+    from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
 
     specs = aspect_specs()
@@ -370,6 +376,7 @@ def default_cli_commands() -> list["CliCommand"]:
         *ticket_cli.commands(),
         *description_cli.commands(),
         *agent_cli.commands(),
+        *status_cli.commands(),
         *order_cli.commands(),
         *aspect_commands(specs),
     ]
@@ -392,9 +399,10 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.estimation import aspect as estimation
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
+    from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
 
-    return [agent.SPEC, description.SPEC, estimation.SPEC, ticket.SPEC]
+    return [agent.SPEC, description.SPEC, estimation.SPEC, status.SPEC, ticket.SPEC]
 
 
 def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str]]:
@@ -406,9 +414,11 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
     from dplanner.modules.estimation import aspect as estimation
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_description import aspect as description
+    from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
 
     pairs = [
+        (status.SPEC.id, status.summary),
         (estimation.SPEC.id, estimation.summary),
         (ticket.SPEC.id, ticket.summary),
         (description.SPEC.id, description.summary),
