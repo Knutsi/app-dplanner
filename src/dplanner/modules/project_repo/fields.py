@@ -39,7 +39,8 @@ from dplanner.modules.project_repo.repo import (
     write_association,
 )
 
-FIELD_GAP = 8
+FIELD_GAP = 8  # Between form rows, matching the panel's Name/Summary form.
+NOTE_GAP = 6  # DESIGN.md: a remark sits 6 under what it belongs to.
 
 # One answer per process: None while unknown, then whatever `gh auth status` said.
 _gh_auth_cache: bool | None = None
@@ -124,7 +125,7 @@ class RepoFieldsWidget(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(FIELD_GAP)
+        layout.setSpacing(NOTE_GAP)  # The status note hangs 6 under the form it remarks on.
         layout.addLayout(form)
         layout.addWidget(self.status)
 
