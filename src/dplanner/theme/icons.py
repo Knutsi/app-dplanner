@@ -160,6 +160,21 @@ def project_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
+def graph_icon(color: str) -> QIcon:
+    """Three joined nodes: a project's step graph."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.drawLine(QPointF(4.5, 4.5), QPointF(11.5, 4.5))
+    painter.drawLine(QPointF(4.5, 4.5), QPointF(8.0, 11.5))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(color))
+    painter.drawEllipse(QPointF(4.5, 4.5), 1.8, 1.8)
+    painter.drawEllipse(QPointF(11.5, 4.5), 1.8, 1.8)
+    painter.drawEllipse(QPointF(8.0, 11.5), 1.8, 1.8)
+    painter.end()
+    return QIcon(pixmap)
+
+
 def spec_icon(color: str) -> QIcon:
     """A page with a check over its lower lines: a specification with marked requirements."""
     pixmap, painter = _canvas()

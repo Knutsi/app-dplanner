@@ -37,8 +37,9 @@ class ProjectsDeps:
     segments: IndexSegmentRegistry
     theme: ThemeService
     parent: QWidget
-    # Show a project. Wired by the composition root to the project editor, which this
-    # module never imports.
+    # Show a project — the "Open Project" verb's callback, wired by the composition root
+    # to the project editor, which this module never imports. In the tree, opening the
+    # graph is the Steps entry's job, not the project row's.
     open_project: Callable[[NodeId], None]
     # Rows other modules put under each project, wired by the composition root.
     entries: tuple[ProjectEntry, ...] = ()
@@ -66,7 +67,6 @@ class ProjectsModule:
                 context=deps.context,
                 actions=deps.actions,
                 theme=deps.theme,
-                open_project=deps.open_project,
                 entries=deps.entries,
             )
 

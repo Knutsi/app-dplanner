@@ -6,9 +6,11 @@ the graph editor is for — an index answers "what is in this workspace", and a 
 position in a graph, which a list of rows cannot show. An entry is different: it is a door
 into a project-scoped surface (its specs, say), not a copy of the project's content.
 
-The segment publishes what is selected and opens what is activated. It does not know what an
-editor is: opening goes through callbacks the composition root supplied — ``open_project``
-for a project row, ``entry.open`` for an entry row.
+The segment publishes what is selected and opens what is activated. A project row is a
+folder: double-clicking it folds and unfolds (Qt's own double-click behaviour — activation
+adds nothing, so nothing here fights it). What *opens* is an entry row, through the
+``entry.open`` callback the composition root supplied; the segment never learns what an
+editor is.
 """
 
 from collections.abc import Callable, Sequence
@@ -65,7 +67,6 @@ class ProjectsSegment:
         context: ContextService,
         actions: ActionRegistry,
         theme: ThemeService,
-        open_project: Callable[[NodeId], None],
         entries: tuple[ProjectEntry, ...] = (),
     ) -> None:
         self._root = root
@@ -73,7 +74,6 @@ class ProjectsSegment:
         self._context = context
         self._actions = actions
         self._theme = theme
-        self._open_project = open_project
         self._entries = tuple(sorted(entries, key=lambda entry: (entry.order, entry.id)))
         self._unsubscribe = [
             product.structure_changed.connect(lambda *_args: self.rebuild()),
@@ -104,14 +104,14 @@ class ProjectsSegment:
         return [ContextNode(uri) for uri in uris]
 
     def activated(self, item: QTreeWidgetItem) -> None:
-        kind, node_id = self._identity(item)
-        if kind == "project" and node_id:
-            self._open_project(node_id)
-        elif kind == "entry":
+        kind, _node_id = self._identity(item)
+        if kind == "entry":
             entry = self._entry_of(item)
             project_id = self._entry_project(item)
             if entry and project_id:
                 entry.open(project_id)
+        # A project row deliberately does nothing here: double-click already folds it, and
+        # opening a surface is what its entry rows are for.
 
     def context_menu(self, item: QTreeWidgetItem) -> QMenu | None:
         kind, _node_id = self._identity(item)

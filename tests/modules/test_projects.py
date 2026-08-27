@@ -72,10 +72,21 @@ def test_selecting_a_row_publishes_the_selection_scope(services, project):
     assert uris == [selection_uri("project", project.id)]
 
 
-def test_activating_a_project_opens_its_tab(services, project):
+def test_activating_a_project_folds_rather_than_opens(services, project):
+    """A project row is a folder; the graph opens from its Steps entry."""
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
     row = panel.tree.topLevelItem(0).child(0)
     panel.tree.itemActivated.emit(row, 0)
+    assert services.tabs.activities() == []
+
+
+def test_the_steps_entry_opens_the_project_tab(services, project):
+    panel = services.window.dock.widget_for(INDEX_PANEL_ID)
+    row = panel.tree.topLevelItem(0).child(0)
+    steps = next(
+        row.child(i) for i in range(row.childCount()) if row.child(i).text(0) == "Steps"
+    )
+    panel.tree.itemActivated.emit(steps, 0)
     assert [a.title for a in services.tabs.activities()] == ["Discovery"]
 
 
@@ -97,7 +108,6 @@ def entry_segment(services, project):
         context=services.context,
         actions=services.actions,
         theme=services.theme,
-        open_project=lambda node_id: opened.append(("project", node_id)),
         entries=(
             ProjectEntry(
                 id="specs",
@@ -132,6 +142,7 @@ def test_entries_nest_under_each_project_in_order(entry_segment, project):
 
 def test_activating_an_entry_opens_it_for_its_project(entry_segment, project):
     segment, root, opened = entry_segment
+    segment.activated(root.child(0))  # The project row itself folds; it opens nothing.
     segment.activated(root.child(0).child(1))
     assert opened == [("specs", project.id)]
 

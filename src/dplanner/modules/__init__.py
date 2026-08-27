@@ -90,7 +90,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         WorkspaceWatchModule,
     )
     from dplanner.modules.workspaces.module import WorkspacesDeps, WorkspacesModule
-    from dplanner.theme.icons import spec_icon
+    from dplanner.theme.icons import graph_icon, spec_icon
 
     product: Product = services.document
     # The composition root knows the concrete store, exactly as it knows the concrete
@@ -302,16 +302,25 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 parent=services.window,
                 # The index opens a project without knowing what an editor is.
                 open_project=project_editor.open,
-                # Rows under each project. The Specs entry renders the Project menu — the
-                # row stands for its project, and spec.add / spec.open live there.
+                # Rows under each project — a project row itself only folds; these are
+                # what opens. Each renders the Project menu: the row stands for its
+                # project, and the project's verbs all live there.
                 entries=(
+                    ProjectEntry(
+                        id="steps",
+                        label="Steps",
+                        open=project_editor.open,
+                        icon=graph_icon,
+                        menu="Project",
+                        order=10,
+                    ),
                     ProjectEntry(
                         id="spec",
                         label="Specs",
                         open=spec.open,
                         icon=spec_icon,
                         menu="Project",
-                        order=10,
+                        order=20,
                     ),
                 ),
             )
