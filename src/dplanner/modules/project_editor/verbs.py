@@ -37,7 +37,6 @@ from dplanner.domain.model import NodeId, Product, Step, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
-    HIDDEN,
     ActionRegistry,
     ActionSpec,
     ActionState,
@@ -159,10 +158,12 @@ class StepVerbs:
     def _can_link(self, context: Context) -> ActionState:
         pair = self._pair(context)
         if pair is None:
-            return HIDDEN
+            return DISABLED
         if self._existing_link(context) is not None:
-            # Out of the menu, because Unlink is what belongs there instead — but the reason
-            # travels anyway, for the canvas reporting a drop onto an already-linked node.
+            # The documented exception to "disabled, never hidden": Link and Unlink are one
+            # slot, and a greyed "Already linked" beside an enabled Remove Link would say the
+            # same fact twice. The label travels anyway, for the canvas reporting a drop onto
+            # an already-linked node.
             return ActionState(visible=False, enabled=False, label="Already linked")
         source, waiter = pair
         refusal = self.product.link_refusal(waiter, "requires", source)

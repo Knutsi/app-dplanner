@@ -33,8 +33,8 @@ from dplanner.domain.ordering import Placed, placed
 from dplanner.domain.schedule import Scheduled, schedule
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
+    DISABLED,
     ENABLED,
-    HIDDEN,
     ActionRegistry,
     ActionSpec,
     ActionState,
@@ -285,7 +285,7 @@ class StepOrderModule:
     def _on_a_project(self, context: Context) -> ActionState:
         project_id = context.focus_entity("project")
         if project_id is None or not self._deps.product.has(project_id):
-            return HIDDEN
+            return DISABLED
         return ENABLED
 
     def _open(self, context: Context) -> None:

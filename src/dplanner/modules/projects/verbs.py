@@ -19,7 +19,6 @@ from dplanner.domain.model import NodeId, Product, Project
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
-    HIDDEN,
     ActionRegistry,
     ActionSpec,
     ActionState,
@@ -88,9 +87,9 @@ class ProjectVerbs:
 
     def _on_a_project(self, context: Context) -> ActionState:
         project_id = context.focus_entity("project")
-        if project_id is None:
-            return HIDDEN
-        return ENABLED if self.product.has(project_id) else DISABLED
+        if project_id is None or not self.product.has(project_id):
+            return DISABLED
+        return ENABLED
 
     def _focused(self, context: Context) -> Project | None:
         project_id = context.focus_entity("project")

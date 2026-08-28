@@ -392,8 +392,8 @@ def state(services, action_id, context):
 
 def test_link_wants_exactly_two_steps(services, project, tab):
     first, second = project.steps
-    assert not state(services, "steps.link", context_of(services)).visible
-    assert not state(services, "steps.link", context_of(services, first.id)).visible
+    assert not state(services, "steps.link", context_of(services)).enabled
+    assert not state(services, "steps.link", context_of(services, first.id)).enabled
     assert state(services, "steps.link", context_of(services, first.id, second.id)).enabled
 
 
@@ -416,7 +416,7 @@ def test_link_runs_from_a_context_alone(services, project, tab):
 def test_unlink_offers_itself_only_for_a_linked_pair(services, project, tab):
     first, second = project.steps
     # Disabled rather than hidden: it is a toolbar button, and a row that reflows as the
-    # selection changes cannot be read. `build_menu` filters on enabled, so menus are as before.
+    # selection changes cannot be read. `build_menu` renders it greyed, like the menu bar.
     assert not state(services, "steps.unlink", context_of(services, first.id, second.id)).enabled
 
     services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))

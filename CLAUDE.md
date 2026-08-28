@@ -230,6 +230,13 @@ root, stop and look for the registry or capability you have not found yet.
   and what a greyed one says. Never write a second reachability check in a view — the one that
   existed refused every drop for a fortnight because it read gesture state that had already
   been cleared.
+- **An action that exists but does not apply right now is DISABLED, never HIDDEN.** A greyed
+  entry teaches the precondition — its `label` carries the reason where there is one. HIDDEN
+  is reserved for a capability absent from this build (a feature flag, a storage provider
+  without history) and for a verb whose opposite occupies its slot (`steps.link` stands down
+  while Unlink is offered). The palette filters on runnable; every other presenter — menu
+  bar, toolbars, `build_menu` popups — shows the greyed entry. `ARCHITECTURE.md`'s *Hidden
+  means absent; disabled means not now* has the reasoning.
 - **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
   `MENU_STRUCTURE`, so anything with a context menu owns a menu in that table — the canvas has
   `Step`, the index tree has `Project`, the tab bar renders View's Tabs submenu (via

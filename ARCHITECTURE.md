@@ -219,6 +219,32 @@ what the user picked into the context and running an action. The verb is then te
 handing it a constructed `Context`, and `tests/modules/test_project_editor.py` does exactly
 that with no canvas in sight.
 
+### Hidden means absent; disabled means not now
+
+An `ActionState` distinguishes *invisible* from *greyed*, and the two are different claims,
+not two strengths of the same one. **Disabled says "this exists here, but not right now"** —
+the verb belongs to the program, the user just hasn't given it what it needs, and the greyed
+entry teaches the precondition (its label carries the reason where there is one:
+`steps.link`'s "Cannot Link — cycle" is the worked example). **Hidden says "this capability
+is not in front of you at all"** — a storage provider without history has no *Save Version*,
+a feature behind a flag leaves no trace. The rule's short form is in `CLAUDE.md`.
+
+The reason it is a rule and not taste: a menu that reshapes itself with the selection cannot
+be learned. The user who saw *Open Specs* yesterday and cannot find it today has no way to
+know whether the feature is gone or their context is wrong — a greyed entry answers that
+question before it is asked. It also keeps every surface stable: a toolbar row that reflows
+as the selection changes cannot be read, and the menubar's separators stop jumping.
+
+One documented exception: a verb whose *opposite* currently occupies its slot may hide.
+`steps.link` stands down when the pair is already linked, because *Remove Link* is the verb
+that belongs in that position and a greyed "Already linked" beside it would state the same
+fact twice. The label still rides on the hidden state — the canvas status bar reads it after
+a refused drop.
+
+The presenters split accordingly: the menu bar, toolbars and `build_menu`'s right-click
+popups all render a disabled action greyed; only the command palette filters to what is
+runnable, because a fuzzy search over verbs that cannot run helps nobody.
+
 ## Where a panel goes
 
 The window has a centre — the tab groups — and three areas around it: **left, right and

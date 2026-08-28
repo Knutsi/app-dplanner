@@ -18,11 +18,14 @@ def build_menu(
     parent: QWidget,
     submenu: str | None = None,
 ) -> QMenu:
-    """One menu's currently-runnable actions as a context menu.
+    """One menu's visible actions as a context menu; a disabled one is greyed, not omitted.
 
-    The context is snapshotted for the labels ("Delete 3 Items") but re-read when an entry
-    is triggered, so a menu left open across a selection change still acts on what the user
-    has *now* rather than on what they had when it opened.
+    Same policy as the menu bar — hidden means the capability is absent, disabled means "not
+    right now", and the greyed entry's label carries the reason (`steps.link`'s refusals are
+    the worked example). Only the palette filters on runnable. The context is snapshotted for
+    the labels ("Delete 3 Items") but re-read when an entry is triggered, so a menu left open
+    across a selection change still acts on what the user has *now* rather than on what they
+    had when it opened.
 
     ``submenu=None`` (the norm) renders the whole menu, flattening any child menus. Naming a
     submenu renders just that child menu's entries — for a popup on a thing whose verbs live
@@ -31,14 +34,18 @@ def build_menu(
     context = context_service.current()
     popup = QMenu(parent)
     previous_group: str | None = None
-    for spec, state in actions.runnable(context):
+    for spec in actions.all_specs():
         if spec.menu != menu or (submenu is not None and spec.submenu != submenu):
+            continue
+        state = spec.state(context)
+        if not state.visible:
             continue
         if previous_group is not None and spec.group != previous_group:
             popup.addSeparator()
         previous_group = spec.group
         label = state.label if state.label is not None else spec.label
         action = popup.addAction(label)
+        action.setEnabled(state.enabled)
         if state.checked is not None:
             action.setCheckable(True)
             action.setChecked(state.checked)
