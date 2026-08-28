@@ -96,6 +96,29 @@ def test_a_dangling_pointer_is_an_error_not_a_fallthrough(tmp_path):
         find_workspace(start=tmp_path)
 
 
+def test_creating_a_workspace_inside_a_checkout_leaves_a_pointer(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)  # find_repo_root only checks existence.
+    create_product(LocalStorage(repo / "plans" / "widget"))
+    assert (repo / ".dplanner").read_text().strip() == "plans/widget"
+    deep = repo / "src" / "somewhere"
+    deep.mkdir(parents=True)
+    assert find_workspace(start=deep).path == repo / "plans" / "widget"
+
+
+def test_the_pointer_never_clobbers_and_never_points_at_the_root(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".dplanner").write_text("elsewhere\n")
+    create_product(LocalStorage(repo / "plans"))
+    assert (repo / ".dplanner").read_text() == "elsewhere\n"  # the user's word stands
+
+    at_root = tmp_path / "solo"
+    (at_root / ".git").mkdir(parents=True)
+    create_product(LocalStorage(at_root))
+    assert not (at_root / ".dplanner").exists()  # the walk already finds product.json
+
+
 # -- reading -----------------------------------------------------------------------------------
 
 

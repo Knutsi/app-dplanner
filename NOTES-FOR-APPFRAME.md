@@ -449,6 +449,20 @@ project card's empty Repository field after a checkout is set.
 *workspace's* repository; asking about somebody else's checkout is a planner concern.
 Upstream would want it only if the template ever grows a "point at another repo" feature.
 
+### `core/storage/pointer.py` — the workspace pointer file, and who may touch it
+
+**What.** `POINTER_FILE = ".dplanner"` and `write_pointer(workspace)`: drop a one-line
+relative path at the enclosing git repository's root when a workspace is created inside a
+checkout — skipping when there is no repo, the workspace *is* the root, or a pointer
+already exists (a hand-written one is never clobbered).
+
+**Why it is core.** The constant used to live in `cli/workspace.py`, but the writer is
+`domain/seed.py` (called through the framework's seed seam) and framework/domain may not
+import `cli/`. `core/storage` is the one layer both sides see. The lesson worth carrying:
+a file format with a reader on one layer and a writer on another belongs below both.
+
+**Belongs upstream?** The pattern yes; the filename is DPlanner's.
+
 ### `core/png.py` — an RGB buffer as PNG bytes, stdlib only
 
 **What.** One function, `encode_rgb(width, height, stride, pixels)`: IHDR + one IDAT +
