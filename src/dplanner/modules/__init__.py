@@ -544,7 +544,7 @@ def _briefing_sections(
     a description, a requirement or a PR is. An empty fact contributes no section.
     """
     from dplanner.modules.github.aspect import read as github_read
-    from dplanner.modules.spec.aspect import read_links
+    from dplanner.modules.spec.aspect import attachment_paths, read_links
     from dplanner.modules.spec.documents import read_index
     from dplanner.modules.step_agent_instruction.prompt import PromptPart
     from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
@@ -559,7 +559,7 @@ def _briefing_sections(
         )
     links = read_links(step)
     if links:
-        _documents, requirements = read_index(product.project_of(step.id))
+        requirements = read_index(product.project_of(step.id)).requirements
         by_id = {requirement.id: requirement for requirement in requirements}
         lines: list[str] = []
         for link in links:
@@ -574,6 +574,15 @@ def _briefing_sections(
             lines += [f"  > {quoted}" for quoted in requirement.quote.splitlines()]
         sections.append(
             PromptPart(heading="Requirements this step implements", body="\n".join(lines))
+        )
+    figures = attachment_paths(files, step.id)
+    if figures:
+        sections.append(
+            PromptPart(
+                heading="Figures from the spec",
+                body="Rendered from the specification for this step — look at them.",
+                files=figures,
+            )
         )
     refs = github_read(step)
     if refs is not None:

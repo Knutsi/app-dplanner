@@ -449,6 +449,21 @@ project card's empty Repository field after a checkout is set.
 *workspace's* repository; asking about somebody else's checkout is a planner concern.
 Upstream would want it only if the template ever grows a "point at another repo" feature.
 
+### `core/png.py` — an RGB buffer as PNG bytes, stdlib only
+
+**What.** One function, `encode_rgb(width, height, stride, pixels)`: IHDR + one IDAT +
+IEND, filter 0, a fixed zlib level, no ancillary chunks. ~40 lines. Added for the spec
+module's `dplanner spec render`, which rasterises a PDF page (pdfium) into a content-
+addressed image asset from the CLI, where Qt must not load and Pillow is not a dependency.
+
+**Why it is core.** It is Qt-free, application-independent, and any headless surface that
+ever produces an image hits the same wall: the framework's only encoder is QImage. The
+determinism (fixed compression level, no timestamps) is part of the contract — content
+addressing has to see that identical pixels are identical bytes.
+
+**Belongs upstream?** Probably, the day the template has a second headless image producer;
+it is small enough that carrying it here until then costs nothing.
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class
