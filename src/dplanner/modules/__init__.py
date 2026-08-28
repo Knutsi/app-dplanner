@@ -638,6 +638,7 @@ def default_cli_commands() -> list["CliCommand"]:
     """
     from dplanner.cli.aspects import commands as aspect_commands
     from dplanner.cli.command import CliRegistry
+    from dplanner.cli.lint import commands as lint_commands
     from dplanner.cli.skill import commands as skill_commands
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.github import cli as github_cli
@@ -677,6 +678,17 @@ def default_cli_commands() -> list["CliCommand"]:
         # own over the product's — handed over here so neither cli.py imports the other.
         *github_cli.commands(repository_for=repo_repository_for),
         *aspect_commands(specs),
+        # Each module exports what "missing" means for its own aspect; the list order is
+        # the report order — the graph's integrity first, then authoring, then the spec.
+        *lint_commands(
+            checks=[
+                *projects_cli.lint_checks(),
+                *description_cli.lint_checks(),
+                *agent_cli.lint_checks(),
+                *estimation_cli.lint_checks(),
+                *spec_cli.lint_checks(),
+            ]
+        ),
     ]
     # The skill describes the registry it is registered into, so the loop is closed here
     # rather than by anything going looking for a registry at run time.

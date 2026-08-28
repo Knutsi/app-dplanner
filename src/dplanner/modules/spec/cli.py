@@ -11,10 +11,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.core.text_diff import diff_hunks
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Project
+from dplanner.domain.model import Product, Project
 from dplanner.modules.spec.aspect import MODULE_ID, read_links, write_links
 from dplanner.modules.spec.documents import (
     KIND_PDF,
@@ -31,6 +32,50 @@ from dplanner.modules.spec.documents import (
     remove_document,
     write_index,
 )
+
+
+def lint_checks() -> list[LintCheck]:
+    def spec_findings(_product: Product, project: Project) -> list[LintFinding]:
+        _documents, requirements = read_index(project)
+        known = {requirement.id for requirement in requirements}
+        findings = [
+            LintFinding(
+                check="spec.requirement-unimplemented",
+                subject_id=requirement.id,
+                subject=requirement.title,
+                message="no step implements it — "
+                f"`dplanner spec link <step> {requirement.id}`",
+            )
+            for requirement in requirements
+            if not linked_steps(project, requirement.id)
+        ]
+        for step in project.steps:
+            links = read_links(step)
+            findings += [
+                LintFinding(
+                    check="spec.link-dangling",
+                    subject_id=step.id,
+                    subject=step.title,
+                    message=f"links {link}, which is not in the spec index — "
+                    f"`dplanner spec link '{step.title}' {link} --remove`",
+                )
+                for link in links
+                if link not in known
+            ]
+            # Only a project that has requirements can expect its steps to cite them.
+            if requirements and not links:
+                findings.append(
+                    LintFinding(
+                        check="spec.step-unlinked",
+                        subject_id=step.id,
+                        subject=step.title,
+                        message="implements no requirement — "
+                        f"`dplanner spec link '{step.title}' <requirement>`",
+                    )
+                )
+        return findings
+
+    return [spec_findings]
 
 
 def commands() -> list[CliCommand]:

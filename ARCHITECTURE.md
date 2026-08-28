@@ -544,6 +544,29 @@ client; it is useful to people and to CI; and it needs no process lifecycle. If 
 Claude-specific integration is wanted later, `dplanner mcp serve` is a thin adapter over the
 same registry and introduces no second description of any command.
 
+## Lint belongs to no feature
+
+`dplanner project lint` asks whether a plan is complete enough to hand to an agent — and
+completeness is a fact about *every* feature at once: an unestimated step is estimation's
+concern, an uncited requirement is the spec's, a dangling edge is the graph's. No module can
+own that question without importing the others, so the verb lives in `cli/lint.py` beside
+`cli/aspects.py`, whose rationale it repeats: a command that answers a question *about* the
+features takes them as arguments.
+
+The split is what makes it right rather than merely legal. `cli/lint.py` owns the shapes
+(`LintFinding`, `LintCheck`), the report and the exit code; each owning module's Qt-free
+`cli.py` exports `lint_checks()`, so the knowledge of *what missing looks like* — and which
+verb closes the gap, which every message names — stays with the module that owns the aspect.
+`default_cli_commands()` assembles the list, and its order is the report's order. The
+alternative — a verb inside `projects/cli.py` with injected predicates — would put a
+cross-feature report inside one feature and grow that module's signature with facts that are
+not its business.
+
+Two deliberate behaviours: findings exit 1, so an agent gates a handover on lint exactly as
+it gates on a test suite; and the conditional checks (spec citations only where requirements
+exist, a start date only where estimates do) keep the report an obligation list rather than
+noise about features a project never adopted.
+
 ## Deriving rather than storing
 
 `domain/ordering.py` answers "what order can this be done in" as a pure function, and the

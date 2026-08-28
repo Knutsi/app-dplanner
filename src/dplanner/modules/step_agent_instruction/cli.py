@@ -17,9 +17,10 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import EditTextCommand
-from dplanner.domain.model import Node, Product, Step, StepId, TextEdit
+from dplanner.domain.model import Node, Product, Project, Step, StepId, TextEdit
 from dplanner.domain.store import ModuleFileArea
 from dplanner.modules.step_agent_instruction.aspect import (
     MODULE_ID,
@@ -46,6 +47,28 @@ def _no_parts(
 
 def _no_epilogue(_step: Step) -> str:
     return ""
+
+
+def lint_checks() -> list[LintCheck]:
+    def missing_instructions(_product: Product, project: Project) -> list[LintFinding]:
+        # A standing instruction covers every step, so it silences this check — the same
+        # rule `agent prompt`'s guard applies.
+        if read_project(project):
+            return []
+        return [
+            LintFinding(
+                check="agent.missing",
+                subject_id=step.id,
+                subject=step.title,
+                message="no agent instruction and no standing one — "
+                f"`dplanner agent set '{step.title}' --file -`, or "
+                f"`dplanner agent set --project '{project.title}' --file -`",
+            )
+            for step in project.steps
+            if not read(step)
+        ]
+
+    return [missing_instructions]
 
 
 def commands(

@@ -16,6 +16,7 @@ from argparse import ArgumentParser, Namespace
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -38,6 +39,28 @@ def _one_project(parser: ArgumentParser) -> None:
 
 def _one_step(parser: ArgumentParser) -> None:
     parser.add_argument("step", help=STEP_ARG)
+
+
+def lint_checks() -> list[LintCheck]:
+    def dangling_requires(_product: Product, project: Project) -> list[LintFinding]:
+        # remove_child keeps edges naming a deleted step so undo restores the graph
+        # exactly, and requires()/depths() silently skip them — this is the one reader
+        # that says they are there.
+        ids = {step.id for step in project.steps}
+        return [
+            LintFinding(
+                check="graph.requires-dangling",
+                subject_id=step.id,
+                subject=step.title,
+                message=f"waits on {target[:8]}, a step that no longer exists "
+                "(the edge is kept so undo stays exact) — recreate the step, or ignore",
+            )
+            for step in project.steps
+            for target in step.edges.get("requires", [])
+            if target not in ids
+        ]
+
+    return [dangling_requires]
 
 
 def commands() -> list[CliCommand]:

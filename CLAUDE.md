@@ -285,6 +285,11 @@ root, stop and look for the registry or capability you have not found yet.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.
+- **A cross-feature verb lives in `cli/`, fed by the composition root.** `cli/aspects.py`
+  and `cli/lint.py` are the examples: the verb owns the shapes and the report; a module
+  contributes by exporting Qt-free pieces (an `AspectSpec`, a `lint_checks()`) from its own
+  package, and `default_cli_commands()` assembles the list. `cli/` never imports a module.
+  `ARCHITECTURE.md`'s *Lint belongs to no feature* has the reasoning.
 
 ## Deliberate divergences from the template
 
