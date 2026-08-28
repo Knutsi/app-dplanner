@@ -29,10 +29,10 @@ learning anything about it. `dplanner aspect list` says which exist in a build.
 ## Status
 
 Early, and honest about it. The model, the storage layer, the index tree, the whole CLI, the
-graph editor and the order view are in place and tested. Nine aspects ship — estimate,
-ticket, description, agent instruction, status, release, handoff, GitHub refs and spec
-links — each with an editor in the step panel and verbs in the CLI (`dplanner aspect list`
-is the authoritative roll call). Estimation runs over the graph: a project start date and
+graph editor and the order view are in place and tested. Ten aspects ship — estimate,
+ticket, description, agent instruction, agent run, status, release, handoff, GitHub refs
+and spec links — each with verbs in the CLI and most with an editor in the step panel
+(`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: a project start date and
 the estimates give every step a running total and a date, in the order table and in
 `dplanner schedule show`. Progression reads the same graph with the statuses in hand:
 the execution board and `dplanner progression show` say what can be launched right now.
@@ -178,7 +178,7 @@ src/dplanner/
 │   ├── project_repo/        which repo and checkout a project works against (overrides the product's)
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
 │   │
-│   │   ── the nine aspect modules (`dplanner aspect list`); the `step_` prefix is not the
+│   │   ── the ten aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /
 │   │      `step_properties` are views of steps, not aspects:
 │   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule

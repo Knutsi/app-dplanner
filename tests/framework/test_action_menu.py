@@ -14,6 +14,7 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import ContextService
 
 MENUS = MenuStructure({"View": ("panels", "tabs"), "File": ("open",)})
+HIDDEN = ActionState(visible=False, enabled=False)
 
 
 def spec(action_id, menu="View", group="tabs", order=50, **kwargs):
@@ -63,8 +64,7 @@ def test_a_disabled_entry_is_greyed_and_a_hidden_one_is_omitted(app, registry):
     """Same policy as the menu bar: disabled means "not right now" and stays readable;
     hidden means the capability is absent and leaves no trace."""
     registry.register(spec("greyed", group="panels", state=lambda _c: DISABLED))
-    gone = ActionState(visible=False, enabled=False)
-    registry.register(spec("gone", group="panels", state=lambda _c: gone))
+    registry.register(spec("gone", group="panels", state=lambda _c: HIDDEN))
     parent = QWidget()
     popup = build_menu(registry, ContextService(), "View", parent)
     assert entries(popup) == ["greyed", "panel", "|", ("Tabs", ["move", "close"])]

@@ -108,6 +108,7 @@ class StepOrderDeps:
     product: Product
     actions: ActionRegistry
     context: ContextService
+    parent: QWidget  # The CSV export's file dialog needs a window to parent on.
     tabs: TabHost
     # Show a step in whatever edits graphs. Wired by the composition root; this module never
     # learns that a graph editor exists.
