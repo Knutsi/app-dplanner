@@ -404,7 +404,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         StepDescriptionModule(
             StepDescriptionDeps(
-                product=product, undo=services.undo, sections=services.inspector_sections
+                product=product,
+                undo=services.undo,
+                sections=services.inspector_sections,
+                files=store.files,
             )
         ),
         StepAgentInstructionModule(
