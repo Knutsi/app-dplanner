@@ -257,6 +257,35 @@ def test_agent_prompt_with_no_instruction_anywhere_names_both_fixes(cli):
     assert "agent set --project" in message
 
 
+# -- the graph as text -------------------------------------------------------------------------
+
+
+def test_project_graph_draws_waves_and_edges(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Read the spec")
+    cli("step", "add", "Discovery", "Draft the model", "--after", "Read the spec")
+    cli("step", "add", "Discovery", "Interview users")
+    chart = data(cli("project", "graph", "Discovery", "--json"))["mermaid"]
+    assert chart.startswith("flowchart TD")
+    # Both independent steps sit in wave 1, the dependent one in wave 2.
+    assert 'subgraph wave1["Wave 1"]' in chart and 'subgraph wave2["Wave 2"]' in chart
+    read = data(cli("step", "show", "Read the spec", "--json"))["id"][:12]
+    draft = data(cli("step", "show", "Draft the model", "--json"))["id"][:12]
+    assert f"s{read} --> s{draft}" in chart
+
+
+def test_project_graph_quotes_awkward_titles(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", 'Say "hello" [loudly]')
+    chart = cli("project", "graph", "Discovery")
+    assert '"Say #quot;hello#quot; [loudly]"' in chart
+
+
+def test_project_graph_of_an_empty_project_is_still_a_chart(cli):
+    cli("project", "create", "Discovery")
+    assert "no steps yet" in cli("project", "graph", "Discovery")
+
+
 # -- export and import -------------------------------------------------------------------------
 
 

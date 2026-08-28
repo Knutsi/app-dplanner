@@ -26,6 +26,7 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import EDGE_KINDS, Product, Project, Step, StepId, TextEdit
+from dplanner.domain.ordering import placed
 
 PROJECT_ARG = "project id, folder name, or part of its title"
 STEP_ARG = "step id, folder name, or part of its title"
@@ -74,6 +75,14 @@ def commands() -> list[CliCommand]:
             configure=_one_project,
             run=_project_delete,
             examples=("dplanner project delete discovery",),
+        ),
+        CliCommand(
+            path=("project", "graph"),
+            summary="The step graph as a Mermaid flowchart: waves as rows, requires as "
+            "arrows. Paste it into a PR or a report.",
+            configure=_one_project,
+            run=_project_graph,
+            examples=("dplanner project graph discovery",),
         ),
         CliCommand(
             path=("project", "export"),
@@ -265,6 +274,39 @@ def _project_delete(context: CliContext, args: Namespace) -> int:
     context.report(
         {"deleted": project.id, "steps": steps}, f"Deleted {title!r} and its {steps} steps"
     )
+    return 0
+
+
+def mermaid(product: Product, project: Project) -> str:
+    """The step graph as a Mermaid flowchart — the same map the canvas draws, as text.
+
+    Deliberately structure-only: waves become subgraphs so parallelism is visible at a
+    glance, ``requires`` edges order them, and nothing else is styled in. The walk is
+    ``placed()``, whose order is stable, so regenerating the chart after an unrelated edit
+    diffs clean. Dangling edges are skipped, as everywhere ``requires()`` is read.
+    """
+    lines = ["flowchart TD"]
+    rows = placed(product, project)
+    if not rows:
+        return "flowchart TD\n    %% no steps yet"
+    node_ids = {row.step.id: f"s{row.step.id[:12]}" for row in rows}
+    for wave in range(1, rows[-1].wave + 1):
+        lines.append(f'    subgraph wave{wave}["Wave {wave}"]')
+        for row in rows:
+            if row.wave == wave:
+                title = (row.step.title or "Untitled step").replace('"', "#quot;")
+                lines.append(f'        {node_ids[row.step.id]}["{title}"]')
+        lines.append("    end")
+    for row in rows:
+        for other in product.requires(row.step.id):
+            lines.append(f"    {node_ids[other.id]} --> {node_ids[row.step.id]}")
+    return "\n".join(lines)
+
+
+def _project_graph(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.product, args.project)
+    chart = mermaid(context.product, project)
+    context.report({"project": project.id, "mermaid": chart}, chart)
     return 0
 
 
