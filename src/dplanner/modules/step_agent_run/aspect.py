@@ -24,7 +24,7 @@ DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 SPEC = AspectSpec(
     id=MODULE_ID,
     label="Agent run",
-    summary="Where a launched agent stands: launched, working, plan-for-review, or pending-approval.",
+    summary="Where a launched agent stands: launched, working, plan-for-review, pending-approval.",
     data_format=DATA_FORMAT,
 )
 

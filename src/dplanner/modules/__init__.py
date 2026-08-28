@@ -69,8 +69,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.product.module import ProductDeps, ProductModule
-    from dplanner.modules.project_editor.items import NodeAccent
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
+    from dplanner.modules.project_editor.renderers import NodeAccent
     from dplanner.modules.project_repo.module import ProjectRepoDeps, ProjectRepoModule
     from dplanner.modules.project_repo.repo import checkout_for as repo_checkout_for
     from dplanner.modules.project_repo.repo import repository_for as repo_repository_for
@@ -78,10 +78,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
     from dplanner.modules.spec.module import SpecDeps, SpecModule
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_INSTRUCTION_ID
+    from dplanner.modules.step_agent_instruction.aspect import read as agent_instruction_read
     from dplanner.modules.step_agent_instruction.module import (
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
     )
+    from dplanner.modules.step_agent_run.aspect import MODULE_ID as AGENT_RUN_ID
+    from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_agent_run.aspect import record_launch as agent_run_launch
     from dplanner.modules.step_agent_run.module import StepAgentRunModule
     from dplanner.modules.step_description.aspect import read as description_read
@@ -97,8 +101,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepPropertiesModule,
     )
     from dplanner.modules.step_release.aspect import MODULE_ID as RELEASE_ID
-    from dplanner.modules.step_release.aspect import read as release_label
+    from dplanner.modules.step_release.aspect import read as release_read
     from dplanner.modules.step_release.module import StepReleaseDeps, StepReleaseModule
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
@@ -134,21 +139,34 @@ def default_modules(services: "AppServices") -> list["Module"]:
     def step_accent(step_id: str) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
-        A done step is muted; a release wears its label as a badge; a PR is a pill on the
-        second line with its state as a tone, and a branch the small fork glyph — which is
-        why the canvas subtitle skips the release and GitHub phrases below.
+        A done step is muted with a good bar; in-progress and blocked wear busy and bad
+        bars; a release wears its label as a badge; a PR is a pill on the second line with
+        its state as a tone, a branch the small fork glyph, an agent instruction the spark;
+        a live agent run is the chip on the bottom edge. Everything worn here is skipped
+        from the canvas subtitle below, so nothing is said twice.
         """
         step = product.step(step_id)
         refs = github_read(step)
         pill = ""
         if refs is not None and refs.has_pr():
             pill = f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
+        chip_text, chip_tone = {
+            "launched": ("launched", "info"),
+            "working": ("working", "info"),
+            "plan-for-review": ("plan ready", "attention"),
+            "pending-approval": ("needs approval", "attention"),
+        }.get(agent_run_state(step), ("", ""))
+        status = step_status(step)
         return NodeAccent(
-            muted=step_status(step) == "done",
-            badge=release_label(step),
+            muted=status == "done",
+            badge=release_read(step),
             pill_text=pill,
             pill_tone={"merged": "good", "closed": "bad"}.get(refs.pr_state, "") if refs else "",
             branch=bool(refs is not None and refs.branch),
+            bar_tone={"done": "good", "in-progress": "busy", "blocked": "bad"}.get(status, ""),
+            spark=bool(agent_instruction_read(step)),
+            chip_text=chip_text,
+            chip_tone=chip_tone,
         )
 
     def step_schedule(project_id: str, order: "Sequence[Placed]") -> "list[Scheduled]":
@@ -217,7 +235,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # A node's second line: whatever the aspects have to say about that step. The
             # release and GitHub phrases are skipped because the accent already wears them
             # — the badge the label, the pill and glyph the PR and branch.
-            step_aspects=lambda step_id: step_aspects(step_id, skip={RELEASE_ID, GITHUB_ID}),
+            # The accent wears all of these, so the subtitle must not say them again.
+            step_aspects=lambda step_id: step_aspects(
+                step_id,
+                skip={RELEASE_ID, GITHUB_ID, STATUS_ID, AGENT_INSTRUCTION_ID, AGENT_RUN_ID},
+            ),
             step_accent=step_accent,
             # The timeline sort reads a step's length through this seam; estimation owns it.
             days_for=estimated_days,
@@ -500,6 +522,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # stores. Neither module knows the other's name.
                 step_schedule=step_schedule,
                 start_bar=estimation.create_start_bar,
+                # A release row wears a rule and a tint; the name itself stays in the
+                # trailing aspects column, which is why RELEASE_ID is not skipped here.
+                release_label=lambda step_id: release_read(product.step(step_id)),
             )
         ),
         AgentSkillModule(

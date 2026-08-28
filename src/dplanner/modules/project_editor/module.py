@@ -57,7 +57,7 @@ from dplanner.framework.window import StatusHost
 from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
-from dplanner.modules.project_editor.items import NodeAccent, StepNodeItem
+from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.layout import positions
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
@@ -78,6 +78,7 @@ from dplanner.modules.project_editor.regions import (
     read_regions,
     set_regions_command,
 )
+from dplanner.modules.project_editor.renderers import NodeAccent
 from dplanner.modules.project_editor.selection import (
     EDGE_KIND,
     REGION_KIND,
@@ -175,6 +176,10 @@ class ProjectActivity(ActivityBase):
             self._product.edges_changed.connect(lambda *_a: self._sync()),
             self._product.field_changed.connect(self._on_field),
             self._product.module_data_changed.connect(self._on_module_data),
+            # Prose reaches the node too — the spark glyph and the subtitle's summaries
+            # read module_text — and sync diffs before repainting, so a keystroke that
+            # changes neither is free.
+            self._product.text_edited.connect(lambda *_a: self._sync()),
         ]
         self._sync()
 

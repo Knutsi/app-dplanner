@@ -1,7 +1,7 @@
 """build_menu: one menu's verbs as a popup, nested like the menu bar or filtered flat."""
 
 import pytest
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QMenu, QWidget
 
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
@@ -33,7 +33,7 @@ def registry():
 
 def entries(popup):
     """The popup's shape: separators as "|", child menus as (title, [their entries])."""
-    rendered = []
+    rendered: list[object] = []
     for action in popup.actions():
         if action.isSeparator():
             rendered.append("|")
@@ -109,6 +109,7 @@ def test_a_child_entry_is_greyed_and_checkable_like_a_flat_one(app):
     parent = QWidget()
     popup = build_menu(registry, ContextService(), "View", parent)
     child = popup.actions()[0].menu()
+    assert isinstance(child, QMenu)
     by_text = {a.text(): a for a in child.actions()}
     assert not by_text["move"].isEnabled()
     assert by_text["close"].isCheckable() and by_text["close"].isChecked()
@@ -121,5 +122,6 @@ def test_triggering_a_child_entry_runs_the_action(app):
     parent = QWidget()
     popup = build_menu(registry, ContextService(), "View", parent)
     child = popup.actions()[0].menu()
+    assert isinstance(child, QMenu)
     child.actions()[0].trigger()
     assert ran == ["move"]

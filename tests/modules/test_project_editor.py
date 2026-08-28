@@ -21,10 +21,10 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Project, Step
 from dplanner.framework.context import SCOPE_SELECTION
-from dplanner.modules.project_editor.items import FILL_ALPHA
 from dplanner.modules.project_editor.modes import CONNECT, IDLE, PAN
 from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+from dplanner.modules.project_editor.renderers import FILL_ALPHA
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef
 from dplanner.modules.step_properties.module import PANEL_ID as STEP_PANEL_ID
 from dplanner.theme import apply_theme
@@ -760,6 +760,25 @@ def test_space_pans_while_it_is_held(app, services, project, tab):
     release_key(app, tab, Qt.Key.Key_Space)
     assert modes(tab).current().name == IDLE
     assert view(tab).dragMode() == QGraphicsView.DragMode.RubberBandDrag
+
+
+def test_connect_mode_shows_every_handle_and_pan_hides_them(app, services, project, tab):
+    """The mode's look is pushed to every node; the stack's answer wins over enter/exit."""
+    canvas = scene(tab)
+    first = project.steps[0]
+    assert canvas._nodes[first.id]._hints.handles == "hover"
+
+    services.actions.run("steps.connect", services.context.current())
+    assert all(item._hints.handles == "always" for item in canvas._nodes.values())
+
+    # Space stacks Pan over Connect; popping back must restore Connect's hints.
+    press_key(app, tab, Qt.Key.Key_Space)
+    assert canvas._nodes[first.id]._hints.handles == "hidden"
+    release_key(app, tab, Qt.Key.Key_Space)
+    assert canvas._nodes[first.id]._hints.handles == "always"
+
+    press_key(app, tab, Qt.Key.Key_Escape)
+    assert canvas._nodes[first.id]._hints.handles == "hover"
 
 
 def test_connect_mode_links_two_clicks_and_then_lets_go(app, services, project, tab):

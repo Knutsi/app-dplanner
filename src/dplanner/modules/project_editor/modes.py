@@ -38,6 +38,7 @@ from dplanner.domain.model import StepId
 from dplanner.modules.project_editor.items import RegionItem, StepNodeItem
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.modules.project_editor.regions import MIN_REGION
+from dplanner.modules.project_editor.renderers import RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection
 
 # How the current mode reaches the context, so an action's ``state`` can read it as a pure
@@ -55,6 +56,19 @@ REGION_RESIZE = "region-resize"
 
 def mode_uri(name: str) -> str:
     return f"{MODE_URI_PREFIX}{name}"
+
+
+# What each mode wants every node to show, fanned out by the scene when the stack changes.
+# Kept beside the mode names so a new mode decides its look in the same breath. Connect
+# shows every handle — each is a target; pan and the region modes hide them — their presses
+# do not link. Anything unlisted gets the default (idle's hover-only handle).
+HINTS_BY_MODE = {
+    CONNECT: RenderHints(handles="always"),
+    PAN: RenderHints(handles="hidden"),
+    REGION_CREATE: RenderHints(handles="hidden"),
+    REGION_DRAG: RenderHints(handles="hidden"),
+    REGION_RESIZE: RenderHints(handles="hidden"),
+}
 
 
 # -- what a mode is handed ---------------------------------------------------------------------

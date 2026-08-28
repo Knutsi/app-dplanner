@@ -26,7 +26,7 @@ type DaysFor = Callable[[Step], float | None]
 
 ORIGIN = 40.0
 H_GAP = 80.0
-V_GAP = 54.0
+V_GAP = 50.0  # NODE_H + V_GAP = the 110-point row pitch; NODE_H moved, this compensated.
 # The backward lean of a fishbone rib: how far left of its attachment a rib begins.
 RIB_DX = 60.0
 # One working day of timeline, in canvas points.

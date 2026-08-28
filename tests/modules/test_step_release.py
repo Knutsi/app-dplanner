@@ -229,9 +229,12 @@ def test_toggling_off_asks_first_and_clears(services, panel_step, monkeypatch):
 
     services.document.set_module_data(panel_step.id, MODULE_ID, write("MVP"))
     asked = []
-    monkeypatch.setattr(
-        release_module, "confirm", lambda *args: asked.append(args) or True
-    )
+
+    def yes(*args: object) -> bool:
+        asked.append(args)
+        return True
+
+    monkeypatch.setattr(release_module, "confirm", yes)
     select(services, panel_step)
     services.actions.run("release.toggle", services.context.current())
     assert asked and read(panel_step) == ""

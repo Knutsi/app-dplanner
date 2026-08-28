@@ -25,9 +25,10 @@ DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 GRID = 8.0
 
 # A node's footprint. It lives here rather than in items.py so the Qt-free sort algorithms
-# can default to it; the canvas imports it back.
+# can default to it; the canvas imports it back. NODE_H pairs with sorts.V_GAP to keep the
+# 110-point row pitch — a change here owes one there.
 NODE_W = 180.0
-NODE_H = 56.0
+NODE_H = 60.0
 
 
 def snapped(value: float) -> float:
