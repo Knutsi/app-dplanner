@@ -13,13 +13,16 @@ Qt-free by rule — see ``tests/test_architecture.py``.
 
 import json
 from argparse import ArgumentParser, Namespace
+from collections.abc import Sequence
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.authoring import StepAuthor
+from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import (
     AddNodeCommand,
+    CompositeCommand,
     EditTextCommand,
     RemoveNodeCommand,
     SetEdgesCommand,
@@ -42,7 +45,9 @@ def _one_step(parser: ArgumentParser) -> None:
 
 
 def lint_checks() -> list[LintCheck]:
-    def dangling_requires(_product: Product, project: Project) -> list[LintFinding]:
+    def dangling_requires(
+        _product: Product, project: Project, _files: FilesFor
+    ) -> list[LintFinding]:
         # remove_child keeps edges naming a deleted step so undo restores the graph
         # exactly, and requires()/depths() silently skip them — this is the one reader
         # that says they are there.
@@ -63,7 +68,44 @@ def lint_checks() -> list[LintCheck]:
     return [dangling_requires]
 
 
-def commands() -> list[CliCommand]:
+def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
+    def _configure_step_add(parser: ArgumentParser) -> None:
+        parser.add_argument("project", help=PROJECT_ARG)
+        parser.add_argument("title", help="what the step is called")
+        parser.add_argument(
+            "--after",
+            action="append",
+            default=[],
+            metavar="STEP",
+            help="a step this one waits on; repeatable",
+        )
+        for author in step_authors:
+            author.configure(parser)
+
+    def _step_add(context: CliContext, args: Namespace) -> int:
+        if sum(1 for author in step_authors if author.reads_stdin(args)) > 1:
+            raise CliError("only one flag may read stdin (-) per call")
+        product = context.product
+        project = find_project(product, args.project)
+        step = Step(title=args.title)
+        context.apply(AddNodeCommand(project.id, step))
+        waiting = [find_step(product, needle).id for needle in args.after]
+        if waiting:
+            context.apply(SetEdgesCommand(step.id, "requires", waiting))
+        # Composition-root order is report order. No rollback: an author that raises
+        # aborts the run, and the transaction writes nothing — the step included.
+        data, notes = _step_row(product, step), []
+        for author in step_authors:
+            contributed = author.author(context, step, args)
+            if contributed is not None:
+                data |= contributed.data
+                notes.append(f"  {contributed.note}")
+        context.report(
+            data,
+            "\n".join([f"Added {step.title!r} to {project.title}  {step.id}", *notes]),
+        )
+        return 0
+
     return [
         CliCommand(
             path=("project", "list"),
@@ -100,12 +142,23 @@ def commands() -> list[CliCommand]:
             examples=("dplanner project delete discovery",),
         ),
         CliCommand(
+            path=("project", "clear-steps"),
+            summary="Remove every step, keeping the project and its documents — "
+            "the re-plan verb.",
+            configure=_one_project,
+            run=_project_clear_steps,
+            examples=("dplanner project clear-steps discovery",),
+        ),
+        CliCommand(
             path=("project", "graph"),
             summary="The step graph as a Mermaid flowchart: waves as rows, requires as "
             "arrows. Paste it into a PR or a report.",
-            configure=_one_project,
+            configure=_configure_graph,
             run=_project_graph,
-            examples=("dplanner project graph discovery",),
+            examples=(
+                "dplanner project graph discovery",
+                "dplanner project graph discovery --short",
+            ),
         ),
         CliCommand(
             path=("project", "export"),
@@ -140,10 +193,15 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("step", "add"),
-            summary="Add a step to a project.",
+            summary="Add a step to a project — and author it in the same call: "
+            "description, instruction, estimate, links, figures.",
             configure=_configure_step_add,
             run=_step_add,
-            examples=("dplanner step add discovery 'Read the spec'",),
+            examples=(
+                "dplanner step add discovery 'Read the spec'",
+                "dplanner step add discovery 'Draft the model' --after 'Read the spec'"
+                " --describe-file model.md --agent-file - --days 3 --link r6 r7 --attach a1",
+            ),
         ),
         CliCommand(
             path=("step", "rename"),
@@ -260,6 +318,17 @@ def _project_show(context: CliContext, args: Namespace) -> int:
     return 0
 
 
+def _configure_graph(parser: ArgumentParser) -> None:
+    _one_project(parser)
+    parser.add_argument(
+        "--short",
+        action="store_true",
+        help="compact labels: s1, s2 ids and titles cut to ~24 characters — for graphs "
+        "too wide to read; the ids are positional, so the default form is the "
+        "diff-stable one",
+    )
+
+
 def _configure_create(parser: ArgumentParser) -> None:
     parser.add_argument("title", help="what the project is called")
     parser.add_argument("--summary", default="", help="one line on what it delivers")
@@ -300,24 +369,36 @@ def _project_delete(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def mermaid(product: Product, project: Project) -> str:
+SHORT_TITLE = 24  # Where a compact label cuts a title; enough to recognise, not to read.
+
+
+def mermaid(product: Product, project: Project, short: bool = False) -> str:
     """The step graph as a Mermaid flowchart — the same map the canvas draws, as text.
 
     Deliberately structure-only: waves become subgraphs so parallelism is visible at a
     glance, ``requires`` edges order them, and nothing else is styled in. The walk is
     ``placed()``, whose order is stable, so regenerating the chart after an unrelated edit
     diffs clean. Dangling edges are skipped, as everywhere ``requires()`` is read.
+
+    ``short`` swaps full titles for ``1: Truncated title…`` labels over positional
+    ``s1, s2, …`` ids — narrow enough for a PR description, but positional, so the
+    default form remains the diff-stable one.
     """
     lines = ["flowchart TD"]
     rows = placed(product, project)
     if not rows:
         return "flowchart TD\n    %% no steps yet"
-    node_ids = {row.step.id: f"s{row.step.id[:12]}" for row in rows}
+    node_ids = {
+        row.step.id: f"s{row.index}" if short else f"s{row.step.id[:12]}" for row in rows
+    }
     for wave in range(1, rows[-1].wave + 1):
         lines.append(f'    subgraph wave{wave}["Wave {wave}"]')
         for row in rows:
             if row.wave == wave:
                 title = (row.step.title or "Untitled step").replace('"', "#quot;")
+                if short:
+                    cut = title if len(title) <= SHORT_TITLE else title[: SHORT_TITLE - 1] + "…"
+                    title = f"{row.index}: {cut}"
                 lines.append(f'        {node_ids[row.step.id]}["{title}"]')
         lines.append("    end")
     for row in rows:
@@ -328,8 +409,28 @@ def mermaid(product: Product, project: Project) -> str:
 
 def _project_graph(context: CliContext, args: Namespace) -> int:
     project = find_project(context.product, args.project)
-    chart = mermaid(context.product, project)
+    chart = mermaid(context.product, project, short=args.short)
     context.report({"project": project.id, "mermaid": chart}, chart)
+    return 0
+
+
+def _project_clear_steps(context: CliContext, args: Namespace) -> int:
+    """The same composite the canvas's delete-N-steps gesture builds — one undoable
+    object in a window, one transaction here. No confirmation, matching `project
+    delete`: a run is a transaction and version control is the undo."""
+    project = find_project(context.product, args.project)
+    doomed = list(project.steps)
+    if doomed:
+        context.apply(
+            CompositeCommand(
+                f"Clear {len(doomed)} Steps", [RemoveNodeCommand(step.id) for step in doomed]
+            )
+        )
+    context.report(
+        {"project": project.id, "removed": [step.id for step in doomed]},
+        f"Removed all {len(doomed)} steps from {project.title!r} — "
+        "specs, requirements and the start date stay",
+    )
     return 0
 
 
@@ -437,30 +538,6 @@ def _step_show(context: CliContext, args: Namespace) -> int:
     for key in sorted(step.module_text):
         lines.append(f"  {key}: {len(step.module_text[key])} characters of prose")
     context.report(data, "\n".join(lines))
-    return 0
-
-
-def _configure_step_add(parser: ArgumentParser) -> None:
-    parser.add_argument("project", help=PROJECT_ARG)
-    parser.add_argument("title", help="what the step is called")
-    parser.add_argument(
-        "--after",
-        action="append",
-        default=[],
-        metavar="STEP",
-        help="a step this one waits on; repeatable",
-    )
-
-
-def _step_add(context: CliContext, args: Namespace) -> int:
-    product = context.product
-    project = find_project(product, args.project)
-    step = Step(title=args.title)
-    context.apply(AddNodeCommand(project.id, step))
-    waiting = [find_step(product, needle).id for needle in args.after]
-    if waiting:
-        context.apply(SetEdgesCommand(step.id, "requires", waiting))
-    context.report(_step_row(product, step), f"Added {step.title!r} to {project.title}  {step.id}")
     return 0
 
 

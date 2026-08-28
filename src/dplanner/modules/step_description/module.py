@@ -4,16 +4,19 @@ The editor itself is :class:`~dplanner.framework.prose_section.ProseSection` —
 owns the binding mechanics, so all this module supplies is which document to edit.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from dplanner.domain.fields import ModuleTextField
-from dplanner.domain.model import Product
+from dplanner.domain.model import NodeId, Product
+from dplanner.domain.store import ModuleFileArea
+from dplanner.framework.asset_gallery import AreaFor
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
-from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.text_binding import TextField
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_description.aspect import DATA_FORMAT, MODULE_ID, SPEC
+from dplanner.modules.step_description.section import DescriptionSection
 
 PLACEHOLDER = "What this step is. Markdown; images go in with `dplanner describe attach`."
 
@@ -23,6 +26,9 @@ class StepDescriptionDeps:
     product: Product
     undo: UndoService[Product]
     sections: InspectorSectionRegistry
+    # The store's file areas — how the tab shows the images `describe attach` wrote.
+    # None is a build without file storage.
+    files: Callable[[NodeId, str], ModuleFileArea] | None = None
 
 
 class StepDescriptionModule:
@@ -40,11 +46,19 @@ class StepDescriptionModule:
                 return None
             return ModuleTextField(deps.product, step_id, MODULE_ID)
 
+        def area_for_target(step_id: str) -> AreaFor | None:
+            files = deps.files
+            if files is None or not deps.product.has(step_id):
+                return None
+            return lambda: files(step_id, MODULE_ID)
+
         deps.sections.register(
             InspectorSection(
                 id=f"{MODULE_ID}.tab",
                 label=SPEC.label,
                 order=30,
-                factory=lambda: ProseSection(field_for, deps.undo, PLACEHOLDER),
+                factory=lambda: DescriptionSection(
+                    field_for, deps.undo, PLACEHOLDER, area_for_target
+                ),
             )
         )

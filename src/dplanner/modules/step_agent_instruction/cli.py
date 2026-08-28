@@ -17,7 +17,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.authoring import StepAuthor, StepAuthored
+from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import EditTextCommand
 from dplanner.domain.model import Node, Product, Project, Step, StepId, TextEdit
@@ -49,8 +50,43 @@ def _no_epilogue(_step: Step) -> str:
     return ""
 
 
+def _file_body(file_arg: str) -> str:
+    """A markdown body from a file, or stdin when the argument is ``-``."""
+    import sys
+
+    if file_arg == "-":
+        return sys.stdin.read()
+    path = Path(file_arg)
+    if not path.is_file():
+        raise CliError(f"no such file: {file_arg}")
+    return path.read_text()
+
+
+def step_author() -> StepAuthor:
+    """`step add`'s instruction flag: the new step arrives ready to hand to an agent."""
+
+    def configure(parser: ArgumentParser) -> None:
+        parser.add_argument(
+            "--agent-file",
+            metavar="FILE",
+            help="an agent instruction for the new step, or - for stdin",
+        )
+
+    def author(context: CliContext, step: Step, args: Namespace) -> StepAuthored | None:
+        if args.agent_file is None:
+            return None
+        body = _file_body(args.agent_file)
+        edit = TextEdit(step.id, MODULE_ID, 0, "", body)
+        context.apply(EditTextCommand(edit, label="Set Agent Instruction"))
+        return StepAuthored({"agent": len(body)}, f"instruction: {len(body)} characters")
+
+    return StepAuthor(configure, author, lambda args: args.agent_file == "-")
+
+
 def lint_checks() -> list[LintCheck]:
-    def missing_instructions(_product: Product, project: Project) -> list[LintFinding]:
+    def missing_instructions(
+        _product: Product, project: Project, _files: FilesFor
+    ) -> list[LintFinding]:
         # A standing instruction covers every step, so it silences this check — the same
         # rule `agent prompt`'s guard applies.
         if read_project(project):
@@ -179,16 +215,7 @@ def _show(context: CliContext, args: Namespace) -> int:
 
 
 def _set(context: CliContext, args: Namespace) -> int:
-    import sys
-
-    if args.file == "-":
-        body = sys.stdin.read()
-    else:
-        path = Path(args.file)
-        if not path.is_file():
-            raise CliError(f"no such file: {args.file}")
-        body = path.read_text()
-
+    body = _file_body(args.file)
     node = _target(context, args)
     current = node.module_text.get(MODULE_ID, "")
     edit = TextEdit(node.id, MODULE_ID, 0, current, body)

@@ -94,6 +94,11 @@ error rather than a fallthrough — the walk never quietly acts on some other wo
 one the user explicitly named. The file is meant to be committed, so everyone who clones the
 repository — people and agents alike — gets the discovery for free.
 
+Creating a workspace inside a git checkout writes the pointer at the repository root
+automatically (a relative path, one line). A pointer that already exists is never
+overwritten — a hand-written one is the user's word — and a workspace that *is* the
+repository root needs none, so none is written.
+
 ### Changing it
 
 The chain lives in `domain/migrations.py` and the engine in `core/formats.py`. DPlanner is

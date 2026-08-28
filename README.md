@@ -157,6 +157,8 @@ src/dplanner/
 │   ├── index_panel.py       the index tree: folders from whoever registered them
 │   ├── inspector.py         what a module registers to appear in a detail panel
 │   ├── prose_section.py     a panel section over one document, bound to the undo stack
+│   ├── asset_gallery.py     a module's attached files as thumbnails; click to view
+│   ├── image_preview.py     the modal lightbox the gallery (and anyone) opens
 │   ├── window_watch.py      noticing that another writer changed the workspace
 │   └── …                    registries, actions, tabs, undo, autosave, tasks, LLM
 │

@@ -14,6 +14,8 @@ content-addressed helpers in :mod:`dplanner.domain.assets` — which also carrie
 reasoning for why an asset add is not undoable.
 """
 
+import re
+
 from dplanner.core.module_data import ModuleDataFormat
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.model import Step
@@ -31,6 +33,20 @@ SPEC = AspectSpec(
 
 def read(step: Step) -> str:
     return step.module_text.get(MODULE_ID, "")
+
+
+_IMAGE_REFERENCE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)")
+
+
+def image_references(markdown: str) -> list[str]:
+    """The area-relative image paths the markdown embeds — ``![](assets/…)``.
+
+    External URLs and absolute paths are not the module's files and are skipped. The
+    shape is written down here, beside the store it points into, so a lint check and a
+    future renderer cannot disagree about what a reference is.
+    """
+    found = _IMAGE_REFERENCE.findall(markdown)
+    return [ref for ref in found if "://" not in ref and not ref.startswith("/")]
 
 
 def summary(step: Step) -> str:

@@ -11,11 +11,11 @@ works for any other source of days somebody wires in later. That is the same sea
 lets the order table, ``dplanner schedule show``, ``--json`` and every report after them read
 one implementation.
 
-**Serial, and in working days.** Steps run one after another down the topological order,
-weekends are skipped, and a week is five working days. That is deliberately the simple
-answer: a dependency-aware schedule, where independent branches run side by side, is the next
-refinement and needs nothing here to move — only ``schedule`` to place a step after everything
-it waits on rather than after its predecessor in the list.
+**Two named assumptions, no pretend precision.** ``schedule`` is serial — one worker, steps
+end to end down the topological order, weekends skipped, a week is five working days.
+``critical_path`` is the other bracket: unlimited workers, bounded only by the ``requires``
+chains. Real staffing lands between the two, and a report that prints both labelled is
+honest where a single number would be a guess wearing a date.
 
 **Every plan has a start.** A project nobody has dated starts today — the caller resolves
 that (see ``estimation/schedule.py``'s ``start_of``) and this file is simply handed a date.
@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from math import ceil
 
-from dplanner.domain.model import Step
+from dplanner.domain.model import Product, Project, Step, StepId
 from dplanner.domain.ordering import Placed
 
 WORKING_DAYS_PER_WEEK = 5
@@ -135,6 +135,12 @@ def format_days(days: float | None) -> str:
     return f"{days:g}d"
 
 
+def format_day_count(days: float) -> str:
+    """A day count as prose: "1 day", "2.5 days" — for sentences, where ``format_days``
+    feeds columns. The grammar lives here so no verb prints "1 days" again."""
+    return f"{days:g} day" if days == 1 else f"{days:g} days"
+
+
 def schedule(
     order: Sequence[Placed],
     days_for: Callable[[Step], float | None],
@@ -150,3 +156,73 @@ def schedule(
         finish = working_days_after(start, accumulated) if days is not None else None
         scheduled.append(Scheduled(place=place, days=days, accumulated=accumulated, finish=finish))
     return scheduled
+
+
+@dataclass(frozen=True)
+class CriticalPath:
+    """The longest days-weighted chain through a project's ``requires`` graph.
+
+    The serial schedule answers "one worker, steps end to end"; this answers the other
+    honest assumption — unlimited workers, dependency-bound — and the two bracket every
+    real staffing in between.
+    """
+
+    days: float  # The chain's total; a floor no amount of staffing gets under.
+    steps: tuple[Step, ...]  # The chain itself, first thing first.
+    unestimated: int  # Steps on the chain counted as zero days — the floor's honesty.
+
+
+def critical_path(
+    product: Product,
+    project: Project,
+    days_for: Callable[[Step], float | None],
+) -> CriticalPath | None:
+    """None only when the project has no steps.
+
+    ``ordering.depths()``'s walk, weighted by ``days_for`` instead of one per hop — and
+    handed the function rather than a schema, so whoever owns the estimate keeps its
+    shape. Ties break by project step order, the same rule every derivation here uses,
+    so the answer changes when the graph or the estimates change and not otherwise.
+    """
+    if not project.steps:
+        return None
+    order = {step.id: index for index, step in enumerate(project.steps)}
+    finishes: dict[StepId, float] = {}
+    towards: dict[StepId, StepId | None] = {}
+
+    def finish_of(step_id: StepId, seen: frozenset[StepId]) -> float:
+        if step_id in finishes:
+            return finishes[step_id]
+        if step_id in seen:  # Defensive: a hand-edited file could still contain a cycle.
+            return 0.0
+        step = product.step(step_id)
+        own = days_for(step) or 0.0
+        waiting = step.edges.get("requires", [])
+        resolved = sorted(
+            (target for target in waiting if project.step(target) is not None),
+            key=lambda target: order[target],
+        )
+        best: StepId | None = None
+        upstream = 0.0
+        for target in resolved:
+            candidate = finish_of(target, seen | {step_id})
+            if candidate > upstream:  # Strict: the earliest of equals keeps the tie.
+                upstream, best = candidate, target
+        finishes[step_id] = own + upstream
+        towards[step_id] = best
+        return finishes[step_id]
+
+    for step in project.steps:
+        finish_of(step.id, frozenset())
+    last = max(project.steps, key=lambda step: (finishes[step.id], -order[step.id]))
+    chain: list[Step] = []
+    at: StepId | None = last.id
+    while at is not None:
+        chain.append(product.step(at))
+        at = towards.get(at)
+    chain.reverse()
+    return CriticalPath(
+        days=finishes[last.id],
+        steps=tuple(chain),
+        unestimated=sum(1 for step in chain if days_for(step) is None),
+    )
