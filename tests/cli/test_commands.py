@@ -312,6 +312,31 @@ def test_agent_prompt_with_no_instruction_anywhere_names_both_fixes(cli):
     assert "agent set --project" in message
 
 
+def test_clear_steps_keeps_the_project_and_what_it_owns(cli, tmp_path):
+    cli("project", "create", "Discovery")
+    for title in ("A", "B", "C"):
+        cli("step", "add", "Discovery", title)
+    cli("schedule", "start", "Discovery", "--date", "2026-09-01")
+    spec = tmp_path / "spec.md"
+    spec.write_text("# Spec")
+    cli("spec", "import", "Discovery", str(spec))
+    cli("spec", "mark", "Discovery", "spec", "--title", "A rule")
+
+    report = data(cli("project", "clear-steps", "Discovery", "--json"))
+    assert len(report["removed"]) == 3
+    assert data(cli("step", "list", "Discovery", "--json"))["steps"] == []
+    # The re-plan keeps everything the steps did not own.
+    assert data(cli("schedule", "show", "Discovery", "--json"))["start"] == "2026-09-01"
+    listed = data(cli("spec", "requirements", "Discovery", "--json"))["requirements"]
+    assert [req["id"] for req in listed] == ["r1"]
+
+
+def test_clear_steps_on_an_empty_project_is_a_calm_zero(cli):
+    cli("project", "create", "Discovery")
+    out = cli("project", "clear-steps", "Discovery")
+    assert "all 0 steps" in out
+
+
 # -- the schedule's two assumptions ------------------------------------------------------------
 
 

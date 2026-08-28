@@ -20,6 +20,7 @@ from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import (
     AddNodeCommand,
+    CompositeCommand,
     EditTextCommand,
     RemoveNodeCommand,
     SetEdgesCommand,
@@ -100,6 +101,14 @@ def commands() -> list[CliCommand]:
             configure=_one_project,
             run=_project_delete,
             examples=("dplanner project delete discovery",),
+        ),
+        CliCommand(
+            path=("project", "clear-steps"),
+            summary="Remove every step, keeping the project and its documents — "
+            "the re-plan verb.",
+            configure=_one_project,
+            run=_project_clear_steps,
+            examples=("dplanner project clear-steps discovery",),
         ),
         CliCommand(
             path=("project", "graph"),
@@ -332,6 +341,26 @@ def _project_graph(context: CliContext, args: Namespace) -> int:
     project = find_project(context.product, args.project)
     chart = mermaid(context.product, project)
     context.report({"project": project.id, "mermaid": chart}, chart)
+    return 0
+
+
+def _project_clear_steps(context: CliContext, args: Namespace) -> int:
+    """The same composite the canvas's delete-N-steps gesture builds — one undoable
+    object in a window, one transaction here. No confirmation, matching `project
+    delete`: a run is a transaction and version control is the undo."""
+    project = find_project(context.product, args.project)
+    doomed = list(project.steps)
+    if doomed:
+        context.apply(
+            CompositeCommand(
+                f"Clear {len(doomed)} Steps", [RemoveNodeCommand(step.id) for step in doomed]
+            )
+        )
+    context.report(
+        {"project": project.id, "removed": [step.id for step in doomed]},
+        f"Removed all {len(doomed)} steps from {project.title!r} — "
+        "specs, requirements and the start date stay",
+    )
     return 0
 
 
