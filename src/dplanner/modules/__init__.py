@@ -388,7 +388,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
         # After sync, so a reload notice lands to the right of the workspace path.
         WorkspaceWatchModule(
             WorkspaceWatchDeps(
-                repo=services.repo,
+                # The narrowed store from above: the watcher needs changed_underneath(),
+                # which the Repository protocol deliberately does not promise.
+                repo=store,
                 autosave=services.autosave,
                 actions=services.actions,
                 switcher=services.switcher,

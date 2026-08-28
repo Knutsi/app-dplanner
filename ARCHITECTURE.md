@@ -850,6 +850,35 @@ module layer: it renders the real `agent.run` action's state — evaluated again
 synthesised for exactly that card's step — so the gate's reason appears verbatim and no
 second copy of "what launching needs" exists.
 
+## Pressure points, named before they hurt
+
+A whole-codebase review (2026-08) found the architecture holding; these are the places
+where growth has a known cost curve, written down so the feature that crosses the line
+recognises the moment. None needs action today.
+
+- **`_briefing_sections()` in the composition root grows one hand-rolled block per aspect**
+  with a briefing presence — four blocks today, each with its own empty-check. The exit is
+  the shape `cli/lint.py` and `cli/authoring.py` already use: each module exports a Qt-free
+  block builder, the root assembles the list. When the function hits about six blocks, make
+  that move rather than adding a seventh `if`.
+- **The step panel's tab order is a cross-module number line.** Each aspect module picks its
+  `InspectorSection(order=…)` against numbers that live in six other packages — the GitHub
+  module's comment literally names two of them. Fine at this size, and
+  `tests/modules/test_aspect_editors.py` pins the resulting sequence; the tenth aspect
+  author will have to read seven files to pick a number, and that is the moment the order
+  belongs in one place (the composition root already knows it).
+- **`project_editor` accretes by construction.** *Modules never import each other* means a
+  feature that lives *on* the canvas — regions, named layouts, sorts, the minimap — cannot
+  become its own package, so the surface-owning module grows instead (a quarter of all
+  module code). The answer today is internal seams: Qt-free files per concern, split item
+  and mode files, the keymap as a table. If a canvas feature ever needs its *own* Deps and
+  registration, that is the day the module boundary rule earns a canvas-extension registry.
+- **Every GUI test builds all modules.** The `services` fixture constructs the real
+  composition root so a test can never drift from production wiring — a strong property,
+  deliberately kept. The cost grows with the module count, and the `Deps` dataclasses are
+  exactly what would make cheap isolated module tests possible; nothing uses that yet.
+  If suite time becomes the complaint, the seam is already there.
+
 ## Where this is going
 
 - **A second edge kind that can be drawn rather than only typed.** The mode stack is where it

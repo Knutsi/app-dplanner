@@ -67,11 +67,6 @@ def _add_common(parser: ArgumentParser, *, suppress: bool = False) -> None:
     )
 
 
-def build_parser(registry: CliRegistry) -> ArgumentParser:
-    """The parser tree. See :func:`build_tree` when you also want the leaves."""
-    return build_tree(registry)[0]
-
-
 def build_tree(registry: CliRegistry) -> tuple[ArgumentParser, dict[str, ArgumentParser]]:
     """The parser tree, and every verb's parser by command id.
 
@@ -126,7 +121,7 @@ def run(
     """Parse, open the product if the verb needs one, and run it."""
     out = out if out is not None else sys.stdout
     err = err if err is not None else sys.stderr
-    args: Namespace = build_parser(registry).parse_args(list(argv))
+    args: Namespace = build_tree(registry)[0].parse_args(list(argv))
     command: CliCommand = args._command
     try:
         if not command.needs_workspace:

@@ -254,9 +254,9 @@ def test_the_cli_never_loads_qt() -> None:
     probe = (
         "import sys;"
         "from dplanner.cli.command import CliRegistry;"
-        "from dplanner.cli.main import build_parser;"
+        "from dplanner.cli.main import build_tree;"
         "from dplanner.modules import aspect_specs, default_cli_commands, default_module_formats;"
-        "r = CliRegistry(); r.register_all(default_cli_commands()); build_parser(r);"
+        "r = CliRegistry(); r.register_all(default_cli_commands()); build_tree(r);"
         # entry.py also calls default_module_formats() at CLI time (aspect_specs() feeds
         # it and the skill); without them here, a Qt import reached only through those
         # paths would go unnoticed — the composition root is exempt from the static rules.

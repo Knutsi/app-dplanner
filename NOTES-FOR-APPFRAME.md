@@ -632,6 +632,21 @@ selection needed the same treatment plus the announce-only-real-changes subtlety
 
 **Belongs upstream?** Yes, as a pair with the expansion helpers.
 
+### Two small honesty fixes: `window_watch` and the startup-failure dialog
+
+**What.** `WorkspaceWatcher` now takes a typed `WatchableRepository` instead of `repo:
+object` with an `isinstance` fallback to a watcher that silently never fires — a wiring
+mistake is a type error again, and the composition root passes its already-narrowed
+store. `AppSession` lost the `report_startup_failure` injection point nothing ever
+injected, and its two near-identical `QMessageBox` builders collapsed into one
+`_failure_box(failure, parent)` used by both the modal pre-window path and the
+non-blocking in-window path.
+
+**Why the template should know.** Both are the same lesson as the entropy list above: a
+defensive `object` parameter and an unused injection seam each read as flexibility and
+behave as a trap — the silent-`None` watcher especially, because the failure mode is "the
+feature just doesn't run".
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class
