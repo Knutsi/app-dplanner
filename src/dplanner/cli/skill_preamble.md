@@ -23,27 +23,55 @@ you work. So:
   Each is a separate line in the diff and a separate thing the user can disagree with.
 - **Do not invent structure the user did not ask for.** A plan with twenty imagined steps is
   harder to correct than an empty one.
+- **Show the shape.** `dplanner project graph <project>` renders the step graph as a
+  Mermaid flowchart — paste it into a PR description or a report instead of describing the
+  graph in prose.
+
+## Linking honestly
+
+Link `requires` only when the work truly cannot start before the other step lands. A plan
+that is one straight chain is a smell: it usually means dependencies were invented to
+impose an order, or the steps are cut too coarse to see what is independent. Independent
+steps are what let two agents — or two weeks — run in parallel; `dplanner order show`
+groups steps into waves of what can start together, and `project graph` makes the same
+shape visible. If the waves are all singletons, revisit the links before adding more steps.
 
 ## Working from a specification
 
 A project can carry the documents it answers to — a PDF, a markdown file, plain text —
-and the workflow runs from import to updated steps:
+and the workflow runs from import to steps an agent can execute *in isolation*:
 
 1. **Import it.** `dplanner spec import <project> spec.pdf` stores the document beside the
    project. Importing under the same name again *replaces* it and keeps the previous
-   version, which is what makes step 5 possible.
-2. **Read it yourself.** `spec show` prints text and markdown; for a PDF, `spec path`
-   prints the file's absolute path and you read it directly. DPlanner does not parse the
-   document, because you have already understood it better than a parser would.
-3. **Mark the requirements.** One `dplanner spec mark <project> <doc> --title … --quote …`
-   per named obligation you find, with the passage that anchors it. Requirements are the
+   version, which is what makes step 6 possible. Importing a PDF also extracts its text
+   layer.
+2. **Read it yourself.** `spec show` prints any document — for a PDF it prints the
+   extracted text, page by page (`--page N` for one page) — and `spec path` still hands
+   you the original file. Read the whole thing before planning; you understand it better
+   than any parser.
+3. **Mark the requirements.** One `dplanner spec mark <project> <doc> --title … --quote …
+   --page N` per named obligation you find. The quote is checked against the document and
+   the page is recorded (found automatically when the quote is). Requirements are the
    durable trace of your reading — the next agent starts from them, not from scratch.
-4. **Create the steps and link them.** `step add` and `step link` build the graph;
-   `dplanner spec link <step> <requirement>` records *why* each step exists.
-5. **When the spec changes**, import it again, then `spec diff <project> <doc>` to see what
-   moved, and `spec requirements <project> --document <doc> --json` to find the linked
-   steps. Update the steps and requirements the diff actually touches, and say what you
-   changed.
+4. **Create the steps and link them.** `step add` and `step link` build the graph (see
+   *Linking honestly*); `dplanner spec link <step> <requirement>` records *why* each step
+   exists.
+5. **Author every step before moving on.** A step with only a title is not a plan — the
+   agent who picks it up has nothing to execute. For each step: `describe set` (what it
+   is), `agent set` (how to carry it out — or set one standing instruction for the whole
+   project with `agent set --project`), `estimate set --days N`, and put the figures the
+   step needs in front of its agent: `spec render <project> <doc> --page N` turns a page
+   into an image, `spec attach-to-step <step> <asset-id>` carries it into the step's
+   briefing. `agent prompt <step>` shows exactly what the executing agent will receive —
+   read it and ask whether it is enough to work from.
+6. **Run `dplanner project lint <project>` before handing the plan over.** It lists every
+   step missing a description, instruction, estimate or requirement link, every
+   requirement no step implements, and every dangling link — each with the verb that fixes
+   it — and exits 1 until the plan is complete. Hand over clean.
+7. **When the spec changes**, import it again, then `spec diff <project> <doc>` to see what
+   moved (PDFs diff by their text layers), and `spec requirements <project> --document
+   <doc> --json` to find the linked steps. Update the steps and requirements the diff
+   actually touches, and say what you changed.
 
 ## Recording your work on GitHub
 
@@ -61,8 +89,11 @@ says where the code is:
 
 Prefer building the project up with `project create` and `step add` when there are only a
 few steps: the user sees each one arrive and can stop you. For something large you have
-already agreed on, `dplanner project export | dplanner project import` moves whole
-projects as JSON.
+already agreed on, `dplanner project export | dplanner project import` is the blessed bulk
+path: the document carries every step's aspects and prose — descriptions, instructions,
+estimates, links — and the project's own, including its standing agent instruction, so a
+whole authored plan moves in one command. (Module *files* — spec blobs, attached images —
+stay behind; import the spec and re-attach figures after.)
 
 ## Conventions
 
