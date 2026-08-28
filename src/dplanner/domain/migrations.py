@@ -1,4 +1,4 @@
-"""The product format's history.
+"""The library format's history.
 
 One tuple, appended to and never edited. The engine is in
 :mod:`dplanner.core.formats`; the rules it enforces are worth restating here because this is
@@ -8,7 +8,8 @@ the file you will be tempted to break:
   folder written by version 1 walks the whole chain, and each step's output is the next
   step's input.
 - ``node`` runs per node as it loads, with the raw dict it came from, so it can reach keys
-  the model no longer has fields for. ``whole`` runs once over the finished product.
+  the model no longer has fields for. ``whole`` runs once over each finished *project* —
+  the aggregate a format version covers, since every ``project.dproj`` migrates on its own.
 - Bumping the version is exactly this edit. ``FORMAT.current_version`` is derived.
 
 DPlanner ships at version 1 with an empty chain. The first breaking change looks like::
@@ -21,8 +22,8 @@ DPlanner ships at version 1 with an empty chain. The first breaking change looks
 """
 
 from dplanner.core.formats import FormatHistory, Migration
-from dplanner.domain.model import Node, Product
+from dplanner.domain.model import Node, Project
 
-MIGRATIONS: tuple[Migration[Node, Product], ...] = ()
+MIGRATIONS: tuple[Migration[Node, Project], ...] = ()
 
-FORMAT: FormatHistory[Node, Product] = FormatHistory(MIGRATIONS, oldest_readable=1)
+FORMAT: FormatHistory[Node, Project] = FormatHistory(MIGRATIONS, oldest_readable=1)

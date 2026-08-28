@@ -21,7 +21,7 @@ from typing import Any
 from PySide6.QtWidgets import QApplication, QWidget
 
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import NodeId, Product, Step, StepId
+from dplanner.domain.model import Library, NodeId, Step, StepId
 from dplanner.framework.undo import UndoService
 
 # DESIGN.md: side panels get 16 px outer margins and 6 px from a field to what belongs
@@ -36,20 +36,20 @@ class ModuleDataSection(QWidget):
 
     def __init__(
         self,
-        product: Product,
-        undo: UndoService[Product],
+        library: Library,
+        undo: UndoService[Library],
         *,
         module_id: str,
         undo_label: str,
     ) -> None:
         super().__init__()
-        self._product = product
+        self._library = library
         self._undo = undo
         self._module_id = module_id
         self._undo_label = undo_label
         self._step_id: StepId | None = None
         self._loading = False
-        self._unsubscribe = product.module_data_changed.connect(self._on_module_data)
+        self._unsubscribe = library.module_data_changed.connect(self._on_module_data)
 
     # -- the InspectorExtension contract -------------------------------------------------------
 
@@ -69,8 +69,8 @@ class ModuleDataSection(QWidget):
 
     def step(self) -> Step | None:
         """The shown step — None while nothing is shown or the step is gone."""
-        if self._step_id is not None and self._product.has(self._step_id):
-            return self._product.step(self._step_id)
+        if self._step_id is not None and self._library.has(self._step_id):
+            return self._library.step(self._step_id)
         return None
 
     def reload(self) -> None:

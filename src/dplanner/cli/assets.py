@@ -39,13 +39,13 @@ def step_asset_commands(
         source = Path(args.file)
         if not source.is_file():
             raise CliError(f"no such file: {args.file}")
-        step = find_step(context.product, args.step)
+        step = find_step(context.library, args.step, context.current)
         name = attach(context.store.files(step.id, module_id), source.read_bytes(), source.name)
         context.report({"step": step.id, "asset": name}, attached_text(name))
         return 0
 
     def run_assets(context: CliContext, args: Namespace) -> int:
-        step = find_step(context.product, args.step)
+        step = find_step(context.library, args.step, context.current)
         names = assets(context.store.files(step.id, module_id))
         context.report({"step": step.id, "assets": names}, "\n".join(names) or "(none)")
         return 0

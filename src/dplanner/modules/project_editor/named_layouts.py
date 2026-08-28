@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, TypeGuard, cast
 
 from dplanner.domain.commands import Command, SetModuleDataCommand
-from dplanner.domain.model import Product, Project, StepId
+from dplanner.domain.model import Library, Project, StepId
 from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import (
     MODULE_ID,
@@ -67,14 +67,14 @@ def read_layouts(project: Project) -> dict[str, LayoutSnapshot]:
     return layouts
 
 
-def snapshot(product: Product, project: Project) -> LayoutSnapshot:
+def snapshot(library: Library, project: Project) -> LayoutSnapshot:
     """The graph as it stands: every step's position and every region's rect.
 
     Built from :func:`~dplanner.modules.project_editor.layout.positions`, so a step nobody
     has moved still snapshots at its automatic seat — a layout restores the whole picture,
     not just the hand-placed part.
     """
-    placed = positions(product, project)
+    placed = positions(library, project)
     return LayoutSnapshot(
         steps={step_id: (snapped(x), snapped(y)) for step_id, (x, y) in placed.items()},
         regions=region_rects(project),
@@ -92,14 +92,14 @@ def write_layouts(project: Project, layouts: dict[str, LayoutSnapshot]) -> dict[
     return entry_with(project, LAYOUTS_KEY, body)
 
 
-def is_current(product: Product, project: Project, name: str) -> bool:
+def is_current(library: Library, project: Project, name: str) -> bool:
     """Does the graph still sit exactly where this layout put it?
 
     A step or region the layout has never heard of counts as drift, deliberately — the
     picker's modified dot should light up when the graph outgrows its snapshot.
     """
     saved = read_layouts(project).get(name)
-    return saved is not None and snapshot(product, project) == saved
+    return saved is not None and snapshot(library, project) == saved
 
 
 # -- the commands both surfaces build ----------------------------------------------------------
@@ -118,7 +118,7 @@ def position_commands(
 
 
 def apply_layout_commands(
-    product: Product, project: Project, name: str, view_origin: object = None
+    library: Library, project: Project, name: str, view_origin: object = None
 ) -> list[Command]:
     """Everything applying this layout means: step moves, and region rects where they still
     apply. Raises ``KeyError`` for a name the project does not have."""

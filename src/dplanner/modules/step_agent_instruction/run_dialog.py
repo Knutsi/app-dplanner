@@ -1,6 +1,6 @@
 """The fallback when no terminal could be opened: the prompt itself, ready to carry.
 
-Not an error page — the prompt is the product, and the terminal was only ever one way to
+Not an error page — the prompt is the library, and the terminal was only ever one way to
 deliver it. Copy it, or point an agent at the file; ``dplanner agent prompt`` prints the
 same thing.
 """

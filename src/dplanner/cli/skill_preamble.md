@@ -1,8 +1,9 @@
-DPlanner plans a **product**: one codebase, its repository, and the work planned against it.
+DPlanner plans **projects**: each one a directory inside a git repository, listed in the
+user's per-user project library.
 
 ```
-Product  ── the system level: a name, a repository URL, a checkout
-└── Project  ── a unit of work with a beginning and an end
+Library  ── the account level: the projects a user is planning
+└── Project  ── a unit of work with a beginning and an end, in its own repository
     └── Step  ── a node in that project's graph
 ```
 
@@ -144,8 +145,8 @@ then authored `step add`s.
 - **Exit 1 with one line on stderr** means something you can fix. A traceback means a bug in
   DPlanner; report it rather than working around it.
 - **Nothing is written when a command fails.** A run is a transaction.
-- **Someone else may be writing too.** If a command says the workspace changed on disk, a
+- **Someone else may be writing too.** If a command says a project changed on disk, a
   window or another run wrote to it. Run the command again — you will be working from what
   is actually there.
-- **A workspace created inside a git checkout announces itself**: a `.dplanner` pointer
+- **A project created inside a git checkout announces itself**: a `.dplanner` pointer
   file is written at the repository root, so discovery works from anywhere in the clone.

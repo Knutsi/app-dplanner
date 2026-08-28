@@ -12,7 +12,7 @@ from typing import Any, Final
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Product, Step, StepId, now_stamp
+from dplanner.domain.model import Library, Step, StepId, now_stamp
 
 MODULE_ID = "step_agent_run"
 
@@ -66,7 +66,7 @@ def summary(step: Step) -> str:
     return "" if not state else f"agent: {state.replace('-', ' ')}"
 
 
-def record_launch(product: Product, step_id: StepId) -> None:
+def record_launch(library: Library, step_id: StepId) -> None:
     """Stamp "an agent shell was launched on this step" — directly, off the undo stack.
 
     The stamp records an external fact: a detached shell now exists, and Ctrl+Z cannot
@@ -75,7 +75,7 @@ def record_launch(product: Product, step_id: StepId) -> None:
     Autosave flushes on the store's dirty signal regardless of the stack.
     """
     SetModuleDataCommand(step_id, MODULE_ID, write("launched"), view_origin=LAUNCH_ORIGIN).redo(
-        product
+        library
     )
 
 

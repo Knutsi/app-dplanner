@@ -1,6 +1,6 @@
-"""Undoable changes to the product.
+"""Undoable changes to the library.
 
-A command is the *only* way anything changes the product. Not because indirection is
+A command is the *only* way anything changes the library. Not because indirection is
 virtuous, but because a command is the unit undo works in: pushing one is what makes an
 action reversible, and the alternative — a view mutating the model directly — is a change
 that Ctrl+Z cannot see and no other view hears about.
@@ -26,9 +26,9 @@ from typing import Any, Protocol
 
 from dplanner.domain.model import (
     FIELD_LABELS,
+    Library,
     Node,
     NodeId,
-    Product,
     StepId,
     TextEdit,
 )
@@ -45,15 +45,15 @@ class Command(Protocol):
 
     def text(self) -> str: ...
 
-    def redo(self, product: Product) -> None: ...
+    def redo(self, library: Library) -> None: ...
 
-    def undo(self, product: Product) -> None: ...
+    def undo(self, library: Library) -> None: ...
 
     def merge_with(self, other: "Command") -> bool: ...
 
 
 class SetFieldCommand:
-    """One of a node's value fields — a product's name, a project's title, a step's title.
+    """One of a node's value fields — a project's title or summary, a step's title.
 
     One command for every field on every level rather than a class each: they are edited the
     same way, undone the same way, and differ only in what the menu calls them.
@@ -72,15 +72,15 @@ class SetFieldCommand:
     def text(self) -> str:
         return FIELD_LABELS.get(self.field, "Set Field")
 
-    def redo(self, product: Product) -> None:
+    def redo(self, library: Library) -> None:
         if not self._captured:
-            self._before = getattr(product.node(self.node_id), self.field)
+            self._before = getattr(library.node(self.node_id), self.field)
             self._captured = True
-        product.set_field(self.node_id, self.field, self.value, self._next_origin)
+        library.set_field(self.node_id, self.field, self.value, self._next_origin)
         self._next_origin = UNDO_ORIGIN
 
-    def undo(self, product: Product) -> None:
-        product.set_field(self.node_id, self.field, self._before, UNDO_ORIGIN)
+    def undo(self, library: Library) -> None:
+        library.set_field(self.node_id, self.field, self._before, UNDO_ORIGIN)
 
     def merge_with(self, other: Command) -> bool:
         # Two different fields never merge, however fast they were typed: undoing a summary
@@ -114,12 +114,12 @@ class EditTextCommand:
     def text(self) -> str:
         return self.label
 
-    def redo(self, product: Product) -> None:
-        product.apply_text_edit(self.edit, self._next_origin)
+    def redo(self, library: Library) -> None:
+        library.apply_text_edit(self.edit, self._next_origin)
         self._next_origin = UNDO_ORIGIN
 
-    def undo(self, product: Product) -> None:
-        product.apply_text_edit(self.edit.inverted(), UNDO_ORIGIN)
+    def undo(self, library: Library) -> None:
+        library.apply_text_edit(self.edit.inverted(), UNDO_ORIGIN)
 
     def merge_with(self, other: Command) -> bool:
         if not isinstance(other, EditTextCommand) or other.label != self.label:
@@ -163,22 +163,27 @@ class SetEdgesCommand:
     def text(self) -> str:
         return "Change Links"
 
-    def redo(self, product: Product) -> None:
+    def redo(self, library: Library) -> None:
         if self._before is None:
-            self._before = list(product.step(self.step_id).edges.get(self.kind, []))
-        product.set_edges(self.step_id, self.kind, self.targets, self._next_origin)
+            self._before = list(library.step(self.step_id).edges.get(self.kind, []))
+        library.set_edges(self.step_id, self.kind, self.targets, self._next_origin)
         self._next_origin = UNDO_ORIGIN
 
-    def undo(self, product: Product) -> None:
+    def undo(self, library: Library) -> None:
         assert self._before is not None
-        product.set_edges(self.step_id, self.kind, self._before, UNDO_ORIGIN)
+        library.set_edges(self.step_id, self.kind, self._before, UNDO_ORIGIN)
 
     def merge_with(self, other: Command) -> bool:
         return False
 
 
 class AddNodeCommand:
-    """Add a project to the product, or a step to a project."""
+    """Add a step to a project.
+
+    Generic over the node kinds the model holds, but in practice steps only: project
+    membership is a library operation (git plus the library file), performed off the undo
+    stack by the library module — undo cannot re-initialise a repository.
+    """
 
     def __init__(self, parent_id: NodeId, node: Node, index: int | None = None) -> None:
         self.parent_id = parent_id
@@ -188,11 +193,11 @@ class AddNodeCommand:
     def text(self) -> str:
         return f"Add {self.node.kind.title()}"
 
-    def redo(self, product: Product) -> None:
-        product.add_child(self.parent_id, self.node, self.index)
+    def redo(self, library: Library) -> None:
+        library.add_child(self.parent_id, self.node, self.index)
 
-    def undo(self, product: Product) -> None:
-        _, self.index = product.remove_child(self.node.id)
+    def undo(self, library: Library) -> None:
+        _, self.index = library.remove_child(self.node.id)
 
     def merge_with(self, other: Command) -> bool:
         return False
@@ -210,13 +215,13 @@ class RemoveNodeCommand:
     def text(self) -> str:
         return "Delete" if self._node is None else f"Delete {self._node.kind.title()}"
 
-    def redo(self, product: Product) -> None:
-        self._node = product.node(self.node_id)
-        self._parent_id, self._index = product.remove_child(self.node_id)
+    def redo(self, library: Library) -> None:
+        self._node = library.node(self.node_id)
+        self._parent_id, self._index = library.remove_child(self.node_id)
 
-    def undo(self, product: Product) -> None:
+    def undo(self, library: Library) -> None:
         assert self._node is not None
-        product.restore_child(self._parent_id, self._node, self._index)
+        library.restore_child(self._parent_id, self._node, self._index)
 
     def merge_with(self, other: Command) -> bool:
         return False
@@ -252,15 +257,15 @@ class SetModuleDataCommand:
             return self.label
         return "Clear" if not self.data else "Edit"
 
-    def redo(self, product: Product) -> None:
+    def redo(self, library: Library) -> None:
         if self._before is None:
-            self._before = dict(product.node(self.node_id).module_data.get(self.module_id, {}))
-        product.set_module_data(self.node_id, self.module_id, self.data, self._next_origin)
+            self._before = dict(library.node(self.node_id).module_data.get(self.module_id, {}))
+        library.set_module_data(self.node_id, self.module_id, self.data, self._next_origin)
         self._next_origin = UNDO_ORIGIN
 
-    def undo(self, product: Product) -> None:
+    def undo(self, library: Library) -> None:
         assert self._before is not None
-        product.set_module_data(self.node_id, self.module_id, self._before, UNDO_ORIGIN)
+        library.set_module_data(self.node_id, self.module_id, self._before, UNDO_ORIGIN)
 
     def merge_with(self, other: Command) -> bool:
         if (
@@ -284,13 +289,13 @@ class CompositeCommand:
     def text(self) -> str:
         return self.label
 
-    def redo(self, product: Product) -> None:
+    def redo(self, library: Library) -> None:
         for command in self.commands:
-            command.redo(product)
+            command.redo(library)
 
-    def undo(self, product: Product) -> None:
+    def undo(self, library: Library) -> None:
         for command in reversed(self.commands):
-            command.undo(product)
+            command.undo(library)
 
     def merge_with(self, other: Command) -> bool:
         return False

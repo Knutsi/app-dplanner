@@ -7,9 +7,6 @@ free, since it is the same registry read through the same context.
 
 import pytest
 
-from dplanner.domain.commands import AddNodeCommand
-from dplanner.domain.model import Project
-
 CLOSE_TAB = "appshell.close_tab"
 CLOSE_OTHERS = "appshell.close_other_tabs"
 CLOSE_RIGHT = "appshell.close_tabs_right"
@@ -17,14 +14,8 @@ CLOSE_ALL = "appshell.close_all_tabs"
 
 
 @pytest.fixture
-def projects(services):
-    product = services.document
-    made = []
-    for title in ("Discovery", "Build", "Ship"):
-        project = Project(title=title)
-        AddNodeCommand(product.id, project).redo(product)
-        made.append(project)
-    return made
+def projects(make_project):
+    return [make_project(title) for title in ("Discovery", "Build", "Ship")]
 
 
 def open_all(services, projects):

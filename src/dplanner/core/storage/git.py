@@ -15,6 +15,7 @@ Everything here blocks. Callers run it through ``TaskRunner``.
 """
 
 import subprocess
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -33,22 +34,61 @@ def find_repo_root(start: Path) -> Path | None:
     return None
 
 
+def init_repo(path: Path) -> Path:
+    """``git init`` at ``path`` (created if missing), returning the new repository root."""
+    path = path.expanduser()
+    path.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        ["git", "init", str(path)], capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0:
+        raise StorageError(f"git init: {result.stderr.strip()}")
+    return path
+
+
+def origin_url(path: Path) -> str:
+    """The ``origin`` remote URL of the repository containing ``path``, "" when absent."""
+    root = find_repo_root(path.expanduser())
+    if root is None:
+        return ""
+    result = subprocess.run(
+        ["git", "-C", str(root), "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 class GitStorage(LocalStorage):
     """Files under a directory inside a git repository, plus that repository's history."""
 
-    def __init__(self, root: Path, repo_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        root: Path,
+        repo_root: Path | None = None,
+        scopes: Sequence[str] | None = None,
+    ) -> None:
         super().__init__(root)
         found = repo_root or find_repo_root(self._root)
         if found is None:
             raise StorageError(f"{self._root} is not inside a git repository")
         self.repo_root = found.resolve()
-        # The pathspec every commit is scoped to. "." when the workspace *is* the repo.
-        relative = self._root.relative_to(self.repo_root)
-        self._scope = str(relative) if relative.parts else "."
+        # The pathspecs every commit is scoped to. One repository can hold several planned
+        # directories; scoping is what keeps a Save from sweeping up the user's own source.
+        if scopes is None:
+            relative = self._root.relative_to(self.repo_root)
+            scopes = (str(relative) if relative.parts else ".",)
+        self._scopes: tuple[str, ...] = tuple(scopes)
         self._dirty = False
         self._dirty_count = 0
         self.dirty_changed: Signal[bool, int] = Signal()
         self.worktree_changed: Signal[()] = Signal()
+
+    @property
+    def scopes(self) -> tuple[str, ...]:
+        """The repo-root-relative pathspecs this provider's history operations cover."""
+        return self._scopes
 
     @property
     def label(self) -> str:
@@ -98,7 +138,7 @@ class GitStorage(LocalStorage):
         """Re-read the working tree against HEAD. Local only, so it is cheap enough to
         call after every autosave flush."""
         lines = self._git(
-            "status", "--porcelain", "--", self._scope, check=False
+            "status", "--porcelain", "--", *self._scopes, check=False
         ).stdout.splitlines()
         dirty, count = bool(lines), len(lines)
         if dirty != self._dirty or count != self._dirty_count:
@@ -112,18 +152,18 @@ class GitStorage(LocalStorage):
         shows as a pure addition instead of vanishing from the diff — without staging its
         content or touching the working tree.
         """
-        self._git("add", "-N", "--", self._scope, check=False)
-        return self._git("diff", "HEAD", "--", self._scope, check=False).stdout
+        self._git("add", "-N", "--", *self._scopes, check=False)
+        return self._git("diff", "HEAD", "--", *self._scopes, check=False).stdout
 
     # -- history -------------------------------------------------------------------------------
 
     def commit(self, message: str = "") -> bool:
         """Stage and commit the workspace directory only. False when nothing had changed."""
-        self._git("add", "-A", "--", self._scope)
-        staged = self._git("diff", "--cached", "--quiet", "--", self._scope, check=False)
+        self._git("add", "-A", "--", *self._scopes)
+        staged = self._git("diff", "--cached", "--quiet", "--", *self._scopes, check=False)
         if staged.returncode == 0:
             return False
-        self._git("commit", "-m", message or self._timestamped("Save"), "--", self._scope)
+        self._git("commit", "-m", message or self._timestamped("Save"), "--", *self._scopes)
         self.refresh_dirty()
         return True
 
@@ -135,7 +175,7 @@ class GitStorage(LocalStorage):
             f"-{limit}",
             "--format=%H%x1f%an%x1f%aI%x1f%s%x1e",
             "--",
-            self._scope,
+            *self._scopes,
             check=False,
         )
         revisions = []

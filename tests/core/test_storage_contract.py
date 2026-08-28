@@ -185,6 +185,24 @@ def test_dirty_tracking_reports_changes(versioned):
     assert seen[-1] == (False, 0)
 
 
+def test_dirty_file_count_is_askable_directly(versioned):
+    """The exit dialog reads the count synchronously — it must match what refresh saw."""
+    versioned.write_text("note.md", "first")
+    versioned.commit("one")
+    versioned.refresh_dirty()
+    assert versioned.dirty_file_count() == 0
+    versioned.write_text("a.md", "x")
+    versioned.write_text("b.md", "y")
+    versioned.refresh_dirty()
+    assert versioned.dirty_file_count() == 2
+
+
+def test_scopes_default_to_the_workspace_directory(versioned):
+    """One repository can hold several planned directories; the scopes are the pathspecs
+    every history operation is limited to, and a bare provider covers its own directory."""
+    assert versioned.scopes == ("workspace",)
+
+
 def test_diff_shows_an_untracked_file_as_an_addition(versioned):
     versioned.write_text("note.md", "brand new\n")
     assert "brand new" in versioned.diff()

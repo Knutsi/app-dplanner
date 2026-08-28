@@ -9,7 +9,7 @@ undoable fails here rather than in front of a user.
 import pytest
 
 from dplanner.domain.commands import AddNodeCommand
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.projects import index
@@ -17,11 +17,9 @@ from dplanner.modules.projects.index import ProjectEntry, ProjectsSegment
 
 
 @pytest.fixture
-def project(services):
-    product = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
-    AddNodeCommand(project.id, Step(title="Read the spec")).redo(product)
+def project(services, make_project):
+    project = make_project("Discovery")
+    AddNodeCommand(project.id, Step(title="Read the spec")).redo(services.document)
     return project
 
 
@@ -56,10 +54,10 @@ def test_the_folder_shows_projects_and_not_their_steps(services, project):
     assert "step" not in kinds and kinds <= {"entry"}
 
 
-def test_the_folder_follows_the_model(services, project):
+def test_the_folder_follows_the_model(services, project, make_project):
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
     root = panel.tree.topLevelItem(0)
-    AddNodeCommand(services.document.id, Project(title="Build")).redo(services.document)
+    make_project("Build")
     assert [root.child(i).text(0) for i in range(root.childCount())] == ["Discovery", "Build"]
 
 
@@ -134,7 +132,7 @@ def entry_segment(services, project):
     opened = []
     segment = ProjectsSegment(
         root=root,
-        product=services.document,
+        library=services.document,
         context=services.context,
         actions=services.actions,
         theme=services.theme,
@@ -203,44 +201,85 @@ def test_a_theme_change_repaints_without_collapsing_expansion(entry_segment, ser
     assert not root.child(0).icon(0).isNull()
 
 
+def test_a_problem_entry_is_a_greyed_row_that_selects_nothing(services, project):
+    """A library entry that could not open is still the user's project: it shows greyed
+    with the reason, cannot be activated into anything, and never enters the selection."""
+    from pathlib import Path
+
+    from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
+
+    from dplanner.domain.store import ProjectProblem
+
+    tree = QTreeWidget()
+    root = QTreeWidgetItem(["Projects"])
+    tree.addTopLevelItem(root)
+    problem = ProjectProblem(Path("/gone/search-rewrite"), "no project.dproj here")
+    segment = ProjectsSegment(
+        root=root,
+        library=services.document,
+        context=services.context,
+        actions=services.actions,
+        theme=services.theme,
+        problems=lambda: [problem],
+    )
+    try:
+        row = root.child(root.childCount() - 1)
+        assert row is not None
+        assert row.text(0) == "search-rewrite — unavailable"
+        assert row.isDisabled()
+        assert row.data(0, index.KIND_ROLE) == "problem"
+        assert "no project.dproj here" in row.toolTip(0)
+        assert segment.selection_nodes([row]) == []
+        assert segment.context_menu(row) is None
+    finally:
+        segment.dispose()
+        tree.deleteLater()
+
+
 # -- the verbs ---------------------------------------------------------------------------------
 
 
 def test_project_verbs_grey_without_a_project(services):
     context = services.context.current()
-    for action_id in ("projects.rename", "projects.delete", "projects.open"):
+    for action_id in ("projects.rename", "projects.remove", "projects.open"):
         found = state(services, action_id, context)
         assert found.visible and not found.enabled
-    assert state(services, "projects.new", context).enabled
 
 
 def test_project_verbs_enable_on_a_selected_project(services, project):
     context = select(services, "project", project.id)
-    for action_id in ("projects.rename", "projects.delete", "projects.open"):
+    for action_id in ("projects.rename", "projects.remove", "projects.open"):
         assert state(services, action_id, context).enabled
 
 
-def test_new_project_is_created_and_undone(services, monkeypatch):
-    from PySide6.QtWidgets import QInputDialog
-
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Build", True))
-    services.actions.run("projects.new", services.context.current())
-    assert [p.title for p in services.document.projects] == ["Build"]
-
-    services.undo.undo()
-    assert services.document.projects == []
-
-
-def test_delete_takes_the_project_and_its_tab(services, project, monkeypatch):
+def test_remove_takes_the_project_out_of_model_and_store_but_leaves_its_files(
+    services, project, monkeypatch
+):
+    """Removal is from the library only: the model forgets it, the store forgets it, the
+    tab goes, and the directory stays exactly where it was — which is what the confirm
+    prompt promises."""
+    from dplanner.domain.store import PROJECT_META
     from dplanner.modules.projects import verbs
 
-    monkeypatch.setattr(verbs, "confirm", lambda *a, **k: True)
+    asked = []
+
+    def fake_confirm(_parent, title, question):
+        asked.append((title, question))
+        return True
+
+    monkeypatch.setattr(verbs, "confirm", fake_confirm)
+    directory = services.repo.project_dir(project.id)
     services.tabs.open("project", project.id)
     assert services.tabs.activities()
 
-    services.actions.run("projects.delete", select(services, "project", project.id))
+    services.actions.run("projects.remove", select(services, "project", project.id))
     assert services.document.projects == []
     assert services.tabs.activities() == []
+    with pytest.raises(KeyError):  # Detached: the store no longer tracks the directory.
+        services.repo.project_dir(project.id)
+    assert asked[0][0] == "Remove from Library"
+    assert "files stay" in asked[0][1]
+    assert (directory / PROJECT_META).is_file()  # The files really did stay.
 
 
 def test_rename_reaches_the_tab_title(services, project, monkeypatch):

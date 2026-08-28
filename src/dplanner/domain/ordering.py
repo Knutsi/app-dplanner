@@ -22,10 +22,10 @@ from exposing this function everywhere instead: the activity, ``dplanner order s
 
 from dataclasses import dataclass
 
-from dplanner.domain.model import Product, Project, Step, StepId
+from dplanner.domain.model import Library, Project, Step, StepId
 
 
-def depths(product: Product, project: Project) -> dict[StepId, int]:
+def depths(library: Library, project: Project) -> dict[StepId, int]:
     """How many ``requires`` edges deep each step is — the length of its longest chain.
 
     Cycles cannot occur: the model refuses to create one, so the walk always terminates.
@@ -38,7 +38,7 @@ def depths(product: Product, project: Project) -> dict[StepId, int]:
             return known[step_id]
         if step_id in seen:  # Defensive: a hand-edited file could still contain one.
             return 0
-        waiting = product.step(step_id).edges.get("requires", [])
+        waiting = library.step(step_id).edges.get("requires", [])
         resolved = [t for t in waiting if project.step(t) is not None]
         found = 0 if not resolved else 1 + max(depth_of(t, seen | {step_id}) for t in resolved)
         known[step_id] = found
@@ -49,13 +49,13 @@ def depths(product: Product, project: Project) -> dict[StepId, int]:
     return known
 
 
-def waves(product: Product, project: Project) -> list[list[Step]]:
+def waves(library: Library, project: Project) -> list[list[Step]]:
     """The steps grouped by depth: everything in ``waves[0]`` can be started now.
 
     Empty waves cannot occur — a step at depth *n* waits on one at depth *n-1* by
     definition — so the list is dense and its index is the wave number.
     """
-    by_depth = depths(product, project)
+    by_depth = depths(library, project)
     if not project.steps:
         return []
     grouped: list[list[Step]] = [[] for _ in range(max(by_depth.values(), default=0) + 1)]
@@ -64,9 +64,9 @@ def waves(product: Product, project: Project) -> list[list[Step]]:
     return grouped
 
 
-def topological_order(product: Product, project: Project) -> list[Step]:
+def topological_order(library: Library, project: Project) -> list[Step]:
     """Every step, in an order that never puts a step before something it waits on."""
-    return [step for wave in waves(product, project) for step in wave]
+    return [step for wave in waves(library, project) for step in wave]
 
 
 @dataclass(frozen=True)
@@ -83,7 +83,7 @@ class Placed:
     step: Step
 
 
-def placed(product: Product, project: Project) -> list[Placed]:
+def placed(library: Library, project: Project) -> list[Placed]:
     """Every step in order, carrying its index and its wave.
 
     The shape a table wants and the shape the CLI prints, so neither has to number the rows
@@ -94,7 +94,7 @@ def placed(product: Product, project: Project) -> list[Placed]:
         for index, (wave_number, step) in enumerate(
             (
                 (number, step)
-                for number, wave in enumerate(waves(product, project))
+                for number, wave in enumerate(waves(library, project))
                 for step in wave
             ),
             start=1,
@@ -102,7 +102,7 @@ def placed(product: Product, project: Project) -> list[Placed]:
     ]
 
 
-def ready(product: Product, project: Project) -> list[Step]:
+def ready(library: Library, project: Project) -> list[Step]:
     """The steps with nothing left to wait on — the first wave, named for what it means."""
-    found = waves(product, project)
+    found = waves(library, project)
     return found[0] if found else []

@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.fields import ModuleTextField
-from dplanner.domain.model import NodeId, Product, StepId, TextEdit
+from dplanner.domain.model import Library, NodeId, StepId, TextEdit
 from dplanner.domain.store import FilesFor
 from dplanner.framework.cards import card_rule
 from dplanner.framework.text_binding import TextBinding
@@ -43,13 +43,13 @@ NOTE_PLACEHOLDER = "What the next step's worker should know: decisions, keys, go
 
 
 class HandoffSection(QWidget):
-    def __init__(self, product: Product, undo: UndoService[Product], files: FilesFor) -> None:
+    def __init__(self, library: Library, undo: UndoService[Library], files: FilesFor) -> None:
         super().__init__()
-        self._product = product
+        self._product = library
         self._undo = undo
         self._files = files
         self._step_id: StepId | None = None
-        self._binding: TextBinding[Product] | None = None
+        self._binding: TextBinding[Library] | None = None
         self._loading = False
 
         self.note = QPlainTextEdit(self)
@@ -97,9 +97,9 @@ class HandoffSection(QWidget):
         layout.addWidget(self.inherited_view, 1)
 
         self._unsubscribes = [
-            product.module_data_changed.connect(self._on_module_data),
-            product.text_edited.connect(self._on_text),
-            product.edges_changed.connect(lambda *_a: self._refresh_inherited()),
+            library.module_data_changed.connect(self._on_module_data),
+            library.text_edited.connect(self._on_text),
+            library.edges_changed.connect(lambda *_a: self._refresh_inherited()),
         ]
 
     # -- the panel's side of the contract ------------------------------------------------------

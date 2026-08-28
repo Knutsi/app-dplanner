@@ -14,8 +14,8 @@ from dataclasses import dataclass
 
 from PySide6.QtWidgets import QInputDialog, QWidget
 
-from dplanner.domain.commands import AddNodeCommand, RemoveNodeCommand, SetFieldCommand
-from dplanner.domain.model import NodeId, Product, Project
+from dplanner.domain.commands import SetFieldCommand
+from dplanner.domain.model import Library, NodeId, Project, ProjectId
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -27,13 +27,20 @@ from dplanner.framework.context import Context
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
 
+# Removal is a membership change, not an edit: it leaves the undo stack alone (a removed
+# project's files stay on disk, and Ctrl+Z could not honestly re-attach them), so it
+# carries its own origin like any directly-applied external change.
+_MEMBERSHIP_ORIGIN: object = object()
+
 
 @dataclass(frozen=True)
 class ProjectVerbs:
-    product: Product
-    undo: UndoService[Product]
+    library: Library
+    undo: UndoService[Library]
     parent: QWidget
     open_project: Callable[[NodeId], None]
+    # The store's half of removal, wired by the composition root.
+    detach: Callable[[ProjectId], None]
 
     def register_into(self, actions: ActionRegistry) -> None:
         for spec in self._specs():
@@ -41,16 +48,6 @@ class ProjectVerbs:
 
     def _specs(self) -> list[ActionSpec]:
         return [
-            ActionSpec(
-                id="projects.new",
-                label="&New Project…",
-                menu="Project",
-                group="edit",
-                order=10,
-                shortcut="Ctrl+Shift+P",
-                tip="Add a project to this product",
-                run=self._new,
-            ),
             ActionSpec(
                 id="projects.rename",
                 label="&Rename Project…",
@@ -62,14 +59,14 @@ class ProjectVerbs:
                 run=self._rename,
             ),
             ActionSpec(
-                id="projects.delete",
-                label="&Delete Project",
+                id="projects.remove",
+                label="Re&move from Library…",
                 menu="Project",
                 group="edit",
                 order=30,
-                tip="Remove this project and all of its steps",
+                tip="Take this project out of the library; its files stay on disk",
                 state=self._on_a_project,
-                run=self._delete,
+                run=self._remove,
             ),
             ActionSpec(
                 id="projects.open",
@@ -87,25 +84,17 @@ class ProjectVerbs:
 
     def _on_a_project(self, context: Context) -> ActionState:
         project_id = context.focus_entity("project")
-        if project_id is None or not self.product.has(project_id):
+        if project_id is None or not self.library.has(project_id):
             return DISABLED
         return ENABLED
 
     def _focused(self, context: Context) -> Project | None:
         project_id = context.focus_entity("project")
-        if project_id is None or not self.product.has(project_id):
+        if project_id is None or not self.library.has(project_id):
             return None
-        return self.product.project(project_id)
+        return self.library.project(project_id)
 
     # -- run -----------------------------------------------------------------------------------
-
-    def _new(self, _context: Context) -> None:
-        title, accepted = QInputDialog.getText(self.parent, "New Project", "Project name:")
-        if not accepted or not title.strip():
-            return
-        project = Project(title=title.strip())
-        self.undo.push(AddNodeCommand(self.product.id, project))
-        self.open_project(project.id)
 
     def _rename(self, context: Context) -> None:
         project = self._focused(context)
@@ -117,14 +106,17 @@ class ProjectVerbs:
         if accepted and title.strip():
             self.undo.push(SetFieldCommand(project.id, "title", title.strip()))
 
-    def _delete(self, context: Context) -> None:
+    def _remove(self, context: Context) -> None:
         project = self._focused(context)
         if project is None:
             return
-        steps = len(project.steps)
-        detail = f" and its {steps} step{'s' if steps != 1 else ''}" if steps else ""
-        if confirm(self.parent, "Delete Project", f"Delete {project.title!r}{detail}?"):
-            self.undo.push(RemoveNodeCommand(project.id))
+        if confirm(
+            self.parent,
+            "Remove from Library",
+            f"Remove {project.title!r} from this library? Its files stay on disk.",
+        ):
+            self.library.remove_child(project.id, origin=_MEMBERSHIP_ORIGIN)
+            self.detach(project.id)
 
     def _open(self, context: Context) -> None:
         project = self._focused(context)

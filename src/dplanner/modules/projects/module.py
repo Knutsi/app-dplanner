@@ -11,7 +11,8 @@ from dataclasses import dataclass
 
 from PySide6.QtWidgets import QTreeWidgetItem, QWidget
 
-from dplanner.domain.model import NodeId, Product
+from dplanner.domain.model import Library, NodeId, ProjectId
+from dplanner.domain.store import ProjectProblem
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
@@ -30,10 +31,10 @@ MODULE_ID = "projects"
 
 @dataclass(frozen=True)
 class ProjectsDeps:
-    product: Product
+    library: Library
     actions: ActionRegistry
     context: ContextService
-    undo: UndoService[Product]
+    undo: UndoService[Library]
     segments: IndexSegmentRegistry
     theme: ThemeService
     parent: QWidget
@@ -41,6 +42,10 @@ class ProjectsDeps:
     # to the project editor, which this module never imports. In the tree, opening the
     # graph is the Steps entry's job, not the project row's.
     open_project: Callable[[NodeId], None]
+    # The store's half of Remove from Library, wired by the composition root.
+    detach: Callable[[ProjectId], None]
+    # Library entries that failed to open — shown greyed with the reason.
+    problems: Callable[[], list[ProjectProblem]]
     # Rows other modules put under each project, wired by the composition root.
     entries: tuple[ProjectEntry, ...] = ()
 
@@ -54,20 +59,22 @@ class ProjectsModule:
     def register(self) -> None:
         deps = self._deps
         ProjectVerbs(
-            product=deps.product,
+            library=deps.library,
             undo=deps.undo,
             parent=deps.parent,
             open_project=deps.open_project,
+            detach=deps.detach,
         ).register_into(deps.actions)
 
         def segment(root: QTreeWidgetItem) -> ProjectsSegment:
             return ProjectsSegment(
                 root=root,
-                product=deps.product,
+                library=deps.library,
                 context=deps.context,
                 actions=deps.actions,
                 theme=deps.theme,
                 entries=deps.entries,
+                problems=deps.problems,
             )
 
         deps.segments.register(

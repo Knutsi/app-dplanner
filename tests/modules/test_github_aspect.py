@@ -2,18 +2,18 @@
 
 No ``qapp`` fixture — ``aspect.py``, ``cli.py`` and ``gh.py`` are Qt-free by rule. Every
 gh call is monkeypatched: these tests must pass with no ``gh`` installed and no network.
+
+Which repository a step's refs belong to is **derived** from its project directory's
+``origin`` remote — nothing stores a URL — so the tests that need one add a real remote
+with git rather than setting anything through the CLI.
 """
 
 import json
-from io import StringIO
+import subprocess
 
 import pytest
 
-from dplanner.cli.command import CliRegistry
-from dplanner.cli.main import run
-from dplanner.core.storage.local import LocalStorage
-from dplanner.domain.store import ProductStore
-from dplanner.modules import default_cli_commands, default_module_formats
+from dplanner.domain.store import LibraryStore
 from dplanner.modules.github import cli as github_cli
 from dplanner.modules.github.aspect import GithubRefs, read, summary, write
 from dplanner.modules.github.gh import PrInfo
@@ -22,22 +22,22 @@ MERGED = PrInfo(number=12, title="Add login flow", state="merged", url="u12", he
 OPEN = PrInfo(number=7, title="Fix crash", state="open", url="u7", head_ref="fix/crash")
 
 
+def add_origin(repo, url):
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", url], check=True)
+
+
 @pytest.fixture
-def cli(workspace):
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
+def cli(cli):
+    """The shared CLI over a seeded project — the conftest fixture, pre-populated."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Read the spec")
+    return cli
 
-    def invoke(*argv, expect=0):
-        out, err = StringIO(), StringIO()
-        code = run(
-            registry, default_module_formats(), ["--workspace", str(workspace), *argv], out, err
-        )
-        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
-        return out.getvalue() + err.getvalue()
 
-    invoke("project", "create", "Discovery")
-    invoke("step", "add", "Discovery", "Read the spec")
-    return invoke
+@pytest.fixture
+def origin(cli, workspace):
+    """The workspace repository, pointed at GitHub — what the gh-backed verbs derive from."""
+    add_origin(workspace, "https://github.com/acme/widget.git")
 
 
 @pytest.fixture
@@ -52,16 +52,17 @@ def gh_present(monkeypatch):
     monkeypatch.setattr(github_cli, "gh_refusal", lambda **_kw: None)
 
 
-def reload(workspace):
-    return ProductStore(LocalStorage(workspace)).load()
+@pytest.fixture
+def reload(cli_library):
+    return lambda: LibraryStore(cli_library).load()
 
 
-def first_step(product):
-    return product.projects[0].steps[0]
+def first_step(library):
+    return library.projects[0].steps[0]
 
 
-def stored_refs(workspace) -> GithubRefs:
-    refs = read(first_step(reload(workspace)))
+def stored_refs(reload) -> GithubRefs:
+    refs = read(first_step(reload()))
     assert refs is not None
     return refs
 
@@ -84,33 +85,34 @@ def test_the_pr_number_is_stored_as_an_int():
     assert isinstance(write(GithubRefs(pr_number=12))["pr_number"], int)
 
 
-def test_summary_says_the_pr_and_its_terminal_state(cli, workspace, gh_less):
+def test_summary_says_the_pr_and_its_terminal_state(cli, reload, gh_less):
     cli("github", "set", "Read the spec", "--branch", "feat/login")
-    assert summary(first_step(reload(workspace))) == "feat/login"
+    assert summary(first_step(reload())) == "feat/login"
     cli("github", "set", "Read the spec", "--pr", "12")
-    assert summary(first_step(reload(workspace))) == "PR #12"
+    assert summary(first_step(reload())) == "PR #12"
 
 
 # -- recording, with and without gh ------------------------------------------------------------
 
 
-def test_a_branch_is_recorded_without_gh(cli, workspace, gh_less):
+def test_a_branch_is_recorded_without_gh(cli, reload, gh_less):
     cli("github", "set", "Read the spec", "--branch", "feat/login")
-    refs = read(first_step(reload(workspace)))
+    refs = read(first_step(reload()))
     assert refs == GithubRefs(branch="feat/login")
 
 
-def test_a_pr_set_without_gh_still_records_the_number(cli, workspace, gh_less):
+def test_a_pr_set_without_gh_still_records_the_number(cli, reload, gh_less):
     cli("github", "set", "Read the spec", "--pr", "#12")
-    refs = stored_refs(workspace)
+    refs = stored_refs(reload)
     assert refs.pr_number == 12 and refs.pr_state == ""
 
 
-def test_a_pr_set_with_gh_fills_state_title_url_and_branch(cli, workspace, gh_present, monkeypatch):
+def test_a_pr_set_with_gh_fills_state_title_url_and_branch(
+    cli, origin, reload, gh_present, monkeypatch
+):
     monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: MERGED)
-    cli("product", "set", "--repository", "https://github.com/acme/widget")
     cli("github", "set", "Read the spec", "--pr", "12")
-    assert stored_refs(workspace) == GithubRefs(
+    assert stored_refs(reload) == GithubRefs(
         branch="feat/login",
         pr_number=12,
         pr_url="u12",
@@ -119,10 +121,10 @@ def test_a_pr_set_with_gh_fills_state_title_url_and_branch(cli, workspace, gh_pr
     )
 
 
-def test_setting_one_half_keeps_the_other(cli, workspace, gh_less):
+def test_setting_one_half_keeps_the_other(cli, reload, gh_less):
     cli("github", "set", "Read the spec", "--branch", "feat/login")
     cli("github", "set", "Read the spec", "--pr", "12")
-    refs = stored_refs(workspace)
+    refs = stored_refs(reload)
     assert refs.branch == "feat/login" and refs.pr_number == 12
 
 
@@ -134,11 +136,11 @@ def test_a_ref_that_names_no_pr_is_refused(cli, gh_less):
     assert "names no PR" in cli("github", "set", "Read the spec", "--pr", "soon", expect=1)
 
 
-def test_clearing_halves_and_the_whole(cli, workspace, gh_less):
-    modules = workspace / "projects/discovery/steps/read-the-spec/modules"
+def test_clearing_halves_and_the_whole(cli, workspace, reload, gh_less):
+    modules = workspace / "discovery/steps/read-the-spec/modules"
     cli("github", "set", "Read the spec", "--branch", "feat/login", "--pr", "12")
     cli("github", "clear", "Read the spec", "--pr")
-    assert read(first_step(reload(workspace))) == GithubRefs(branch="feat/login")
+    assert read(first_step(reload())) == GithubRefs(branch="feat/login")
     cli("github", "clear", "Read the spec")
     assert not (modules / "github.json").exists()
     assert "no GitHub refs" in cli("github", "clear", "Read the spec", expect=1)
@@ -148,32 +150,32 @@ def test_clearing_halves_and_the_whole(cli, workspace, gh_less):
 
 
 def test_gh_gated_verbs_refuse_without_gh(cli, gh_less):
-    assert "gh not found" in cli("github", "prs", expect=1)
-    assert "gh not found" in cli("github", "branches", expect=1)
+    assert "gh not found" in cli("github", "prs", "--project", "Discovery", expect=1)
+    assert "gh not found" in cli("github", "branches", "--project", "Discovery", expect=1)
     assert "gh not found" in cli("github", "refresh", expect=1)
 
 
-def test_gh_gated_verbs_refuse_without_a_repository(cli, gh_present):
-    assert "product set --repository" in cli("github", "prs", expect=1)
+def test_gh_gated_verbs_refuse_without_a_github_remote(cli, gh_present):
+    """No origin on the project's repository: the refusal says how to add one."""
+    assert "git remote add origin" in cli("github", "prs", "--project", "Discovery", expect=1)
 
 
-def test_prs_lists_open_by_default_and_all_on_request(cli, gh_present, monkeypatch):
+def test_prs_lists_open_by_default_and_all_on_request(cli, origin, gh_present, monkeypatch):
     monkeypatch.setattr(github_cli, "list_prs", lambda repo: [MERGED, OPEN])
-    cli("product", "set", "--repository", "https://github.com/acme/widget")
-    assert json.loads(cli("github", "prs", "--json"))["prs"] == [
+    assert json.loads(cli("github", "prs", "--project", "Discovery", "--json"))["prs"] == [
         {"number": 7, "state": "open", "title": "Fix crash", "branch": "fix/crash"}
     ]
-    assert len(json.loads(cli("github", "prs", "--all", "--json"))["prs"]) == 2
+    shown = cli("github", "prs", "--all", "--project", "Discovery", "--json")
+    assert len(json.loads(shown)["prs"]) == 2
 
 
-def test_branches_come_from_gh(cli, gh_present, monkeypatch):
+def test_branches_come_from_gh(cli, origin, gh_present, monkeypatch):
     monkeypatch.setattr(github_cli, "list_branches", lambda repo: ["main", "feat/login"])
-    cli("product", "set", "--repository", "https://github.com/acme/widget")
-    assert json.loads(cli("github", "branches", "--json"))["branches"] == ["main", "feat/login"]
+    shown = cli("github", "branches", "--project", "Discovery", "--json")
+    assert json.loads(shown)["branches"] == ["main", "feat/login"]
 
 
-def test_refresh_rechecks_only_open_and_unknown_prs(cli, workspace, gh_present, monkeypatch):
-    cli("product", "set", "--repository", "https://github.com/acme/widget")
+def test_refresh_rechecks_only_open_and_unknown_prs(cli, origin, reload, gh_present, monkeypatch):
     cli("step", "add", "Discovery", "Write the docs")
     monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: None)
     cli("github", "set", "Read the spec", "--pr", "12")  # Recorded with state "".
@@ -181,14 +183,24 @@ def test_refresh_rechecks_only_open_and_unknown_prs(cli, workspace, gh_present, 
 
     report = json.loads(cli("github", "refresh", "--json"))
     assert report == {"checked": 1, "updated": 1}
-    assert stored_refs(workspace).pr_state == "merged"
+    assert stored_refs(reload).pr_state == "merged"
 
     # Now merged: a second refresh has nothing left to check.
     assert json.loads(cli("github", "refresh", "--json")) == {"checked": 0, "updated": 0}
 
 
-def test_a_projects_own_repository_wins_for_its_steps(cli, gh_present, monkeypatch):
-    """project_repo's resolution rule, arriving through the composition root's wiring."""
+def test_each_projects_own_repository_answers_for_its_steps(
+    cli, tmp_path, workspace, gh_present, monkeypatch
+):
+    """Two projects, two repositories: a step's refs are asked of its own project's origin."""
+    from dplanner.core.storage.locations import init_repo
+
+    add_origin(workspace, "https://github.com/acme/widget.git")
+    satellite = init_repo(tmp_path / "second")
+    add_origin(satellite, "https://github.com/acme/satellite.git")
+    cli("project", "create", "Satellite", "--dir", str(satellite / "satellite"))
+    cli("step", "add", "Satellite", "Wire the antenna")
+
     asked = []
 
     def view_pr(repo, _number):
@@ -196,13 +208,17 @@ def test_a_projects_own_repository_wins_for_its_steps(cli, gh_present, monkeypat
         return OPEN
 
     monkeypatch.setattr(github_cli, "view_pr", view_pr)
-    cli("product", "set", "--repository", "https://github.com/acme/widget")
-    cli("repo", "set", "Discovery", "--repository", "https://github.com/acme/satellite")
-    cli("github", "set", "Read the spec", "--pr", "7")
+    cli("github", "set", "Wire the antenna", "--pr", "7")
     assert asked == ["acme/satellite"]
 
 
-def test_prs_can_ask_a_projects_repository(cli, gh_present, monkeypatch):
+def test_prs_can_ask_a_named_projects_repository(cli, tmp_path, gh_present, monkeypatch):
+    from dplanner.core.storage.locations import init_repo
+
+    satellite = init_repo(tmp_path / "second")
+    add_origin(satellite, "https://github.com/acme/satellite.git")
+    cli("project", "create", "Satellite", "--dir", str(satellite / "satellite"))
+
     asked = []
 
     def list_prs(repo):
@@ -210,13 +226,11 @@ def test_prs_can_ask_a_projects_repository(cli, gh_present, monkeypatch):
         return []
 
     monkeypatch.setattr(github_cli, "list_prs", list_prs)
-    cli("repo", "set", "Discovery", "--repository", "https://github.com/acme/satellite")
-    cli("github", "prs", "--project", "Discovery")
+    cli("github", "prs", "--project", "Satellite")
     assert asked == ["acme/satellite"]
 
 
-def test_refresh_without_changes_reports_zero_updates(cli, gh_present, monkeypatch):
-    cli("product", "set", "--repository", "https://github.com/acme/widget")
+def test_refresh_without_changes_reports_zero_updates(cli, origin, gh_present, monkeypatch):
     monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: OPEN)
     cli("github", "set", "Read the spec", "--pr", "7")
     assert json.loads(cli("github", "refresh", "--json")) == {"checked": 1, "updated": 0}

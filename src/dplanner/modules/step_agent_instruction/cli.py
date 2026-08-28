@@ -3,8 +3,8 @@
 The verbs an agent uses on itself: ``show`` before starting the work, ``set`` when the user
 has told it something worth keeping for next time, ``prompt`` for the whole assembled
 briefing — project instruction, step instruction, inherited context — which is also what
-Run Agent in the window launches with. ``show``/``set`` take either a step or ``--project``,
-because the aspect lives at both levels and the verbs should not care.
+Run Agent in the window launches with. ``show``/``set`` take either a step or
+``--for-project``, because the aspect lives at both levels and the verbs should not care.
 
 ``commands()`` takes the context assembly as typed parameters, supplied by the composition
 root — the CLI-side twin of a module ``Deps`` callback, and the same generalisation
@@ -19,7 +19,7 @@ from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
 from dplanner.domain.commands import EditTextCommand
-from dplanner.domain.model import Node, Product, Project, Step, TextEdit
+from dplanner.domain.model import Library, Node, Project, Step, TextEdit
 from dplanner.domain.store import FilesFor
 from dplanner.modules.step_agent_instruction.aspect import (
     MODULE_ID,
@@ -53,7 +53,7 @@ def step_author() -> StepAuthor:
 
 def lint_checks() -> list[LintCheck]:
     def missing_instructions(
-        _product: Product, project: Project, _files: FilesFor
+        _product: Library, project: Project, _files: FilesFor
     ) -> list[LintFinding]:
         # A standing instruction covers every step, so it silences this check — the same
         # rule `agent prompt`'s guard applies.
@@ -66,7 +66,7 @@ def lint_checks() -> list[LintCheck]:
                 subject=step.title,
                 message="no agent instruction and no standing one — "
                 f"`dplanner agent set '{step.title}' --file -`, or "
-                f"`dplanner agent set --project '{project.title}' --file -`",
+                f"`dplanner agent set --for-project '{project.title}' --file -`",
             )
             for step in project.steps
             if not read(step)
@@ -77,22 +77,22 @@ def lint_checks() -> list[LintCheck]:
 
 def commands(*, briefing: Briefing) -> list[CliCommand]:
     def _prompt(context: CliContext, args: Namespace) -> int:
-        step = find_step(context.product, args.step)
-        project = context.product.project_of(step.id)
+        step = find_step(context.library, args.step)
+        project = context.library.project_of(step.id)
         instruction = read(step)
         project_instruction = read_project(project)
         if not instruction and not project_instruction:
             raise CliError(
                 f"{step.title!r} has no agent instruction and neither does its project — "
                 f"set one with `dplanner agent set {step.title!r} --file …`, or a standing "
-                f"one with `dplanner agent set --project {project.title!r} --file …`"
+                f"one with `dplanner agent set --for-project {project.title!r} --file …`"
             )
         assembled = assemble(
             step_title=step.title or "Untitled step",
             project_title=project.title or "Untitled project",
             instruction=instruction,
-            parts=briefing.parts(context.product, step, context.store.files),
-            sections=briefing.sections(context.product, step, context.store.files),
+            parts=briefing.parts(context.library, step, context.store.files),
+            sections=briefing.sections(context.library, step, context.store.files),
             epilogue=briefing.epilogue(step),
             preamble=briefing.preamble,
             project_instruction=project_instruction,
@@ -101,7 +101,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
         )
         data = {
             "step": step.id,
-            "root": str(context.store.storage.root),
+            "root": str(context.store.project_dir(project.id)),
             "prompt": assembled.text,
             "files": list(assembled.files),
         }
@@ -111,24 +111,24 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
     return [
         CliCommand(
             path=("agent", "show"),
-            summary="Print how a step — or with --project, a whole project — should be "
+            summary="Print how a step — or with --for-project, a whole project — should be "
             "carried out. Read this before starting a step.",
             configure=_one_target,
             run=_show,
             examples=(
                 "dplanner agent show 'Read the spec'",
-                "dplanner agent show --project 'Search rewrite'",
+                "dplanner agent show --for-project 'Search rewrite'",
             ),
         ),
         CliCommand(
             path=("agent", "set"),
-            summary="Replace a step's — or with --project, the project's standing — agent "
+            summary="Replace a step's — or with --for-project, the project's standing — agent "
             "instruction from a file or stdin.",
             configure=_configure_set,
             run=_set,
             examples=(
                 "dplanner agent set 'Read the spec' --file notes.md",
-                "echo 'Follow FORMAT.md' | dplanner agent set --project Rewrite --file -",
+                "echo 'Follow FORMAT.md' | dplanner agent set --for-project Rewrite --file -",
             ),
         ),
         CliCommand(
@@ -147,8 +147,14 @@ def _one_target(parser: ArgumentParser) -> None:
         "step", nargs="?", help="step id, folder name, or part of its title"
     )
     parser.add_argument(
-        "--project",
-        help="a project instead: its standing instruction, prepended to every briefing",
+        "--for-project",
+        dest="for_project",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="PROJECT",
+        help="the project instead: its standing instruction, prepended to every "
+        "briefing (defaults to the current project)",
     )
 
 
@@ -159,11 +165,13 @@ def _configure_set(parser: ArgumentParser) -> None:
 
 def _target(context: CliContext, args: Namespace) -> Node:
     """The step or the project the verb addresses — exactly one of the two."""
-    if (args.step is None) == (args.project is None):
-        raise CliError("name a step, or --project, but not both")
-    if args.project is not None:
-        return find_project(context.product, args.project)
-    return find_step(context.product, args.step)
+    if (args.step is None) == (args.for_project is None):
+        raise CliError("name a step, or --for-project, but not both")
+    if args.for_project is not None:
+        if args.for_project:
+            return find_project(context.library, args.for_project)
+        return context.project
+    return find_step(context.library, args.step, context.current)
 
 
 def _show(context: CliContext, args: Namespace) -> int:

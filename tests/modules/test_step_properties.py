@@ -7,7 +7,7 @@ window — because the point of that seam is that nobody constructs a second one
 import pytest
 
 from dplanner.domain.commands import AddNodeCommand, RemoveNodeCommand, SetFieldCommand
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.step_properties.module import PANEL_ID
 
@@ -18,12 +18,11 @@ def select(services, *step_ids):
 
 
 @pytest.fixture
-def project(services):
-    product = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
-    AddNodeCommand(project.id, Step(title="Read the spec")).redo(product)
-    AddNodeCommand(project.id, Step(title="Draft the model")).redo(product)
+def project(services, make_project):
+    library = services.document
+    project = make_project("Discovery")
+    AddNodeCommand(project.id, Step(title="Read the spec")).redo(library)
+    AddNodeCommand(project.id, Step(title="Draft the model")).redo(library)
     return project
 
 

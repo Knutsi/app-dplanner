@@ -1,7 +1,7 @@
 """The GitHub tab: the branch and PR a step lands in, typed or picked.
 
 Both fields are editable combos so recording works with no ``gh`` and no network — the
-pickers are the enhancement, filled from GitHub in the background when the product has a
+pickers are the enhancement, filled from GitHub in the background when the library has a
 repository URL and ``gh`` can be used. Merged and closed PRs stay in the list, marked, so
 a step can be pointed at work that already landed.
 """
@@ -15,7 +15,7 @@ from PySide6.QtCore import Signal as QtSignal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import QComboBox, QFormLayout, QLabel, QLineEdit
 
-from dplanner.domain.model import Product, Step, StepId
+from dplanner.domain.model import Library, Step, StepId
 from dplanner.framework.module_data_section import (
     FORM_SPACING,
     PANEL_MARGIN,
@@ -49,12 +49,12 @@ class GithubSection(ModuleDataSection):
 
     def __init__(
         self,
-        product: Product,
-        undo: UndoService[Product],
+        library: Library,
+        undo: UndoService[Library],
         repository_for: Callable[[StepId], str],
         tasks: TaskService,
     ) -> None:
-        super().__init__(product, undo, module_id=MODULE_ID, undo_label="Set GitHub Refs")
+        super().__init__(library, undo, module_id=MODULE_ID, undo_label="Set GitHub Refs")
         self._repository_for = repository_for
         self._runner = TaskRunner(tasks, parent=self)
         self._prs: dict[int, PrInfo] = {}
@@ -104,7 +104,7 @@ class GithubSection(ModuleDataSection):
             return
         repo = parse_repo(self._repository_for(step.id))
         if repo is None:
-            self.status.setText("Set a repository URL on the product to list branches and PRs")
+            self.status.setText("Set a repository URL on the library to list branches and PRs")
             return
         if repo == self._loaded_repo:
             return

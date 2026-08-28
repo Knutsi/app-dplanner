@@ -3,7 +3,7 @@
 ``core.storage.github`` also wraps ``gh``, but that is a concrete storage provider and
 off-limits to a feature module (architecture rule 8), so this file owns its own subprocess
 calls and its own ``owner/repo`` parsing. The overlap is small and deliberate: what the
-storage layer parses is the *workspace's* origin, what this parses is the *product's*
+storage layer parses is the *workspace's* origin, what this parses is the *library's*
 repository URL, and neither should learn about the other.
 
 Everything here degrades to a refusal rather than an exception a caller has to guess at:

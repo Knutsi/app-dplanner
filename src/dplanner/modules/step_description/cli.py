@@ -9,14 +9,14 @@ from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_step, step_arg
 from dplanner.domain.assets import assets
 from dplanner.domain.commands import EditTextCommand
-from dplanner.domain.model import Product, Project, Step, TextEdit
+from dplanner.domain.model import Library, Project, Step, TextEdit
 from dplanner.domain.store import FilesFor
 from dplanner.modules.step_description.aspect import MODULE_ID, image_references, read
 
 
 def lint_checks() -> list[LintCheck]:
     def missing_descriptions(
-        _product: Product, project: Project, _files: FilesFor
+        _product: Library, project: Project, _files: FilesFor
     ) -> list[LintFinding]:
         return [
             LintFinding(
@@ -30,7 +30,7 @@ def lint_checks() -> list[LintCheck]:
         ]
 
     def missing_images(
-        _product: Product, project: Project, files: FilesFor
+        _product: Library, project: Project, files: FilesFor
     ) -> list[LintFinding]:
         """A description that embeds ![](assets/…) naming a file that is not beside the
         step — the reference an agent's briefing would carry into nothing."""
@@ -97,7 +97,7 @@ def _configure_set(parser: ArgumentParser) -> None:
 
 
 def _step(context: CliContext, needle: str) -> Step:
-    return find_step(context.product, needle)
+    return find_step(context.library, needle)
 
 
 def step_author() -> StepAuthor:

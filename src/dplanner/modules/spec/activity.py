@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.domain.model import NodeId, Product, Project
+from dplanner.domain.model import Library, NodeId, Project
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import EntityActivity
@@ -129,7 +129,7 @@ class SpecsActivity(EntityActivity):
 
     def __init__(
         self,
-        product: Product,
+        library: Library,
         context: ContextService,
         actions: ActionRegistry,
         files: Callable[[NodeId], ModuleFileArea],
@@ -137,7 +137,7 @@ class SpecsActivity(EntityActivity):
         project_id: NodeId,
     ) -> None:
         super().__init__(context, "project", project_id)
-        self._product = product
+        self._product = library
         self._context = context
         self._actions = actions
         self._files = files
@@ -194,7 +194,7 @@ class SpecsActivity(EntityActivity):
         # No `field_changed` subscription: nothing here reads a field — the list shows
         # index data, and retitling the tab is `SpecModule._retitle_tabs`'s job.
         self._unsubscribes = [
-            product.module_data_changed.connect(self._on_module_data),
+            library.module_data_changed.connect(self._on_module_data),
             theme.changed.connect(lambda _theme: self._paint_toolbar(theme)),
         ]
         self._paint_toolbar(theme)

@@ -2,18 +2,14 @@
 
 import json
 from datetime import date
-from io import StringIO
 
 import pytest
 from PySide6.QtCore import QDate
 
-from dplanner.cli.command import CliRegistry
-from dplanner.cli.main import run
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.domain.schedule import format_date
 from dplanner.framework.context import SCOPE_SELECTION
-from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.step_order.view import (
     ACCUMULATED_COLUMN,
     ASPECTS_COLUMN,
@@ -29,16 +25,15 @@ from dplanner.modules.step_order.view import (
 
 
 @pytest.fixture
-def project(services):
+def project(services, make_project):
     """A → B, A → C, and D waiting on both B and C: three waves, one with two steps."""
-    product = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
+    library = services.document
+    project = make_project("Discovery")
     for title in ("A", "B", "C", "D"):
-        AddNodeCommand(project.id, Step(title=title)).redo(product)
+        AddNodeCommand(project.id, Step(title=title)).redo(library)
     a, b, c, d = project.steps
     for waiter, sources in ((b, [a]), (c, [a]), (d, [b, c])):
-        SetEdgesCommand(waiter.id, "requires", [s.id for s in sources]).redo(product)
+        SetEdgesCommand(waiter.id, "requires", [s.id for s in sources]).redo(library)
     return project
 
 
@@ -363,22 +358,8 @@ def test_file_export_writes_the_order_as_csv(services, project, tmp_path, monkey
 # -- the CLI, with no window at all --------------------------------------------------------------
 
 
-def test_the_cli_gives_the_same_answer(tmp_path):
+def test_the_cli_gives_the_same_answer(cli):
     """No `qapp` fixture: what an agent asks is derived on the spot and cannot be stale."""
-    from dplanner.core.storage.local import LocalStorage
-    from dplanner.domain.seed import create_product
-
-    root = tmp_path / "widget"
-    create_product(LocalStorage(root))
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-
-    def cli(*argv):
-        out = StringIO()
-        code = run(registry, default_module_formats(), ["--workspace", str(root), *argv], out)
-        assert code == 0, out.getvalue()
-        return out.getvalue()
-
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "A")
     cli("step", "add", "Discovery", "B", "--after", "A")

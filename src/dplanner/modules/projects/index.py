@@ -20,7 +20,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem
 
-from dplanner.domain.model import NodeId, Product
+from dplanner.domain.model import Library, NodeId
+from dplanner.domain.store import ProjectProblem
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextNode, ContextService, selection_uri
@@ -68,21 +69,23 @@ class ProjectsSegment:
     def __init__(
         self,
         root: QTreeWidgetItem,
-        product: Product,
+        library: Library,
         context: ContextService,
         actions: ActionRegistry,
         theme: ThemeService,
         entries: tuple[ProjectEntry, ...] = (),
+        problems: Callable[[], list[ProjectProblem]] = list,
     ) -> None:
         self._root = root
-        self._product = product
+        self._library = library
+        self._problems = problems
         self._context = context
         self._actions = actions
         self._theme = theme
         self._entries = tuple(sorted(entries, key=lambda entry: (entry.order, entry.id)))
         self._unsubscribe = [
-            product.structure_changed.connect(lambda *_args: self.rebuild()),
-            product.field_changed.connect(lambda *_args: self.rebuild()),
+            library.structure_changed.connect(lambda *_args: self.rebuild()),
+            library.field_changed.connect(lambda *_args: self.rebuild()),
             # Row icons are painted in the theme's ink, and only the segment knows which
             # rows carry one — the panel's re-tint hook covers folder roots alone.
             theme.changed.connect(lambda *_args: self.rebuild()),
@@ -138,7 +141,7 @@ class ProjectsSegment:
     def rebuild(self) -> None:
         """Redraw the folder, keeping open — and selected — what the user had.
 
-        A whole redraw rather than a diff: a product holds tens of projects, not thousands,
+        A whole redraw rather than a diff: a library holds tens of projects, not thousands,
         and a diff is where tree bugs live. Expansion is still restored because a folder the
         user closed should stay closed — the entry rows nesting under each project are why.
         Selection is restored under blocked signals, because ``takeChildren`` deselecting
@@ -152,7 +155,7 @@ class ProjectsSegment:
         open_keys = expansion_of(self._root)
         selected_keys = selection_of(self._root)
         self._root.takeChildren()
-        for project in self._product.projects:
+        for project in self._library.projects:
             row = QTreeWidgetItem([project.title or "Untitled project"])
             row.setData(0, Qt.ItemDataRole.UserRole, project.id)
             row.setData(0, KIND_ROLE, "project")
@@ -166,6 +169,14 @@ class ProjectsSegment:
                 if entry.icon is not None:
                     child.setIcon(0, entry.icon(ink))
                 row.addChild(child)
+            self._root.addChild(row)
+        for problem in self._problems():
+            # A project this build could not open is still the user's project: a greyed,
+            # non-activatable row that says why, instead of silently vanishing.
+            row = QTreeWidgetItem([f"{problem.path.name} — unavailable"])
+            row.setToolTip(0, f"{problem.path}\n{problem.reason}")
+            row.setDisabled(True)
+            row.setData(0, KIND_ROLE, "problem")
             self._root.addChild(row)
         restore_expansion(self._root, open_keys)
         restored = restore_selection(self._root, selected_keys)

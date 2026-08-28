@@ -53,29 +53,29 @@ def _configure_set(parser: ArgumentParser) -> None:
 
 
 def _set(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(args.state)))
     context.report({"step": step.id, "status": args.state}, f"{step.title}: {args.state}")
     return 0
 
 
 def _show(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     status = read(step)
     context.report({"step": step.id, "status": status}, f"{step.title}: {status}")
     return 0
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
     context.report({"step": step.id, "status": "pending"}, f"{step.title}: pending")
     return 0
 
 
 def _list(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
-    order = placed(context.product, project)
+    project = find_project(context.library, args.project)
+    order = placed(context.library, project)
     grouped = {status: [p.step for p in order if read(p.step) == status] for status in STATUSES}
     data = {
         "project": project.id,

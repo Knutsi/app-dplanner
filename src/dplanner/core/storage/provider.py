@@ -109,6 +109,10 @@ class VersionedStorage(Protocol):
 
     def is_dirty(self) -> bool: ...
 
+    def dirty_file_count(self) -> int:
+        """How many files differ from the last recorded version. Cached, like is_dirty."""
+        ...
+
     def refresh_dirty(self) -> None:
         """Re-check the working tree; emits ``dirty_changed`` only on a real change."""
         ...

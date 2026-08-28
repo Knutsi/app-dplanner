@@ -85,7 +85,7 @@ def _configure_show(parser: ArgumentParser) -> None:
 def _set(context: CliContext, args: Namespace) -> int:
     body = body_from(args.file)
 
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     current = read_note(step)
     edit = TextEdit(step.id, MODULE_ID, 0, current, body)
     context.apply(EditTextCommand(edit, label="Set Handoff"))
@@ -99,16 +99,16 @@ def _set(context: CliContext, args: Namespace) -> int:
 
 
 def _show(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step, context.current)
     files = context.store.files
-    root = str(context.store.storage.root)
+    root = str(context.store.project_dir(context.library.project_of(step.id).id))
     data: dict[str, Any] = {"step": step.id, "root": root}
     if args.inherited:
-        handoffs = inherited(context.product, step, files)
+        handoffs = inherited(context.library, step, files)
         data["inherited"] = [_row(handoff) for handoff in handoffs]
         context.report(data, inherited_text(handoffs))
         return 0
-    handoff = own(context.product, step, files)
+    handoff = own(context.library, step, files)
     if handoff is None:
         context.report({"step": step.id, "handoff": None}, "(no handoff)")
         return 0
@@ -118,7 +118,7 @@ def _show(context: CliContext, args: Namespace) -> int:
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     current = read_note(step)
     if current:
         edit = TextEdit(step.id, MODULE_ID, 0, current, "")

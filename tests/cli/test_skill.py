@@ -53,6 +53,14 @@ def test_the_edge_vocabulary_is_described(files):
     assert "cycles are refused" in files[SKILL_FILE]
 
 
+def test_the_skill_says_how_the_current_project_is_found(files):
+    """The half a registry cannot render: the walk, the pointer file, and the library."""
+    skill = files[SKILL_FILE]
+    assert "## Where the project is" in skill
+    assert "project.dproj" in skill and ".dplanner" in skill
+    assert "--library PATH" in skill and "$DPLANNER_LIBRARY" in skill
+
+
 def test_the_skill_has_frontmatter_a_skill_loader_can_read(files):
     head = files[SKILL_FILE].splitlines()
     assert head[0] == "---"
@@ -93,8 +101,8 @@ def invoke(registry, *argv):
     return out.getvalue()
 
 
-def test_the_skill_verbs_need_no_product(registry, tmp_path, monkeypatch):
-    """An agent asks what DPlanner is before it has found a workspace."""
+def test_the_skill_verbs_need_no_library(registry, tmp_path, monkeypatch):
+    """An agent asks what DPlanner is before it has found a library."""
     monkeypatch.chdir(tmp_path)
     assert "name: dplanner" in invoke(registry, "skill", "show")
 
@@ -107,9 +115,9 @@ def test_installing_reports_stale_then_current(files, tmp_path):
     assert status(files, tmp_path) == "stale"
 
 
-def test_project_install_travels_with_the_repository(registry, tmp_path, monkeypatch):
+def test_repo_install_travels_with_the_repository(registry, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    invoke(registry, "skill", "install", "--project")
+    invoke(registry, "skill", "install", "--repo")
     assert (tmp_path / ".claude" / "skills" / "dplanner" / SKILL_FILE).is_file()
 
 
@@ -137,7 +145,7 @@ def test_path_hint_names_an_editable_install_from_a_checkout(monkeypatch):
 def test_status_verb_reports_whether_the_command_resolves(registry, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("dplanner.cli.skill.shutil.which", lambda _name: None)
-    out = invoke(registry, "skill", "status", "--project")
+    out = invoke(registry, "skill", "status", "--repo")
     assert "not on PATH" in out
 
 
@@ -179,7 +187,7 @@ def test_uninstall_removes_only_what_install_wrote(files, tmp_path):
 
 def test_uninstall_verb(registry, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    invoke(registry, "skill", "install", "--project")
-    invoke(registry, "skill", "uninstall", "--project")
+    invoke(registry, "skill", "install", "--repo")
+    invoke(registry, "skill", "uninstall", "--repo")
     assert not (tmp_path / ".claude" / "skills" / "dplanner").exists()
-    assert "nothing installed" in invoke(registry, "skill", "uninstall", "--project")
+    assert "nothing installed" in invoke(registry, "skill", "uninstall", "--repo")

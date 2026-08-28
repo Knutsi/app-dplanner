@@ -8,7 +8,7 @@ one undo stack), the inherited context (derived, read-only, rendered by the prom
 import pytest
 
 from dplanner.domain.commands import AddNodeCommand
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
 
@@ -16,12 +16,10 @@ from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
 
 
 @pytest.fixture
-def step(services):
-    product = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
+def step(services, make_project):
+    project = make_project("Discovery")
     step = Step(title="Deploy")
-    AddNodeCommand(project.id, step).redo(product)
+    AddNodeCommand(project.id, step).redo(services.document)
     return step
 
 
@@ -172,12 +170,12 @@ def test_the_project_part_edits_the_projects_own_text(services, step, section):
 
 
 def test_the_inherited_part_shows_what_earlier_steps_handed_forward(services, step, section):
-    product = services.document
-    project = product.project_of(step.id)
+    library = services.document
+    project = library.project_of(step.id)
     earlier = Step(title="Set up CI", edges={"requires": []})
-    AddNodeCommand(project.id, earlier).redo(product)
-    product.set_edges(step.id, "requires", [earlier.id])
-    product.set_text(earlier.id, "step_handoff", "Keys in vault.")
+    AddNodeCommand(project.id, earlier).redo(library)
+    library.set_edges(step.id, "requires", [earlier.id])
+    library.set_text(earlier.id, "step_handoff", "Keys in vault.")
 
     section.show_target(step.id)
     text = section.inherited_view.toPlainText()
@@ -185,7 +183,7 @@ def test_the_inherited_part_shows_what_earlier_steps_handed_forward(services, st
     assert "1 block" in section.inherited_part.summary.text()
 
     # A handoff edited while the tab is open reaches the pane without a reselect.
-    product.set_text(earlier.id, "step_handoff", "Keys moved to 1Password.")
+    library.set_text(earlier.id, "step_handoff", "Keys moved to 1Password.")
     assert "1Password" in section.inherited_view.toPlainText()
 
 
@@ -252,7 +250,7 @@ def test_the_project_panel_shows_the_agent_card(services, step):
     )
     panel = services.window.dock.widget_for("project_editor.project")
     titles = [c.title.text() for c in panel._cards]
-    assert "Agent" in titles and "Repository" in titles
+    assert "Agent" in titles
 
 
 # -- the preview -------------------------------------------------------------------------------

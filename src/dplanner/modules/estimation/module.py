@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from PySide6.QtWidgets import QWidget
 
-from dplanner.domain.model import Product, ProjectId, StepId
+from dplanner.domain.model import Library, ProjectId, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -46,8 +46,8 @@ def _no_reveal(_step_id: StepId) -> None:
 
 @dataclass(frozen=True)
 class EstimationDeps:
-    product: Product
-    undo: UndoService[Product]
+    library: Library
+    undo: UndoService[Library]
     sections: InspectorSectionRegistry
     actions: ActionRegistry
     context: ContextService
@@ -71,7 +71,7 @@ class EstimationModule:
         self, project_id: ProjectId, parent: QWidget | None = None
     ) -> StartDateBar:
         """One project's start date, for whichever surface wants to show the schedule."""
-        return StartDateBar(self._deps.product, self._deps.undo, project_id, parent)
+        return StartDateBar(self._deps.library, self._deps.undo, project_id, parent)
 
     def open_for_steps(self, project_id: ProjectId, step_ids: Sequence[StepId] = ()) -> None:
         """Open the project's Estimates tab, scoped to ``step_ids`` (or the whole project).
@@ -99,7 +99,7 @@ class EstimationModule:
                 id=f"{MODULE_ID}.tab",
                 label=SPEC.label,
                 order=10,
-                factory=lambda: EstimateSection(deps.product, deps.undo),
+                factory=lambda: EstimateSection(deps.library, deps.undo),
             )
         )
 
@@ -123,16 +123,16 @@ class EstimationModule:
         follow_entity_tabs(
             deps.tabs,
             BulkEstimateActivity,
-            deps.product.has,
-            closes_on=deps.product.structure_changed,
-            retitles_on=deps.product.field_changed,
+            deps.library.has,
+            closes_on=deps.library.structure_changed,
+            retitles_on=deps.library.field_changed,
         )
 
     # -- the verb ------------------------------------------------------------------------------
 
     def _selected_steps(self, context: Context) -> list[StepId]:
-        product = self._deps.product
-        return [s for s in context.selected_entities("step") if product.has(s)]
+        library = self._deps.library
+        return [s for s in context.selected_entities("step") if library.has(s)]
 
     def _can_estimate(self, context: Context) -> ActionState:
         selected = self._selected_steps(context)
@@ -141,15 +141,15 @@ class EstimationModule:
         if selected:
             return ENABLED
         project_id = context.focus_entity("project")
-        if project_id is not None and self._deps.product.has(project_id):
+        if project_id is not None and self._deps.library.has(project_id):
             return ENABLED  # The menu-bar path: no steps picked, size the whole project.
         return DISABLED
 
     def _open_for_context(self, context: Context) -> None:
         selected = self._selected_steps(context)
         if selected:
-            self.open_for_steps(self._deps.product.project_of(selected[0]).id, selected)
+            self.open_for_steps(self._deps.library.project_of(selected[0]).id, selected)
             return
         project_id = context.focus_entity("project")
-        if project_id is not None and self._deps.product.has(project_id):
+        if project_id is not None and self._deps.library.has(project_id):
             self.open_for_steps(project_id)

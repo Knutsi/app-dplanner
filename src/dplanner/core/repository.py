@@ -22,15 +22,20 @@ one ``dirty(owner_id, aspect)`` signal, the framework's ``AutosaveService`` only
 and batches it, and ``flush(marks)`` on your store decides what an *aspect* means and in
 what order the writes happen. Your vocabulary, framework's timer.
 
+A repository is constructed from a *source path* — a file or directory your domain package
+interprets — rather than a storage provider, because a repository may span several
+providers (DPlanner's spans one per project). What providers it opens underneath is its
+own business.
+
 Modules that need the real model types import :mod:`dplanner.domain` directly; the layering
 rules allow that. This protocol exists so the *framework* never has to.
 """
 
 from collections.abc import Callable, Iterable
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from dplanner.core.signals import Signal
-from dplanner.core.storage.provider import StorageProvider
 
 # (owner id, aspect name). The aspect vocabulary belongs to your store: Writer uses
 # "text"/"meta"/"structure"; a planner might use "fields"/"dependencies".
@@ -64,22 +69,21 @@ class Persister(Protocol):
 
 
 class Repository[DocT](Protocol):
-    """One workspace's data. Constructed by your ``domain`` package, over a provider.
+    """One session's data. Constructed by your ``domain`` package, over a source path.
 
     Generic in the aggregate it loads, so the framework can hand your real type back to the
     composition root without ever naming it.
     """
 
-    storage: StorageProvider
     # (owner id, aspect) — the framework debounces this and calls flush().
     dirty: Signal[str, str]
 
     def exists(self) -> bool:
-        """Whether this storage already holds a workspace. False means seed a new one."""
+        """Whether the source already holds data. False means seed it first."""
         ...
 
     def load(self) -> DocT:
-        """Read the workspace, running any pending format migrations."""
+        """Read the data, running any pending format migrations."""
         ...
 
     def owners(self) -> Iterable[DataOwner]:
@@ -99,4 +103,4 @@ class Repository[DocT](Protocol):
         ...
 
 
-type RepositoryFactory[DocT] = Callable[[StorageProvider], Repository[DocT]]
+type RepositoryFactory[DocT] = Callable[[Path], Repository[DocT]]

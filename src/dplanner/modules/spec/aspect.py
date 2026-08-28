@@ -99,13 +99,13 @@ def write_step_entry(
 def attachment_paths(
     files: FilesFor, step_id: NodeId
 ) -> tuple[str, ...]:
-    """A step's spec figures as workspace-relative paths — what a briefing lists and the
+    """A step's spec figures as absolute paths — what a briefing lists and the
     launcher stages. A step the store has never flushed has no directory, and no files."""
     try:
         area = files(step_id, MODULE_ID)
     except KeyError:
         return ()
-    return tuple(f"{area.directory}/{name}" for name in assets(area))
+    return tuple(str(area.absolute(name)) for name in assets(area))
 
 
 def summary(step: Step) -> str:

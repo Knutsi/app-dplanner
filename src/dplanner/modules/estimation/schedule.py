@@ -23,7 +23,7 @@ from datetime import date
 from typing import Any
 
 from dplanner.core.module_data import stamped
-from dplanner.domain.model import Product, Project
+from dplanner.domain.model import Library, Project
 from dplanner.domain.ordering import placed
 from dplanner.domain.schedule import (
     CriticalPath,
@@ -70,9 +70,9 @@ def write_start(start: date | None) -> dict[str, Any]:
     return stamped({START_KEY: start.isoformat()}, DATA_FORMAT.version)
 
 
-def project_schedule(product: Product, project: Project) -> list[Scheduled]:
+def project_schedule(library: Library, project: Project) -> list[Scheduled]:
     """The project's steps in order, each with its running total and its date."""
-    return schedule(placed(product, project), read, start_of(project))
+    return schedule(placed(library, project), read, start_of(project))
 
 
 def finish_date(rows: list[Scheduled]) -> date | None:
@@ -80,9 +80,9 @@ def finish_date(rows: list[Scheduled]) -> date | None:
     return next((row.finish for row in reversed(rows) if row.finish is not None), None)
 
 
-def project_critical_path(product: Product, project: Project) -> CriticalPath | None:
+def project_critical_path(library: Library, project: Project) -> CriticalPath | None:
     """The longest days-weighted chain, over this module's estimates."""
-    return critical_path(product, project, read)
+    return critical_path(library, project, read)
 
 
 def critical_finish(project: Project, path: CriticalPath) -> date | None:

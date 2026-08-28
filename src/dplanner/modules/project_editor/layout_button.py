@@ -15,7 +15,7 @@ from collections.abc import Callable
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMenu, QToolButton, QWidget
 
-from dplanner.domain.model import NodeId, Product, Project
+from dplanner.domain.model import Library, NodeId, Project
 from dplanner.framework.action_menu import append_action
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextService
@@ -34,7 +34,7 @@ class LayoutButton(QToolButton):
 
     def __init__(
         self,
-        product: Product,
+        library: Library,
         project_id: NodeId,
         actions: ActionRegistry,
         context: ContextService,
@@ -42,7 +42,7 @@ class LayoutButton(QToolButton):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._product = product
+        self._product = library
         self._project_id = project_id
         self._actions = actions
         self._context = context
@@ -59,8 +59,8 @@ class LayoutButton(QToolButton):
         self.setMenu(self._menu)
 
         self._unsubscribes: list[Callable[[], None]] = [
-            product.module_data_changed.connect(self._on_module_data),
-            product.structure_changed.connect(lambda *_args: self._refresh_face()),
+            library.module_data_changed.connect(self._on_module_data),
+            library.structure_changed.connect(lambda *_args: self._refresh_face()),
         ]
         self._refresh_face()
 

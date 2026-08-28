@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from dplanner.domain.model import NodeId, Product, Project, Step, StepId
+from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.progression import estimated_progress, progression
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
@@ -76,7 +76,7 @@ def _no_run(_context: Context) -> None:
 
 @dataclass(frozen=True)
 class ProgressionDeps:
-    product: Product
+    library: Library
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
@@ -99,7 +99,7 @@ class ProgressionActivity(EntityActivity):
     def __init__(self, deps: ProgressionDeps, project_id: NodeId) -> None:
         super().__init__(deps.context, "project", project_id)
         self._deps = deps
-        self._product = deps.product
+        self._product = deps.library
         self.project_id = project_id
 
         # The caption, note and board share one column capped at a readable measure —
@@ -257,14 +257,14 @@ class ProgressionModule:
         follow_entity_tabs(
             deps.tabs,
             ProgressionActivity,
-            deps.product.has,
-            closes_on=deps.product.structure_changed,
-            retitles_on=deps.product.field_changed,
+            deps.library.has,
+            closes_on=deps.library.structure_changed,
+            retitles_on=deps.library.field_changed,
         )
 
     def _on_a_project(self, context: Context) -> ActionState:
         project_id = context.focus_entity("project")
-        if project_id is None or not self._deps.product.has(project_id):
+        if project_id is None or not self._deps.library.has(project_id):
             return DISABLED
         return ENABLED
 

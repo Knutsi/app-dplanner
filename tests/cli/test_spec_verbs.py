@@ -1,4 +1,4 @@
-"""``dplanner spec``: documents, versions, requirements, links — over a real workspace.
+"""``dplanner spec``: documents, versions, requirements, links — over a real library.
 
 **No ``qapp`` fixture anywhere in this file**: the spec workflow is an agent's workflow,
 and it has to run where a graphics stack does not exist.
@@ -71,7 +71,7 @@ def test_import_stores_the_document_beside_the_project(cli, project, tmp_path, w
     listed = data(cli("spec", "list", project, "--json"))
     assert [doc["name"] for doc in listed["documents"]] == ["auth-spec"]
     assert listed["documents"][0]["kind"] == "markdown"
-    blobs = list((workspace / "projects").glob("*/modules/spec/documents/*.md"))
+    blobs = list(workspace.glob("*/modules/spec/documents/*.md"))
     assert len(blobs) == 1
 
 
@@ -93,7 +93,7 @@ def test_replacing_keeps_the_previous_version(cli, project, tmp_path, workspace)
     cli("spec", "import", project, source(tmp_path, "spec2.md", "two"), "--name", "spec")
     assert data(cli("spec", "list", project, "--json"))["documents"][0]["has_previous"]
     # Both blobs stay on disk: the index edit is undoable, the blob write is not.
-    blobs = list((workspace / "projects").glob("*/modules/spec/documents/*.md"))
+    blobs = list(workspace.glob("*/modules/spec/documents/*.md"))
     assert len(blobs) == 2
 
 
@@ -119,17 +119,17 @@ def test_show_prints_a_pdfs_text_layer_with_page_markers(cli, project, tmp_path)
 
 def test_import_writes_the_text_layer_beside_the_documents(cli, project, tmp_path, workspace):
     cli("spec", "import", project, source(tmp_path, "spec.pdf", tiny_pdf("A rule.")))
-    layers = list((workspace / "projects").glob("*/modules/spec/text/*.txt"))
+    layers = list(workspace.glob("*/modules/spec/text/*.txt"))
     assert len(layers) == 1 and "A rule." in layers[0].read_text()
 
 
 def test_a_pdf_imported_before_text_layers_still_shows(cli, project, tmp_path, workspace):
     """Read verbs extract in memory and never write — no lazy backfill."""
     cli("spec", "import", project, source(tmp_path, "spec.pdf", tiny_pdf("A rule.")))
-    for layer in (workspace / "projects").glob("*/modules/spec/text/*.txt"):
+    for layer in workspace.glob("*/modules/spec/text/*.txt"):
         layer.unlink()
     assert "A rule." in cli("spec", "show", project, "spec")
-    assert list((workspace / "projects").glob("*/modules/spec/text/*.txt")) == []
+    assert list(workspace.glob("*/modules/spec/text/*.txt")) == []
 
 
 def test_pages_are_a_pdf_thing(cli, project, tmp_path):
@@ -330,7 +330,7 @@ def test_attach_to_step_copies_the_figure_beside_the_step(cli, project, tmp_path
     cli("spec", "render", project, "s", "--page", "1")
     cli("step", "add", project, "Hash passwords")
     report = data(cli("spec", "attach-to-step", "Hash passwords", "a1", "--json"))
-    copies = list((workspace / "projects").glob("*/steps/*/modules/spec/assets/*.png"))
+    copies = list(workspace.glob("*/steps/*/modules/spec/assets/*.png"))
     assert len(copies) == 1 and report["files"][0].endswith(".png")
 
     shown = data(cli("step", "show", "Hash passwords", "--json"))
@@ -341,7 +341,7 @@ def test_attach_to_step_copies_the_figure_beside_the_step(cli, project, tmp_path
     shown = data(cli("step", "show", "Hash passwords", "--json"))
     assert "attachments" not in shown["aspects"].get("spec", {})
     # The copied blob stays — content-addressed files are cheap and undo may want it.
-    assert list((workspace / "projects").glob("*/steps/*/modules/spec/assets/*.png"))
+    assert list(workspace.glob("*/steps/*/modules/spec/assets/*.png"))
 
 
 def test_linking_does_not_erase_attachments(cli, project, tmp_path):
@@ -408,7 +408,7 @@ def test_attach_to_step_takes_several_assets(cli, project, tmp_path, workspace):
     cli("step", "add", project, "Hash passwords")
     report = data(cli("spec", "attach-to-step", "Hash passwords", "a1", "a2", "--json"))
     assert report["assets"] == ["a1", "a2"] and len(report["files"]) == 2
-    copies = list((workspace / "projects").glob("*/steps/*/modules/spec/assets/*.png"))
+    copies = list(workspace.glob("*/steps/*/modules/spec/assets/*.png"))
     assert len(copies) == 2
 
     out = cli("spec", "attach-to-step", "Hash passwords", "a1", "a9", expect=1)
@@ -417,7 +417,7 @@ def test_attach_to_step_takes_several_assets(cli, project, tmp_path, workspace):
 
 def test_the_index_is_stamped_format_2(cli, project, tmp_path, workspace):
     cli("spec", "import", project, source(tmp_path, "s.md", "# Spec"))
-    entry = json.loads(next((workspace / "projects").glob("*/modules/spec.json")).read_text())
+    entry = json.loads(next(workspace.glob("*/modules/spec.json")).read_text())
     assert entry["format"] == 2
 
 
@@ -435,7 +435,7 @@ def test_remove_takes_the_document_and_its_requirements(cli, marked, tmp_path, w
     remaining = data(cli("spec", "requirements", marked, "--json"))["requirements"]
     assert [req["id"] for req in remaining] == ["r2"]
     # The blob outlives the index entry — an orphan is recoverable, a dangling pointer is not.
-    blobs = list((workspace / "projects").glob("*/modules/spec/documents/*.md"))
+    blobs = list(workspace.glob("*/modules/spec/documents/*.md"))
     assert len(blobs) == 2
 
 
@@ -448,7 +448,7 @@ def test_remove_reports_the_steps_left_dangling(cli, marked):
 
 def test_removing_the_last_document_removes_the_index_file(cli, marked, workspace):
     cli("spec", "remove", marked, "spec")
-    assert list((workspace / "projects").glob("*/modules/spec.json")) == []
+    assert list(workspace.glob("*/modules/spec.json")) == []
 
 
 # -- refusals leave nothing behind -------------------------------------------------------------

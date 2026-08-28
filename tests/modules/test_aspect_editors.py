@@ -8,18 +8,16 @@ stack, each ignoring the echo of its own write.
 import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
-from dplanner.domain.model import Project, Step, TextEdit
+from dplanner.domain.model import Step, TextEdit
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.estimation.aspect import read as read_estimate
 from dplanner.modules.step_properties.module import PANEL_ID
 
 
 @pytest.fixture
-def project(services):
-    product = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
-    AddNodeCommand(project.id, Step(title="Read the spec")).redo(product)
+def project(services, make_project):
+    project = make_project("Discovery")
+    AddNodeCommand(project.id, Step(title="Read the spec")).redo(services.document)
     return project
 
 

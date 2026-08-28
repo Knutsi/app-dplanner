@@ -1,40 +1,42 @@
-"""Saving, in the sense of recording a version — and only when that means something.
+"""Saving, in the sense of recording a version — across every repository in the library.
 
-This module is the clearest demonstration of why storage is a capability rather than a
-flag. It asks the provider one question at registration:
+What Save means here: files are already on disk (autosave put them there); *Save* records
+a version. One library spans several git repositories, so Save commits **each dirty
+repository once**, scoped to that repository's project directories — the user's source
+code is never swept up — and pushes where a remote exists. The unsaved-changes indicator
+counts files across all of them.
 
-    if not isinstance(deps.storage, VersionedStorage): return
+Branch operations are different: a branch belongs to one repository, so New Branch and
+Switch Branch act on the repository of the *focused project* and are disabled — with the
+reason in the label — until a project is focused.
 
-Against a plain folder it registers **nothing** — no Save action, no branch label, no
-unsaved indicator, no Ctrl+S that silently does nothing. Against a git checkout it
-registers the lot, and if that checkout also has a remote it adds Update. Nothing anywhere
-else in the application checks which backend is in use.
-
-What Save means here: files are already on disk (autosave put them there); *Save* records a
-version. That is why the unsaved-changes indicator counts files differing from the last
-commit rather than unwritten buffers.
+Membership changes at runtime (File ▸ New/Open Project), so the service re-pulls its
+repository groups whenever the library's structure changes.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QInputDialog, QMessageBox, QWidget
 
-from dplanner.core.storage.provider import (
-    RemoteStorage,
-    StorageError,
-    StorageProvider,
-    VersionedStorage,
+from dplanner.core.storage.provider import StorageError, StorageProvider
+from dplanner.domain.model import Library, ProjectId
+from dplanner.framework.action_registry import (
+    DISABLED,
+    ActionRegistry,
+    ActionSpec,
+    ActionState,
 )
-from dplanner.framework.action_registry import ActionRegistry, ActionSpec, ActionState
 from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import Context, ContextService
-from dplanner.framework.session import WorkspaceSwitcher
+from dplanner.framework.session import SessionControl
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.window import StatusHost, UnsavedChangesHost
-from dplanner.modules.sync.service import SyncService
+from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
+from dplanner.modules.sync.service import RepoGroup, SyncService
 from dplanner.modules.sync.view import DiffDialog, IconLabel, UnsavedChangesButton
 from dplanner.theme.icons import branch_icon, folder_icon
 from dplanner.theme.themes import Theme
@@ -45,13 +47,21 @@ class SyncDeps:
     actions: ActionRegistry
     autosave: AutosaveService
     context: ContextService
-    storage: StorageProvider
     status: StatusHost
     tasks: TaskService  # Storage operations surface in the task centre ("Saving", …).
     chrome: UnsavedChangesHost  # The headline "unsaved changes" flag and quit-time guard.
     theme: ThemeService  # The status-bar glyphs follow the theme's secondary text colour.
     parent: QWidget  # Dialog parent; also the service's QObject parent.
-    switcher: WorkspaceSwitcher
+    switcher: SessionControl
+    library: Library  # For its structure signal: membership changes re-pull the groups.
+    library_path: Path
+    # The store's repository face, wired by the composition root.
+    repos: Callable[[], Sequence[StorageProvider]]
+    repo_for: Callable[[ProjectId], StorageProvider | None]
+    # The project the user is in: the focused project, or the focused step's project.
+    focused_project: Callable[[Context], ProjectId | None]
+    # The titles a repository group covers, for the diff picker and the quit dialog.
+    projects_in: Callable[[RepoGroup], list[str]]
 
 
 class SyncModule:
@@ -64,10 +74,10 @@ class SyncModule:
     def register(self) -> None:
         deps = self._deps
 
-        # Which workspace this window is on, in every configuration — it is the first thing
+        # Which library this window is on, in every configuration — it is the first thing
         # you want to know when two windows are open.
         path_label = IconLabel("WorkspacePathLabel")
-        path_label.set_text(deps.storage.label)
+        path_label.set_text(self._library_label())
         deps.status.add_status_widget(path_label)
 
         branch_label = IconLabel("SyncStatusLabel")
@@ -80,23 +90,13 @@ class SyncModule:
         deps.theme.changed.connect(paint_icons)
         paint_icons(deps.theme.current)
 
-        storage = deps.storage
-        if not isinstance(storage, VersionedStorage):
-            # A plain folder. Say so once, and register nothing that would lie.
-            branch_label.set_text("no history")
-            return
-
-        service = SyncService(storage, deps.tasks, parent=deps.parent)
+        service = SyncService(deps.repos, deps.tasks, parent=deps.parent)
         self.service = service
+        deps.library.structure_changed.connect(lambda *_: self._on_membership(service))
 
         unsaved_button = UnsavedChangesButton()
         deps.status.add_status_widget(unsaved_button)
         diff_dialog = DiffDialog(deps.parent)
-
-        # A workspace switch mid-operation would pull files out from under the provider.
-        deps.switcher.add_switch_guard(
-            lambda: "Storage is busy — try again in a moment" if service.is_busy() else None
-        )
 
         def poke_context() -> None:
             # Action states re-evaluate on context change only, so a storage-state change
@@ -104,21 +104,26 @@ class SyncModule:
             deps.context.refresh()
 
         def refresh_label(*_args: object) -> None:
-            branch = service.branch or "—"
-            branch_label.set_text(f"{branch} — working…" if service.is_busy() else branch)
-            poke_context()
+            group = self._focused_group(service, deps.context.current())
+            branch = service.branch_of(group) if group is not None else ""
+            shown = branch or "—"
+            branch_label.set_text(f"{shown} — working…" if service.is_busy() else shown)
+
+        # The branch label follows the focused project, so a selection change repaints it.
+        deps.context.changed.connect(refresh_label)
 
         # Autosave must never race a checkout; pause() nests, and resume() happens when the
         # operation ends.
         service.before_operation = deps.autosave.pause
 
-        # An operation that rewrote the working tree leaves the in-memory model stale, so
+        # An operation that rewrote a working tree leaves the in-memory model stale, so
         # the whole build is replaced once the operation finishes.
         pending_reload = [False]
         service.worktree_changed.connect(lambda: pending_reload.__setitem__(0, True))
 
         def on_busy_changed(busy: bool) -> None:
             refresh_label()
+            poke_context()
             if busy:
                 return
             if pending_reload[0]:
@@ -133,7 +138,6 @@ class SyncModule:
             service.refresh()
 
         service.busy_changed.connect(on_busy_changed)
-        service.branch_changed.connect(refresh_label)
         service.notice.connect(lambda text: deps.status.show_status(text, 5000))
         service.failed.connect(lambda text: QMessageBox.warning(deps.parent, "Storage", text))
         # Files reach disk 1.5 s after the last keystroke; that is also the earliest moment
@@ -149,7 +153,9 @@ class SyncModule:
         service.dirty_changed.connect(on_dirty_changed)
 
         def open_diff() -> None:
-            diff_dialog.set_diff(storage.diff())
+            diff_dialog.set_sources(
+                [(self._group_label(group), group.diff) for group in service.groups()]
+            )
             diff_dialog.show()  # Non-modal: reviewing a diff must not block editing.
             diff_dialog.raise_()
             diff_dialog.activateWindow()
@@ -168,6 +174,30 @@ class SyncModule:
         service.refresh()
         refresh_label()
 
+    # -- labels --------------------------------------------------------------------------------
+
+    def _library_label(self) -> str:
+        path = self._deps.library_path
+        home = Path.home()
+        return f"~/{path.relative_to(home)}" if path.is_relative_to(home) else str(path)
+
+    def _group_label(self, group: RepoGroup) -> str:
+        titles = ", ".join(self._deps.projects_in(group))
+        count = group.dirty_file_count()
+        files = f" · {count} file{'s' if count != 1 else ''}" if count else ""
+        return f"{group.label}{files}" + (f" — {titles}" if titles else "")
+
+    def _focused_group(self, service: SyncService, context: Context) -> RepoGroup | None:
+        project_id = self._deps.focused_project(context)
+        if project_id is None:
+            return None
+        group = self._deps.repo_for(project_id)
+        return group if isinstance(group, RepoGroup) else None
+
+    def _on_membership(self, service: SyncService) -> None:
+        service.rewire()
+        service.refresh()
+
     # -- quitting ------------------------------------------------------------------------------
 
     def _confirm_close(self, service: SyncService) -> bool:
@@ -176,24 +206,22 @@ class SyncModule:
         # before deciding, so quitting right after typing never loses the question.
         deps.autosave.flush_now()
         service.refresh()
-        if not service.dirty:
+        dirty = service.dirty_groups()
+        if not dirty:
             return True
-        box = QMessageBox(deps.parent)
-        box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("Unsaved Changes")
-        noun = "change" if service.dirty_file_count == 1 else "changes"
-        box.setText(f"You have {service.dirty_file_count} unsaved {noun}. Save before quitting?")
-        box.setStandardButtons(
-            QMessageBox.StandardButton.Save
-            | QMessageBox.StandardButton.Discard
-            | QMessageBox.StandardButton.Cancel
-        )
-        box.setDefaultButton(QMessageBox.StandardButton.Save)
-        result = box.exec()
-        if result == QMessageBox.StandardButton.Cancel:
+        rows = [DirtyRepoRow(label=self._group_label(group)) for group in dirty]
+        dialog = ExitDialog(rows, deps.parent)
+        if dialog.exec() != ExitDialog.DialogCode.Accepted:
             return False
-        if result == QMessageBox.StandardButton.Save:
-            service.save_sync()
+        if dialog.discard:
+            # Unchecked or discarded repositories stay dirty. Nothing is lost: the files
+            # are on disk, and the next window shows the same unsaved count.
+            return True
+        chosen = [dirty[index] for index in dialog.checked_rows()]
+        if chosen:
+            # Synchronous, like the old quit-time save: the window is closing, and a task
+            # nobody can watch is worse than a moment's wait.
+            service.save_sync(dialog.message(), only=chosen)
         return True
 
     # -- actions -------------------------------------------------------------------------------
@@ -204,15 +232,28 @@ class SyncModule:
         def ready(_context: Context) -> ActionState:
             return ActionState(enabled=not service.is_busy())
 
+        def branch_ready(reason_label: str) -> Callable[[Context], ActionState]:
+            def state(context: Context) -> ActionState:
+                if service.is_busy():
+                    return DISABLED
+                if self._focused_group(service, context) is None:
+                    return ActionState(enabled=False, label=reason_label)
+                return ActionState(enabled=True)
+
+            return state
+
         def run_save(_context: Context) -> None:
             deps.autosave.flush_now()  # Typing reaches disk before it is committed.
             service.save()
 
-        def run_switch(_context: Context) -> None:
-            names = service.branches()
+        def run_switch(context: Context) -> None:
+            group = self._focused_group(service, context)
+            if group is None:
+                return
+            names = service.branches(group)
             if not names:
                 return
-            current = service.branch
+            current = service.branch_of(group)
             chosen, accepted = QInputDialog.getItem(
                 deps.parent,
                 "Switch Branch",
@@ -224,14 +265,17 @@ class SyncModule:
             if not accepted or chosen == current:
                 return
             deps.autosave.flush_now()
-            self._run_guarded(lambda: service.switch_branch_sync(chosen))
+            self._run_guarded(lambda: service.switch_branch_sync(group, chosen))
 
-        def run_new_branch(_context: Context) -> None:
+        def run_new_branch(context: Context) -> None:
+            group = self._focused_group(service, context)
+            if group is None:
+                return
             name, accepted = QInputDialog.getText(deps.parent, "New Branch", "Branch name:")
             if not accepted or not name.strip():
                 return
             deps.autosave.flush_now()
-            self._run_guarded(lambda: service.create_branch_sync(name.strip()))
+            self._run_guarded(lambda: service.create_branch_sync(group, name.strip()))
 
         deps.actions.register(
             ActionSpec(
@@ -241,7 +285,7 @@ class SyncModule:
                 group="save",
                 order=10,
                 shortcut="Ctrl+S",
-                tip="Record a version of the workspace",
+                tip="Record a version in every repository with planning changes",
                 state=ready,
                 run=run_save,
             )
@@ -265,8 +309,8 @@ class SyncModule:
                 menu="File",
                 group="branch",
                 order=10,
-                tip="Start a new line of work from the current state",
-                state=ready,
+                tip="Start a new line of work in the focused project's repository",
+                state=branch_ready("New &Branch — select a project first"),
                 run=run_new_branch,
             )
         )
@@ -277,8 +321,8 @@ class SyncModule:
                 menu="File",
                 group="branch",
                 order=20,
-                tip="Move to another line of work",
-                state=ready,
+                tip="Move the focused project's repository to another line of work",
+                state=branch_ready("S&witch Branch — select a project first"),
                 run=run_switch,
             )
         )
@@ -286,19 +330,25 @@ class SyncModule:
         def run_pull(_context: Context) -> None:
             service.pull()
 
-        if isinstance(service.storage, RemoteStorage):
-            deps.actions.register(
-                ActionSpec(
-                    id="sync.pull",
-                    label="&Update from Remote",
-                    menu="File",
-                    group="branch",
-                    order=30,
-                    tip="Bring in work saved elsewhere",
-                    state=ready,
-                    run=run_pull,
-                )
+        def pull_ready(_context: Context) -> ActionState:
+            if service.is_busy():
+                return DISABLED
+            if not service.has_any_remote():
+                return ActionState(enabled=False, label="&Update from Remote — no remotes")
+            return ActionState(enabled=True)
+
+        deps.actions.register(
+            ActionSpec(
+                id="sync.pull",
+                label="&Update from Remote",
+                menu="File",
+                group="branch",
+                order=30,
+                tip="Bring in work saved elsewhere, in every repository with a remote",
+                state=pull_ready,
+                run=run_pull,
             )
+        )
 
     def _run_guarded(self, body: Callable[[], None]) -> None:
         """Run a synchronous storage operation with autosave paused, reporting failures.
