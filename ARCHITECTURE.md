@@ -567,6 +567,31 @@ it gates on a test suite; and the conditional checks (spec citations only where 
 exist, a start date only where estimates do) keep the report an obligation list rather than
 noise about features a project never adopted.
 
+A check is handed the store's file lookup as its third argument (`FilesFor`) alongside the
+product and project, because some facts live *beside* a node rather than in it: whether a
+requirement's quote still anchors in its document's text layer, whether a description's
+`![](assets/…)` resolves to a file actually attached. The check re-derives those answers on
+every run rather than trusting anything stored at mark time — `spec import` can replace a
+document with no window open to notice, which is the same argument the ordering makes.
+
+## Authoring a step is one verb, many modules
+
+A fully authored step needs a description, an instruction, an estimate, its requirement
+links and its figures — five modules' facts, and five commands when every module keeps to
+its own verb. Measured against a real plan, that was most of the invocations. So `step add`
+takes **authors**: each contributing module's Qt-free `cli.py` exports a `StepAuthor` — the
+flags it registers on the verb's parser, and what it applies to the fresh step — and the
+composition root assembles the list into `projects_cli.commands(step_authors=…)`, exactly
+as it assembles lint's checks. The shape lives in `cli/authoring.py` for lint's reason: the
+contributing modules may not import each other, and `cli/` sits below them all.
+
+Two decisions carry the weight. **The transaction is the rollback**: an author that raises
+aborts the whole run, and `open_product` flushes nothing — the step included — so no author
+writes compensation code. Any future refactor that flushed eagerly mid-run would silently
+break every author's atomicity; this paragraph is the guard. And **stdin is claimed before
+it is read**: each author declares whether its parsed flags would consume stdin, so two
+`--…-file -` on one call are refused before either swallows the other's document.
+
 ## Deriving rather than storing
 
 `domain/ordering.py` answers "what order can this be done in" as a pure function, and the
