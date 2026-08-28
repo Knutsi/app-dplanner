@@ -312,6 +312,33 @@ def test_agent_prompt_with_no_instruction_anywhere_names_both_fixes(cli):
     assert "agent set --project" in message
 
 
+# -- the schedule's two assumptions ------------------------------------------------------------
+
+
+def test_schedule_show_names_both_assumptions(cli):
+    """A diamond graph: serial totals every step, the critical path takes the heavier
+    branch — and each line says which assumption produced it."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "A")
+    cli("step", "add", "Discovery", "B", "--after", "A")
+    cli("step", "add", "Discovery", "C", "--after", "A")
+    cli("step", "add", "Discovery", "D", "--after", "B", "--after", "C")
+    for title, days in (("A", "1"), ("B", "2"), ("C", "10"), ("D", "1")):
+        cli("estimate", "set", title, "--days", days)
+    cli("schedule", "start", "Discovery", "--date", "2026-09-07")
+
+    shown = data(cli("schedule", "show", "Discovery", "--json"))
+    assert shown["days"] == 14 and shown["assumption"] == "serial"
+    path = shown["critical_path"]
+    assert path["days"] == 12
+    assert [step["title"] for step in path["steps"]] == ["A", "C", "D"]
+
+    text = cli("schedule", "show", "Discovery")
+    assert "(serial: one worker, steps end to end)" in text
+    assert "critical path:" in text and "unlimited workers" in text
+    assert "A → C → D" in text
+
+
 # -- the graph as text -------------------------------------------------------------------------
 
 

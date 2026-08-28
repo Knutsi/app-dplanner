@@ -12,17 +12,9 @@ MODULE_ID = "step_agent_instruction"
 
 
 def png_bytes():
+    from dplanner.core.png import encode_rgb
 
-    from PySide6.QtGui import QColor, QImage
-
-    image = QImage(2, 2, QImage.Format.Format_RGB32)
-    image.fill(QColor("black"))
-    from PySide6.QtCore import QBuffer
-
-    buffer = QBuffer()
-    buffer.open(QBuffer.OpenModeFlag.WriteOnly)
-    image.save(buffer, "PNG")
-    return bytes(buffer.data())
+    return encode_rgb(2, 2, 6, b"\x00" * 12)
 
 
 @pytest.fixture

@@ -15,10 +15,18 @@ from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Product, Project
-from dplanner.domain.schedule import Scheduled, format_date, format_day_count, format_days
+from dplanner.domain.schedule import (
+    CriticalPath,
+    Scheduled,
+    format_date,
+    format_day_count,
+    format_days,
+)
 from dplanner.modules.estimation.aspect import MODULE_ID, read, write
 from dplanner.modules.estimation.schedule import (
+    critical_finish,
     finish_date,
+    project_critical_path,
     project_schedule,
     read_start,
     start_of,
@@ -185,18 +193,34 @@ def _start(context: CliContext, args: Namespace) -> int:
 
 
 def _show(context: CliContext, args: Namespace) -> int:
-    """The schedule: the order walk, carrying estimates instead of counting hops."""
+    """The schedule: the order walk carrying estimates, under both honest assumptions.
+
+    The serial total and the critical path bracket every real staffing, so both are
+    always printed, each labelled with the assumption it makes — a single number here
+    would be a guess wearing a date.
+    """
     project = find_project(context.product, args.project)
     rows = project_schedule(context.product, project)
     start = start_of(project)
     unestimated = sum(1 for row in rows if row.days is None)
     landing = finish_date(rows)
+    path = project_critical_path(context.product, project)
+    path_landing = critical_finish(project, path) if path is not None else None
     data: dict[str, Any] = {
         "project": project.id,
         "start": start.isoformat(),
         "finish": landing.isoformat() if landing else "",
         "days": rows[-1].accumulated if rows else 0.0,
+        "assumption": "serial",  # What the finish/days/accumulated keys mean.
         "unestimated": unestimated,
+        "critical_path": None
+        if path is None
+        else {
+            "days": path.days,
+            "finish": path_landing.isoformat() if path_landing else "",
+            "steps": [{"id": step.id, "title": step.title} for step in path.steps],
+            "unestimated": path.unestimated,
+        },
         "steps": [
             {
                 "index": row.place.index,
@@ -209,7 +233,7 @@ def _show(context: CliContext, args: Namespace) -> int:
             for row in rows
         ],
     }
-    context.report(data, _report(project.title, rows, landing, unestimated))
+    context.report(data, _report(project.title, rows, landing, unestimated, path, path_landing))
     return 0
 
 
@@ -218,6 +242,8 @@ def _report(
     rows: list[Scheduled],
     landing: date | None,
     unestimated: int,
+    path: CriticalPath | None,
+    path_landing: date | None,
 ) -> str:
     """The same columns the order table shows, through the same formatter."""
     if not rows:
@@ -232,6 +258,17 @@ def _report(
     tail = f"{format_days(rows[-1].accumulated)} of work"
     if landing is not None:
         tail += f", landing {format_date(landing)}"
+    tail += " (serial: one worker, steps end to end)"
     if unestimated:
         tail += f", {unestimated} unestimated"
-    return "\n".join([*lines, "", f"{title}: {tail}"])
+    summary = [f"{title}: {tail}"]
+    if path is not None:
+        chain = " → ".join(step.title or "Untitled step" for step in path.steps)
+        second = f"critical path: {format_days(path.days)}"
+        if path_landing is not None:
+            second += f", landing {format_date(path_landing)}"
+        second += f" (dependency-aware: unlimited workers) — {chain}"
+        if path.unestimated:
+            second += f", {path.unestimated} unestimated on the path"
+        summary.append(second)
+    return "\n".join([*lines, "", *summary])

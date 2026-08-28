@@ -175,3 +175,62 @@ def test_one_day_is_singular_and_everything_else_plural():
     assert format_day_count(1) == "1 day"
     assert format_day_count(2.5) == "2.5 days"
     assert format_day_count(0) == "0 days"
+
+
+# -- the critical path ---------------------------------------------------------------------------
+
+
+def diamond():
+    """A splits into B and C, which join at D — the shape that separates serial from path."""
+    product = Product(name="Widget")
+    project = Project(title="Discovery")
+    product.add_child(product.id, project)
+    for title in ("A", "B", "C", "D"):
+        product.add_child(project.id, Step(title=title))
+    a, b, c, d = project.steps
+    product.set_edges(b.id, "requires", [a.id])
+    product.set_edges(c.id, "requires", [a.id])
+    product.set_edges(d.id, "requires", [b.id, c.id])
+    return product, project
+
+
+def test_the_path_takes_the_heavier_branch():
+    from dplanner.domain.schedule import critical_path
+
+    product, project = diamond()
+    path = critical_path(product, project, days_of({"A": 1, "B": 2, "C": 10, "D": 1}))
+    assert path is not None
+    assert [step.title for step in path.steps] == ["A", "C", "D"]
+    assert path.days == 12
+    assert path.unestimated == 0
+
+
+def test_unestimated_steps_on_the_path_are_counted_not_priced():
+    from dplanner.domain.schedule import critical_path
+
+    product, project = diamond()
+    path = critical_path(product, project, days_of({"A": 1, "B": 2, "D": 1}))
+    assert path is not None
+    # C is free to the walk, so B's branch is the heavier one — and nothing on it is a guess.
+    assert [step.title for step in path.steps] == ["A", "B", "D"]
+    assert path.unestimated == 0
+    heavy = critical_path(product, project, days_of({"A": 1, "D": 1}))
+    assert heavy is not None and heavy.unestimated == 1  # whichever weightless branch won
+
+
+def test_equal_branches_break_ties_by_project_order():
+    from dplanner.domain.schedule import critical_path
+
+    product, project = diamond()
+    path = critical_path(product, project, days_of({"A": 1, "B": 3, "C": 3, "D": 1}))
+    assert path is not None
+    assert [step.title for step in path.steps] == ["A", "B", "D"]
+
+
+def test_an_empty_project_has_no_path():
+    from dplanner.domain.schedule import critical_path
+
+    product = Product(name="Widget")
+    project = Project(title="Discovery")
+    product.add_child(product.id, project)
+    assert critical_path(product, project, days_of({})) is None
