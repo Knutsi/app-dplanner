@@ -14,7 +14,16 @@ stack announces, the scene fans out, and no item ever reads which mode is curren
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPalette, QPen
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetrics,
+    QFontMetricsF,
+    QPainter,
+    QPainterPath,
+    QPalette,
+    QPen,
+)
 
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 
@@ -39,6 +48,9 @@ INVALID_TINT = QColor(220, 110, 110, 180)
 BUSY_TINT = QColor(110, 160, 220, 180)
 BADGE_TINT = QColor(150, 130, 220, 70)
 BADGE_BORDER = QColor(150, 130, 220, 160)
+# A highlighted body: the badge's purple family over the whole node, so a milestone node,
+# its badge and the order table's release row read as one identity.
+HIGHLIGHT_FILL = QColor(150, 130, 220, 36)
 CHIP_INFO_TINT = QColor(90, 170, 200, 70)
 CHIP_INFO_BORDER = QColor(90, 170, 200, 160)
 CHIP_ATTENTION_TINT = QColor(220, 170, 90, 70)
@@ -59,6 +71,11 @@ BADGE_INSET = 10.0  # From the node's right edge, clear of the link handle's cor
 
 # The chip on the bottom edge, left end — the badge's mirror, worn by a live agent run.
 CHIP_H = 14.0
+
+# The icon medallions on the top edge, left end: one small circle per aspect kind a step
+# carries. Sized like the badge, and bound by the same boundingRect inequality.
+ICON_D = 14.0
+ICON_GAP = 4.0
 
 # The pill on the second line: a small status label (a PR, say) beside the subtitle.
 PILL_H = 14.0
@@ -95,9 +112,14 @@ class NodeAccent:
     pill_tone: str = ""  # "" neutral | "good" | "bad".
     branch: bool = False  # Paint the branch glyph.
     bar_tone: str = ""  # "" none | "good" | "busy" | "bad".
-    spark: bool = False  # Paint the spark glyph: there is machine guidance here.
     chip_text: str = ""  # "" → no chip.
     chip_tone: str = ""  # "" neutral | "info" | "attention".
+    body_tone: str = ""  # "" plain | "highlight": the node itself is a different kind.
+    # Icon medallions on the top edge, left end, in order: "tag" (a milestone the graph
+    # aims at), "spark" (there is machine guidance here).
+    icons: tuple[str, ...] = ()
+    stat_text: str = ""  # The one number a step answers with — full ink, never faded.
+    stat_strong: bool = False  # Bold the stat: this node's number is the point of it.
 
 
 @dataclass(frozen=True)
@@ -142,8 +164,9 @@ def paint_node(
 
     paint_body(painter, palette, body, accent, state)
     inner = body.adjusted(PADDING, PADDING, -PADDING, -PADDING)
-    paint_title_line(painter, inner, title, text_colour, accent.muted)
-    paint_second_line(painter, inner, subtitle, accent, text_colour, faded)
+    paint_title(painter, inner, title, text_colour, accent.muted)
+    paint_detail_line(painter, inner, subtitle, accent, text_colour, faded)
+    paint_icon_medallions(painter, palette, accent.icons)
     if accent.badge:
         paint_badge(painter, palette, accent.badge)
     if accent.chip_text:
@@ -154,20 +177,32 @@ def paint_node(
 def paint_body(
     painter: QPainter, palette: QPalette, body: QRectF, accent: NodeAccent, state: NodeState
 ) -> None:
-    """The rounded rect: fill, border (selection and link aim win), and the status bar."""
+    """The rounded rect: fill, border (selection and link aim win), and the status bar.
+
+    A "highlight" body tone tints the whole node and strengthens its border — this node is
+    a different kind of thing, legible at any zoom — but selection and a link drag's
+    verdict still outrank it.
+    """
     muted = accent.muted
-    fill = QColor(palette.text().color())
-    fill.setAlpha(MUTED_FILL_ALPHA if muted else FILL_ALPHA)
+    highlighted = accent.body_tone == "highlight"
+    fill = QColor(HIGHLIGHT_FILL) if highlighted else QColor(palette.text().color())
+    if not highlighted:
+        fill.setAlpha(MUTED_FILL_ALPHA if muted else FILL_ALPHA)
     border = QColor(palette.highlight().color())
+    width = 2.0 if state.selected or state.link_state else 1.0
     if state.link_state == "valid":
         border = VALID_TINT
     elif state.link_state == "invalid":
         border = INVALID_TINT
     elif not state.selected:
-        border = QColor(palette.text().color())
-        border.setAlpha(MUTED_BORDER_ALPHA if muted else 90)
+        if highlighted:
+            border = QColor(BADGE_BORDER)
+            width = 1.5
+        else:
+            border = QColor(palette.text().color())
+            border.setAlpha(MUTED_BORDER_ALPHA if muted else 90)
     painter.setBrush(fill)
-    painter.setPen(QPen(border, 2.0 if state.selected or state.link_state else 1.0))
+    painter.setPen(QPen(border, width))
     painter.drawRoundedRect(body, RADIUS, RADIUS)
     if accent.bar_tone in BAR_TONES:
         paint_status_bar(painter, body, accent.bar_tone)
@@ -183,14 +218,34 @@ def paint_status_bar(painter: QPainter, body: QRectF, tone: str) -> None:
     painter.restore()
 
 
-def paint_title_line(
+def title_lines(metrics: QFontMetrics | QFontMetricsF, title: str, width: float) -> list[str]:
+    """The title wrapped onto at most two lines, the second elided.
+
+    Word-accumulation, so a name breaks where a person would break it; a single word too
+    wide for a line is left to the elision. Pure, so it can be tested without a painter.
+    """
+    if metrics.horizontalAdvance(title) <= width:
+        return [title]
+    words = title.split()
+    first = ""
+    for index, word in enumerate(words):
+        attempt = f"{first} {word}".strip()
+        if first and metrics.horizontalAdvance(attempt) > width:
+            rest = " ".join(words[index:])
+            return [first, metrics.elidedText(rest, Qt.TextElideMode.ElideRight, int(width))]
+        first = attempt
+    return [metrics.elidedText(title, Qt.TextElideMode.ElideRight, int(width))]
+
+
+def paint_title(
     painter: QPainter, inner: QRectF, title: str, text_colour: QColor, muted: bool
 ) -> None:
+    """Up to two lines of name, so most steps read in full."""
     metrics = painter.fontMetrics()
     title_left = inner.left()
     painter.setPen(text_colour)
     if muted:
-        # A check before the title says "done" without a word taking subtitle space.
+        # A check before the title says "done" without a word taking detail space.
         check = "✓"
         painter.drawText(
             QRectF(title_left, inner.top(), inner.width(), metrics.height()),
@@ -198,15 +253,16 @@ def paint_title_line(
             check,
         )
         title_left += metrics.horizontalAdvance(check + " ")
-    title_width = inner.right() - title_left
-    painter.drawText(
-        QRectF(title_left, inner.top(), title_width, metrics.height()),
-        int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-        metrics.elidedText(title, Qt.TextElideMode.ElideRight, int(title_width)),
-    )
+    width = inner.right() - title_left
+    for row, line in enumerate(title_lines(metrics, title, width)):
+        painter.drawText(
+            QRectF(title_left, inner.top() + row * metrics.height(), width, metrics.height()),
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+            line,
+        )
 
 
-def paint_second_line(
+def paint_detail_line(
     painter: QPainter,
     inner: QRectF,
     subtitle: str,
@@ -214,12 +270,20 @@ def paint_second_line(
     text_colour: QColor,
     faded: QColor,
 ) -> None:
-    """Subtitle on the left; pill, then branch and spark glyphs, right-aligned.
+    """The bottom line: subtitle on the left; stat, pill and branch glyph right-aligned.
 
-    The decorations take their width first so the subtitle's elision stays honest.
+    Anchored to the node's bottom, so a one-line title just leaves air above it. The
+    decorations take their width first so the subtitle's elision stays honest, and the
+    stat — the one number the step answers with — is the rightmost and the only full-ink
+    text on the line.
     """
     metrics = painter.fontMetrics()
-    second_top = inner.top() + metrics.height() + LINE_GAP
+    line_top = inner.bottom() - metrics.height()
+    stat_font = QFont(painter.font())
+    stat_font.setBold(accent.stat_strong)
+    stat_w = (
+        QFontMetricsF(stat_font).horizontalAdvance(accent.stat_text) if accent.stat_text else 0.0
+    )
     pill_font = QFont(painter.font())
     pill_font.setPointSizeF(max(6.0, pill_font.pointSizeF() - 1))
     pill_w = (
@@ -227,21 +291,32 @@ def paint_second_line(
         if accent.pill_text
         else 0.0
     )
-    glyphs = int(accent.branch) + int(accent.spark)
-    glyph_w = glyphs * GLYPH_SIZE + (glyphs - (0 if pill_w else 1)) * GLYPH_GAP if glyphs else 0.0
-    reserved = pill_w + glyph_w + (PILL_MARGIN if pill_w or glyph_w else 0.0)
+    glyph_w = GLYPH_SIZE if accent.branch else 0.0
+    parts = [w for w in (stat_w, pill_w, glyph_w) if w]
+    reserved = sum(parts) + GLYPH_GAP * max(0, len(parts) - 1) + (PILL_MARGIN if parts else 0.0)
 
     if subtitle:
         painter.setPen(faded)
         width = inner.width() - reserved
         painter.drawText(
-            QRectF(inner.left(), second_top, width, metrics.height()),
-            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop),
+            QRectF(inner.left(), line_top, width, metrics.height()),
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
             metrics.elidedText(subtitle, Qt.TextElideMode.ElideRight, int(width)),
         )
     right = inner.right()
+    if stat_w:
+        painter.save()
+        painter.setFont(stat_font)
+        painter.setPen(text_colour)
+        painter.drawText(
+            QRectF(right - stat_w, line_top, stat_w, metrics.height()),
+            int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
+            accent.stat_text,
+        )
+        painter.restore()
+        right -= stat_w + GLYPH_GAP
     if pill_w:
-        pill = QRectF(right - pill_w, second_top + (metrics.height() - PILL_H) / 2, pill_w, PILL_H)
+        pill = QRectF(right - pill_w, line_top + (metrics.height() - PILL_H) / 2, pill_w, PILL_H)
         tone = {"good": VALID_TINT, "bad": INVALID_TINT}.get(accent.pill_tone)
         pill_fill = QColor(tone if tone is not None else text_colour)
         pill_fill.setAlpha(PILL_FILL_ALPHA)
@@ -254,14 +329,9 @@ def paint_second_line(
         painter.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), accent.pill_text)
         painter.restore()
         right -= pill_w + GLYPH_GAP
-    glyph_top = second_top + (metrics.height() - GLYPH_SIZE) / 2
     if accent.branch:
+        glyph_top = line_top + (metrics.height() - GLYPH_SIZE) / 2
         paint_branch_glyph(
-            painter, QRectF(right - GLYPH_SIZE, glyph_top, GLYPH_SIZE, GLYPH_SIZE), faded
-        )
-        right -= GLYPH_SIZE + GLYPH_GAP
-    if accent.spark:
-        paint_spark_glyph(
             painter, QRectF(right - GLYPH_SIZE, glyph_top, GLYPH_SIZE, GLYPH_SIZE), faded
         )
 
@@ -309,6 +379,44 @@ def paint_chip(painter: QPainter, palette: QPalette, text: str, tone: str) -> No
     painter.setPen(ink)
     painter.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), shown)
     painter.setFont(font)
+
+
+def paint_icon_medallions(painter: QPainter, palette: QPalette, icons: tuple[str, ...]) -> None:
+    """One small circle per aspect kind, on the top edge's left end — the badge's opposite.
+
+    A glance at a node's top-left corner answers "what is this step": a tag means a
+    milestone, a spark means machine guidance, nothing means a plain step.
+    """
+    ink = QColor(palette.text().color())
+    faded = QColor(ink)
+    faded.setAlpha(SECONDARY_ALPHA)
+    x = BADGE_INSET
+    for kind in icons:
+        centre = QPointF(x + ICON_D / 2, 0.0)
+        border = QColor(BADGE_BORDER) if kind == "tag" else faded
+        fill = QColor(BADGE_TINT) if kind == "tag" else QColor(palette.window().color())
+        painter.setBrush(fill)
+        painter.setPen(QPen(border, 1.0))
+        painter.drawEllipse(centre, ICON_D / 2, ICON_D / 2)
+        glyph = QRectF(centre.x() - 4.0, centre.y() - 4.0, 8.0, 8.0)
+        if kind == "tag":
+            paint_tag_glyph(painter, glyph, ink)
+        elif kind == "spark":
+            paint_spark_glyph(painter, glyph, faded)
+        x += ICON_D + ICON_GAP
+
+
+def paint_tag_glyph(painter: QPainter, rect: QRectF, colour: QColor) -> None:
+    """A tiny release tag: a square hanging point-first — a marker on the timeline."""
+    path = QPainterPath(QPointF(rect.center().x(), rect.bottom()))
+    path.lineTo(QPointF(rect.left(), rect.center().y() - rect.height() * 0.1))
+    path.lineTo(QPointF(rect.left(), rect.top()))
+    path.lineTo(QPointF(rect.right(), rect.top()))
+    path.lineTo(QPointF(rect.right(), rect.center().y() - rect.height() * 0.1))
+    path.closeSubpath()
+    painter.setBrush(colour)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawPath(path)
 
 
 def paint_handle(painter: QPainter, palette: QPalette, state: NodeState) -> None:

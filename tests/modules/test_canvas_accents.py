@@ -46,12 +46,38 @@ def test_a_done_step_is_muted_with_a_good_bar(services, project, tab):
     assert accent.bar_tone == "good"
 
 
-def test_a_release_wears_its_label_as_a_badge(services, project, tab):
+def test_a_release_is_a_highlighted_node_with_a_tag(services, project, tab):
     step = project.steps[1]
     services.undo.push(SetModuleDataCommand(step.id, release.MODULE_ID, release.write("MVP")))
-    assert node(tab, step)._accent.badge == "MVP"
+    accent = node(tab, step)._accent
+    assert accent.badge == "MVP"
+    assert accent.body_tone == "highlight"
+    assert "tag" in accent.icons
     # The badge already wears the label, so the subtitle must not repeat it.
     assert "release" not in node(tab, step)._subtitle
+
+
+def test_an_estimate_is_the_steps_stat_not_subtitle_text(services, project, tab):
+    step = project.steps[0]
+    services.undo.push(
+        SetModuleDataCommand(step.id, "estimation", {"days": 3.0, "format": 1})
+    )
+    accent = node(tab, step)._accent
+    assert accent.stat_text == "3d"
+    assert accent.stat_strong is False
+    assert "3d" not in node(tab, step)._subtitle
+
+
+def test_a_release_stat_is_the_accumulated_days_and_date(services, project, tab):
+    """The release's number is the schedule's answer at its row — days and landing date."""
+    first, second = project.steps
+    for step, days in ((first, 2.0), (second, 3.0)):
+        services.undo.push(SetModuleDataCommand(step.id, "estimation", {"days": days}))
+    services.undo.push(SetModuleDataCommand(second.id, release.MODULE_ID, release.write("MVP")))
+    accent = node(tab, second)._accent
+    assert accent.stat_strong is True
+    assert accent.stat_text.startswith("5d · ")
+    assert any(char.isdigit() for char in accent.stat_text.split("·")[1])
 
 
 def test_in_progress_gets_a_busy_bar_and_leaves_the_subtitle(services, project, tab):
@@ -72,10 +98,10 @@ def test_blocked_gets_a_bad_bar(services, project, tab):
     assert node(tab, step)._accent.bar_tone == "bad"
 
 
-def test_an_instructed_step_wears_the_spark(services, project, tab):
+def test_an_instructed_step_wears_the_spark_medallion(services, project, tab):
     step = project.steps[0]
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
-    assert node(tab, step)._accent.spark is True
+    assert "spark" in node(tab, step)._accent.icons
     assert "instructed" not in node(tab, step)._subtitle
 
 

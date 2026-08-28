@@ -53,7 +53,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.core.storage.git import find_repo_root
     from dplanner.core.storage.github import gh_authenticated, gh_path, repository_url
     from dplanner.domain.model import Product
-    from dplanner.domain.schedule import schedule
+    from dplanner.domain.ordering import placed
+    from dplanner.domain.schedule import format_date, format_days, schedule
     from dplanner.domain.store import ProductStore
     from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
@@ -136,14 +137,34 @@ def default_modules(services: "AppServices") -> list["Module"]:
         summaries = aspect_summaries(skip)
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
 
+    def release_stat(step: "Step") -> str:
+        """What a release answers with: the schedule's accumulated days and landing date.
+
+        A release closes the block of work above it, so its number is the walk's total at
+        that row — the same pair the order table's release row highlights. Falls back to
+        nothing when the project carries no estimates at all.
+        """
+        project = product.project_of(step.id)
+        order = placed(product, project)
+        for scheduled in step_schedule(project.id, order):
+            if scheduled.place.step.id == step.id:
+                if scheduled.finish is not None:
+                    return f"{format_days(scheduled.accumulated)} · {format_date(scheduled.finish)}"
+                if scheduled.accumulated:
+                    return format_days(scheduled.accumulated)
+                break
+        return ""
+
     def step_accent(step_id: str) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
         A done step is muted with a good bar; in-progress and blocked wear busy and bad
-        bars; a release wears its label as a badge; a PR is a pill on the second line with
-        its state as a tone, a branch the small fork glyph, an agent instruction the spark;
-        a live agent run is the chip on the bottom edge. Everything worn here is skipped
-        from the canvas subtitle below, so nothing is said twice.
+        bars; a release is a highlighted node wearing its label as a badge, a tag medallion
+        and the schedule's accumulated days and date as its stat; an agent instruction is
+        the spark medallion; a PR is a pill with its state as a tone and a branch the fork
+        glyph; a live agent run is the chip on the bottom edge; a plain step's stat is its
+        own estimate. Everything worn here is skipped from the canvas subtitle below, so
+        nothing is said twice.
         """
         step = product.step(step_id)
         refs = github_read(step)
@@ -157,16 +178,29 @@ def default_modules(services: "AppServices") -> list["Module"]:
             "pending-approval": ("needs approval", "attention"),
         }.get(agent_run_state(step), ("", ""))
         status = step_status(step)
+        release = release_read(step)
+        icons = (
+            *(("tag",) if release else ()),
+            *(("spark",) if agent_instruction_read(step) else ()),
+        )
+        if release:
+            stat = release_stat(step)
+        else:
+            days = estimated_days(step)
+            stat = format_days(days) if days is not None else ""
         return NodeAccent(
             muted=status == "done",
-            badge=release_read(step),
+            badge=release,
             pill_text=pill,
             pill_tone={"merged": "good", "closed": "bad"}.get(refs.pr_state, "") if refs else "",
             branch=bool(refs is not None and refs.branch),
             bar_tone={"done": "good", "in-progress": "busy", "blocked": "bad"}.get(status, ""),
-            spark=bool(agent_instruction_read(step)),
             chip_text=chip_text,
             chip_tone=chip_tone,
+            body_tone="highlight" if release else "",
+            icons=icons,
+            stat_text=stat,
+            stat_strong=bool(release),
         )
 
     def step_schedule(project_id: str, order: "Sequence[Placed]") -> "list[Scheduled]":
@@ -238,7 +272,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # The accent wears all of these, so the subtitle must not say them again.
             step_aspects=lambda step_id: step_aspects(
                 step_id,
-                skip={RELEASE_ID, GITHUB_ID, STATUS_ID, AGENT_INSTRUCTION_ID, AGENT_RUN_ID},
+                skip={
+                    RELEASE_ID,
+                    GITHUB_ID,
+                    STATUS_ID,
+                    AGENT_INSTRUCTION_ID,
+                    AGENT_RUN_ID,
+                    ESTIMATION_ID,
+                },
             ),
             step_accent=step_accent,
             # The timeline sort reads a step's length through this seam; estimation owns it.
