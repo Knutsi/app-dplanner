@@ -74,6 +74,18 @@ def test_the_section_opens_on_the_prompt_tab_showing_the_assembly(services, step
     assert "## When you are done" in text  # the epilogue rides along — the full briefing
 
 
+def test_the_prompt_is_tinted_by_origin_without_changing_the_text(services, step, section):
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    project = services.document.project_of(step.id)
+    services.document.set_text(project.id, "step_agent_instruction", "House rules.")
+    section.show_target(step.id)
+    # The colouring renders segments; the characters must be exactly the assembly.
+    assert section.prompt_view.toPlainText() == section._assembled_now.text
+    legend = section.prompt_legend.text()
+    assert section.prompt_legend.isVisibleTo(section)
+    assert "Project" in legend and "This step" in legend
+
+
 def test_the_prompt_tab_lists_every_referenced_image(services, step, section):
     from dplanner.domain.assets import attach
 

@@ -44,7 +44,7 @@ from dplanner.domain.assets import assets, attach
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.image_preview import ImagePreviewDialog
 
-THUMBNAIL_SIZE = 64
+THUMBNAIL_SIZE = 76  # On the 4-point grid; large enough to recognise a figure.
 ITEM_GAP = 6  # Within the gallery — DESIGN.md's within-block spacing.
 
 # The provider resolves the node's file area, raising KeyError while the node is unflushed.
@@ -255,6 +255,12 @@ class AssetGallery(QWidget):
             _ratio, pixmap = self._thumbs.get(name, (1.0, None))
             cell = _AssetItem(name, pixmap, self._view, self._remove if removable else None)
             self._grid.addWidget(cell, index // self._columns, index % self._columns)
+        # Pack the cells left: all spare width goes to a phantom trailing column, or a
+        # short row spreads its few thumbnails across the whole panel. Old stretches are
+        # cleared first — the column count changes with the width.
+        for column in range(self._grid.columnCount() + 1):
+            self._grid.setColumnStretch(column, 0)
+        self._grid.setColumnStretch(self._columns, 1)
         self._grid_host.setVisible(bool(self._names))
 
     def _column_count(self) -> int:

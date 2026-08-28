@@ -498,6 +498,10 @@ deliberately not undoable.
 **Belongs upstream?** Yes, for any application adopting the module-files +
 content-addressed-assets convention — the widget knows nothing DPlanner-specific.
 
+*Later refinement*: thumbnails grew to 76 px and the grid packs left (all spare width on
+a phantom trailing stretch column) — a short row used to spread its few thumbnails across
+the whole panel, which read as scattered rather than listed.
+
 ### `framework/image_preview.py` — one modal lightbox for everything
 
 **What.** `ImagePreviewDialog(image, name, parent, caption=, path=)`: fitted to ≤80 % of

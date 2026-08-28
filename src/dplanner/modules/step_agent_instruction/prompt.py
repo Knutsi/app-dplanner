@@ -22,9 +22,24 @@ class PromptPart:
 
 
 @dataclass(frozen=True)
+class PromptSegment:
+    """A stretch of the assembled text and where it came from.
+
+    ``origin`` is one of ``header``, ``protocol`` (preamble and epilogue), ``project``,
+    ``context``, ``instruction``, ``inherited``. Concatenating the segment texts
+    reproduces ``AssembledPrompt.text`` exactly — a display that colours by origin can
+    never show something other than what is sent.
+    """
+
+    origin: str
+    text: str
+
+
+@dataclass(frozen=True)
 class AssembledPrompt:
     text: str
     files: tuple[str, ...]  # Every file the prompt references, in reading order.
+    segments: tuple[PromptSegment, ...] = ()
 
 
 def _files_lines(files: Sequence[str]) -> list[str]:
@@ -76,31 +91,47 @@ def assemble(
     worded by the composition root and rendered here as opaque blocks, between the standing
     instruction and the step's, so the agent reads what the step *is* before how to do it.
     """
-    lines = [f"# Step: {step_title}", "", f"Project: {project_title}", ""]
+    blocks: list[tuple[str, list[str]]] = [
+        ("header", [f"# Step: {step_title}", "", f"Project: {project_title}", ""])
+    ]
     if preamble:
-        lines += ["## Before you start", "", preamble.rstrip(), ""]
+        blocks.append(("protocol", ["## Before you start", "", preamble.rstrip(), ""]))
     if project_instruction or project_files:
-        lines += ["## Project instructions", ""]
+        project_lines = ["## Project instructions", ""]
         if project_instruction:
-            lines += [project_instruction.rstrip(), ""]
-        lines += _files_lines(project_files)
-    for section in sections:
-        lines += section_lines(section)
+            project_lines += [project_instruction.rstrip(), ""]
+        project_lines += _files_lines(project_files)
+        blocks.append(("project", project_lines))
+    if sections:
+        blocks.append(
+            ("context", [line for section in sections for line in section_lines(section)])
+        )
     if instruction or instruction_files:
-        lines += ["## Instructions", ""]
+        instruction_lines = ["## Instructions", ""]
         if instruction:
-            lines += [instruction.rstrip(), ""]
-        lines += _files_lines(instruction_files)
+            instruction_lines += [instruction.rstrip(), ""]
+        instruction_lines += _files_lines(instruction_files)
+        blocks.append(("instruction", instruction_lines))
     if parts:
-        lines += ["## Context handed forward from earlier steps", ""]
+        inherited_lines = ["## Context handed forward from earlier steps", ""]
         for part in parts:
-            lines += part_lines(part)
+            inherited_lines += part_lines(part)
+        blocks.append(("inherited", inherited_lines))
     if epilogue:
-        lines += ["## When you are done", "", epilogue.rstrip(), ""]
+        blocks.append(("protocol", ["## When you are done", "", epilogue.rstrip(), ""]))
     files = (
         *project_files,
         *(path for section in sections for path in section.files),
         *instruction_files,
         *(path for part in parts for path in part.files),
     )
-    return AssembledPrompt(text="\n".join(lines), files=files)
+    # Each segment carries the newline that joins it to the next, so the concatenation
+    # is exactly the joined text — the invariant PromptSegment promises.
+    segments = tuple(
+        PromptSegment(
+            origin, "\n".join(block) + ("\n" if index < len(blocks) - 1 else "")
+        )
+        for index, (origin, block) in enumerate(blocks)
+    )
+    text = "\n".join(line for _origin, block in blocks for line in block)
+    return AssembledPrompt(text=text, files=files, segments=segments)

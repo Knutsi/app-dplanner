@@ -20,7 +20,7 @@ or a preview is possible, and the state's reason label becomes the disabled tool
 from collections.abc import Callable, Sequence
 
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QColor, QIcon
+from PySide6.QtGui import QColor, QIcon, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -46,6 +46,7 @@ from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
 from dplanner.modules.step_agent_instruction.prompt import (
     AssembledPrompt,
     PromptPart,
+    PromptSegment,
     part_lines,
     section_lines,
 )
@@ -233,6 +234,8 @@ class AgentSection(QWidget):
         self.prompt_view.setFrameShape(QPlainTextEdit.Shape.NoFrame)
         self.prompt_view.setPlaceholderText("Select a step to see its briefing.")
         make_text_well(self.prompt_view)
+        self.prompt_legend = QLabel(self)
+        self.prompt_legend.setObjectName("InspectorNote")
         self.prompt_gallery = AssetGallery(self)
         self.copy_button = QPushButton("Copy Prompt", self)
         self.copy_button.clicked.connect(self._copy_prompt)
@@ -244,6 +247,7 @@ class AgentSection(QWidget):
         prompt_column = QVBoxLayout(prompt_page)
         prompt_column.setContentsMargins(0, 0, 0, 0)
         prompt_column.setSpacing(FIELD_GAP)
+        prompt_column.addWidget(self.prompt_legend)
         prompt_column.addWidget(self.prompt_view, stretch=1)
         prompt_column.addWidget(self.prompt_gallery)
         prompt_column.addLayout(copy_row)
@@ -401,18 +405,71 @@ class AgentSection(QWidget):
         self.copy_button.setEnabled(assembled is not None)
         if assembled is None:
             self.prompt_view.setPlainText("")
+            self.prompt_legend.hide()
             self.prompt_gallery.set_files([], None)
             return
-        self.prompt_view.setPlainText(assembled.text)
+        self._render_prompt(assembled)
+        self.prompt_gallery.set_files(assembled.files, self._read_asset)
+
+    def _render_prompt(self, assembled: AssembledPrompt) -> None:
+        """The text tinted by origin — the segments guarantee the characters are exactly
+        the assembled text, so the colouring can never lie about what is sent."""
+        colors = self._origin_colors()
+        self.prompt_view.clear()
+        cursor = self.prompt_view.textCursor()
+        fallback = self.palette().text().color()
+        segments = assembled.segments or (PromptSegment("instruction", assembled.text),)
+        for segment in segments:
+            style = QTextCharFormat()
+            style.setForeground(colors.get(segment.origin, fallback))
+            cursor.insertText(segment.text, style)
+        self.prompt_view.moveCursor(QTextCursor.MoveOperation.Start)
         make_text_well(self.prompt_view)
         space_lines(self.prompt_view)
-        self.prompt_gallery.set_files(assembled.files, self._read_asset)
+        legend = "   ".join(
+            f'<span style="color:{colors[origin].name()}">■ {label}</span>'
+            for origin, label in (
+                ("project", "Project"),
+                ("context", "Step context"),
+                ("inherited", "Inherited"),
+                ("instruction", "This step"),
+            )
+        )
+        self.prompt_legend.setText(legend)
+        self.prompt_legend.show()
+
+    def _origin_colors(self) -> dict[str, QColor]:
+        """Per-origin inks from the live palette, never stored — hues at the theme text's
+        own lightness stay readable in light and dark alike; the protocol chrome dims to
+        the sanctioned ~63 % secondary, and the step's own instruction keeps full ink."""
+        ink = self.palette().text().color()
+        secondary = QColor(ink)
+        secondary.setAlpha(160)
+
+        def tinted(hue: int) -> QColor:
+            return QColor.fromHsl(hue, 110, ink.lightness())
+
+        return {
+            "header": secondary,
+            "protocol": secondary,
+            "project": tinted(215),  # blue
+            "context": tinted(160),  # teal
+            "inherited": tinted(275),  # violet
+            "instruction": ink,
+        }
 
     def _copy_prompt(self) -> None:
         from PySide6.QtGui import QGuiApplication
 
         if self._assembled_now is not None:
             QGuiApplication.clipboard().setText(self._assembled_now.text)
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange:
+            # The origin inks are read from the live palette at render time; a theme
+            # switch re-renders rather than re-tinting stored colours (CLAUDE.md's rule).
+            self._mark_prompt_stale()
 
     def _refresh_context(self) -> None:
         sections: Sequence[PromptPart] = ()

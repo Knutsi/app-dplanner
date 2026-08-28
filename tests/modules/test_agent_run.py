@@ -39,6 +39,25 @@ def test_the_prompt_carries_instruction_context_and_epilogue():
     assert assembled.files == ("a/b.png",)
 
 
+def test_segments_reproduce_the_text_exactly_and_name_their_origins():
+    """The coloured Prompt view renders segments — the invariant is that their
+    concatenation IS the text, so the display can never differ from what is sent."""
+    assembled = assemble(
+        step_title="Deploy",
+        project_title="Discovery",
+        instruction="Ship it.",
+        parts=[PromptPart(heading="Set up CI", body="Keys in vault.")],
+        epilogue="Report back.",
+        preamble="Check first.",
+        project_instruction="House rules.",
+        sections=[PromptPart(heading="Description", body="What it is.")],
+    )
+    assert "".join(segment.text for segment in assembled.segments) == assembled.text
+    assert [segment.origin for segment in assembled.segments] == [
+        "header", "protocol", "project", "context", "instruction", "inherited", "protocol",
+    ]
+
+
 def test_an_empty_context_leaves_no_empty_section():
     assembled = assemble("Deploy", "Discovery", "Ship it.", [], "")
     assert "Context handed forward" not in assembled.text
