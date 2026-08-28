@@ -10,11 +10,11 @@ from dplanner.modules.step_description.aspect import MODULE_ID
 
 @pytest.fixture
 def step(services):
-    product = services.document
+    library = services.document
     project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
+    AddNodeCommand(library.id, project).redo(library)
     step = Step(title="Deploy")
-    AddNodeCommand(project.id, step).redo(product)
+    AddNodeCommand(project.id, step).redo(library)
     return step
 
 

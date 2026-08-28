@@ -16,10 +16,10 @@ from dplanner.modules.step_properties.module import PANEL_ID
 
 @pytest.fixture
 def project(services):
-    product = services.document
+    library = services.document
     project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
-    AddNodeCommand(project.id, Step(title="Read the spec")).redo(product)
+    AddNodeCommand(library.id, project).redo(library)
+    AddNodeCommand(project.id, Step(title="Read the spec")).redo(library)
     return project
 
 

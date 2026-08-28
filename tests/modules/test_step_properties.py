@@ -19,11 +19,11 @@ def select(services, *step_ids):
 
 @pytest.fixture
 def project(services):
-    product = services.document
+    library = services.document
     project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
-    AddNodeCommand(project.id, Step(title="Read the spec")).redo(product)
-    AddNodeCommand(project.id, Step(title="Draft the model")).redo(product)
+    AddNodeCommand(library.id, project).redo(library)
+    AddNodeCommand(project.id, Step(title="Read the spec")).redo(library)
+    AddNodeCommand(project.id, Step(title="Draft the model")).redo(library)
     return project
 
 

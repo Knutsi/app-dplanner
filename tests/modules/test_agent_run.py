@@ -109,7 +109,7 @@ def test_referenced_files_keep_reading_order():
 
 
 def test_stage_assets_copies_beside_the_prompt(tmp_path):
-    source = "projects/p/modules/x/assets/ab12.png"
+    source = "p/modules/x/assets/ab12.png"
     staged = launcher.stage_assets(tmp_path, [source], {source: b"png-bytes"}.get)
     target = Path(staged[source])
     assert target.parent == tmp_path / "assets"
@@ -267,11 +267,11 @@ def step(services):
     from dplanner.domain.commands import AddNodeCommand
     from dplanner.domain.model import Project, Step
 
-    product = services.document
+    library = services.document
     project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
+    AddNodeCommand(library.id, project).redo(library)
     step = Step(title="Deploy")
-    AddNodeCommand(project.id, step).redo(product)
+    AddNodeCommand(project.id, step).redo(library)
     return step
 
 
@@ -296,7 +296,7 @@ def test_without_a_checkout_the_reason_names_both_places(services, step):
     select(services, step)
     state = services.actions.spec("agent.run").state(services.context.current())
     assert state.visible and not state.enabled
-    assert state.label is not None and "project or the product" in state.label
+    assert state.label is not None and "project or the library" in state.label
 
 
 def test_the_project_checkout_wins_over_the_products(services, step, tmp_path, monkeypatch):
@@ -322,7 +322,7 @@ def test_the_project_checkout_wins_over_the_products(services, step, tmp_path, m
     ((_command, cwd),) = calls
     assert cwd == project_dir
 
-    # Clearing the project's association falls back to the product's.
+    # Clearing the project's association falls back to the library's.
     services.document.set_module_data(project.id, REPO_ID, {})
     services.actions.run("agent.run", services.context.current())
     assert calls[-1][1] == product_dir

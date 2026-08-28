@@ -16,14 +16,14 @@ from dplanner.modules import default_cli_commands, default_module_formats
 @pytest.fixture
 def project(services):
     """The diamond: B and C wait on A, D waits on both — serial and parallel in one graph."""
-    product = services.document
+    library = services.document
     project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
+    AddNodeCommand(library.id, project).redo(library)
     for title in ("A", "B", "C", "D"):
-        AddNodeCommand(project.id, Step(title=title)).redo(product)
+        AddNodeCommand(project.id, Step(title=title)).redo(library)
     a, b, c, d = project.steps
     for waiter, sources in ((b, [a]), (c, [a]), (d, [b, c])):
-        SetEdgesCommand(waiter.id, "requires", [s.id for s in sources]).redo(product)
+        SetEdgesCommand(waiter.id, "requires", [s.id for s in sources]).redo(library)
     return project
 
 
@@ -132,7 +132,7 @@ def test_a_build_without_an_agent_has_no_button_at_all(services, project):
 
     activity = ProgressionActivity(
         ProgressionDeps(
-            product=services.document,
+            library=services.document,
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,

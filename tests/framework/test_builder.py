@@ -25,11 +25,11 @@ def test_module_data_is_migrated_before_any_module_reads_it(session, app, tmp_pa
     """Breaking this order produces a bug that only appears on an old workspace."""
     from dplanner.core.module_data import migrate_module_data
 
-    product = session.services.document
+    library = session.services.document
     repo = session.services.repo
-    product.set_module_data(product.id, "m", {"old": 1})
+    library.set_module_data(library.id, "m", {"old": 1})
 
     fmt = ModuleDataFormat("m", version=2, migrations=(lambda d: {"new": d["old"]},))
     changed = migrate_module_data(repo, [fmt])
-    assert changed == [product.id]
-    assert product.module_data["m"] == stamped({"new": 1}, 2)
+    assert changed == [library.id]
+    assert library.module_data["m"] == stamped({"new": 1}, 2)

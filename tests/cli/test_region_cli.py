@@ -44,11 +44,11 @@ def test_add_around_steps_wraps_them_where_they_sit(cli, workspace):
     # The report names what the rectangle actually covers, so a caught neighbour is visible.
     assert "2 steps: Design schema, Write migrations" in said
 
-    product = ProductStore(LocalStorage(workspace)).load()
-    project = product.projects[0]
+    library = ProductStore(LocalStorage(workspace)).load()
+    project = library.projects[0]
     region = read_regions(project)[0]
     assert region.title == "Database setup"
-    placed = positions(product, project)
+    placed = positions(library, project)
     schema, migrations, ship = project.steps
     assert region.contains_centre(*placed[schema.id], NODE_W, NODE_H)
     assert region.contains_centre(*placed[migrations.id], NODE_W, NODE_H)
@@ -97,12 +97,12 @@ def test_fit_rewraps_in_place_and_keeps_the_id(cli, workspace):
     said = cli("region", "fit", "Discovery", "Database setup", "--steps", "schema", "migrations")
     assert "2 steps: Design schema, Write migrations" in said
 
-    product = ProductStore(LocalStorage(workspace)).load()
-    project = product.projects[0]
+    library = ProductStore(LocalStorage(workspace)).load()
+    project = library.projects[0]
     after = read_regions(project)[0]
     assert after.id == before.id  # a saved layout's rect entry still points at it
     assert after.title == "Database setup"
-    placed = positions(product, project)
+    placed = positions(library, project)
     schema, migrations, _ship = project.steps
     assert after.contains_centre(*placed[schema.id], NODE_W, NODE_H)
     assert after.contains_centre(*placed[migrations.id], NODE_W, NODE_H)

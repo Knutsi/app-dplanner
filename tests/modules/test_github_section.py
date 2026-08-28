@@ -1,6 +1,6 @@
 """The GitHub tab, as the panel drives it: typing gh-less, picking from fetched lists.
 
-The loader is never started here — the test product has no repository URL, so the section
+The loader is never started here — the test library has no repository URL, so the section
 spawns no subprocess; the fetched lists are handed to ``_on_lists`` directly.
 """
 
@@ -20,10 +20,10 @@ OPEN = PrInfo(number=7, title="Fix crash", state="open", url="u7", head_ref="fix
 
 @pytest.fixture
 def project(services):
-    product = services.document
+    library = services.document
     project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
-    AddNodeCommand(project.id, Step(title="Read the spec")).redo(product)
+    AddNodeCommand(library.id, project).redo(library)
+    AddNodeCommand(project.id, Step(title="Read the spec")).redo(library)
     return project
 
 
@@ -103,7 +103,7 @@ def test_a_failed_fetch_leaves_the_fields_typeable_and_says_why(editor):
 
 
 def test_no_repository_means_no_fetch_and_a_hint(editor):
-    """The fixture product has no repository URL, so showing a step must not have started
+    """The fixture library has no repository URL, so showing a step must not have started
     a loader — the status explains what to set instead."""
     assert editor._loaded_repo is None
     assert "repository" in editor.status.text()

@@ -44,8 +44,8 @@ def test_save_list_apply_round_trip(cli, workspace):
     assert listed["layouts"] == [{"name": "plan", "steps": 2, "regions": 0}]
 
     cli("layout", "apply", "Discovery", "plan")
-    product = reload(workspace)
-    for step in product.projects[0].steps:
+    library = reload(workspace)
+    for step in library.projects[0].steps:
         assert read_position(step) is not None
 
 
@@ -53,8 +53,8 @@ def test_apply_leaves_a_later_step_unplaced(cli, workspace):
     cli("layout", "save", "Discovery", "plan")
     cli("step", "add", "Discovery", "Ship it")
     cli("layout", "apply", "Discovery", "plan")
-    product = reload(workspace)
-    placed = [read_position(step) for step in product.projects[0].steps]
+    library = reload(workspace)
+    placed = [read_position(step) for step in library.projects[0].steps]
     assert placed[0] is not None and placed[1] is not None
     assert placed[2] is None  # the layout never saw it, so it keeps its automatic seat
 

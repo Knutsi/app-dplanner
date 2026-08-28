@@ -18,11 +18,11 @@ CLOSE_ALL = "appshell.close_all_tabs"
 
 @pytest.fixture
 def projects(services):
-    product = services.document
+    library = services.document
     made = []
     for title in ("Discovery", "Build", "Ship"):
         project = Project(title=title)
-        AddNodeCommand(product.id, project).redo(product)
+        AddNodeCommand(library.id, project).redo(library)
         made.append(project)
     return made
 

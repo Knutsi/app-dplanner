@@ -4,7 +4,7 @@ No ``qapp`` fixture: ``regions.py`` is Qt-free by rule — the CLI reaches it wh
 snapshot records region rects — and exercising it without one is part of the proof.
 """
 
-from dplanner.domain.model import Product, Project
+from dplanner.domain.model import Library, Project
 from dplanner.modules.project_editor.named_layouts import LayoutSnapshot, write_layouts
 from dplanner.modules.project_editor.positions import MODULE_ID
 from dplanner.modules.project_editor.regions import (
@@ -17,17 +17,17 @@ from dplanner.modules.project_editor.regions import (
 
 
 def build():
-    product = Product(name="Widget")
+    library = Library(name="Widget")
     project = Project(title="Discovery")
-    product.add_child(product.id, project)
-    return product, project
+    library.add_child(library.id, project)
+    return library, project
 
 
 def test_write_and_read_round_trip_in_creation_order():
-    product, project = build()
+    library, project = build()
     first = new_region("Database setup", 8.0, 8.0, 320.0, 240.0)
     second = new_region("Finalize release", 400.0, 8.0, 320.0, 240.0)
-    set_regions_command(project, [first, second], "Add Region").redo(product)
+    set_regions_command(project, [first, second], "Add Region").redo(library)
     assert read_regions(project) == [first, second]
 
 
@@ -41,8 +41,8 @@ def test_rects_snap_and_are_stored_as_floats():
 
 
 def test_unreadable_regions_read_as_absent():
-    product, project = build()
-    product.set_module_data(
+    library, project = build()
+    library.set_module_data(
         project.id,
         MODULE_ID,
         {
@@ -65,21 +65,21 @@ def test_contains_centre_is_the_carry_rule():
 
 
 def test_writing_regions_carries_the_layouts_untouched():
-    product, project = build()
-    product.set_module_data(
+    library, project = build()
+    library.set_module_data(
         project.id, MODULE_ID, write_layouts(project, {"Plan": LayoutSnapshot()})
     )
     set_regions_command(project, [new_region("DB", 0.0, 0.0, 100.0, 100.0)], "Add").redo(
-        product
+        library
     )
     entry = project.module_data[MODULE_ID]
     assert "layouts" in entry and "regions" in entry
 
 
 def test_deleting_the_last_region_leaves_no_file_behind():
-    product, project = build()
+    library, project = build()
     set_regions_command(project, [new_region("DB", 0.0, 0.0, 100.0, 100.0)], "Add").redo(
-        product
+        library
     )
-    set_regions_command(project, [], "Delete Region").redo(product)
+    set_regions_command(project, [], "Delete Region").redo(library)
     assert MODULE_ID not in project.module_data

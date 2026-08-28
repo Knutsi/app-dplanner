@@ -67,7 +67,7 @@ def cli(workspace):
 def test_set_show_and_clear(cli, workspace):
     cli("status", "set", "Read the spec", "done")
     assert json.loads(cli("status", "show", "Read the spec", "--json"))["status"] == "done"
-    step_dir = workspace / "projects" / "discovery" / "steps" / "read-the-spec"
+    step_dir = workspace / "discovery" / "steps" / "read-the-spec"
     assert (step_dir / "modules" / "step_status.json").is_file()
     cli("status", "clear", "Read the spec")
     assert "pending" in cli("status", "show", "Read the spec")
@@ -77,7 +77,7 @@ def test_set_show_and_clear(cli, workspace):
 def test_setting_pending_leaves_no_file(cli, workspace):
     cli("status", "set", "Read the spec", "in-progress")
     cli("status", "set", "Read the spec", "pending")
-    step_dir = workspace / "projects" / "discovery" / "steps" / "read-the-spec"
+    step_dir = workspace / "discovery" / "steps" / "read-the-spec"
     assert not (step_dir / "modules" / "step_status.json").exists()
 
 
@@ -102,11 +102,11 @@ def test_list_groups_by_status_in_working_order(cli):
 
 @pytest.fixture
 def step(services):
-    product = services.document
+    library = services.document
     project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
+    AddNodeCommand(library.id, project).redo(library)
     step = Step(title="Read the spec")
-    AddNodeCommand(project.id, step).redo(product)
+    AddNodeCommand(project.id, step).redo(library)
     return step
 
 

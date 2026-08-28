@@ -11,7 +11,7 @@ import pytest
 
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import run
-from dplanner.domain.model import Product, Project, Step
+from dplanner.domain.model import Library, Project, Step
 from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.step_handoff.aspect import (
     MODULE_ID,
@@ -26,90 +26,90 @@ def _no_files(_step_id, _module_id):
 
 
 def build(edges):
-    """A product with one project whose steps and requires-edges are given as a dict."""
-    product = Product(name="Widget")
+    """A library with one project whose steps and requires-edges are given as a dict."""
+    library = Library(name="Widget")
     project = Project(title="Discovery")
-    product.add_child(product.id, project)
+    library.add_child(library.id, project)
     steps = {}
     for name in edges:
         steps[name] = Step(title=name)
-        product.add_child(project.id, steps[name])
+        library.add_child(project.id, steps[name])
     for name, sources in edges.items():
         if sources:
-            product.set_edges(steps[name].id, "requires", [steps[s].id for s in sources])
-    return product, steps
+            library.set_edges(steps[name].id, "requires", [steps[s].id for s in sources])
+    return library, steps
 
 
-def note(product, step, text, scope="downstream"):
-    product.set_text(step.id, MODULE_ID, text)
-    product.set_module_data(step.id, MODULE_ID, write_scope(scope))
+def note(library, step, text, scope="downstream"):
+    library.set_text(step.id, MODULE_ID, text)
+    library.set_module_data(step.id, MODULE_ID, write_scope(scope))
 
 
 # -- the derivation ----------------------------------------------------------------------------
 
 
 def test_a_chain_inherits_every_ancestor_in_order():
-    product, steps = build({"A": [], "B": ["A"], "C": ["B"]})
-    note(product, steps["A"], "From A.")
-    note(product, steps["B"], "From B.")
-    titles = [h.title for h in inherited(product, steps["C"], _no_files)]
+    library, steps = build({"A": [], "B": ["A"], "C": ["B"]})
+    note(library, steps["A"], "From A.")
+    note(library, steps["B"], "From B.")
+    titles = [h.title for h in inherited(library, steps["C"], _no_files)]
     assert titles == ["A", "B"]
 
 
 def test_a_diamond_lists_the_shared_ancestor_once():
-    product, steps = build({"A": [], "B": ["A"], "C": ["A"], "D": ["B", "C"]})
-    note(product, steps["A"], "From A.")
-    titles = [h.title for h in inherited(product, steps["D"], _no_files)]
+    library, steps = build({"A": [], "B": ["A"], "C": ["A"], "D": ["B", "C"]})
+    note(library, steps["A"], "From A.")
+    titles = [h.title for h in inherited(library, steps["D"], _no_files)]
     assert titles == ["A"]
 
 
 def test_a_project_scoped_handoff_reaches_a_non_descendant():
-    product, steps = build({"A": [], "B": []})
-    note(product, steps["A"], "Everyone should know.", scope="project")
-    titles = [h.title for h in inherited(product, steps["B"], _no_files)]
+    library, steps = build({"A": [], "B": []})
+    note(library, steps["A"], "Everyone should know.", scope="project")
+    titles = [h.title for h in inherited(library, steps["B"], _no_files)]
     assert titles == ["A"]
 
 
 def test_a_downstream_handoff_does_not_reach_a_sibling():
-    product, steps = build({"A": [], "B": []})
-    note(product, steps["A"], "Only for my dependents.")
-    assert inherited(product, steps["B"], _no_files) == []
+    library, steps = build({"A": [], "B": []})
+    note(library, steps["A"], "Only for my dependents.")
+    assert inherited(library, steps["B"], _no_files) == []
 
 
 def test_a_step_never_inherits_its_own_handoff():
-    product, steps = build({"A": []})
-    note(product, steps["A"], "Mine.", scope="project")
-    assert inherited(product, steps["A"], _no_files) == []
+    library, steps = build({"A": []})
+    note(library, steps["A"], "Mine.", scope="project")
+    assert inherited(library, steps["A"], _no_files) == []
 
 
 def test_an_ancestor_with_nothing_to_say_is_omitted():
-    product, steps = build({"A": [], "B": ["A"]})
-    assert inherited(product, steps["B"], _no_files) == []
+    library, steps = build({"A": [], "B": ["A"]})
+    assert inherited(library, steps["B"], _no_files) == []
 
 
 def test_an_unflushed_node_answers_no_assets_rather_than_crashing():
-    product, steps = build({"A": [], "B": ["A"]})
-    note(product, steps["A"], "From A.")
-    (handoff,) = inherited(product, steps["B"], _no_files)
+    library, steps = build({"A": [], "B": ["A"]})
+    note(library, steps["A"], "From A.")
+    (handoff,) = inherited(library, steps["B"], _no_files)
     assert handoff.assets == ()
 
 
 def test_the_text_rendering_names_the_source_step():
-    product, steps = build({"A": [], "B": ["A"]})
-    note(product, steps["A"], "Keys are in the vault.")
-    text = inherited_text(inherited(product, steps["B"], _no_files))
+    library, steps = build({"A": [], "B": ["A"]})
+    note(library, steps["A"], "Keys are in the vault.")
+    text = inherited_text(inherited(library, steps["B"], _no_files))
     assert 'From A:' in text and "Keys are in the vault." in text
     assert inherited_text([]) == "Nothing handed forward yet."
 
 
 def test_own_is_none_when_there_is_nothing():
-    product, steps = build({"A": []})
-    assert own(product, steps["A"], _no_files) is None
+    library, steps = build({"A": []})
+    assert own(library, steps["A"], _no_files) is None
 
 
 def test_an_unknown_scope_reads_as_downstream():
-    product, steps = build({"A": []})
-    product.set_module_data(steps["A"].id, MODULE_ID, {"scope": "galaxy", "format": 1})
+    library, steps = build({"A": []})
+    library.set_module_data(steps["A"].id, MODULE_ID, {"scope": "galaxy", "format": 1})
     assert read_scope(steps["A"]) == "downstream"
 
 
@@ -184,6 +184,6 @@ def test_scope_project_reaches_everyone_and_clear_removes_it(cli, workspace):
     shown = json.loads(cli("handoff", "show", "Write docs", "--inherited", "--json"))
     assert [row["title"] for row in shown["inherited"]] == ["Set up CI"]
     cli("handoff", "clear", "Set up CI")
-    step_dir = workspace / "projects" / "discovery" / "steps" / "set-up-ci"
+    step_dir = workspace / "discovery" / "steps" / "set-up-ci"
     assert not (step_dir / "modules" / "step_handoff.md").exists()
     assert not (step_dir / "modules" / "step_handoff.json").exists()

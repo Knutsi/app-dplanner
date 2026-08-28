@@ -77,7 +77,7 @@ def cli(workspace):
 
 
 def entry_path(workspace):
-    steps = workspace / "projects" / "discovery" / "steps"
+    steps = workspace / "discovery" / "steps"
     return steps / "read-the-spec" / "modules" / "step_agent_run.json"
 
 

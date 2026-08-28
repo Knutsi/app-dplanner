@@ -13,7 +13,7 @@ from dplanner.domain.store import ProductStore, StaleWorkspaceError
 
 
 def module(session):
-    return next(m for m in session.services.modules if m.id == "workspace_watch")
+    return next(m for m in session.services.modules if m.id == "library_watch")
 
 
 def another_writer(session, title="Written by an agent"):
@@ -78,11 +78,11 @@ def test_reload_is_offered_and_discards_what_was_typed(session, monkeypatch):
     another_writer(session)
     services.autosave.flush_now()
 
-    from dplanner.modules.workspace_watch import module as watch_module
+    from dplanner.modules.library_watch import module as watch_module
 
     monkeypatch.setattr(watch_module, "confirm", lambda *_args: True)
-    assert services.actions.spec("workspace_watch.reload").state(services.context.current()).enabled
-    services.actions.run("workspace_watch.reload", services.context.current())
+    assert services.actions.spec("library_watch.reload").state(services.context.current()).enabled
+    services.actions.run("library_watch.reload", services.context.current())
 
     assert session.services.document.name != "Typed here"
     assert [p.title for p in session.services.document.projects] == ["Written by an agent"]

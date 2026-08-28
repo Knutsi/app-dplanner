@@ -31,14 +31,14 @@ from dplanner.modules.step_order.view import (
 @pytest.fixture
 def project(services):
     """A → B, A → C, and D waiting on both B and C: three waves, one with two steps."""
-    product = services.document
+    library = services.document
     project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
+    AddNodeCommand(library.id, project).redo(library)
     for title in ("A", "B", "C", "D"):
-        AddNodeCommand(project.id, Step(title=title)).redo(product)
+        AddNodeCommand(project.id, Step(title=title)).redo(library)
     a, b, c, d = project.steps
     for waiter, sources in ((b, [a]), (c, [a]), (d, [b, c])):
-        SetEdgesCommand(waiter.id, "requires", [s.id for s in sources]).redo(product)
+        SetEdgesCommand(waiter.id, "requires", [s.id for s in sources]).redo(library)
     return project
 
 

@@ -7,7 +7,7 @@ ends up on screen.
 """
 
 from dplanner.domain.commands import SetEdgesCommand
-from dplanner.domain.model import Product, Project, Step
+from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import depths
 from dplanner.modules.project_editor.placement import auto_positions, positions
 from dplanner.modules.project_editor.positions import (
@@ -31,12 +31,12 @@ from dplanner.modules.project_editor.sorts import (
 
 
 def build():
-    product = Product(name="Widget")
+    library = Library(name="Widget")
     project = Project(title="Discovery")
-    product.add_child(product.id, project)
+    library.add_child(library.id, project)
     for title in ("A", "B", "C"):
-        product.add_child(project.id, Step(title=title))
-    return product, project
+        library.add_child(project.id, Step(title=title))
+    return library, project
 
 
 def by_title(project, title):
@@ -44,20 +44,20 @@ def by_title(project, title):
 
 
 def test_a_chain_reads_left_to_right():
-    product, project = build()
+    library, project = build()
     a, b, c = project.steps
-    SetEdgesCommand(b.id, "requires", [a.id]).redo(product)
-    SetEdgesCommand(c.id, "requires", [b.id]).redo(product)
+    SetEdgesCommand(b.id, "requires", [a.id]).redo(library)
+    SetEdgesCommand(c.id, "requires", [b.id]).redo(library)
 
-    found = depths(product, project)
+    found = depths(library, project)
     assert (found[a.id], found[b.id], found[c.id]) == (0, 1, 2)
-    placed = auto_positions(product, project)
+    placed = auto_positions(library, project)
     assert placed[a.id][0] < placed[b.id][0] < placed[c.id][0]
 
 
 def test_independent_steps_stack_in_one_column():
-    product, project = build()
-    placed = auto_positions(product, project)
+    library, project = build()
+    placed = auto_positions(library, project)
     xs = {placed[step.id][0] for step in project.steps}
     ys = {placed[step.id][1] for step in project.steps}
     assert len(xs) == 1 and len(ys) == 3
@@ -65,22 +65,22 @@ def test_independent_steps_stack_in_one_column():
 
 def test_the_longest_chain_wins():
     """A step waiting on two things sits after the later of them, not the earlier."""
-    product, project = build()
+    library, project = build()
     a, b, c = project.steps
-    SetEdgesCommand(b.id, "requires", [a.id]).redo(product)
-    SetEdgesCommand(c.id, "requires", [a.id, b.id]).redo(product)
-    assert depths(product, project)[c.id] == 2
+    SetEdgesCommand(b.id, "requires", [a.id]).redo(library)
+    SetEdgesCommand(c.id, "requires", [a.id, b.id]).redo(library)
+    assert depths(library, project)[c.id] == 2
 
 
 def test_a_stored_position_wins_over_the_automatic_one():
-    product, project = build()
+    library, project = build()
     step = by_title(project, "B")
-    product.set_module_data(step.id, "project_editor", write_position(504.0, 304.0))
-    placed = positions(product, project)
+    library.set_module_data(step.id, "project_editor", write_position(504.0, 304.0))
+    placed = positions(library, project)
     assert placed[step.id] == (504.0, 304.0)  # Already on the grid, so stored verbatim.
     assert (
         placed[by_title(project, "A").id]
-        == auto_positions(product, project)[by_title(project, "A").id]
+        == auto_positions(library, project)[by_title(project, "A").id]
     )
 
 
@@ -94,9 +94,9 @@ def test_positions_snap_and_are_stored_as_floats():
 
 def test_an_unreadable_position_reads_as_absent():
     """A hand-edited or newer file must not crash the canvas."""
-    product, project = build()
+    library, project = build()
     step = project.steps[0]
-    product.set_module_data(step.id, "project_editor", {"x": "left", "y": 4})
+    library.set_module_data(step.id, "project_editor", {"x": "left", "y": 4})
     assert read_position(step) is None
 
 
@@ -108,19 +108,19 @@ def test_an_unreadable_position_reads_as_absent():
 
 def braided(flip_edges=False):
     """Two chains that cross, a shared gate, and a loose end — enough shape to tangle."""
-    product = Product(name="Widget")
+    library = Library(name="Widget")
     project = Project(title="Discovery")
-    product.add_child(product.id, project)
+    library.add_child(library.id, project)
     steps = {}
     for title in ("a", "b", "c", "d", "e", "f", "g", "loose"):
         step = Step(title=title)
         steps[title] = step
-        product.add_child(project.id, step)
+        library.add_child(project.id, step)
 
     def link(waiter, sources):
         ordered = list(reversed(sources)) if flip_edges else sources
         SetEdgesCommand(steps[waiter].id, "requires", [steps[s].id for s in ordered]).redo(
-            product
+            library
         )
 
     link("c", ["b"])
@@ -128,7 +128,7 @@ def braided(flip_edges=False):
     link("e", ["c", "d"])
     link("f", ["d", "c"])
     link("g", ["e", "f"])
-    return product, project, steps
+    return library, project, steps
 
 
 def assert_no_overlap(placed, size_for=node_size, steps_by_id=None):
@@ -142,20 +142,20 @@ def assert_no_overlap(placed, size_for=node_size, steps_by_id=None):
             assert apart, f"{one} overlaps {other}"
 
 
-def every_sort(product, project):
+def every_sort(library, project):
     return {
-        "flow": layered_flow(product, project),
-        "down": layered_down(product, project),
-        "spine": spine(product, project),
-        "timeline": timeline(product, project),
-        "radial": radial(product, project),
+        "flow": layered_flow(library, project),
+        "down": layered_down(library, project),
+        "spine": spine(library, project),
+        "timeline": timeline(library, project),
+        "radial": radial(library, project),
     }
 
 
 def test_every_sort_is_deterministic_and_overlap_free():
-    product, project, _steps = braided()
-    first = every_sort(product, project)
-    again = every_sort(product, project)
+    library, project, _steps = braided()
+    first = every_sort(library, project)
+    again = every_sort(library, project)
     for name, placed in first.items():
         assert placed.keys() == {step.id for step in project.steps}
         assert placed == again[name], f"{name} is not deterministic"
@@ -163,9 +163,9 @@ def test_every_sort_is_deterministic_and_overlap_free():
 
 
 def test_edge_list_order_does_not_change_a_sort():
-    product, project, steps = braided()
+    library, project, steps = braided()
     flipped_product, flipped_project, flipped_steps = braided(flip_edges=True)
-    one = every_sort(product, project)
+    one = every_sort(library, project)
     other = every_sort(flipped_product, flipped_project)
     for name in one:
         by_title = {title: one[name][step.id] for title, step in steps.items()}
@@ -174,39 +174,39 @@ def test_edge_list_order_does_not_change_a_sort():
 
 
 def test_flow_keeps_left_to_right_depth_order():
-    product, project, _steps = braided()
-    placed = layered_flow(product, project)
+    library, project, _steps = braided()
+    placed = layered_flow(library, project)
     for step in project.steps:
         for source in step.edges.get("requires", []):
             assert placed[source][0] < placed[step.id][0]
 
 
 def test_barycenter_untangles_a_crossing():
-    product, project = build()
+    library, project = build()
     a, b, c = project.steps
     d = Step(title="D")
-    product.add_child(project.id, d)
+    library.add_child(project.id, d)
     # C waits on B and D waits on A: laid in project order the two edges would cross.
-    SetEdgesCommand(c.id, "requires", [b.id]).redo(product)
-    SetEdgesCommand(d.id, "requires", [a.id]).redo(product)
+    SetEdgesCommand(c.id, "requires", [b.id]).redo(library)
+    SetEdgesCommand(d.id, "requires", [a.id]).redo(library)
 
-    placed = layered_flow(product, project)
+    placed = layered_flow(library, project)
     same_side = (placed[a.id][1] < placed[b.id][1]) == (placed[d.id][1] < placed[c.id][1])
     assert same_side, "the second column should mirror the first's order"
 
 
 def test_layered_down_flows_top_to_bottom():
-    product, project = build()
+    library, project = build()
     a, b, c = project.steps
-    SetEdgesCommand(b.id, "requires", [a.id]).redo(product)
-    SetEdgesCommand(c.id, "requires", [b.id]).redo(product)
-    placed = layered_down(product, project)
+    SetEdgesCommand(b.id, "requires", [a.id]).redo(library)
+    SetEdgesCommand(c.id, "requires", [b.id]).redo(library)
+    placed = layered_down(library, project)
     assert placed[a.id][1] < placed[b.id][1] < placed[c.id][1]
 
 
 def test_spine_lays_the_longest_chain_on_one_line():
-    product, project, steps = braided()
-    placed = spine(product, project)
+    library, project, steps = braided()
+    placed = spine(library, project)
     # b → c → e → g is the deepest chain through the first-by-project-order sources.
     chain = [steps[t].id for t in ("b", "c", "e", "g")]
     assert {placed[sid][1] for sid in chain} == {0.0}
@@ -217,18 +217,18 @@ def test_spine_lays_the_longest_chain_on_one_line():
 
 
 def test_spine_ribs_alternate_sides():
-    product, project, _steps = braided()
-    placed = spine(product, project)
+    library, project, _steps = braided()
+    placed = spine(library, project)
     sides = {1.0 if y > 0 else -1.0 for _x, y in placed.values() if y != 0.0}
     assert sides == {1.0, -1.0}
 
 
 def test_timeline_x_follows_earliest_start():
-    product, project = build()
+    library, project = build()
     a, b, c = project.steps
-    SetEdgesCommand(b.id, "requires", [a.id]).redo(product)
+    SetEdgesCommand(b.id, "requires", [a.id]).redo(library)
     days = {a.id: 2.0}
-    placed = timeline(product, project, days_for=lambda step: days.get(step.id))
+    placed = timeline(library, project, days_for=lambda step: days.get(step.id))
 
     assert placed[a.id][0] == ORIGIN
     assert placed[c.id][0] == ORIGIN  # nothing to wait on
@@ -237,31 +237,31 @@ def test_timeline_x_follows_earliest_start():
 
 
 def test_radial_rings_follow_bfs_distance():
-    product, project = build()
+    library, project = build()
     a, b, c = project.steps
     d = Step(title="D")
-    product.add_child(project.id, d)
-    SetEdgesCommand(b.id, "requires", [a.id]).redo(product)
-    SetEdgesCommand(c.id, "requires", [a.id]).redo(product)
-    SetEdgesCommand(d.id, "requires", [b.id]).redo(product)
+    library.add_child(project.id, d)
+    SetEdgesCommand(b.id, "requires", [a.id]).redo(library)
+    SetEdgesCommand(c.id, "requires", [a.id]).redo(library)
+    SetEdgesCommand(d.id, "requires", [b.id]).redo(library)
 
     def r(placed, step):
         x, y = placed[step.id]
         cx, cy = x + NODE_W / 2, y + NODE_H / 2  # the node's centre, for the default size
         return (cx**2 + cy**2) ** 0.5
 
-    placed = radial(product, project)  # a is the most connected, so the centre
+    placed = radial(library, project)  # a is the most connected, so the centre
     assert r(placed, a) < 1e-9
     assert abs(r(placed, b) - r(placed, c)) < 1e-9
     assert r(placed, d) > r(placed, b)
 
-    recentred = radial(product, project, center=d.id)
+    recentred = radial(library, project, center=d.id)
     assert r(recentred, d) < 1e-9
-    assert most_connected(product, project) == a.id
+    assert most_connected(library, project) == a.id
 
 
 def test_sorts_respect_node_sizes():
-    product, project, steps = braided()
+    library, project, steps = braided()
     big = steps["c"].id
 
     def size_for(step):
@@ -269,5 +269,5 @@ def test_sorts_respect_node_sizes():
 
     by_id = {step.id: step for step in project.steps}
     for sort in (layered_flow, layered_down, spine, timeline):
-        placed = sort(product, project, size_for=size_for)
+        placed = sort(library, project, size_for=size_for)
         assert_no_overlap(placed, size_for=size_for, steps_by_id=by_id)

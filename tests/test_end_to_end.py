@@ -36,7 +36,7 @@ def workspace(app, tmp_path, close_quietly):
 
 
 def seed_a_project(services):
-    """Put content in an empty product, the way the CLI does: apply, do not push.
+    """Put content in an empty library, the way the CLI does: apply, do not push.
 
     Deliberately *not* through the undo stack. This is the setup, not the edit under test —
     and it is also exactly what an agent does before the user starts editing, so the state
@@ -44,11 +44,11 @@ def seed_a_project(services):
     """
     from dplanner.domain.commands import AddNodeCommand
 
-    product = services.document
+    library = services.document
     project = Project(title="Discovery", summary="what we do not know")
-    AddNodeCommand(product.id, project).redo(product)
+    AddNodeCommand(library.id, project).redo(library)
     for title in ("Read the spec", "Draft the model"):
-        AddNodeCommand(project.id, Step(title=title)).redo(product)
+        AddNodeCommand(project.id, Step(title=title)).redo(library)
     return project
 
 
@@ -57,7 +57,7 @@ def test_every_registered_activity_opens(workspace):
     services = session.services
     project = seed_a_project(services)
     services.tabs.open("project", project.id)
-    services.tabs.open("product")
+    services.tabs.open("library")
     services.tabs.open("llm_calls")
     assert len(services.tabs.activities()) >= 3
     for activity in services.tabs.activities():
@@ -75,7 +75,7 @@ def test_the_index_lists_what_the_product_holds(workspace):
 def test_a_mixed_edit_chain_undoes_back_to_an_identical_workspace(workspace, close_quietly):
     session, location, root = workspace
     services = session.services
-    product = services.document
+    library = services.document
     project = seed_a_project(services)
     services.autosave.flush_now()
     before = fingerprint(root)
@@ -98,7 +98,7 @@ def test_a_mixed_edit_chain_undoes_back_to_an_identical_workspace(workspace, clo
 
     services.undo.push(SetFieldCommand(project.id, "title", "Renamed"))
     services.undo.break_coalescing()
-    services.undo.push(SetFieldCommand(product.id, "repository", "git@example.com:w.git"))
+    services.undo.push(SetFieldCommand(library.id, "repository", "git@example.com:w.git"))
     services.undo.break_coalescing()
     services.undo.push(EditTextCommand(TextEdit(first.id, "step_description", 0, "", "# Notes\n")))
     services.undo.break_coalescing()
@@ -124,7 +124,7 @@ def test_a_mixed_edit_chain_undoes_back_to_an_identical_workspace(workspace, clo
     assert reopened.services is not None
     try:
         reopened_titles = [getattr(n, "title", n.kind) for n in reopened.services.document.nodes()]
-        assert reopened_titles == [getattr(n, "title", n.kind) for n in product.nodes()]
+        assert reopened_titles == [getattr(n, "title", n.kind) for n in library.nodes()]
         assert fingerprint(root) == before
     finally:
         close_quietly(reopened)

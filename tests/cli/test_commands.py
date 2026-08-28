@@ -19,12 +19,12 @@ def data(text):
     return json.loads(text)
 
 
-# -- finding the product -----------------------------------------------------------------------
+# -- finding the library -----------------------------------------------------------------------
 
 
 def test_the_product_is_found_by_walking_up(workspace):
     """The whole point: an agent already sitting in the checkout needs no configuration."""
-    deep = workspace / "projects" / "somewhere"
+    deep = workspace / "somewhere"
     deep.mkdir(parents=True, exist_ok=True)
     assert find_workspace(start=deep).path == workspace
 
@@ -32,7 +32,7 @@ def test_the_product_is_found_by_walking_up(workspace):
 def test_no_product_anywhere_is_an_error_not_a_guess(tmp_path):
     from dplanner.cli.command import CliError
 
-    with pytest.raises(CliError, match="no product found here"):
+    with pytest.raises(CliError, match="no library found here"):
         find_workspace(start=tmp_path)
 
 
@@ -86,14 +86,14 @@ def test_the_pointer_never_clobbers_and_never_points_at_the_root(tmp_path):
     at_root = tmp_path / "solo"
     (at_root / ".git").mkdir(parents=True)
     create_product(LocalStorage(at_root))
-    assert not (at_root / ".dplanner").exists()  # the walk already finds product.json
+    assert not (at_root / ".dplanner").exists()  # the walk already finds library.json
 
 
 # -- reading -----------------------------------------------------------------------------------
 
 
 def test_product_show_reports_an_empty_product(cli):
-    assert data(cli("product", "show", "--json"))["projects"] == 0
+    assert data(cli("library", "show", "--json"))["projects"] == 0
 
 
 def test_an_empty_product_says_so_rather_than_printing_nothing(cli):
@@ -102,8 +102,8 @@ def test_an_empty_product_says_so_rather_than_printing_nothing(cli):
 
 def test_json_works_after_the_verb_as_well_as_before(cli):
     """Argparse wants global options first; nobody types them that way."""
-    assert data(cli("product", "show", "--json"))["name"]
-    assert data(cli("--json", "product", "show"))["name"]
+    assert data(cli("library", "show", "--json"))["name"]
+    assert data(cli("--json", "library", "show"))["name"]
 
 
 # -- writing -----------------------------------------------------------------------------------
@@ -111,13 +111,13 @@ def test_json_works_after_the_verb_as_well_as_before(cli):
 
 def test_a_verb_writes_to_disk_and_the_next_run_sees_it(cli, workspace):
     cli("project", "create", "Search rewrite", "--summary", "Replace the index")
-    assert (workspace / "projects" / "search-rewrite" / "project.json").is_file()
+    assert (workspace / "search-rewrite" / "project.json").is_file()
     rows = data(cli("project", "list", "--json"))["projects"]
     assert [row["title"] for row in rows] == ["Search rewrite"]
 
 
 def test_product_set_needs_something_to_set(cli):
-    assert "nothing to set" in cli("product", "set", expect=1)
+    assert "nothing to set" in cli("library", "set", expect=1)
 
 
 def test_steps_and_links(cli):
@@ -139,9 +139,9 @@ def test_a_cycle_is_refused_as_a_message_not_a_traceback(cli):
 
 def test_nothing_is_written_when_a_verb_fails(cli, workspace):
     cli("project", "create", "Discovery")
-    before = (workspace / "projects" / "discovery" / "project.json").read_bytes()
+    before = (workspace / "discovery" / "project.json").read_bytes()
     cli("project", "rename", "Discovery", expect=1)
-    assert (workspace / "projects" / "discovery" / "project.json").read_bytes() == before
+    assert (workspace / "discovery" / "project.json").read_bytes() == before
 
 
 def test_an_ambiguous_name_asks_rather_than_guessing(cli):
@@ -180,7 +180,7 @@ def test_agent_set_and_show_take_a_project(cli, cli_stdin, workspace):
     cli("project", "create", "Discovery")
     cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
     assert (
-        workspace / "projects" / "discovery" / "modules" / "step_agent_instruction.md"
+        workspace / "discovery" / "modules" / "step_agent_instruction.md"
     ).is_file()
     shown = data(cli("agent", "show", "--project", "Discovery", "--json"))
     assert shown["markdown"] == "House rules."

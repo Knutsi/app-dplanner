@@ -97,7 +97,7 @@ def cli(workspace):
 
 def test_set_and_clear(cli, workspace):
     cli("release", "set", "Ship the beta", "--label", "MVP")
-    step_dir = workspace / "projects" / "discovery" / "steps" / "ship-the-beta"
+    step_dir = workspace / "discovery" / "steps" / "ship-the-beta"
     entry = json.loads((step_dir / "modules" / "step_release.json").read_text())
     assert entry["label"] == "MVP"
     cli("release", "clear", "Ship the beta")
@@ -111,7 +111,7 @@ def test_clearing_a_step_that_is_not_a_release_says_so(cli):
 def test_set_without_label_generates_the_next_one(cli, workspace):
     cli("release", "set", "Build the core")
     cli("release", "set", "Ship the beta")
-    steps = workspace / "projects" / "discovery" / "steps"
+    steps = workspace / "discovery" / "steps"
     first = json.loads((steps / "build-the-core" / "modules" / "step_release.json").read_text())
     second = json.loads((steps / "ship-the-beta" / "modules" / "step_release.json").read_text())
     assert first["label"] == "v1"
@@ -134,11 +134,11 @@ def panel_step(services):
     from dplanner.domain.commands import AddNodeCommand
     from dplanner.domain.model import Project
 
-    product = services.document
+    library = services.document
     project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
+    AddNodeCommand(library.id, project).redo(library)
     step = Step(title="Ship the beta")
-    AddNodeCommand(project.id, step).redo(product)
+    AddNodeCommand(project.id, step).redo(library)
     return step
 
 
@@ -186,10 +186,10 @@ def select(services, step):
 def second_step(services, panel_step):
     from dplanner.domain.commands import AddNodeCommand
 
-    product = services.document
-    project = product.project_of(panel_step.id)
+    library = services.document
+    project = library.project_of(panel_step.id)
     step = Step(title="Build the core")
-    AddNodeCommand(project.id, step).redo(product)
+    AddNodeCommand(project.id, step).redo(library)
     return step
 
 

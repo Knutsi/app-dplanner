@@ -18,10 +18,10 @@ from dplanner.modules.projects.index import ProjectEntry, ProjectsSegment
 
 @pytest.fixture
 def project(services):
-    product = services.document
+    library = services.document
     project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
-    AddNodeCommand(project.id, Step(title="Read the spec")).redo(product)
+    AddNodeCommand(library.id, project).redo(library)
+    AddNodeCommand(project.id, Step(title="Read the spec")).redo(library)
     return project
 
 
@@ -134,7 +134,7 @@ def entry_segment(services, project):
     opened = []
     segment = ProjectsSegment(
         root=root,
-        product=services.document,
+        library=services.document,
         context=services.context,
         actions=services.actions,
         theme=services.theme,

@@ -16,7 +16,7 @@ from dplanner.entry import command_words, looks_like_a_verb
     [
         ["project", "list"],
         ["--workspace", "/tmp/widget", "project", "list"],
-        ["--json", "product", "show"],
+        ["--json", "library", "show"],
         ["--workspace", "/tmp/widget", "--json", "step", "add", "p", "t"],
         ["skill", "show"],
         ["--help"],
@@ -31,7 +31,7 @@ def test_these_run_a_verb(argv):
     [
         [],
         ["--workspace", "/tmp/widget"],
-        ["--workspace", "/home/someone/product"],  # A directory named like a noun.
+        ["--workspace", "/home/someone/library"],  # A directory named like a noun.
         ["-style", "Fusion"],
         ["--workspace", "/tmp/widget", "-platform", "offscreen"],
     ],

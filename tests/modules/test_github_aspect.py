@@ -56,8 +56,8 @@ def reload(workspace):
     return ProductStore(LocalStorage(workspace)).load()
 
 
-def first_step(product):
-    return product.projects[0].steps[0]
+def first_step(library):
+    return library.projects[0].steps[0]
 
 
 def stored_refs(workspace) -> GithubRefs:
@@ -108,7 +108,7 @@ def test_a_pr_set_without_gh_still_records_the_number(cli, workspace, gh_less):
 
 def test_a_pr_set_with_gh_fills_state_title_url_and_branch(cli, workspace, gh_present, monkeypatch):
     monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: MERGED)
-    cli("product", "set", "--repository", "https://github.com/acme/widget")
+    cli("library", "set", "--repository", "https://github.com/acme/widget")
     cli("github", "set", "Read the spec", "--pr", "12")
     assert stored_refs(workspace) == GithubRefs(
         branch="feat/login",
@@ -135,7 +135,7 @@ def test_a_ref_that_names_no_pr_is_refused(cli, gh_less):
 
 
 def test_clearing_halves_and_the_whole(cli, workspace, gh_less):
-    modules = workspace / "projects/discovery/steps/read-the-spec/modules"
+    modules = workspace / "discovery/steps/read-the-spec/modules"
     cli("github", "set", "Read the spec", "--branch", "feat/login", "--pr", "12")
     cli("github", "clear", "Read the spec", "--pr")
     assert read(first_step(reload(workspace))) == GithubRefs(branch="feat/login")
@@ -154,12 +154,12 @@ def test_gh_gated_verbs_refuse_without_gh(cli, gh_less):
 
 
 def test_gh_gated_verbs_refuse_without_a_repository(cli, gh_present):
-    assert "product set --repository" in cli("github", "prs", expect=1)
+    assert "library set --repository" in cli("github", "prs", expect=1)
 
 
 def test_prs_lists_open_by_default_and_all_on_request(cli, gh_present, monkeypatch):
     monkeypatch.setattr(github_cli, "list_prs", lambda repo: [MERGED, OPEN])
-    cli("product", "set", "--repository", "https://github.com/acme/widget")
+    cli("library", "set", "--repository", "https://github.com/acme/widget")
     assert json.loads(cli("github", "prs", "--json"))["prs"] == [
         {"number": 7, "state": "open", "title": "Fix crash", "branch": "fix/crash"}
     ]
@@ -168,12 +168,12 @@ def test_prs_lists_open_by_default_and_all_on_request(cli, gh_present, monkeypat
 
 def test_branches_come_from_gh(cli, gh_present, monkeypatch):
     monkeypatch.setattr(github_cli, "list_branches", lambda repo: ["main", "feat/login"])
-    cli("product", "set", "--repository", "https://github.com/acme/widget")
+    cli("library", "set", "--repository", "https://github.com/acme/widget")
     assert json.loads(cli("github", "branches", "--json"))["branches"] == ["main", "feat/login"]
 
 
 def test_refresh_rechecks_only_open_and_unknown_prs(cli, workspace, gh_present, monkeypatch):
-    cli("product", "set", "--repository", "https://github.com/acme/widget")
+    cli("library", "set", "--repository", "https://github.com/acme/widget")
     cli("step", "add", "Discovery", "Write the docs")
     monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: None)
     cli("github", "set", "Read the spec", "--pr", "12")  # Recorded with state "".
@@ -196,7 +196,7 @@ def test_a_projects_own_repository_wins_for_its_steps(cli, gh_present, monkeypat
         return OPEN
 
     monkeypatch.setattr(github_cli, "view_pr", view_pr)
-    cli("product", "set", "--repository", "https://github.com/acme/widget")
+    cli("library", "set", "--repository", "https://github.com/acme/widget")
     cli("repo", "set", "Discovery", "--repository", "https://github.com/acme/satellite")
     cli("github", "set", "Read the spec", "--pr", "7")
     assert asked == ["acme/satellite"]
@@ -216,7 +216,7 @@ def test_prs_can_ask_a_projects_repository(cli, gh_present, monkeypatch):
 
 
 def test_refresh_without_changes_reports_zero_updates(cli, gh_present, monkeypatch):
-    cli("product", "set", "--repository", "https://github.com/acme/widget")
+    cli("library", "set", "--repository", "https://github.com/acme/widget")
     monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: OPEN)
     cli("github", "set", "Read the spec", "--pr", "7")
     assert json.loads(cli("github", "refresh", "--json")) == {"checked": 1, "updated": 0}
