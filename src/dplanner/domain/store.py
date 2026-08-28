@@ -53,6 +53,7 @@ aspects that are dirty, in the order this format requires.
 import json
 import shutil
 from collections.abc import Callable, Iterable
+from pathlib import Path
 from typing import Any
 
 from dplanner.core.formats import FORMAT_KEY, UnsupportedFormatError
@@ -114,6 +115,10 @@ class ModuleFileArea:
 
     def read_bytes(self, name: str) -> bytes | None:
         return self._storage.read_bytes(_join(self.directory, name))
+
+    def absolute(self, name: str) -> Path:
+        """The file's place on the local disk — for handing to something outside the store."""
+        return self._storage.root / _join(self.directory, name)
 
     def write_bytes(self, name: str, data: bytes) -> None:
         self._storage.write_bytes(_join(self.directory, name), data)

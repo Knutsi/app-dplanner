@@ -10,28 +10,34 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import NodeId, Product
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import (
+    DISABLED,
     ENABLED,
-    HIDDEN,
     ActionRegistry,
     ActionSpec,
     ActionState,
 )
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.tabs import TabHost
+from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
-from dplanner.modules.spec.activity import SPECS_KIND, SpecsActivity
+from dplanner.framework.widgets import confirm
+from dplanner.modules.spec.activity import DOCUMENT_ENTITY, SPECS_KIND, SpecsActivity
 from dplanner.modules.spec.aspect import DATA_FORMAT, MODULE_ID
 from dplanner.modules.spec.documents import (
+    SpecDocument,
     binary_refusal,
     default_name,
     import_document,
     read_index,
+    remove_document,
     write_index,
 )
 
@@ -45,6 +51,7 @@ class SpecDeps:
     context: ContextService
     tabs: TabHost
     undo: UndoService[Product]
+    theme: ThemeService
     parent: QWidget
     # The module's file area beside any node. Wired by the composition root, which is the
     # only place that knows the concrete store.
@@ -66,7 +73,9 @@ class SpecModule:
 
         def factory(target: str | None) -> SpecsActivity:
             assert target is not None
-            return SpecsActivity(deps.product, deps.context, deps.actions, deps.files, target)
+            return SpecsActivity(
+                deps.product, deps.context, deps.actions, deps.files, deps.theme, target
+            )
 
         deps.tabs.register_factory(SPECS_KIND, factory)
         deps.actions.register(
@@ -79,6 +88,30 @@ class SpecModule:
                 tip="Import a PDF, markdown or text document beside this project",
                 state=self._on_a_project,
                 run=self._add,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="spec.remove",
+                label="&Remove Spec Document",
+                menu="Project",
+                group="documents",
+                order=20,
+                tip="Remove the selected document and its requirements; the file stays on disk",
+                state=self._on_a_document,
+                run=self._remove,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="spec.open_external",
+                label="Open Document E&xternally",
+                menu="Project",
+                group="documents",
+                order=30,
+                tip="Open the selected spec document in the system viewer",
+                state=self._on_a_document,
+                run=self._open_external,
             )
         )
         deps.actions.register(
@@ -101,8 +134,23 @@ class SpecModule:
     def _on_a_project(self, context: Context) -> ActionState:
         project_id = context.focus_entity("project")
         if project_id is None or not self._deps.product.has(project_id):
-            return HIDDEN
+            return DISABLED
         return ENABLED
+
+    def _on_a_document(self, context: Context) -> ActionState:
+        return ENABLED if self._selected_document(context) is not None else DISABLED
+
+    def _selected_document(self, context: Context) -> tuple[NodeId, SpecDocument] | None:
+        """The document the Specs tab has selected, resolved against its project's index."""
+        project_id = context.focus_entity("project")
+        if project_id is None or not self._deps.product.has(project_id):
+            return None
+        name = context.selected_entity(DOCUMENT_ENTITY)
+        if name is None:
+            return None
+        documents, _requirements = read_index(self._deps.product.project(project_id))
+        document = next((doc for doc in documents if doc.name == name), None)
+        return None if document is None else (project_id, document)
 
     def _open(self, context: Context) -> None:
         project_id = context.focus_entity("project")
@@ -141,6 +189,43 @@ class SpecModule:
                 SetModuleDataCommand(project_id, MODULE_ID, write_index(documents, requirements))
             )
         self.open(project_id)
+
+    def _remove(self, context: Context) -> None:
+        found = self._selected_document(context)
+        if found is None:
+            return  # The state gate already prevents this; stay honest anyway.
+        project_id, document = found
+        documents, requirements = read_index(self._deps.product.project(project_id))
+        documents, requirements, dropped = remove_document(documents, requirements, document.name)
+        detail = f" and its {len(dropped)} requirements" if dropped else ""
+        question = f"Remove {document.name!r}{detail}? The file stays on disk."
+        if not confirm(self._deps.parent, "Remove Spec Document", question):
+            return
+        self._deps.undo.push(
+            SetModuleDataCommand(
+                project_id,
+                MODULE_ID,
+                write_index(documents, requirements),
+                label="Remove Spec Document",
+            )
+        )
+
+    def _open_external(self, context: Context) -> None:
+        found = self._selected_document(context)
+        if found is None:
+            return  # The state gate already prevents this; stay honest anyway.
+        project_id, document = found
+        area = self._deps.files(project_id)
+        # Existence is checked here, at run time — a state callback runs on every context
+        # change and must not touch the disk.
+        if area.read_bytes(document.file) is None:
+            QMessageBox.warning(
+                self._deps.parent,
+                "Spec Documents",
+                f"{document.file} is missing from the workspace.",
+            )
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(area.absolute(document.file))))
 
     # -- tab upkeep ----------------------------------------------------------------------------
 

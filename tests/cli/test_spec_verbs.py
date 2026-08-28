@@ -198,6 +198,36 @@ def test_requirements_filter_by_document(cli, marked, tmp_path):
     assert ids == ["r1"]
 
 
+# -- removing ----------------------------------------------------------------------------------
+
+
+def test_remove_takes_the_document_and_its_requirements(cli, marked, tmp_path, workspace):
+    cli("spec", "import", marked, source(tmp_path, "other.md", "# Other"))
+    cli("spec", "mark", marked, "other", "--title", "Elsewhere")
+    report = data(cli("spec", "remove", marked, "spec", "--json"))
+    assert report["document"] == "spec"
+    assert report["requirements_removed"] == ["r1"]
+    listed = data(cli("spec", "list", marked, "--json"))
+    assert [doc["name"] for doc in listed["documents"]] == ["other"]
+    remaining = data(cli("spec", "requirements", marked, "--json"))["requirements"]
+    assert [req["id"] for req in remaining] == ["r2"]
+    # The blob outlives the index entry — an orphan is recoverable, a dangling pointer is not.
+    blobs = list((workspace / "projects").glob("*/modules/spec/documents/*.md"))
+    assert len(blobs) == 2
+
+
+def test_remove_reports_the_steps_left_dangling(cli, marked):
+    cli("step", "add", marked, "Hash passwords")
+    cli("spec", "link", "Hash passwords", "r1")
+    out = cli("spec", "remove", marked, "spec")
+    assert "still linked" in out and "Hash passwords" in out
+
+
+def test_removing_the_last_document_removes_the_index_file(cli, marked, workspace):
+    cli("spec", "remove", marked, "spec")
+    assert list((workspace / "projects").glob("*/modules/spec.json")) == []
+
+
 # -- refusals leave nothing behind -------------------------------------------------------------
 
 

@@ -132,6 +132,31 @@ def exit_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
+def external_icon(color: str) -> QIcon:
+    """An arrow leaving a box through its open corner: open outside the application."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    # The box, open at the top-right.
+    painter.drawPolyline(
+        QPolygonF(
+            [
+                QPointF(7.0, 3.5),
+                QPointF(3.0, 3.5),
+                QPointF(3.0, 13.0),
+                QPointF(12.5, 13.0),
+                QPointF(12.5, 9.0),
+            ]
+        )
+    )
+    # The arrow out through the corner.
+    painter.drawLine(QPointF(7.5, 8.5), QPointF(13.0, 3.0))
+    painter.drawLine(QPointF(9.4, 3.0), QPointF(13.0, 3.0))
+    painter.drawLine(QPointF(13.0, 6.6), QPointF(13.0, 3.0))
+    painter.end()
+    return QIcon(pixmap)
+
+
 def leaf_icon(color: str) -> QIcon:
     """A single page with text lines: a segment without children."""
     pixmap, painter = _canvas()

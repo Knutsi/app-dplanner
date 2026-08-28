@@ -234,6 +234,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             context=services.context,
             tabs=services.tabs,
             undo=services.undo,
+            theme=services.theme,
             parent=services.window,
             files=lambda node_id: store.files(node_id, SPEC_ID),
         )
