@@ -133,6 +133,16 @@ def test_an_ambiguous_name_asks_rather_than_guessing(cli):
     # The message has to say what to type next, so it names the ids.
     ids = [row["id"][:8] for row in data(cli("project", "list", "--json"))["projects"]]
     assert all(short in message for short in ids)
+    # And what it says to type has to work: the short id it printed resolves.
+    shown = data(cli("project", "show", ids[0], "--json"))
+    assert shown["id"].startswith(ids[0])
+
+
+def test_a_short_id_prefix_finds_a_step(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    full = data(cli("step", "show", "Deploy", "--json"))["id"]
+    assert data(cli("step", "show", full[:8], "--json"))["id"] == full
 
 
 def test_unlink_removes_only_that_edge(cli):
