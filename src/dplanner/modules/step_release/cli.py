@@ -10,7 +10,13 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.ordering import placed
-from dplanner.modules.step_release.aspect import MODULE_ID, read, write
+from dplanner.modules.step_release.aspect import (
+    MODULE_ID,
+    next_release_label,
+    project_labels,
+    read,
+    write,
+)
 
 
 def commands() -> list[CliCommand]:
@@ -20,7 +26,10 @@ def commands() -> list[CliCommand]:
             summary="Mark a step as a release point, with a label.",
             configure=_configure_set,
             run=_set,
-            examples=("dplanner release set 'Ship the beta' --label MVP",),
+            examples=(
+                "dplanner release set 'Ship the beta' --label MVP",
+                "dplanner release set 'Ship the beta'",
+            ),
         ),
         CliCommand(
             path=("release", "clear"),
@@ -49,16 +58,24 @@ def _one_project(parser: ArgumentParser) -> None:
 
 def _configure_set(parser: ArgumentParser) -> None:
     _one_step(parser)
-    parser.add_argument("--label", required=True, help="what to call it: MVP, v1.0, v2")
+    parser.add_argument(
+        "--label",
+        help="what to call it: MVP, v1.0, v2 (omitted: generated from the project's labels)",
+    )
 
 
 def _set(context: CliContext, args: Namespace) -> int:
-    entry = write(args.label)
+    step = find_step(context.product, args.step)
+    if args.label is None:
+        project = context.product.project_of(step.id)
+        label = next_release_label(project_labels(project, skip=step.id))
+    else:
+        label = args.label
+    entry = write(label)
     if not entry:
         raise CliError("a release needs a label")
-    step = find_step(context.product, args.step)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
-    context.report({"step": step.id} | entry, f"{step.title}: release {args.label.strip()}")
+    context.report({"step": step.id} | entry, f"{step.title}: release {label.strip()}")
     return 0
 
 

@@ -21,10 +21,10 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Project, Step
 from dplanner.framework.context import SCOPE_SELECTION
-from dplanner.modules.project_editor.items import FILL_ALPHA
 from dplanner.modules.project_editor.modes import CONNECT, IDLE, PAN
 from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+from dplanner.modules.project_editor.renderers import FILL_ALPHA
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef
 from dplanner.modules.step_properties.module import PANEL_ID as STEP_PANEL_ID
 from dplanner.theme import apply_theme
@@ -262,7 +262,8 @@ def test_double_clicking_empty_space_creates_a_step_there(app, services, project
     send(app, tab, QEvent.Type.MouseButtonDblClick, QPointF(700, 500))
 
     assert len(project.steps) == 3
-    assert project.steps[-1].module_data["project_editor"]["x"] == 608.0
+    # Centred on the click: 700 - NODE_W / 2, snapped to the grid.
+    assert project.steps[-1].module_data["project_editor"]["x"] == 592.0
 
 
 # -- gestures become commands -----------------------------------------------------------------
@@ -626,6 +627,23 @@ def painted_node(tab, step_id, background: str) -> QColor:
     return image.pixelColor(int(NODE_W / 2), int(NODE_H * 0.75))
 
 
+def test_a_title_wraps_at_a_word_and_the_overflow_elides(app):
+    from PySide6.QtGui import QFont, QFontMetrics
+
+    from dplanner.modules.project_editor.renderers import title_lines
+
+    metrics = QFontMetrics(QFont())
+    short = title_lines(metrics, "Ship it", 10_000.0)
+    assert short == ["Ship it"]
+
+    long_title = "Rebuild the deployment pipeline for the beta environment"
+    width = metrics.horizontalAdvance("Rebuild the deployment") + 2.0
+    first, second = title_lines(metrics, long_title, width)
+    assert first == "Rebuild the deployment"
+    assert second.startswith("pipeline")
+    assert metrics.horizontalAdvance(second) <= width  # elided, never clipped
+
+
 def ink_over(background: str, ink: str, alpha: int) -> QColor:
     share = alpha / 255
     base, over = QColor(background), QColor(ink)
@@ -760,6 +778,25 @@ def test_space_pans_while_it_is_held(app, services, project, tab):
     release_key(app, tab, Qt.Key.Key_Space)
     assert modes(tab).current().name == IDLE
     assert view(tab).dragMode() == QGraphicsView.DragMode.RubberBandDrag
+
+
+def test_connect_mode_shows_every_handle_and_pan_hides_them(app, services, project, tab):
+    """The mode's look is pushed to every node; the stack's answer wins over enter/exit."""
+    canvas = scene(tab)
+    first = project.steps[0]
+    assert canvas._nodes[first.id]._hints.handles == "hover"
+
+    services.actions.run("steps.connect", services.context.current())
+    assert all(item._hints.handles == "always" for item in canvas._nodes.values())
+
+    # Space stacks Pan over Connect; popping back must restore Connect's hints.
+    press_key(app, tab, Qt.Key.Key_Space)
+    assert canvas._nodes[first.id]._hints.handles == "hidden"
+    release_key(app, tab, Qt.Key.Key_Space)
+    assert canvas._nodes[first.id]._hints.handles == "always"
+
+    press_key(app, tab, Qt.Key.Key_Escape)
+    assert canvas._nodes[first.id]._hints.handles == "hover"
 
 
 def test_connect_mode_links_two_clicks_and_then_lets_go(app, services, project, tab):
@@ -1048,10 +1085,10 @@ def test_dragging_out_a_region_is_one_undo_step(app, services, project, tab):
 
 
 def test_a_body_drag_carries_the_steps_whose_centres_lie_inside(app, services, project, tab):
-    first, second = project.steps  # at (40, 40) and (40, 150) in the automatic layout
+    first, second = project.steps  # at (40, 40) and (40, 160) in the automatic layout
     region = add_region(services, project, 0.0, 0.0, 300.0, 120.0)  # first inside, second out
 
-    drag(app, tab, QPointF(250.0, 80.0), QPointF(410.0, 240.0))  # body: off node, off strip
+    drag(app, tab, QPointF(280.0, 80.0), QPointF(440.0, 240.0))  # body: off node, off strip
 
     found = regions_of(services, project)[0]
     assert (found.x, found.y) == (160.0, 160.0)

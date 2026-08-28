@@ -374,6 +374,24 @@ greyed "Cannot Link — cycle" reaches the user from the canvas right-click.
 `HIDDEN`) already exist upstream; what was missing was the statement of *which one a state
 callback should return*, and one presenter honouring it inconsistently.
 
+### `build_menu` now nests submenus like the menu bar
+
+**What.** The `submenu=None` path no longer flattens. Specs carrying a `submenu` collapse
+into a child `QMenu` keyed `(group, submenu)`, created at the first *visible* spec's sort
+position — the same placement rule as `DynamicMenuBar._submenu`. A child menu whose entries
+are all hidden is simply never created; a popup is rebuilt on every show, so absence is the
+static equivalent of the menu bar's dynamic hide. The `submenu="X"` filter path is unchanged
+(the tab bar's and the region popup's flat renders depend on it), and one local `add_entry`
+helper builds flat and nested entries alike so the two can never drift.
+
+**Why.** The docstring literally admitted the flattening. Once a menu holds three submenus
+(Status, Type, Go on Step), a flat right-click renders a dozen sibling entries where the
+menu bar shows three folders — the popup and the menu bar were the same registry wearing
+two different shapes for no reason anybody could defend.
+
+**Upstream?** Yes — the popup builder and the menu bar should agree on what a submenu means,
+and the all-hidden rule falls out for free from the rebuild-per-show model.
+
 ### A theme change is not one event, and three surfaces missed it
 
 **What.** Three changes, all found by switching the theme with a graph on screen.

@@ -79,6 +79,10 @@ def _no_parts(_step_id: StepId) -> Sequence[PromptPart]:
     return ()
 
 
+def _no_record(_step_id: StepId) -> None:
+    return None
+
+
 def _no_epilogue(_step_id: StepId) -> str:
     return ""
 
@@ -109,6 +113,9 @@ class StepAgentInstructionDeps:
     # Where the agent runs. The root resolves the project's checkout over the product's;
     # None is the product-only build, not a second copy of that rule.
     checkout_for: Callable[[StepId], str] | None = None
+    # Stamps "an agent shell was launched on this step" — the step_agent_run aspect,
+    # reached through the root because modules never import each other.
+    record_launch: Callable[[StepId], None] = field(default=_no_record)
 
 
 class StepAgentInstructionModule:
@@ -288,8 +295,10 @@ class StepAgentInstructionModule:
             command = launcher.resolve_command(launch_command(), prepared, workdir)
         if command is not None:
             launcher.spawn(command, workdir)
+            deps.record_launch(step.id)
             deps.status.show_status(f"Agent launched on “{step.title}”", 4000)
             return
+        # No shell was started, so nothing is stamped: the fallback hands over the prompt.
         PromptFallbackDialog(assembled.text, str(prepared.prompt_file), deps.parent).exec()
 
     def _preview(self, context: Context) -> None:

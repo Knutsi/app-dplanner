@@ -412,6 +412,43 @@ def test_running_spawns_a_terminal_in_the_checkout(services, step, tmp_path, mon
     assert cwd == tmp_path
 
 
+def test_a_successful_launch_stamps_the_run_state(services, step, tmp_path, monkeypatch):
+    """The stamp records an external fact, so it never lands on the undo stack."""
+    from dplanner.modules.step_agent_run.aspect import launched, read
+
+    services.document.set_field(services.document.id, "checkout", str(tmp_path))
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: None)
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+    services.actions.run("agent.run", services.context.current())
+    assert read(step) == "launched"
+    assert launched(step)
+    assert not services.undo.can_undo()
+
+
+def test_the_prompt_fallback_does_not_stamp(services, step, tmp_path, monkeypatch):
+    """No shell was started, so nothing claims one was."""
+    import dplanner.modules.step_agent_instruction.module as agent_module
+    from dplanner.modules.step_agent_run.aspect import read
+
+    services.document.set_field(services.document.id, "checkout", str(tmp_path))
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: None)
+
+    class SilentDialog:
+        def __init__(self, *args):
+            pass
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(agent_module, "PromptFallbackDialog", SilentDialog)
+    services.actions.run("agent.run", services.context.current())
+    assert read(step) == ""
+
+
 def test_a_run_stages_attached_images_beside_the_prompt(services, step, tmp_path, monkeypatch):
     """The agent runs in the checkout, so the prompt must reference copies it can reach."""
     from dplanner.domain.assets import attach
@@ -486,6 +523,8 @@ def test_agent_prompt_carries_handoffs_and_the_epilogue(tmp_path):
     assert 'From "Set up CI"' in shown["prompt"]
     assert "Keys in vault." in shown["prompt"]
     assert "dplanner status set 'Deploy' done" in shown["prompt"]
+    assert "dplanner agent-state set 'Deploy' plan-for-review" in shown["prompt"]
+    assert "dplanner agent-state clear 'Deploy'" in shown["prompt"]
     # The preflight comes first: no skill, no work.
     assert "dplanner skill status" in shown["prompt"]
     assert shown["prompt"].index("skill status") < shown["prompt"].index("Ship it.")

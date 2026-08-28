@@ -721,6 +721,14 @@ table, the menu bar and the palette all grew it from that single registration. T
 never learned the vocabulary either — it renders a neutral `NodeAccent(muted, badge)`, and
 the composition root translates "done" into muted and a release label into the badge.
 
+The *Type* submenu is the same idea one step further: one checkable toggle per type-ish
+aspect (Release today), each independent, because a Type radio group would reintroduce the
+exclusive type field this section rules out. Toggling Release on generates the next label
+from the project's existing ones (`next_release_label` in `step_release/aspect.py`, shared
+with `dplanner release set`); toggling off asks first, since the label is not kept — and
+the Release tab stays visible on every step precisely so a generated label has somewhere
+to be edited.
+
 ## Pass-forward is derived at read time
 
 A handoff (`modules/step_handoff/`) stores only what the step itself says: a note, a scope

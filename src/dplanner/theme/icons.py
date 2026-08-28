@@ -369,3 +369,52 @@ def list_icon(color: str) -> QIcon:
         painter.drawEllipse(QPointF(3.5, y), 1.3, 1.3)
     painter.end()
     return QIcon(pixmap)
+
+
+# -- the step-kind glyphs ----------------------------------------------------------------------
+# Shared by the canvas's medallions (modules/project_editor/renderers.py) and the order
+# table's title column, so a step reads as the same kind everywhere it appears. The painters
+# take an explicit rect for the canvas; the icon wrappers dress them for item views.
+
+
+def paint_tag_glyph(painter: QPainter, rect: QRectF, colour: QColor) -> None:
+    """A tiny release tag: a square hanging point-first — a marker on the timeline."""
+    path = QPainterPath(QPointF(rect.center().x(), rect.bottom()))
+    path.lineTo(QPointF(rect.left(), rect.center().y() - rect.height() * 0.1))
+    path.lineTo(QPointF(rect.left(), rect.top()))
+    path.lineTo(QPointF(rect.right(), rect.top()))
+    path.lineTo(QPointF(rect.right(), rect.center().y() - rect.height() * 0.1))
+    path.closeSubpath()
+    painter.setBrush(colour)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawPath(path)
+
+
+def paint_spark_glyph(painter: QPainter, rect: QRectF, colour: QColor) -> None:
+    """A four-pointed spark: there is machine guidance — an agent instruction — here."""
+    cx, cy = rect.center().x(), rect.center().y()
+    pull = rect.width() * 0.14
+    path = QPainterPath(QPointF(cx, rect.top()))
+    path.quadTo(QPointF(cx + pull, cy - pull), QPointF(rect.right(), cy))
+    path.quadTo(QPointF(cx + pull, cy + pull), QPointF(cx, rect.bottom()))
+    path.quadTo(QPointF(cx - pull, cy + pull), QPointF(rect.left(), cy))
+    path.quadTo(QPointF(cx - pull, cy - pull), QPointF(cx, rect.top()))
+    painter.setBrush(colour)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawPath(path)
+
+
+def tag_icon(color: str | QColor) -> QIcon:
+    """The release tag as a row icon: this step is a milestone the graph aims at."""
+    pixmap, painter = _canvas()
+    paint_tag_glyph(painter, QRectF(4.0, 3.5, 8.0, 9.5), QColor(color))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def spark_icon(color: str | QColor) -> QIcon:
+    """The agent-instruction spark as a row icon: machine guidance travels with this step."""
+    pixmap, painter = _canvas()
+    paint_spark_glyph(painter, QRectF(3.0, 3.0, 10.0, 10.0), QColor(color))
+    painter.end()
+    return QIcon(pixmap)
