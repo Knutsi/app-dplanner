@@ -28,6 +28,12 @@ DIALOG_MARGIN = 20
 SECTION_GAP = 12
 SIDE_MARGIN = DIALOG_MARGIN - PANEL_MARGIN
 
+# Roomier than the 360 px side panel it mirrors — prose and tables breathe here — but
+# clamped to the screen so a laptop never gets a dialog it cannot show whole.
+DIALOG_WIDTH = 680
+DIALOG_HEIGHT = 620
+SCREEN_CLEARANCE = 80  # Left around the dialog when the screen is the constraint.
+
 
 class StepDetailsDialog(QDialog):
     """One step's details, modally. Edits go through the undo stack like the panel's."""
@@ -56,7 +62,13 @@ class StepDetailsDialog(QDialog):
         layout.setSpacing(SECTION_GAP)
         layout.addWidget(self.panel, 1)
         layout.addWidget(buttons)
-        self.resize(520, 620)
+        width, height = DIALOG_WIDTH, DIALOG_HEIGHT
+        screen = self.screen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            width = min(width, available.width() - SCREEN_CLEARANCE)
+            height = min(height, available.height() - SCREEN_CLEARANCE)
+        self.resize(width, height)
 
     def dispose(self) -> None:
         # A title still being typed commits on focus-out; force it before detaching, or
