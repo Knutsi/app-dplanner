@@ -100,9 +100,11 @@ class StepAgentInstructionDeps:
     # the prompt and staged beside it at launch. None is a build without file storage.
     files: Callable[[NodeId, str], ModuleFileArea] | None = None
     read_asset: Callable[[str], bytes | None] | None = None
-    # The briefing's context blocks and its opening and closing words, assembled by the
-    # composition root — the one place allowed to know what the other aspects store.
+    # The briefing's blocks — handed-forward context, the step's own facts — and its
+    # opening and closing words, assembled by the composition root — the one place
+    # allowed to know what the other aspects store.
     prompt_parts: Callable[[StepId], Sequence[PromptPart]] = field(default=_no_parts)
+    prompt_sections: Callable[[StepId], Sequence[PromptPart]] = field(default=_no_parts)
     epilogue: Callable[[StepId], str] = field(default=_no_epilogue)
     preamble: str = ""
     # Where the agent runs. The root resolves the project's checkout over the product's;
@@ -234,6 +236,10 @@ class StepAgentInstructionModule:
             PromptPart(heading=part.heading, body=part.body, files=place(part.files))
             for part in deps.prompt_parts(step.id)
         ]
+        sections = [
+            PromptPart(heading=section.heading, body=section.body, files=place(section.files))
+            for section in deps.prompt_sections(step.id)
+        ]
         project_files: tuple[str, ...] = ()
         instruction_files: tuple[str, ...] = ()
         if deps.files is not None:
@@ -244,6 +250,7 @@ class StepAgentInstructionModule:
             project_title=project.title or "Untitled project",
             instruction=read(step),
             parts=parts,
+            sections=sections,
             epilogue=deps.epilogue(step.id),
             preamble=deps.preamble,
             project_instruction=read_project(project),

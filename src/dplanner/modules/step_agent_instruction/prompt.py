@@ -43,6 +43,16 @@ def part_lines(part: PromptPart) -> list[str]:
     return lines
 
 
+def section_lines(section: PromptPart) -> list[str]:
+    """A fact about the step itself as a first-class block — its description, its
+    requirements — where ``part_lines`` frames context handed forward from elsewhere."""
+    lines = [f"## {section.heading}", ""]
+    if section.body:
+        lines += [section.body.rstrip(), ""]
+    lines += _files_lines(section.files)
+    return lines
+
+
 def assemble(
     step_title: str,
     project_title: str,
@@ -53,6 +63,7 @@ def assemble(
     project_instruction: str = "",
     project_files: Sequence[str] = (),
     instruction_files: Sequence[str] = (),
+    sections: Sequence[PromptPart] = (),
 ) -> AssembledPrompt:
     """The whole prompt as markdown, and the files it points at.
 
@@ -61,6 +72,9 @@ def assemble(
     ``project_instruction`` is the project's standing instruction, ahead of the step's own;
     either instruction's section disappears entirely when it is empty and carries no files,
     which is what lets a step ride on the standing instruction alone.
+    ``sections`` are the step's own facts — a description, the requirements it implements —
+    worded by the composition root and rendered here as opaque blocks, between the standing
+    instruction and the step's, so the agent reads what the step *is* before how to do it.
     """
     lines = [f"# Step: {step_title}", "", f"Project: {project_title}", ""]
     if preamble:
@@ -70,6 +84,8 @@ def assemble(
         if project_instruction:
             lines += [project_instruction.rstrip(), ""]
         lines += _files_lines(project_files)
+    for section in sections:
+        lines += section_lines(section)
     if instruction or instruction_files:
         lines += ["## Instructions", ""]
         if instruction:
@@ -83,6 +99,7 @@ def assemble(
         lines += ["## When you are done", "", epilogue.rstrip(), ""]
     files = (
         *project_files,
+        *(path for section in sections for path in section.files),
         *instruction_files,
         *(path for part in parts for path in part.files),
     )

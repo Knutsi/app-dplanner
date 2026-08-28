@@ -638,7 +638,19 @@ CLI instead (`status set`, `handoff set`), which the two-writers machinery alrea
 The briefing opens with the **project's standing instruction** — the same module's prose on
 the project node, edited in the project panel's Agent card and in the Agent tab's Project
 part (two bindings over one field, one undo stack) — ahead of the step's own instruction and
-the inherited context. Files attached at either level are **staged into the per-run
+the inherited context.
+
+The briefing is deliberately **self-contained**: between the standing instruction and the
+step's own sit the step's facts — its description (with attached figures), the requirements
+it implements (titles *and* quotes, so the agent reads the obligation rather than chasing an
+id), and the branch or PR the work lands on. The agent module renders these as opaque
+blocks; the composition root words them, exactly as it words the preamble and epilogue,
+because each names another module's vocabulary. Two block kinds, two framings: *parts* are
+context handed forward from earlier steps (`### From "…"`), *sections* are facts about this
+step (`## …`). One builder per kind lives in `modules/__init__.py` and both surfaces — Run
+Agent and `dplanner agent prompt` — call the same two functions, so the window and the CLI
+cannot brief a step two ways. An executing agent needs `agent prompt` and nothing else;
+needing five verbs to reconstruct a briefing was the failure this replaces. Files attached at either level are **staged into the per-run
 directory** beside `prompt.md` and referenced by their staged absolute paths: the agent runs
 in the checkout, not the workspace, so a workspace-relative path in the prompt would point at
 nothing it can reach. Asset names are content-addressed, so staging is a flat, collision-safe

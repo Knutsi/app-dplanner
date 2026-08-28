@@ -249,6 +249,61 @@ def test_agent_prompt_works_from_the_standing_instruction_alone(cli, cli_stdin):
     assert "## Instructions" not in shown["prompt"]
 
 
+def test_agent_prompt_is_a_self_contained_briefing(cli, cli_stdin, tmp_path):
+    """One read gives an executing agent everything: description, the requirements the
+    step answers to (titles AND quotes), where the work lands, then the instructions."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    cli_stdin("describe", "set", "Deploy", "--file", "-", stdin="The release step.")
+    spec = tmp_path / "spec.txt"
+    spec.write_text("The system must deploy on tag.\n")
+    cli("spec", "import", "Discovery", str(spec))
+    cli(
+        "spec", "mark", "Discovery", "spec",
+        "--title", "Deploy on tag", "--quote", "must deploy on tag",
+    )
+    cli("spec", "link", "Deploy", "r1")
+    cli("github", "set", "Deploy", "--branch", "deploy-work")
+
+    prompt = data(cli("agent", "prompt", "Deploy", "--json"))["prompt"]
+    assert "## Description" in prompt and "The release step." in prompt
+    assert "**Deploy on tag** (r1, in spec)" in prompt
+    assert "> must deploy on tag" in prompt
+    assert "Branch: deploy-work" in prompt
+    # What the step is, before why it exists, before how to carry it out.
+    assert prompt.index("## Description") < prompt.index("## Requirements")
+    assert prompt.index("## Requirements") < prompt.index("## Instructions")
+    assert prompt.index("## Instructions") < prompt.index("Ship it.")
+
+
+def test_agent_prompt_says_when_a_requirement_link_dangles(cli, cli_stdin, tmp_path):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    spec = tmp_path / "spec.txt"
+    spec.write_text("The system must deploy on tag.\n")
+    cli("spec", "import", "Discovery", str(spec))
+    cli("spec", "mark", "Discovery", "spec", "--title", "Deploy on tag")
+    cli("spec", "link", "Deploy", "r1")
+    cli("spec", "unmark", "Discovery", "r1")
+    prompt = data(cli("agent", "prompt", "Deploy", "--json"))["prompt"]
+    assert "r1 (no longer in the spec index)" in prompt
+
+
+def test_agent_prompt_lists_description_figures_as_files(cli, cli_stdin, tmp_path):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    figure = tmp_path / "diagram.png"
+    figure.write_bytes(b"png bytes")
+    cli("describe", "attach", "Deploy", str(figure))
+    shown = data(cli("agent", "prompt", "Deploy", "--json"))
+    attached = [path for path in shown["files"] if "step_description" in path]
+    assert len(attached) == 1 and attached[0].endswith(".png")
+    assert attached[0] in shown["prompt"]
+
+
 def test_agent_prompt_with_no_instruction_anywhere_names_both_fixes(cli):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "Deploy")

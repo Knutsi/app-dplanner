@@ -31,11 +31,13 @@ if TYPE_CHECKING:
 
     from dplanner.cli import CliCommand
     from dplanner.domain.aspects import AspectSpec
-    from dplanner.domain.model import Step
+    from dplanner.domain.model import Product, Step
     from dplanner.domain.ordering import Placed
     from dplanner.domain.schedule import Scheduled
+    from dplanner.domain.store import ModuleFileArea
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
+    from dplanner.modules.step_agent_instruction.prompt import PromptPart
 
 __all__ = [
     "StorageLocation",
@@ -80,14 +82,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
     )
-    from dplanner.modules.step_agent_instruction.prompt import PromptPart
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_description.aspect import summary as description_summary
     from dplanner.modules.step_description.module import (
         StepDescriptionDeps,
         StepDescriptionModule,
     )
-    from dplanner.modules.step_handoff.handoff import inherited as inherited_handoffs
     from dplanner.modules.step_handoff.module import StepHandoffDeps, StepHandoffModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
     from dplanner.modules.step_properties.module import (
@@ -157,17 +157,13 @@ def default_modules(services: "AppServices") -> list["Module"]:
         """
         return schedule(order, estimated_days, start_of(product.project(project_id)))
 
+    # The briefing's blocks come from the shared builders below the list — the same two
+    # functions the CLI wires in — closed over the window's product and store here.
     def agent_prompt_parts(step_id: str) -> list["PromptPart"]:
-        """The briefing's context blocks: the step's inherited handoffs, as prompt parts.
+        return _handoff_parts(product, product.step(step_id), store.files)
 
-        The agent module never learns what a handoff is, and the handoff module never
-        learns there is a prompt — this adapter is the whole acquaintance.
-        """
-        step = product.step(step_id)
-        return [
-            PromptPart(heading=h.title, body=h.note, files=h.assets)
-            for h in inherited_handoffs(product, step, store.files)
-        ]
+    def agent_prompt_sections(step_id: str) -> list["PromptPart"]:
+        return _briefing_sections(product, product.step(step_id), store.files)
 
     # Three modules constructed before the list, because what each one hands the others
     # reads better as wiring than as ordering:
@@ -427,6 +423,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # How staged assets are read at launch — bytes by workspace-relative path.
                 read_asset=store.storage.read_bytes,
                 prompt_parts=agent_prompt_parts,
+                prompt_sections=agent_prompt_sections,
                 epilogue=lambda step_id: _agent_epilogue(product.step(step_id).title),
                 preamble=_agent_preamble(),
                 # Where the agent runs: the project's checkout over the product's — the
@@ -510,6 +507,93 @@ def default_modules(services: "AppServices") -> list["Module"]:
     ]
 
 
+def _module_asset_paths(
+    files: "Callable[[str, str], ModuleFileArea]", node_id: str, module_id: str
+) -> tuple[str, ...]:
+    """A node's module files as workspace-relative paths; a never-flushed node has none."""
+    from dplanner.domain.assets import assets
+
+    try:
+        area = files(node_id, module_id)
+    except KeyError:
+        return ()
+    return tuple(f"{area.directory}/{name}" for name in assets(area))
+
+
+def _handoff_parts(
+    product: "Product", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
+) -> "list[PromptPart]":
+    """The briefing's inherited blocks: handoffs become prompt parts here, and neither the
+    agent module nor the handoff module learns the other's name. Both surfaces call this
+    one function, so the window and the CLI cannot brief a step two ways."""
+    from dplanner.modules.step_agent_instruction.prompt import PromptPart
+    from dplanner.modules.step_handoff.handoff import inherited
+
+    return [
+        PromptPart(heading=h.title, body=h.note, files=h.assets)
+        for h in inherited(product, step, files)
+    ]
+
+
+def _briefing_sections(
+    product: "Product", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
+) -> "list[PromptPart]":
+    """The step's own facts as briefing sections: what it is, why it exists, where the
+    work lands. Cross-module prose, so it is worded here in the one file allowed to know
+    every module's vocabulary — the agent module renders the blocks without learning what
+    a description, a requirement or a PR is. An empty fact contributes no section.
+    """
+    from dplanner.modules.github.aspect import read as github_read
+    from dplanner.modules.spec.aspect import read_links
+    from dplanner.modules.spec.documents import read_index
+    from dplanner.modules.step_agent_instruction.prompt import PromptPart
+    from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
+    from dplanner.modules.step_description.aspect import read as description_read
+
+    sections: list[PromptPart] = []
+    description = description_read(step)
+    description_files = _module_asset_paths(files, step.id, DESCRIPTION_ID)
+    if description or description_files:
+        sections.append(
+            PromptPart(heading="Description", body=description, files=description_files)
+        )
+    links = read_links(step)
+    if links:
+        _documents, requirements = read_index(product.project_of(step.id))
+        by_id = {requirement.id: requirement for requirement in requirements}
+        lines: list[str] = []
+        for link in links:
+            requirement = by_id.get(link)
+            if requirement is None:
+                # Links dangle by design (unmark warns, it does not rewrite steps);
+                # the briefing says so instead of pretending the link never existed.
+                lines.append(f"- {link} (no longer in the spec index)")
+                continue
+            where = f", in {requirement.document}" if requirement.document else ""
+            lines.append(f"- **{requirement.title}** ({requirement.id}{where})")
+            lines += [f"  > {quoted}" for quoted in requirement.quote.splitlines()]
+        sections.append(
+            PromptPart(heading="Requirements this step implements", body="\n".join(lines))
+        )
+    refs = github_read(step)
+    if refs is not None:
+        lines = []
+        if refs.branch:
+            lines.append(f"Branch: {refs.branch}")
+        if refs.has_pr():
+            pr = f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
+            if refs.pr_title:
+                pr += f" — {refs.pr_title}"
+            if refs.pr_state:
+                pr += f" ({refs.pr_state})"
+            if refs.pr_url:
+                pr += f" {refs.pr_url}"
+            lines.append(pr)
+        if lines:
+            sections.append(PromptPart(heading="Where the work lands", body="\n".join(lines)))
+    return sections
+
+
 def _agent_preamble() -> str:
     """The briefing's preflight: the agent proves it can report back before it starts.
 
@@ -555,8 +639,6 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.cli.aspects import commands as aspect_commands
     from dplanner.cli.command import CliRegistry
     from dplanner.cli.skill import commands as skill_commands
-    from dplanner.domain.model import Product, Step
-    from dplanner.domain.store import ModuleFileArea
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.github import cli as github_cli
     from dplanner.modules.product import cli as product_cli
@@ -565,24 +647,12 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
-    from dplanner.modules.step_agent_instruction.prompt import PromptPart
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_handoff import cli as handoff_cli
-    from dplanner.modules.step_handoff.handoff import inherited as inherited_handoffs
     from dplanner.modules.step_order import cli as order_cli
     from dplanner.modules.step_release import cli as release_cli
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
-
-    def agent_prompt_parts(
-        product: Product, step: Step, files: "Callable[[str, str], ModuleFileArea]"
-    ) -> list[PromptPart]:
-        # The same acquaintance the window makes: handoffs become prompt parts here, and
-        # neither module learns the other's name.
-        return [
-            PromptPart(heading=h.title, body=h.note, files=h.assets)
-            for h in inherited_handoffs(product, step, files)
-        ]
 
     specs = aspect_specs()
     commands = [
@@ -594,7 +664,8 @@ def default_cli_commands() -> list["CliCommand"]:
         *ticket_cli.commands(),
         *description_cli.commands(),
         *agent_cli.commands(
-            prompt_parts=agent_prompt_parts,
+            prompt_parts=_handoff_parts,
+            prompt_sections=_briefing_sections,
             epilogue=lambda step: _agent_epilogue(step.title),
             preamble=_agent_preamble(),
         ),

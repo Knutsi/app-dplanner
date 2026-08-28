@@ -29,8 +29,9 @@ from dplanner.modules.step_agent_instruction.aspect import (
 )
 from dplanner.modules.step_agent_instruction.prompt import PromptPart, assemble
 
-# (product, step, files) -> the context blocks the prompt should carry. ``files`` is the
-# store's file lookup, passed through so the parts can name real asset paths.
+# (product, step, files) -> blocks the prompt should carry: handed-forward context for
+# ``prompt_parts``, the step's own facts for ``prompt_sections``. ``files`` is the store's
+# file lookup, passed through so the blocks can name real asset paths.
 PartsFor = Callable[
     [Product, Step, Callable[[StepId, str], ModuleFileArea]], Sequence[PromptPart]
 ]
@@ -49,6 +50,7 @@ def _no_epilogue(_step: Step) -> str:
 
 def commands(
     prompt_parts: PartsFor = _no_parts,
+    prompt_sections: PartsFor = _no_parts,
     epilogue: EpilogueFor = _no_epilogue,
     preamble: str = "",
 ) -> list[CliCommand]:
@@ -68,6 +70,7 @@ def commands(
             project_title=project.title or "Untitled project",
             instruction=instruction,
             parts=prompt_parts(context.product, step, context.store.files),
+            sections=prompt_sections(context.product, step, context.store.files),
             epilogue=epilogue(step),
             preamble=preamble,
             project_instruction=project_instruction,
@@ -108,8 +111,8 @@ def commands(
         ),
         CliCommand(
             path=("agent", "prompt"),
-            summary="Print the full briefing for a step: project and step instructions "
-            "plus inherited context.",
+            summary="Print the full briefing for a step: instructions, description, "
+            "requirements, branch and inherited context — everything, in one read.",
             configure=_one_step,
             run=_prompt,
             examples=("dplanner agent prompt 'Read the spec' --json",),
