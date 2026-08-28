@@ -57,9 +57,9 @@ def _configure_set(parser: ArgumentParser) -> None:
 
 
 def _set(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     if args.label is None:
-        project = context.product.project_of(step.id)
+        project = context.library.project_of(step.id)
         label = next_release_label(project_labels(project, skip=step.id))
     else:
         label = args.label
@@ -72,7 +72,7 @@ def _set(context: CliContext, args: Namespace) -> int:
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     if not read(step):
         raise CliError(f"{step.title!r} is not a release")
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
@@ -81,9 +81,9 @@ def _clear(context: CliContext, args: Namespace) -> int:
 
 
 def _list(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     releases = [
-        (place, read(place.step)) for place in placed(context.product, project) if read(place.step)
+        (place, read(place.step)) for place in placed(context.library, project) if read(place.step)
     ]
     data = {
         "project": project.id,

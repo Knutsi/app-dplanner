@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from PySide6.QtWidgets import QInputDialog, QWidget
 
 from dplanner.domain.commands import CompositeCommand
-from dplanner.domain.model import NodeId, Product, Project, Step, StepId
+from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -77,8 +77,8 @@ def set_current_layout_name(project_id: NodeId, name: str | None) -> None:
 
 @dataclass(frozen=True)
 class LayoutVerbs:
-    product: Product
-    undo: UndoService[Product]
+    library: Library
+    undo: UndoService[Library]
     parent: QWidget
     # Which project's graph these verbs act on: the one the current tab is showing.
     current_project: Callable[[], NodeId | None]
@@ -198,12 +198,12 @@ class LayoutVerbs:
 
     def apply(self, project_id: NodeId, name: str) -> None:
         """Put the graph back the way this layout had it — one undo step."""
-        if not self.product.has(project_id):
+        if not self.library.has(project_id):
             return
-        project = self.product.project(project_id)
+        project = self.library.project(project_id)
         if name not in read_layouts(project):
             return
-        commands = apply_layout_commands(self.product, project, name)
+        commands = apply_layout_commands(self.library, project, name)
         if commands:
             self.undo.push(CompositeCommand(f'Apply Layout "{name}"', commands))
             self.undo.break_coalescing()
@@ -214,9 +214,9 @@ class LayoutVerbs:
 
     def _project(self) -> Project | None:
         project_id = self.current_project()
-        if project_id is None or not self.product.has(project_id):
+        if project_id is None or not self.library.has(project_id):
             return None
-        return self.product.project(project_id)
+        return self.library.project(project_id)
 
     def _applied(self) -> tuple[Project, str] | None:
         """The current tab's project and its applied layout, when both still exist."""
@@ -264,25 +264,25 @@ class LayoutVerbs:
         project = self._project()
         if project is None:
             return
-        self._run_sort("Layered Flow", layered_flow(self.product, project))
+        self._run_sort("Layered Flow", layered_flow(self.library, project))
 
     def _sort_down(self, _context: Context) -> None:
         project = self._project()
         if project is None:
             return
-        self._run_sort("Layered Down", layered_down(self.product, project))
+        self._run_sort("Layered Down", layered_down(self.library, project))
 
     def _sort_spine(self, _context: Context) -> None:
         project = self._project()
         if project is None:
             return
-        self._run_sort("Spine Layout", spine(self.product, project))
+        self._run_sort("Spine Layout", spine(self.library, project))
 
     def _sort_timeline(self, _context: Context) -> None:
         project = self._project()
         if project is None:
             return
-        placed = timeline(self.product, project, days_for=self.days_for)
+        placed = timeline(self.library, project, days_for=self.days_for)
         self._run_sort("Timeline Layout", placed)
 
     def _sort_radial(self, context: Context) -> None:
@@ -291,7 +291,7 @@ class LayoutVerbs:
             return
         chosen = context.selected_entities("step")
         center = chosen[0] if len(chosen) == 1 else None
-        self._run_sort("Radial Layout", radial(self.product, project, center=center))
+        self._run_sort("Radial Layout", radial(self.library, project, center=center))
 
     # -- run -----------------------------------------------------------------------------------
 
@@ -307,7 +307,7 @@ class LayoutVerbs:
             self.parent, "Save Layout", f"Replace the layout “{name}”?"
         ):
             return
-        snap = snapshot(self.product, project)
+        snap = snapshot(self.library, project)
         self.undo.push(save_layout_command(project, name, snap, view_origin=None))
         self.undo.break_coalescing()
         set_current_layout_name(project.id, name)
@@ -318,7 +318,7 @@ class LayoutVerbs:
         if found is None:
             return
         project, name = found
-        snap = snapshot(self.product, project)
+        snap = snapshot(self.library, project)
         self.undo.push(
             save_layout_command(project, name, snap, label=f'Update Layout "{name}"')
         )

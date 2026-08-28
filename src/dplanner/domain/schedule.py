@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from math import ceil
 
-from dplanner.domain.model import Product, Project, Step, StepId
+from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import Placed
 
 WORKING_DAYS_PER_WEEK = 5
@@ -173,7 +173,7 @@ class CriticalPath:
 
 
 def critical_path(
-    product: Product,
+    library: Library,
     project: Project,
     days_for: Callable[[Step], float | None],
 ) -> CriticalPath | None:
@@ -195,7 +195,7 @@ def critical_path(
             return finishes[step_id]
         if step_id in seen:  # Defensive: a hand-edited file could still contain a cycle.
             return 0.0
-        step = product.step(step_id)
+        step = library.step(step_id)
         own = days_for(step) or 0.0
         waiting = step.edges.get("requires", [])
         resolved = sorted(
@@ -218,7 +218,7 @@ def critical_path(
     chain: list[Step] = []
     at: StepId | None = last.id
     while at is not None:
-        chain.append(product.step(at))
+        chain.append(library.step(at))
         at = towards.get(at)
     chain.reverse()
     return CriticalPath(

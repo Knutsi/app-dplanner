@@ -141,8 +141,7 @@ def test_bold_italic_and_lists_read_back_as_markdown(editor, area):
 # -- editing sessions in the built application -------------------------------------------------
 
 
-from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand  # noqa: E402
-from dplanner.domain.model import Project  # noqa: E402
+from dplanner.domain.commands import SetModuleDataCommand  # noqa: E402
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri  # noqa: E402
 from dplanner.modules.spec.aspect import MODULE_ID  # noqa: E402
 from dplanner.modules.spec.documents import (  # noqa: E402
@@ -154,10 +153,8 @@ from dplanner.modules.spec.documents import (  # noqa: E402
 
 
 @pytest.fixture
-def project(services):
-    project = Project(title="Discovery")
-    AddNodeCommand(services.document.id, project).redo(services.document)
-    return project
+def project(make_project):
+    return make_project("Discovery")
 
 
 def imported(services, project, name, data, filename):

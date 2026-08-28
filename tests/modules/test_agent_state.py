@@ -2,14 +2,10 @@
 
 import json
 from datetime import datetime
-from io import StringIO
 
 import pytest
 
-from dplanner.cli.command import CliRegistry
-from dplanner.cli.main import run
 from dplanner.domain.model import Step
-from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.step_agent_run.aspect import MODULE_ID, launched, read, summary, write
 
 # -- the aspect, with no application at all ----------------------------------------------------
@@ -59,25 +55,15 @@ def test_writing_an_unknown_state_is_refused():
 
 
 @pytest.fixture
-def cli(workspace):
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-
-    def invoke(*argv, expect=0):
-        out, err = StringIO(), StringIO()
-        code = run(
-            registry, default_module_formats(), ["--workspace", str(workspace), *argv], out, err
-        )
-        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
-        return out.getvalue() + err.getvalue()
-
-    invoke("project", "create", "Discovery")
-    invoke("step", "add", "Discovery", "Read the spec")
-    return invoke
+def cli(cli):
+    """The shared CLI over a seeded project — the conftest fixture, pre-populated."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Read the spec")
+    return cli
 
 
 def entry_path(workspace):
-    steps = workspace / "projects" / "discovery" / "steps"
+    steps = workspace / "discovery" / "steps"
     return steps / "read-the-spec" / "modules" / "step_agent_run.json"
 
 

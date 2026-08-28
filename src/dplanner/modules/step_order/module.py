@@ -29,7 +29,7 @@ from typing import Protocol
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QFileDialog, QLabel, QVBoxLayout, QWidget
 
-from dplanner.domain.model import NodeId, Product, Project, ProjectId, StepId
+from dplanner.domain.model import Library, NodeId, Project, ProjectId, StepId
 from dplanner.domain.ordering import Placed, placed
 from dplanner.domain.schedule import Scheduled, schedule
 from dplanner.framework.action_menu import build_menu
@@ -102,7 +102,7 @@ def _unscheduled(_project_id: ProjectId, order: Sequence[Placed]) -> list[Schedu
 
 @dataclass(frozen=True)
 class StepOrderDeps:
-    product: Product
+    library: Library
     actions: ActionRegistry
     context: ContextService
     parent: QWidget  # The CSV export's file dialog needs a window to parent on.
@@ -134,7 +134,7 @@ class OrderActivity(EntityActivity):
     def __init__(self, deps: StepOrderDeps, project_id: NodeId) -> None:
         super().__init__(deps.context, "project", project_id)
         self._deps = deps
-        self._product = deps.product
+        self._product = deps.library
         self.project_id = project_id
 
         page = QWidget()
@@ -304,14 +304,14 @@ class StepOrderModule:
         follow_entity_tabs(
             deps.tabs,
             OrderActivity,
-            deps.product.has,
-            closes_on=deps.product.structure_changed,
-            retitles_on=deps.product.field_changed,
+            deps.library.has,
+            closes_on=deps.library.structure_changed,
+            retitles_on=deps.library.field_changed,
         )
 
     def _on_a_project(self, context: Context) -> ActionState:
         project_id = context.focus_entity("project")
-        if project_id is None or not self._deps.product.has(project_id):
+        if project_id is None or not self._deps.library.has(project_id):
             return DISABLED
         return ENABLED
 
@@ -325,8 +325,8 @@ class StepOrderModule:
         if project_id is None:
             return
         deps = self._deps
-        project = deps.product.project(project_id)
-        order = placed(deps.product, project)
+        project = deps.library.project(project_id)
+        order = placed(deps.library, project)
         rows = order_rows(
             deps.step_schedule(project_id, order), deps.step_aspects, deps.release_label
         )

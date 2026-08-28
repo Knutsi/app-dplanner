@@ -53,9 +53,9 @@ def _show(
     status_for: Callable[[Step], str],
     days_for: Callable[[Step], float | None],
 ) -> int:
-    product = context.product
-    project = find_project(product, args.project)
-    found = progression(product, project, status_for)
+    library = context.library
+    project = find_project(library, args.project)
+    found = progression(library, project, status_for)
     weighted = estimated_progress(found, days_for)
 
     def named(steps: tuple[Step, ...]) -> list[dict[str, Any]]:

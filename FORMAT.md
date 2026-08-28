@@ -1,6 +1,6 @@
 # Data formats and how they change
 
-A workspace is a folder of plain files that people share, keep in version control, and open
+A project is a folder of plain files that people share, keep in version control, and open
 with builds of the application that are not all the same age — and, in DPlanner, that a
 coding agent writes to through the CLI while somebody has a window open on it. That makes
 the on-disk format a public contract, and this document is the contract's rules.
@@ -9,57 +9,72 @@ There are **two independent version axes**, and keeping them independent is the 
 
 | Axis | Covers | Version lives in | Owned by |
 |---|---|---|---|
-| Product format | the folder layout and the keys in `product.json` / `project.json` / `step.json` | `product.json`'s `"format"` | `domain/migrations.py` |
+| Project format | the folder layout and the keys in `project.dproj` / `step.json` | `project.dproj`'s `"format"` | `domain/migrations.py` |
 | Module data | each `modules/<module_id>.json`, opaque to the store | the file itself, `"format"` (absent = 1) | the module that writes it |
 
-A module changing its own JSON never bumps the product format, and `domain/` never learns a
-module's schema. **Whoever owns a piece of data owns its history.**
+A module changing its own JSON never bumps the project format, and `domain/` never learns a
+module's schema. **Whoever owns a piece of data owns its history.** Each project directory
+carries its own format stamp and migrates on its own — one library can hold projects
+written by different builds, and each gets exactly the migrations it needs.
 
 ## Where a value goes
 
 Three places, and the choice is not stylistic:
 
-| Where | What | Mechanism | Travels with the workspace? |
+| Where | What | Mechanism | Travels with the project? |
 |---|---|---|---|
-| The workspace | content, and anything a collaborator should see | your model, or `module_data` / `module_text` / a module file area | yes — it is in the files, and in the commits |
-| Per user, per machine | preferences: window sizes, model choices, what was open | `framework/user_config.py` | no |
+| The project directory | content, and anything a collaborator should see | your model, or `module_data` / `module_text` / a module file area | yes — it is in the files, and in the commits |
+| Per user, per machine (Qt-free) | what the CLI must also read: the project library | `core/config_dir.py` + `domain/library_file.py` | no — it is a list of *this machine's* paths |
+| Per user, per machine (GUI only) | preferences: panel layout, model choices, agent command | `framework/user_config.py` (QSettings) | no |
 | The OS keychain | credentials, API keys | `framework/secrets_store.py` | no, and never on disk |
 
-If you are unsure, ask who the value belongs to. A colleague opening the workspace should
-see the project's conventions and none of your preferences.
+If you are unsure, ask who the value belongs to. A colleague opening the project should
+see its conventions and none of your preferences.
 
-**One deliberate exception.** `Product.checkout` — where *this* machine has the product's
-repository cloned — is a per-machine value and is stored in the workspace anyway. The CLI
-has to resolve it, `framework/user_config.py` is QSettings, and the CLI is below the
-framework and loads no Qt. Storing it is the honest trade; if it turns out to churn in
-shared repositories the fix is a Qt-free per-user config in `core/`, not a hidden field.
-The per-project checkout in `modules/project_repo.json` rides the same trade for the same
-reason.
+An earlier format stored per-machine checkout paths *in* the shared workspace as the least
+bad way to let the Qt-free CLI resolve them. That trade is resolved: where a project's code
+lives is now **derived** — the project directory sits inside its repository, so the repo
+root comes from `find_repo_root` and the remote URL from git itself — and the one per-user
+value both halves need, the library file, lives in the Qt-free config directory.
 
-## The product format
+## The library file
 
-One directory per node, nested exactly like the model, with explicit container directories
-for the two levels:
+`library.json` records **membership**: which project directories this user is planning.
+
+```json
+{"format": 1, "projects": [{"path": "/home/anna/code/widget/planning"}]}
+```
+
+- The default lives at `$XDG_CONFIG_HOME/dplanner/library.json` (platform equivalents on
+  Windows/macOS — see `core/config_dir.py`); `--library PATH` or `$DPLANNER_LIBRARY` names
+  another. It is per user and per machine, and never belongs in version control.
+- Paths are absolute (`~` is allowed) and the array order is the order the Projects panel
+  shows.
+- Reading is tolerant: a malformed row is skipped, and an entry that cannot be opened — the
+  folder is gone, holds no `project.dproj`, or is not inside a git repository — becomes an
+  *unavailable* row in the panel rather than a refusal, and keeps its place in the file
+  across rewrites.
+
+## The project format
+
+A project is one directory **inside a git repository**, one directory per node below it,
+nested exactly like the model:
 
 ```
-widget/
-├── product.json               id, name, format, repository, checkout, children
-├── modules/                   module data belonging to the product itself
-└── projects/
-    └── search-rewrite/        folder name, frozen at creation
-        ├── project.json       id, title, summary, children
-        ├── modules/
-        │   └── project_repo.json   this project's own repository/checkout, if any
-        └── steps/
-            └── read-the-spec/
-                ├── step.json  id, title, edges
-                └── modules/
-                    ├── estimation.json         structured data
-                    ├── step_status.json        {"status": "done"} — absent means pending
-                    ├── step_description.md     prose
-                    ├── step_handoff.md         what this step passes forward
-                    └── step_handoff/           files this module owns
-                        └── assets/diagram.png
+<repository>/
+└── planning/                  the project directory — any folder in the repo
+    ├── project.dproj          id, title, summary, created, format, children
+    ├── modules/               module data belonging to the project itself
+    └── steps/
+        └── read-the-spec/     folder name, frozen at creation
+            ├── step.json      id, title, edges
+            └── modules/
+                ├── estimation.json         structured data
+                ├── step_status.json        {"status": "done"} — absent means pending
+                ├── step_description.md     prose
+                ├── step_handoff.md         what this step passes forward
+                └── step_handoff/           files this module owns
+                    └── assets/diagram.png
 ```
 
 Four conventions, and each one is a lesson about diffs:
@@ -71,32 +86,33 @@ Four conventions, and each one is a lesson about diffs:
 - **Absence encodes the default.** A step with no links writes no `edges` key, and an empty
   document is deleted rather than written blank — so a diff shows exactly the nodes whose
   plan actually changed.
-- **Container directories say what a level is.** `projects/` and `steps/` cost one directory
-  each and buy a reader the shape of the model at a glance. They also mean children never sit
-  beside `modules/`, so there are no reserved folder names to trip over.
+- **Container directories say what a level is.** `steps/` costs one directory and buys a
+  reader the shape of the model at a glance. It also means children never sit beside
+  `modules/`, so there are no reserved folder names to trip over.
 
 **Edges are keyed by kind**: `"edges": {"requires": ["<step id>", …]}`. One line per edge
 rather than an object per edge, and the direction cannot be read the wrong way round —
 `requires` is what *this* step waits on. The kind vocabulary is the domain's
-(`domain/model.py`), because a kind only some builds understood would make a shared workspace
+(`domain/model.py`), because a kind only some builds understood would make a shared project
 mean different things to different people. **A kind this build does not know is loaded and
 written back untouched**, so a colleague's newer link survives an older build opening the
 file.
 
 ### The `.dplanner` pointer file
 
-The CLI finds a product by walking up from the working directory for `product.json`. A plan
-kept in a subdirectory the walk would never enter — `dplanner-workspace/` beside the code,
-say — is reachable through a `.dplanner` file: one line, the workspace's path relative to
-the pointer's own directory (an absolute path also works). A `product.json` in the same
-directory wins over a pointer beside it, and a pointer that leads to no `product.json` is an
-error rather than a fallthrough — the walk never quietly acts on some other workspace above
-one the user explicitly named. The file is meant to be committed, so everyone who clones the
-repository — people and agents alike — gets the discovery for free.
+The CLI finds the current project by walking up from the working directory for
+`project.dproj`. A plan kept in a subdirectory the walk would never enter — `planning/`
+beside the code, say — is reachable through a `.dplanner` file: one line, the project
+directory's path relative to the pointer's own directory (an absolute path also works). A
+`project.dproj` in the same directory wins over a pointer beside it, and a pointer that
+leads to no `project.dproj` is an error rather than a fallthrough — the walk never quietly
+acts on some other project above one the user explicitly named. The file is meant to be
+committed, so everyone who clones the repository — people and agents alike — gets the
+discovery for free.
 
-Creating a workspace inside a git checkout writes the pointer at the repository root
+Creating a project inside a git checkout writes the pointer at the repository root
 automatically (a relative path, one line). A pointer that already exists is never
-overwritten — a hand-written one is the user's word — and a workspace that *is* the
+overwritten — a hand-written one is the user's word — and a project that *is* the
 repository root needs none, so none is written.
 
 ### Changing it
@@ -108,17 +124,18 @@ at format 1, so the chain is still empty.
    chain, so that edit *is* the version bump.
 2. **Never edit an existing migration.** A folder written by version 1 still walks the
    entire chain, and each step's output is the next step's input. Editing step 2 silently
-   changes what step 3 receives from every old workspace on every machine — including ones
+   changes what step 3 receives from every old project on every machine — including ones
    you will never see. If step 2 was wrong, fix it by appending step 4.
 3. **Two hooks, for two different jobs.** `node` runs per node as it loads, with the raw
    dict it came from, so it can reach keys the model no longer has fields for. `whole` runs
-   once over the finished aggregate, for anything that needs to see the shape.
-4. **Migrate once, at open, then save the whole workspace.** Never leave a half-migrated
+   once over each finished *project* — the aggregate a format version covers.
+4. **Migrate once, at open, then save the whole project.** Never leave a half-migrated
    folder for a later partial autosave to finish.
 
-A folder written by a *newer* build is refused outright rather than partly read, and never
-written to. `UnsupportedFormatError.is_newer` distinguishes that from damage, because it is
-not a problem with the data — the usual cause is a colleague's push or a branch switch.
+A project written by a *newer* build is never partly read and never written to — it shows
+as an unavailable row while the rest of the library opens normally.
+`UnsupportedFormatError.is_newer` distinguishes that from damage, because it is not a
+problem with the data — the usual cause is a colleague's push or a branch switch.
 
 ## What a module may store
 
@@ -150,10 +167,10 @@ DATA_FORMAT = ModuleDataFormat(MODULE_ID, version, migrations)
 # invariant, checked in __post_init__: len(migrations) == version - 1
 ```
 
-Two behaviours follow, and both matter once a workspace is shared:
+Two behaviours follow, and both matter once a project is shared:
 
 - **Data newer than the module declares is left untouched and logged.** An older build keeps
-  the workspace readable and never overwrites a newer build's data — that feature simply
+  the project readable and never overwrites a newer build's data — that feature simply
   looks empty until the application is updated.
 - **Writing nothing leaves nothing behind.** `stamped()` returns `{}` when the format stamp
   would be the only key, an empty entry removes the file, an emptied file area is removed
@@ -179,9 +196,9 @@ has one practical consequence worth knowing: the CLI's migration list is built f
 aspects *plus* anything like this, and a format missing from it is data the CLI silently
 declines to bring forward.
 
-**A module that writes a number owes it a `float`.** The product format used to enforce this
-at the model boundary, because an `int` writes as `5` where a reloaded float writes as `5.0`
-— making a file's bytes depend on whether the workspace had been reopened since it was
+**A module that writes a number owes it a `float`.** The old format enforced this at the
+model boundary, because an `int` writes as `5` where a reloaded float writes as `5.0`
+— making a file's bytes depend on whether the project had been reopened since it was
 written. Module data is opaque to the model and `stamped()` writes whatever dict it is
 handed, so on this axis the duty belongs to whoever owns the number. See
 `modules/estimation/aspect.py`, which is the reference for it, and
@@ -189,16 +206,18 @@ handed, so on this axis the duty belongs to whoever owns the number. See
 
 ## Two writers, one folder
 
-DPlanner expects an agent to run `dplanner` against a workspace a window has open. "Memory
+DPlanner expects an agent to run `dplanner` against a project a window has open. "Memory
 is authoritative, disk follows" is therefore not the whole story, and the rule that completes
 it is:
 
-**Nothing writes over a file it has not seen.** `ProductStore` records what the workspace
-looked like when it last read or wrote it and raises `StaleWorkspaceError` rather than
-flushing over anything that changed underneath. A CLI run reports it and writes nothing; a
-window pauses autosave, keeps the edits, and offers *File ▸ Reload from Disk*. The same check
-is why two CLI runs need no lock between them: the second one is simply refused and can be
-run again.
+**Nothing writes over a file it has not seen.** `LibraryStore` records what each project
+directory looked like when it last read or wrote it and raises `StaleWorkspaceError` rather
+than flushing over anything that changed underneath — **per project**, so an agent editing
+one project never blocks saving another, and the error names the project. The library file
+gets the same treatment with its own stamp, because two instances can both add a project.
+A CLI run reports the refusal and writes nothing; a window pauses autosave, keeps the
+edits, and offers *File ▸ Reload from Disk*. The same check is why two CLI runs need no
+lock between them: the second one is simply refused and can be run again.
 
 ## Retiring a module
 
@@ -209,7 +228,7 @@ The retired module's *code* is gone; only its data contract survives, in the pac
 inherited it. Modules never import each other, and this is why they do not have to.
 
 `modules/estimation/aspect.py` is the worked example: `step_estimation` became `estimation`
-when it grew a project's start date, and the rename cost no product-format migration and no
+when it grew a project's start date, and the rename cost no project-format migration and no
 import. Three rules it makes concrete:
 
 - **The retired format's version is frozen forever.** `RETIRED_STEP_ESTIMATION` is format 1
@@ -220,5 +239,5 @@ import. Three rules it makes concrete:
   to retire a field: `estimation` drops the old `confidence` simply by rebuilding the entry
   from `days`, and needs no migration of its own to do it.
 - **A takeover is one-way.** The old file is deleted at the first open by a build that has
-  the change, so an older build opening the workspace afterwards sees that feature as empty.
+  the change, so an older build opening the project afterwards sees that feature as empty.
   That is the same trade as any format change, and worth saying out loud before a rename.

@@ -13,7 +13,7 @@ composition root is free (its position *ahead of this one* is not; see the root'
 
 from dataclasses import dataclass
 
-from dplanner.domain.model import Product
+from dplanner.domain.model import Library
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.theme_service import ThemeService
@@ -26,8 +26,8 @@ PANEL_ID = f"{MODULE_ID}.step"
 
 @dataclass(frozen=True)
 class StepPropertiesDeps:
-    product: Product
-    undo: UndoService[Product]
+    library: Library
+    undo: UndoService[Library]
     panels: PanelRegistry
     # Whoever registered an aspect editor. Read when the panel is built, not here, so a
     # contributing module's position in the composition root is free.
@@ -55,7 +55,7 @@ class StepPropertiesModule:
 
     def _create_panel(self) -> StepPanel:
         return StepPanel(
-            self._deps.product,
+            self._deps.library,
             self._deps.undo,
             sections=self._deps.sections.sections(),
             theme=self._deps.theme,

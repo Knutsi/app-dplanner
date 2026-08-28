@@ -46,7 +46,7 @@ def _configure_set(parser: ArgumentParser) -> None:
 
 
 def _set(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     # The original launch stamp survives as the state moves along.
     context.apply(
         SetModuleDataCommand(step.id, MODULE_ID, write(args.state, launched=launched(step)))
@@ -56,7 +56,7 @@ def _set(context: CliContext, args: Namespace) -> int:
 
 
 def _show(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     state = read(step)
     data = {"step": step.id, "state": state, "launched": launched(step)}
     context.report(data, f"{step.title}: {state}" if state else f"{step.title}: no agent run")
@@ -64,7 +64,7 @@ def _show(context: CliContext, args: Namespace) -> int:
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
     context.report({"step": step.id, "state": ""}, f"{step.title}: no agent run")
     return 0

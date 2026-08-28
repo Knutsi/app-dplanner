@@ -1,7 +1,7 @@
 """``dplanner layout …`` and ``dplanner region …`` — arranging the graph from the command line.
 
 The same command objects the window pushes, so an apply here is undoable in a tab open on
-the same product. ``layout save`` upserts rather than refusing a collision: an agent
+the same library. ``layout save`` upserts rather than refusing a collision: an agent
 re-running a script should converge, and the window's Save-As prompt covers the human case.
 
 ``region add --steps`` is the agent's way in: it computes the rectangle that wraps those
@@ -53,20 +53,20 @@ WRAP_PAD_TOP = TITLE_STRIP_H + 24.0
 
 def commands(days_for: Callable[[Step], float | None]) -> list[CliCommand]:
     def _sort(context: CliContext, args: Namespace) -> int:
-        project = find_project(context.product, args.project)
+        project = find_project(context.library, args.project)
         if not project.steps:
             raise CliError("the project has no steps to arrange")
         center = None
         if args.center is not None:
             if args.algorithm != "radial":
                 raise CliError("--center only means something to the radial sort")
-            center = find_step(context.product, args.center).id
+            center = find_step(context.library, args.center).id
         placed = {
-            "flow": lambda: layered_flow(context.product, project),
-            "down": lambda: layered_down(context.product, project),
-            "spine": lambda: spine(context.product, project),
-            "timeline": lambda: timeline(context.product, project, days_for=days_for),
-            "radial": lambda: radial(context.product, project, center=center),
+            "flow": lambda: layered_flow(context.library, project),
+            "down": lambda: layered_down(context.library, project),
+            "spine": lambda: spine(context.library, project),
+            "timeline": lambda: timeline(context.library, project, days_for=days_for),
+            "radial": lambda: radial(context.library, project, center=center),
         }[args.algorithm]()
         moves: list[Command] = position_commands(placed, label=f"Sort {args.algorithm}")
         for command in moves:
@@ -194,7 +194,7 @@ def _named(project: Project, name: str) -> None:
 
 
 def _list(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     layouts = read_layouts(project)
     data = {
         "project": project.id,
@@ -214,20 +214,20 @@ def _list(context: CliContext, args: Namespace) -> int:
 
 
 def _save(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     name = args.name.strip()
     if not name:
         raise CliError("a layout needs a name")
     said = "updated" if name in read_layouts(project) else "created"
-    context.apply(save_layout_command(project, name, snapshot(context.product, project)))
+    context.apply(save_layout_command(project, name, snapshot(context.library, project)))
     context.report({"project": project.id, "name": name, "result": said}, f"{name}: {said}")
     return 0
 
 
 def _apply(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     _named(project, args.name)
-    moves = apply_layout_commands(context.product, project, args.name)
+    moves = apply_layout_commands(context.library, project, args.name)
     for command in moves:
         context.apply(command)
     context.report(
@@ -238,7 +238,7 @@ def _apply(context: CliContext, args: Namespace) -> int:
 
 
 def _rename(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     _named(project, args.old)
     new = args.new.strip()
     if not new:
@@ -251,7 +251,7 @@ def _rename(context: CliContext, args: Namespace) -> int:
 
 
 def _delete(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     _named(project, args.name)
     context.apply(delete_layout_command(project, args.name))
     context.report({"project": project.id, "name": args.name}, f"{args.name}: deleted")
@@ -355,8 +355,8 @@ def _region_line(row: dict[str, Any]) -> str:
 
 
 def _region_list(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
-    placed = positions(context.product, project)
+    project = find_project(context.library, args.project)
+    placed = positions(context.library, project)
     rows = [_region_row(project, region, placed) for region in read_regions(project)]
     data = {"project": project.id, "regions": rows}
     if not rows:
@@ -367,7 +367,7 @@ def _region_list(context: CliContext, args: Namespace) -> int:
 
 
 def _region_add(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     title = args.title.strip()
     if not title:
         raise CliError("a region needs a title")
@@ -383,7 +383,7 @@ def _region_add(context: CliContext, args: Namespace) -> int:
     context.apply(
         set_regions_command(project, [*read_regions(project), region], "Add Region")
     )
-    placed = positions(context.product, project)
+    placed = positions(context.library, project)
     row = _region_row(project, region, placed)
     context.report(row | {"project": project.id}, _region_line(row))
     return 0
@@ -393,10 +393,10 @@ def _wrap_rect(
     context: CliContext, project: Project, needles: list[str]
 ) -> tuple[float, float, float, float]:
     """The rectangle that wraps these steps where they sit, with air around them."""
-    placed = positions(context.product, project)
+    placed = positions(context.library, project)
     chosen = []
     for needle in needles:
-        step = find_step(context.product, needle)
+        step = find_step(context.library, needle)
         if step.id not in placed:
             raise CliError(f"step {step.title!r} is not in this project")
         chosen.append(step)
@@ -412,7 +412,7 @@ def _wrap_rect(
 def _region_fit(context: CliContext, args: Namespace) -> int:
     """Recompute the wrap, keeping the region's id — a delete-and-re-add would mint a new
     one and orphan the region's rect entries in every saved layout."""
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     region = _find_region(project, args.region)
     x, y, w, h = _wrap_rect(context, project, args.steps)
     refitted = [
@@ -420,14 +420,14 @@ def _region_fit(context: CliContext, args: Namespace) -> int:
         for r in read_regions(project)
     ]
     context.apply(set_regions_command(project, refitted, "Fit Region"))
-    placed = positions(context.product, project)
+    placed = positions(context.library, project)
     row = _region_row(project, region.moved_to(x, y).sized(w, h), placed)
     context.report(row | {"project": project.id}, _region_line(row))
     return 0
 
 
 def _region_rename(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     region = _find_region(project, args.region)
     new = args.new.strip()
     if not new:
@@ -442,7 +442,7 @@ def _region_rename(context: CliContext, args: Namespace) -> int:
 
 
 def _region_delete(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     region = _find_region(project, args.region)
     kept = [r for r in read_regions(project) if r.id != region.id]
     context.apply(set_regions_command(project, kept, "Delete Region"))

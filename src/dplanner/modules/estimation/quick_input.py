@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.core.signals import Signal
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Product, StepId
+from dplanner.domain.model import Library, StepId
 from dplanner.framework.undo import UndoService
 from dplanner.modules.estimation.aspect import MODULE_ID, write
 
@@ -130,15 +130,15 @@ class EstimateInput(QWidget):
 
 
 def push_estimate(
-    product: Product,
-    undo: UndoService[Product],
+    library: Library,
+    undo: UndoService[Library],
     step_id: StepId,
     days: float | None,
     origin: object,
 ) -> None:
     """The one commit path: no-op when unchanged, one undoable command otherwise."""
     entry = write(days)
-    if entry == product.step(step_id).module_data.get(MODULE_ID, {}):
+    if entry == library.step(step_id).module_data.get(MODULE_ID, {}):
         return
     undo.push(
         SetModuleDataCommand(step_id, MODULE_ID, entry, view_origin=origin, label="Set Estimate")

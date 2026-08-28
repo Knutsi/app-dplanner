@@ -647,6 +647,78 @@ defensive `object` parameter and an unused injection seam each read as flexibili
 behave as a trap — the silent-`None` watcher especially, because the failure mode is "the
 feature just doesn't run".
 
+### `core/config_dir.py` — a Qt-free per-user config location
+
+**What.** One function, `config_dir(app)`: the platform's per-user configuration directory
+(XDG / `%APPDATA%` / `~/Library/Application Support`), hand-rolled, no dependency. DPlanner's
+project-library file lives there.
+
+**Why.** The template's answer to "per user, per machine" is QSettings via
+`framework/user_config.py` — which a headless CLI cannot read (see §4: the CLI loads no Qt).
+Any application with a real CLI surface eventually needs one value both halves can reach,
+and FORMAT.md had already named "a Qt-free per-user config in core/" as the sanctioned fix
+before anything used it. Upstream candidate: yes — small, and the trap it resolves is
+structural, not app-specific.
+
+### `GitStorage` grew multiple commit scopes, `init_repo`, `origin_url`
+
+**What.** The single `self._scope` pathspec became `self._scopes: tuple[str, ...]`
+(constructor arg `scopes=None` keeps the old derive-from-root behaviour), threaded through
+`refresh_dirty/diff/commit/history`. Module-level `init_repo(path)` (plain `git init`) and
+`origin_url(path)` (`git remote get-url origin`, "" when absent) joined `find_repo_root`.
+`core/storage/locations.py` grew `grouped_by_repo(providers)`: one scoped provider per
+distinct `repo_root`, so a Save over several planned directories in one repository is one
+commit covering exactly those directories.
+
+**Why.** The scoping policy ("a Save must never sweep up whatever else is in the tree") was
+already the class's one policy decision; multiple scopes is the same decision when one
+repository holds several planned directories. `origin_url` replaces storing a repository URL
+that git already knows. Upstream: the multi-scope change is honest generalisation; the
+grouping helper only matters to applications whose document spans providers.
+
+Related: `VersionedStorage` gained `dirty_file_count()` (the cached count `GitStorage`
+always had beside `is_dirty()`); an aggregator over several providers needs the number, not
+just the flag, and shadowing it from signal payloads was worse than promising it.
+
+### A repository is built over a source path, not a storage provider
+
+**What.** `Repository` lost its `storage` attribute and `RepositoryFactory` became
+`Callable[[Path], Repository[DocT]]`; `AppBuilder.with_storage(provider)` became
+`with_source(path)` and `SeedFactory` takes the path; `AppServices.storage` is gone.
+DPlanner's `LibraryStore` is built over the library *file* and opens one provider per
+project directory underneath.
+
+**Why.** The framework assumed one document = one provider, and the assumption was wired
+into three seams (`repo.storage`, the builder's stage 1, the services bundle) that nothing
+in the framework actually used beyond construction. A repository that spans several
+providers only had to stop *announcing* one. Upstream candidate: yes — it deletes API and
+widens what a template application's document can be.
+
+### A replaced window's close guards must not run
+
+**What.** `AppSession._open` clears `old_window.close_guards` before closing the window it
+is replacing; close *hooks* (the final autosave flush) still run.
+
+**Why.** Guards exist to interrupt a person quitting ("Record changes before quitting?").
+A rebuild is not a quit: the changes are on disk and the new window shows the same dirty
+state — but the guard cannot know that, so a watcher-triggered reload with anything
+uncommitted opened a modal nobody was there to answer. Found as a test hang; a real user's
+reload would have blocked the same way. Upstream candidate: yes — any application with
+both a close guard and a rebuild path has this bug latent.
+
+### The session lost switching; a different document is a different process
+
+**What.** `AppSession.switch_to`, the switch guards, and the `workspaces/last|recent|roots`
+QSettings all went; the `WorkspaceSwitcher` protocol shrank to `SessionControl.reload()`.
+DPlanner opens a different library by spawning a detached instance instead.
+
+**Why.** With a default library that always exists, "last opened" and "recent" had no
+remaining job, and the in-process switch was the one caller of the guard machinery. The
+full-rebuild discipline stays — reload after a branch switch or an external write is
+unchanged — but the switch-shaped half of it was scaffolding for a flow that no longer
+exists. Upstream: the rebuild reasoning holds either way; whether a template keeps
+`switch_to` depends on whether its documents are cheap enough to share a process.
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class

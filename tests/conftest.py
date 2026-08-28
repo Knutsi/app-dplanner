@@ -2,6 +2,11 @@
 
 Two things here are order-sensitive and must stay at module level, above the imports they
 look like they should sit below. Both are commented where they are.
+
+The model here mirrors production: a per-test **library file** lists project directories,
+each inside a git repository. ``session`` opens the library the way ``dplanner.app.main``
+does; ``make_project`` gives GUI tests a *real* project (seeded on disk, attached to the
+store) because a project with no directory cannot hold module files any more.
 """
 
 import os
@@ -14,7 +19,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 
 from dplanner.app import configure_application, new_session, set_early_attributes
-from dplanner.core.storage.locations import StorageLocation
 
 # AA_DontUseNativeMenuBar is read at QMenuBar construction time and must be set before the
 # QApplication exists. pytest-qt constructs it lazily inside the `qapp` fixture, so this has
@@ -50,9 +54,9 @@ def app(qapp, tmp_path_factory):
 def close_quietly():
     """Tear a built application down without asking the user anything.
 
-    Close guards exist to interrupt a real person ("Save before quitting?"); in a headless
-    suite a modal dialog is a hang with no one to answer it. Dropping the guards is the
-    honest way to say "this window is being discarded, not quit".
+    Close guards exist to interrupt a real person ("Record changes before quitting?"); in a
+    headless suite a modal dialog is a hang with no one to answer it. Dropping the guards is
+    the honest way to say "this window is being discarded, not quit".
     """
 
     def close(session):
@@ -66,15 +70,33 @@ def close_quietly():
 
 
 @pytest.fixture
-def session(app, tmp_path, close_quietly):
-    """A whole application, built over a fresh workspace in a temp directory.
+def library_repo(tmp_path):
+    """A git repository ready to hold this test's project directories."""
+    from dplanner.core.storage.locations import init_repo
+
+    return init_repo(tmp_path / "repo")
+
+
+@pytest.fixture
+def library_file(tmp_path):
+    """An empty per-test library file — the source the session is built over."""
+    from dplanner.domain.seed import create_library
+
+    path = tmp_path / "library.json"
+    create_library(path)
+    return path
+
+
+@pytest.fixture
+def session(app, library_file, close_quietly):
+    """A whole application, built over a fresh, empty library in a temp directory.
 
     Built through ``AppSession`` — the same path ``dplanner.app.main`` takes — so a test can
     never drift from production wiring. Yields the session; ``session.services`` reaches
     every part of the running application.
     """
     session = new_session()
-    assert session.open_initial(StorageLocation(scheme="", target=str(tmp_path / "workspace")))
+    assert session.open_initial(library_file)
     yield session
     close_quietly(session)
 
@@ -83,6 +105,28 @@ def session(app, tmp_path, close_quietly):
 def services(session):
     """Shorthand for the built application's services."""
     return session.services
+
+
+@pytest.fixture
+def make_project(services, library_repo):
+    """A real project in the running application: on disk, attached, in the model.
+
+    The in-memory shortcut (``AddNodeCommand`` straight onto the aggregate) is gone on
+    purpose: a project now *is* a directory, and a store asked for a record-less project's
+    files would refuse. Every project this creates lives in the test's one repository —
+    several projects per repo is a supported layout, and the cheapest one to build.
+    """
+    from dplanner.core.fsio import slugify
+    from dplanner.domain.seed import seed_project
+
+    def make(title="Discovery"):
+        store = services.repo
+        directory = seed_project(library_repo / slugify(title, fallback="project"), title)
+        project = store.attach(directory)
+        services.document.add_child(services.document.id, project)
+        return project
+
+    return make
 
 
 @pytest.fixture(autouse=True)
@@ -102,23 +146,21 @@ def _collect_qt_garbage():
 
 @pytest.fixture(autouse=True)
 def _fresh_session_settings():
-    """Session state (last opened, recents) must not leak between tests.
+    """Per-user state must not leak between tests.
 
-    Any test that opens through ``AppSession`` records the workspace in QSettings; a later
-    test asserting on the Open dialog's list would see it. The ``modules`` group holds
-    per-module global preferences.
+    The ``modules`` group holds per-module global preferences; the rest are the framework's.
     """
     yield
     from PySide6.QtCore import QSettings
 
     settings = QSettings()
-    for group in ("workspaces", "appearance", "modules", "layout"):
+    for group in ("appearance", "modules", "layout"):
         settings.beginGroup(group)
         settings.remove("")
         settings.endGroup()
 
 
-# -- the headless CLI, over a real workspace ---------------------------------------------------
+# -- the headless CLI, over a real library -----------------------------------------------------
 # Shared by tests/cli/ and by module tests exercising their verbs. These build no Qt
 # objects; the CLI's no-Qt property itself is proven by test_architecture's subprocess
 # probes, not by anything in this process.
@@ -136,16 +178,39 @@ def registry():
 
 @pytest.fixture
 def workspace(tmp_path):
-    from dplanner.core.storage.local import LocalStorage
-    from dplanner.domain.seed import create_product
+    """The CLI tests' git repository. Projects the tests create land directly inside it,
+    so ``workspace / "discovery" / "steps" / …`` is where a created project's files are."""
+    from dplanner.core.storage.locations import init_repo
 
-    root = tmp_path / "widget"
-    create_product(LocalStorage(root))
-    return root
+    return init_repo(tmp_path / "widget")
 
 
 @pytest.fixture
-def cli(registry, workspace):
+def cli_library(tmp_path):
+    from dplanner.domain.seed import create_library
+
+    path = tmp_path / "library.json"
+    create_library(path)
+    return path
+
+
+def _default_project_dir(argv, workspace):
+    """Test sugar: default the ``--dir`` a create/import verb requires.
+
+    The GUI dialog supplies a directory; these fixtures supply the one the assertions
+    expect — ``<workspace>/<slug(title)>`` — so fifty call sites do not each spell it.
+    An explicit ``--dir`` in the call always wins.
+    """
+    from dplanner.core.fsio import slugify
+
+    if list(argv[:2]) not in (["project", "create"], ["project", "import"]) or "--dir" in argv:
+        return list(argv)
+    title = next((word for word in argv[2:] if not word.startswith("-")), "imported")
+    return [*argv, "--dir", str(workspace / slugify(title, fallback="imported"))]
+
+
+@pytest.fixture
+def cli(registry, workspace, cli_library):
     from io import StringIO
 
     from dplanner.cli.main import run
@@ -153,8 +218,9 @@ def cli(registry, workspace):
 
     def invoke(*argv, expect=0):
         out, err = StringIO(), StringIO()
+        argv = _default_project_dir(argv, workspace)
         code = run(
-            registry, default_module_formats(), ["--workspace", str(workspace), *argv], out, err
+            registry, default_module_formats(), ["--library", str(cli_library), *argv], out, err
         )
         assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
         return out.getvalue() + err.getvalue()
@@ -163,7 +229,7 @@ def cli(registry, workspace):
 
 
 @pytest.fixture
-def cli_stdin(registry, workspace):
+def cli_stdin(registry, workspace, cli_library):
     import sys
     from io import StringIO
 
@@ -172,13 +238,14 @@ def cli_stdin(registry, workspace):
 
     def invoke(*argv, expect=0, stdin=""):
         out, err = StringIO(), StringIO()
+        argv = _default_project_dir(argv, workspace)
         real = sys.stdin
         sys.stdin = StringIO(stdin)
         try:
             code = run(
                 registry,
                 default_module_formats(),
-                ["--workspace", str(workspace), *argv],
+                ["--library", str(cli_library), *argv],
                 out,
                 err,
             )

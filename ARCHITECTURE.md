@@ -19,16 +19,34 @@ below:
 - **There are two front doors, not one and a hatch.** A window and a `dplanner` command,
   equals, over one model — and expected to be in use at the same time.
 
-## Product → Project → Step
+## Library → Project → Step
 
-A planner needs a level above "the project": the same codebase accumulates projects over
-years, and what is true of the codebase — where its repository is, what it is called — is not
-true of any one project. So the top level is the **Product**, and a window holds exactly one.
-Opening another is a new window, which keeps every window's undo stack, autosave and
-selection about one thing.
+A planner needs a level above "the project" — but the earlier answer, a **Product** owning
+its projects inside one workspace folder, put the boundary in the wrong place. A person's
+projects do not all belong to one codebase, a project's planning files want to live *with*
+the code they plan, and "where is the repository" turned out to be a fact the directory
+already knows rather than one worth storing. So the top level is the **Library**: a per-user
+file (see `FORMAT.md`) listing the project directories this user is planning. It is the
+account level, not a document — the in-memory `Library` aggregate exists only to be the one
+place a change can happen (the flat node index and the signals live there), and nothing on
+disk stands for it but the membership list.
 
-Below that, a **Project** is a unit of work with an end, and a **Step** is a node in its
-graph.
+A **Project** is a unit of work with an end — a directory holding `project.dproj`, inside a
+git repository, opened through its own storage provider. A **Step** is a node in its graph.
+
+**Why membership changes bypass the undo stack.** Creating a project may `git init` a
+repository and always writes files outside any store; removing one only forgets it. Neither
+is something Ctrl+Z could honestly reverse, so File ▸ New/Open Project and Remove from
+Library apply their model change directly with their own origin — the same discipline as
+syncing an external fact, below.
+
+**Why opening another library is another process.** Every registry refuses a duplicate id,
+so two libraries in one process was never implementable — and unlike the old
+workspace *switch* (one document replacing another in the same window), two libraries are
+genuinely two applications' worth of state someone wants side by side. File ▸ New/Open
+Project Library therefore spawns a detached instance and the in-process switch machinery is
+gone; `reload` — the full rebuild — remains, because branch switches, pulls and external
+writes still invalidate the build wholesale.
 
 **Why a graph and not a tree.** Work has prerequisites that do not nest: the thing you must
 do first is routinely in another part of the plan. A tree forces that relationship into
@@ -43,7 +61,7 @@ every link change touch one heavily-shared file, which is the wrong shape for me
 
 **Why deleting a step leaves other steps' links alone.** Undo has to restore the graph
 exactly. Silently rewriting other steps' edge lists would make delete-then-undo lossy, so
-resolution is tolerant instead: `Product.requires()` skips ids it cannot resolve.
+resolution is tolerant instead: `Library.requires()` skips ids it cannot resolve.
 
 ## Aspects
 
@@ -76,7 +94,7 @@ An aspect declares itself once, in its package's Qt-free `aspect.py`: `SPEC` (id
 one-line summary, data format) plus typed `read`/`write` helpers. That one declaration feeds
 the CLI verb, the generated skill, `dplanner aspect list`, the module's `data_format`, and
 whatever editor arrives later. Shipping an aspect with no editor is deliberate rather than
-unfinished — the `data_format` declaration is what makes the workspace forward-compatible,
+unfinished — the `data_format` declaration is what makes the project forward-compatible,
 so the CLI can write the data today and a card can arrive without a migration.
 
 ## Two surfaces, one vocabulary
@@ -109,7 +127,7 @@ The template's sidebar was a tab set: one page per module, one visible at a time
 replaced it with a single tree whose folders come from an `IndexSegmentRegistry`, and
 deleted the tab set rather than keeping both.
 
-The argument for the tree is that it shows the workspace's *shape* — projects, and the steps
+The argument for the tree is that it shows the library's *shape* — projects, and the steps
 under them — where a tab set shows one feature and hides the rest. The argument for deleting
 the old one is that anything a page could hold is a folder here, so keeping both would have
 been two navigation mechanisms competing for the same 275 pixels.
@@ -138,7 +156,7 @@ a gesture, a menu item, the command palette, or the CLI
    ActionSpec.state(context) gates it, ActionSpec.run(context) performs it
         │
         ▼   a Command from domain/commands.py — the same object either surface builds
-   undo.push(command)   (the window)        command.redo(product)   (the CLI)
+   undo.push(command)   (the window)        command.redo(library)   (the CLI)
         │
         ▼   one mutator, one change
    the model, which emits exactly one signal carrying an `origin`
@@ -161,7 +179,7 @@ the canvas should not be the thing that knows how to create an edge.
 **The origin is what makes the last step safe.** The view that caused the change ignores its
 own echo; undo passes a token matching no view, so everyone applies it. Without it you get the
 oldest bug in desktop software — B updates from A's edit, B's update fires, A's caret jumps to
-the end. Every signal on `Product` carries one, with no exception, because a convention with
+the end. Every signal on `Library` carries one, with no exception, because a convention with
 one hole is one nobody can rely on.
 
 **"On the GUI thread" is a constraint, not a formality.** `core.signals.Signal` is synchronous
@@ -360,7 +378,7 @@ made edges unselectable, so making them selectable *removed* a rule rather than 
 turns it into something on the undo stack, so a drag is undoable and the model stays the only
 authority on what a legal graph is.
 
-That last point is why `Product.link_refusal()` exists. A link drag needs to know *before* the
+That last point is why `Library.link_refusal()` exists. A link drag needs to know *before* the
 drop whether an edge would be a cycle, and the alternative — a second reachability check in the
 view — is two implementations that will eventually disagree. So the refusal is a question the
 model answers, `set_edges` asks it before writing, and the canvas asks it under the cursor.
@@ -421,7 +439,7 @@ and only the last step, telling the canvas what to select, needs a window.
 Two things place a node, and they persist differently on purpose. The **ambient layout** —
 where a never-moved node sits — is recomputed from the graph every time the project opens
 (`layout.auto_positions`, which is `sorts.layered_flow`). Storing it would mean opening a tab
-dirties the workspace, autosave flushes it 1.5 seconds later, and every step an agent creates
+dirties the project, autosave flushes it 1.5 seconds later, and every step an agent creates
 through the CLI grows a position file the next time a window happens to open. A **sort
 action** (`canvas.sort_*`, or `dplanner layout sort`) is different in kind: somebody asked
 for that arrangement, so it is a gesture like a drag — one `CompositeCommand` of position
@@ -435,7 +453,7 @@ under the same `project_editor` id as the per-step positions (the `estimation` c
 precedent in `FORMAT.md`). Applying one builds the same position commands a sort does, which
 is what makes a CLI `layout apply` undoable in an open window. **Which layout is currently
 applied** is per-user presentation state and lives in `user_config` (QSettings), never the
-workspace: two people sharing a repository can be looking at different layouts of the same
+project: two people sharing a repository can be looking at different layouts of the same
 graph. The picker's modified dot is a comparison against the snapshot, recomputed — never
 stored.
 
@@ -494,12 +512,12 @@ the icon it is given.
 
 **Node positions are stored, automatic layout is not.** A step nobody has moved is placed by
 `requires` depth, recomputed each time the project opens. Persisting that would mean merely
-opening a tab dirtied the workspace, autosave flushed it 1.5 seconds later, and every step an
+opening a tab dirtied the project, autosave flushed it 1.5 seconds later, and every step an
 agent created through the CLI grew a position file the next time a window happened to open. A
-test asserts the workspace is unchanged after a tab is opened, because that is the kind of rule
+test asserts the project is unchanged after a tab is opened, because that is the kind of rule
 that decays silently.
 
-## Two writers, one workspace
+## Two writers, one folder
 
 The scenario DPlanner is built for — an agent refining a plan *with* the user — means the
 CLI writes while a window is open on the same folder. The framework's ordinary contract,
@@ -512,9 +530,13 @@ the feature. So the rule is instead:
 
 > **Nothing writes over a file it has not seen.**
 
-`ProductStore` records what the workspace looked like when it last read or wrote it and
-raises `StaleWorkspaceError` rather than flushing over anything that changed underneath.
-Around that one check:
+`LibraryStore` records what each project directory looked like when it last read or wrote
+it and raises `StaleWorkspaceError` rather than flushing over anything that changed
+underneath. The check is **per project** — flush verifies exactly the projects it is about
+to write, so an agent editing project B never blocks saving project A, and the refusal
+names the project. The library file is a third written thing with the same treatment under
+its own stamp, because two instances can both add a project; membership reaches disk
+through the ordinary flush, as a structure mark on the library root. Around that one check:
 
 - A **CLI run** reports it as one line and writes nothing. A run is a transaction, so
   running it again picks up the change and is correct.
@@ -563,7 +585,7 @@ The refresher builds the same `SetModuleDataCommand` every other writer builds, 
   undo entry here would make Ctrl+Z restore a *stale* state instead of undoing the user's
   last edit, and the user never asked for the refresh in the first place.
 - **The stack is not what persists.** Autosave flushes on the store's dirty signal, which
-  `Product` emits for every model change regardless of who applied it — so the write
+  `Library` emits for every model change regardless of who applied it — so the write
   reaches disk without the stack's help.
 - **There is precedent, not exception.** The CLI applies commands the same way (a run is a
   transaction; version control is the undo). The rule "every model change goes through a
@@ -573,8 +595,8 @@ The refresher builds the same `SetModuleDataCommand` every other writer builds, 
   `domain/commands`, so they write through the `Repository` protocol directly — before any
   surface that could undo exists.)
 
-The concurrent-writer story needs nothing new: the refresh dirties the workspace like any
-edit, and *Two writers, one workspace* above already covers an agent flushing underneath.
+The concurrent-writer story needs nothing new: the refresh dirties the project like any
+edit, and *Two writers, one folder* above already covers an agent flushing underneath.
 
 ## The skill is a projection, not a document
 
@@ -584,7 +606,7 @@ flag which no longer exists is worse than no skill, because it is believed.
 
 So `dplanner skill install` **renders** `SKILL.md` and `reference.md` from the same
 `CliRegistry` that `--help` renders. The hand-written half is only what a registry cannot
-know: what a product is, and how to work with a person. Everything else — the command index,
+know: what a project is, and how to work with a person. Everything else — the command index,
 every argument, the aspects, the edge kinds — comes from the objects themselves.
 
 Two details make that safe. The parsers are built at a **fixed width** rather than the
@@ -621,7 +643,7 @@ exist, a start date only where estimates do) keep the report an obligation list 
 noise about features a project never adopted.
 
 A check is handed the store's file lookup as its third argument (`FilesFor`) alongside the
-product and project, because some facts live *beside* a node rather than in it: whether a
+library and project, because some facts live *beside* a node rather than in it: whether a
 requirement's quote still anchors in its document's text layer, whether a description's
 `![](assets/…)` resolves to a file actually attached. The check re-derives those answers on
 every run rather than trusting anything stored at mark time — `spec import` can replace a
@@ -639,7 +661,7 @@ as it assembles lint's checks. The shape lives in `cli/authoring.py` for lint's 
 contributing modules may not import each other, and `cli/` sits below them all.
 
 Two decisions carry the weight. **The transaction is the rollback**: an author that raises
-aborts the whole run, and `open_product` flushes nothing — the step included — so no author
+aborts the whole run, and `open_library` flushes nothing — the step included — so no author
 writes compensation code. Any future refactor that flushed eagerly mid-run would silently
 break every author's atomicity; this paragraph is the guard. And **stdin is claimed before
 it is read**: each author declares whether its parsed flags would consume stdin, so two
@@ -674,7 +696,7 @@ the user actually modified — opening one never reformats it — and says so in
 first save would. **A foreign change to the edited document ends the session**: the model
 is the authority, unflushed keystrokes yield, and anything already flushed survives as a
 recoverable blob. An agent replacing the document under an open window resolves through
-*Two writers, one workspace* like every other write.
+*Two writers, one folder* like every other write.
 
 ## Deriving rather than storing
 
@@ -710,14 +732,14 @@ the same function, asked a question with no answer.
 
 The start date itself is the smallest case of the same rule. **A project nobody has dated
 starts today**, and that answer is computed (`estimation.schedule.start_of`) rather than
-written when the tab opens. Writing it would dirty a workspace for the act of looking at it,
+written when the tab opens. Writing it would dirty a project for the act of looking at it,
 and it would be wrong by tomorrow — so the only date on disk is one a person chose, and every
 other plan answers "if you start now". Which also deleted a state: there is no "no start
 date" any more, so no empty Date column to explain and no branch to carry it.
 
 The rule generalises: **derived data may be cached, but it may not be persisted.** A cache
 that is wrong is a bug you find in a session; a file that is wrong is a bug you find in a
-diff, months later, in a workspace nobody can reconstruct.
+diff, months later, in a project nobody can reconstruct.
 
 One carve-out, stated so it stops looking like an oversight: **a derivation keyed by the
 content hash of its input is not a stored answer**, because it cannot disagree with what it
@@ -741,7 +763,7 @@ Status went the same way after being weighed as a model field. It is a stored fa
 derivation — the graph can say what is *ready*, but only a person or an agent can say what
 is *finished* or *stuck* — yet storing it does not make it a field: `VALUE_FIELDS["step"]`
 is still `("title",)`, and that is the central design decision of the model holding. As an
-aspect it costs no product-format migration, absence encodes `pending`, both surfaces got
+aspect it costs no project-format migration, absence encodes `pending`, both surfaces got
 the verb from one declaration (`dplanner status set '<step>' done` is how an agent reports
 back), and the derivation that wants it — the progression board's status-aware frontier —
 is handed a `status_for(step)` function, exactly as `schedule()` is handed `days_for`.
@@ -774,11 +796,11 @@ another surface would dispute.
 
 The seam repeats one level down: `inherited()` is handed a `files(step_id, module_id)`
 function rather than a store, so the derivation runs headless and never learns where a
-workspace lives.
+project lives.
 
 ## Running an agent launches a peer, not a task
 
-*Run Agent* writes the briefing to a per-run temp directory — never the workspace, which
+*Run Agent* writes the briefing to a per-run temp directory — never the project, which
 would dirty it and end up in version control — and spawns a terminal detached
 (`start_new_session`). Deliberately **not** through `TaskRunner`: a task promises progress,
 cancellation and a completion that returns to the GUI thread, and none of those are honest
@@ -802,14 +824,14 @@ Agent and `dplanner agent prompt` — call the same two functions, so the window
 cannot brief a step two ways. An executing agent needs `agent prompt` and nothing else;
 needing five verbs to reconstruct a briefing was the failure this replaces. Files attached at either level are **staged into the per-run
 directory** beside `prompt.md` and referenced by their staged absolute paths: the agent runs
-in the checkout, not the workspace, so a workspace-relative path in the prompt would point at
+in the repository it opened at, so the prompt's file paths are absolute — anything else would point at
 nothing it can reach. Asset names are content-addressed, so staging is a flat, collision-safe
 copy; an unreadable path stays in the prompt as itself rather than vanishing.
 
 Resolution is settings template first (`{script}`, `{prompt_file}`, `{workdir}`), then a
 platform table, then `None` — and `None` is an answer: the fallback dialog delivers the
-prompt itself, because the prompt is the product and the terminal was only one way to hand
-it over. `dplanner agent prompt` prints the same assembly (with workspace-relative paths —
+prompt itself, because the prompt is the deliverable and the terminal was only one way to hand
+it over. `dplanner agent prompt` prints the same assembly (with the same absolute paths —
 the run directory does not exist yet), and *Preview Agent Prompt* shows it in the window.
 
 The assembly is also where the CLI grew the composition root's other seam:
@@ -818,27 +840,44 @@ The assembly is also where the CLI grew the composition root's other seam:
 what crosses modules arrives as arguments — `skill_commands(specs, described)` made that
 shape first, and this is its second use.
 
-## A project's repository overrides the product's
+## Repository facts are derived from the project's directory
 
-A product names one codebase, but a project can work against its own — a satellite repo, a
-fork, a different clone. The association lives in `modules/project_repo/` as module data on
-the project node, not as model fields: the same argument the aspects make one level up — the
-model stays fact-free, and a build without the module round-trips the file untouched. It is
-not an `AspectSpec` either, because an aspect is a fact about a *step*.
+A project *lives in* its repository now, so "which repository does this project's work
+belong to" stopped being a stored association and became a derivation: the repo root is
+`find_repo_root(project directory)`, and the remote URL is git's own answer
+(`origin_url`). This retired a whole module (`project_repo`) and the recorded trade that
+funded it — per-machine checkout paths stored in shared files so the Qt-free CLI could
+resolve them. Nothing stored can now disagree with git, which is the same argument as
+never storing the topological order.
 
-The resolution — the project's checkout, else the product's — is **one function**,
-`project_repo/repo.py::checkout_for`, with exactly two readers: the composition root closes
-it over step → project and hands it to Run Agent as a typed callback (the agent module never
-imports `project_repo`; its unwired default is the old product-only behaviour, not a second
-copy of the rule), and `dplanner repo show` prints it with the fallback marked. Nothing else
-may re-derive the answer, for the same reason nothing re-derives the topological order.
+Two readers, both wired by the composition root: Run Agent receives `workdir_for`
+(step → its project's repo root — where the terminal opens), and the github module
+receives `repository_for` (step → the remote URL its PRs live under). `dplanner project
+show` prints the same derived facts. A project directory whose repository has vanished
+disables Run Agent with the reason in the label rather than guessing.
 
-The git/gh facts under the fields are **advisory, never gating** — a plain folder is a
-legitimate checkout. The probes reach the widget as callables wired by the root, because a
-feature may not name a concrete storage provider; the instant ones run per refresh, and the
-signed-in check (a network round trip with no timeout) runs once per process on a daemon
-thread with its answer cached. The future `github` module will make its own checks —
-deliberately: a shared probe would be coupling, and the check is two lines.
+The git requirement is **gating at membership, honest afterwards**: File ▸ New Project
+offers to `git init`, Open Project refuses a non-repo (the plan's history *is* the repo's
+history now), but a project whose repository breaks later degrades to disabled verbs, not
+a broken library.
+
+## Save spans repositories; the exit dialog says what it records
+
+One library can hold projects in several repositories, so *Save* (record a version) means:
+**one commit per dirty repository, covering exactly that repository's project
+directories**. The store owns the grouping (`LibraryStore.repo_groups()` — one provider
+per distinct repo root, its git operations scoped to the member projects' paths), which is
+what keeps two truths at once: several projects in one repo save as one commit, and a Save
+can never sweep up the user's source code sitting beside the plan. Branch operations are
+different — a branch belongs to one repository — so New/Switch Branch act on the focused
+project's repo and are disabled, with the reason in the label, until a project is focused.
+
+Quitting with uncommitted planning changes asks once, honestly: a dialog listing each dirty
+repository (checked by default, with its file count and project titles) over one optional
+commit message. *Commit & Quit* records the checked rows synchronously — the documented
+save-at-quit exception to TaskRunner — and *Quit Without Committing* is a real choice, not
+a scare: autosave already put the files on disk, so nothing is lost either way; only the
+version history goes unrecorded until next time.
 
 ## Progression is the status-aware frontier
 

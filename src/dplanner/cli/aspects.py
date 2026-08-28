@@ -26,7 +26,7 @@ def commands(specs: Sequence[AspectSpec]) -> list[CliCommand]:
             path=("aspect", "list"),
             summary="The kinds of fact a step can carry, and the verbs that write them.",
             run=run,
-            needs_workspace=False,
+            needs_library=False,
             examples=("dplanner aspect list", "dplanner aspect list --json"),
         )
     ]

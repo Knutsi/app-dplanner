@@ -14,7 +14,7 @@ live, and this module works headless with no store at all.
 from dataclasses import dataclass
 
 from dplanner.domain.assets import assets
-from dplanner.domain.model import Product, Step, StepId
+from dplanner.domain.model import Library, Step, StepId
 from dplanner.domain.ordering import placed
 from dplanner.domain.store import FilesFor
 from dplanner.modules.step_handoff.aspect import MODULE_ID, read_note, read_scope
@@ -29,7 +29,7 @@ class Handoff:
     assets: tuple[str, ...]  # Workspace-relative paths, ready to print for an agent.
 
 
-def own(product: Product, step: Step, files: FilesFor) -> Handoff | None:
+def own(library: Library, step: Step, files: FilesFor) -> Handoff | None:
     """What this step hands forward, or None when it hands forward nothing."""
     note = read_note(step)
     paths = asset_paths(files, step.id)
@@ -44,23 +44,23 @@ def own(product: Product, step: Step, files: FilesFor) -> Handoff | None:
     )
 
 
-def inherited(product: Product, step: Step, files: FilesFor) -> list[Handoff]:
+def inherited(library: Library, step: Step, files: FilesFor) -> list[Handoff]:
     """Everything this step's worker should know, in the order the work was done.
 
     The handoffs of every transitive ``requires`` ancestor, plus every project-scoped
     handoff from the rest of the project — walked once over the topological order, so the
     result is deterministic and an ancestor is never listed twice.
     """
-    project = product.project_of(step.id)
-    ancestors = _ancestors(product, step)
+    project = library.project_of(step.id)
+    ancestors = _ancestors(library, step)
     found = []
-    for place in placed(product, project):
+    for place in placed(library, project):
         other = place.step
         if other.id == step.id:
             continue
         if other.id not in ancestors and read_scope(other) != "project":
             continue
-        handoff = own(product, other, files)
+        handoff = own(library, other, files)
         if handoff is not None:
             found.append(handoff)
     return found
@@ -84,11 +84,11 @@ def inherited_text(handoffs: list[Handoff]) -> str:
     return "\n\n".join(blocks)
 
 
-def _ancestors(product: Product, step: Step) -> set[StepId]:
+def _ancestors(library: Library, step: Step) -> set[StepId]:
     seen: set[StepId] = set()
     queue = [step.id]
     while queue:
-        for required in product.requires(queue.pop()):
+        for required in library.requires(queue.pop()):
             if required.id not in seen:
                 seen.add(required.id)
                 queue.append(required.id)
@@ -96,7 +96,8 @@ def _ancestors(product: Product, step: Step) -> set[StepId]:
 
 
 def asset_paths(files: FilesFor, step_id: StepId) -> tuple[str, ...]:
-    """The step's handoff files as workspace-relative paths.
+    """The step's handoff files as absolute paths — same reason as the agent aspect's:
+    one library spans several roots, and the agent runs in the repository anyway.
 
     A node the store has never flushed has no directory yet, and the store says so with a
     ``KeyError`` — a step created this run simply has no files to list.
@@ -105,4 +106,4 @@ def asset_paths(files: FilesFor, step_id: StepId) -> tuple[str, ...]:
         area = files(step_id, MODULE_ID)
     except KeyError:
         return ()
-    return tuple(f"{area.directory}/{name}" for name in assets(area))
+    return tuple(str(area.absolute(name)) for name in assets(area))

@@ -1,14 +1,16 @@
-"""The product model: a catalogue of projects, each a graph of steps.
+"""The model: a library of projects, each a graph of steps.
 
 Three levels, and each is a different kind of thing:
 
-**Product** is the system level — one codebase, its repository, and the projects planned
-against it. It is also the aggregate: the single place a change can happen, which is what
-makes "every change emits exactly one signal" true rather than hopeful. A window holds one
-product; opening another opens another window.
+**Library** is the account level — the projects a user is planning, listed in a per-user
+library file. It is also the aggregate: the single place a change can happen, which is what
+makes "every change emits exactly one signal" true rather than hopeful. It is in-memory
+only — the library file records membership, each project directory records the rest, and no
+node on disk stands for the library itself. A window holds one library; opening another
+starts another instance.
 
-**Project** is a unit of work with a beginning and an end. **Step** is a node in that
-project's graph.
+**Project** is a unit of work with a beginning and an end — a directory inside a git
+repository. **Step** is a node in that project's graph.
 
 **Identity is the id, never the position.** ``uuid4().hex``, generated at creation and
 written into the JSON. A node keeps its identity through renames and reorders — which is
@@ -53,15 +55,11 @@ DEFAULT_EDGE_KIND: Final = "requires"
 # mutators, three commands and three signals: they are edited the same way, undone the same
 # way, and differ only in what the Edit menu calls them.
 VALUE_FIELDS: Final[dict[str, tuple[str, ...]]] = {
-    "product": ("name", "repository", "checkout"),
     "project": ("title", "summary"),
     "step": ("title",),
 }
 
 FIELD_LABELS: Final[dict[str, str]] = {
-    "name": "Rename Product",
-    "repository": "Set Repository",
-    "checkout": "Set Checkout",
     "title": "Rename",
     "summary": "Edit Summary",
 }
@@ -92,10 +90,11 @@ class TextEdit:
 
 
 class Node:
-    """What a product, a project and a step have in common.
+    """What a project and a step have in common (the library root is one too, nominally).
 
-    Every one of them can own module data, so every one of them satisfies
-    :class:`~dplanner.core.repository.DataOwner` and appears in ``repo.owners()``.
+    A project and a step can own module data, so both satisfy
+    :class:`~dplanner.core.repository.DataOwner` and appear in ``repo.owners()``. The
+    library root cannot — it has no directory — and is excluded from :meth:`Library.nodes`.
     """
 
     kind: str = ""
@@ -116,7 +115,7 @@ class Node:
 
 
 class Step(Node):
-    """A node in a project's graph. Dumb data — mutate through :class:`Product`."""
+    """A node in a project's graph. Dumb data — mutate through :class:`Library`."""
 
     kind = "step"
 
@@ -174,27 +173,18 @@ class Project(Node):
         return next((step for step in self.steps if step.id == step_id), None)
 
 
-class Product(Node):
-    """The aggregate: one product, its projects, and every way to change any of them."""
+class Library(Node):
+    """The aggregate: the open library's projects, and every way to change any of them.
 
-    kind = "product"
+    Not persisted as a node: the library file lists project directories, each project
+    directory holds its own data, and this object exists only to be the one place a change
+    can happen — the flat index and the signals live here.
+    """
 
-    def __init__(
-        self,
-        *,
-        node_id: NodeId | None = None,
-        name: str = "",
-        repository: str = "",
-        checkout: str = "",
-        created: str = "",
-    ) -> None:
-        super().__init__(node_id=node_id, created=created)
-        self.name = name
-        # Where the product's code lives. `repository` is a URL and travels with the
-        # workspace; `checkout` is a local path and is the one value here that does not
-        # really belong to everybody — see FORMAT.md for why it is stored anyway.
-        self.repository = repository
-        self.checkout = checkout
+    kind = "library"
+
+    def __init__(self, *, node_id: NodeId | None = None) -> None:
+        super().__init__(node_id=node_id)
         self.projects: list[Project] = []
 
         # One flat index across all three kinds, because the framework's repository face
@@ -216,10 +206,7 @@ class Product(Node):
         self.dirty: Signal[str, str] = Signal()
 
     def __repr__(self) -> str:
-        return f"Product({self.name!r}, {len(self.projects)} projects)"
-
-    def title_for_folder(self) -> str:
-        return self.name
+        return f"Library({len(self.projects)} projects)"
 
     # -- lookup --------------------------------------------------------------------------------
 
@@ -240,8 +227,11 @@ class Product(Node):
         return self._nodes[node_id]
 
     def nodes(self) -> Iterator[Node]:
-        """The product, then every project, then its steps — parents before children."""
-        yield self
+        """Every project, then its steps — parents before children.
+
+        The library root is deliberately absent: it has no directory and can carry no
+        module data, so nothing downstream (the migration pass, the flush) should see it.
+        """
         for project in self.projects:
             yield project
             yield from project.steps
@@ -266,7 +256,7 @@ class Product(Node):
         """The project a step belongs to. Edges never cross one, so this always answers."""
         parent = self.parent_of(step_id)
         if not isinstance(parent, Project):
-            raise KeyError(f"{step_id} is not a step in this product")
+            raise KeyError(f"{step_id} is not a step in this library")
         return parent
 
     # -- fields --------------------------------------------------------------------------------
@@ -408,7 +398,7 @@ class Product(Node):
     def add_child(
         self, parent_id: NodeId, child: Node, index: int | None = None, origin: Origin = None
     ) -> NodeId:
-        """Add a project to the product, or a step to a project."""
+        """Add a project to the library, or a step to a project."""
         children = self._children_of(parent_id, type(child))
         if not child.folder_name:
             child.folder_name = unique_folder_name(
@@ -430,7 +420,7 @@ class Product(Node):
         node = self._nodes[node_id]
         parent = self.parent_of(node_id)
         if parent is None:
-            raise ValueError("the product itself cannot be removed")
+            raise ValueError("the library itself cannot be removed")
         children = self._children_of(parent.id, type(node))
         index = children.index(node)
         children.remove(node)
@@ -447,7 +437,7 @@ class Product(Node):
 
     def _children_of(self, parent_id: NodeId, child_type: type) -> list[Any]:
         parent = self._nodes[parent_id]
-        if isinstance(parent, Product) and child_type is Project:
+        if isinstance(parent, Library) and child_type is Project:
             return parent.projects
         if isinstance(parent, Project) and child_type is Step:
             return parent.steps

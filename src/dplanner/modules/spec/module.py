@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox, QWidget
 
 from dplanner.cli.command import CliError
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import NodeId, Product
+from dplanner.domain.model import Library, NodeId
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -56,11 +56,11 @@ FILE_FILTER = "Spec documents (*.pdf *.md *.markdown *.txt);;All files (*)"
 
 @dataclass(frozen=True)
 class SpecDeps:
-    product: Product
+    library: Library
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
-    undo: UndoService[Product]
+    undo: UndoService[Library]
     theme: ThemeService
     parent: QWidget
     # The module's file area beside any node. Wired by the composition root, which is the
@@ -84,7 +84,7 @@ class SpecModule:
         def factory(target: str | None) -> SpecsActivity:
             assert target is not None
             return SpecsActivity(
-                deps.product,
+                deps.library,
                 deps.context,
                 deps.actions,
                 deps.files,
@@ -169,16 +169,16 @@ class SpecModule:
         follow_entity_tabs(
             deps.tabs,
             SpecsActivity,
-            deps.product.has,
-            closes_on=deps.product.structure_changed,
-            retitles_on=deps.product.field_changed,
+            deps.library.has,
+            closes_on=deps.library.structure_changed,
+            retitles_on=deps.library.field_changed,
         )
 
     # -- actions -------------------------------------------------------------------------------
 
     def _on_a_project(self, context: Context) -> ActionState:
         project_id = context.focus_entity("project")
-        if project_id is None or not self._deps.product.has(project_id):
+        if project_id is None or not self._deps.library.has(project_id):
             return DISABLED
         return ENABLED
 
@@ -188,12 +188,12 @@ class SpecModule:
     def _selected_document(self, context: Context) -> tuple[NodeId, SpecDocument] | None:
         """The document the Specs tab has selected, resolved against its project's index."""
         project_id = context.focus_entity("project")
-        if project_id is None or not self._deps.product.has(project_id):
+        if project_id is None or not self._deps.library.has(project_id):
             return None
         name = context.selected_entity(DOCUMENT_ENTITY)
         if name is None:
             return None
-        documents = read_index(self._deps.product.project(project_id)).documents
+        documents = read_index(self._deps.library.project(project_id)).documents
         document = next((doc for doc in documents if doc.name == name), None)
         return None if document is None else (project_id, document)
 
@@ -216,14 +216,14 @@ class SpecModule:
 
     def _new(self, context: Context) -> None:
         project_id = context.focus_entity("project")
-        if project_id is None or not self._deps.product.has(project_id):
+        if project_id is None or not self._deps.library.has(project_id):
             return
         title, accepted = QInputDialog.getText(
             self._deps.parent, "New Spec Document", "Title:"
         )
         if not accepted or not title.strip():
             return
-        project = self._deps.product.project(project_id)
+        project = self._deps.library.project(project_id)
         index = read_index(project)
         today = datetime.now(UTC).date().isoformat()
         try:
@@ -261,7 +261,7 @@ class SpecModule:
 
     def _add(self, context: Context) -> None:
         project_id = context.focus_entity("project")
-        if project_id is None or not self._deps.product.has(project_id):
+        if project_id is None or not self._deps.library.has(project_id):
             return
         filename, _filter = QFileDialog.getOpenFileName(
             self._deps.parent, "Add Spec Document", "", FILE_FILTER
@@ -275,7 +275,7 @@ class SpecModule:
             QMessageBox.warning(self._deps.parent, "Spec Documents", refusal)
             return
 
-        project = self._deps.product.project(project_id)
+        project = self._deps.library.project(project_id)
         index = read_index(project)
         today = datetime.now(UTC).date().isoformat()
         documents, _document, outcome = import_document(
@@ -299,7 +299,7 @@ class SpecModule:
         if found is None:
             return  # The state gate already prevents this; stay honest anyway.
         project_id, document = found
-        index = read_index(self._deps.product.project(project_id))
+        index = read_index(self._deps.library.project(project_id))
         documents, requirements, dropped = remove_document(
             index.documents, index.requirements, document.name
         )

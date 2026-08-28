@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from PySide6.QtWidgets import QFormLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from dplanner.domain.commands import SetFieldCommand
-from dplanner.domain.model import NodeId, Product
+from dplanner.domain.model import Library, NodeId
 from dplanner.framework.cards import CardStack, ToolCard
 from dplanner.framework.context import Context
 from dplanner.framework.inspector import InspectorExtension, InspectorSection
@@ -38,15 +38,15 @@ class ProjectPanel(QWidget):
 
     def __init__(
         self,
-        product: Product,
-        undo: UndoService[Product],
+        library: Library,
+        undo: UndoService[Library],
         cards: Sequence[InspectorSection] = (),
         theme: ThemeService | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("InspectorPanel")
-        self._product = product
+        self._product = library
         self._undo = undo
         self._project_id: NodeId | None = None
 
@@ -101,7 +101,7 @@ class ProjectPanel(QWidget):
                 if section.icon is not None:
                     card.set_glyph(section.icon(current.text_secondary))
 
-        self._unsubscribes = [product.field_changed.connect(self._on_field)]
+        self._unsubscribes = [library.field_changed.connect(self._on_field)]
         if theme is not None:
             self._unsubscribes.append(theme.changed.connect(paint_glyphs))
             paint_glyphs(theme.current)

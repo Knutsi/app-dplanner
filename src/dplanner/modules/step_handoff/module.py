@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from dplanner.domain.model import Product
+from dplanner.domain.model import Library
 from dplanner.domain.store import FilesFor
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.undo import UndoService
@@ -12,8 +12,8 @@ from dplanner.modules.step_handoff.section import HandoffSection
 
 @dataclass(frozen=True)
 class StepHandoffDeps:
-    product: Product
-    undo: UndoService[Product]
+    library: Library
+    undo: UndoService[Library]
     sections: InspectorSectionRegistry
     # Where a step's handoff files live — the store's `files`, handed in so this module
     # never names a store.
@@ -34,6 +34,6 @@ class StepHandoffModule:
                 id=f"{MODULE_ID}.tab",
                 label=SPEC.label,
                 order=60,
-                factory=lambda: HandoffSection(deps.product, deps.undo, deps.files),
+                factory=lambda: HandoffSection(deps.library, deps.undo, deps.files),
             )
         )

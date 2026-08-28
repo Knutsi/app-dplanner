@@ -13,12 +13,12 @@ from typing import TextIO
 
 from dplanner.core.repository import DirtyMark
 from dplanner.domain.commands import Command
-from dplanner.domain.model import Product
-from dplanner.domain.store import ProductStore
+from dplanner.domain.model import Library, Project
+from dplanner.domain.store import LibraryStore
 
 
 class CliError(Exception):
-    """Something the user can fix: no workspace, no such project, a bad argument.
+    """Something the user can fix: no library, no such project, a bad argument.
 
     Raised by a verb and printed as one line. Anything else that escapes is a bug and keeps
     its traceback, because hiding those makes them impossible to report.
@@ -27,31 +27,44 @@ class CliError(Exception):
 
 @dataclass
 class CliContext:
-    """One invocation: the product it opened, and where its output goes.
+    """One invocation: the library it opened, the project it resolved, where output goes.
 
-    The product and the store are optional on the dataclass and required through the
+    The library and the store are optional on the dataclass and required through the
     properties, because a few verbs — ``skill show``, for one — have nothing to do with a
-    product. That way a verb that does need one still reads a plain ``Product``, with no
+    library. That way a verb that does need one still reads a plain ``Library``, with no
     None-check of its own, and a verb that reaches for one it was not given says so.
+
+    ``current`` is the project the invocation resolved from the working directory or
+    ``--project`` — see ``cli/discovery.py`` for the rule. A verb that acts on "the"
+    project reads :attr:`project`, which spells out what to do when there is none.
     """
 
     out: TextIO
     as_json: bool = False
-    opened: "Product | None" = None
-    opened_store: "ProductStore | None" = None
+    opened: "Library | None" = None
+    opened_store: "LibraryStore | None" = None
+    current: "Project | None" = None
     marks: set[DirtyMark] = field(default_factory=set)
 
     @property
-    def product(self) -> Product:
+    def library(self) -> Library:
         if self.opened is None:
-            raise CliError("this command needs a product")
+            raise CliError("this command needs a library")
         return self.opened
 
     @property
-    def store(self) -> ProductStore:
+    def store(self) -> LibraryStore:
         if self.opened_store is None:
-            raise CliError("this command needs a product")
+            raise CliError("this command needs a library")
         return self.opened_store
+
+    @property
+    def project(self) -> Project:
+        if self.current is None:
+            raise CliError(
+                "no current project — run inside a project's repository or pass --project"
+            )
+        return self.current
 
     def apply(self, command: Command) -> None:
         """Apply a domain command.
@@ -67,7 +80,7 @@ class CliContext:
         reported.
         """
         try:
-            command.redo(self.product)
+            command.redo(self.library)
         except ValueError as error:
             raise CliError(str(error)) from error
 
@@ -99,8 +112,8 @@ class CliCommand:
     # argparse already knows how to describe itself, and its help *is* what the skill
     # generator reads — so no argument is ever described in two places.
     configure: Callable[[ArgumentParser], None] = lambda _parser: None
-    # False for verbs that make no sense against a product — `skill show`, for instance.
-    needs_workspace: bool = True
+    # False for verbs that make no sense against a library — `skill show`, for instance.
+    needs_library: bool = True
     examples: tuple[str, ...] = ()
 
     @property

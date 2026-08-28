@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from PySide6.QtWidgets import QInputDialog, QWidget
 
-from dplanner.domain.model import NodeId, Product, Project
+from dplanner.domain.model import Library, NodeId, Project
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
@@ -33,8 +33,8 @@ from dplanner.modules.project_editor.selection import REGION_KIND
 
 @dataclass(frozen=True)
 class RegionVerbs:
-    product: Product
-    undo: UndoService[Product]
+    library: Library
+    undo: UndoService[Library]
     parent: QWidget
     # Which project the current tab is showing, as for the step verbs.
     current_project: Callable[[], NodeId | None]
@@ -85,9 +85,9 @@ class RegionVerbs:
 
     def _project(self) -> Project | None:
         project_id = self.current_project()
-        if project_id is None or not self.product.has(project_id):
+        if project_id is None or not self.library.has(project_id):
             return None
-        return self.product.project(project_id)
+        return self.library.project(project_id)
 
     def _selected(self, context: Context) -> list[Region]:
         project = self._project()

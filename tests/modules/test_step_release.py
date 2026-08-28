@@ -1,14 +1,10 @@
 """The release aspect: the label on disk, its CLI, the Release tab, and the Type toggle."""
 
 import json
-from io import StringIO
 
 import pytest
 
-from dplanner.cli.command import CliRegistry
-from dplanner.cli.main import run
 from dplanner.domain.model import Step
-from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.step_release.aspect import (
     MODULE_ID,
     next_release_label,
@@ -77,27 +73,17 @@ def test_a_generated_label_never_collides():
 
 
 @pytest.fixture
-def cli(workspace):
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-
-    def invoke(*argv, expect=0):
-        out, err = StringIO(), StringIO()
-        code = run(
-            registry, default_module_formats(), ["--workspace", str(workspace), *argv], out, err
-        )
-        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
-        return out.getvalue() + err.getvalue()
-
-    invoke("project", "create", "Discovery")
-    invoke("step", "add", "Discovery", "Build the core")
-    invoke("step", "add", "Discovery", "Ship the beta", "--after", "Build the core")
-    return invoke
+def cli(cli):
+    """The shared CLI over a seeded project — the conftest fixture, pre-populated."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Build the core")
+    cli("step", "add", "Discovery", "Ship the beta", "--after", "Build the core")
+    return cli
 
 
 def test_set_and_clear(cli, workspace):
     cli("release", "set", "Ship the beta", "--label", "MVP")
-    step_dir = workspace / "projects" / "discovery" / "steps" / "ship-the-beta"
+    step_dir = workspace / "discovery" / "steps" / "ship-the-beta"
     entry = json.loads((step_dir / "modules" / "step_release.json").read_text())
     assert entry["label"] == "MVP"
     cli("release", "clear", "Ship the beta")
@@ -111,7 +97,7 @@ def test_clearing_a_step_that_is_not_a_release_says_so(cli):
 def test_set_without_label_generates_the_next_one(cli, workspace):
     cli("release", "set", "Build the core")
     cli("release", "set", "Ship the beta")
-    steps = workspace / "projects" / "discovery" / "steps"
+    steps = workspace / "discovery" / "steps"
     first = json.loads((steps / "build-the-core" / "modules" / "step_release.json").read_text())
     second = json.loads((steps / "ship-the-beta" / "modules" / "step_release.json").read_text())
     assert first["label"] == "v1"
@@ -130,15 +116,12 @@ def test_list_is_the_roadmap_in_working_order(cli):
 
 
 @pytest.fixture
-def panel_step(services):
+def panel_step(services, make_project):
     from dplanner.domain.commands import AddNodeCommand
-    from dplanner.domain.model import Project
 
-    product = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
+    project = make_project("Discovery")
     step = Step(title="Ship the beta")
-    AddNodeCommand(project.id, step).redo(product)
+    AddNodeCommand(project.id, step).redo(services.document)
     return step
 
 
@@ -186,10 +169,10 @@ def select(services, step):
 def second_step(services, panel_step):
     from dplanner.domain.commands import AddNodeCommand
 
-    product = services.document
-    project = product.project_of(panel_step.id)
+    library = services.document
+    project = library.project_of(panel_step.id)
     step = Step(title="Build the core")
-    AddNodeCommand(project.id, step).redo(product)
+    AddNodeCommand(project.id, step).redo(library)
     return step
 
 

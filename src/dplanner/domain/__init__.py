@@ -1,7 +1,7 @@
-"""The product: a catalogue of projects, each a graph of steps.
+"""The library: a catalogue of projects, each a graph of steps.
 
-**Product** is the system level — one codebase, the repository it lives in, and the projects
-planned against it. A window holds one product.
+**Library** is the system level — one codebase, the repository it lives in, and the projects
+planned against it. A window holds one library.
 
 **Project** is a unit of work. **Step** is a node in that project's graph, and edges between
 steps are typed: ``requires`` orders the graph and refuses cycles, ``relates`` is a plain

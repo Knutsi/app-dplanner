@@ -8,7 +8,7 @@ from datetime import date
 
 import pytest
 
-from dplanner.domain.model import Product, Project, Step
+from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import placed
 from dplanner.domain.schedule import (
     as_weeks,
@@ -27,14 +27,14 @@ SATURDAY = date(2026, 9, 12)
 @pytest.fixture
 def project():
     """Four steps in a chain, so the topological order is the order they were added."""
-    product = Product(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
-    product.add_child(product.id, project)
+    library.add_child(library.id, project)
     for title in ("A", "B", "C", "D"):
-        product.add_child(project.id, Step(title=title))
+        library.add_child(project.id, Step(title=title))
     for waiting, before in zip(project.steps[1:], project.steps, strict=False):
-        product.set_edges(waiting.id, "requires", [before.id])
-    return product, project
+        library.set_edges(waiting.id, "requires", [before.id])
+    return library, project
 
 
 def days_of(estimates):
@@ -100,9 +100,9 @@ def test_the_months_do_not_come_from_the_locale():
 
 
 def test_the_total_runs_serially_down_the_order(project):
-    product, found = project
+    library, found = project
     rows = schedule(
-        placed(product, found), days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0}), MONDAY
+        placed(library, found), days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0}), MONDAY
     )
 
     assert [row.accumulated for row in rows] == [1.0, 3.0, 6.0, 10.0]
@@ -110,8 +110,8 @@ def test_the_total_runs_serially_down_the_order(project):
 
 def test_an_unestimated_step_advances_nothing_and_claims_no_date(project):
     """ "We have not estimated this" and "this is free" are different claims."""
-    product, found = project
-    rows = schedule(placed(product, found), days_of({"A": 2.0, "C": 3.0}), MONDAY)
+    library, found = project
+    rows = schedule(placed(library, found), days_of({"A": 2.0, "C": 3.0}), MONDAY)
 
     assert [row.days for row in rows] == [2.0, None, 3.0, None]
     assert [row.accumulated for row in rows] == [2.0, 2.0, 5.0, 5.0]
@@ -125,8 +125,8 @@ def test_an_unestimated_step_advances_nothing_and_claims_no_date(project):
 
 def test_two_halves_land_on_the_first_day(project):
     """Rounding happens once, on the total — never per step, where it would accumulate."""
-    product, found = project
-    rows = schedule(placed(product, found), days_of({"A": 0.5, "B": 0.5}), MONDAY)
+    library, found = project
+    rows = schedule(placed(library, found), days_of({"A": 0.5, "B": 0.5}), MONDAY)
 
     assert rows[1].accumulated == 1.0
     assert rows[1].finish == MONDAY
@@ -135,32 +135,32 @@ def test_two_halves_land_on_the_first_day(project):
 def test_only_an_unestimated_step_lacks_a_date(project):
     """There is no "no start date" case any more — a project nobody dated starts today, so
     the only blank in the Date column is a step nobody has sized."""
-    product, found = project
-    rows = schedule(placed(product, found), days_of({"A": 3.0, "B": 1.0}), MONDAY)
+    library, found = project
+    rows = schedule(placed(library, found), days_of({"A": 3.0, "B": 1.0}), MONDAY)
 
     assert [row.accumulated for row in rows] == [3.0, 4.0, 4.0, 4.0]
     assert [row.finish is None for row in rows] == [False, False, True, True]
 
 
 def test_a_weekend_start_dates_from_the_monday(project):
-    product, found = project
-    rows = schedule(placed(product, found), days_of({"A": 1.0}), SATURDAY)
+    library, found = project
+    rows = schedule(placed(library, found), days_of({"A": 1.0}), SATURDAY)
 
     assert rows[0].finish == date(2026, 9, 14)
 
 
 def test_a_project_with_no_steps_schedules_to_nothing():
-    product = Product(name="Widget")
+    library = Library()
     empty = Project(title="Empty")
-    product.add_child(product.id, empty)
+    library.add_child(library.id, empty)
 
-    assert schedule(placed(product, empty), lambda _step: None, MONDAY) == []
+    assert schedule(placed(library, empty), lambda _step: None, MONDAY) == []
 
 
 def test_each_row_keeps_its_place_in_the_order(project):
     """The schedule carries the ordering's answer rather than renumbering the rows itself."""
-    product, found = project
-    rows = schedule(placed(product, found), days_of({}), MONDAY)
+    library, found = project
+    rows = schedule(placed(library, found), days_of({}), MONDAY)
 
     assert [row.place.index for row in rows] == [1, 2, 3, 4]
     assert [row.place.wave for row in rows] == [1, 2, 3, 4]
@@ -182,23 +182,23 @@ def test_one_day_is_singular_and_everything_else_plural():
 
 def diamond():
     """A splits into B and C, which join at D — the shape that separates serial from path."""
-    product = Product(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
-    product.add_child(product.id, project)
+    library.add_child(library.id, project)
     for title in ("A", "B", "C", "D"):
-        product.add_child(project.id, Step(title=title))
+        library.add_child(project.id, Step(title=title))
     a, b, c, d = project.steps
-    product.set_edges(b.id, "requires", [a.id])
-    product.set_edges(c.id, "requires", [a.id])
-    product.set_edges(d.id, "requires", [b.id, c.id])
-    return product, project
+    library.set_edges(b.id, "requires", [a.id])
+    library.set_edges(c.id, "requires", [a.id])
+    library.set_edges(d.id, "requires", [b.id, c.id])
+    return library, project
 
 
 def test_the_path_takes_the_heavier_branch():
     from dplanner.domain.schedule import critical_path
 
-    product, project = diamond()
-    path = critical_path(product, project, days_of({"A": 1, "B": 2, "C": 10, "D": 1}))
+    library, project = diamond()
+    path = critical_path(library, project, days_of({"A": 1, "B": 2, "C": 10, "D": 1}))
     assert path is not None
     assert [step.title for step in path.steps] == ["A", "C", "D"]
     assert path.days == 12
@@ -208,21 +208,21 @@ def test_the_path_takes_the_heavier_branch():
 def test_unestimated_steps_on_the_path_are_counted_not_priced():
     from dplanner.domain.schedule import critical_path
 
-    product, project = diamond()
-    path = critical_path(product, project, days_of({"A": 1, "B": 2, "D": 1}))
+    library, project = diamond()
+    path = critical_path(library, project, days_of({"A": 1, "B": 2, "D": 1}))
     assert path is not None
     # C is free to the walk, so B's branch is the heavier one — and nothing on it is a guess.
     assert [step.title for step in path.steps] == ["A", "B", "D"]
     assert path.unestimated == 0
-    heavy = critical_path(product, project, days_of({"A": 1, "D": 1}))
+    heavy = critical_path(library, project, days_of({"A": 1, "D": 1}))
     assert heavy is not None and heavy.unestimated == 1  # whichever weightless branch won
 
 
 def test_equal_branches_break_ties_by_project_order():
     from dplanner.domain.schedule import critical_path
 
-    product, project = diamond()
-    path = critical_path(product, project, days_of({"A": 1, "B": 3, "C": 3, "D": 1}))
+    library, project = diamond()
+    path = critical_path(library, project, days_of({"A": 1, "B": 3, "C": 3, "D": 1}))
     assert path is not None
     assert [step.title for step in path.steps] == ["A", "B", "D"]
 
@@ -230,7 +230,7 @@ def test_equal_branches_break_ties_by_project_order():
 def test_an_empty_project_has_no_path():
     from dplanner.domain.schedule import critical_path
 
-    product = Product(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
-    product.add_child(product.id, project)
-    assert critical_path(product, project, days_of({})) is None
+    library.add_child(library.id, project)
+    assert critical_path(library, project, days_of({})) is None

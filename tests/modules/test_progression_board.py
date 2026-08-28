@@ -1,29 +1,24 @@
 """The progression board: the execution surface, and the seams it reaches others through."""
 
 import json
-from io import StringIO
 
 import pytest
 
-from dplanner.cli.command import CliRegistry
-from dplanner.cli.main import run
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules import default_cli_commands, default_module_formats
 
 
 @pytest.fixture
-def project(services):
+def project(services, make_project):
     """The diamond: B and C wait on A, D waits on both — serial and parallel in one graph."""
-    product = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(product.id, project).redo(product)
+    library = services.document
+    project = make_project("Discovery")
     for title in ("A", "B", "C", "D"):
-        AddNodeCommand(project.id, Step(title=title)).redo(product)
+        AddNodeCommand(project.id, Step(title=title)).redo(library)
     a, b, c, d = project.steps
     for waiter, sources in ((b, [a]), (c, [a]), (d, [b, c])):
-        SetEdgesCommand(waiter.id, "requires", [s.id for s in sources]).redo(product)
+        SetEdgesCommand(waiter.id, "requires", [s.id for s in sources]).redo(library)
     return project
 
 
@@ -132,7 +127,7 @@ def test_a_build_without_an_agent_has_no_button_at_all(services, project):
 
     activity = ProgressionActivity(
         ProgressionDeps(
-            product=services.document,
+            library=services.document,
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
@@ -184,22 +179,8 @@ def test_the_step_menu_mirror_opens_the_same_tab(services, project):
 # -- the CLI, with no window at all ----------------------------------------------------------
 
 
-def test_the_cli_gives_the_same_answer(tmp_path):
+def test_the_cli_gives_the_same_answer(cli):
     """No `qapp` fixture: what an agent asks is derived on the spot and cannot be stale."""
-    from dplanner.core.storage.local import LocalStorage
-    from dplanner.domain.seed import create_product
-
-    root = tmp_path / "widget"
-    create_product(LocalStorage(root))
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-
-    def cli(*argv):
-        out = StringIO()
-        code = run(registry, default_module_formats(), ["--workspace", str(root), *argv], out)
-        assert code == 0, out.getvalue()
-        return out.getvalue()
-
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "A")
     cli("step", "add", "Discovery", "B", "--after", "A")

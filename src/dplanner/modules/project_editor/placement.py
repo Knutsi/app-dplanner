@@ -15,21 +15,21 @@ dirtied the workspace, autosave would flush it 1.5 seconds later, and every step
 created through the CLI would grow a position file the next time a window happened to open.
 """
 
-from dplanner.domain.model import Product, Project, StepId
+from dplanner.domain.model import Library, Project, StepId
 from dplanner.modules.project_editor.sorts import layered_flow
 
 
-def auto_positions(product: Product, project: Project) -> dict[StepId, tuple[float, float]]:
+def auto_positions(library: Library, project: Project) -> dict[StepId, tuple[float, float]]:
     """A position for every step, from the graph alone.
 
     A pure function of the graph, so it only moves a node when the graph itself changed.
     """
-    return layered_flow(product, project)
+    return layered_flow(library, project)
 
 
-def positions(product: Product, project: Project) -> dict[StepId, tuple[float, float]]:
+def positions(library: Library, project: Project) -> dict[StepId, tuple[float, float]]:
     """Where every node goes: what was stored, falling back to the automatic layout."""
     from dplanner.modules.project_editor.positions import read_position
 
-    automatic = auto_positions(product, project)
+    automatic = auto_positions(library, project)
     return {step.id: (read_position(step) or automatic[step.id]) for step in project.steps}

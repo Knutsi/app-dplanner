@@ -4,7 +4,7 @@ import pytest
 
 from dplanner.domain.assets import assets, attach
 from dplanner.domain.commands import AddNodeCommand
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.framework import asset_gallery
 from dplanner.framework.asset_gallery import AssetGallery
 
@@ -18,9 +18,8 @@ def png_bytes():
 
 
 @pytest.fixture
-def step(services):
-    project = Project(title="Discovery")
-    AddNodeCommand(services.document.id, project).redo(services.document)
+def step(services, make_project):
+    project = make_project()
     step = Step(title="Deploy")
     AddNodeCommand(project.id, step).redo(services.document)
     return step
@@ -44,12 +43,15 @@ def test_area_mode_shows_thumbnails_and_chips_and_removes(app, services, step):
 
 
 def test_files_mode_is_read_only(app, services, step):
+    from pathlib import Path
+
     area = services.repo.files(step.id, MODULE_ID)
     name = attach(area, png_bytes(), "figure.png")
-    workspace_path = f"{area.directory}/{name}"
+    absolute = str(area.absolute(name))
 
     gallery = AssetGallery(editable=True)
-    gallery.set_files([workspace_path], services.repo.storage.read_bytes)
+    # File lists carry absolute paths now, read the way the composition root reads them.
+    gallery.set_files([absolute], lambda path: Path(path).read_bytes())
     assert gallery._grid_host.findChildren(asset_gallery._Thumb)
     # Files mode never edits, even on a gallery constructed editable.
     assert not gallery.attach_button.isVisibleTo(gallery)

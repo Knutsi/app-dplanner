@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from dplanner.cli.command import CliCommand, CliContext
 from dplanner.cli.lookup import find_project
-from dplanner.domain.model import Product, Project
+from dplanner.domain.model import Library, Project
 from dplanner.domain.store import FilesFor
 
 
@@ -30,21 +30,21 @@ class LintFinding:
 
 
 # One shape for both scopes: a step-scoped check loops over ``project.steps`` itself.
-LintCheck = Callable[[Product, Project, FilesFor], Sequence[LintFinding]]
+LintCheck = Callable[[Library, Project, FilesFor], Sequence[LintFinding]]
 
 
 def commands(checks: Sequence[LintCheck]) -> list[CliCommand]:
     def _lint(context: CliContext, args: Namespace) -> int:
-        product = context.product
+        library = context.library
         projects = (
-            [find_project(product, args.project)] if args.project else list(product.projects)
+            [find_project(library, args.project)] if args.project else list(library.projects)
         )
         found: list[tuple[Project, LintFinding]] = []
         for project in projects:
             for check in checks:
                 found += [
                     (project, finding)
-                    for finding in check(product, project, context.store.files)
+                    for finding in check(library, project, context.store.files)
                 ]
         rows = [
             {

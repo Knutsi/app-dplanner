@@ -4,10 +4,9 @@ Recording (``set``, ``clear``) is plain strings and always works. The verbs that
 GitHub — ``refresh``, ``prs``, ``branches`` — need the ``gh`` CLI and a GitHub repository
 URL, and refuse with one line when either is missing.
 
-``commands()`` takes the repository resolution as a typed parameter, supplied by the
-composition root — the CLI-side twin of a module ``Deps`` callback: which repository a
-step belongs to is the ``project_repo`` module's rule, and a ``cli.py`` never imports
-another module, so the answer arrives as an argument.
+Which repository a step belongs to is **derived from its project's directory**: the
+enclosing git repository's ``origin`` remote. Nothing stores a URL, so nothing can
+disagree with git.
 """
 
 from argparse import ArgumentParser, Namespace
@@ -16,9 +15,10 @@ from dataclasses import replace
 from functools import partial
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lookup import find_project, find_step, step_arg
+from dplanner.cli.lookup import find_step, step_arg
+from dplanner.core.storage.locations import origin_url
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Product, Project, Step
+from dplanner.domain.model import Project, Step
 from dplanner.modules.github.aspect import (
     MODULE_ID,
     GithubRefs,
@@ -39,19 +39,14 @@ from dplanner.modules.github.gh import (
     which_gh,
 )
 
-# (product, project) -> the repository URL that project's work belongs to. Required:
-# project_repo's resolution is the only authority on it, and the composition root supplies
-# it — a default here would be a second copy of that rule.
-RepositoryFor = Callable[[Product, Project], str]
 
-
-def commands(*, repository_for: RepositoryFor) -> list[CliCommand]:
+def commands() -> list[CliCommand]:
     return [
         CliCommand(
             path=("github", "set"),
             summary="Record the branch and/or PR a step's work lands in.",
             configure=_configure_set,
-            run=lambda context, args: _set(context, args, repository_for),
+            run=_set,
             examples=(
                 "dplanner github set 'Read the spec' --branch feat/login",
                 "dplanner github set 'Read the spec' --pr 12",
@@ -68,21 +63,21 @@ def commands(*, repository_for: RepositoryFor) -> list[CliCommand]:
             path=("github", "refresh"),
             summary="Update the stored state of open PRs from GitHub (needs gh).",
             configure=_configure_refresh,
-            run=lambda context, args: _refresh(context, args, repository_for),
+            run=_refresh,
             examples=("dplanner github refresh",),
         ),
         CliCommand(
             path=("github", "prs"),
             summary="List the repository's pull requests (needs gh; first 100).",
             configure=_configure_prs,
-            run=lambda context, args: _prs(context, args, repository_for),
+            run=_prs,
             examples=("dplanner github prs --all",),
         ),
         CliCommand(
             path=("github", "branches"),
             summary="List the repository's branches (needs gh).",
             configure=_configure_branches,
-            run=lambda context, args: _branches(context, args, repository_for),
+            run=_branches,
             examples=("dplanner github branches",),
         ),
     ]
@@ -101,28 +96,21 @@ def _configure_clear(parser: ArgumentParser) -> None:
 
 
 def _configure_refresh(parser: ArgumentParser) -> None:
-    parser.add_argument("step", nargs="?", help="one step; omit for every step in the product")
+    parser.add_argument("step", nargs="?", help="one step; omit for every step in the library")
 
 
 def _configure_prs(parser: ArgumentParser) -> None:
     parser.add_argument("--all", action="store_true", help="include merged and closed PRs")
-    _project_option(parser)
 
 
 def _configure_branches(parser: ArgumentParser) -> None:
-    _project_option(parser)
+    return None
 
 
-def _project_option(parser: ArgumentParser) -> None:
-    parser.add_argument(
-        "--project", default="", help="use this project's repository instead of the product's"
-    )
-
-
-def _set(context: CliContext, args: Namespace, repository_for: RepositoryFor) -> int:
+def _set(context: CliContext, args: Namespace) -> int:
     if not args.branch and not args.pr:
         raise CliError("nothing to set — pass --branch and/or --pr")
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step, context.current)
     current = read(step) or GithubRefs()
 
     refs = replace(current, branch=args.branch or current.branch)
@@ -136,7 +124,7 @@ def _set(context: CliContext, args: Namespace, repository_for: RepositoryFor) ->
             pr_url=args.pr if "/pull/" in args.pr else "",
         )
         # Best effort; recording never fails on gh.
-        info = _fetch_pr(_step_repo(context, step, repository_for), number)
+        info = _fetch_pr(_step_repo(context, step), number)
         if info is not None:
             refs = refreshed(refs, info)
 
@@ -149,7 +137,7 @@ def _set(context: CliContext, args: Namespace, repository_for: RepositoryFor) ->
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step, context.current)
     current = read(step)
     if current is None:
         raise CliError(f"{step.title!r} has no GitHub refs")
@@ -160,15 +148,19 @@ def _clear(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _refresh(context: CliContext, args: Namespace, repository_for: RepositoryFor) -> int:
+def _refresh(context: CliContext, args: Namespace) -> int:
     _need_gh()
-    steps = [find_step(context.product, args.step)] if args.step else _all_steps(context)
+    steps = (
+        [find_step(context.library, args.step, context.current)]
+        if args.step
+        else _all_steps(context)
+    )
     checked = updated = 0
     for step in steps:
         refs = read(step)
         if refs is None or refs.pr_number is None or refs.pr_state in ("merged", "closed"):
             continue
-        repo = _step_repo(context, step, repository_for)
+        repo = _step_repo(context, step)
         if repo is None:
             if args.step:  # Asked about one step, so its missing repo is an answer.
                 raise CliError(_NO_REPOSITORY)
@@ -187,8 +179,8 @@ def _refresh(context: CliContext, args: Namespace, repository_for: RepositoryFor
     return 0
 
 
-def _prs(context: CliContext, args: Namespace, repository_for: RepositoryFor) -> int:
-    repo = _scope_repo(context, args, repository_for)
+def _prs(context: CliContext, args: Namespace) -> int:
+    repo = _scope_repo(context)
     prs = _gh(lambda: list_prs(repo))
     if not args.all:
         prs = [pr for pr in prs if pr.state == "open"]
@@ -201,8 +193,8 @@ def _prs(context: CliContext, args: Namespace, repository_for: RepositoryFor) ->
     return 0
 
 
-def _branches(context: CliContext, args: Namespace, repository_for: RepositoryFor) -> int:
-    repo = _scope_repo(context, args, repository_for)
+def _branches(context: CliContext, _args: Namespace) -> int:
+    repo = _scope_repo(context)
     branches = _gh(lambda: list_branches(repo))
     context.report({"branches": branches}, "\n".join(branches) or "no branches")
     return 0
@@ -216,9 +208,8 @@ def _gh[T](call: Callable[[], T]) -> T:
 
 
 _NO_REPOSITORY = (
-    "no GitHub repository to ask — set one with "
-    "`dplanner product set --repository https://github.com/owner/repo` "
-    "or `dplanner repo set <project> --repository …`"
+    "no GitHub remote on the project's repository — add one with "
+    "`git remote add origin https://github.com/owner/repo`"
 )
 
 
@@ -228,21 +219,21 @@ def _need_gh() -> None:
         raise CliError(refusal)
 
 
-def _step_repo(context: CliContext, step: Step, repository_for: RepositoryFor) -> str | None:
-    """The ``owner/repo`` a step's refs belong to: its project's repository over the
-    product's — ``project_repo``'s rule, arriving through ``repository_for``."""
-    project = context.product.project_of(step.id)
-    return parse_repo(repository_for(context.product, project))
+def _repo_url(context: CliContext, project: Project) -> str:
+    """The remote URL a project's work belongs to — its directory's repository, from git."""
+    return origin_url(context.store.project_dir(project.id))
 
 
-def _scope_repo(context: CliContext, args: Namespace, repository_for: RepositoryFor) -> str:
-    """The repo a list verb asks: ``--project``'s over the product's, gh checked first."""
+def _step_repo(context: CliContext, step: Step) -> str | None:
+    """The ``owner/repo`` a step's refs belong to: its project directory's repository."""
+    project = context.library.project_of(step.id)
+    return parse_repo(_repo_url(context, project))
+
+
+def _scope_repo(context: CliContext) -> str:
+    """The repo a list verb asks: the current project's, gh checked first."""
     _need_gh()
-    if args.project:
-        project = find_project(context.product, args.project)
-        repo = parse_repo(repository_for(context.product, project))
-    else:
-        repo = parse_repo(context.product.repository)
+    repo = parse_repo(_repo_url(context, context.project))
     if repo is None:
         raise CliError(_NO_REPOSITORY)
     return repo
@@ -258,7 +249,7 @@ def _fetch_pr(repo: str | None, number: int) -> PrInfo | None:
 
 
 def _all_steps(context: CliContext) -> list[Step]:
-    return [step for project in context.product.projects for step in project.steps]
+    return [step for project in context.library.projects for step in project.steps]
 
 
 def _cleared_half(current: GithubRefs, *, branch: bool) -> GithubRefs:

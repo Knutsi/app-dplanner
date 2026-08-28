@@ -1,36 +1,69 @@
-"""The product format on disk: what it writes, what it omits, and what it reads back."""
+"""The library format on disk: what it writes, what it omits, and what it reads back.
+
+The store is multi-root now: a per-user library file lists project directories, each one
+self-contained inside a git repository. The fixtures mirror that — a real ``git init``-ed
+repository, a seeded project directory, and a library file naming it.
+"""
 
 import json
 
 import pytest
 
-from dplanner.core.storage.local import LocalStorage
-from dplanner.domain.model import Product, Project, Step
-from dplanner.domain.store import ProductStore, StaleWorkspaceError
+from dplanner.core.storage.locations import init_repo
+from dplanner.domain.library_file import read_library_file, write_library_file
+from dplanner.domain.model import Step
+from dplanner.domain.seed import seed_project
+from dplanner.domain.store import LibraryStore, StaleWorkspaceError
 
 
 @pytest.fixture
-def store(tmp_path):
-    return ProductStore(LocalStorage(tmp_path / "ws"))
+def repo(tmp_path):
+    return init_repo(tmp_path / "repo")
 
 
 @pytest.fixture
-def product(store):
-    product = Product(name="Widget", repository="git@example.com:widget.git")
-    project = Project(title="Discovery", summary="what we do not know")
-    product.add_child(product.id, project)
-    product.add_child(project.id, Step(title="Read the spec"))
-    product.add_child(project.id, Step(title="Draft the model"))
-    store.create(product)
-    return product
+def project_dir(repo):
+    return seed_project(repo / "discovery", "Discovery")
 
 
-def find(product, title):
-    return next(node for node in product.nodes() if getattr(node, "title", None) == title)
+@pytest.fixture
+def store(tmp_path, project_dir):
+    path = tmp_path / "library.json"
+    write_library_file(path, [project_dir])
+    return LibraryStore(path)
 
 
-def read(store, *parts):
-    return json.loads((store.storage.root.joinpath(*parts)).read_text())
+@pytest.fixture
+def library(store):
+    library = store.load()
+    project = library.projects[0]
+    library.set_field(project.id, "summary", "what we do not know")
+    library.add_child(project.id, Step(title="Read the spec"))
+    library.add_child(project.id, Step(title="Draft the model"))
+    store.flush({(project.id, "meta"), (project.id, "structure")})
+    return library
+
+
+def find(library, title):
+    return next(node for node in library.nodes() if getattr(node, "title", None) == title)
+
+
+def read(path):
+    return json.loads(path.read_text())
+
+
+def flush_everything(store, library):
+    """Every mark for every node — what ``save_all`` used to spell in one call.
+
+    A "structure" mark belongs to a container (the model emits it with the parent's id),
+    so only projects carry one here.
+    """
+    marks = set()
+    for node in library.nodes():
+        marks.update({(node.id, "meta"), (node.id, "module_text"), (node.id, "module_data")})
+        if node.kind == "project":
+            marks.add((node.id, "structure"))
+    store.flush(marks)
 
 
 def fingerprint(root):
@@ -45,133 +78,132 @@ def fingerprint(root):
 # -- the shape on disk -------------------------------------------------------------------------
 
 
-def test_a_new_store_reports_no_workspace(store):
-    assert not store.exists()
+def test_a_missing_library_file_reports_not_existing(store, tmp_path):
+    assert store.exists()
+    assert not LibraryStore(tmp_path / "nowhere.json").exists()
 
 
-def test_the_product_becomes_container_directories(store, product):
-    root = store.storage.root
-    assert (root / "product.json").is_file()
-    assert (root / "projects" / "discovery" / "project.json").is_file()
-    assert (root / "projects" / "discovery" / "steps" / "read-the-spec" / "step.json").is_file()
+def test_a_project_becomes_container_directories(store, library, project_dir):
+    assert (project_dir / "project.dproj").is_file()
+    assert (project_dir / "steps" / "read-the-spec" / "step.json").is_file()
 
 
-def test_ordering_lives_in_the_parent_not_in_filenames(store, product):
-    meta = read(store, "projects", "discovery", "project.json")
+def test_ordering_lives_in_the_parent_not_in_filenames(store, library, project_dir):
+    meta = read(project_dir / "project.dproj")
     assert meta["children"] == ["read-the-spec", "draft-the-model"]
 
 
-def test_absence_encodes_the_default(store, product):
+def test_absence_encodes_the_default(store, library, project_dir):
     """A step at its default carries only identity — so a diff shows exactly what changed."""
-    meta = read(store, "projects", "discovery", "steps", "read-the-spec", "step.json")
+    meta = read(project_dir / "steps" / "read-the-spec" / "step.json")
     assert set(meta) == {"id", "created", "title"}
 
 
-def test_the_format_version_is_written_on_the_product_only(store, product):
-    assert "format" in read(store, "product.json")
-    assert "format" not in read(store, "projects", "discovery", "project.json")
+def test_the_format_version_is_written_per_project(store, library, project_dir):
+    assert "format" in read(project_dir / "project.dproj")
+    assert "format" not in read(project_dir / "steps" / "read-the-spec" / "step.json")
 
 
 # -- the round trip ----------------------------------------------------------------------------
 
 
-def test_what_is_written_reads_back_the_same(store, product, tmp_path):
-    reopened = ProductStore(LocalStorage(store.storage.root)).load()
-    assert reopened.name == "Widget"
+def test_what_is_written_reads_back_the_same(store, library):
+    reopened = LibraryStore(store.library_path).load()
     assert [p.title for p in reopened.projects] == ["Discovery"]
+    assert reopened.projects[0].summary == "what we do not know"
     assert [s.title for s in reopened.projects[0].steps] == ["Read the spec", "Draft the model"]
 
 
-def test_saving_a_reloaded_product_changes_no_bytes(store, product):
-    """The bytes must not depend on whether the workspace has been reopened."""
-    before = fingerprint(store.storage.root)
-    reopened_store = ProductStore(LocalStorage(store.storage.root))
+def test_saving_a_reloaded_library_changes_no_bytes(store, library, project_dir):
+    """The bytes must not depend on whether the library has been reopened."""
+    before = fingerprint(project_dir)
+    reopened_store = LibraryStore(store.library_path)
     reopened = reopened_store.load()
-    reopened_store.save_all(reopened)
-    assert fingerprint(store.storage.root) == before
+    flush_everything(reopened_store, reopened)
+    assert fingerprint(project_dir) == before
 
 
-def test_edges_are_one_line_per_kind(store, product):
-    first, second = find(product, "Read the spec"), find(product, "Draft the model")
-    product.set_edges(second.id, "requires", [first.id])
+def test_edges_are_one_line_per_kind(store, library, project_dir):
+    first, second = find(library, "Read the spec"), find(library, "Draft the model")
+    library.set_edges(second.id, "requires", [first.id])
     store.flush({(second.id, "meta")})
-    meta = read(store, "projects", "discovery", "steps", "draft-the-model", "step.json")
+    meta = read(project_dir / "steps" / "draft-the-model" / "step.json")
     assert meta["edges"] == {"requires": [first.id]}
 
 
-def test_an_edge_kind_this_build_does_not_know_survives(store, product):
+def test_an_edge_kind_this_build_does_not_know_survives(store, library, project_dir):
     """A colleague's newer link must not vanish because an older build opened the file."""
-    path = store.storage.root / "projects/discovery/steps/read-the-spec/step.json"
-    meta = json.loads(path.read_text())
+    path = project_dir / "steps" / "read-the-spec" / "step.json"
+    meta = read(path)
     meta["edges"] = {"invented_by_a_newer_build": ["whatever"]}
     path.write_text(json.dumps(meta))
 
-    reopened_store = ProductStore(LocalStorage(store.storage.root))
+    reopened_store = LibraryStore(store.library_path)
     reopened = reopened_store.load()
-    reopened_store.save_all(reopened)
-    assert json.loads(path.read_text())["edges"] == {"invented_by_a_newer_build": ["whatever"]}
+    flush_everything(reopened_store, reopened)
+    assert read(path)["edges"] == {"invented_by_a_newer_build": ["whatever"]}
 
 
 # -- module data, prose and files ----------------------------------------------------------------
 
 
-def test_module_data_prose_and_files_sit_side_by_side(store, product):
-    step = find(product, "Read the spec")
-    product.set_module_data(step.id, "step_estimation", {"days": 3.0})
-    product.set_text(step.id, "step_description", "# Notes\n")
+def test_module_data_prose_and_files_sit_side_by_side(store, library, project_dir):
+    step = find(library, "Read the spec")
+    library.set_module_data(step.id, "step_estimation", {"days": 3.0})
+    library.set_text(step.id, "step_description", "# Notes\n")
     store.flush({(step.id, "module_data"), (step.id, "module_text")})
     store.files(step.id, "step_description").write_bytes("assets/diagram.png", b"\x89PNG")
 
-    modules = store.storage.root / "projects/discovery/steps/read-the-spec/modules"
+    modules = project_dir / "steps" / "read-the-spec" / "modules"
     assert (modules / "step_estimation.json").is_file()
     assert (modules / "step_description.md").read_text() == "# Notes\n"
     assert (modules / "step_description" / "assets" / "diagram.png").read_bytes() == b"\x89PNG"
 
 
-def test_clearing_module_data_leaves_nothing_behind(store, product):
-    step = find(product, "Read the spec")
-    modules = store.storage.root / "projects/discovery/steps/read-the-spec/modules"
-    product.set_module_data(step.id, "step_estimation", {"days": 3.0})
+def test_clearing_module_data_leaves_nothing_behind(store, library, project_dir):
+    step = find(library, "Read the spec")
+    modules = project_dir / "steps" / "read-the-spec" / "modules"
+    library.set_module_data(step.id, "step_estimation", {"days": 3.0})
     store.flush({(step.id, "module_data")})
     assert modules.is_dir()
 
-    product.set_module_data(step.id, "step_estimation", {})
+    library.set_module_data(step.id, "step_estimation", {})
     store.flush({(step.id, "module_data")})
     assert not modules.exists()
 
 
-def test_clearing_prose_removes_the_document(store, product):
-    step = find(product, "Read the spec")
-    document = store.storage.root / "projects/discovery/steps/read-the-spec/modules/x.md"
-    product.set_text(step.id, "x", "something")
+def test_clearing_prose_removes_the_document(store, library, project_dir):
+    step = find(library, "Read the spec")
+    document = project_dir / "steps" / "read-the-spec" / "modules" / "x.md"
+    library.set_text(step.id, "x", "something")
     store.flush({(step.id, "module_text")})
     assert document.is_file()
 
-    product.set_text(step.id, "x", "")
+    library.set_text(step.id, "x", "")
     store.flush({(step.id, "module_text")})
     assert not document.exists()
 
 
-def test_an_unknown_module_entry_is_round_tripped(store, product):
+def test_an_unknown_module_entry_is_round_tripped(store, library, project_dir):
     """Data belonging to a module this build does not have must survive untouched."""
-    modules = store.storage.root / "projects/discovery/steps/read-the-spec/modules"
+    modules = project_dir / "steps" / "read-the-spec" / "modules"
     modules.mkdir(parents=True, exist_ok=True)
     (modules / "from_the_future.json").write_text('{"kept": true}\n')
 
-    reopened_store = ProductStore(LocalStorage(store.storage.root))
+    reopened_store = LibraryStore(store.library_path)
     reopened = reopened_store.load()
-    reopened_store.save_all(reopened)
-    assert json.loads((modules / "from_the_future.json").read_text()) == {"kept": True}
+    flush_everything(reopened_store, reopened)
+    assert read(modules / "from_the_future.json") == {"kept": True}
 
 
-def test_a_file_area_this_build_does_not_know_is_left_alone(store, product):
-    modules = store.storage.root / "projects/discovery/steps/read-the-spec/modules"
+def test_a_file_area_this_build_does_not_know_is_left_alone(store, library, project_dir):
+    modules = project_dir / "steps" / "read-the-spec" / "modules"
     (modules / "from_the_future" / "assets").mkdir(parents=True)
     (modules / "from_the_future" / "assets" / "x.png").write_bytes(b"png")
 
     # Reopen, because the file above was written by "another build" and this store has to
-    # have seen the workspace as it now is before it may write to it.
-    reopened_store = ProductStore(LocalStorage(store.storage.root))
+    # have seen the project as it now is before it may write to it.
+    reopened_store = LibraryStore(store.library_path)
     reopened = reopened_store.load()
     step = find(reopened, "Read the spec")
     reopened.set_module_data(step.id, "step_estimation", {"days": 1.0})
@@ -181,100 +213,228 @@ def test_a_file_area_this_build_does_not_know_is_left_alone(store, product):
     assert (modules / "from_the_future" / "assets" / "x.png").is_file()
 
 
-def test_removing_the_last_file_removes_the_area(store, product):
-    step = find(product, "Read the spec")
+def test_removing_the_last_file_removes_the_area(store, library, project_dir):
+    step = find(library, "Read the spec")
     area = store.files(step.id, "step_description")
     area.write_bytes("diagram.png", b"png")
     area.remove("diagram.png")
-    assert not (store.storage.root / area.directory).exists()
+    assert not (project_dir / "steps" / "read-the-spec" / "modules" / "step_description").exists()
 
 
 # -- two writers, one folder -------------------------------------------------------------------
 
 
-def test_a_workspace_changed_underneath_is_noticed(store, product):
+def test_a_project_changed_underneath_is_noticed(store, library, project_dir):
     assert not store.changed_underneath()
-    (store.storage.root / "projects/discovery/project.json").write_text("{}\n")
+    (project_dir / "note.md").write_text("left by an agent\n")
     assert store.changed_underneath()
 
 
-def test_flushing_over_someone_elses_write_is_refused(store, product):
+def test_the_library_file_changing_is_noticed_too(store, library):
+    assert not store.changed_underneath()
+    write_library_file(store.library_path, [])
+    assert store.changed_underneath()
+
+
+def test_gits_own_files_are_never_another_writer(tmp_path):
+    """A project at the repository root — New Project's git-init flow — puts `.git/`
+    inside the watched directory, and git rewrites its own files on every commit and
+    even on `git status`. Counting that as an outside change made every Save reload the
+    application in a loop; a real content change must still be seen."""
+    import subprocess
+
+    repo = init_repo(tmp_path / "at-root")
+    project_dir = seed_project(repo, "At Root")
+    path = tmp_path / "library.json"
+    write_library_file(path, [project_dir])
+    store = LibraryStore(path)
+    store.load()
+    assert not store.changed_underneath()
+
+    git = ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-qm", "Save"], check=True, capture_output=True)
+    subprocess.run([*git, "status", "--porcelain"], check=True, capture_output=True)
+    assert not store.changed_underneath()
+
+    (project_dir / "note.md").write_text("left by an agent\n")
+    assert store.changed_underneath()
+
+
+def test_flushing_over_someone_elses_write_is_refused(store, library, project_dir):
     """The scenario this exists for: an agent edits the folder while a window is open.
 
     A flush that rewrote the node from a model which never saw that edit would erase it
     silently, and orphan removal would delete a directory the agent had just created.
     """
-    step = find(product, "Read the spec")
-    other = ProductStore(LocalStorage(store.storage.root))
-    other_product = other.load()
-    other_step = find(other_product, "Read the spec")
-    other_product.set_field(other_step.id, "title", "Written by an agent")
+    step = find(library, "Read the spec")
+    other = LibraryStore(store.library_path)
+    other_library = other.load()
+    other_step = find(other_library, "Read the spec")
+    other_library.set_field(other_step.id, "title", "Written by an agent")
     other.flush({(other_step.id, "meta")})
 
-    product.set_field(step.id, "title", "Written in the window")
+    library.set_field(step.id, "title", "Written in the window")
     with pytest.raises(StaleWorkspaceError, match="changed on disk"):
         store.flush({(step.id, "meta")})
 
-    meta = read(store, "projects", "discovery", "steps", "read-the-spec", "step.json")
+    meta = read(project_dir / "steps" / "read-the-spec" / "step.json")
     assert meta["title"] == "Written by an agent"
 
 
-def test_reopening_clears_the_refusal(store, product):
+def test_reopening_clears_the_refusal(store, library, project_dir):
     """Reload is the way out, and it is the only one that cannot lose anybody's work."""
-    (store.storage.root / "projects/discovery/project.json").write_text("{}\n")
-    reopened_store = ProductStore(LocalStorage(store.storage.root))
+    path = project_dir / "steps" / "read-the-spec" / "step.json"
+    meta = read(path)
+    meta["title"] = "Edited by hand"
+    path.write_text(json.dumps(meta))
+
+    reopened_store = LibraryStore(store.library_path)
     reopened = reopened_store.load()
     assert not reopened_store.changed_underneath()
-    reopened_store.flush({(reopened.id, "meta")})
+    reopened_store.flush({(reopened.projects[0].id, "meta")})
+
+
+def test_an_outside_edit_in_one_project_does_not_block_another(tmp_path):
+    """Staleness is per project: an agent working in Beta never blocks saving Alpha."""
+    repo = init_repo(tmp_path / "repo")
+    alpha_dir = seed_project(repo / "alpha", "Alpha")
+    beta_dir = seed_project(repo / "beta", "Beta")
+    path = tmp_path / "library.json"
+    write_library_file(path, [alpha_dir, beta_dir])
+    store = LibraryStore(path)
+    loaded = store.load()
+    alpha, beta = loaded.projects
+
+    (beta_dir / "note.md").write_text("left by an agent\n")
+
+    loaded.set_field(alpha.id, "summary", "still saveable")
+    store.flush({(alpha.id, "meta")})
+    assert read(alpha_dir / "project.dproj")["summary"] == "still saveable"
+
+    loaded.set_field(beta.id, "summary", "would overwrite the agent")
+    with pytest.raises(StaleWorkspaceError, match="Beta"):
+        store.flush({(beta.id, "meta")})
+
+
+# -- membership --------------------------------------------------------------------------------
+
+
+def test_a_bad_entry_becomes_a_problem_row_and_the_rest_still_load(tmp_path):
+    """One row this build cannot read must not take every healthy project down with it."""
+    repo = init_repo(tmp_path / "repo")
+    healthy = seed_project(repo / "healthy", "Healthy")
+    missing = tmp_path / "vanished"
+    no_meta = repo / "just-a-folder"
+    no_meta.mkdir()
+    outside = seed_project(tmp_path / "outside", "Outside")  # not inside any git repo
+    path = tmp_path / "library.json"
+    write_library_file(path, [healthy, missing, no_meta, outside])
+
+    store = LibraryStore(path)
+    loaded = store.load()
+
+    assert [p.title for p in loaded.projects] == ["Healthy"]
+    problems = {problem.path: problem.reason for problem in store.problems()}
+    assert "does not exist" in problems[missing]
+    assert "project.dproj" in problems[no_meta]
+    assert "not inside a git repository" in problems[outside]
+
+
+def test_adding_a_project_rewrites_the_library_file(tmp_path):
+    """A structure mark on the library root means membership changed — and entries that
+    failed to open keep their place in the file: they are still the user's projects."""
+    repo = init_repo(tmp_path / "repo")
+    first = seed_project(repo / "one", "One")
+    missing = tmp_path / "vanished"
+    path = tmp_path / "library.json"
+    write_library_file(path, [first, missing])
+    store = LibraryStore(path)
+    loaded = store.load()
+    assert [problem.path for problem in store.problems()] == [missing]
+
+    second = seed_project(repo / "two", "Two")
+    project = store.attach(second)
+    loaded.add_child(loaded.id, project)
+    store.flush({(loaded.id, "structure")})
+
+    assert read_library_file(path) == [first, second, missing]
+
+
+def test_two_projects_in_one_repo_share_one_scoped_provider(tmp_path):
+    """A Save should commit that repository once, covering exactly both directories."""
+    repo = init_repo(tmp_path / "repo")
+    a = seed_project(repo / "plans" / "alpha", "Alpha")
+    b = seed_project(repo / "beta", "Beta")
+    path = tmp_path / "library.json"
+    write_library_file(path, [a, b])
+    store = LibraryStore(path)
+    store.load()
+
+    from dplanner.core.storage.git import GitStorage
+
+    groups = store.repo_groups()
+    assert len(groups) == 1
+    group = groups[0]
+    assert isinstance(group, GitStorage)  # A repo group is a provider with a history.
+    assert set(group.scopes) == {"plans/alpha", "beta"}
+
+
+def test_two_repos_get_two_providers(tmp_path):
+    a = seed_project(init_repo(tmp_path / "first") / "alpha", "Alpha")
+    b = seed_project(init_repo(tmp_path / "second") / "beta", "Beta")
+    path = tmp_path / "library.json"
+    write_library_file(path, [a, b])
+    store = LibraryStore(path)
+    store.load()
+    assert len(store.repo_groups()) == 2
 
 
 # -- structure ---------------------------------------------------------------------------------
 
 
-def test_flush_resolves_each_kind_from_one_flat_mark(store, product):
+def test_flush_resolves_each_kind_from_one_flat_mark(store, library, project_dir):
     """`flush` is handed (id, aspect) pairs with no kind in them, so it has to work the
-    kind out — the one place a three-level model meets a flat repository face."""
-    project = find(product, "Discovery")
-    step = find(product, "Read the spec")
-    product.set_field(product.id, "name", "Widget Two")
-    product.set_field(project.id, "title", "Discovery Phase")
-    product.set_field(step.id, "title", "Read the whole spec")
-    store.flush({(product.id, "meta"), (project.id, "meta"), (step.id, "meta")})
+    kind out — the one place a two-level model meets a flat repository face."""
+    project = find(library, "Discovery")
+    step = find(library, "Read the spec")
+    library.set_field(project.id, "title", "Discovery Phase")
+    library.set_field(step.id, "title", "Read the whole spec")
+    store.flush({(project.id, "meta"), (step.id, "meta")})
 
-    assert read(store, "product.json")["name"] == "Widget Two"
-    assert read(store, "projects", "discovery", "project.json")["title"] == "Discovery Phase"
-    meta = read(store, "projects", "discovery", "steps", "read-the-spec", "step.json")
+    assert read(project_dir / "project.dproj")["title"] == "Discovery Phase"
+    meta = read(project_dir / "steps" / "read-the-spec" / "step.json")
     assert meta["title"] == "Read the whole spec"
 
 
-def test_a_new_step_gets_its_directory_on_flush(store, product):
-    project = find(product, "Discovery")
-    product.add_child(project.id, Step(title="Review"))
+def test_a_new_step_gets_its_directory_on_flush(store, library, project_dir):
+    project = find(library, "Discovery")
+    library.add_child(project.id, Step(title="Review"))
     store.flush({(project.id, "structure")})
-    assert (store.storage.root / "projects/discovery/steps/review/step.json").is_file()
+    assert (project_dir / "steps" / "review" / "step.json").is_file()
 
 
-def test_a_removed_step_takes_its_directory_with_it(store, product):
-    project = find(product, "Discovery")
-    product.remove_child(find(product, "Read the spec").id)
+def test_a_removed_step_takes_its_directory_with_it(store, library, project_dir):
+    project = find(library, "Discovery")
+    library.remove_child(find(library, "Read the spec").id)
     store.flush({(project.id, "structure")})
-    assert not (store.storage.root / "projects/discovery/steps/read-the-spec").exists()
+    assert not (project_dir / "steps" / "read-the-spec").exists()
 
 
-def test_deleting_and_undoing_writes_the_subtree_again(store, product):
-    project = find(product, "Discovery")
-    step = find(product, "Read the spec")
-    parent_id, index = product.remove_child(step.id)
+def test_deleting_and_undoing_writes_the_subtree_again(store, library, project_dir):
+    project = find(library, "Discovery")
+    step = find(library, "Read the spec")
+    parent_id, index = library.remove_child(step.id)
     store.flush({(project.id, "structure")})
-    product.restore_child(parent_id, step, index)
+    library.restore_child(parent_id, step, index)
     store.flush({(project.id, "structure")})
-    assert (store.storage.root / "projects/discovery/steps/read-the-spec/step.json").is_file()
+    assert (project_dir / "steps" / "read-the-spec" / "step.json").is_file()
 
 
-def test_an_unlisted_directory_holding_a_step_is_adopted(store, product):
+def test_an_unlisted_directory_holding_a_step_is_adopted(store, library, project_dir):
     """A folder a merge resurrected is data, not noise."""
-    stray = store.storage.root / "projects/discovery/steps/found-by-hand"
+    stray = project_dir / "steps" / "found-by-hand"
     stray.mkdir(parents=True)
     (stray / "step.json").write_text('{"id": "abc123", "title": "Found by hand"}\n')
-    reopened = ProductStore(LocalStorage(store.storage.root)).load()
+    reopened = LibraryStore(store.library_path).load()
     assert "Found by hand" in [step.title for step in reopened.projects[0].steps]

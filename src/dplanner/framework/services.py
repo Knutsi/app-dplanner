@@ -19,7 +19,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from dplanner.core.repository import Repository
-from dplanner.core.storage.provider import StorageProvider
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import ContextService
@@ -38,7 +37,7 @@ from dplanner.framework.zoom import ZoomService
 
 if TYPE_CHECKING:
     from dplanner.framework.main_window import AppWindow
-    from dplanner.framework.session import WorkspaceSwitcher
+    from dplanner.framework.session import SessionControl
 
 
 @dataclass
@@ -47,7 +46,6 @@ class AppServices:
     # ``repo`` is typed as the protocol so the framework compiles against any model; the
     # composition root knows the concrete type and hands modules whatever they need.
     repo: Repository[Any]
-    storage: StorageProvider
     # The loaded aggregate itself, whatever your domain calls it. Typed loosely here on
     # purpose — the framework never touches it, and the composition root re-types it the
     # moment it puts it on a module's Deps.
@@ -76,7 +74,7 @@ class AppServices:
     tasks: TaskService
     llm_providers: LLMProviderRegistry
     llm: LLMService
-    switcher: WorkspaceSwitcher
+    switcher: SessionControl
 
     # The feature modules themselves, in registration order. Not for modules — they never
     # see this bundle — but so a test can reach any part of the running application, which

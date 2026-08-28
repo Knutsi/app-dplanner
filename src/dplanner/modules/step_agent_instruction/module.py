@@ -11,7 +11,7 @@ whatever context the composition root hands in — this module never learns what
 is), stage its attached files beside the prompt in a per-run temp directory, and open a
 terminal on it. The terminal is a **peer process the user owns**, deliberately not a
 TaskRunner task — see ``launcher.py``. Preview Prompt and the no-terminal fallback show
-the same assembled text, because the prompt is the product and the terminal was only one
+the same assembled text, because the prompt is the library and the terminal was only one
 way to hand it over.
 """
 
@@ -22,7 +22,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.fsio import slugify
-from dplanner.domain.model import Product, Step, StepId
+from dplanner.domain.model import Library, Step, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -83,8 +83,8 @@ def _no_record(_step_id: StepId) -> None:
 
 @dataclass(frozen=True)
 class StepAgentInstructionDeps:
-    product: Product
-    undo: UndoService[Product]
+    library: Library
+    undo: UndoService[Library]
     sections: InspectorSectionRegistry
     actions: ActionRegistry
     context: ContextService  # The Agent tab's buttons evaluate their verbs against it.
@@ -95,15 +95,15 @@ class StepAgentInstructionDeps:
     # the prompt and staged beside it at launch.
     files: FilesFor
     read_asset: Callable[[str], bytes | None]
+    # Where the agent runs: the project's git repository root, resolved by the composition
+    # root from the step's project directory. "" when the repository cannot be found.
+    workdir_for: Callable[[StepId], str]
     # The project panel's card registry; None is a build without a project panel.
     cards: InspectorSectionRegistry | None = None
     # The cross-module half of the prompt, assembled by the composition root — the one
     # place allowed to know what the other aspects store. The same object feeds
     # ``dplanner agent prompt``, so the two surfaces cannot drift.
     briefing: Briefing = EMPTY_BRIEFING
-    # Where the agent runs. The root resolves the project's checkout over the product's;
-    # None is the product-only build, not a second copy of that rule.
-    checkout_for: Callable[[StepId], str] | None = None
     # Stamps "an agent shell was launched on this step" — the step_agent_run aspect,
     # reached through the root because modules never import each other.
     record_launch: Callable[[StepId], None] = field(default=_no_record)
@@ -119,27 +119,27 @@ class StepAgentInstructionModule:
     def register(self) -> None:
         deps = self._deps
 
-        # The tab thinks per step id; the briefing speaks the shared (product, step,
+        # The tab thinks per step id; the briefing speaks the shared (library, step,
         # files) vocabulary. The one adapter lives here, in the module that owns both.
         def parts_for(step_id: StepId) -> Sequence[PromptPart]:
-            return deps.briefing.parts(deps.product, deps.product.step(step_id), deps.files)
+            return deps.briefing.parts(deps.library, deps.library.step(step_id), deps.files)
 
         def sections_for(step_id: StepId) -> Sequence[PromptPart]:
-            return deps.briefing.sections(deps.product, deps.product.step(step_id), deps.files)
+            return deps.briefing.sections(deps.library, deps.library.step(step_id), deps.files)
 
         def make_section() -> AgentSection:
             # The tab's buttons are the same verbs the menus run — evaluated lazily, so
             # the registration order of action and section never matters.
             return AgentSection(
-                deps.product,
+                deps.library,
                 deps.undo,
                 PLACEHOLDER,
                 prompt_parts=parts_for,
                 prompt_sections=sections_for,
                 read_asset=deps.read_asset,
                 # The Prompt tab shows the same assembly Run Agent launches with —
-                # unstaged, so its paths are workspace-relative and read_asset resolves.
-                assembled=lambda step_id: self._assembled(deps.product.step(step_id)),
+                # unstaged, so its paths are the on-disk absolutes read_asset resolves.
+                assembled=lambda step_id: self._assembled(deps.library.step(step_id)),
                 files=deps.files,
                 run_state=lambda: deps.actions.spec("agent.run").state(deps.context.current()),
                 run=lambda: deps.actions.run("agent.run", deps.context.current()),
@@ -164,7 +164,7 @@ class StepAgentInstructionModule:
                     label="Agent",
                     order=20,
                     factory=lambda: ProjectInstructionCard(
-                        deps.product, deps.undo, deps.files
+                        deps.library, deps.undo, deps.files
                     ),
                     icon=typewriter_icon,
                 )
@@ -216,10 +216,10 @@ class StepAgentInstructionModule:
             return ActionState(
                 enabled=False, label="Run Agent — write an agent instruction first"
             )
-        if not self._checkout(step.id):
+        if not self._deps.workdir_for(step.id):
             return ActionState(
                 enabled=False,
-                label="Run Agent — set a checkout on the project or the product first",
+                label="Run Agent — the project's folder is not in a git repository",
             )
         return ENABLED
 
@@ -228,14 +228,10 @@ class StepAgentInstructionModule:
         inherited context worth seeing."""
         return DISABLED if self._focused(context) is None else ENABLED
 
-    def _checkout(self, step_id: StepId) -> str:
-        deps = self._deps
-        return deps.checkout_for(step_id) if deps.checkout_for else deps.product.checkout
-
     def _assembled(self, step: Step, staged: Mapping[str, str] | None = None) -> AssembledPrompt:
         """The briefing, with every referenced file path mapped through ``staged``."""
         deps = self._deps
-        project = deps.product.project_of(step.id)
+        project = deps.library.project_of(step.id)
         remap: Mapping[str, str] = staged or {}
 
         def place(paths: Sequence[str]) -> tuple[str, ...]:
@@ -243,11 +239,11 @@ class StepAgentInstructionModule:
 
         parts = [
             PromptPart(heading=part.heading, body=part.body, files=place(part.files))
-            for part in deps.briefing.parts(deps.product, step, deps.files)
+            for part in deps.briefing.parts(deps.library, step, deps.files)
         ]
         sections = [
             PromptPart(heading=section.heading, body=section.body, files=place(section.files))
-            for section in deps.briefing.sections(deps.product, step, deps.files)
+            for section in deps.briefing.sections(deps.library, step, deps.files)
         ]
         project_files = place(asset_paths(deps.files, project.id))
         instruction_files = place(asset_paths(deps.files, step.id))
@@ -272,7 +268,7 @@ class StepAgentInstructionModule:
         run_dir = launcher.new_run_dir()
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
-        workdir = Path(self._checkout(step.id)).expanduser()
+        workdir = Path(deps.workdir_for(step.id)).expanduser()
         # The slug carries a short id so two steps with one title never share a worktree.
         worktree = f"{slugify(step.title, fallback='step')}-{step.id[:6]}" if use_worktree() else ""
         prepared = launcher.prepare(
@@ -308,6 +304,6 @@ class StepAgentInstructionModule:
 
     def _focused(self, context: Context) -> Step | None:
         step_id = context.focus_entity("step")
-        if step_id is None or not self._deps.product.has(step_id):
+        if step_id is None or not self._deps.library.has(step_id):
             return None
-        return self._deps.product.step(step_id)
+        return self._deps.library.step(step_id)

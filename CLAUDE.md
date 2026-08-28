@@ -1,12 +1,13 @@
 # Working on DPlanner
 
-DPlanner is a **development planner**. It plans a *product* — one codebase, its repository,
-and the work planned against it — and it is meant to be driven by a coding agent as readily
-as by a person.
+DPlanner is a **development planner**. It plans *projects* — each one a directory inside a
+git repository, listed in a per-user project library — and it is meant to be driven by a
+coding agent as readily as by a person.
 
 ```
-Product  ── the system level: a name, a repository URL, a checkout. One per window.
-└── Project  ── a unit of work with a beginning and an end
+Library  ── the account level: a per-user file listing project directories. One per window.
+└── Project  ── a unit of work with a beginning and an end — a folder with a project.dproj,
+    │           inside a git repository (its repo root and remote are derived, never stored)
     └── Step  ── a node in that project's graph
 ```
 
@@ -206,22 +207,32 @@ root, stop and look for the registry or capability you have not found yet.
   and has no thread affinity, so the model is only ever changed on the GUI thread. Anything
   computed off it returns through `TaskRunner`, the one place that uses real Qt signals.
 - **There is no Save-file action.** Autosave writes 1.5 s after the last change; *Save*
-  means recording a version, and it only exists when the storage provider has a history. The
-  CLI has no timer: a run is a transaction that flushes once, at the end, and writes nothing
-  if the verb failed.
+  means recording a version: **one commit per dirty repository, scoped to that repository's
+  project directories** — several projects in one repo save as one commit, and the user's
+  source code is never swept up. Quitting with dirty repos asks once, listing them
+  (`modules/sync/exit_dialog.py`). Branch verbs act on the focused project's repository.
+  The CLI has no timer: a run is a transaction that flushes once, at the end, and writes
+  nothing if the verb failed.
 - **Every model change goes through a command** on the single undo stack, and carries an
   `origin` so the view that made the edit can ignore its own echo.
 - **A background sync of an external fact applies its command directly, off the undo
   stack, with its own origin** — undoing the user's edit must never restore a stale PR
   state instead. `modules/github/refresh.py` is the example; `ARCHITECTURE.md`'s *Syncing
   an external fact* has the reasoning.
-- **Two writers are expected.** An agent runs `dplanner` against a folder a window has open.
-  The store records what it last read or wrote and **refuses to flush over anything that
-  changed underneath** (`StaleWorkspaceError`); the window notices and reloads when it owes
-  nothing, and says so when it does. That one check also makes a lock between CLI runs
-  unnecessary.
-- **Opening a different workspace is a full rebuild**, not a reset. Registries refuse
-  duplicate ids, which is what makes that the only implementable answer — and the correct one.
+- **Two writers are expected.** An agent runs `dplanner` against a project a window has
+  open. The store records what each project directory last looked like and **refuses to
+  flush over anything that changed underneath** (`StaleWorkspaceError`) — checked **per
+  project**, so one project's outside edit never blocks saving another; the library file
+  has its own stamp. The window notices and reloads when it owes nothing, and says so when
+  it does. That one check also makes a lock between CLI runs unnecessary.
+- **Reloading the library is a full rebuild**, not a reset. Registries refuse duplicate
+  ids, which is what makes that the only implementable answer — and the correct one.
+  Opening a *different* library is not even a reload: File ▸ New/Open Project Library
+  spawns a detached instance (`modules/library/module.py::spawn_instance`).
+- **Project membership changes bypass the undo stack.** New/Open Project may `git init` and
+  always writes outside any store; Remove from Library only forgets. Neither is honestly
+  reversible, so they apply directly with `LIBRARY_ORIGIN` and the library file is
+  rewritten by the ordinary flush (a structure mark on the library root).
 - **Blocking work runs through `TaskRunner`**, never on the GUI thread: storage operations,
   LLM calls, anything that touches the network. It appears in the task centre for free.
   The one documented exception — storage operations that rewrite the working tree, which
@@ -229,9 +240,9 @@ root, stop and look for the registry or capability you have not found yet.
   operations that rewrite the working tree are synchronous*.
 - **An edge lives on the step that waits**, is validated against the project, and is
   deliberately *not* rewritten when a step is deleted — undo has to restore the graph
-  exactly. `Product.requires()` skips ids it cannot resolve. Edge kinds this build does not
+  exactly. `Library.requires()` skips ids it cannot resolve. Edge kinds this build does not
   know are loaded and written back untouched.
-- **`Product.link_refusal()` is the only authority on a legal edge.** `set_edges` asks it
+- **`Library.link_refusal()` is the only authority on a legal edge.** `set_edges` asks it
   before writing, and `steps.link`'s state asks it to decide whether the menu entry is enabled
   and what a greyed one says. Never write a second reachability check in a view — the one that
   existed refused every drop for a fortnight because it read gesture state that had already
@@ -261,17 +272,17 @@ root, stop and look for the registry or capability you have not found yet.
 - **Renaming a module is a `Takeover`, not a migration.** The on-disk id is the contract
   between the old module and the new one, so the successor's package carries the retired
   id and a converter and the data moves at open — see `modules/estimation/aspect.py` and
-  `FORMAT.md`'s *Retiring a module*. No product-format change, and no module importing
+  `FORMAT.md`'s *Retiring a module*. No project-format change, and no module importing
   another.
 - **Automatic graph layout is never persisted; an explicit sort is.** A node nobody moved is
   placed by dependency depth every time the project opens — storing that would make merely
-  opening a tab dirty the workspace, and every CLI-created step would grow a position file
+  opening a tab dirty the project, and every CLI-created step would grow a position file
   behind the user's back. A sort *action* (`canvas.sort_*`, `dplanner layout sort`) is a
   user gesture, so it writes through the undo stack like a drag. Named layouts and regions
   are project-level entries under the same `project_editor` id — `ARCHITECTURE.md`'s *An
   explicit sort persists; the ambient layout never does* has the reasoning.
 - **A module that writes a number owes it a `float`.** An `int` writes as `5` where a
-  reloaded float writes as `5.0`, making a file's bytes depend on whether the workspace had
+  reloaded float writes as `5.0`, making a file's bytes depend on whether the project had
   been reopened. `module_data` is opaque to the model, so the coercion belongs in the
   aspect's `write()` — see `modules/estimation/aspect.py`.
 - **Editing a spec in-app is a replace.** The Specs tab's markdown editor flushes a session
@@ -282,9 +293,11 @@ root, stop and look for the registry or capability you have not found yet.
   replace* has the reasoning.
 - **Running an agent launches a peer, never a task.** *Run Agent* spawns a detached terminal
   the user owns — not a `TaskRunner` body, which would promise cancel and progress nobody
-  can honestly deliver. The prompt goes to a per-run temp directory, never the workspace.
-  The agent reports back through the CLI (`status set`, `handoff set`). `ARCHITECTURE.md`'s
-  *Running an agent launches a peer, not a task* has the reasoning.
+  can honestly deliver. The terminal opens at the project's **git repository root** (via
+  the `workdir_for` seam the composition root wires from `find_repo_root`). The prompt goes
+  to a per-run temp directory, never the project. The agent reports back through the CLI
+  (`status set`, `handoff set`). `ARCHITECTURE.md`'s *Running an agent launches a peer, not
+  a task* has the reasoning.
 - **Inherited handoffs are computed, never stored** — `step_handoff/handoff.py` is one
   function with three readers (tab, CLI, agent prompt). Same rule as the ordering, and the
   reasoning is in `ARCHITECTURE.md`'s *Pass-forward is derived at read time*.
@@ -296,13 +309,15 @@ root, stop and look for the registry or capability you have not found yet.
 - **A module's project-level editor is a card, registered into `services.detail_cards`.**
   Same `InspectorSection` contract as a step tab, with a project id in `show_target`; the
   project panel renders the stack. Register before `project_editor` in `default_modules()` —
-  the panel is built from whatever has registered by then. `modules/project_repo/` and the
-  agent instruction's card are the examples; `ARCHITECTURE.md`'s *The project panel hosts
-  the same contract, as cards* has the reasoning.
-- **A project may carry its own repository and checkout.** Resolution — the project's, else
-  the product's — is one function in `modules/project_repo/repo.py`, and Run Agent is wired
-  through it; never write a second copy. `ARCHITECTURE.md`'s *A project's repository
-  overrides the product's* has the reasoning.
+  the panel is built from whatever has registered by then. The agent instruction's card is
+  the example; `ARCHITECTURE.md`'s *The project panel hosts the same contract, as cards*
+  has the reasoning.
+- **Repository facts are derived, never stored.** A project lives in its repository, so the
+  repo root is `find_repo_root(project dir)` and the remote URL is git's own answer
+  (`origin_url`) — both re-exported through `core/storage/locations.py`, the one import
+  path allowed above the storage layer. Run Agent and the github module read them through
+  seams wired by the composition root; never store a URL beside them. `ARCHITECTURE.md`'s
+  *Repository facts are derived from the project's directory* has the reasoning.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.
