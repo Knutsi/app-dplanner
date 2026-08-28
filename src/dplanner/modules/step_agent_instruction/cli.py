@@ -54,10 +54,15 @@ def commands(
 ) -> list[CliCommand]:
     def _prompt(context: CliContext, args: Namespace) -> int:
         step = find_step(context.product, args.step)
-        instruction = read(step)
-        if not instruction:
-            raise CliError(f"{step.title!r} has no agent instruction")
         project = context.product.project_of(step.id)
+        instruction = read(step)
+        project_instruction = read_project(project)
+        if not instruction and not project_instruction:
+            raise CliError(
+                f"{step.title!r} has no agent instruction and neither does its project — "
+                f"set one with `dplanner agent set {step.title!r} --file …`, or a standing "
+                f"one with `dplanner agent set --project {project.title!r} --file …`"
+            )
         assembled = assemble(
             step_title=step.title or "Untitled step",
             project_title=project.title or "Untitled project",
@@ -65,7 +70,7 @@ def commands(
             parts=prompt_parts(context.product, step, context.store.files),
             epilogue=epilogue(step),
             preamble=preamble,
-            project_instruction=read_project(project),
+            project_instruction=project_instruction,
             project_files=asset_paths(context.store.files, project.id),
             instruction_files=asset_paths(context.store.files, step.id),
         )

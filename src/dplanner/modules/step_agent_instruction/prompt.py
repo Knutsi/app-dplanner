@@ -59,7 +59,8 @@ def assemble(
     ``preamble`` opens the briefing — preflight checks the agent must pass before touching
     the work, worded by the composition root like the epilogue is.
     ``project_instruction`` is the project's standing instruction, ahead of the step's own;
-    its section disappears entirely when it is empty and carries no files.
+    either instruction's section disappears entirely when it is empty and carries no files,
+    which is what lets a step ride on the standing instruction alone.
     """
     lines = [f"# Step: {step_title}", "", f"Project: {project_title}", ""]
     if preamble:
@@ -69,8 +70,11 @@ def assemble(
         if project_instruction:
             lines += [project_instruction.rstrip(), ""]
         lines += _files_lines(project_files)
-    lines += ["## Instructions", "", instruction.rstrip(), ""]
-    lines += _files_lines(instruction_files)
+    if instruction or instruction_files:
+        lines += ["## Instructions", ""]
+        if instruction:
+            lines += [instruction.rstrip(), ""]
+        lines += _files_lines(instruction_files)
     if parts:
         lines += ["## Context handed forward from earlier steps", ""]
         for part in parts:

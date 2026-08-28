@@ -201,6 +201,26 @@ def test_agent_prompt_opens_with_the_project_instruction(cli, cli_stdin):
     assert shown["prompt"].index("House rules.") < shown["prompt"].index("Ship it.")
 
 
+def test_agent_prompt_works_from_the_standing_instruction_alone(cli, cli_stdin):
+    """The standing instruction is "prepended to every briefing" — so a step with no
+    instruction of its own still has a briefing, exactly as the GUI's Preview shows."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
+    shown = data(cli("agent", "prompt", "Deploy", "--json"))
+    assert "House rules." in shown["prompt"]
+    # No empty section for the instruction the step does not have.
+    assert "## Instructions" not in shown["prompt"]
+
+
+def test_agent_prompt_with_no_instruction_anywhere_names_both_fixes(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    message = cli("agent", "prompt", "Deploy", expect=1)
+    assert "agent set 'Deploy'" in message
+    assert "agent set --project" in message
+
+
 # -- export and import -------------------------------------------------------------------------
 
 
