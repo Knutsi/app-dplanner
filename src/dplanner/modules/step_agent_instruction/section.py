@@ -447,7 +447,7 @@ class AgentSection(QWidget):
         secondary.setAlpha(160)
 
         def tinted(hue: int) -> QColor:
-            return QColor.fromHsl(hue, 110, ink.lightness())
+            return QColor.fromHsl(hue, 190, ink.lightness())
 
         return {
             "header": secondary,
