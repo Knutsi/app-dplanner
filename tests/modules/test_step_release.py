@@ -1,4 +1,4 @@
-"""The release aspect: the label on disk, its CLI, and the Release tab."""
+"""The release aspect: the label on disk, its CLI, the Release tab, and the Type toggle."""
 
 import json
 from io import StringIO
@@ -11,7 +11,13 @@ from dplanner.core.storage.local import LocalStorage
 from dplanner.domain.model import Step
 from dplanner.domain.seed import create_product
 from dplanner.modules import default_cli_commands, default_module_formats
-from dplanner.modules.step_release.aspect import MODULE_ID, read, summary, write
+from dplanner.modules.step_release.aspect import (
+    MODULE_ID,
+    next_release_label,
+    read,
+    summary,
+    write,
+)
 
 # -- the aspect, with no application at all ----------------------------------------------------
 
@@ -31,6 +37,42 @@ def test_a_blank_label_writes_nothing():
     """Absence encodes the default: no label, no file."""
     assert write("") == {}
     assert write("   ") == {}
+
+
+# -- the generated label -----------------------------------------------------------------------
+
+
+def test_the_first_release_is_v1():
+    assert next_release_label([]) == "v1"
+    assert next_release_label(["", "  "]) == "v1"
+
+
+def test_the_next_label_increments_the_highest():
+    assert next_release_label(["v1", "v2"]) == "v3"
+    assert next_release_label(["v2", "v1"]) == "v3"
+
+
+def test_dotted_labels_keep_their_shape():
+    assert next_release_label(["v1.0"]) == "v2.0"
+    assert next_release_label(["v1.2.3"]) == "v2.0.0"
+
+
+def test_the_prefix_is_preserved():
+    assert next_release_label(["release 4"]) == "release 5"
+
+
+def test_non_numeric_labels_fall_back_to_counting():
+    assert next_release_label(["MVP"]) == "v2"
+    assert next_release_label(["MVP", "Beta"]) == "v3"
+
+
+def test_mixed_labels_follow_the_numbered_ones():
+    assert next_release_label(["MVP", "v1"]) == "v2"
+
+
+def test_a_generated_label_never_collides():
+    labels = ["beta 1", "beta 2"]
+    assert next_release_label(labels) not in labels
 
 
 # -- the CLI -----------------------------------------------------------------------------------
@@ -73,6 +115,16 @@ def test_set_and_clear(cli, workspace):
 
 def test_clearing_a_step_that_is_not_a_release_says_so(cli):
     assert "is not a release" in cli("release", "clear", "Build the core", expect=1)
+
+
+def test_set_without_label_generates_the_next_one(cli, workspace):
+    cli("release", "set", "Build the core")
+    cli("release", "set", "Ship the beta")
+    steps = workspace / "projects" / "discovery" / "steps"
+    first = json.loads((steps / "build-the-core" / "modules" / "step_release.json").read_text())
+    second = json.loads((steps / "ship-the-beta" / "modules" / "step_release.json").read_text())
+    assert first["label"] == "v1"
+    assert second["label"] == "v2"
 
 
 def test_list_is_the_roadmap_in_working_order(cli):
@@ -128,3 +180,79 @@ def test_committing_the_same_value_pushes_nothing(services, panel_step, section)
     section.label.setText("")
     section.label.editingFinished.emit()
     assert not services.undo.can_undo()
+
+
+# -- the Type toggle ---------------------------------------------------------------------------
+
+
+def select(services, step):
+    from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+
+    services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))
+
+
+@pytest.fixture
+def second_step(services, panel_step):
+    from dplanner.domain.commands import AddNodeCommand
+
+    product = services.document
+    project = product.project_of(panel_step.id)
+    step = Step(title="Build the core")
+    AddNodeCommand(project.id, step).redo(product)
+    return step
+
+
+def test_the_release_toggle_action_exists(services):
+    spec = services.actions.spec("release.toggle")
+    assert spec.menu == "Step" and spec.group == "type" and spec.submenu == "Type"
+
+
+def test_a_release_step_shows_checked_and_a_plain_one_not(services, panel_step):
+    select(services, panel_step)
+    context = services.context.current()
+    assert services.actions.spec("release.toggle").state(context).checked is False
+    services.document.set_module_data(panel_step.id, MODULE_ID, write("MVP"))
+    assert services.actions.spec("release.toggle").state(context).checked is True
+
+
+def test_toggling_on_generates_the_next_label_undoably(services, panel_step, second_step):
+    services.document.set_module_data(second_step.id, MODULE_ID, write("v1"))
+    select(services, panel_step)
+    services.actions.run("release.toggle", services.context.current())
+    assert read(panel_step) == "v2"
+    services.undo.undo()
+    assert read(panel_step) == ""
+
+
+def test_toggling_off_asks_first_and_clears(services, panel_step, monkeypatch):
+    import dplanner.modules.step_release.module as release_module
+
+    services.document.set_module_data(panel_step.id, MODULE_ID, write("MVP"))
+    asked = []
+    monkeypatch.setattr(
+        release_module, "confirm", lambda *args: asked.append(args) or True
+    )
+    select(services, panel_step)
+    services.actions.run("release.toggle", services.context.current())
+    assert asked and read(panel_step) == ""
+    services.undo.undo()
+    assert read(panel_step) == "MVP"
+
+
+def test_a_declined_confirm_changes_nothing(services, panel_step, monkeypatch):
+    import dplanner.modules.step_release.module as release_module
+
+    services.document.set_module_data(panel_step.id, MODULE_ID, write("MVP"))
+    monkeypatch.setattr(release_module, "confirm", lambda *_args: False)
+    select(services, panel_step)
+    services.actions.run("release.toggle", services.context.current())
+    assert read(panel_step) == "MVP"
+    assert not services.undo.can_undo()
+
+
+def test_with_no_step_selected_the_toggle_is_disabled(services):
+    from dplanner.framework.context import SCOPE_SELECTION
+
+    services.context.set_scope(SCOPE_SELECTION, ())
+    state = services.actions.spec("release.toggle").state(services.context.current())
+    assert not state.enabled

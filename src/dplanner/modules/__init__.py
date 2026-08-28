@@ -82,6 +82,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
     )
+    from dplanner.modules.step_agent_run.aspect import record_launch as agent_run_launch
+    from dplanner.modules.step_agent_run.module import StepAgentRunModule
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_description.aspect import summary as description_summary
     from dplanner.modules.step_description.module import (
@@ -436,8 +438,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 checkout_for=lambda step_id: repo_checkout_for(
                     product, product.project_of(step_id)
                 ),
+                # The launch stamp: written directly, off the undo stack — Ctrl+Z cannot
+                # un-launch a shell.
+                record_launch=lambda step_id: agent_run_launch(product, step_id),
             )
         ),
+        # Declares the agent-run format only; Run Agent and the CLI write it, the canvas
+        # reads it through step_accent above.
+        StepAgentRunModule(),
         StepHandoffModule(
             StepHandoffDeps(
                 product=product,
@@ -448,7 +456,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         StepReleaseModule(
             StepReleaseDeps(
-                product=product, undo=services.undo, sections=services.inspector_sections
+                product=product,
+                undo=services.undo,
+                sections=services.inspector_sections,
+                actions=services.actions,
+                parent=services.window,
             )
         ),
         # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
@@ -633,8 +645,14 @@ def _agent_epilogue(step_title: str) -> str:
     """
     title = step_title or "Untitled step"
     return (
+        "As you work, keep the run state current:\n"
+        f"- `dplanner agent-state set '{title}' plan-for-review` when your plan is ready"
+        " to review\n"
+        f"- `dplanner agent-state set '{title}' working` while implementing\n"
+        f"- `dplanner agent-state set '{title}' pending-approval` while waiting on an"
+        " approval\n"
         "When the work is finished, record it in DPlanner:\n"
-        f"- `dplanner status set '{title}' done`\n"
+        f"- `dplanner status set '{title}' done` and `dplanner agent-state clear '{title}'`\n"
         f"- `dplanner handoff set '{title}' --file -` with anything later steps should"
         " know (add `--scope project` to reach the whole project;"
         f" `dplanner handoff attach '{title}' <file>` for files).\n"
@@ -664,6 +682,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
+    from dplanner.modules.step_agent_run import cli as agent_state_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_handoff import cli as handoff_cli
     from dplanner.modules.step_order import cli as order_cli
@@ -695,6 +714,7 @@ def default_cli_commands() -> list["CliCommand"]:
             epilogue=lambda step: _agent_epilogue(step.title),
             preamble=_agent_preamble(),
         ),
+        *agent_state_cli.commands(),
         *status_cli.commands(),
         *release_cli.commands(),
         *handoff_cli.commands(),
@@ -738,6 +758,7 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.github import aspect as github
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
+    from dplanner.modules.step_agent_run import aspect as agent_run
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_handoff import aspect as handoff
     from dplanner.modules.step_release import aspect as release
@@ -746,6 +767,7 @@ def aspect_specs() -> list["AspectSpec"]:
 
     return [
         agent.SPEC,
+        agent_run.SPEC,
         description.SPEC,
         estimation.SPEC,
         github.SPEC,
@@ -767,6 +789,7 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
     from dplanner.modules.github import aspect as github
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
+    from dplanner.modules.step_agent_run import aspect as agent_run
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_handoff import aspect as handoff
     from dplanner.modules.step_release import aspect as release
@@ -775,6 +798,7 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
 
     pairs = [
         (status.SPEC.id, status.summary),
+        (agent_run.SPEC.id, agent_run.summary),
         (release.SPEC.id, release.summary),
         (estimation.SPEC.id, estimation.summary),
         (ticket.SPEC.id, ticket.summary),
