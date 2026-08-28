@@ -31,11 +31,11 @@ from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import NodeId, Product, StepId
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import ActionState
+from dplanner.framework.asset_gallery import AssetGallery
 from dplanner.framework.text_binding import TextBinding
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import make_text_well, space_lines
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
-from dplanner.modules.step_agent_instruction.asset_strip import AssetStrip
 from dplanner.modules.step_agent_instruction.prompt import PromptPart, part_lines
 from dplanner.theme.icons import ICON_SIZE, graph_icon, leaf_icon, project_icon
 
@@ -159,7 +159,9 @@ class AgentSection(QWidget):
         self.project_edit.setObjectName("InspectorNotes")
         self.project_edit.setPlaceholderText(PROJECT_PLACEHOLDER)
         self.project_edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
-        self.project_assets = AssetStrip(self)
+        self.project_assets = AssetGallery(
+            self, editable=True, attach_title="Attach to Instruction"
+        )
         project_body = _body(self.project_edit, self.project_assets)
         self.project_part = PartRow("Project", project_icon, project_body)
 
@@ -177,7 +179,9 @@ class AgentSection(QWidget):
         self.edit.setObjectName("InspectorNotes")
         self.edit.setPlaceholderText(placeholder)
         self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
-        self.step_assets = AssetStrip(self)
+        self.step_assets = AssetGallery(
+            self, editable=True, attach_title="Attach to Instruction"
+        )
         step_body = _body(self.edit, self.step_assets)
         self.step_part = PartRow("This step", leaf_icon, step_body, expanded=True)
 
@@ -261,11 +265,11 @@ class AgentSection(QWidget):
         files = self._files
         step_id, project_id = self._step_id, self._project_id
         if files is None or step_id is None or project_id is None:
-            self.step_assets.set_source(None)
-            self.project_assets.set_source(None)
+            self.step_assets.set_area(None)
+            self.project_assets.set_area(None)
             return
-        self.step_assets.set_source(lambda: files(step_id, MODULE_ID))
-        self.project_assets.set_source(lambda: files(project_id, MODULE_ID))
+        self.step_assets.set_area(lambda: files(step_id, MODULE_ID))
+        self.project_assets.set_area(lambda: files(project_id, MODULE_ID))
 
     def _refresh_inherited(self) -> None:
         parts: Sequence[PromptPart] = ()
@@ -343,7 +347,9 @@ class ProjectInstructionCard(QWidget):
         # A card grows down the stack, not with its content: a few lines here, the Agent
         # tab for serious writing. The inner scroller is DESIGN.md's accepted trade.
         self.edit.setFixedHeight(self.edit.fontMetrics().lineSpacing() * 6 + 16)
-        self.assets = AssetStrip(self)
+        self.assets = AssetGallery(
+            self, editable=True, attach_title="Attach to Instruction"
+        )
 
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
@@ -369,12 +375,12 @@ class ProjectInstructionCard(QWidget):
                 self.edit, ModuleTextField(self._product, project_id, MODULE_ID), self._undo
             )
             files, pid = self._files, project_id
-            self.assets.set_source(
+            self.assets.set_area(
                 (lambda: files(pid, MODULE_ID)) if files is not None else None
             )
         else:
             self.edit.setPlainText("")
-            self.assets.set_source(None)
+            self.assets.set_area(None)
 
     def dispose(self) -> None:
         self._close_binding()
@@ -386,8 +392,8 @@ class ProjectInstructionCard(QWidget):
             self._binding = None
 
 
-def _body(edit: QPlainTextEdit, assets: AssetStrip) -> QWidget:
-    """An editor with its asset strip under it, as one collapsible body."""
+def _body(edit: QPlainTextEdit, assets: AssetGallery) -> QWidget:
+    """An editor with its asset gallery under it, as one collapsible body."""
     body = QWidget()
     column = QVBoxLayout(body)
     column.setContentsMargins(0, 0, 0, 0)
