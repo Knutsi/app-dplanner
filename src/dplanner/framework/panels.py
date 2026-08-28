@@ -3,8 +3,9 @@
 A **panel** is a surface anchored beside the tabs rather than inside one — the index tree, a
 detail editor, an output log. A module registers a :class:`PanelSpec` saying what it is called
 and where it would like to sit; the window's :class:`PanelDock` builds it once and puts it in an
-area. The user moves it between areas from its header's right-click menu and hides it from
-*View ▸ Panels*, and both choices are remembered.
+area. The user moves it between areas from its header's right-click menu, hides it from
+*View ▸ Panels*, and can collapse a whole side at once (*View ▸ Left/Right Side Panel*,
+Ctrl+B / Ctrl+Alt+B) — all of it remembered.
 
 **One panel, not one per tab.** This is the whole reason the dock exists. A panel built inside
 an activity is duplicated the moment the window is split, and two copies of one editor is not a
@@ -123,6 +124,15 @@ def _store_size(area: PanelArea, size: int) -> None:
     QSettings().setValue(f"layout/areas/{area.value}", size)
 
 
+def _stored_collapsed(area: PanelArea) -> bool:
+    raw = QSettings().value(f"layout/areas/{area.value}/collapsed", False)
+    return raw in (True, "true", "True", 1, "1")
+
+
+def _store_collapsed(area: PanelArea, collapsed: bool) -> None:
+    QSettings().setValue(f"layout/areas/{area.value}/collapsed", collapsed)
+
+
 class _PanelFrame(QWidget):
     """One panel on screen: its header strip, and the module's widget below it.
 
@@ -175,6 +185,7 @@ class PanelDock(QSplitter):
         self._frames: dict[str, _PanelFrame] = {}
         self._areas_of: dict[str, PanelArea] = {}
         self._hidden: set[str] = set()
+        self._collapsed: set[PanelArea] = {a for a in PanelArea if _stored_collapsed(a)}
         self._chrome = True
         # Read once and updated on every drag. Kept in memory because the sizes are
         # re-applied on each resize, and QSettings is not free per mouse move.
@@ -182,6 +193,9 @@ class PanelDock(QSplitter):
 
         # A panel was shown, hidden or moved. What View ▸ Panels re-reads its checkmarks from.
         self.panels_changed: Signal[str] = Signal()
+        # A whole area was collapsed or expanded. What the side-panel toggles re-read theirs
+        # from — a separate signal because panels_changed carries a panel id.
+        self.areas_changed: Signal[PanelArea] = Signal()
 
         self._middle = QSplitter(Qt.Orientation.Vertical, self)
         self._middle.setChildrenCollapsible(False)
@@ -241,6 +255,9 @@ class PanelDock(QSplitter):
             return
         if visible:
             self._hidden.discard(panel_id)
+            # Switching a panel on is a gesture that puts it somewhere — a checkmark that
+            # turns on with nothing appearing reads as a bug, so the collapsed side opens.
+            self.set_area_collapsed(self._areas_of[panel_id], False)
         else:
             self._hidden.add(panel_id)
         QSettings().setValue(f"layout/panels/{panel_id}/hidden", not visible)
@@ -254,8 +271,25 @@ class PanelDock(QSplitter):
         self._areas_of[panel_id] = area
         QSettings().setValue(f"layout/panels/{panel_id}/area", area.value)
         self._place(frame)
+        # "Put that over there" means over there, visibly — not into a collapsed side.
+        self.set_area_collapsed(area, False)
         self._refresh()
         self.panels_changed.emit(panel_id)
+
+    def is_area_collapsed(self, area: PanelArea) -> bool:
+        """Whether the user has this whole side folded away, panels' own state untouched."""
+        return area in self._collapsed
+
+    def set_area_collapsed(self, area: PanelArea, collapsed: bool) -> None:
+        if collapsed == (area in self._collapsed):
+            return
+        if collapsed:
+            self._collapsed.add(area)
+        else:
+            self._collapsed.discard(area)
+        _store_collapsed(area, collapsed)
+        self._refresh()
+        self.areas_changed.emit(area)
 
     def set_chrome_visible(self, visible: bool) -> None:
         """Immersive mode: every area off, and back exactly as it was."""
@@ -328,7 +362,14 @@ class PanelDock(QSplitter):
         # shown yet is not visible however it was set, and the dock is built and filled
         # before anything is on screen.
         for panel_id, frame in self._frames.items():
-            frame.setVisible(self._chrome and frame.has_content and panel_id not in self._hidden)
+            # Collapse is tested on the frame, not just the area splitter: a frame under a
+            # hidden parent still answers isHidden() == False, and is_panel_showing reads it.
+            frame.setVisible(
+                self._chrome
+                and frame.has_content
+                and panel_id not in self._hidden
+                and self._areas_of[panel_id] not in self._collapsed
+            )
         for area, splitter in self._areas.items():
             # An area with nothing in it takes no space at all — an empty right side is not a
             # blank column, it is a wider canvas.
@@ -358,7 +399,8 @@ class PanelDock(QSplitter):
         sizes = self.sizes()
         for area, size in ((PanelArea.LEFT, sizes[0]), (PanelArea.RIGHT, sizes[2])):
             # 0 means the area was dragged shut — restoring that next time would look like a
-            # panel that had gone missing, so only real sizes are remembered.
+            # panel that had gone missing, so only real sizes are remembered. The isHidden()
+            # guard also keeps a collapsed area from overwriting its remembered width.
             if not self._areas[area].isHidden() and size > 0:
                 self._sizes[area] = size
                 _store_size(area, size)

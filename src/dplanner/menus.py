@@ -23,11 +23,12 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     "File": ("open", "product", "save", "branch", "window"),
     "Edit": ("history",),
     # "palette" is the command palette alone — the way to *any* verb, set off from the
-    # panel toggles below it. "canvas" is the graph editor's own view verbs — framing it is
-    # not the application's font zoom, which is what "zoom" means here. "tabs" holds the
-    # Tabs submenu, which is also what the tab bar's right-click renders (build_menu's
-    # submenu filter), so the two can never be a hand-maintained copy of each other.
-    "View": ("palette", "panels", "zoom", "canvas", "theme", "tabs", "window"),
+    # panel toggles below it. "areas" is the whole-side collapse switches, ahead of the
+    # per-panel checkmarks in "panels". "canvas" is the graph editor's own view verbs —
+    # framing it is not the application's font zoom, which is what "zoom" means here.
+    # "tabs" holds the Tabs submenu, which is also what the tab bar's right-click renders
+    # (build_menu's submenu filter), so the two can never be a hand-maintained copy.
+    "View": ("palette", "areas", "panels", "zoom", "canvas", "theme", "tabs", "window"),
     # The planner's own vocabulary. "Project" is what the index tree's right-click menu
     # renders and "Step" is what the graph canvas's does — see framework/action_menu.py.
     # "link" holds the two-step verbs: the canvas publishes both ends into the selection

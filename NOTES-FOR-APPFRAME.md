@@ -276,6 +276,34 @@ a widget built inside an activity. The `ContextPanel` contract is the interestin
 subscription in the dock, and a panel that already reads the context follows the active pane
 for free, given the "only the active pane publishes" rule the tab groups needed anyway.
 
+### An area can be collapsed whole: `set_area_collapsed` on the dock and `PanelHost`
+
+**What.** `framework/panels.py` gained area-level collapse — `set_area_collapsed(area, bool)`,
+`is_area_collapsed(area)`, an `areas_changed: Signal[PanelArea]`, persisted at
+`layout/areas/{area}/collapsed` — and `PanelHost` in `framework/window.py` carries all three,
+with `main_window.py` delegating. The appshell module binds View ▸ Left/Right Side Panel to
+Ctrl+B / Ctrl+Alt+B over it (the VS Code sidebar gesture).
+
+**The part that was not obvious.** Collapse is a *third* orthogonal gate beside the per-panel
+hide and immersive chrome, and it has to be tested in the **frame's** visibility formula in
+`_refresh`, not by hiding the area splitter alone: a frame under a hidden parent still answers
+`isHidden() == False`, so `is_panel_showing` would lie for every panel on a collapsed side.
+With the term on the frame, the existing "area with no visible frames hides and takes zero
+width" machinery — including the `splitterMoved` guard that refuses to persist a 0 size — does
+the rest unchanged, which is why the whole feature is a set, two methods and one formula term.
+
+**One behavioural rule, stated once:** an explicit gesture that puts a panel somewhere expands
+that somewhere — switching a panel on, or moving one into a collapsed area, un-collapses it
+(a checkmark that turns on with nothing appearing reads as a bug). A `ContextPanel` answering
+True does *not*: collapse is the user's choice and survives selection changes.
+
+**Deliberately not built:** a VS Code-style collapsed rail to click. New chrome against the
+dock's "areas, not draggable docks" minimalism; the View menu (which renders the shortcut),
+the palette and the key cover discoverability.
+
+**Upstream?** Yes, with the panel areas themselves — it is the gesture that makes three fixed
+areas feel as light as draggable docks without being them.
+
 ### One mutator that broke the framework's own convention
 
 **What.** `Product.set_module_data()` and `module_data_changed` were the only mutator/signal

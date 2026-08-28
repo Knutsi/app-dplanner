@@ -23,7 +23,7 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.context import SCOPE_APP, Context, ContextService
 from dplanner.framework.palette import CommandPalette
-from dplanner.framework.panels import PanelRegistry, PanelSpec
+from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
@@ -340,6 +340,35 @@ class AppShellModule:
         )
 
         # -- panels -----------------------------------------------------------------------
+        # The whole-side switches first: one keystroke folds a side away and brings it back,
+        # with every panel's own on/off untouched underneath.
+        def register_area_toggle(area: PanelArea, label: str, shortcut: str, order: int) -> None:
+            def area_state(_context: Context) -> ActionState:
+                return ActionState(checked=not deps.chrome.is_area_collapsed(area))
+
+            def run_area(_context: Context) -> None:
+                deps.chrome.set_area_collapsed(area, not deps.chrome.is_area_collapsed(area))
+
+            deps.actions.register(
+                ActionSpec(
+                    id=f"appshell.toggle_{area.value}_panels",
+                    label=label,
+                    menu="View",
+                    group="areas",
+                    order=order,
+                    shortcut=shortcut,
+                    tip=f"Show or hide every panel on the {area.value} side",
+                    state=area_state,
+                    run=run_area,
+                )
+            )
+
+        register_area_toggle(PanelArea.LEFT, "Left Side Panel", "Ctrl+B", 10)
+        register_area_toggle(PanelArea.RIGHT, "Right Side Panel", "Ctrl+Alt+B", 20)
+        # BOTTOM has no registered panels yet; Ctrl+J is reserved for its toggle when one exists.
+        # Collapse also flips when a gesture reveals a panel, so the checkmarks re-read here.
+        deps.chrome.areas_changed.connect(lambda _area: poke_context())
+
         # One checkable entry per anchored panel. Both halves are needed: the framework's own
         # index panel is registered before any module runs, and every module's panel arrives
         # after this line.
