@@ -176,10 +176,11 @@ def test_a_theme_change_repaints_without_collapsing_expansion(entry_segment, ser
 # -- the verbs ---------------------------------------------------------------------------------
 
 
-def test_project_verbs_hide_without_a_project(services):
+def test_project_verbs_grey_without_a_project(services):
     context = services.context.current()
     for action_id in ("projects.rename", "projects.delete", "projects.open"):
-        assert not state(services, action_id, context).visible
+        found = state(services, action_id, context)
+        assert found.visible and not found.enabled
     assert state(services, "projects.new", context).enabled
 
 

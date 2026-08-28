@@ -19,8 +19,8 @@ from PySide6.QtWidgets import QWidget
 
 from dplanner.domain.model import Product, ProjectId, StepId
 from dplanner.framework.action_registry import (
+    DISABLED,
     ENABLED,
-    HIDDEN,
     ActionRegistry,
     ActionSpec,
     ActionState,
@@ -137,7 +137,7 @@ class EstimationModule:
         project_id = context.focus_entity("project")
         if project_id is not None and self._deps.product.has(project_id):
             return ENABLED  # The menu-bar path: no steps picked, size the whole project.
-        return HIDDEN
+        return DISABLED
 
     def _open_for_context(self, context: Context) -> None:
         selected = self._selected_steps(context)

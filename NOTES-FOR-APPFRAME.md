@@ -355,6 +355,25 @@ this submenu, flat" is the same shape one notch narrower.
 **Upstream?** Yes — any application that folds a noun's verbs into a submenu and gives that
 noun a right-click needs exactly this.
 
+### `build_menu` greys a disabled entry instead of omitting it
+
+**What.** `build_menu` no longer filters through `registry.runnable()`. It walks
+`all_specs()`, skips only `visible=False`, and renders everything else with
+`setEnabled(state.enabled)` — so a context menu now shows a disabled verb greyed, exactly as
+the menu bar does. The palette still filters on `runnable()`; the two presenters now
+deliberately disagree, and that split is the design: a menu is a map of what exists, a
+fuzzy-searched palette is a launcher for what can run.
+
+**Why.** The application adopted "an action that does not apply right now is DISABLED, never
+HIDDEN" (a menu that reshapes itself with the selection cannot be learned; a greyed entry
+teaches the precondition, and its `label` carries the reason). With that policy the popup was
+the one presenter still silently dropping entries, which also broke the promise that a
+greyed "Cannot Link — cycle" reaches the user from the canvas right-click.
+
+**Upstream?** Yes, together with the policy itself — the constants (`ENABLED` / `DISABLED` /
+`HIDDEN`) already exist upstream; what was missing was the statement of *which one a state
+callback should return*, and one presenter honouring it inconsistently.
+
 ### A theme change is not one event, and three surfaces missed it
 
 **What.** Three changes, all found by switching the theme with a graph on screen.

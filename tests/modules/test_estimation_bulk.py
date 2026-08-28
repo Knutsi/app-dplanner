@@ -91,9 +91,9 @@ def test_the_action_names_the_count_it_will_estimate(services, project):
     assert state.label == "&Estimate 3 Steps"
 
 
-def test_the_action_hides_off_any_project(services):
+def test_the_action_greys_off_any_project(services):
     state = services.actions.spec("estimate.open").state(services.context.current())
-    assert not state.visible
+    assert state.visible and not state.enabled
 
 
 def test_the_tab_opens_beside_the_canvas(services, project):

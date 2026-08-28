@@ -4,7 +4,13 @@ import pytest
 from PySide6.QtWidgets import QWidget
 
 from dplanner.framework.action_menu import build_menu
-from dplanner.framework.action_registry import ActionRegistry, ActionSpec, MenuStructure
+from dplanner.framework.action_registry import (
+    DISABLED,
+    HIDDEN,
+    ActionRegistry,
+    ActionSpec,
+    MenuStructure,
+)
 from dplanner.framework.context import ContextService
 
 MENUS = MenuStructure({"View": ("panels", "tabs"), "File": ("open",)})
@@ -38,3 +44,16 @@ def test_a_submenu_popup_holds_exactly_that_submenus_entries(app, registry):
     parent = QWidget()
     popup = build_menu(registry, ContextService(), "View", parent, submenu="Tabs")
     assert entries(popup) == ["move", "close"]
+
+
+def test_a_disabled_entry_is_greyed_and_a_hidden_one_is_omitted(app, registry):
+    """Same policy as the menu bar: disabled means "not right now" and stays readable;
+    hidden means the capability is absent and leaves no trace."""
+    registry.register(spec("greyed", group="panels", state=lambda _c: DISABLED))
+    registry.register(spec("gone", group="panels", state=lambda _c: HIDDEN))
+    parent = QWidget()
+    popup = build_menu(registry, ContextService(), "View", parent)
+    assert entries(popup) == ["greyed", "panel", "|", "move", "close"]
+    by_text = {a.text(): a for a in popup.actions()}
+    assert not by_text["greyed"].isEnabled()
+    assert by_text["panel"].isEnabled()

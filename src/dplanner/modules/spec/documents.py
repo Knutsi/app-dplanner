@@ -202,6 +202,24 @@ def import_document(
     return updated, document, "replaced"
 
 
+def remove_document(
+    documents: Sequence[SpecDocument],
+    requirements: Sequence[Requirement],
+    name: str,
+) -> tuple[list[SpecDocument], list[Requirement], list[Requirement]]:
+    """The index without ``name``, and the requirements that were marked in it.
+
+    Returns (remaining documents, remaining requirements, dropped requirements). The blobs
+    stay on disk — an orphan is recoverable where a dangling pointer is not (see the module
+    docstring) — and step links to a dropped requirement dangle and read as absent, the same
+    tolerance ``unmark`` relies on.
+    """
+    remaining = [doc for doc in documents if doc.name != name]
+    kept = [req for req in requirements if req.document != name]
+    dropped = [req for req in requirements if req.document == name]
+    return remaining, kept, dropped
+
+
 def matching_documents(documents: Sequence[SpecDocument], needle: str) -> list[SpecDocument]:
     """Exact name or filename first, then partial names — the caller decides how to refuse."""
     exact = [doc for doc in documents if needle in (doc.name, doc.filename)]

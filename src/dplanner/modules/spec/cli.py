@@ -28,6 +28,7 @@ from dplanner.modules.spec.documents import (
     matching_documents,
     next_requirement_id,
     read_index,
+    remove_document,
     write_index,
 )
 
@@ -65,6 +66,14 @@ def commands() -> list[CliCommand]:
             configure=_configure_versioned,
             run=_path,
             examples=("dplanner spec path 'Search rewrite' auth-spec",),
+        ),
+        CliCommand(
+            path=("spec", "remove"),
+            summary="Remove a spec document and the requirements marked in it; "
+            "the file stays on disk for the workspace's VCS.",
+            configure=_one_document,
+            run=_remove,
+            examples=("dplanner spec remove 'Search rewrite' auth-spec",),
         ),
         CliCommand(
             path=("spec", "diff"),
@@ -198,8 +207,7 @@ def _content(context: CliContext, project: Project, document: SpecDocument, blob
 
 
 def _absolute(context: CliContext, project: Project, blob: str) -> str:
-    area = context.store.files(project.id, MODULE_ID)
-    return str(context.store.storage.root / Path(area.directory) / Path(blob))
+    return str(context.store.files(project.id, MODULE_ID).absolute(blob))
 
 
 # -- verbs -------------------------------------------------------------------------------------
@@ -287,6 +295,38 @@ def _path(context: CliContext, args: Namespace) -> int:
     _content(context, project, document, blob)  # Refuse a path that would dangle.
     absolute = _absolute(context, project, blob)
     context.report({"project": project.id, "document": document.name, "path": absolute}, absolute)
+    return 0
+
+
+def _remove(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.product, args.project)
+    document = _document(project, args.document)
+    docs, requirements = read_index(project)
+    docs, requirements, dropped = remove_document(docs, requirements, document.name)
+    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(docs, requirements)))
+    still_linked = {req.id: linked_steps(project, req.id) for req in dropped}
+    note = f"{document.name}: removed"
+    if dropped:
+        note += f" with {len(dropped)} requirements"
+    orphans = [req_id for req_id, steps in still_linked.items() if steps]
+    if orphans:
+        titles = ", ".join(
+            sorted({step.title for req_id in orphans for step in still_linked[req_id]})
+        )
+        note += f" — still linked from {titles}; unlink with `dplanner spec link --remove`"
+    context.report(
+        {
+            "project": project.id,
+            "document": document.name,
+            "requirements_removed": [req.id for req in dropped],
+            "still_linked": {
+                req_id: [step.id for step in steps]
+                for req_id, steps in still_linked.items()
+                if steps
+            },
+        },
+        note,
+    )
     return 0
 
 
