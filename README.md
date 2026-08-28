@@ -166,7 +166,7 @@ src/dplanner/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
 │   ├── product/             the product's identity: name, repository, checkout
 │   ├── projects/            the Projects folder in the index, and the project verbs
-│   ├── project_editor/      a project in a tab: the canvas, its modes, sorts, named layouts and regions
+│   ├── project_editor/      a project in a tab: the canvas, its modes and renderers, sorts, named layouts and regions
 │   │                        (its panel also hosts the modules' project-level cards)
 │   ├── project_repo/        which repo and checkout a project works against (overrides the product's)
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
@@ -175,8 +175,9 @@ src/dplanner/
 │   ├── step_description/
 │   ├── step_agent_instruction/   … this one also holds the project's standing instruction
 │   │                             and assembles and launches Run Agent
+│   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by `dplanner agent-state`
 │   ├── step_status/         where a step stands — a Status submenu, no tab
-│   ├── step_release/        the steps that mark a release point
+│   ├── step_release/        the steps that mark a release point — the Release tab and the Type ▸ Release toggle
 │   ├── step_handoff/        what a step passes forward, and who inherits it
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, the missing-gh notice
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`

@@ -10,7 +10,13 @@ from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Product, Project, Step
 from dplanner.domain.ordering import depths
 from dplanner.modules.project_editor.layout import auto_positions, positions
-from dplanner.modules.project_editor.positions import GRID, read_position, write_position
+from dplanner.modules.project_editor.positions import (
+    GRID,
+    NODE_H,
+    NODE_W,
+    read_position,
+    write_position,
+)
 from dplanner.modules.project_editor.sorts import (
     DAY_PX,
     ORIGIN,
@@ -241,7 +247,7 @@ def test_radial_rings_follow_bfs_distance():
 
     def r(placed, step):
         x, y = placed[step.id]
-        cx, cy = x + 90.0, y + 28.0  # the node's centre, for the default size
+        cx, cy = x + NODE_W / 2, y + NODE_H / 2  # the node's centre, for the default size
         return (cx**2 + cy**2) ** 0.5
 
     placed = radial(product, project)  # a is the most connected, so the centre

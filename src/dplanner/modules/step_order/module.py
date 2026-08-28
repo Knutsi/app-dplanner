@@ -84,6 +84,10 @@ def _no_reveal(_step_id: StepId) -> None:
     pass
 
 
+def _no_release(_step_id: StepId) -> str:
+    return ""
+
+
 def _unscheduled(_project_id: ProjectId, order: Sequence[Placed]) -> list[Scheduled]:
     """Nobody in this build knows what a step costs: every row, no days, no dates.
 
@@ -112,6 +116,9 @@ class StepOrderDeps:
     )
     # The widget that sets the date the schedule counts from. None is a legitimate build.
     start_bar: Callable[[ProjectId, QWidget], StartBar] | None = None
+    # The label of the release a step is, "" otherwise. Wired by the composition root;
+    # this module never learns who owns releases.
+    release_label: Callable[[StepId], str] = field(default=_no_release)
 
 
 class OrderActivity(ActivityBase):
@@ -152,7 +159,7 @@ class OrderActivity(ActivityBase):
             layout.addWidget(self.start_bar.widget)
             layout.addSpacing(BLOCK_GAP)
 
-        self.table = OrderTable(wave_label, deps.step_aspects, page)
+        self.table = OrderTable(wave_label, deps.step_aspects, deps.release_label, page)
         self.table.itemSelectionChanged.connect(self._on_selection)
         self.table.cellActivated.connect(self._on_activated)
         self.table.customContextMenuRequested.connect(self._on_context_menu)

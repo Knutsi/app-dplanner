@@ -37,7 +37,6 @@ from dplanner.framework.widgets import install_ctrl_wheel_zoom
 from dplanner.modules.project_editor.items import (
     EdgeItem,
     LinkPreviewItem,
-    NodeAccent,
     RegionItem,
     RegionPreviewItem,
     StepNodeItem,
@@ -45,6 +44,7 @@ from dplanner.modules.project_editor.items import (
 from dplanner.modules.project_editor.keymap import bound_actions
 from dplanner.modules.project_editor.minimap import Minimap
 from dplanner.modules.project_editor.modes import (
+    HINTS_BY_MODE,
     CanvasDeps,
     CanvasEvent,
     CanvasKey,
@@ -53,6 +53,7 @@ from dplanner.modules.project_editor.modes import (
     PanMode,
 )
 from dplanner.modules.project_editor.regions import Region
+from dplanner.modules.project_editor.renderers import NodeAccent, RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef
 
 ZOOM_MIN = 0.4
@@ -85,6 +86,7 @@ class GraphScene(QGraphicsScene):
     def __init__(self, link_refusal: Callable[[StepId, StepId], str | None]) -> None:
         super().__init__()
         self._link_refusal = link_refusal
+        self._hints = RenderHints()
         self._nodes: dict[StepId, StepNodeItem] = {}
         self._edges: dict[EdgeRef, EdgeItem] = {}
         self._regions: dict[str, RegionItem] = {}
@@ -137,6 +139,7 @@ class GraphScene(QGraphicsScene):
             item = self._nodes.get(spec.step_id)
             if item is None:
                 item = self._nodes[spec.step_id] = StepNodeItem(spec.step_id)
+                item.set_render_hints(self._hints)  # A node born mid-mode dresses for it.
                 self.addItem(item)
             item.set_text(spec.title, spec.subtitle)
             item.set_accent(spec.accent)
@@ -260,6 +263,12 @@ class GraphScene(QGraphicsScene):
             item.set_link_state(
                 "valid" if step_id == valid else "invalid" if step_id == invalid else ""
             )
+
+    def set_render_hints(self, hints: "RenderHints") -> None:
+        """Fan the current mode's wishes out to every node — the set_link_states shape."""
+        self._hints = hints
+        for item in self._nodes.values():
+            item.set_render_hints(hints)
 
     def region_at(self, scene_pos: QPointF) -> RegionItem | None:
         """The region under this point — by the full rect, not Qt's hit shape, because a
@@ -398,6 +407,12 @@ class GraphView(QGraphicsView):
 
         self.deps = CanvasDeps(canvas=scene, view=self, status=status, run_action=run_action)
         self.modes = ModeStack(base_mode(self.deps))
+        # The mode's look reaches the nodes here: one subscription on the stack, not
+        # per-mode enter/exit — Space stacks Pan over Connect, and popping back must
+        # restore Connect's hints, which only the stack's current answer gets right.
+        self.modes.changed.connect(
+            lambda name: scene.set_render_hints(HINTS_BY_MODE.get(name, RenderHints()))
+        )
         # Space is released after the drag it started often enough that popping immediately
         # would strand the hand cursor mid-pan; the pop waits for the button.
         self._pan_release_pending = False

@@ -19,6 +19,11 @@ from dplanner.modules.step_order.view import (
     ASPECTS_COLUMN,
     DATE_COLUMN,
     ESTIMATE_COLUMN,
+    RELEASE_ROLE,
+    RELEASE_ROW_EXTRA,
+    ROW_HEIGHT,
+    TITLE_COLUMN,
+    _ReleaseRowDelegate,
 )
 
 
@@ -92,6 +97,50 @@ def test_the_estimate_has_a_column_and_is_not_repeated_in_the_summary(services, 
 
     assert tab.table.item(0, ESTIMATE_COLUMN).text() == "3d"
     assert "3d" not in tab.table.item(0, ASPECTS_COLUMN).text()
+
+
+def test_a_release_row_is_marked_and_keeps_its_name(services, project, tab):
+    """Every cell flags the row for the delegate; the name still reads in the summary."""
+    from dplanner.modules.step_release.aspect import write
+
+    d = project.steps[3]  # The last of its block — the rule under it closes the work above.
+    services.undo.push(SetModuleDataCommand(d.id, "step_release", write("MVP")))
+
+    table = tab.table
+    release_row = 3
+    assert all(
+        table.item(release_row, column).data(RELEASE_ROLE) == "MVP"
+        for column in range(table.columnCount())
+    )
+    assert table.item(release_row, TITLE_COLUMN).font().bold()
+    assert "MVP" in table.item(release_row, ASPECTS_COLUMN).text()
+    assert isinstance(table.itemDelegate(), _ReleaseRowDelegate)
+
+
+def test_a_release_date_is_highlighted(services, project, tab):
+    from dplanner.modules.step_release.aspect import write
+
+    d = project.steps[3]
+    services.undo.push(SetModuleDataCommand(d.id, "estimation", {"days": 2.0, "format": 1}))
+    services.undo.push(SetModuleDataCommand(d.id, "step_release", write("MVP")))
+
+    from PySide6.QtCore import Qt
+
+    item = tab.table.item(3, DATE_COLUMN)
+    assert item.font().bold()
+    # No faded brush was set: the date keeps the palette's full-strength, live foreground.
+    assert item.data(Qt.ItemDataRole.ForegroundRole) is None
+
+
+def test_a_release_row_gets_air_and_a_plain_row_does_not(services, project, tab):
+    from dplanner.modules.step_release.aspect import write
+
+    d = project.steps[3]
+    services.undo.push(SetModuleDataCommand(d.id, "step_release", write("MVP")))
+
+    assert tab.table.rowHeight(3) == ROW_HEIGHT + RELEASE_ROW_EXTRA
+    assert tab.table.rowHeight(0) == ROW_HEIGHT
+    assert not tab.table.item(0, TITLE_COLUMN).data(RELEASE_ROLE)
 
 
 def test_the_days_accumulate_down_the_order(services, project, tab):

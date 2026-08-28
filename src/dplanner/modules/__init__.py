@@ -53,7 +53,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.core.storage.git import find_repo_root
     from dplanner.core.storage.github import gh_authenticated, gh_path, repository_url
     from dplanner.domain.model import Product
-    from dplanner.domain.schedule import schedule
+    from dplanner.domain.ordering import placed
+    from dplanner.domain.schedule import format_date, format_days, schedule
     from dplanner.domain.store import ProductStore
     from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
@@ -70,8 +71,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.product.module import ProductDeps, ProductModule
     from dplanner.modules.progression.module import ProgressionDeps, ProgressionModule
-    from dplanner.modules.project_editor.items import NodeAccent
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
+    from dplanner.modules.project_editor.renderers import NodeAccent
     from dplanner.modules.project_repo.module import ProjectRepoDeps, ProjectRepoModule
     from dplanner.modules.project_repo.repo import checkout_for as repo_checkout_for
     from dplanner.modules.project_repo.repo import repository_for as repo_repository_for
@@ -79,10 +80,16 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
     from dplanner.modules.spec.module import SpecDeps, SpecModule
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_INSTRUCTION_ID
+    from dplanner.modules.step_agent_instruction.aspect import read as agent_instruction_read
     from dplanner.modules.step_agent_instruction.module import (
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
     )
+    from dplanner.modules.step_agent_run.aspect import MODULE_ID as AGENT_RUN_ID
+    from dplanner.modules.step_agent_run.aspect import read as agent_run_state
+    from dplanner.modules.step_agent_run.aspect import record_launch as agent_run_launch
+    from dplanner.modules.step_agent_run.module import StepAgentRunModule
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_description.aspect import summary as description_summary
     from dplanner.modules.step_description.module import (
@@ -96,8 +103,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepPropertiesModule,
     )
     from dplanner.modules.step_release.aspect import MODULE_ID as RELEASE_ID
-    from dplanner.modules.step_release.aspect import read as release_label
+    from dplanner.modules.step_release.aspect import read as release_read
     from dplanner.modules.step_release.module import StepReleaseDeps, StepReleaseModule
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
@@ -130,24 +138,73 @@ def default_modules(services: "AppServices") -> list["Module"]:
         summaries = aspect_summaries(skip)
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
 
+    def release_stat(step: "Step") -> str:
+        """What a release answers with: the schedule's accumulated days and landing date.
+
+        A release closes the block of work above it, so its number is the walk's total at
+        that row — the same pair the order table's release row highlights. Falls back to
+        nothing when the project carries no estimates at all.
+        """
+        project = product.project_of(step.id)
+        order = placed(product, project)
+        for scheduled in step_schedule(project.id, order):
+            if scheduled.place.step.id == step.id:
+                if scheduled.finish is not None:
+                    return f"{format_days(scheduled.accumulated)} · {format_date(scheduled.finish)}"
+                if scheduled.accumulated:
+                    return format_days(scheduled.accumulated)
+                break
+        return ""
+
     def step_accent(step_id: str) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
-        A done step is muted; a release wears its label as a badge; a PR is a pill on the
-        second line with its state as a tone, and a branch the small fork glyph — which is
-        why the canvas subtitle skips the release and GitHub phrases below.
+        A done step is muted with a green body — finished work recedes into a colour the
+        eye can skip; in-progress and blocked wear busy and bad bars; a release is a
+        purple-highlighted node wearing its label as a badge, a tag medallion and the
+        schedule's accumulated days and date as its stat (done outranks it on the body —
+        a shipped release reads finished, and the tag still says what it was); an agent
+        instruction is the spark medallion; a PR is a pill with its state as a tone and a
+        branch the fork glyph; a live agent run is the chip on the bottom edge; a plain
+        step's stat is its own estimate. Everything worn here is skipped from the canvas
+        subtitle below, so nothing is said twice.
         """
         step = product.step(step_id)
         refs = github_read(step)
         pill = ""
         if refs is not None and refs.has_pr():
             pill = f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
+        chip_text, chip_tone = {
+            "launched": ("launched", "info"),
+            "working": ("working", "info"),
+            "plan-for-review": ("plan ready", "attention"),
+            "pending-approval": ("needs approval", "attention"),
+        }.get(agent_run_state(step), ("", ""))
+        status = step_status(step)
+        release = release_read(step)
+        icons = (
+            *(("tag",) if release else ()),
+            *(("spark",) if agent_instruction_read(step) else ()),
+        )
+        if release:
+            stat = release_stat(step)
+        else:
+            days = estimated_days(step)
+            stat = format_days(days) if days is not None else ""
         return NodeAccent(
-            muted=step_status(step) == "done",
-            badge=release_label(step),
+            muted=status == "done",
+            badge=release,
             pill_text=pill,
             pill_tone={"merged": "good", "closed": "bad"}.get(refs.pr_state, "") if refs else "",
             branch=bool(refs is not None and refs.branch),
+            # Done colours the whole body, so its bar would only repeat the same green.
+            bar_tone={"in-progress": "busy", "blocked": "bad"}.get(status, ""),
+            chip_text=chip_text,
+            chip_tone=chip_tone,
+            body_tone="good" if status == "done" else ("highlight" if release else ""),
+            icons=icons,
+            stat_text=stat,
+            stat_strong=bool(release),
         )
 
     def step_schedule(project_id: str, order: "Sequence[Placed]") -> "list[Scheduled]":
@@ -216,7 +273,18 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # A node's second line: whatever the aspects have to say about that step. The
             # release and GitHub phrases are skipped because the accent already wears them
             # — the badge the label, the pill and glyph the PR and branch.
-            step_aspects=lambda step_id: step_aspects(step_id, skip={RELEASE_ID, GITHUB_ID}),
+            # The accent wears all of these, so the subtitle must not say them again.
+            step_aspects=lambda step_id: step_aspects(
+                step_id,
+                skip={
+                    RELEASE_ID,
+                    GITHUB_ID,
+                    STATUS_ID,
+                    AGENT_INSTRUCTION_ID,
+                    AGENT_RUN_ID,
+                    ESTIMATION_ID,
+                },
+            ),
             step_accent=step_accent,
             # The timeline sort reads a step's length through this seam; estimation owns it.
             days_for=estimated_days,
@@ -464,8 +532,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 checkout_for=lambda step_id: repo_checkout_for(
                     product, product.project_of(step_id)
                 ),
+                # The launch stamp: written directly, off the undo stack — Ctrl+Z cannot
+                # un-launch a shell.
+                record_launch=lambda step_id: agent_run_launch(product, step_id),
             )
         ),
+        # Declares the agent-run format only; Run Agent and the CLI write it, the canvas
+        # reads it through step_accent above.
+        StepAgentRunModule(),
         StepHandoffModule(
             StepHandoffDeps(
                 product=product,
@@ -476,7 +550,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         StepReleaseModule(
             StepReleaseDeps(
-                product=product, undo=services.undo, sections=services.inspector_sections
+                product=product,
+                undo=services.undo,
+                sections=services.inspector_sections,
+                actions=services.actions,
+                parent=services.window,
             )
         ),
         # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
@@ -516,6 +594,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # stores. Neither module knows the other's name.
                 step_schedule=step_schedule,
                 start_bar=estimation.create_start_bar,
+                # A release row wears a rule and a tint; the name itself stays in the
+                # trailing aspects column, which is why RELEASE_ID is not skipped here.
+                release_label=lambda step_id: release_read(product.step(step_id)),
             )
         ),
         progression,
@@ -662,8 +743,14 @@ def _agent_epilogue(step_title: str) -> str:
     """
     title = step_title or "Untitled step"
     return (
+        "As you work, keep the run state current:\n"
+        f"- `dplanner agent-state set '{title}' plan-for-review` when your plan is ready"
+        " to review\n"
+        f"- `dplanner agent-state set '{title}' working` while implementing\n"
+        f"- `dplanner agent-state set '{title}' pending-approval` while waiting on an"
+        " approval\n"
         "When the work is finished, record it in DPlanner:\n"
-        f"- `dplanner status set '{title}' done`\n"
+        f"- `dplanner status set '{title}' done` and `dplanner agent-state clear '{title}'`\n"
         f"- `dplanner handoff set '{title}' --file -` with anything later steps should"
         " know (add `--scope project` to reach the whole project;"
         f" `dplanner handoff attach '{title}' <file>` for files).\n"
@@ -694,6 +781,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
+    from dplanner.modules.step_agent_run import cli as agent_state_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_handoff import cli as handoff_cli
     from dplanner.modules.step_order import cli as order_cli
@@ -726,6 +814,7 @@ def default_cli_commands() -> list["CliCommand"]:
             epilogue=lambda step: _agent_epilogue(step.title),
             preamble=_agent_preamble(),
         ),
+        *agent_state_cli.commands(),
         *status_cli.commands(),
         *release_cli.commands(),
         *handoff_cli.commands(),
@@ -772,6 +861,7 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.github import aspect as github
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
+    from dplanner.modules.step_agent_run import aspect as agent_run
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_handoff import aspect as handoff
     from dplanner.modules.step_release import aspect as release
@@ -780,6 +870,7 @@ def aspect_specs() -> list["AspectSpec"]:
 
     return [
         agent.SPEC,
+        agent_run.SPEC,
         description.SPEC,
         estimation.SPEC,
         github.SPEC,
@@ -801,6 +892,7 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
     from dplanner.modules.github import aspect as github
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
+    from dplanner.modules.step_agent_run import aspect as agent_run
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_handoff import aspect as handoff
     from dplanner.modules.step_release import aspect as release
@@ -809,6 +901,7 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
 
     pairs = [
         (status.SPEC.id, status.summary),
+        (agent_run.SPEC.id, agent_run.summary),
         (release.SPEC.id, release.summary),
         (estimation.SPEC.id, estimation.summary),
         (ticket.SPEC.id, ticket.summary),

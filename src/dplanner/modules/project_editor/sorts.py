@@ -7,8 +7,8 @@ graph always lands the same way (the ``ordering.py`` convention). And every sort
 **size-aware** through ``size_for``, so when nodes grow beyond one fixed footprint — a step
 kind that packs more inside itself — the spacing follows without touching an algorithm.
 
-The gaps are chosen so the default node reproduces the old rhythm: ``NODE_W + H_GAP`` is the
-260-point column pitch the canvas has always had, ``NODE_H + V_GAP`` the 110-point row.
+The gaps are chosen so the default node lands on round pitches: ``NODE_W + H_GAP`` is the
+300-point column pitch, ``NODE_H + V_GAP`` the 120-point row.
 
 **Qt-free** — ``dplanner layout sort`` runs these where no graphics stack exists.
 """
@@ -26,7 +26,7 @@ type DaysFor = Callable[[Step], float | None]
 
 ORIGIN = 40.0
 H_GAP = 80.0
-V_GAP = 54.0
+V_GAP = 44.0  # NODE_H + V_GAP = the 120-point row pitch; NODE_H moves owe a look here.
 # The backward lean of a fishbone rib: how far left of its attachment a rib begins.
 RIB_DX = 60.0
 # One working day of timeline, in canvas points.
