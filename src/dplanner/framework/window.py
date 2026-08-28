@@ -12,6 +12,7 @@ from typing import Protocol
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.signals import Signal
+from dplanner.framework.panels import PanelArea
 
 
 class StatusHost(Protocol):
@@ -28,14 +29,21 @@ class PanelHost(Protocol):
     Where a panel sits, and whether it currently has anything to show, are the dock's own
     business (:mod:`dplanner.framework.panels`) — this is only the user's on/off, which is what
     a View menu needs. ``panels_changed`` carries the panel id, and exists because that
-    on/off can also be flipped from a panel's own header menu.
+    on/off can also be flipped from a panel's own header menu. An area collapse is the same
+    kind of fact one level up — a whole side switched off at once — so it lives here too, and
+    ``areas_changed`` exists because collapse also flips when a gesture reveals a panel.
     """
 
     panels_changed: Signal[str]
+    areas_changed: Signal[PanelArea]
 
     def set_panel_visible(self, panel_id: str, visible: bool) -> None: ...
 
     def is_panel_visible(self, panel_id: str) -> bool: ...
+
+    def set_area_collapsed(self, area: PanelArea, collapsed: bool) -> None: ...
+
+    def is_area_collapsed(self, area: PanelArea) -> bool: ...
 
 
 class ImmersiveHost(Protocol):

@@ -111,6 +111,30 @@ def test_close_all_tabs_empties_the_window(services, projects):
     assert services.tabs.current_activity() is None
 
 
+def test_the_area_toggles_live_in_views_areas_group(services):
+    """The placement and shortcuts the side-panel collapse depends on: View's own group
+    ahead of the per-panel checkmarks, and the keys the palette renders."""
+    from dplanner.framework.panels import PanelArea
+
+    for action_id, shortcut in (
+        ("appshell.toggle_left_panels", "Ctrl+B"),
+        ("appshell.toggle_right_panels", "Ctrl+Alt+B"),
+    ):
+        spec = services.actions.spec(action_id)
+        assert (spec.menu, spec.group, spec.shortcut) == ("View", "areas", shortcut)
+    assert not services.window.is_area_collapsed(PanelArea.LEFT)
+
+
+def test_toggling_an_area_flips_its_checkmark(services):
+    toggle = "appshell.toggle_left_panels"
+    assert state(services, toggle).checked
+
+    run(services, toggle)
+    assert not state(services, toggle).checked
+    run(services, toggle)
+    assert state(services, toggle).checked
+
+
 def test_the_move_shortcut_yields_to_word_selection_in_a_text_editor(session, projects):
     """Ctrl+Shift+Right moves the tab — except in an editable field, where it must keep
     selecting the next word. Qt's text controls claim the key through ShortcutOverride, and
