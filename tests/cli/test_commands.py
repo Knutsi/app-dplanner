@@ -335,6 +335,61 @@ def test_agent_prompt_with_no_instruction_anywhere_names_both_fixes(cli):
     assert "agent set --project" in message
 
 
+# -- authoring a step at birth -----------------------------------------------------------------
+
+
+def test_step_add_authors_the_whole_step_in_one_call(cli, cli_stdin, tmp_path):
+    cli("project", "create", "Discovery")
+    spec = tmp_path / "spec.md"
+    spec.write_text("The rule is argon2id.")
+    cli("spec", "import", "Discovery", str(spec))
+    cli("spec", "mark", "Discovery", "spec", "--title", "Hashing", "--quote", "argon2id")
+    figure = tmp_path / "fig.png"
+    figure.write_bytes(b"png bytes")
+    cli("spec", "attach", "Discovery", str(figure))
+    describe = tmp_path / "what.md"
+    describe.write_text("An offline-first store.")
+
+    cli_stdin(
+        "step", "add", "Discovery", "Hash passwords",
+        "--describe-file", str(describe), "--agent-file", "-",
+        "--days", "3", "--link", "r1", "--attach", "a1",
+        stdin="Use argon2id.",
+    )
+
+    assert data(cli("describe", "show", "Hash passwords", "--json"))["markdown"].startswith(
+        "An offline-first"
+    )
+    assert data(cli("agent", "show", "Hash passwords", "--json"))["markdown"] == "Use argon2id."
+    shown = data(cli("step", "show", "Hash passwords", "--json"))
+    assert shown["aspects"]["estimation"]["days"] == 3.0
+    assert shown["aspects"]["spec"]["requirements"] == ["r1"]
+    assert shown["aspects"]["spec"]["attachments"][0]["asset"] == "a1"
+    # One call, and the authoring lint checks have nothing left to say about this step.
+    report = data(cli("project", "lint", "Discovery", "--json", expect=1))
+    complaints = {row["check"] for row in report["findings"] if row["title"] == "Hash passwords"}
+    assert complaints == set()
+
+
+def test_a_failing_author_leaves_no_step_behind(cli, tmp_path):
+    """The transaction is the rollback: a refused flag aborts the whole add."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Doomed", "--days", "-1", expect=1)
+    assert data(cli("step", "list", "Discovery", "--json"))["steps"] == []
+    cli("step", "add", "Discovery", "Doomed", "--link", "r9", expect=1)
+    assert data(cli("step", "list", "Discovery", "--json"))["steps"] == []
+
+
+def test_two_stdin_flags_are_refused_before_either_reads(cli):
+    cli("project", "create", "Discovery")
+    out = cli(
+        "step", "add", "Discovery", "Deploy",
+        "--describe-file", "-", "--agent-file", "-", expect=1,
+    )
+    assert "one flag may read stdin" in out
+    assert data(cli("step", "list", "Discovery", "--json"))["steps"] == []
+
+
 def test_clear_steps_keeps_the_project_and_what_it_owns(cli, tmp_path):
     cli("project", "create", "Discovery")
     for title in ("A", "B", "C"):

@@ -11,10 +11,11 @@ from datetime import date
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Product, Project
+from dplanner.domain.model import Product, Project, Step
 from dplanner.domain.schedule import (
     CriticalPath,
     Scheduled,
@@ -32,6 +33,28 @@ from dplanner.modules.estimation.schedule import (
     start_of,
     write_start,
 )
+
+
+def step_author() -> StepAuthor:
+    """`step add`'s estimate flag: the new step arrives already sized."""
+
+    def configure(parser: ArgumentParser) -> None:
+        parser.add_argument(
+            "--days",
+            type=float,
+            metavar="N",
+            help="working days the new step is thought to take",
+        )
+
+    def author(context: CliContext, step: Step, args: Namespace) -> StepAuthored | None:
+        if args.days is None:
+            return None
+        if args.days < 0:
+            raise CliError("an estimate cannot be negative")
+        context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(args.days)))
+        return StepAuthored({"days": args.days}, f"estimate: {format_day_count(args.days)}")
+
+    return StepAuthor(configure, author)
 
 
 def lint_checks() -> list[LintCheck]:

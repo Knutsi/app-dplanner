@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.core.text_diff import diff_hunks
@@ -48,6 +49,53 @@ from dplanner.modules.spec.documents import (
 )
 from dplanner.modules.spec.pdf import find_quote, render_page, split_pages, text_blob_name
 from dplanner.modules.spec.pdf import text_layer as extract_text_layer
+
+
+def step_author() -> StepAuthor:
+    """`step add`'s spec flags: the new step arrives citing its requirements, figures
+    beside it — through the same cores the standalone verbs use, so the two paths
+    cannot drift."""
+
+    def configure(parser: ArgumentParser) -> None:
+        parser.add_argument(
+            "--link",
+            nargs="+",
+            metavar="R",
+            help="requirement ids the new step implements",
+        )
+        parser.add_argument(
+            "--attach",
+            nargs="+",
+            metavar="A",
+            help="spec asset ids to copy beside the new step",
+        )
+
+    def author(context: CliContext, step: Step, args: Namespace) -> StepAuthored | None:
+        if args.link is None and args.attach is None:
+            return None
+        project = context.product.project_of(step.id)
+        links = read_links(step)
+        attachments = read_attachments(step)
+        if args.link:
+            links = linked_ids(project, step, list(dict.fromkeys(args.link)))
+        files: list[str] = []
+        if args.attach:
+            attachments, files = copied_to_step(
+                context, project, step, list(dict.fromkeys(args.attach))
+            )
+        context.apply(
+            SetModuleDataCommand(step.id, MODULE_ID, write_step_entry(links, attachments))
+        )
+        notes = []
+        if args.link:
+            notes.append(f"linked {', '.join(args.link)}")
+        if args.attach:
+            notes.append(f"attached {', '.join(args.attach)}")
+        return StepAuthored(
+            {"requirements": sorted(set(links)), "attachments": files}, "; ".join(notes)
+        )
+
+    return StepAuthor(configure, author)
 
 
 def lint_checks() -> list[LintCheck]:

@@ -4,6 +4,7 @@ from argparse import ArgumentParser, Namespace
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_step
 from dplanner.domain.assets import assets, attach
@@ -112,17 +113,41 @@ def _step(context: CliContext, needle: str) -> Step:
     return find_step(context.product, needle)
 
 
-def _set(context: CliContext, args: Namespace) -> int:
+def _body(file_arg: str) -> str:
+    """A markdown body from a file, or stdin when the argument is ``-``."""
     import sys
 
-    if args.file == "-":
-        body = sys.stdin.read()
-    else:
-        path = Path(args.file)
-        if not path.is_file():
-            raise CliError(f"no such file: {args.file}")
-        body = path.read_text()
+    if file_arg == "-":
+        return sys.stdin.read()
+    path = Path(file_arg)
+    if not path.is_file():
+        raise CliError(f"no such file: {file_arg}")
+    return path.read_text()
 
+
+def step_author() -> StepAuthor:
+    """`step add`'s description flag: the new step arrives already described."""
+
+    def configure(parser: ArgumentParser) -> None:
+        parser.add_argument(
+            "--describe-file",
+            metavar="FILE",
+            help="a markdown description for the new step, or - for stdin",
+        )
+
+    def author(context: CliContext, step: Step, args: Namespace) -> StepAuthored | None:
+        if args.describe_file is None:
+            return None
+        body = _body(args.describe_file)
+        edit = TextEdit(step.id, MODULE_ID, 0, "", body)
+        context.apply(EditTextCommand(edit, label="Set Description"))
+        return StepAuthored({"described": len(body)}, f"description: {len(body)} characters")
+
+    return StepAuthor(configure, author, lambda args: args.describe_file == "-")
+
+
+def _set(context: CliContext, args: Namespace) -> int:
+    body = _body(args.file)
     step = _step(context, args.step)
     current = read(step)
     # One positioned edit over the whole document, labelled so a burst of GUI typing and a

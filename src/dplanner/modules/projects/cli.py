@@ -13,9 +13,11 @@ Qt-free by rule — see ``tests/test_architecture.py``.
 
 import json
 from argparse import ArgumentParser, Namespace
+from collections.abc import Sequence
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.authoring import StepAuthor
 from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import (
@@ -66,7 +68,44 @@ def lint_checks() -> list[LintCheck]:
     return [dangling_requires]
 
 
-def commands() -> list[CliCommand]:
+def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
+    def _configure_step_add(parser: ArgumentParser) -> None:
+        parser.add_argument("project", help=PROJECT_ARG)
+        parser.add_argument("title", help="what the step is called")
+        parser.add_argument(
+            "--after",
+            action="append",
+            default=[],
+            metavar="STEP",
+            help="a step this one waits on; repeatable",
+        )
+        for author in step_authors:
+            author.configure(parser)
+
+    def _step_add(context: CliContext, args: Namespace) -> int:
+        if sum(1 for author in step_authors if author.reads_stdin(args)) > 1:
+            raise CliError("only one flag may read stdin (-) per call")
+        product = context.product
+        project = find_project(product, args.project)
+        step = Step(title=args.title)
+        context.apply(AddNodeCommand(project.id, step))
+        waiting = [find_step(product, needle).id for needle in args.after]
+        if waiting:
+            context.apply(SetEdgesCommand(step.id, "requires", waiting))
+        # Composition-root order is report order. No rollback: an author that raises
+        # aborts the run, and the transaction writes nothing — the step included.
+        data, notes = _step_row(product, step), []
+        for author in step_authors:
+            contributed = author.author(context, step, args)
+            if contributed is not None:
+                data |= contributed.data
+                notes.append(f"  {contributed.note}")
+        context.report(
+            data,
+            "\n".join([f"Added {step.title!r} to {project.title}  {step.id}", *notes]),
+        )
+        return 0
+
     return [
         CliCommand(
             path=("project", "list"),
@@ -154,10 +193,15 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("step", "add"),
-            summary="Add a step to a project.",
+            summary="Add a step to a project — and author it in the same call: "
+            "description, instruction, estimate, links, figures.",
             configure=_configure_step_add,
             run=_step_add,
-            examples=("dplanner step add discovery 'Read the spec'",),
+            examples=(
+                "dplanner step add discovery 'Read the spec'",
+                "dplanner step add discovery 'Draft the model' --after 'Read the spec'"
+                " --describe-file model.md --agent-file - --days 3 --link r6 r7 --attach a1",
+            ),
         ),
         CliCommand(
             path=("step", "rename"),
@@ -494,30 +538,6 @@ def _step_show(context: CliContext, args: Namespace) -> int:
     for key in sorted(step.module_text):
         lines.append(f"  {key}: {len(step.module_text[key])} characters of prose")
     context.report(data, "\n".join(lines))
-    return 0
-
-
-def _configure_step_add(parser: ArgumentParser) -> None:
-    parser.add_argument("project", help=PROJECT_ARG)
-    parser.add_argument("title", help="what the step is called")
-    parser.add_argument(
-        "--after",
-        action="append",
-        default=[],
-        metavar="STEP",
-        help="a step this one waits on; repeatable",
-    )
-
-
-def _step_add(context: CliContext, args: Namespace) -> int:
-    product = context.product
-    project = find_project(product, args.project)
-    step = Step(title=args.title)
-    context.apply(AddNodeCommand(project.id, step))
-    waiting = [find_step(product, needle).id for needle in args.after]
-    if waiting:
-        context.apply(SetEdgesCommand(step.id, "requires", waiting))
-    context.report(_step_row(product, step), f"Added {step.title!r} to {project.title}  {step.id}")
     return 0
 
 

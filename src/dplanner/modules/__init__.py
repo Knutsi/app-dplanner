@@ -670,7 +670,16 @@ def default_cli_commands() -> list["CliCommand"]:
     specs = aspect_specs()
     commands = [
         *product_cli.commands(),
-        *projects_cli.commands(),
+        # The step authors let `step add` author the step in the same call; the list
+        # order is the report order — the same order the skill teaches authoring in.
+        *projects_cli.commands(
+            step_authors=[
+                description_cli.step_author(),
+                agent_cli.step_author(),
+                estimation_cli.step_author(),
+                spec_cli.step_author(),
+            ]
+        ),
         *repo_cli.commands(),
         *spec_cli.commands(),
         *estimation_cli.commands(),
