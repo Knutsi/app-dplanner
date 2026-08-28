@@ -28,6 +28,7 @@ from PySide6.QtGui import (
     QResizeEvent,
     QTextBlockFormat,
     QTextCursor,
+    QTextDocument,
 )
 from PySide6.QtWidgets import QScrollArea, QTextBrowser, QVBoxLayout, QWidget
 
@@ -36,6 +37,33 @@ from dplanner.domain.store import ModuleFileArea
 DOCUMENT_MARGIN = 12  # DESIGN.md: text never touches the frame.
 LINE_HEIGHT_PERCENT = 130
 PAGE_GAP = 12
+
+
+def area_image(area: ModuleFileArea | None, name: QUrl | str) -> QImage | None:
+    """A relative resource resolved through the file area — the one rule both the viewer
+    and the editor answer ``loadResource`` with. None means "not ours; ask Qt"."""
+    url = QUrl(name) if isinstance(name, str) else name
+    if area is not None and url.isRelative():
+        data = area.read_bytes(url.toString())
+        if data is not None:
+            image = QImage.fromData(data)
+            if not image.isNull():
+                return image
+    return None
+
+
+def style_document(document: QTextDocument) -> None:
+    """Margin and line height for a spec's text — re-applied after ``setMarkdown``,
+    which resets the document. Shared by the viewer and the editor so a document
+    reads the same whichever one is showing it."""
+    document.setDocumentMargin(DOCUMENT_MARGIN)
+    block = QTextBlockFormat()
+    block.setLineHeight(
+        LINE_HEIGHT_PERCENT, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value
+    )
+    cursor = QTextCursor(document)
+    cursor.select(QTextCursor.SelectionType.Document)
+    cursor.mergeBlockFormat(block)
 
 
 class SpecTextBrowser(QTextBrowser):
@@ -50,32 +78,16 @@ class SpecTextBrowser(QTextBrowser):
     def show_markdown(self, area: ModuleFileArea, body: str) -> None:
         self._area = area
         self.setMarkdown(body)
-        self._space_lines()
+        style_document(self.document())
 
     def show_text(self, body: str) -> None:
         self._area = None
         self.setPlainText(body)
-        self._space_lines()
-
-    def _space_lines(self) -> None:
-        self.document().setDocumentMargin(DOCUMENT_MARGIN)  # setMarkdown resets the document.
-        block = QTextBlockFormat()
-        block.setLineHeight(
-            LINE_HEIGHT_PERCENT, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value
-        )
-        cursor = QTextCursor(self.document())
-        cursor.select(QTextCursor.SelectionType.Document)
-        cursor.mergeBlockFormat(block)
+        style_document(self.document())
 
     def loadResource(self, type: int, name: QUrl | str) -> Any:  # noqa: N802, A002 - Qt override
-        url = QUrl(name) if isinstance(name, str) else name
-        if self._area is not None and url.isRelative():
-            data = self._area.read_bytes(url.toString())
-            if data is not None:
-                image = QImage.fromData(data)
-                if not image.isNull():
-                    return image
-        return super().loadResource(type, name)
+        image = area_image(self._area, name)
+        return image if image is not None else super().loadResource(type, name)
 
 
 class _PdfPage(QWidget):

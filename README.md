@@ -195,7 +195,7 @@ src/dplanner/
 │   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── progression/         the execution board — what can be launched now — and `dplanner progression show`
-│   ├── spec/                spec documents beside a project, their requirements and figures, `dplanner spec` (pdf.py: text layers and page rendering)
+│   ├── spec/                spec documents beside a project, their requirements and figures, `dplanner spec` (pdf.py: text layers and page rendering; editor.py: the in-app markdown editor)
 │   ├── workspace_watch/     reloading when something else writes to the workspace
 │   ├── agent_skill/         the skill dialog, and the install that puts dplanner on PATH
 │   ├── appshell/  workspaces/  sync/  settings/  taskcenter/  debug/
