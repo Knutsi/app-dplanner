@@ -49,7 +49,7 @@ __all__ = [
 
 def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.core.storage.git import find_repo_root
-    from dplanner.core.storage.github import gh_authenticated, gh_path
+    from dplanner.core.storage.github import gh_authenticated, gh_path, repository_url
     from dplanner.domain.model import Product
     from dplanner.domain.schedule import schedule
     from dplanner.domain.store import ProductStore
@@ -202,6 +202,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             is_git_repo=lambda path: find_repo_root(path) is not None,
             gh_installed=lambda: gh_path() is not None,
             gh_signed_in=gh_authenticated,
+            repository_url_for=repository_url,
         )
     )
     project_editor = ProjectEditorModule(

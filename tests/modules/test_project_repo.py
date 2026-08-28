@@ -53,8 +53,28 @@ def test_neither_set_resolves_to_nothing():
 
 @pytest.fixture(autouse=True)
 def _quiet_probes(monkeypatch):
-    """Never a subprocess in tests: the auth cache is pre-answered, so no probe starts."""
+    """Never a subprocess in tests: the auth cache is pre-answered, so no probe starts,
+    and the URL probe is inert — the panel's widget carries the production gh resolver,
+    and a committed checkout must not shell out mid-suite. Auto-fill tests opt back in
+    through ``inline_url_probe``."""
     monkeypatch.setattr(fields_module, "_gh_auth_cache", True)
+    monkeypatch.setattr(fields_module._UrlProbe, "start", lambda self: None)
+
+
+@pytest.fixture
+def inline_url_probe(_quiet_probes, monkeypatch):
+    """The URL probe runs synchronously on the calling thread — deterministic delivery
+    for tests that inject a fake resolver. Depends on ``_quiet_probes`` so this patch
+    lands second and wins."""
+
+    def start(self):
+        try:
+            url = self._resolve() or ""
+        except Exception:
+            url = ""
+        self._finished.emit(url)
+
+    monkeypatch.setattr(fields_module._UrlProbe, "start", start)
 
 
 @pytest.fixture
@@ -135,7 +155,9 @@ def test_the_product_fallback_shows_as_placeholder_not_text(services, project, p
     assert MODULE_ID not in project.module_data
 
 
-def make_fields(services, *, is_git_repo=None, gh_installed=None, gh_signed_in=None):
+def make_fields(
+    services, *, is_git_repo=None, gh_installed=None, gh_signed_in=None, repository_url_for=None
+):
     """A widget with injected probes — the status facts must not depend on this machine."""
     from dplanner.modules.project_repo.fields import RepoFieldsWidget
 
@@ -145,6 +167,7 @@ def make_fields(services, *, is_git_repo=None, gh_installed=None, gh_signed_in=N
         is_git_repo=is_git_repo,
         gh_installed=gh_installed,
         gh_signed_in=gh_signed_in,
+        repository_url_for=repository_url_for,
     )
 
 
@@ -192,4 +215,54 @@ def test_an_unwired_probe_says_nothing(services, project, tmp_path):
     fields.checkout.editingFinished.emit()
     assert "git repository" not in fields.status.text()
     assert "gh" not in fields.status.text()
+    fields.dispose()
+
+
+# -- auto-filling the repository from the checkout ---------------------------------------------
+
+
+def test_setting_a_checkout_autofills_an_empty_repository(services, project, inline_url_probe):
+    fields = make_fields(
+        services, repository_url_for=lambda _path: "https://github.com/acme/widget"
+    )
+    fields.show_target(project.id)
+    fields.checkout.setText("~/Code/widget")
+    fields.checkout.editingFinished.emit()
+    assert read_repository(project) == "https://github.com/acme/widget"
+    assert fields.repository.text() == "https://github.com/acme/widget"
+    # The fill is an external fact, applied off the stack: one undo removes the checkout
+    # and the auto-filled URL together, and nothing is left to redo the staleness back.
+    services.undo.undo()
+    assert MODULE_ID not in project.module_data
+    assert not services.undo.can_undo()
+    fields.dispose()
+
+
+def test_a_filled_repository_is_never_overwritten(services, project, inline_url_probe):
+    calls = []
+
+    def resolve(path):
+        calls.append(path)
+        return "https://x"
+
+    fields = make_fields(services, repository_url_for=resolve)
+    fields.show_target(project.id)
+    fields.repository.setText("https://github.com/me/mine")
+    fields.checkout.setText("~/Code/widget")
+    fields.checkout.editingFinished.emit()
+    assert read_repository(project) == "https://github.com/me/mine"
+    assert not calls  # A non-empty field never even asks.
+    fields.dispose()
+
+
+def test_a_stale_answer_is_discarded(services, project):
+    """Delivery guards, driven directly so the races stay deterministic."""
+    fields = make_fields(services, repository_url_for=lambda _path: "https://x")
+    fields.show_target(project.id)
+    # The checkout moved on while gh was out: the answer is about the old path.
+    services.document.set_module_data(project.id, MODULE_ID, write_association("", "~/new"))
+    fields._apply_repository_url(project.id, "~/old", "https://github.com/acme/widget")
+    assert read_repository(project) == ""
+    # A project that no longer exists is silence, not a crash.
+    fields._apply_repository_url(Project(title="Gone").id, "~/x", "https://x")
     fields.dispose()

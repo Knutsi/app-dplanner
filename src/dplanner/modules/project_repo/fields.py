@@ -11,8 +11,15 @@ a legitimate checkout.
 
 The future ``github`` module will make its own gh checks — deliberately: a shared probe
 would be coupling, and the check is two lines.
+
+Setting a checkout also auto-fills an *empty* Repository field: the URL gh derives from
+the checkout is an external fact, so — like ``modules/github/refresh.py``'s PR sync — it
+is applied directly, off the undo stack, with its own origin. The user's checkout command
+captured the pre-fill entry as its old state, so one undo removes the checkout and the
+auto-filled URL together, and no stale URL can ever be restored by a later undo.
 """
 
+import contextlib
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -46,6 +53,9 @@ NOTE_GAP = 6  # DESIGN.md: a remark sits 6 under what it belongs to.
 # One answer per process: None while unknown, then whatever `gh auth status` said.
 _gh_auth_cache: bool | None = None
 
+# The auto-fill's origin: foreign to the widget, so its own reload still happens.
+_AUTOFILL_ORIGIN = object()
+
 
 class _GhProbe(QObject):
     """Runs the auth check once on a daemon thread; the result lands on the GUI thread
@@ -76,6 +86,35 @@ class _GhProbe(QObject):
         self._on_done()
 
 
+class _UrlProbe(QObject):
+    """Resolves one checkout's repository URL on a daemon thread; the answer lands on the
+    GUI thread (queued — connected to a bound method of this widget-owned object)."""
+
+    _finished = Signal(str)
+
+    def __init__(
+        self,
+        resolve: Callable[[], str | None],
+        on_done: Callable[[str], None],
+        parent: QObject,
+    ) -> None:
+        super().__init__(parent)
+        self._resolve = resolve
+        self._finished.connect(on_done)
+
+    def start(self) -> None:
+        def work() -> None:
+            try:
+                url = self._resolve() or ""
+            except Exception:  # A probe must never take the panel down with it.
+                url = ""
+            with contextlib.suppress(RuntimeError):
+                # The widget (our parent) may have died while gh was out.
+                self._finished.emit(url)
+
+        threading.Thread(target=work, daemon=True).start()
+
+
 class RepoFieldsWidget(QWidget):
     """Repository and checkout for one project, re-targeted as the panel's context moves.
 
@@ -94,6 +133,7 @@ class RepoFieldsWidget(QWidget):
         is_git_repo: Callable[[Path], bool] | None = None,
         gh_installed: Callable[[], bool] | None = None,
         gh_signed_in: Callable[[], bool] | None = None,
+        repository_url_for: Callable[[Path], str | None] | None = None,
     ) -> None:
         super().__init__(parent)
         self._product = product
@@ -101,6 +141,7 @@ class RepoFieldsWidget(QWidget):
         self._is_git_repo = is_git_repo
         self._gh_installed = gh_installed
         self._gh_signed_in = gh_signed_in
+        self._repository_url_for = repository_url_for
         self._project_id: NodeId | None = None
         self._loading = False
         self._probe: _GhProbe | None = None
@@ -180,6 +221,44 @@ class RepoFieldsWidget(QWidget):
             )
         )
         self._refresh_status()
+        self._maybe_autofill_repository()
+
+    def _maybe_autofill_repository(self) -> None:
+        """Ask gh for the checkout's repository URL when the Repository field is empty."""
+        if self._repository_url_for is None or self._project_id is None:
+            return
+        if self.repository.text().strip():
+            return
+        checkout = self.checkout.text().strip()
+        if not checkout:
+            return
+        resolve = self._repository_url_for
+        project_id = self._project_id
+        path = Path(checkout).expanduser()
+        _UrlProbe(
+            lambda: resolve(path),
+            lambda url: self._apply_repository_url(project_id, checkout, url),
+            self,
+        ).start()
+
+    def _apply_repository_url(self, project_id: NodeId, checkout: str, url: str) -> None:
+        # The answer is stale the moment anything moved: the project is gone, a repository
+        # was written meanwhile (never overwrite), the checkout changed again, or the user
+        # is mid-typing an uncommitted URL. Silence is the only correct reaction to all.
+        if not url or not self._product.has(project_id):
+            return
+        project = self._product.project(project_id)
+        if read_repository(project) or read_checkout(project) != checkout:
+            return
+        if self._project_id == project_id and self.repository.text().strip():
+            return
+        SetModuleDataCommand(
+            project_id,
+            MODULE_ID,
+            write_association(url, checkout),
+            view_origin=_AUTOFILL_ORIGIN,
+            label="Auto-fill Project Repository",
+        ).redo(self._product)
 
     def _browse(self) -> None:
         if self._project_id is None:

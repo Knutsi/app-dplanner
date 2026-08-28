@@ -27,6 +27,9 @@ class ProjectRepoDeps:
     is_git_repo: Callable[[Path], bool] | None = None
     gh_installed: Callable[[], bool] | None = None
     gh_signed_in: Callable[[], bool] | None = None
+    # Resolves a checkout path to its repository URL, for auto-filling an empty
+    # Repository field. Same contract: None means the card simply never auto-fills.
+    repository_url_for: Callable[[Path], str | None] | None = None
 
 
 class ProjectRepoModule:
@@ -46,6 +49,7 @@ class ProjectRepoModule:
                 is_git_repo=deps.is_git_repo,
                 gh_installed=deps.gh_installed,
                 gh_signed_in=deps.gh_signed_in,
+                repository_url_for=deps.repository_url_for,
             )
 
         deps.cards.register(

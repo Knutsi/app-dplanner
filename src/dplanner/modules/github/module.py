@@ -3,13 +3,16 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QWidget
 
 from dplanner.domain.model import Product, StepId
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.undo import UndoService
 from dplanner.modules.github.aspect import DATA_FORMAT, MODULE_ID, SPEC
+from dplanner.modules.github.gh import which_gh
+from dplanner.modules.github.notice import maybe_warn
 from dplanner.modules.github.refresh import PrRefresher
 from dplanner.modules.github.section import GithubSection
 
@@ -20,7 +23,7 @@ class GithubDeps:
     undo: UndoService[Product]
     sections: InspectorSectionRegistry
     tasks: TaskService
-    parent: QObject  # Owns the refresher, so its timer dies with the window.
+    parent: QWidget  # The window: owns the refresher and parents the missing-gh notice.
     # step id -> the repository URL that step's refs belong to. project_repo's rule (the
     # project's own repository over the product's), arriving through the composition root.
     repository_for: Callable[[StepId], str]
@@ -44,3 +47,7 @@ class GithubModule:
             )
         )
         PrRefresher(deps.product, deps.tasks, deps.repository_for, parent=deps.parent).start()
+        # Deferred past the window's show; notice.py keeps it to once per process.
+        QTimer.singleShot(
+            0, lambda: maybe_warn(deps.parent, installed=lambda: which_gh() is not None)
+        )

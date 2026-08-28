@@ -390,6 +390,18 @@ the host differs, the extension contract does not. Worth a line in the template'
 the card host drives `show_target` with a *project* id — the contract's target vocabulary is
 whatever the host says it is, and that turned out to be the feature, not a loophole.
 
+### `core/storage/github.py` grew `repository_url(checkout)`
+
+**What.** One function beside `gh_path()`/`gh_authenticated()`: `gh repo view --json url`
+run *at* an arbitrary checkout path, returning the canonical repository URL or `None` for
+every refusal alike (gh missing, unauthenticated, not a repo, no GitHub remote). The
+composition root wires it into `project_repo` as an injected probe, which auto-fills the
+project card's empty Repository field after a checkout is set.
+
+**Why it is DPlanner-specific.** The template's storage layer only ever asks gh about the
+*workspace's* repository; asking about somebody else's checkout is a planner concern.
+Upstream would want it only if the template ever grows a "point at another repo" feature.
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class
