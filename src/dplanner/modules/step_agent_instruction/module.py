@@ -132,6 +132,9 @@ class StepAgentInstructionModule:
                 prompt_parts=deps.prompt_parts,
                 prompt_sections=deps.prompt_sections,
                 read_asset=deps.read_asset,
+                # The Prompt tab shows the same assembly Run Agent launches with —
+                # unstaged, so its paths are workspace-relative and read_asset resolves.
+                assembled=lambda step_id: self._assembled(deps.product.step(step_id)),
                 files=deps.files,
                 run_state=lambda: deps.actions.spec("agent.run").state(deps.context.current()),
                 run=lambda: deps.actions.run("agent.run", deps.context.current()),

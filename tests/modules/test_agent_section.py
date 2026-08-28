@@ -56,6 +56,70 @@ def card(services):
 # -- the three parts ---------------------------------------------------------------------------
 
 
+# -- the Prompt tab ----------------------------------------------------------------------------
+
+
+def test_the_section_opens_on_the_prompt_tab_showing_the_assembly(services, step, section):
+    """The first thing shown is the thing to inspect: the exact text Run Agent sends."""
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    project = services.document.project_of(step.id)
+    services.document.set_text(project.id, "step_agent_instruction", "House rules.")
+    section.show_target(step.id)
+
+    assert section.tab_bar.currentIndex() == 0
+    text = section.prompt_view.toPlainText()
+    assert text.startswith("# Step: Deploy")
+    assert "## Project instructions" in text and "House rules." in text
+    assert "Ship it." in text
+    assert "## When you are done" in text  # the epilogue rides along — the full briefing
+
+
+def test_the_prompt_is_tinted_by_origin_without_changing_the_text(services, step, section):
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    project = services.document.project_of(step.id)
+    services.document.set_text(project.id, "step_agent_instruction", "House rules.")
+    section.show_target(step.id)
+    # The colouring renders segments; the characters must be exactly the assembly.
+    assert section.prompt_view.toPlainText() == section._assembled_now.text
+    legend = section.prompt_legend.text()
+    assert section.prompt_legend.isVisibleTo(section)
+    assert "Project" in legend and "This step" in legend
+
+
+def test_the_prompt_tab_lists_every_referenced_image(services, step, section):
+    from dplanner.domain.assets import attach
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    attach(services.repo.files(step.id, "step_agent_instruction"), b"png", "mock.png")
+    attach(services.repo.files(step.id, "spec"), b"png", "figure.png")
+    section.show_target(step.id)
+    names = section.prompt_gallery._names
+    assert len(names) == 2
+    assert any("step_agent_instruction" in name for name in names)
+    assert any("modules/spec" in name for name in names)
+
+
+def test_the_prompt_refreshes_lazily_only_while_shown(services, step, section):
+    section.show_target(step.id)
+    section.tab_bar.setCurrentIndex(1)  # Components
+    services.document.set_text(step.id, "step_description", "Now described.")
+    assert "Now described." not in section.prompt_view.toPlainText()  # stale, offscreen
+    section.tab_bar.setCurrentIndex(0)  # back to Prompt
+    assert "Now described." in section.prompt_view.toPlainText()
+
+
+def test_copy_prompt_fills_the_clipboard(services, step, section):
+    from PySide6.QtGui import QGuiApplication
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    section.show_target(step.id)
+    section.copy_button.click()
+    assert QGuiApplication.clipboard().text() == section.prompt_view.toPlainText()
+
+
+# -- the Components tab ------------------------------------------------------------------------
+
+
 def test_this_step_opens_expanded_and_the_context_parts_collapsed(services, step, section):
     section.show_target(step.id)
     assert section.step_part.expanded()
