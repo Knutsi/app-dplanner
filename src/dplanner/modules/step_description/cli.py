@@ -4,7 +4,7 @@ from argparse import ArgumentParser, Namespace
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_step
 from dplanner.domain.assets import assets, attach
 from dplanner.domain.commands import EditTextCommand
@@ -13,7 +13,9 @@ from dplanner.modules.step_description.aspect import MODULE_ID, read
 
 
 def lint_checks() -> list[LintCheck]:
-    def missing_descriptions(_product: Product, project: Project) -> list[LintFinding]:
+    def missing_descriptions(
+        _product: Product, project: Project, _files: FilesFor
+    ) -> list[LintFinding]:
         return [
             LintFinding(
                 check="description.missing",

@@ -17,7 +17,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import EditTextCommand
 from dplanner.domain.model import Node, Product, Project, Step, StepId, TextEdit
@@ -50,7 +50,9 @@ def _no_epilogue(_step: Step) -> str:
 
 
 def lint_checks() -> list[LintCheck]:
-    def missing_instructions(_product: Product, project: Project) -> list[LintFinding]:
+    def missing_instructions(
+        _product: Product, project: Project, _files: FilesFor
+    ) -> list[LintFinding]:
         # A standing instruction covers every step, so it silences this check — the same
         # rule `agent prompt`'s guard applies.
         if read_project(project):

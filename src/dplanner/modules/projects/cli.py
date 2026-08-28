@@ -16,7 +16,7 @@ from argparse import ArgumentParser, Namespace
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -42,7 +42,9 @@ def _one_step(parser: ArgumentParser) -> None:
 
 
 def lint_checks() -> list[LintCheck]:
-    def dangling_requires(_product: Product, project: Project) -> list[LintFinding]:
+    def dangling_requires(
+        _product: Product, project: Project, _files: FilesFor
+    ) -> list[LintFinding]:
         # remove_child keeps edges naming a deleted step so undo restores the graph
         # exactly, and requires()/depths() silently skip them — this is the one reader
         # that says they are there.

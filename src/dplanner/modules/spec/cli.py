@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.core.text_diff import diff_hunks
 from dplanner.domain.assets import attach
@@ -50,7 +50,9 @@ from dplanner.modules.spec.pdf import text_layer as extract_text_layer
 
 
 def lint_checks() -> list[LintCheck]:
-    def spec_findings(_product: Product, project: Project) -> list[LintFinding]:
+    def spec_findings(
+        _product: Product, project: Project, _files: FilesFor
+    ) -> list[LintFinding]:
         requirements = read_index(project).requirements
         known = {requirement.id for requirement in requirements}
         findings = [

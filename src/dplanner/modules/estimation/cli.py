@@ -11,7 +11,7 @@ from datetime import date
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Product, Project
@@ -35,7 +35,9 @@ from dplanner.modules.estimation.schedule import (
 
 
 def lint_checks() -> list[LintCheck]:
-    def missing_estimates(_product: Product, project: Project) -> list[LintFinding]:
+    def missing_estimates(
+        _product: Product, project: Project, _files: FilesFor
+    ) -> list[LintFinding]:
         findings = [
             LintFinding(
                 check="estimate.missing",
