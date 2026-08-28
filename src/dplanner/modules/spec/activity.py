@@ -11,6 +11,7 @@ from typing import Any
 from PySide6.QtCore import QModelIndex, QRect, QSize, Qt
 from PySide6.QtGui import QIcon, QPainter
 from PySide6.QtWidgets import (
+    QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -162,7 +163,13 @@ class SpecsActivity(ActivityBase):
         side_layout.setContentsMargins(0, 0, 0, 0)
         side_layout.setSpacing(BLOCK_GAP)
         self.toolbar = ActionToolbar(actions, context, TOOLBAR_ACTIONS, BUTTON_TEXT, side)
-        side_layout.addWidget(self.toolbar)
+        # A trailing stretch keeps the buttons left — without it the row's spare width
+        # spreads the fixed-size buttons apart (same move as CanvasToolbar's row).
+        toolbar_row = QHBoxLayout()
+        toolbar_row.setContentsMargins(0, 0, 0, 0)
+        toolbar_row.addWidget(self.toolbar)
+        toolbar_row.addStretch(1)
+        side_layout.addLayout(toolbar_row)
         self.list = QListWidget(side)
         self.list.setItemDelegate(_DocumentDelegate(self.list))
         self.list.currentItemChanged.connect(lambda *_a: self._on_selection())
