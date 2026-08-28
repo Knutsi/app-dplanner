@@ -18,13 +18,18 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem, QWidget
+from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem
 
 from dplanner.domain.model import NodeId, Product
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextNode, ContextService, selection_uri
-from dplanner.framework.index_panel import expansion_of, restore_expansion
+from dplanner.framework.index_panel import (
+    expansion_of,
+    restore_expansion,
+    restore_selection,
+    selection_of,
+)
 from dplanner.framework.theme_service import ThemeService
 from dplanner.theme.icons import project_icon
 
@@ -131,14 +136,21 @@ class ProjectsSegment:
     # -- building ------------------------------------------------------------------------------
 
     def rebuild(self) -> None:
-        """Redraw the folder, keeping open what the user had open.
+        """Redraw the folder, keeping open — and selected — what the user had.
 
         A whole redraw rather than a diff: a product holds tens of projects, not thousands,
         and a diff is where tree bugs live. Expansion is still restored because a folder the
         user closed should stay closed — the entry rows nesting under each project are why.
+        Selection is restored under blocked signals, because ``takeChildren`` deselecting
+        everything would otherwise publish an empty selection scope on every rename — and
+        the panels following the context would abandon what the user is looking at.
         """
+        tree = self._tree()
+        if tree is not None:
+            tree.blockSignals(True)
         ink = self._theme.current.text_secondary
         open_keys = expansion_of(self._root)
+        selected_keys = selection_of(self._root)
         self._root.takeChildren()
         for project in self._product.projects:
             row = QTreeWidgetItem([project.title or "Untitled project"])
@@ -156,6 +168,12 @@ class ProjectsSegment:
                 row.addChild(child)
             self._root.addChild(row)
         restore_expansion(self._root, open_keys)
+        restored = restore_selection(self._root, selected_keys)
+        if tree is not None:
+            tree.blockSignals(False)
+            if restored != selected_keys:
+                # A selected row is truly gone — that change must announce itself.
+                tree.itemSelectionChanged.emit()
 
     def _identity(self, item: QTreeWidgetItem) -> tuple[str, str]:
         kind = item.data(0, KIND_ROLE)
@@ -172,6 +190,6 @@ class ProjectsSegment:
         project_id = item.data(0, PROJECT_ROLE)
         return project_id if isinstance(project_id, str) else ""
 
-    def _tree(self) -> QWidget | None:
+    def _tree(self) -> QTreeWidget | None:
         tree = self._root.treeWidget()
         return tree if isinstance(tree, QTreeWidget) else None

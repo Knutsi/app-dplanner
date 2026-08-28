@@ -225,6 +225,32 @@ def restore_expansion(item: QTreeWidgetItem, open_keys: set[str]) -> None:
             row.setExpanded(True)
 
 
+def selection_of(item: QTreeWidgetItem) -> set[str]:
+    """Which rows under ``item`` are selected, by the same per-row key as expansion.
+
+    The companion `restore_selection` exists because a rebuild that drops the selection
+    does not just lose a highlight: the tree publishes the (now empty) selection scope,
+    and every panel following the context abandons what the user was looking at."""
+    return {
+        key
+        for row in _walk(item)
+        if row.isSelected() and isinstance(key := row.data(0, Qt.ItemDataRole.UserRole), str)
+    }
+
+
+def restore_selection(item: QTreeWidgetItem, selected_keys: set[str]) -> set[str]:
+    """Re-select the surviving rows; returns the keys actually restored, so a caller can
+    tell whether the selection truly changed (a selected row deleted underneath) and only
+    then let the change announce itself."""
+    restored: set[str] = set()
+    for row in _walk(item):
+        key = row.data(0, Qt.ItemDataRole.UserRole)
+        if isinstance(key, str) and key in selected_keys:
+            row.setSelected(True)
+            restored.add(key)
+    return restored
+
+
 def _walk(item: QTreeWidgetItem) -> list[QTreeWidgetItem]:
     rows = [item]
     for index in range(item.childCount()):

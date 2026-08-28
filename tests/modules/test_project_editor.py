@@ -979,7 +979,7 @@ def test_right_clicking_an_unselected_step_makes_it_current(services, project, t
 
 def save_layout(services, project, name):
     from dplanner.modules.project_editor.layout_verbs import set_current_layout_name
-    from dplanner.modules.project_editor.layouts import save_layout_command, snapshot
+    from dplanner.modules.project_editor.named_layouts import save_layout_command, snapshot
 
     snap = snapshot(services.document, project)
     services.undo.push(save_layout_command(project, name, snap))
@@ -1028,7 +1028,7 @@ def test_a_sort_action_is_one_undo_step(services, project, tab):
 
 def test_applying_a_layout_is_one_undo_step_that_restores_every_position(services, project, tab):
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.project_editor.layouts import snapshot
+    from dplanner.modules.project_editor.named_layouts import snapshot
     from dplanner.modules.project_editor.positions import write_position
 
     saved = save_layout(services, project, "release plan")

@@ -5,10 +5,39 @@ hand-maintained copy of it. One builder, reading the same registry through the s
 context, is what keeps four presentations of the same verbs from drifting apart.
 """
 
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu, QWidget
 
 from dplanner.framework.action_registry import ActionRegistry, ActionState
 from dplanner.framework.context import ContextService
+
+
+def append_action(
+    target: QMenu,
+    actions: ActionRegistry,
+    context_service: ContextService,
+    action_id: str,
+) -> QAction | None:
+    """One registered action as a menu entry, under the one presenter policy.
+
+    Greyed when disabled, omitted only when hidden, the state's label over the spec's,
+    checkable when the state says so, and the context re-read at trigger time. The policy
+    lives here so a widget that assembles its popup by hand (a toolbar button mixing data
+    rows with verbs) renders an entry, never a copy of one.
+    """
+    spec = actions.spec(action_id)
+    state = spec.state(context_service.current())
+    if not state.visible:
+        return None
+    entry = target.addAction(state.label if state.label is not None else spec.label)
+    entry.setEnabled(state.enabled)
+    if state.checked is not None:
+        entry.setCheckable(True)
+        entry.setChecked(state.checked)
+    entry.triggered.connect(
+        lambda _checked=False, sid=spec.id: actions.run(sid, context_service.current())
+    )
+    return entry
 
 
 def build_menu(

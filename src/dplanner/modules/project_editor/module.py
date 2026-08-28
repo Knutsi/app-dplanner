@@ -37,10 +37,9 @@ from dplanner.domain.commands import (
 from dplanner.domain.model import NodeId, Product, Project, Step, StepId
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
-from dplanner.framework.activity import ActivityBase
+from dplanner.framework.activity import EntityActivity, follow_entity_tabs
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
-    SCOPE_SELECTION,
     ContextNode,
     ContextService,
     Uri,
@@ -58,7 +57,6 @@ from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import StepNodeItem
-from dplanner.modules.project_editor.layout import positions
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
 from dplanner.modules.project_editor.modes import (
@@ -69,6 +67,7 @@ from dplanner.modules.project_editor.modes import (
     RegionCreateMode,
 )
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
+from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import DATA_FORMAT, write_position
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.project_panel import ProjectPanel
@@ -130,7 +129,7 @@ class ProjectEditorDeps:
     cards: InspectorSectionRegistry = field(default_factory=InspectorSectionRegistry)
 
 
-class ProjectActivity(ActivityBase):
+class ProjectActivity(EntityActivity):
     """One project, as a graph. What is selected on it is published; the panels follow."""
 
     def __init__(
@@ -140,16 +139,15 @@ class ProjectActivity(ActivityBase):
         verbs: StepVerbs,
         layout_verbs: LayoutVerbs,
     ) -> None:
+        # Only the pane the user is in may write to the selection scope: a background one
+        # re-syncing its canvas — when a step is deleted, say — would otherwise clobber
+        # what the active pane published. EntityActivity owns that rule.
+        super().__init__(deps.context, "project", project_id)
         self._deps = deps
         self._product = deps.product
         self._verbs = verbs
         self._layout_verbs = layout_verbs
         self.project_id = project_id
-        # There is one selection scope, one detail panel and several panes on screen. Only
-        # the pane the user is in may write to the scope: a background one re-syncing its
-        # canvas — when a step is deleted, say — would otherwise clobber what the active pane
-        # published, and the panel would follow it away from what the user is looking at.
-        self._is_active = False
 
         self._scene = GraphScene(self._link_refusal)
         self._view = GraphView(
@@ -198,8 +196,7 @@ class ProjectActivity(ActivityBase):
         return self._page
 
     def on_activated(self) -> None:
-        self._is_active = True
-        self._publish_activity()
+        super().on_activated()
         self._publish_selection(self._scene.selection())
         # The canvas has its own key bindings, so it has to actually hold the keyboard.
         self._view.setFocus()
@@ -246,7 +243,7 @@ class ProjectActivity(ActivityBase):
         return True
 
     def on_deactivated(self) -> None:
-        self._is_active = False
+        super().on_deactivated()
         # A mode is something the user is in, and they are no longer in this pane.
         self._view.modes.pop_to_base()
         self._deps.undo.break_coalescing()
@@ -339,25 +336,25 @@ class ProjectActivity(ActivityBase):
         self._deps.undo.break_coalescing()
         self._publish_selection(selection)
 
-    def _publish_activity(self) -> None:
-        if not self._is_active:
-            return
-        self._deps.context.set_scope(
-            SCOPE_ACTIVITY,
-            (
-                ContextNode(
-                    self.uri,
-                    (
-                        ("entity", entity_uri("project", self.project_id)),
-                        ("mode", canvas_mode_uri(self._view.modes.current().name)),
-                    ),
+    def activity_nodes(self) -> tuple[ContextNode, ...]:
+        # The base's entity edge, plus the canvas's current input mode — a mode-switch
+        # action's checked state is a pure function of the context.
+        return (
+            ContextNode(
+                self.uri,
+                (
+                    ("entity", entity_uri("project", self.project_id)),
+                    ("mode", canvas_mode_uri(self._view.modes.current().name)),
                 ),
             ),
         )
 
-    def _publish_selection(self, selection: CanvasSelection) -> None:
+    def _publish_activity(self) -> None:
         if not self._is_active:
-            return  # See _is_active: a background pane does not speak for the user.
+            return
+        self._deps.context.set_scope(SCOPE_ACTIVITY, self.activity_nodes())
+
+    def _publish_selection(self, selection: CanvasSelection) -> None:
         nodes = (
             tuple(ContextNode(selection_uri("step", step_id)) for step_id in selection.steps)
             + tuple(
@@ -369,7 +366,7 @@ class ProjectActivity(ActivityBase):
                 for region_id in selection.regions
             )
         )
-        self._deps.context.set_scope(SCOPE_SELECTION, nodes)
+        self.publish_selection(nodes)
 
     def _move_command(self, step_id: StepId, x: float, y: float) -> Command:
         return SetModuleDataCommand(
@@ -558,8 +555,13 @@ class ProjectEditorModule:
         self._layout_verbs.register_into(deps.actions)
         self._region_verbs.register_into(deps.actions)
         # A project that goes away takes its tab with it, and a rename reaches the tab.
-        deps.product.structure_changed.connect(lambda *_args: self._close_orphan_tabs())
-        deps.product.field_changed.connect(lambda *_args: self._retitle_tabs())
+        follow_entity_tabs(
+            deps.tabs,
+            ProjectActivity,
+            deps.product.has,
+            closes_on=deps.product.structure_changed,
+            retitles_on=deps.product.field_changed,
+        )
 
     # -- tabs ------------------------------------------------------------------------------------
 
@@ -593,13 +595,3 @@ class ProjectEditorModule:
         current = self._current_activity()
         if current is not None:
             current.frame()
-
-    def _close_orphan_tabs(self) -> None:
-        for activity in self._activities():
-            if not self._deps.product.has(activity.project_id):
-                self._deps.tabs.close_activity(activity)
-
-    def _retitle_tabs(self) -> None:
-        for activity in self._activities():
-            if self._deps.product.has(activity.project_id):
-                self._deps.tabs.set_tab_title(activity, activity.title)

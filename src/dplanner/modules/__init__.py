@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from dplanner.domain.store import ModuleFileArea
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
-    from dplanner.modules.step_agent_instruction.prompt import PromptPart
+    from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
 
 __all__ = [
     "StorageLocation",
@@ -221,13 +221,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         """
         return schedule(order, estimated_days, start_of(product.project(project_id)))
 
-    # The briefing's blocks come from the shared builders below the list — the same two
-    # functions the CLI wires in — closed over the window's product and store here.
-    def agent_prompt_parts(step_id: str) -> list["PromptPart"]:
-        return _handoff_parts(product, product.step(step_id), store.files)
-
-    def agent_prompt_sections(step_id: str) -> list["PromptPart"]:
-        return _briefing_sections(product, product.step(step_id), store.files)
+    # The one briefing both the window and the CLI assemble from — see _default_briefing.
+    briefing = _default_briefing()
 
     # Three modules constructed before the list, because what each one hands the others
     # reads better as wiring than as ordering:
@@ -528,10 +523,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 files=store.files,
                 # How staged assets are read at launch — bytes by workspace-relative path.
                 read_asset=store.storage.read_bytes,
-                prompt_parts=agent_prompt_parts,
-                prompt_sections=agent_prompt_sections,
-                epilogue=lambda step_id: _agent_epilogue(product.step(step_id).title),
-                preamble=_agent_preamble(),
+                briefing=briefing,
                 # Where the agent runs: the project's checkout over the product's — the
                 # one resolution rule, closed over step → project here.
                 checkout_for=lambda step_id: repo_checkout_for(
@@ -726,6 +718,21 @@ def _briefing_sections(
     return sections
 
 
+def _default_briefing() -> "Briefing":
+    """The briefing every surface assembles from: the shared block builders below, and
+    the root's own opening and closing prose. One object, two callers — the window's
+    Deps and ``dplanner agent prompt`` — so what an agent is launched with and what the
+    verb prints are the same text by construction."""
+    from dplanner.modules.step_agent_instruction.prompt import Briefing
+
+    return Briefing(
+        parts=_handoff_parts,
+        sections=_briefing_sections,
+        epilogue=lambda step: _agent_epilogue(step.title),
+        preamble=_agent_preamble(),
+    )
+
+
 def _agent_preamble() -> str:
     """The briefing's preflight: the agent proves it can report back before it starts.
 
@@ -816,12 +823,7 @@ def default_cli_commands() -> list["CliCommand"]:
         *estimation_cli.commands(),
         *ticket_cli.commands(),
         *description_cli.commands(),
-        *agent_cli.commands(
-            prompt_parts=_handoff_parts,
-            prompt_sections=_briefing_sections,
-            epilogue=lambda step: _agent_epilogue(step.title),
-            preamble=_agent_preamble(),
-        ),
+        *agent_cli.commands(briefing=_default_briefing()),
         *agent_state_cli.commands(),
         *status_cli.commands(),
         *release_cli.commands(),

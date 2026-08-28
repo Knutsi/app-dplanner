@@ -49,7 +49,9 @@ from dplanner.modules.step_agent_instruction.aspect import (
     read_project,
 )
 from dplanner.modules.step_agent_instruction.prompt import (
+    EMPTY_BRIEFING,
     AssembledPrompt,
+    Briefing,
     PromptPart,
     assemble,
 )
@@ -75,16 +77,8 @@ PREVIEW_NOTE = (
 )
 
 
-def _no_parts(_step_id: StepId) -> Sequence[PromptPart]:
-    return ()
-
-
 def _no_record(_step_id: StepId) -> None:
     return None
-
-
-def _no_epilogue(_step_id: StepId) -> str:
-    return ""
 
 
 @dataclass(frozen=True)
@@ -97,19 +91,16 @@ class StepAgentInstructionDeps:
     settings_sections: SettingsSectionRegistry
     status: StatusHost
     parent: QWidget
+    # The store's file areas and raw byte access — how instruction images are listed for
+    # the prompt and staged beside it at launch.
+    files: FilesFor
+    read_asset: Callable[[str], bytes | None]
     # The project panel's card registry; None is a build without a project panel.
     cards: InspectorSectionRegistry | None = None
-    # The store's file areas and raw byte access — how instruction images are listed for
-    # the prompt and staged beside it at launch. None is a build without file storage.
-    files: FilesFor | None = None
-    read_asset: Callable[[str], bytes | None] | None = None
-    # The briefing's blocks — handed-forward context, the step's own facts — and its
-    # opening and closing words, assembled by the composition root — the one place
-    # allowed to know what the other aspects store.
-    prompt_parts: Callable[[StepId], Sequence[PromptPart]] = field(default=_no_parts)
-    prompt_sections: Callable[[StepId], Sequence[PromptPart]] = field(default=_no_parts)
-    epilogue: Callable[[StepId], str] = field(default=_no_epilogue)
-    preamble: str = ""
+    # The cross-module half of the prompt, assembled by the composition root — the one
+    # place allowed to know what the other aspects store. The same object feeds
+    # ``dplanner agent prompt``, so the two surfaces cannot drift.
+    briefing: Briefing = EMPTY_BRIEFING
     # Where the agent runs. The root resolves the project's checkout over the product's;
     # None is the product-only build, not a second copy of that rule.
     checkout_for: Callable[[StepId], str] | None = None
@@ -128,6 +119,14 @@ class StepAgentInstructionModule:
     def register(self) -> None:
         deps = self._deps
 
+        # The tab thinks per step id; the briefing speaks the shared (product, step,
+        # files) vocabulary. The one adapter lives here, in the module that owns both.
+        def parts_for(step_id: StepId) -> Sequence[PromptPart]:
+            return deps.briefing.parts(deps.product, deps.product.step(step_id), deps.files)
+
+        def sections_for(step_id: StepId) -> Sequence[PromptPart]:
+            return deps.briefing.sections(deps.product, deps.product.step(step_id), deps.files)
+
         def make_section() -> AgentSection:
             # The tab's buttons are the same verbs the menus run — evaluated lazily, so
             # the registration order of action and section never matters.
@@ -135,8 +134,8 @@ class StepAgentInstructionModule:
                 deps.product,
                 deps.undo,
                 PLACEHOLDER,
-                prompt_parts=deps.prompt_parts,
-                prompt_sections=deps.prompt_sections,
+                prompt_parts=parts_for,
+                prompt_sections=sections_for,
                 read_asset=deps.read_asset,
                 # The Prompt tab shows the same assembly Run Agent launches with —
                 # unstaged, so its paths are workspace-relative and read_asset resolves.
@@ -244,25 +243,22 @@ class StepAgentInstructionModule:
 
         parts = [
             PromptPart(heading=part.heading, body=part.body, files=place(part.files))
-            for part in deps.prompt_parts(step.id)
+            for part in deps.briefing.parts(deps.product, step, deps.files)
         ]
         sections = [
             PromptPart(heading=section.heading, body=section.body, files=place(section.files))
-            for section in deps.prompt_sections(step.id)
+            for section in deps.briefing.sections(deps.product, step, deps.files)
         ]
-        project_files: tuple[str, ...] = ()
-        instruction_files: tuple[str, ...] = ()
-        if deps.files is not None:
-            project_files = place(asset_paths(deps.files, project.id))
-            instruction_files = place(asset_paths(deps.files, step.id))
+        project_files = place(asset_paths(deps.files, project.id))
+        instruction_files = place(asset_paths(deps.files, step.id))
         return assemble(
             step_title=step.title or "Untitled step",
             project_title=project.title or "Untitled project",
             instruction=read(step),
             parts=parts,
             sections=sections,
-            epilogue=deps.epilogue(step.id),
-            preamble=deps.preamble,
+            epilogue=deps.briefing.epilogue(step),
+            preamble=deps.briefing.preamble,
             project_instruction=read_project(project),
             project_files=project_files,
             instruction_files=instruction_files,
@@ -274,11 +270,7 @@ class StepAgentInstructionModule:
             return
         deps = self._deps
         run_dir = launcher.new_run_dir()
-        staged: dict[str, str] = {}
-        if deps.read_asset is not None:
-            staged = launcher.stage_assets(
-                run_dir, self._assembled(step).files, deps.read_asset
-            )
+        staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
         workdir = Path(self._checkout(step.id)).expanduser()
         # The slug carries a short id so two steps with one title never share a worktree.

@@ -10,7 +10,7 @@ from dplanner.cli.main import run
 from dplanner.core.storage.local import LocalStorage
 from dplanner.domain.store import ProductStore
 from dplanner.modules import default_cli_commands, default_module_formats
-from dplanner.modules.project_editor.layout import positions
+from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.modules.project_editor.regions import read_regions
 

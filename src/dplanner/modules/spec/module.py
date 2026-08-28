@@ -24,6 +24,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
+from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
@@ -126,8 +127,13 @@ class SpecModule:
                 run=self._open,
             )
         )
-        deps.product.structure_changed.connect(lambda *_a: self._close_orphan_tabs())
-        deps.product.field_changed.connect(lambda *_a: self._retitle_tabs())
+        follow_entity_tabs(
+            deps.tabs,
+            SpecsActivity,
+            deps.product.has,
+            closes_on=deps.product.structure_changed,
+            retitles_on=deps.product.field_changed,
+        )
 
     # -- actions -------------------------------------------------------------------------------
 
@@ -230,18 +236,3 @@ class SpecModule:
             )
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(area.absolute(document.file))))
-
-    # -- tab upkeep ----------------------------------------------------------------------------
-
-    def _activities(self) -> list[SpecsActivity]:
-        return [a for a in self._deps.tabs.activities() if isinstance(a, SpecsActivity)]
-
-    def _close_orphan_tabs(self) -> None:
-        for activity in self._activities():
-            if not self._deps.product.has(activity.project_id):
-                self._deps.tabs.close_activity(activity)
-
-    def _retitle_tabs(self) -> None:
-        for activity in self._activities():
-            if self._deps.product.has(activity.project_id):
-                self._deps.tabs.set_tab_title(activity, activity.title)

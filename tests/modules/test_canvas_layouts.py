@@ -5,7 +5,7 @@ built from the same functions — and exercising it without one is part of the p
 """
 
 from dplanner.domain.model import Product, Project, Step
-from dplanner.modules.project_editor.layouts import (
+from dplanner.modules.project_editor.named_layouts import (
     LayoutSnapshot,
     apply_layout_commands,
     delete_layout_command,

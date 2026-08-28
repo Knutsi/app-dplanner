@@ -37,8 +37,6 @@ from dplanner.framework.widgets import install_ctrl_wheel_zoom
 from dplanner.modules.project_editor.items import (
     EdgeItem,
     LinkPreviewItem,
-    RegionItem,
-    RegionPreviewItem,
     StepNodeItem,
 )
 from dplanner.modules.project_editor.keymap import bound_actions
@@ -52,6 +50,7 @@ from dplanner.modules.project_editor.modes import (
     ModeStack,
     PanMode,
 )
+from dplanner.modules.project_editor.region_items import RegionItem, RegionPreviewItem
 from dplanner.modules.project_editor.regions import Region
 from dplanner.modules.project_editor.renderers import NodeAccent, RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef

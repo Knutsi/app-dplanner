@@ -25,6 +25,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
+from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.context import Context, ContextService, activity_uri
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tabs import TabHost
@@ -119,8 +120,13 @@ class EstimationModule:
                 run=self._open_for_context,
             )
         )
-        deps.product.structure_changed.connect(lambda *_a: self._close_orphan_tabs())
-        deps.product.field_changed.connect(lambda *_a: self._retitle_tabs())
+        follow_entity_tabs(
+            deps.tabs,
+            BulkEstimateActivity,
+            deps.product.has,
+            closes_on=deps.product.structure_changed,
+            retitles_on=deps.product.field_changed,
+        )
 
     # -- the verb ------------------------------------------------------------------------------
 
@@ -147,20 +153,3 @@ class EstimationModule:
         project_id = context.focus_entity("project")
         if project_id is not None and self._deps.product.has(project_id):
             self.open_for_steps(project_id)
-
-    # -- tab upkeep ----------------------------------------------------------------------------
-
-    def _activities(self) -> list[BulkEstimateActivity]:
-        return [
-            a for a in self._deps.tabs.activities() if isinstance(a, BulkEstimateActivity)
-        ]
-
-    def _close_orphan_tabs(self) -> None:
-        for activity in self._activities():
-            if not self._deps.product.has(activity.project_id):
-                self._deps.tabs.close_activity(activity)
-
-    def _retitle_tabs(self) -> None:
-        for activity in self._activities():
-            if self._deps.product.has(activity.project_id):
-                self._deps.tabs.set_tab_title(activity, activity.title)

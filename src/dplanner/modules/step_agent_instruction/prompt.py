@@ -8,8 +8,11 @@ Run Agent, the ``dplanner agent prompt`` verb, and the preview and fallback dial
 of them can drift.
 """
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+
+from dplanner.domain.model import Product, Step
+from dplanner.domain.store import FilesFor
 
 
 @dataclass(frozen=True)
@@ -19,6 +22,38 @@ class PromptPart:
     heading: str
     body: str
     files: tuple[str, ...] = ()
+
+
+# (product, step, files) -> the blocks a briefing carries. The store's file lookup is the
+# third argument so a block can name real asset paths.
+PartsFor = Callable[[Product, Step, FilesFor], Sequence[PromptPart]]
+
+
+def _no_parts(_product: Product, _step: Step, _files: FilesFor) -> Sequence[PromptPart]:
+    return ()
+
+
+@dataclass(frozen=True)
+class Briefing:
+    """The cross-module half of the prompt, assembled once by the composition root.
+
+    One object in one vocabulary for both surfaces: the window's Deps and ``dplanner
+    agent prompt`` used to declare these four members separately, in two different
+    callable shapes, with two adapter closures in the root bridging them.
+
+    ``parts`` is handed-forward context (a handoff, a global note); ``sections`` the
+    step's own facts (description, requirements, the PR); ``epilogue`` closes the prompt
+    with the report-back protocol and ``preamble`` opens it. The default is the honest
+    empty briefing of a build where no other module contributes.
+    """
+
+    parts: PartsFor = _no_parts
+    sections: PartsFor = _no_parts
+    epilogue: Callable[[Step], str] = field(default=lambda _step: "")
+    preamble: str = ""
+
+
+EMPTY_BRIEFING = Briefing()
 
 
 @dataclass(frozen=True)

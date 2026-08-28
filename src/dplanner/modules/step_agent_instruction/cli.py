@@ -13,7 +13,6 @@ module, so what crosses modules arrives as arguments.
 """
 
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable, Sequence
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor, StepAuthored
@@ -28,25 +27,7 @@ from dplanner.modules.step_agent_instruction.aspect import (
     read,
     read_project,
 )
-from dplanner.modules.step_agent_instruction.prompt import PromptPart, assemble
-
-# (product, step, files) -> blocks the prompt should carry: handed-forward context for
-# ``prompt_parts``, the step's own facts for ``prompt_sections``. ``files`` is the store's
-# file lookup, passed through so the blocks can name real asset paths.
-PartsFor = Callable[
-    [Product, Step, FilesFor], Sequence[PromptPart]
-]
-EpilogueFor = Callable[[Step], str]
-
-
-def _no_parts(
-    _product: Product, _step: Step, _files: FilesFor
-) -> Sequence[PromptPart]:
-    return ()
-
-
-def _no_epilogue(_step: Step) -> str:
-    return ""
+from dplanner.modules.step_agent_instruction.prompt import Briefing, assemble
 
 
 def step_author() -> StepAuthor:
@@ -94,12 +75,7 @@ def lint_checks() -> list[LintCheck]:
     return [missing_instructions]
 
 
-def commands(
-    prompt_parts: PartsFor = _no_parts,
-    prompt_sections: PartsFor = _no_parts,
-    epilogue: EpilogueFor = _no_epilogue,
-    preamble: str = "",
-) -> list[CliCommand]:
+def commands(*, briefing: Briefing) -> list[CliCommand]:
     def _prompt(context: CliContext, args: Namespace) -> int:
         step = find_step(context.product, args.step)
         project = context.product.project_of(step.id)
@@ -115,10 +91,10 @@ def commands(
             step_title=step.title or "Untitled step",
             project_title=project.title or "Untitled project",
             instruction=instruction,
-            parts=prompt_parts(context.product, step, context.store.files),
-            sections=prompt_sections(context.product, step, context.store.files),
-            epilogue=epilogue(step),
-            preamble=preamble,
+            parts=briefing.parts(context.product, step, context.store.files),
+            sections=briefing.sections(context.product, step, context.store.files),
+            epilogue=briefing.epilogue(step),
+            preamble=briefing.preamble,
             project_instruction=project_instruction,
             project_files=asset_paths(context.store.files, project.id),
             instruction_files=asset_paths(context.store.files, step.id),

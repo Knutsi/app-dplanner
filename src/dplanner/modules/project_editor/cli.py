@@ -17,8 +17,7 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg
 from dplanner.domain.commands import Command
 from dplanner.domain.model import Project, Step
-from dplanner.modules.project_editor.layout import positions
-from dplanner.modules.project_editor.layouts import (
+from dplanner.modules.project_editor.named_layouts import (
     apply_layout_commands,
     delete_layout_command,
     position_commands,
@@ -27,6 +26,7 @@ from dplanner.modules.project_editor.layouts import (
     save_layout_command,
     snapshot,
 )
+from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.modules.project_editor.regions import (
     TITLE_STRIP_H,

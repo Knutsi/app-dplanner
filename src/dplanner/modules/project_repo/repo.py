@@ -7,8 +7,10 @@ fact-free, and a build without this module round-trips the file untouched. It is
 deliberately not an :class:`AspectSpec` — an aspect is a fact about a *step*.
 
 ``checkout_for`` is **the** resolution rule — the project's checkout, else the product's —
-with exactly two readers: the composition root wires Run Agent through it, and ``repo
-show`` prints it. Nothing else may re-derive the answer.
+with exactly two readers of the model: the composition root wires Run Agent through it,
+and ``repo show`` prints it. The project card's status line previews an *uncommitted*
+field value through ``resolve_checkout``, the same rule handed the value directly.
+Nothing anywhere re-derives the answer.
 
 Like ``Product.checkout``, the per-project checkout is a per-machine path stored in the
 shared workspace anyway — the same deliberate trade FORMAT.md records for the product's:
@@ -54,9 +56,14 @@ def write_association(repository: str, checkout: str) -> dict[str, Any]:
     return stamped(entry, DATA_FORMAT.version) if entry else {}
 
 
+def resolve_checkout(own: str, product: Product) -> str:
+    """The rule on a value in hand: a project's own checkout, else the product's."""
+    return own.strip() or product.checkout
+
+
 def checkout_for(product: Product, project: Project) -> str:
     """Where this project's work runs: its own checkout, else the product's."""
-    return read_checkout(project) or product.checkout
+    return resolve_checkout(read_checkout(project), product)
 
 
 def repository_for(product: Product, project: Project) -> str:

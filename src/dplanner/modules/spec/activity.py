@@ -27,15 +27,12 @@ from PySide6.QtWidgets import (
 from dplanner.domain.model import NodeId, Product, Project
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import ActionRegistry
-from dplanner.framework.activity import ActivityBase
+from dplanner.framework.activity import EntityActivity
 from dplanner.framework.context import (
-    SCOPE_ACTIVITY,
-    SCOPE_SELECTION,
     ContextNode,
     ContextService,
     Uri,
     activity_uri,
-    entity_uri,
     selection_uri,
 )
 from dplanner.framework.theme_service import ThemeService
@@ -127,7 +124,7 @@ class _DocumentDelegate(QStyledItemDelegate):
         return QSize(0, 2 * ROW_PADDING_V + 2 * metrics.height() + ROW_LINE_GAP)
 
 
-class SpecsActivity(ActivityBase):
+class SpecsActivity(EntityActivity):
     """One project's spec documents."""
 
     def __init__(
@@ -139,12 +136,12 @@ class SpecsActivity(ActivityBase):
         theme: ThemeService,
         project_id: NodeId,
     ) -> None:
+        super().__init__(context, "project", project_id)
         self._product = product
         self._context = context
         self._actions = actions
         self._files = files
         self.project_id = project_id
-        self._is_active = False
         self._shown: tuple[str, str] | None = None  # (name, blob) the viewer is rendering.
 
         page = QWidget()
@@ -221,15 +218,8 @@ class SpecsActivity(ActivityBase):
         # The entity edge is what keeps the Project verbs — Add Spec Document among them —
         # live while this tab is current; the selected document rides the selection scope so
         # Remove and Open Externally stay pure functions of the context.
-        self._is_active = True
-        self._context.set_scope(
-            SCOPE_ACTIVITY,
-            (ContextNode(self.uri, (("entity", entity_uri("project", self.project_id)),)),),
-        )
+        super().on_activated()
         self._publish_selection()
-
-    def on_deactivated(self) -> None:
-        self._is_active = False
 
     def close(self) -> None:
         self.toolbar.dispose()
@@ -256,11 +246,9 @@ class SpecsActivity(ActivityBase):
         self._publish_selection()
 
     def _publish_selection(self) -> None:
-        if not self._is_active:
-            return  # See _is_active: a background pane does not speak for the user.
         name = self._current_name()
         nodes = () if name is None else (ContextNode(selection_uri(DOCUMENT_ENTITY, name)),)
-        self._context.set_scope(SCOPE_SELECTION, nodes)
+        self.publish_selection(nodes)
 
     def _refresh(self) -> None:
         if not self._product.has(self.project_id):

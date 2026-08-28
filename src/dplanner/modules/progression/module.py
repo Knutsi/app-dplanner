@@ -36,16 +36,14 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import ActivityBase
+from dplanner.framework.activity import EntityActivity, follow_entity_tabs
 from dplanner.framework.context import (
-    SCOPE_ACTIVITY,
     SCOPE_SELECTION,
     Context,
     ContextNode,
     ContextService,
     Uri,
     activity_uri,
-    entity_uri,
     selection_uri,
 )
 from dplanner.framework.tabs import TabHost
@@ -95,16 +93,14 @@ class ProgressionDeps:
     agent_run: Callable[[Context], None] = field(default=_no_run)
 
 
-class ProgressionActivity(ActivityBase):
+class ProgressionActivity(EntityActivity):
     """One project's execution board."""
 
     def __init__(self, deps: ProgressionDeps, project_id: NodeId) -> None:
+        super().__init__(deps.context, "project", project_id)
         self._deps = deps
         self._product = deps.product
         self.project_id = project_id
-        # Only the pane the user is in may write the selection scope — see CLAUDE.md's
-        # "only the active pane speaks for the user".
-        self._is_active = False
 
         # The caption, note and board share one column capped at a readable measure —
         # three lanes say nothing more by being wider, so past that the column centres.
@@ -164,16 +160,6 @@ class ProgressionActivity(ActivityBase):
     def widget(self) -> QWidget:
         return self._widget
 
-    def on_activated(self) -> None:
-        self._is_active = True
-        self._deps.context.set_scope(
-            SCOPE_ACTIVITY,
-            (ContextNode(self.uri, (("entity", entity_uri("project", self.project_id)),)),),
-        )
-
-    def on_deactivated(self) -> None:
-        self._is_active = False
-
     def close(self) -> None:
         for unsubscribe in self._unsubscribes:
             unsubscribe()
@@ -191,10 +177,8 @@ class ProgressionActivity(ActivityBase):
         self.board.show_progress(progress, estimated_progress(progress, self._deps.days_for))
 
     def _publish(self, step_id: StepId | None) -> None:
-        if not self._is_active:
-            return  # See _is_active: a background pane does not speak for the user.
         nodes = () if step_id is None else (ContextNode(selection_uri("step", step_id)),)
-        self._deps.context.set_scope(SCOPE_SELECTION, nodes)
+        self.publish_selection(nodes)
 
     def _step_context(self, step_id: StepId) -> Context:
         """The context the Run Agent gate is asked against: exactly this card's step.
@@ -270,8 +254,13 @@ class ProgressionModule:
                 run=self._open,
             )
         )
-        deps.product.structure_changed.connect(lambda *_a: self._close_orphan_tabs())
-        deps.product.field_changed.connect(lambda *_a: self._retitle_tabs())
+        follow_entity_tabs(
+            deps.tabs,
+            ProgressionActivity,
+            deps.product.has,
+            closes_on=deps.product.structure_changed,
+            retitles_on=deps.product.field_changed,
+        )
 
     def _on_a_project(self, context: Context) -> ActionState:
         project_id = context.focus_entity("project")
@@ -283,16 +272,3 @@ class ProgressionModule:
         project_id = context.focus_entity("project")
         if project_id is not None:
             self.open(project_id)
-
-    def _activities(self) -> list[ProgressionActivity]:
-        return [a for a in self._deps.tabs.activities() if isinstance(a, ProgressionActivity)]
-
-    def _close_orphan_tabs(self) -> None:
-        for activity in self._activities():
-            if not self._deps.product.has(activity.project_id):
-                self._deps.tabs.close_activity(activity)
-
-    def _retitle_tabs(self) -> None:
-        for activity in self._activities():
-            if self._deps.product.has(activity.project_id):
-                self._deps.tabs.set_tab_title(activity, activity.title)

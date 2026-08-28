@@ -43,6 +43,7 @@ from dplanner.modules.project_repo.repo import (
     MODULE_ID,
     read_checkout,
     read_repository,
+    resolve_checkout,
     write_association,
 )
 
@@ -289,8 +290,8 @@ class RepoFieldsWidget(QWidget):
         self._refresh_status()
 
     def _effective_checkout(self) -> str:
-        checkout = self.checkout.text().strip()
-        return checkout or self._product.checkout
+        # The field's pending text through the one resolution rule — never a re-derivation.
+        return resolve_checkout(self.checkout.text(), self._product)
 
     def _refresh_status(self) -> None:
         self.status.setText(" ".join(self._checkout_facts() + self._gh_facts()))

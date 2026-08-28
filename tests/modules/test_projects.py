@@ -72,6 +72,36 @@ def test_selecting_a_row_publishes_the_selection_scope(services, project):
     assert uris == [selection_uri("project", project.id)]
 
 
+def test_a_rebuild_keeps_the_tree_selection_and_the_published_scope(services, project):
+    """A rename anywhere rebuilds the folder; the rebuild used to drop the tree's
+    selection, publish an empty scope, and take the detail panel off what the user was
+    looking at."""
+    from dplanner.domain.commands import SetFieldCommand
+
+    panel = services.window.dock.widget_for(INDEX_PANEL_ID)
+    row = panel.tree.topLevelItem(0).child(0)
+    panel.tree.setCurrentItem(row)
+
+    SetFieldCommand(project.id, "title", "Renamed").redo(services.document)
+    fresh_row = panel.tree.topLevelItem(0).child(0)
+    assert fresh_row.isSelected()
+    uris = [node.uri for node in services.context.current().scope(SCOPE_SELECTION)]
+    assert uris == [selection_uri("project", project.id)]
+
+
+def test_a_rebuild_that_loses_the_selected_row_announces_the_empty_selection(services, project):
+    """The other half of the rule: a selected project actually deleted must clear the
+    published scope rather than leave panels pointing at a ghost."""
+    from dplanner.domain.commands import RemoveNodeCommand
+
+    panel = services.window.dock.widget_for(INDEX_PANEL_ID)
+    row = panel.tree.topLevelItem(0).child(0)
+    panel.tree.setCurrentItem(row)
+
+    RemoveNodeCommand(project.id).redo(services.document)
+    assert services.context.current().scope(SCOPE_SELECTION) == ()
+
+
 def test_activating_a_project_folds_rather_than_opens(services, project):
     """A project row is a folder; the graph opens from its Steps entry."""
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)

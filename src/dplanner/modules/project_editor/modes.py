@@ -35,8 +35,9 @@ from PySide6.QtWidgets import QGraphicsView
 
 from dplanner.core.signals import Signal
 from dplanner.domain.model import StepId
-from dplanner.modules.project_editor.items import RegionItem, StepNodeItem
+from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+from dplanner.modules.project_editor.region_items import RegionItem
 from dplanner.modules.project_editor.regions import MIN_REGION
 from dplanner.modules.project_editor.renderers import RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection

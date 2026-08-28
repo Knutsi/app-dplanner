@@ -16,6 +16,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMenu, QToolButton, QWidget
 
 from dplanner.domain.model import NodeId, Product, Project
+from dplanner.framework.action_menu import append_action
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextService
 from dplanner.modules.project_editor.layout_verbs import (
@@ -24,7 +25,7 @@ from dplanner.modules.project_editor.layout_verbs import (
     LayoutVerbs,
     current_layout_name,
 )
-from dplanner.modules.project_editor.layouts import is_current, read_layouts
+from dplanner.modules.project_editor.named_layouts import is_current, read_layouts
 from dplanner.modules.project_editor.positions import MODULE_ID
 
 
@@ -121,26 +122,8 @@ class LayoutButton(QToolButton):
         if names and SORT_ACTION_IDS:
             self._menu.addSeparator()
         for action_id in SORT_ACTION_IDS:
-            self._append_registry_action(action_id)
+            append_action(self._menu, self._actions, self._context, action_id)
         if names or SORT_ACTION_IDS:
             self._menu.addSeparator()
         for action_id in MANAGE_ACTION_IDS:
-            self._append_registry_action(action_id)
-
-    def _append_registry_action(self, action_id: str) -> None:
-        """One registered action as a popup entry — `build_menu`'s policy, one entry at a
-        time: greyed rather than omitted, and the context re-read at trigger time."""
-        spec = self._actions.spec(action_id)
-        state = spec.state(self._context.current())
-        if not state.visible:
-            return
-        entry = self._menu.addAction(state.label if state.label is not None else spec.label)
-        entry.setEnabled(state.enabled)
-        if state.checked is not None:
-            entry.setCheckable(True)
-            entry.setChecked(state.checked)
-        entry.triggered.connect(
-            lambda _checked=False, sid=spec.id: self._actions.run(
-                sid, self._context.current()
-            )
-        )
+            append_action(self._menu, self._actions, self._context, action_id)

@@ -570,6 +570,68 @@ carries this surface forever, and each unused seam reads as a promise the applic
 not keep. The upstream question per item is the same: demonstrate it end to end, or ship it
 as documentation rather than code.
 
+### `framework/module_data_section.py` — the structured twin of `prose_section.py`
+
+**What.** `ModuleDataSection(product, undo, *, module_id, undo_label)`: the scaffold every
+structured aspect editor was hand-rolling — the `module_data_changed` subscription and
+teardown, reload-on-target with commits suppressed, the no-op-when-unchanged commit through
+the undo stack, and the echo rule (*ignore the echo of your own write only while one of
+your fields is being edited; an undo carries `UNDO_ORIGIN`, never the view, so it always
+lands*). A subclass builds widgets, implements `load_step(step)` / `entry(step)`, and calls
+`commit()` from its edit-finished handlers; `editing()` defaults to focus-inside-me.
+
+**Why.** `prose_section.py`'s own rationale — "the binding mechanics are the
+easy-to-get-wrong half, and getting it wrong is quiet" — held for JSON too: by the time we
+wrote this, four hand-rolled copies existed and one had drifted (its echo guard swallowed
+an undo made while its field was focused). Ticket, Release, Estimate and GitHub sections
+are the ports; the drift died in the port.
+
+**Belongs upstream?** Yes, next to `prose_section.py` — any application with aspects-like
+per-module data will re-derive it worse.
+
+### `EntityActivity` and `follow_entity_tabs` in `framework/activity.py`
+
+**What.** `ActivityBase` grew a sibling: `EntityActivity(context, entity_kind, entity_id)`
+owns `_is_active`, publishes the activity scope with an entity edge on activation
+(`activity_nodes()` overridable for extra edges — the canvas adds its input mode), and
+`publish_selection(nodes)` enforces *only the active pane speaks for the user*.
+`follow_entity_tabs(tabs, activity_type, still_exists, closes_on=…, retitles_on=…)`
+closes tabs whose entity is gone and retitles survivors — feature-blind via a
+`still_exists` predicate and two core signals.
+
+**Why.** Five modules carried byte-identical copies of both obligations (the fifth copy
+arrived with the newest feature — evidence the pattern recruits). The rule the base
+enforces is CLAUDE.md's most-repeated comment; now it is enforced by construction and the
+sixth entity tab gets it for free.
+
+**Belongs upstream?** Yes, both — the template's docs already state the rule; this is the
+rule as code.
+
+### `append_action` in `framework/action_menu.py`
+
+**What.** The per-spec body factored out of `build_menu`: greyed when disabled, omitted
+only when hidden, state label over spec label, checkable per state, context re-read at
+trigger time. For a widget that assembles its popup by hand (a toolbar button mixing data
+rows with verbs) and must still render entries under the one presenter policy.
+
+**Why.** The canvas's layout button had reimplemented the policy line for line — its
+docstring admitted it — and had already drifted on separators. A copy of a policy is a
+fork waiting to happen; a function is not.
+
+### `selection_of` / `restore_selection` beside the expansion pair in `index_panel.py`
+
+**What.** The same shape as `expansion_of`/`restore_expansion`, for the tree's selection.
+`restore_selection` returns what it actually restored, so a segment can rebuild under
+blocked signals and only announce a selection change when a selected row truly vanished.
+
+**Why.** A rebuild that drops the selection does not just lose a highlight: the tree
+publishes the now-empty selection scope and every context-following panel abandons what
+the user was looking at. DPlanner's projects segment hit exactly that — any rename
+rebuilt the folder and hid the step panel. The expansion helpers existed for this reason;
+selection needed the same treatment plus the announce-only-real-changes subtlety.
+
+**Belongs upstream?** Yes, as a pair with the expansion helpers.
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class
