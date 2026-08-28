@@ -156,6 +156,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 break
         return ""
 
+    def step_type_icons(step: "Step") -> tuple[str, ...]:
+        """What kind of thing a step is, in the medallion vocabulary the canvas painted
+        first: "tag" a release, "spark" machine guidance. The order table's title column
+        reads the same answer, so a step is the same kind everywhere."""
+        return (
+            *(("tag",) if release_read(step) else ()),
+            *(("spark",) if agent_instruction_read(step) else ()),
+        )
+
     def step_accent(step_id: str) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
@@ -182,10 +191,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
         }.get(agent_run_state(step), ("", ""))
         status = step_status(step)
         release = release_read(step)
-        icons = (
-            *(("tag",) if release else ()),
-            *(("spark",) if agent_instruction_read(step) else ()),
-        )
         if release:
             stat = release_stat(step)
         else:
@@ -202,7 +207,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             chip_text=chip_text,
             chip_tone=chip_tone,
             body_tone="good" if status == "done" else ("highlight" if release else ""),
-            icons=icons,
+            icons=step_type_icons(step),
             stat_text=stat,
             stat_strong=bool(release),
         )
@@ -597,6 +602,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # A release row wears a rule and a tint; the name itself stays in the
                 # trailing aspects column, which is why RELEASE_ID is not skipped here.
                 release_label=lambda step_id: release_read(product.step(step_id)),
+                # The same kind vocabulary the canvas medallions wear, one translation.
+                step_icons=lambda step_id: step_type_icons(product.step(step_id)),
             )
         ),
         progression,

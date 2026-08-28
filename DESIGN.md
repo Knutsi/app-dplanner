@@ -118,3 +118,11 @@ matters explicitly:
 A `QListWidget` of multi-line entries uses a `QStyledItemDelegate`, not concatenated `\n`
 text: the delegate gives each row real padding, a primary/secondary text hierarchy, wrapped
 text that re-lays out on resize, and a selection state that recolours both lines legibly.
+
+## Tables
+
+- **Column headers are left-aligned**, whatever the column holds
+  (`header.setDefaultAlignment`, not Qt's centred default). Numeric *cells* still
+  right-align so their digits line up; the header reads from the left with everything else.
+- A row emphasised over its neighbours (the order table's release rows) grows a point
+  rather than going bold — weight in a table of quiet lines shouts.

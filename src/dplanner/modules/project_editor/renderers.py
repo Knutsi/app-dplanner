@@ -26,6 +26,7 @@ from PySide6.QtGui import (
 )
 
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+from dplanner.theme.icons import paint_spark_glyph, paint_tag_glyph
 
 RADIUS = 8.0  # = theme.tokens.RADIUS_MD, matched by eye rather than import: this is a painter.
 PADDING = 12.0
@@ -413,19 +414,6 @@ def paint_icon_medallions(painter: QPainter, palette: QPalette, icons: tuple[str
         x += ICON_D + ICON_GAP
 
 
-def paint_tag_glyph(painter: QPainter, rect: QRectF, colour: QColor) -> None:
-    """A tiny release tag: a square hanging point-first — a marker on the timeline."""
-    path = QPainterPath(QPointF(rect.center().x(), rect.bottom()))
-    path.lineTo(QPointF(rect.left(), rect.center().y() - rect.height() * 0.1))
-    path.lineTo(QPointF(rect.left(), rect.top()))
-    path.lineTo(QPointF(rect.right(), rect.top()))
-    path.lineTo(QPointF(rect.right(), rect.center().y() - rect.height() * 0.1))
-    path.closeSubpath()
-    painter.setBrush(colour)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.drawPath(path)
-
-
 def paint_handle(painter: QPainter, palette: QPalette, state: NodeState) -> None:
     """The link dot on the right edge — what the hints say the mode wants of it.
 
@@ -465,17 +453,3 @@ def paint_branch_glyph(painter: QPainter, rect: QRectF, colour: QColor) -> None:
     painter.setPen(Qt.PenStyle.NoPen)
     painter.drawEllipse(trunk, radius, radius)
     painter.drawEllipse(tip, radius, radius)
-
-
-def paint_spark_glyph(painter: QPainter, rect: QRectF, colour: QColor) -> None:
-    """A four-pointed spark: there is machine guidance — an agent instruction — here."""
-    cx, cy = rect.center().x(), rect.center().y()
-    pull = rect.width() * 0.14
-    path = QPainterPath(QPointF(cx, rect.top()))
-    path.quadTo(QPointF(cx + pull, cy - pull), QPointF(rect.right(), cy))
-    path.quadTo(QPointF(cx + pull, cy + pull), QPointF(cx, rect.bottom()))
-    path.quadTo(QPointF(cx - pull, cy + pull), QPointF(rect.left(), cy))
-    path.quadTo(QPointF(cx - pull, cy - pull), QPointF(cx, rect.top()))
-    painter.setBrush(colour)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.drawPath(path)
