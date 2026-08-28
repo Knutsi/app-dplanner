@@ -290,6 +290,26 @@ def test_a_projects_own_module_data_survives_the_round_trip(cli, monkeypatch):
     assert data(cli("schedule", "show", "Copy", "--json"))["start"] == "2026-09-01"
 
 
+def test_the_standing_instruction_survives_the_round_trip(cli, cli_stdin, monkeypatch):
+    """The project's prose — its standing agent instruction — is as much the plan as its
+    start date; a document without it made export-then-import quietly lossy."""
+    cli("project", "create", "Discovery")
+    cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
+    document = data(cli("project", "export", "Discovery"))
+    assert document["text"]["step_agent_instruction"] == "House rules."
+
+    monkeypatch.setattr("sys.stdin", StringIO(json.dumps(document)))
+    cli("project", "import", "--title", "Copy")
+    shown = data(cli("agent", "show", "--project", "Copy", "--json"))
+    assert shown["markdown"] == "House rules."
+
+
+def test_a_document_from_before_text_existed_still_imports(cli, monkeypatch):
+    monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"title": "Old", "steps": []})))
+    cli("project", "import")
+    assert "Old" in cli("project", "list")
+
+
 def test_import_refuses_something_that_is_not_a_document(cli, monkeypatch):
     monkeypatch.setattr("sys.stdin", StringIO("not json"))
     assert "not valid JSON" in cli("project", "import", expect=1)

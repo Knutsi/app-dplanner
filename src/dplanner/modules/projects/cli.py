@@ -19,12 +19,13 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import (
     AddNodeCommand,
+    EditTextCommand,
     RemoveNodeCommand,
     SetEdgesCommand,
     SetFieldCommand,
     SetModuleDataCommand,
 )
-from dplanner.domain.model import EDGE_KINDS, Product, Project, Step, StepId
+from dplanner.domain.model import EDGE_KINDS, Product, Project, Step, StepId, TextEdit
 
 PROJECT_ARG = "project id, folder name, or part of its title"
 STEP_ARG = "step id, folder name, or part of its title"
@@ -153,14 +154,17 @@ def project_document(product: Product, project: Project) -> dict[str, Any]:
     """One project as plain data — what ``export`` writes and ``import`` reads.
 
     Folder names are deliberately absent: they are presentation, frozen at creation, and an
-    imported project earns its own.
+    imported project earns its own. Module *file areas* — spec document blobs, attached
+    images — are absent too: the document carries data and prose, not binaries.
     """
     return {
         "title": project.title,
         "summary": project.summary,
-        # A project owns module data of its own — its start date, for one — so the document
-        # carries it too. Without this, exporting and importing quietly drops it.
+        # A project owns module data and prose of its own — its start date, its standing
+        # agent instruction — so the document carries both. Without this, exporting and
+        # importing quietly drops them.
         "aspects": {key: dict(value) for key, value in sorted(project.module_data.items())},
+        "text": dict(sorted(project.module_text.items())),
         "steps": [
             {
                 "id": step.id,
@@ -301,6 +305,9 @@ def _project_import(context: CliContext, args: Namespace) -> int:
     context.apply(AddNodeCommand(context.product.id, project))
     for module_id, entry in dict(document.get("aspects", {})).items():
         context.apply(SetModuleDataCommand(project.id, str(module_id), dict(entry)))
+    for module_id, body in dict(document.get("text", {})).items():
+        edit = TextEdit(project.id, str(module_id), 0, "", str(body))
+        context.apply(EditTextCommand(edit, label="Import"))
 
     # Ids in the document are the document's own. Steps get fresh ones and the links are
     # rewritten through this map, so importing the same file twice cannot collide.
