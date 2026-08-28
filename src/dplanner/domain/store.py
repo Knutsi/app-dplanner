@@ -1,87 +1,120 @@
-"""The product on disk: one directory per node, nested exactly like the model.
+"""The library on disk: a per-user list of project directories, each one self-contained.
 
-This is the file that decides what a product *looks like* on disk, and its conventions are
-what make a file-backed format survive being shared through version control:
+The library file (see :mod:`dplanner.domain.library_file`) records *membership*: which
+project directories this user is planning. Everything else lives in the project directory
+itself, which sits inside a git repository and travels with it::
 
-**Ordering lives in the parent's list**, never in ``01-``/``02-`` filename prefixes.
-Reordering two projects is a one-line JSON diff instead of a mass rename.
-
-**A folder name is frozen at creation** and never follows a retitle. Editing a title
-changes one JSON value; it does not move a directory and rewrite its history.
-
-**Absence encodes the default.** An optional key is written only when it is not the
-default, and an empty document is deleted rather than written blank — so a diff shows
-exactly what actually changed, and an untouched node is visibly untouched.
-
-**Container directories say what a level is.** ``projects/`` and ``steps/`` cost one
-directory each and buy a reader the shape of the model at a glance — and, because children
-never sit beside ``modules/``, there are no reserved folder names to trip over::
-
-    <workspace>/
-    ├── product.json
-    ├── modules/
-    └── projects/<slug>/
-        ├── project.json
+    <repository>/
+    └── <project directory>/
+        ├── project.dproj              id, title, summary, created, format, children
         ├── modules/
         └── steps/<slug>/
-            ├── step.json
+            ├── step.json              id, title, edges
             └── modules/
                 ├── estimation.json          structured data
                 ├── step_description.md      prose
                 └── step_description/        files this module owns
 
-One naming rule covers all three: **``modules/<id>.json`` is a module's data,
-``modules/<id>.md`` is its prose, and ``modules/<id>/`` is its files.** Every one of them is
-round-tripped by name, so data belonging to a module this build does not have survives
-untouched.
+The store is therefore **multi-root**: one storage provider per project directory, opened
+through :func:`~dplanner.core.storage.locations.open_project_storage`. A project that
+cannot be opened — folder gone, no meta file, not in a repository, written by a newer
+build — becomes a :class:`ProjectProblem` row rather than sinking the whole library.
 
-**Two writers, one folder.** DPlanner is meant to be driven by an agent while a window is
-open on the same product, so "memory is authoritative and disk follows" is not the whole
-story: a flush that rewrote a node from a model which never saw the agent's edit would erase
-it silently, and ``_remove_orphans`` would delete a directory the agent had just created. So
-the store remembers what the workspace looked like when it last read or wrote it, and
-refuses to flush over anything that changed underneath — see :meth:`changed_underneath` and
-:class:`StaleWorkspaceError`. That one check covers both directions: a second CLI run is
-refused for the same reason and needs no lock of its own.
+The conventions inside a project are what make a file-backed format survive being shared
+through version control:
+
+**Ordering lives in the parent's list**, never in ``01-``/``02-`` filename prefixes.
+**A folder name is frozen at creation** and never follows a retitle. **Absence encodes the
+default** — an optional key is written only when it is not the default, and an empty
+document is deleted rather than written blank. **Container directories say what a level
+is** — steps never sit beside ``modules/``. And one naming rule covers module storage:
+**``modules/<id>.json`` is a module's data, ``modules/<id>.md`` is its prose, and
+``modules/<id>/`` is its files** — every one round-tripped by name, so data belonging to a
+module this build does not have survives untouched.
+
+**Two writers, one folder — now per project.** An agent drives ``dplanner`` against a
+directory a window has open, so the store remembers what each project looked like when it
+last read or wrote it and refuses to flush over anything that changed underneath — but the
+check is per project: an agent editing project B never blocks saving project A. The library
+file gets the same treatment with its own stamp, because two instances can both add a
+project. See :meth:`changed_underneath` and :class:`StaleWorkspaceError`.
 
 The store is passive: it serialises, it does not notify. Change notification lives on the
 aggregate, where the change happened. What it implements for the framework is
 :class:`~dplanner.core.repository.Persister` — one ``flush(marks)`` that writes exactly the
-aspects that are dirty, in the order this format requires.
+aspects that are dirty, in the order this format requires. A structure mark on the *library
+root* means the membership changed, and rewrites the library file.
 """
 
 import json
 import shutil
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from dplanner.core.formats import FORMAT_KEY, UnsupportedFormatError
 from dplanner.core.repository import DataOwner, DirtyMark
 from dplanner.core.signals import Signal
-from dplanner.core.storage.provider import StorageProvider
+from dplanner.core.storage.locations import (
+    find_repo_root,
+    grouped_by_repo,
+    open_project_storage,
+    repo_group_for,
+)
+from dplanner.core.storage.provider import StorageError, StorageProvider
+from dplanner.domain.library_file import read_library_file, write_library_file
 from dplanner.domain.migrations import FORMAT
-from dplanner.domain.model import Node, NodeId, Product, Project, Step, unique_folder_name
+from dplanner.domain.model import (
+    Library,
+    Node,
+    NodeId,
+    Project,
+    ProjectId,
+    Step,
+    unique_folder_name,
+)
 
-PRODUCT_META = "product.json"
-PROJECT_META = "project.json"
+PROJECT_META = "project.dproj"
 STEP_META = "step.json"
 MODULES_DIR = "modules"
-PROJECTS_DIR = "projects"
 STEPS_DIR = "steps"
 
 # Which container directory holds a node's children, and what a child's meta file is called.
-CONTAINER = {"product": PROJECTS_DIR, "project": STEPS_DIR}
-META_FILE = {"product": PRODUCT_META, "project": PROJECT_META, "step": STEP_META}
+CONTAINER = {"project": STEPS_DIR}
+META_FILE = {"project": PROJECT_META, "step": STEP_META}
 
 
 class StaleWorkspaceError(RuntimeError):
-    """The workspace changed on disk since this store last read or wrote it.
+    """A project directory (or the library file) changed on disk since it was last seen.
 
     Not an error in the data and not a bug: somebody else — the CLI, an agent, a branch
-    switch, a colleague's merge — wrote to the same folder. Whoever catches this decides
-    what to do about it, and the only safe options are to reload or to be told.
+    switch, a colleague's merge, another window — wrote to the same folder. Whoever catches
+    this decides what to do about it, and the only safe options are to reload or to be told.
     """
+
+
+@dataclass(frozen=True)
+class ProjectProblem:
+    """A library entry that could not be opened, and why. The panel shows these greyed."""
+
+    path: Path
+    reason: str
+
+
+@dataclass
+class _ProjectRecord:
+    """One open project directory: its provider, and what the store knows about its disk."""
+
+    directory: Path
+    storage: StorageProvider
+    # Node id → its directory, project-relative ("" is the project's own). This one dict is
+    # what makes reorder, rename and undo-of-delete all the same operation from outside:
+    # the model says where a node *should* live, this says where it *does*.
+    dirs: dict[NodeId, str] = field(default_factory=dict)
+    # What the directory looked like the last time this store read or wrote it. Size and
+    # modification time per file — what every build tool uses for the same question.
+    disk: dict[str, tuple[int, int]] = field(default_factory=dict)
 
 
 class ModuleFileArea:
@@ -101,7 +134,7 @@ class ModuleFileArea:
         self.directory = directory
         # An area writes straight through the provider, so the store would otherwise see its
         # own asset as somebody else's edit and refuse the next flush. `noted` is how a write
-        # here reaches the store's record of what the workspace looks like.
+        # here reaches the store's record of what the project looks like.
         self._noted = noted
 
     def names(self, subdirectory: str = "") -> list[str]:
@@ -128,7 +161,7 @@ class ModuleFileArea:
         """Delete one file, and any directory it leaves empty up to the area itself.
 
         "Writing nothing leaves nothing behind" is the same rule the JSON entries follow:
-        an empty directory is invisible in a diff but not in a file browser, and a workspace
+        an empty directory is invisible in a diff but not in a file browser, and a project
         that accumulates them stops looking like the plan it holds.
         """
         self._storage.delete(_join(self.directory, name))
@@ -142,220 +175,304 @@ class ModuleFileArea:
 
 # The store's file lookup, handed to whoever needs a node's module files without
 # holding the store: (node_id, module_id) -> the area. Raises KeyError for a node the
-# store has never flushed. One alias so five features do not spell it five ways.
+# store has never seen. One alias so five features do not spell it five ways.
 FilesFor = Callable[[NodeId, str], ModuleFileArea]
 
 
-class ProductStore:
-    """Loads and saves one :class:`Product` through a storage provider.
+class LibraryStore:
+    """Loads and saves one :class:`Library` — the library file plus one provider per project.
 
-    Note what it takes: a :class:`~dplanner.core.storage.provider.StorageProvider`, not a
-    path. Everything below goes through that interface, which is why the same store works
-    against a plain folder, a git checkout and a GitHub clone without knowing which it has.
+    Note what a *project* goes through: a
+    :class:`~dplanner.core.storage.provider.StorageProvider`, never a raw path. Everything
+    below the meta level uses that interface, which is why the same store works whatever
+    provider a project's directory supports.
     """
 
-    def __init__(self, storage: StorageProvider) -> None:
-        self.storage = storage
-        self.product: Product | None = None
-        # Node id → its directory, workspace-relative. This one dict is what makes reorder,
-        # rename and undo-of-delete all the same operation from outside: the model says
-        # where a node *should* live, this says where it *does*.
-        self._dirs: dict[NodeId, str] = {}
-        # What the workspace looked like the last time this store read or wrote it. Size and
-        # modification time per file, which is what every build tool uses to answer the same
-        # question, and cheap enough to recompute on each 1.5-second autosave.
-        self._disk: dict[str, tuple[int, int]] = {}
+    def __init__(self, library_path: Path | str) -> None:
+        self.library_path = Path(library_path).expanduser()
+        self.library: Library | None = None
+        self._records: dict[ProjectId, _ProjectRecord] = {}
+        self._problems: list[ProjectProblem] = []
+        # Library entries that failed to open keep their place in the file across rewrites:
+        # a project this build cannot read is still the user's project.
+        self._problem_paths: list[Path] = []
+        # One provider per distinct git repository, cached because the sync feature
+        # subscribes to their signals — rebuilt only when membership changes.
+        self._groups: list[StorageProvider] | None = None
+        self._library_stamp: tuple[int, int] | None = None
         self.dirty: Signal[str, str] = Signal()
 
     # -- opening -------------------------------------------------------------------------------
 
     def exists(self) -> bool:
-        return self.storage.exists(PRODUCT_META)
+        return self.library_path.is_file()
 
-    def load(self) -> Product:
-        """Read the workspace, running any pending format migrations, then save it back.
+    def load(self) -> Library:
+        """Read every project the library lists, running any pending format migrations.
 
-        The save at the end is not optional: a migration that ran but was never persisted
-        would run again on the next open, against data a later autosave may already have
-        partly rewritten. Migrate once, write once.
+        A migrated project is saved back immediately — migrate once, write once — and an
+        entry that cannot be opened becomes a :class:`ProjectProblem` instead of a refusal:
+        one bad row must not take every healthy project down with it.
         """
-        raw = self._read_json(PRODUCT_META)
-        found = FORMAT.read_version(raw, self.storage.root / PRODUCT_META)
-        pending = FORMAT.pending(found)
+        library = Library()
+        self._records.clear()
+        self._problems.clear()
+        self._problem_paths.clear()
+        self._groups = None
+        migrated: list[tuple[_ProjectRecord, Project]] = []
+        for directory in read_library_file(self.library_path):
+            try:
+                project, record, pending = self._open_project(directory)
+            except (StorageError, UnsupportedFormatError, OSError) as error:
+                self._problems.append(ProjectProblem(directory, str(error)))
+                self._problem_paths.append(directory)
+                continue
+            library.projects.append(project)
+            self._records[project.id] = record
+            if pending:
+                migrated.append((record, project))
+            else:
+                self._remember_disk(record)
+        library.reindex()
+        self._adopt(library)
+        for record, project in migrated:
+            self._save_project(record, project)
+        self._remember_library_stamp()
+        return library
 
-        product = Product(
-            node_id=str(raw.get("id", "")) or None,
-            name=str(raw.get("name", "")),
-            repository=str(raw.get("repository", "")),
-            checkout=str(raw.get("checkout", "")),
-            created=str(raw.get("created", "")),
-        )
-        self._load_node_files(product, "", raw, pending)
-        for folder in self._child_folders(raw, "", "product"):
-            product.projects.append(self._load_project(_join(PROJECTS_DIR, folder), pending))
-        product.reindex()
+    def _open_project(
+        self, directory: Path
+    ) -> tuple[Project, _ProjectRecord, tuple[Any, ...]]:
+        """Open one project directory, or raise ``StorageError`` saying why it cannot be."""
+        directory = directory.expanduser()
+        if not directory.is_dir():
+            raise StorageError("the folder does not exist on this machine")
+        if find_repo_root(directory) is None:
+            raise StorageError("the folder is not inside a git repository")
+        storage = open_project_storage(directory)
+        if not storage.exists(PROJECT_META):
+            raise StorageError(f"no {PROJECT_META} here — not a DPlanner project")
+        raw = _read_json(storage, PROJECT_META)
+        found = FORMAT.read_version(raw, storage.root / PROJECT_META)
+        pending = FORMAT.pending(found)
+        record = _ProjectRecord(directory=storage.root, storage=storage)
+        project = self._load_project(record, raw, pending)
         for migration in pending:
             if migration.whole is not None:
-                migration.whole(product)
-        self._adopt(product)
-        if pending:
-            self.save_all(product)
-        else:
-            self._remember_disk()
-        return product
+                migration.whole(project)
+        return project, record, pending
 
-    def _load_project(self, directory: str, pending: tuple[Any, ...]) -> Project:
-        raw = self._read_json(_join(directory, PROJECT_META))
+    def _load_project(
+        self, record: _ProjectRecord, raw: dict[str, Any], pending: tuple[Any, ...]
+    ) -> Project:
         project = Project(
             node_id=str(raw.get("id", "")) or None,
             title=str(raw.get("title", "")),
             summary=str(raw.get("summary", "")),
-            folder_name=directory.rsplit("/", 1)[-1],
+            folder_name=record.directory.name,
             created=str(raw.get("created", "")),
         )
-        self._load_node_files(project, directory, raw, pending)
-        for folder in self._child_folders(raw, directory, "project"):
-            project.steps.append(self._load_step(_join(directory, STEPS_DIR, folder), pending))
+        self._load_node_files(record, project, "", raw, pending)
+        for folder in self._child_folders(record, raw, ""):
+            project.steps.append(self._load_step(record, _join(STEPS_DIR, folder), pending))
         return project
 
-    def _load_step(self, directory: str, pending: tuple[Any, ...]) -> Step:
-        raw = self._read_json(_join(directory, STEP_META))
+    def _load_step(
+        self, record: _ProjectRecord, directory: str, pending: tuple[Any, ...]
+    ) -> Step:
+        raw = _read_json(record.storage, _join(directory, STEP_META))
         step = Step(
             node_id=str(raw.get("id", "")) or None,
             title=str(raw.get("title", "")),
-            # Tolerant on every field: a hand-edited product, or one written by a newer
+            # Tolerant on every field: a hand-edited project, or one written by a newer
             # build, must open rather than crash. Edge kinds this build does not know are
             # kept exactly as found, so a colleague's newer link survives a round trip here.
             edges=_read_edges(raw.get("edges")),
             folder_name=directory.rsplit("/", 1)[-1],
             created=str(raw.get("created", "")),
         )
-        self._load_node_files(step, directory, raw, pending)
+        self._load_node_files(record, step, directory, raw, pending)
         return step
 
     def _load_node_files(
-        self, node: Node, directory: str, raw: dict[str, Any], pending: tuple[Any, ...]
+        self,
+        record: _ProjectRecord,
+        node: Node,
+        directory: str,
+        raw: dict[str, Any],
+        pending: tuple[Any, ...],
     ) -> None:
         for migration in pending:
             if migration.node is not None:
-                migration.node(node, raw, self.storage.root / directory)
-        node.module_data, node.module_text = self._load_module_files(directory)
-        self._dirs[node.id] = directory
+                migration.node(node, raw, record.storage.root / directory)
+        node.module_data, node.module_text = self._load_module_files(record, directory)
+        record.dirs[node.id] = directory
 
-    def _child_folders(self, raw: dict[str, Any], directory: str, kind: str) -> list[str]:
-        """The child folders of ``directory``, in the order the parent recorded.
+    def _child_folders(
+        self, record: _ProjectRecord, raw: dict[str, Any], directory: str
+    ) -> list[str]:
+        """The step folders of ``directory``, in the order the project recorded.
 
-        Directories holding a child's meta file but missing from the list are appended
+        Directories holding a step's meta file but missing from the list are appended
         rather than ignored: a folder someone created by hand, or that a merge resurrected,
         is data.
         """
-        container = _join(directory, CONTAINER[kind])
-        child_meta = META_FILE["project" if kind == "product" else "step"]
+        container = _join(directory, STEPS_DIR)
         listed = [name for name in raw.get("children", []) if isinstance(name, str)]
         present = [
             name
-            for name in self.storage.list_dir(container)
-            if self.storage.exists(_join(container, name, child_meta))
+            for name in record.storage.list_dir(container)
+            if record.storage.exists(_join(container, name, STEP_META))
         ]
         ordered = [name for name in listed if name in present]
         return ordered + [name for name in present if name not in listed]
 
-    def _load_module_files(self, directory: str) -> tuple[dict[str, Any], dict[str, str]]:
+    def _load_module_files(
+        self, record: _ProjectRecord, directory: str
+    ) -> tuple[dict[str, Any], dict[str, str]]:
         """Every ``modules/<id>.json`` and ``modules/<id>.md``, by filename.
 
         Entries this build knows nothing about are loaded and saved back untouched, so a
-        workspace shared with a newer build never loses that build's data.
+        project shared with a newer build never loses that build's data.
         """
         data: dict[str, dict[str, Any]] = {}
         text: dict[str, str] = {}
-        for name in self.storage.list_dir(_join(directory, MODULES_DIR)):
+        for name in record.storage.list_dir(_join(directory, MODULES_DIR)):
             path = _join(directory, MODULES_DIR, name)
             if name.endswith(".json"):
-                entry = self._read_json(path)
+                entry = _read_json(record.storage, path)
                 if entry:
                     data[name.removesuffix(".json")] = entry
             elif name.endswith(".md"):
-                document = self.storage.read_text(path)
+                document = record.storage.read_text(path)
                 if document:
                     text[name.removesuffix(".md")] = document
         return data, text
 
-    def _read_json(self, path: str) -> dict[str, Any]:
-        raw = self.storage.read_text(path)
-        if raw is None:
-            return {}
-        try:
-            loaded = json.loads(raw)
-        except json.JSONDecodeError:
-            return {}
-        return loaded if isinstance(loaded, dict) else {}
+    def _adopt(self, library: Library) -> None:
+        """Hold this library and forward its dirty marks — one place, so load() and any
+        later path cannot disagree about it."""
+        self.library = library
+        library.dirty.connect(self.dirty.emit)
 
-    def _write_json(self, path: str, data: dict[str, Any]) -> None:
-        self.storage.write_text(
-            path, json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-        )
+    # -- membership ----------------------------------------------------------------------------
 
-    def _adopt(self, product: Product) -> None:
-        """Hold this product and forward its dirty marks — one place, so create() and
-        load() cannot disagree about it."""
-        self.product = product
-        product.dirty.connect(self.dirty.emit)
+    def attach(self, directory: Path) -> Project:
+        """Open a project directory and start tracking it. No model mutation here —
+        the caller adds the returned project to the library, which marks the root
+        structure dirty and gets the library file rewritten on the next flush."""
+        project, record, pending = self._open_project(Path(directory))
+        self._records[project.id] = record
+        self._groups = None
+        if pending:
+            self._save_project(record, project)
+        else:
+            self._remember_disk(record)
+        return project
+
+    def detach(self, project_id: ProjectId) -> None:
+        """Forget a project. Its files stay on disk — removal is from the library only."""
+        self._records.pop(project_id, None)
+        self._groups = None
+
+    def project_dir(self, project_id: ProjectId) -> Path:
+        return self._records[project_id].directory
+
+    def problems(self) -> list[ProjectProblem]:
+        return list(self._problems)
+
+    def repo_groups(self) -> list[StorageProvider]:
+        """One provider per distinct git repository, scoped to its projects' directories.
+
+        Cached: the sync feature subscribes to these providers' signals, so their identity
+        must be stable until membership actually changes (attach/detach invalidate).
+        """
+        if self._groups is None:
+            self._groups = grouped_by_repo(
+                [record.storage for record in self._records.values()]
+            )
+        return self._groups
+
+    def repo_for(self, project_id: ProjectId) -> StorageProvider | None:
+        """The repository group a project's directory belongs to, or None without one."""
+        record = self._records.get(project_id)
+        if record is None:
+            return None
+        return repo_group_for(record.storage, self.repo_groups())
 
     # -- the Repository face the framework uses ------------------------------------------------
 
     def owners(self) -> Iterable[DataOwner]:
-        return [] if self.product is None else list(self.product.nodes())
+        return [] if self.library is None else list(self.library.nodes())
 
     def owner(self, owner_id: str) -> DataOwner | None:
-        if self.product is None or not self.product.has(owner_id):
+        if self.library is None or not self.library.has(owner_id):
             return None
-        return self.product.node(owner_id)
+        return self.library.node(owner_id)
 
     def set_module_data(self, owner_id: str, module_id: str, data: dict[str, Any]) -> None:
-        assert self.product is not None
-        self.product.set_module_data(owner_id, module_id, data)
+        assert self.library is not None
+        self.library.set_module_data(owner_id, module_id, data)
 
     def files(self, node_id: NodeId, module_id: str) -> ModuleFileArea:
         """The directory ``module_id`` owns beside ``node_id``'s module data."""
-        directory = _join(self._locate(node_id), MODULES_DIR, module_id)
-        return ModuleFileArea(self.storage, directory, self._note_written)
+        record = self._record_for(node_id)
+        directory = _join(self._locate(record, node_id), MODULES_DIR, module_id)
+        return ModuleFileArea(
+            record.storage, directory, lambda path: self._note_written(record, path)
+        )
 
-    def _locate(self, node_id: NodeId) -> str:
+    def _record_for(self, node_id: NodeId) -> _ProjectRecord:
+        assert self.library is not None
+        node = self.library.node(node_id)
+        project = node if isinstance(node, Project) else self.library.project_of(node_id)
+        return self._records[project.id]
+
+    def _locate(self, record: _ProjectRecord, node_id: NodeId) -> str:
         """The node's directory, settled early for a node created since the last flush.
 
-        ``_dirs`` is normally filled at load and flush, but a file area can be asked for in
+        ``dirs`` is normally filled at load and flush, but a file area can be asked for in
         the window between creating a node and the autosave that writes it. Settling the
         folder name here is safe because it is the same choice ``_sync_dir`` would make —
         that method keeps any name already on the node — and a folder name is frozen at
         creation anyway.
         """
-        known = self._dirs.get(node_id)
+        known = record.dirs.get(node_id)
         if known is not None:
             return known
-        assert self.product is not None
-        node = self.product.node(node_id)
-        parent = self.product.parent_of(node_id)
-        assert parent is not None, "the product's own directory is recorded at load"
-        container = _join(self._locate(parent.id), CONTAINER[parent.kind])
+        assert self.library is not None
+        node = self.library.node(node_id)
+        parent = self.library.parent_of(node_id)
+        assert parent is not None, "a project's own directory is recorded when it is opened"
+        container = _join(self._locate(record, parent.id), CONTAINER[parent.kind])
         if not node.folder_name:
             node.folder_name = unique_folder_name(
-                node.title_for_folder(), set(self.storage.list_dir(container))
+                node.title_for_folder(), set(record.storage.list_dir(container))
             )
         directory = _join(container, node.folder_name)
-        self._dirs[node_id] = directory
+        record.dirs[node_id] = directory
         return directory
 
     def close(self) -> None:
-        self.product = None
+        self.library = None
 
     # -- noticing another writer ---------------------------------------------------------------
 
     def changed_underneath(self) -> bool:
-        """Whether anything in the workspace differs from what this store last saw."""
-        return self._snapshot() != self._disk
+        """Whether any project — or the library file itself — differs from what was last seen.
 
-    def _snapshot(self) -> dict[str, tuple[int, int]]:
-        root = self.storage.root
+        Deliberately coarse: this feeds the watcher, whose only move is a whole reload.
+        The flush path checks per project instead, so one project's outside edit never
+        blocks saving another.
+        """
+        if self._stat_library() != self._library_stamp:
+            return True
+        return any(
+            self._snapshot(record) != record.disk for record in self._records.values()
+        )
+
+    def _snapshot(self, record: _ProjectRecord) -> dict[str, tuple[int, int]]:
+        root = record.storage.root
         if not root.is_dir():
             return {}
         found: dict[str, tuple[int, int]] = {}
@@ -365,156 +482,193 @@ class ProductStore:
                 found[str(path.relative_to(root))] = (stat.st_size, stat.st_mtime_ns)
         return found
 
-    def _remember_disk(self) -> None:
-        self._disk = self._snapshot()
+    def _remember_disk(self, record: _ProjectRecord) -> None:
+        record.disk = self._snapshot(record)
 
-    def _note_written(self, path: str) -> None:
+    def _note_written(self, record: _ProjectRecord, path: str) -> None:
         """Record one file this store just wrote or removed, without rescanning the tree."""
-        full = self.storage.root / path
+        full = record.storage.root / path
         if full.is_file():
             stat = full.stat()
-            self._disk[str(full.relative_to(self.storage.root))] = (stat.st_size, stat.st_mtime_ns)
+            record.disk[path] = (stat.st_size, stat.st_mtime_ns)
         else:
-            self._disk.pop(path, None)
+            record.disk.pop(path, None)
+
+    def _stat_library(self) -> tuple[int, int] | None:
+        try:
+            stat = self.library_path.stat()
+        except OSError:
+            return None
+        return (stat.st_size, stat.st_mtime_ns)
+
+    def _remember_library_stamp(self) -> None:
+        self._library_stamp = self._stat_library()
 
     # -- writing -------------------------------------------------------------------------------
 
     def flush(self, marks: set[DirtyMark]) -> None:
-        """Write exactly what ``marks`` names.
+        """Write exactly what ``marks`` names, partitioned by the project that owns it.
+
+        Every project about to be written — and the library file, when membership changed —
+        is checked for outside edits *before anything is written*, so a refused flush
+        leaves the disk exactly as it was. A mark on the library root's structure means
+        the membership changed and rewrites the library file; everything else belongs to
+        one project and is written through that project's provider.
+        """
+        library = self.library
+        if library is None:
+            return
+        rewrite_library = False
+        per_project: dict[ProjectId, set[DirtyMark]] = {}
+        for node_id, aspect in marks:
+            if node_id == library.id:
+                rewrite_library = rewrite_library or aspect == "structure"
+                continue
+            if not library.has(node_id):
+                continue  # A mark for a node removed later in the same batch.
+            node = library.node(node_id)
+            project = node if isinstance(node, Project) else library.project_of(node_id)
+            if project.id in self._records:
+                per_project.setdefault(project.id, set()).add((node_id, aspect))
+
+        if rewrite_library and self._stat_library() != self._library_stamp:
+            raise StaleWorkspaceError(
+                "the project library changed on disk since it was opened — "
+                "reload before writing, or the other writer's work is lost"
+            )
+        for project_id in per_project:
+            record = self._records[project_id]
+            if self._snapshot(record) != record.disk:
+                title = library.project(project_id).title or record.directory.name
+                raise StaleWorkspaceError(
+                    f"{title} ({record.directory}) changed on disk since it was opened — "
+                    "reload before writing, or the other writer's work is lost"
+                )
+
+        if rewrite_library:
+            self._write_library_file()
+        for project_id, project_marks in per_project.items():
+            self._flush_project(self._records[project_id], project_marks)
+
+    def _write_library_file(self) -> None:
+        assert self.library is not None
+        # Model order first; entries that failed to open keep their place at the end —
+        # a project this build cannot read is still the user's project.
+        directories = [
+            self._records[project.id].directory
+            for project in self.library.projects
+            if project.id in self._records
+        ]
+        write_library_file(self.library_path, directories + self._problem_paths)
+        self._remember_library_stamp()
+
+    def _flush_project(self, record: _ProjectRecord, marks: set[DirtyMark]) -> None:
+        """One project's share of a flush.
 
         Structure is done in two passes on purpose. A single pass that synced and cleaned
         one parent at a time could delete a subtree that a pending move has not relocated
         yet — the directories must all exist in their new places before any old one is
         removed.
-
-        Both passes go **parent first**. ``marks`` is a set, so its order is arbitrary, and
-        one flush routinely carries a new project and the steps added inside it: syncing the
-        steps first would look for a directory the project has not been given yet.
         """
-        product = self.product
-        if product is None:
-            return
-        if self.changed_underneath():
-            raise StaleWorkspaceError(
-                f"{self.storage.label} changed on disk since it was opened — "
-                "reload before writing, or the other writer's work is lost"
-            )
-        depth = {node.id: index for index, node in enumerate(product.nodes())}
-        structural = sorted(
-            (node_id for node_id, aspect in marks if aspect == "structure"),
-            key=lambda node_id: depth.get(node_id, -1),
-        )
+        library = self.library
+        assert library is not None
+        structural = [node_id for node_id, aspect in marks if aspect == "structure"]
         for node_id in structural:
-            if product.has(node_id):
-                for child in _children(product.node(node_id)):
-                    self._sync_dir(product, child)
+            if library.has(node_id):
+                for child in _children(library.node(node_id)):
+                    self._sync_dir(record, child)
         for node_id in structural:
-            if product.has(node_id):
-                self._remove_orphans(product.node(node_id))
-                self._write_meta(product.node(node_id))
+            if library.has(node_id):
+                self._remove_orphans(record, library.node(node_id))
+                self._write_meta(record, library.node(node_id))
         for node_id, aspect in marks:
-            if aspect == "structure" or not product.has(node_id):
+            if aspect == "structure" or not library.has(node_id):
                 continue
-            node = product.node(node_id)
+            node = library.node(node_id)
             if aspect == "meta":
-                self._write_meta(node)
+                self._write_meta(record, node)
             elif aspect == "module_text":
-                self._write_module_text(node)
+                self._write_module_text(record, node)
             elif aspect == "module_data":
-                self._write_module_data(node)
-        self._remember_disk()
+                self._write_module_data(record, node)
+        self._remember_disk(record)
 
-    def create(self, product: Product) -> None:
-        """Write a brand-new workspace. The product sits at the workspace root itself."""
-        self._dirs[product.id] = ""
-        self._adopt(product)
-        self.save_all(product)
+    def _save_project(self, record: _ProjectRecord, project: Project) -> None:
+        """Write one whole project — after a migration, so it is never left half-moved."""
+        for node in _walk(project):
+            self._write_meta(record, node)
+            self._write_module_text(record, node)
+            self._write_module_data(record, node)
+        self._remember_disk(record)
 
-    def save_all(self, product: Product) -> None:
-        """Write the whole workspace. Used after a migration and when creating one."""
-        for node in product.nodes():
-            if node is not product:
-                self._sync_dir(product, node)
-        for node in product.nodes():
-            self._write_meta(node)
-            self._write_module_text(node)
-            self._write_module_data(node)
-        self._remember_disk()
-
-    def _sync_dir(self, product: Product, node: Node) -> None:
+    def _sync_dir(self, record: _ProjectRecord, node: Node) -> None:
         """Make the directory match where the model says this node lives.
 
         Three cases, and they are deliberately the same operation from outside: a node that
         was renamed into a fresh folder is moved, one that is new gets its subtree written,
         and one that was deleted and then undone is also "new" — its old directory is gone,
         so it is written again from memory. That last case is why this checks the disk
-        rather than trusting ``_dirs``: the recorded path can be right and the directory
+        rather than trusting ``dirs``: the recorded path can be right and the directory
         still not be there.
         """
-        parent = product.parent_of(node.id)
+        assert self.library is not None
+        parent = self.library.parent_of(node.id)
         assert parent is not None
-        container = _join(self._dirs[parent.id], CONTAINER[parent.kind])
+        container = _join(record.dirs[parent.id], CONTAINER[parent.kind])
         if not node.folder_name:
             node.folder_name = unique_folder_name(
-                node.title_for_folder(), set(self.storage.list_dir(container))
+                node.title_for_folder(), set(record.storage.list_dir(container))
             )
         target = _join(container, node.folder_name)
-        current = self._dirs.get(node.id)
+        current = record.dirs.get(node.id)
 
-        if current is not None and current != target and self.storage.exists(current):
-            (self.storage.root / target).parent.mkdir(parents=True, exist_ok=True)
-            (self.storage.root / current).rename(self.storage.root / target)
-            self._rebase(node, target)
+        if current is not None and current != target and record.storage.exists(current):
+            (record.storage.root / target).parent.mkdir(parents=True, exist_ok=True)
+            (record.storage.root / current).rename(record.storage.root / target)
+            self._rebase(record, node, target)
             return
 
-        self._rebase(node, target)
-        if not self.storage.exists(_join(target, META_FILE[node.kind])):
-            self._write_subtree(node)
+        self._rebase(record, node, target)
+        if not record.storage.exists(_join(target, META_FILE[node.kind])):
+            self._write_subtree(record, node)
 
-    def _write_subtree(self, node: Node) -> None:
+    def _write_subtree(self, record: _ProjectRecord, node: Node) -> None:
         """Write a node and everything under it — for one that is not on disk at all."""
         for descendant in _walk(node):
-            self.storage.make_dir(self._dirs[descendant.id])
-            self._write_meta(descendant)
-            self._write_module_text(descendant)
-            self._write_module_data(descendant)
+            record.storage.make_dir(record.dirs[descendant.id])
+            self._write_meta(record, descendant)
+            self._write_module_text(record, descendant)
+            self._write_module_data(record, descendant)
 
-    def _rebase(self, node: Node, new: str) -> None:
-        self._dirs[node.id] = new
+    def _rebase(self, record: _ProjectRecord, node: Node, new: str) -> None:
+        record.dirs[node.id] = new
         for child in _children(node):
-            self._rebase(child, _join(new, CONTAINER[node.kind], child.folder_name))
+            self._rebase(record, child, _join(new, CONTAINER[node.kind], child.folder_name))
 
-    def _remove_orphans(self, parent: Node) -> None:
+    def _remove_orphans(self, record: _ProjectRecord, parent: Node) -> None:
         """Delete directories under ``parent`` that no longer belong to any child."""
-        container = _join(self._dirs[parent.id], CONTAINER[parent.kind])
+        container = _join(record.dirs[parent.id], CONTAINER[parent.kind])
         keep = {child.folder_name for child in _children(parent)}
-        child_meta = META_FILE["project" if parent.kind == "product" else "step"]
-        for name in self.storage.list_dir(container):
+        for name in record.storage.list_dir(container):
             path = _join(container, name)
-            if name in keep or not self.storage.is_dir(path):
+            if name in keep or not record.storage.is_dir(path):
                 continue
-            if self.storage.exists(_join(path, child_meta)):
-                shutil.rmtree(self.storage.root / path, ignore_errors=True)
-        self.storage.delete(container)  # Removes it only when it is empty.
+            if record.storage.exists(_join(path, STEP_META)):
+                shutil.rmtree(record.storage.root / path, ignore_errors=True)
+        record.storage.delete(container)  # Removes it only when it is empty.
 
-    def _write_meta(self, node: Node) -> None:
-        directory = self._dirs[node.id]
+    def _write_meta(self, record: _ProjectRecord, node: Node) -> None:
+        directory = record.dirs[node.id]
         # Absence encodes the default: an untouched field is not written, so a diff shows
         # exactly the nodes whose plan actually changed.
         meta: dict[str, Any] = {"id": node.id, "created": node.created}
-        if isinstance(node, Product):
-            if node.name:
-                meta["name"] = node.name
-            if node.repository:
-                meta["repository"] = node.repository
-            if node.checkout:
-                meta["checkout"] = node.checkout
-            meta[FORMAT_KEY] = FORMAT.current_version
-        elif isinstance(node, Project):
+        if isinstance(node, Project):
             if node.title:
                 meta["title"] = node.title
             if node.summary:
                 meta["summary"] = node.summary
+            # The format stamp is per project: each directory migrates on its own.
+            meta[FORMAT_KEY] = FORMAT.current_version
         elif isinstance(node, Step):
             if node.title:
                 meta["title"] = node.title
@@ -523,32 +677,47 @@ class ProductStore:
         children = _children(node)
         if children:
             meta["children"] = [child.folder_name for child in children]
-        self._write_json(_join(directory, META_FILE[node.kind]), meta)
+        _write_json(record.storage, _join(directory, META_FILE[node.kind]), meta)
 
-    def _write_module_text(self, node: Node) -> None:
-        directory = _join(self._dirs[node.id], MODULES_DIR)
+    def _write_module_text(self, record: _ProjectRecord, node: Node) -> None:
+        directory = _join(record.dirs[node.id], MODULES_DIR)
         wanted = {f"{module_id}.md" for module_id, body in node.module_text.items() if body}
-        for name in self.storage.list_dir(directory):
+        for name in record.storage.list_dir(directory):
             if name.endswith(".md") and name not in wanted:
-                self.storage.delete(_join(directory, name))
+                record.storage.delete(_join(directory, name))
         for module_id, body in node.module_text.items():
             if body:
-                self.storage.write_text(_join(directory, f"{module_id}.md"), body)
-        self.storage.delete(directory)  # Removes it only when it is empty.
+                record.storage.write_text(_join(directory, f"{module_id}.md"), body)
+        record.storage.delete(directory)  # Removes it only when it is empty.
 
-    def _write_module_data(self, node: Node) -> None:
-        directory = _join(self._dirs[node.id], MODULES_DIR)
+    def _write_module_data(self, record: _ProjectRecord, node: Node) -> None:
+        directory = _join(record.dirs[node.id], MODULES_DIR)
         wanted = {f"{module_id}.json" for module_id in node.module_data}
-        for name in self.storage.list_dir(directory):
+        for name in record.storage.list_dir(directory):
             if name.endswith(".json") and name not in wanted:
-                self.storage.delete(_join(directory, name))
+                record.storage.delete(_join(directory, name))
         for module_id, data in node.module_data.items():
-            self._write_json(_join(directory, f"{module_id}.json"), data)
-        self.storage.delete(directory)  # Removes it only when it is empty.
+            _write_json(record.storage, _join(directory, f"{module_id}.json"), data)
+        record.storage.delete(directory)  # Removes it only when it is empty.
+
+
+def _read_json(storage: StorageProvider, path: str) -> dict[str, Any]:
+    raw = storage.read_text(path)
+    if raw is None:
+        return {}
+    try:
+        loaded = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _write_json(storage: StorageProvider, path: str, data: dict[str, Any]) -> None:
+    storage.write_text(path, json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
 
 def _children(node: Node) -> list[Node]:
-    if isinstance(node, Product):
+    if isinstance(node, Library):
         return list(node.projects)
     if isinstance(node, Project):
         return list(node.steps)
@@ -583,8 +752,9 @@ def _join(*parts: str) -> str:
 
 
 __all__ = [
+    "LibraryStore",
     "ModuleFileArea",
-    "ProductStore",
+    "ProjectProblem",
     "StaleWorkspaceError",
     "UnsupportedFormatError",
 ]

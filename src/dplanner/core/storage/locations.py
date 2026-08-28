@@ -21,6 +21,7 @@ An explicit scheme overrides the detection, so ``file:`` on a git checkout is a 
 way to say *don't offer me version control today*.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -115,3 +116,43 @@ def _open_git(path: Path) -> GitStorage:
     if storage.has_origin():
         return GitHubStorage(path, repo_root=storage.repo_root)
     return storage
+
+
+def open_project_storage(directory: Path) -> StorageProvider:
+    """Open one project directory with the most capable provider it supports."""
+    return open_storage(str(directory))
+
+
+def repo_group_for(
+    provider: StorageProvider, groups: Sequence[StorageProvider]
+) -> StorageProvider | None:
+    """The entry in ``groups`` covering the repository ``provider`` sits in, or None.
+
+    Lives here so callers above the storage layer can match a project to its repository
+    group without naming a concrete provider class themselves.
+    """
+    if not isinstance(provider, GitStorage):
+        return None
+    for group in groups:
+        if isinstance(group, GitStorage) and group.repo_root == provider.repo_root:
+            return group
+    return None
+
+
+def grouped_by_repo(providers: Sequence[StorageProvider]) -> list[StorageProvider]:
+    """One provider per distinct git repository, scoped to the given providers' directories.
+
+    Several projects can live in one repository; a Save should commit that repository once,
+    covering exactly those projects' directories. Providers that are not git checkouts have
+    no history to group and are skipped.
+    """
+    groups: dict[Path, list[GitStorage]] = {}
+    for provider in providers:
+        if isinstance(provider, GitStorage):
+            groups.setdefault(provider.repo_root, []).append(provider)
+    grouped: list[StorageProvider] = []
+    for repo_root, members in groups.items():
+        scopes = [scope for member in members for scope in member.scopes]
+        cls = GitHubStorage if any(isinstance(m, GitHubStorage) for m in members) else GitStorage
+        grouped.append(cls(repo_root, repo_root=repo_root, scopes=scopes))
+    return grouped

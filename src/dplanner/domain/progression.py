@@ -28,7 +28,7 @@ readers of the one function below.
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from dplanner.domain.model import Product, Project, Step, StepId
+from dplanner.domain.model import Library, Project, Step, StepId
 
 DONE = "done"
 IN_PROGRESS = "in-progress"
@@ -100,7 +100,7 @@ class Progression:
 
 
 def progression(
-    product: Product,
+    library: Library,
     project: Project,
     status_for: Callable[[Step], str],
 ) -> Progression:
@@ -123,13 +123,13 @@ def progression(
 
     def outstanding(step: Step) -> list[Step]:
         """The resolved prerequisites not yet done — dead ids skipped, as everywhere."""
-        return [t for t in product.requires(step.id) if status.get(t.id) != DONE]
+        return [t for t in library.requires(step.id) if status.get(t.id) != DONE]
 
     frontier = [step for step in pending if not outstanding(step)]
     ready_ids = {step.id for step in frontier}
     ready = tuple(
         sorted(
-            (Launchable(step, _unlocks(product, project, step, status)) for step in frontier),
+            (Launchable(step, _unlocks(library, project, step, status)) for step in frontier),
             key=lambda launchable: -launchable.unlocks,  # Stable: ties keep project order.
         )
     )
@@ -157,7 +157,7 @@ def progression(
 
 
 def _unlocks(
-    product: Product,
+    library: Library,
     project: Project,
     step: Step,
     status: dict[StepId, str],
@@ -172,7 +172,7 @@ def _unlocks(
     seen: set[StepId] = set()
 
     def visit(step_id: StepId) -> None:
-        for dependent in product.dependents(step_id):
+        for dependent in library.dependents(step_id):
             if dependent.id in seen or project.step(dependent.id) is None:
                 continue
             seen.add(dependent.id)

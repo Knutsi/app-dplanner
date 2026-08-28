@@ -647,6 +647,35 @@ defensive `object` parameter and an unused injection seam each read as flexibili
 behave as a trap — the silent-`None` watcher especially, because the failure mode is "the
 feature just doesn't run".
 
+### `core/config_dir.py` — a Qt-free per-user config location
+
+**What.** One function, `config_dir(app)`: the platform's per-user configuration directory
+(XDG / `%APPDATA%` / `~/Library/Application Support`), hand-rolled, no dependency. DPlanner's
+project-library file lives there.
+
+**Why.** The template's answer to "per user, per machine" is QSettings via
+`framework/user_config.py` — which a headless CLI cannot read (see §4: the CLI loads no Qt).
+Any application with a real CLI surface eventually needs one value both halves can reach,
+and FORMAT.md had already named "a Qt-free per-user config in core/" as the sanctioned fix
+before anything used it. Upstream candidate: yes — small, and the trap it resolves is
+structural, not app-specific.
+
+### `GitStorage` grew multiple commit scopes, `init_repo`, `origin_url`
+
+**What.** The single `self._scope` pathspec became `self._scopes: tuple[str, ...]`
+(constructor arg `scopes=None` keeps the old derive-from-root behaviour), threaded through
+`refresh_dirty/diff/commit/history`. Module-level `init_repo(path)` (plain `git init`) and
+`origin_url(path)` (`git remote get-url origin`, "" when absent) joined `find_repo_root`.
+`core/storage/locations.py` grew `grouped_by_repo(providers)`: one scoped provider per
+distinct `repo_root`, so a Save over several planned directories in one repository is one
+commit covering exactly those directories.
+
+**Why.** The scoping policy ("a Save must never sweep up whatever else is in the tree") was
+already the class's one policy decision; multiple scopes is the same decision when one
+repository holds several planned directories. `origin_url` replaces storing a repository URL
+that git already knows. Upstream: the multi-scope change is honest generalisation; the
+grouping helper only matters to applications whose document spans providers.
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class
