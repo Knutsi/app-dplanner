@@ -141,6 +141,13 @@ def commands(days_for: Callable[[Step], float | None]) -> list[CliCommand]:
             ),
         ),
         CliCommand(
+            path=("region", "fit"),
+            summary="Re-wrap a region around named steps — after a sort moved them.",
+            configure=_region_fit_args,
+            run=_region_fit,
+            examples=('dplanner region fit discovery "Database setup" --steps schema seed',),
+        ),
+        CliCommand(
             path=("region", "rename"),
             summary="Give a region a new title.",
             configure=_region_rename_args,
@@ -286,6 +293,17 @@ def _region_rename_args(parser: ArgumentParser) -> None:
     parser.add_argument("new", help="the new title")
 
 
+def _region_fit_args(parser: ArgumentParser) -> None:
+    _region_args(parser)
+    parser.add_argument(
+        "--steps",
+        nargs="+",
+        required=True,
+        metavar="STEP",
+        help="wrap these steps where they now sit",
+    )
+
+
 def _find_region(project: Project, needle: str) -> Region:
     """Exact id first, then a unique id prefix, then a unique partial title."""
     regions = read_regions(project)
@@ -308,11 +326,16 @@ def _find_region(project: Project, needle: str) -> Region:
 def _region_row(
     project: Project, region: Region, placed: dict[str, tuple[float, float]]
 ) -> dict[str, Any]:
-    inside = sum(
-        1
+    """One region with the steps it actually covers — the agent's verification loop.
+
+    Membership is listed by title, not just counted, so a wrap that caught a step nobody
+    named is visible in the report rather than a surprise on the canvas.
+    """
+    inside = [
+        {"id": step.id, "title": step.title}
         for step in project.steps
         if region.contains_centre(*placed[step.id], NODE_W, NODE_H)
-    )
+    ]
     return {
         "id": region.id,
         "title": region.title,
@@ -320,8 +343,19 @@ def _region_row(
         "y": region.y,
         "w": region.w,
         "h": region.h,
-        "steps_inside": inside,
+        "steps_inside": len(inside),
+        "steps": inside,
     }
+
+
+def _region_line(row: dict[str, Any]) -> str:
+    count = row["steps_inside"]
+    if not count:
+        held = "empty"
+    else:
+        titles = ", ".join(step["title"] or "Untitled step" for step in row["steps"])
+        held = f"{count} step{'s' if count != 1 else ''}: {titles}"
+    return f"{row['id'][:8]}  {row['title']}  ({held})"
 
 
 def _region_list(context: CliContext, args: Namespace) -> int:
@@ -332,11 +366,7 @@ def _region_list(context: CliContext, args: Namespace) -> int:
     if not rows:
         context.report(data, "no regions")
         return 0
-    lines = [
-        f"{row['id'][:8]}  {row['title']}  ({row['steps_inside']} steps inside)"
-        for row in rows
-    ]
-    context.report(data, "\n".join(lines))
+    context.report(data, "\n".join(_region_line(row) for row in rows))
     return 0
 
 
@@ -359,10 +389,7 @@ def _region_add(context: CliContext, args: Namespace) -> int:
     )
     placed = positions(context.product, project)
     row = _region_row(project, region, placed)
-    context.report(
-        row | {"project": project.id},
-        f"{title}: {row['steps_inside']} steps inside",
-    )
+    context.report(row | {"project": project.id}, _region_line(row))
     return 0
 
 
@@ -384,6 +411,23 @@ def _wrap_rect(
     right = max(xs) + NODE_W + WRAP_PAD
     bottom = max(ys) + NODE_H + WRAP_PAD
     return left, top, right - left, bottom - top
+
+
+def _region_fit(context: CliContext, args: Namespace) -> int:
+    """Recompute the wrap, keeping the region's id — a delete-and-re-add would mint a new
+    one and orphan the region's rect entries in every saved layout."""
+    project = find_project(context.product, args.project)
+    region = _find_region(project, args.region)
+    x, y, w, h = _wrap_rect(context, project, args.steps)
+    refitted = [
+        r.moved_to(x, y).sized(w, h) if r.id == region.id else r
+        for r in read_regions(project)
+    ]
+    context.apply(set_regions_command(project, refitted, "Fit Region"))
+    placed = positions(context.product, project)
+    row = _region_row(project, region.moved_to(x, y).sized(w, h), placed)
+    context.report(row | {"project": project.id}, _region_line(row))
+    return 0
 
 
 def _region_rename(context: CliContext, args: Namespace) -> int:

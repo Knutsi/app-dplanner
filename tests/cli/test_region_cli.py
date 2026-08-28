@@ -49,7 +49,8 @@ def reload_project(workspace):
 
 def test_add_around_steps_wraps_them_where_they_sit(cli, workspace):
     said = cli("region", "add", "Discovery", "Database setup", "--steps", "schema", "migrations")
-    assert "2 steps inside" in said
+    # The report names what the rectangle actually covers, so a caught neighbour is visible.
+    assert "2 steps: Design schema, Write migrations" in said
 
     product = ProductStore(LocalStorage(workspace)).load()
     project = product.projects[0]
@@ -78,6 +79,45 @@ def test_add_at_a_rect_and_list(cli):
     row = listed["regions"][0]
     assert row["title"] == "Finalize release"
     assert (row["x"], row["y"], row["w"], row["h"]) == (400.0, 8.0, 320.0, 240.0)
+
+
+def test_list_names_the_steps_each_region_covers(cli):
+    cli("region", "add", "Discovery", "Database setup", "--steps", "schema", "migrations")
+    cli("region", "add", "Discovery", "Elsewhere", "--rect", "5000", "5000", "100", "100")
+
+    said = cli("region", "list", "Discovery")
+    assert "Database setup  (2 steps: Design schema, Write migrations)" in said
+    assert "Elsewhere  (empty)" in said
+
+    listed = json.loads(cli("region", "list", "Discovery", "--json"))
+    by_title = {row["title"]: row for row in listed["regions"]}
+    assert [s["title"] for s in by_title["Database setup"]["steps"]] == [
+        "Design schema",
+        "Write migrations",
+    ]
+    assert by_title["Elsewhere"]["steps"] == []
+
+
+def test_fit_rewraps_in_place_and_keeps_the_id(cli, workspace):
+    cli("region", "add", "Discovery", "Database setup", "--rect", "5000", "5000", "100", "100")
+    before = read_regions(reload_project(workspace))[0]
+
+    said = cli("region", "fit", "Discovery", "Database setup", "--steps", "schema", "migrations")
+    assert "2 steps: Design schema, Write migrations" in said
+
+    product = ProductStore(LocalStorage(workspace)).load()
+    project = product.projects[0]
+    after = read_regions(project)[0]
+    assert after.id == before.id  # a saved layout's rect entry still points at it
+    assert after.title == "Database setup"
+    placed = positions(product, project)
+    schema, migrations, _ship = project.steps
+    assert after.contains_centre(*placed[schema.id], NODE_W, NODE_H)
+    assert after.contains_centre(*placed[migrations.id], NODE_W, NODE_H)
+
+    assert "no region matches" in cli(
+        "region", "fit", "Discovery", "ghost", "--steps", "schema", expect=1
+    )
 
 
 def test_rename_and_delete_find_a_region_by_title_or_id(cli, workspace):
