@@ -411,6 +411,16 @@ def test_project_graph_quotes_awkward_titles(cli):
     assert '"Say #quot;hello#quot; [loudly]"' in chart
 
 
+def test_project_graph_short_uses_positional_ids_and_cut_titles(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "A step with a very long descriptive title indeed")
+    cli("step", "add", "Discovery", "B", "--after", "A step")
+    chart = cli("project", "graph", "Discovery", "--short")
+    assert 's1["1: A step with a very long…"]' in chart
+    assert 's2["2: B"]' in chart
+    assert "s1 --> s2" in chart
+
+
 def test_project_graph_of_an_empty_project_is_still_a_chart(cli):
     cli("project", "create", "Discovery")
     assert "no steps yet" in cli("project", "graph", "Discovery")

@@ -114,9 +114,12 @@ def commands() -> list[CliCommand]:
             path=("project", "graph"),
             summary="The step graph as a Mermaid flowchart: waves as rows, requires as "
             "arrows. Paste it into a PR or a report.",
-            configure=_one_project,
+            configure=_configure_graph,
             run=_project_graph,
-            examples=("dplanner project graph discovery",),
+            examples=(
+                "dplanner project graph discovery",
+                "dplanner project graph discovery --short",
+            ),
         ),
         CliCommand(
             path=("project", "export"),
@@ -271,6 +274,17 @@ def _project_show(context: CliContext, args: Namespace) -> int:
     return 0
 
 
+def _configure_graph(parser: ArgumentParser) -> None:
+    _one_project(parser)
+    parser.add_argument(
+        "--short",
+        action="store_true",
+        help="compact labels: s1, s2 ids and titles cut to ~24 characters — for graphs "
+        "too wide to read; the ids are positional, so the default form is the "
+        "diff-stable one",
+    )
+
+
 def _configure_create(parser: ArgumentParser) -> None:
     parser.add_argument("title", help="what the project is called")
     parser.add_argument("--summary", default="", help="one line on what it delivers")
@@ -311,24 +325,36 @@ def _project_delete(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def mermaid(product: Product, project: Project) -> str:
+SHORT_TITLE = 24  # Where a compact label cuts a title; enough to recognise, not to read.
+
+
+def mermaid(product: Product, project: Project, short: bool = False) -> str:
     """The step graph as a Mermaid flowchart — the same map the canvas draws, as text.
 
     Deliberately structure-only: waves become subgraphs so parallelism is visible at a
     glance, ``requires`` edges order them, and nothing else is styled in. The walk is
     ``placed()``, whose order is stable, so regenerating the chart after an unrelated edit
     diffs clean. Dangling edges are skipped, as everywhere ``requires()`` is read.
+
+    ``short`` swaps full titles for ``1: Truncated title…`` labels over positional
+    ``s1, s2, …`` ids — narrow enough for a PR description, but positional, so the
+    default form remains the diff-stable one.
     """
     lines = ["flowchart TD"]
     rows = placed(product, project)
     if not rows:
         return "flowchart TD\n    %% no steps yet"
-    node_ids = {row.step.id: f"s{row.step.id[:12]}" for row in rows}
+    node_ids = {
+        row.step.id: f"s{row.index}" if short else f"s{row.step.id[:12]}" for row in rows
+    }
     for wave in range(1, rows[-1].wave + 1):
         lines.append(f'    subgraph wave{wave}["Wave {wave}"]')
         for row in rows:
             if row.wave == wave:
                 title = (row.step.title or "Untitled step").replace('"', "#quot;")
+                if short:
+                    cut = title if len(title) <= SHORT_TITLE else title[: SHORT_TITLE - 1] + "…"
+                    title = f"{row.index}: {cut}"
                 lines.append(f'        {node_ids[row.step.id]}["{title}"]')
         lines.append("    end")
     for row in rows:
@@ -339,7 +365,7 @@ def mermaid(product: Product, project: Project) -> str:
 
 def _project_graph(context: CliContext, args: Namespace) -> int:
     project = find_project(context.product, args.project)
-    chart = mermaid(context.product, project)
+    chart = mermaid(context.product, project, short=args.short)
     context.report({"project": project.id, "mermaid": chart}, chart)
     return 0
 
