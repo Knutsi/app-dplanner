@@ -1,42 +1,27 @@
-"""``dplanner layout …`` end to end, over a real workspace. No ``qapp`` fixture."""
+"""``dplanner layout …`` end to end, over a real library. No ``qapp`` fixture."""
 
 import json
-from io import StringIO
 
 import pytest
 
-from dplanner.cli.command import CliRegistry
-from dplanner.cli.main import run
-from dplanner.core.storage.local import LocalStorage
-from dplanner.domain.store import ProductStore
-from dplanner.modules import default_cli_commands, default_module_formats
+from dplanner.domain.store import LibraryStore
 from dplanner.modules.project_editor.positions import read_position
 
 
 @pytest.fixture
-def cli(workspace):
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-
-    def invoke(*argv, expect=0):
-        out, err = StringIO(), StringIO()
-        code = run(
-            registry, default_module_formats(), ["--workspace", str(workspace), *argv], out, err
-        )
-        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
-        return out.getvalue() + err.getvalue()
-
-    invoke("project", "create", "Discovery")
-    invoke("step", "add", "Discovery", "Read the spec")
-    invoke("step", "add", "Discovery", "Draft the model")
-    return invoke
+def cli(cli):
+    """The shared CLI, with a two-step project already in place."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Read the spec")
+    cli("step", "add", "Discovery", "Draft the model")
+    return cli
 
 
-def reload(workspace):
-    return ProductStore(LocalStorage(workspace)).load()
+def reload(library_path):
+    return LibraryStore(library_path).load()
 
 
-def test_save_list_apply_round_trip(cli, workspace):
+def test_save_list_apply_round_trip(cli, cli_library):
     assert "created" in cli("layout", "save", "Discovery", "plan")
     assert "updated" in cli("layout", "save", "Discovery", "plan")
 
@@ -44,16 +29,16 @@ def test_save_list_apply_round_trip(cli, workspace):
     assert listed["layouts"] == [{"name": "plan", "steps": 2, "regions": 0}]
 
     cli("layout", "apply", "Discovery", "plan")
-    library = reload(workspace)
+    library = reload(cli_library)
     for step in library.projects[0].steps:
         assert read_position(step) is not None
 
 
-def test_apply_leaves_a_later_step_unplaced(cli, workspace):
+def test_apply_leaves_a_later_step_unplaced(cli, cli_library):
     cli("layout", "save", "Discovery", "plan")
     cli("step", "add", "Discovery", "Ship it")
     cli("layout", "apply", "Discovery", "plan")
-    library = reload(workspace)
+    library = reload(cli_library)
     placed = [read_position(step) for step in library.projects[0].steps]
     assert placed[0] is not None and placed[1] is not None
     assert placed[2] is None  # the layout never saw it, so it keeps its automatic seat

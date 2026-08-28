@@ -7,7 +7,7 @@ from dplanner.domain.model import EDGE_KINDS, Library, Project, Step, TextEdit
 
 @pytest.fixture
 def library():
-    library = Library(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
     for title in ("Read the spec", "Draft the model", "Review"):
@@ -29,7 +29,14 @@ def test_one_index_spans_all_three_kinds(library):
     step = find(library, "Review")
     assert library.has(library.id) and library.has(project.id) and library.has(step.id)
     assert library.node(step.id) is step
-    assert [node.kind for node in library.nodes()][:3] == ["library", "project", "step"]
+    assert [node.kind for node in library.nodes()][:2] == ["project", "step"]
+
+
+def test_the_root_is_indexed_but_never_iterated(library):
+    """The library root has no directory and can carry no module data, so nothing
+    downstream — the migration pass, the flush — may ever see it in `nodes()`."""
+    assert library.has(library.id)
+    assert library.id not in {node.id for node in library.nodes()}
 
 
 def test_a_step_knows_which_project_it_is_in(library):
@@ -49,10 +56,11 @@ def test_asking_for_the_wrong_kind_is_an_error(library):
 
 def test_each_kind_has_its_own_editable_fields(library):
     project = find(library, "Discovery")
-    library.set_field(library.id, "repository", "git@example.com:widget.git")
+    step = find(library, "Review")
     library.set_field(project.id, "summary", "what we do not know yet")
-    assert library.repository.endswith("widget.git")
+    library.set_field(step.id, "title", "Review everything")
     assert project.summary == "what we do not know yet"
+    assert step.title == "Review everything"
 
 
 def test_a_field_the_kind_does_not_have_is_refused(library):
@@ -62,18 +70,20 @@ def test_a_field_the_kind_does_not_have_is_refused(library):
 
 
 def test_setting_a_field_to_what_it_already_is_emits_nothing(library):
+    project = find(library, "Discovery")
     seen = []
     library.field_changed.connect(lambda *args: seen.append(args))
-    library.set_field(library.id, "name", "Widget")
+    library.set_field(project.id, "title", "Discovery")
     assert seen == []
 
 
 def test_the_origin_reaches_the_signal(library):
     """A view passes itself and ignores its own echo; identity is the whole mechanism."""
+    project = find(library, "Discovery")
     view = object()
     seen = []
     library.field_changed.connect(lambda node_id, field, origin: seen.append(origin))
-    library.set_field(library.id, "name", "Widget 2", view)
+    library.set_field(project.id, "title", "Discovery Phase", view)
     assert seen == [view]
 
 
@@ -215,8 +225,8 @@ def test_a_project_cannot_hold_a_project(library):
         library.add_child(find(library, "Discovery").id, Project(title="Nested"))
 
 
-def test_the_product_itself_cannot_be_removed(library):
-    with pytest.raises(ValueError, match="cannot be removed"):
+def test_the_library_itself_cannot_be_removed(library):
+    with pytest.raises(ValueError, match="the library itself cannot be removed"):
         library.remove_child(library.id)
 
 

@@ -1,8 +1,7 @@
 # DPlanner
 
-A development planner: a **product** — one codebase, its repository, and the work planned
-against it — kept as plain files on disk, so the plan can live in version control next to
-whatever it is planning. Built on
+A development planner: your **projects**, each one a folder of plain files inside its own
+git repository, so every plan lives in version control next to the code it plans. Built on
 [app-framework](https://github.com/Knutsi/app-framework) — PySide6 (Qt 6, LGPL), managed
 with uv, running on Linux and macOS.
 
@@ -12,8 +11,8 @@ any coding agent can drive.
 ## What a plan is
 
 ```
-Product  ── the system level: a name, a repository URL, a checkout. One per window.
-└── Project  ── a unit of work with a beginning and an end
+Library  ── the account level: a per-user file listing project directories. One per window.
+└── Project  ── a unit of work with a beginning and an end, in its own repository
     └── Step  ── a node in that project's graph
 ```
 
@@ -41,34 +40,35 @@ the execution board and `dplanner progression show` say what can be launched rig
 
 ```bash
 uv sync
-uv run dplanner                                  # last-opened, or the Open dialog
-uv run dplanner --workspace ~/Products/widget    # a specific product; created if empty
+uv run dplanner                                  # your library; created empty on first run
+uv run dplanner --library ~/plans/library.json   # another library, in its own instance
 ```
 
-A product can also be named by scheme: `file:~/path` forces a plain folder, `git:~/path`
-requires a git checkout, and `github:owner/repo` clones on first open. Whichever you use, the
-application adapts: against a plain folder there is no Save action at all, because there
-would be nothing for it to do.
+The library file lists your projects and lives per user (`$DPLANNER_LIBRARY` also names
+one). *File ▸ New Project* creates a project folder inside a git repository — offering
+`git init` when there is none — and *Open Project* adds an existing one; both update the
+library live. *New/Open Project Library* starts a separate instance.
 
 ## Working with an agent
 
 ```bash
 uv run dplanner skill install          # ~/.claude/skills/dplanner/
-uv run dplanner skill install --project   # ./.claude/skills/dplanner/, so it travels
+uv run dplanner skill install --repo   # ./.claude/skills/dplanner/, so it travels
 ```
 
 The skill is **generated from the command registry**, so it cannot describe a command that
 does not exist; `dplanner skill status` says whether the installed copy matches the build,
 and *Tools ▸ Install Agent Skill…* does the same from the window.
 
-Commands find the product by walking up from the working directory for `product.json`, so an
-agent already sitting in the checkout needs no configuration. A plan kept in a subdirectory
-the walk would never enter is reachable through a one-line `.dplanner` pointer file at the
-repository root — see `FORMAT.md`. Everything takes `--json`.
+Commands find the current project by walking up from the working directory for
+`project.dproj`, so an agent already sitting in the repository needs no configuration. A
+plan kept in a subdirectory the walk would never enter is reachable through a one-line
+`.dplanner` pointer file at the repository root — see `FORMAT.md`. Everything takes
+`--json`, `--library` and `--project`.
 
 ```bash
-dplanner project list
-dplanner project create "Search rewrite" --summary "Replace the index"
+dplanner library list
+dplanner project create "Search rewrite" --dir ~/code/widget/planning --summary "Replace the index"
 dplanner step add search "Read the spec"
 dplanner step add search "Draft the model" --after "Read the spec"
 dplanner estimate set "Draft the model" --days 5
@@ -88,20 +88,21 @@ seen. See `FORMAT.md`.
 ## On disk
 
 ```
-widget/
-├── product.json               id, name, repository, checkout, format, children
-├── modules/
-└── projects/
-    └── search-rewrite/
-        ├── project.json       id, title, summary, children
-        └── steps/
-            └── read-the-spec/
-                ├── step.json  id, title, edges: {"requires": [ids]}
-                └── modules/
-                    ├── estimation.json         a module's data
-                    ├── step_description.md     a module's prose
-                    └── step_description/       a module's files
+<repository>/
+└── planning/                  the project directory — any folder in the repo
+    ├── project.dproj          id, title, summary, format, children
+    ├── modules/
+    └── steps/
+        └── read-the-spec/
+            ├── step.json      id, title, edges: {"requires": [ids]}
+            └── modules/
+                ├── estimation.json         a module's data
+                ├── step_description.md     a module's prose
+                └── step_description/       a module's files
 ```
+
+The per-user library file (`library.json`) lists project directories and never enters
+version control; each project migrates on its own format stamp.
 
 Ordering lives in the parent's `children` list, folder names are frozen at creation, and
 absent means default — so a diff shows exactly the steps whose plan actually changed. See
@@ -137,8 +138,9 @@ src/dplanner/
 │   ├── signals.py  fsio.py  text_diff.py
 │
 ├── domain/                ── the planner itself. Qt-free.
-│   ├── model.py             Product, Project, Step: the graph, its edges, its aspects
-│   ├── store.py             the on-disk format above, and the stale-write guard
+│   ├── model.py             Library, Project, Step: the graph, its edges, its aspects
+│   ├── store.py             the on-disk format above, one provider per project, the stale-write guard
+│   ├── library_file.py      the per-user library file: which projects exist
 │   ├── aspects.py           what an aspect is: id, label, summary, data format
 │   ├── ordering.py          what order a project can be done in, and what can start now
 │   ├── schedule.py          the same walk carrying estimates: running totals and dates
@@ -147,16 +149,16 @@ src/dplanner/
 │   ├── fields.py            bindable prose, keyed by the module that owns it
 │   ├── assets.py            attaching files to a module's file area, and listing them
 │   ├── migrations.py        the format's version history — append only
-│   └── seed.py              what a brand-new workspace contains
+│   └── seed.py              what a brand-new library, and a brand-new project, contain
 │
 ├── cli/                   ── the headless surface. Qt-free.
 │   ├── command.py           CliCommand, CliContext, CliRegistry
-│   ├── workspace.py         finding, opening, migrating and flushing a product
+│   ├── discovery.py         finding the library and the current project; opening and flushing
 │   ├── main.py              the argparse tree, built from the registry
 │   ├── lookup.py            an id, a folder name, or part of a title
 │   ├── aspects.py           `aspect list`
 │   ├── assets.py            `<noun> attach`/`assets` — the verb pair any file-carrying aspect offers
-│   ├── lint.py              `lint` — every module's checks over one workspace, one report
+│   ├── lint.py              `lint` — every module's checks over the library, one report
 │   ├── authoring.py         `step add` — one verb, each module contributing its flags
 │   └── skill.py             the agent skill, generated from the registry
 │
@@ -167,16 +169,15 @@ src/dplanner/
 │   ├── prose_section.py     a panel section over one document, bound to the undo stack
 │   ├── asset_gallery.py     a module's attached files as thumbnails; click to view
 │   ├── image_preview.py     the modal lightbox the gallery (and anyone) opens
-│   ├── window_watch.py      noticing that another writer changed the workspace
+│   ├── window_watch.py      noticing that another writer changed the library
 │   └── …                    registries, actions, tabs, undo, autosave, tasks, LLM
 │
 ├── modules/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
-│   ├── product/             the product's identity: name, repository, checkout
+│   ├── library/             membership: File ▸ New/Open Project and New/Open Project Library
 │   ├── projects/            the Projects folder in the index, and the project verbs
 │   ├── project_editor/      a project in a tab: the canvas, its modes and renderers, sorts, named layouts and regions
 │   │                        (its panel also hosts the modules' project-level cards)
-│   ├── project_repo/        which repo and checkout a project works against (overrides the product's)
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
 │   │
 │   │   ── the ten aspect modules (`dplanner aspect list`); the `step_` prefix is not the
@@ -196,9 +197,9 @@ src/dplanner/
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── progression/         the execution board — what can be launched now — and `dplanner progression show`
 │   ├── spec/                spec documents beside a project, their requirements and figures, `dplanner spec` (pdf.py: text layers and page rendering)
-│   ├── workspace_watch/     reloading when something else writes to the workspace
+│   ├── library_watch/       reloading when something else writes to a project or the library file
 │   ├── agent_skill/         the skill dialog, and the install that puts dplanner on PATH
-│   ├── appshell/  workspaces/  sync/  settings/  taskcenter/  debug/
+│   ├── appshell/  sync/  settings/  taskcenter/  debug/
 │   └── llm/  llm_openai/  llm_anthropic/
 │
 └── theme/                 22 themes, the palette, and a chrome-only stylesheet

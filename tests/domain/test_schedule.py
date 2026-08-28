@@ -27,7 +27,7 @@ SATURDAY = date(2026, 9, 12)
 @pytest.fixture
 def project():
     """Four steps in a chain, so the topological order is the order they were added."""
-    library = Library(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
     for title in ("A", "B", "C", "D"):
@@ -150,7 +150,7 @@ def test_a_weekend_start_dates_from_the_monday(project):
 
 
 def test_a_project_with_no_steps_schedules_to_nothing():
-    library = Library(name="Widget")
+    library = Library()
     empty = Project(title="Empty")
     library.add_child(library.id, empty)
 
@@ -182,7 +182,7 @@ def test_one_day_is_singular_and_everything_else_plural():
 
 def diamond():
     """A splits into B and C, which join at D — the shape that separates serial from path."""
-    library = Library(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
     for title in ("A", "B", "C", "D"):
@@ -230,7 +230,7 @@ def test_equal_branches_break_ties_by_project_order():
 def test_an_empty_project_has_no_path():
     from dplanner.domain.schedule import critical_path
 
-    library = Library(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
     assert critical_path(library, project, days_of({})) is None

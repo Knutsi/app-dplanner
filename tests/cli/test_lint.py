@@ -19,7 +19,7 @@ def test_a_complete_plan_is_clean_and_exits_zero(cli, cli_stdin):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "Deploy")
     cli_stdin("describe", "set", "Deploy", "--file", "-", stdin="The release step.")
-    cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
+    cli_stdin("agent", "set", "--for-project", "Discovery", "--file", "-", stdin="House rules.")
     cli("estimate", "set", "Deploy", "--days", "2")
     cli("schedule", "start", "Discovery", "--date", "2026-09-01")
     assert "Clean." in cli("project", "lint", "Discovery")
@@ -38,7 +38,7 @@ def test_a_bare_step_is_reported_on_every_authoring_axis(cli):
 def test_a_standing_instruction_silences_the_agent_check(cli, cli_stdin):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "Deploy")
-    cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
+    cli_stdin("agent", "set", "--for-project", "Discovery", "--file", "-", stdin="House rules.")
     report = data(cli("project", "lint", "Discovery", "--json", expect=1))
     assert "agent.missing" not in checks_in(report)
 

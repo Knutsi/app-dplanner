@@ -676,6 +676,10 @@ repository holds several planned directories. `origin_url` replaces storing a re
 that git already knows. Upstream: the multi-scope change is honest generalisation; the
 grouping helper only matters to applications whose document spans providers.
 
+Related: `VersionedStorage` gained `dirty_file_count()` (the cached count `GitStorage`
+always had beside `is_dirty()`); an aggregator over several providers needs the number, not
+just the flag, and shadowing it from signal payloads was worse than promising it.
+
 ### A repository is built over a source path, not a storage provider
 
 **What.** `Repository` lost its `storage` attribute and `RepositoryFactory` became

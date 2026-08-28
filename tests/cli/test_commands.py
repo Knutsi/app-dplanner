@@ -1,4 +1,4 @@
-"""The CLI, over a real workspace.
+"""The CLI, over a real library.
 
 **No ``qapp`` fixture anywhere in this file.** That it can run at all — parse, open, mutate,
 flush — without a QApplication is the real proof the layering holds; the architecture test
@@ -10,9 +10,12 @@ from io import StringIO
 
 import pytest
 
-from dplanner.cli.workspace import find_workspace
-from dplanner.core.storage.local import LocalStorage
-from dplanner.domain.seed import create_product
+from dplanner.cli.command import CliError
+from dplanner.cli.discovery import find_current_project, find_library
+from dplanner.core.storage.locations import init_repo
+from dplanner.domain.library_file import LIBRARY_ENV, write_library_file
+from dplanner.domain.seed import create_library, seed_project
+from dplanner.domain.store import LibraryStore
 
 
 def data(text):
@@ -22,88 +25,152 @@ def data(text):
 # -- finding the library -----------------------------------------------------------------------
 
 
-def test_the_product_is_found_by_walking_up(workspace):
-    """The whole point: an agent already sitting in the checkout needs no configuration."""
-    deep = workspace / "somewhere"
-    deep.mkdir(parents=True, exist_ok=True)
-    assert find_workspace(start=deep).path == workspace
+@pytest.fixture
+def libraries(tmp_path):
+    """Two real library files, so precedence has something to choose between."""
+    first, second = tmp_path / "first.json", tmp_path / "second.json"
+    create_library(first)
+    create_library(second)
+    return first, second
 
 
-def test_no_product_anywhere_is_an_error_not_a_guess(tmp_path):
-    from dplanner.cli.command import CliError
-
-    with pytest.raises(CliError, match="no library found here"):
-        find_workspace(start=tmp_path)
-
-
-def test_an_explicit_workspace_wins(workspace, tmp_path):
-    assert find_workspace(str(workspace), start=tmp_path).path == workspace
+def test_an_explicit_library_beats_the_environment(libraries, monkeypatch):
+    first, second = libraries
+    monkeypatch.setenv(LIBRARY_ENV, str(second))
+    assert find_library(str(first)) == first
 
 
-def test_a_pointer_file_reaches_a_workspace_the_walk_never_enters(workspace, tmp_path):
-    """A plan in `dplanner-workspace/` under a repo root is invisible to an upward walk;
-    a one-line `.dplanner` at the root is how the repo says where it is."""
-    repo = tmp_path / "repo"
+def test_the_environment_beats_the_default(libraries, monkeypatch):
+    _first, second = libraries
+    monkeypatch.setenv(LIBRARY_ENV, str(second))
+    assert find_library() == second
+
+
+def test_nothing_named_means_the_per_user_default(libraries, monkeypatch):
+    first, _second = libraries
+    monkeypatch.delenv(LIBRARY_ENV, raising=False)
+    monkeypatch.setattr("dplanner.domain.library_file.default_library_path", lambda: first)
+    assert find_library() == first
+
+
+def test_a_missing_library_is_a_refusal_that_names_the_fixes(tmp_path, monkeypatch):
+    monkeypatch.delenv(LIBRARY_ENV, raising=False)
+    with pytest.raises(CliError, match="no project library at"):
+        find_library(str(tmp_path / "nowhere.json"))
+
+
+# -- finding the current project ---------------------------------------------------------------
+
+
+def open_library_of(tmp_path, *project_dirs):
+    """A loaded library listing exactly these project directories."""
+    path = tmp_path / "resolve-library.json"
+    write_library_file(path, list(project_dirs))
+    store = LibraryStore(path)
+    return store.load(), store
+
+
+@pytest.fixture
+def repo(tmp_path):
+    return init_repo(tmp_path / "checkout")
+
+
+def test_the_project_is_found_by_walking_up(repo, tmp_path):
+    """The whole point: an agent already sitting in the project needs no configuration."""
+    directory = seed_project(repo / "planning", "Widget")
+    library, store = open_library_of(tmp_path, directory)
+    deep = directory / "notes"
+    deep.mkdir()
+    found = find_current_project(library, store, start=deep)
+    assert found is not None and found.title == "Widget"
+
+
+def test_a_pointer_file_reaches_a_project_the_walk_never_enters(repo, tmp_path):
+    """A plan in `planning/` under a repo root is invisible to an upward walk; the one-line
+    `.dplanner` seed_project leaves at the root is how the repo says where it is."""
+    directory = seed_project(repo / "planning", "Widget")
+    library, store = open_library_of(tmp_path, directory)
     deep = repo / "src" / "somewhere"
     deep.mkdir(parents=True)
-    (repo / ".dplanner").write_text(f"{workspace}\n")  # absolute path
-    assert find_workspace(start=deep).path == workspace
-
-    (repo / ".dplanner").write_text("../widget\n")  # relative to the pointer's directory
-    assert find_workspace(start=deep).path == workspace
+    assert (repo / ".dplanner").read_text().strip() == "planning"
+    found = find_current_project(library, store, start=deep)
+    assert found is not None and found.title == "Widget"
 
 
-def test_a_real_workspace_wins_over_a_pointer_beside_it(workspace, tmp_path):
-    (workspace / ".dplanner").write_text(str(tmp_path / "elsewhere"))
-    assert find_workspace(start=workspace).path == workspace
+def test_a_real_project_wins_over_a_pointer_beside_it(repo, tmp_path):
+    directory = seed_project(repo / "planning", "Widget")
+    library, store = open_library_of(tmp_path, directory)
+    (directory / ".dplanner").write_text(str(tmp_path / "elsewhere"))
+    found = find_current_project(library, store, start=directory)
+    assert found is not None and found.title == "Widget"
 
 
 def test_a_dangling_pointer_is_an_error_not_a_fallthrough(tmp_path):
-    from dplanner.cli.command import CliError
-
-    (tmp_path / ".dplanner").write_text("nowhere")
+    library, store = open_library_of(tmp_path)
+    stray = tmp_path / "stray"
+    stray.mkdir()
+    (stray / ".dplanner").write_text("nowhere")
     with pytest.raises(CliError, match="points at"):
-        find_workspace(start=tmp_path)
+        find_current_project(library, store, start=stray)
 
 
-def test_creating_a_workspace_inside_a_checkout_leaves_a_pointer(tmp_path):
-    repo = tmp_path / "repo"
-    (repo / ".git").mkdir(parents=True)  # find_repo_root only checks existence.
-    create_product(LocalStorage(repo / "plans" / "widget"))
-    assert (repo / ".dplanner").read_text().strip() == "plans/widget"
+def test_a_project_outside_the_library_is_refused_not_half_served(repo, tmp_path):
+    directory = seed_project(repo / "planning", "Widget")
+    library, store = open_library_of(tmp_path)  # the library has never heard of it
+    with pytest.raises(CliError, match="not in your library"):
+        find_current_project(library, store, start=directory)
+
+
+def test_the_repository_resolves_the_project_when_the_walk_finds_nothing(repo, tmp_path):
+    """Anywhere in the checkout — not just under the plan — is inside the project."""
+    directory = seed_project(repo / "planning", "Widget")
+    (repo / ".dplanner").unlink()  # leave only the repo itself to say so
+    library, store = open_library_of(tmp_path, directory)
     deep = repo / "src" / "somewhere"
     deep.mkdir(parents=True)
-    assert find_workspace(start=deep).path == repo / "plans" / "widget"
+    found = find_current_project(library, store, start=deep)
+    assert found is not None and found.title == "Widget"
 
 
-def test_the_pointer_never_clobbers_and_never_points_at_the_root(tmp_path):
-    repo = tmp_path / "repo"
-    (repo / ".git").mkdir(parents=True)
-    (repo / ".dplanner").write_text("elsewhere\n")
-    create_product(LocalStorage(repo / "plans"))
-    assert (repo / ".dplanner").read_text() == "elsewhere\n"  # the user's word stands
+def test_a_repository_with_several_projects_asks_rather_than_guessing(repo, tmp_path):
+    one = seed_project(repo / "one", "Widget")
+    two = seed_project(repo / "two", "Gadget")
+    (repo / ".dplanner").unlink()
+    library, store = open_library_of(tmp_path, one, two)
+    deep = repo / "src"
+    deep.mkdir()
+    with pytest.raises(CliError, match="pass --project") as refusal:
+        find_current_project(library, store, start=deep)
+    assert "Widget" in str(refusal.value) and "Gadget" in str(refusal.value)
 
-    at_root = tmp_path / "solo"
-    (at_root / ".git").mkdir(parents=True)
-    create_product(LocalStorage(at_root))
-    assert not (at_root / ".dplanner").exists()  # the walk already finds library.json
+
+def test_nowhere_at_all_means_no_current_project(tmp_path):
+    library, store = open_library_of(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    assert find_current_project(library, store, start=outside) is None
+
+
+def test_an_explicit_name_wins_over_any_working_directory(repo, tmp_path):
+    directory = seed_project(repo / "planning", "Widget")
+    library, store = open_library_of(tmp_path, directory)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    found = find_current_project(library, store, explicit="Widget", start=outside)
+    assert found is not None and found.title == "Widget"
 
 
 # -- reading -----------------------------------------------------------------------------------
 
 
-def test_product_show_reports_an_empty_product(cli):
-    assert data(cli("library", "show", "--json"))["projects"] == 0
-
-
-def test_an_empty_product_says_so_rather_than_printing_nothing(cli):
+def test_an_empty_library_says_so_rather_than_printing_nothing(cli):
     assert "No projects yet" in cli("project", "list")
 
 
 def test_json_works_after_the_verb_as_well_as_before(cli):
     """Argparse wants global options first; nobody types them that way."""
-    assert data(cli("library", "show", "--json"))["name"]
-    assert data(cli("--json", "library", "show"))["name"]
+    assert data(cli("project", "list", "--json"))["projects"] == []
+    assert data(cli("--json", "project", "list"))["projects"] == []
 
 
 # -- writing -----------------------------------------------------------------------------------
@@ -111,13 +178,19 @@ def test_json_works_after_the_verb_as_well_as_before(cli):
 
 def test_a_verb_writes_to_disk_and_the_next_run_sees_it(cli, workspace):
     cli("project", "create", "Search rewrite", "--summary", "Replace the index")
-    assert (workspace / "search-rewrite" / "project.json").is_file()
+    assert (workspace / "search-rewrite" / "project.dproj").is_file()
     rows = data(cli("project", "list", "--json"))["projects"]
     assert [row["title"] for row in rows] == ["Search rewrite"]
 
 
-def test_product_set_needs_something_to_set(cli):
-    assert "nothing to set" in cli("library", "set", expect=1)
+def test_project_delete_takes_the_directory_with_it(cli, workspace):
+    """`library remove` keeps the files; delete is the verb that really deletes."""
+    cli("project", "create", "Discovery")
+    assert (workspace / "discovery" / "project.dproj").is_file()
+    said = cli("project", "delete", "Discovery")
+    assert str(workspace / "discovery") in said
+    assert not (workspace / "discovery").exists()
+    assert data(cli("project", "list", "--json"))["projects"] == []
 
 
 def test_steps_and_links(cli):
@@ -139,9 +212,9 @@ def test_a_cycle_is_refused_as_a_message_not_a_traceback(cli):
 
 def test_nothing_is_written_when_a_verb_fails(cli, workspace):
     cli("project", "create", "Discovery")
-    before = (workspace / "discovery" / "project.json").read_bytes()
+    before = (workspace / "discovery" / "project.dproj").read_bytes()
     cli("project", "rename", "Discovery", expect=1)
-    assert (workspace / "discovery" / "project.json").read_bytes() == before
+    assert (workspace / "discovery" / "project.dproj").read_bytes() == before
 
 
 def test_an_ambiguous_name_asks_rather_than_guessing(cli):
@@ -178,13 +251,26 @@ def test_unlink_removes_only_that_edge(cli):
 
 def test_agent_set_and_show_take_a_project(cli, cli_stdin, workspace):
     cli("project", "create", "Discovery")
-    cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
+    cli_stdin("agent", "set", "--for-project", "Discovery", "--file", "-", stdin="House rules.")
     assert (
         workspace / "discovery" / "modules" / "step_agent_instruction.md"
     ).is_file()
-    shown = data(cli("agent", "show", "--project", "Discovery", "--json"))
+    shown = data(cli("agent", "show", "--for-project", "Discovery", "--json"))
     assert shown["markdown"] == "House rules."
     assert "project" in shown
+
+
+def test_a_bare_for_project_flag_means_the_current_project(cli, cli_stdin):
+    """`--for-project` with no name reads the invocation's project scope."""
+    cli("project", "create", "Discovery")
+    cli_stdin(
+        "agent", "set", "--for-project", "--file", "-", "--project", "Discovery",
+        stdin="House rules.",
+    )
+    shown = data(cli("agent", "show", "--for-project", "--project", "Discovery", "--json"))
+    assert shown["markdown"] == "House rules."
+    # And with no scope anywhere, the refusal says what to do.
+    assert "pass --project" in cli("agent", "show", "--for-project", expect=1)
 
 
 def test_agent_show_needs_exactly_one_target(cli):
@@ -192,7 +278,7 @@ def test_agent_show_needs_exactly_one_target(cli):
     cli("step", "add", "Discovery", "Deploy")
     message = cli("agent", "show", expect=1)
     assert "but not both" in message
-    message = cli("agent", "show", "Deploy", "--project", "Discovery", expect=1)
+    message = cli("agent", "show", "Deploy", "--for-project", "Discovery", expect=1)
     assert "but not both" in message
 
 
@@ -200,7 +286,7 @@ def test_agent_prompt_opens_with_the_project_instruction(cli, cli_stdin):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "Deploy")
     cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
-    cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
+    cli_stdin("agent", "set", "--for-project", "Discovery", "--file", "-", stdin="House rules.")
     shown = data(cli("agent", "prompt", "Deploy", "--json"))
     assert "## Project instructions" in shown["prompt"]
     assert shown["prompt"].index("House rules.") < shown["prompt"].index("Ship it.")
@@ -211,7 +297,7 @@ def test_agent_prompt_works_from_the_standing_instruction_alone(cli, cli_stdin):
     instruction of its own still has a briefing, exactly as the GUI's Preview shows."""
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "Deploy")
-    cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
+    cli_stdin("agent", "set", "--for-project", "Discovery", "--file", "-", stdin="House rules.")
     shown = data(cli("agent", "prompt", "Deploy", "--json"))
     assert "House rules." in shown["prompt"]
     # No empty section for the instruction the step does not have.
@@ -464,13 +550,13 @@ def test_the_standing_instruction_survives_the_round_trip(cli, cli_stdin, monkey
     """The project's prose — its standing agent instruction — is as much the plan as its
     start date; a document without it made export-then-import quietly lossy."""
     cli("project", "create", "Discovery")
-    cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
+    cli_stdin("agent", "set", "--for-project", "Discovery", "--file", "-", stdin="House rules.")
     document = data(cli("project", "export", "Discovery"))
     assert document["text"]["step_agent_instruction"] == "House rules."
 
     monkeypatch.setattr("sys.stdin", StringIO(json.dumps(document)))
     cli("project", "import", "--title", "Copy")
-    shown = data(cli("agent", "show", "--project", "Copy", "--json"))
+    shown = data(cli("agent", "show", "--for-project", "Copy", "--json"))
     assert shown["markdown"] == "House rules."
 
 

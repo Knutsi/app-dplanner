@@ -12,7 +12,7 @@ from dplanner.domain.progression import estimated_progress, progression
 
 
 def build(*titles):
-    library = Library(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
     for title in titles:

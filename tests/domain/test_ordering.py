@@ -10,7 +10,7 @@ from dplanner.domain.ordering import depths, ready, topological_order, waves
 
 
 def build(*titles):
-    library = Library(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
     for title in titles:

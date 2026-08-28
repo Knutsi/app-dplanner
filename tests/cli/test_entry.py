@@ -2,22 +2,27 @@
 
 `dplanner` is one binary because "which executable do I run" is a paragraph of instructions
 that a single name makes unnecessary — but that only works if the dispatch is right. Reading
-a `--workspace` path as the first command word made `dplanner --workspace ~/w project list`
-open a window instead of listing anything, on somebody's actual screen.
+a `--library` path as the first command word made `dplanner --library ~/plans.json project
+list` open a window instead of listing anything, on somebody's actual screen.
 """
 
 import pytest
 
-from dplanner.entry import command_words, looks_like_a_verb
+from dplanner.entry import VALUE_OPTIONS, command_words, looks_like_a_verb
+
+
+def test_both_value_options_are_skipped():
+    assert VALUE_OPTIONS == ("--library", "--project")
 
 
 @pytest.mark.parametrize(
     "argv",
     [
         ["project", "list"],
-        ["--workspace", "/tmp/widget", "project", "list"],
-        ["--json", "library", "show"],
-        ["--workspace", "/tmp/widget", "--json", "step", "add", "p", "t"],
+        ["--library", "/tmp/plans.json", "project", "list"],
+        ["--json", "library", "list"],
+        ["--library", "/tmp/plans.json", "--json", "step", "add", "p", "t"],
+        ["--project", "widget", "step", "list"],
         ["skill", "show"],
         ["--help"],
     ],
@@ -30,10 +35,11 @@ def test_these_run_a_verb(argv):
     "argv",
     [
         [],
-        ["--workspace", "/tmp/widget"],
-        ["--workspace", "/home/someone/library"],  # A directory named like a noun.
+        ["--library", "/tmp/plans.json"],
+        ["--library", "project"],  # A path named like a noun.
+        ["--project", "step"],  # A project named like a noun.
         ["-style", "Fusion"],
-        ["--workspace", "/tmp/widget", "-platform", "offscreen"],
+        ["--library", "/tmp/plans.json", "-platform", "offscreen"],
     ],
 )
 def test_these_open_a_window(argv):
@@ -41,4 +47,5 @@ def test_these_open_a_window(argv):
 
 
 def test_an_option_value_is_never_a_command_word():
-    assert command_words(["--workspace", "/tmp/step", "project", "list"]) == ["project", "list"]
+    assert command_words(["--library", "/tmp/step", "project", "list"]) == ["project", "list"]
+    assert command_words(["--project", "step", "step", "list"]) == ["step", "list"]
