@@ -34,6 +34,8 @@ CANVAS_KEYS: Final[dict[Binding, tuple[str, ...]]] = {
     (Qt.Key.Key_L, _NONE): ("steps.go_right",),
     (Qt.Key.Key_Right, _NONE): ("steps.go_right",),
     # Verbs.
+    (Qt.Key.Key_Return, _NONE): ("steps.details",),
+    (Qt.Key.Key_Enter, _NONE): ("steps.details",),
     (Qt.Key.Key_C, _NONE): ("steps.connect",),
     (Qt.Key.Key_F, _NONE): ("canvas.frame",),
     (Qt.Key.Key_N, _NONE): ("steps.new",),

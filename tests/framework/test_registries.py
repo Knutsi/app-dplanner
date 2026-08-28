@@ -44,6 +44,9 @@ class FakeSegmentView:
     def selection_nodes(self, items):
         return ()
 
+    def clicked(self, item):
+        pass
+
     def activated(self, item):
         pass
 

@@ -251,7 +251,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     #   project_editor   anchors the project form beside it, and opens projects into tabs
     #   projects         puts projects in the index and opens them through the editor
     #   estimation       owns the estimate, the start date and the bulk Estimates tab; the
-    #                    order view hosts its bar, and its rows reveal steps on the canvas
+    #                    order view hosts its bar
     #
     # None of them imports any other, and the two panel modules do not even wire to each
     # other: each registers a panel and the dock decides what is on screen, so neither knows
@@ -264,6 +264,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             library=library,
             undo=services.undo,
             panels=services.panels,
+            actions=services.actions,
+            parent=services.window,
             sections=services.inspector_sections,
             theme=services.theme,
         )
@@ -329,8 +331,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # never learns what either is stored as.
             status_for=step_status,
             days_for=estimated_days,
-            # A card reveals its step the same way an order row does.
-            reveal_step=project_editor.reveal,
             agent_state=lambda ctx: services.actions.spec("agent.run").state(ctx),
             agent_run=lambda ctx: services.actions.run("agent.run", ctx),
         )
@@ -347,8 +347,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # Handed as answers, so the estimation module never learns where prose lives.
             step_summary=lambda step_id: description_summary(library.step(step_id)),
             describe_step=lambda step_id: description_read(library.step(step_id)),
-            # An Estimates row reveals its step the same way an order row does.
-            reveal_step=project_editor.reveal,
         )
     )
 
@@ -480,11 +478,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # Rows under each project — a project row itself only folds; these are
                 # what opens. Each renders the Project menu: the row stands for its
                 # project, and the project's verbs all live there.
+                # A single click opens the same surface as a preview tab — the VS Code
+                # gesture: the next click's preview replaces it, activation keeps it.
                 entries=(
                     ProjectEntry(
                         id="steps",
                         label="Steps",
                         open=project_editor.open,
+                        open_preview=lambda pid: project_editor.open(pid, preview=True),
                         icon=graph_icon,
                         menu="Project",
                         order=10,
@@ -493,6 +494,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                         id="spec",
                         label="Specs",
                         open=spec.open,
+                        open_preview=lambda pid: spec.open(pid, preview=True),
                         icon=spec_icon,
                         menu="Project",
                         order=20,
@@ -501,6 +503,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                         id="progression",
                         label="Progression",
                         open=progression.open,
+                        open_preview=lambda pid: progression.open(pid, preview=True),
                         icon=gauge_icon,
                         menu="Project",
                         order=30,
@@ -595,9 +598,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 context=services.context,
                 tabs=services.tabs,
                 parent=services.window,
-                # Listing steps is one feature; showing one on a canvas is another. This is
-                # the seam between them, and neither module knows the other's name.
-                reveal_step=project_editor.reveal,
                 # The estimate has a column of its own here, so it does not also belong in
                 # the row's trailing summary. On the canvas, which has no columns, it does.
                 step_aspects=lambda step_id: step_aspects(step_id, skip={ESTIMATION_ID}),

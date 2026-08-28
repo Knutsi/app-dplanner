@@ -106,6 +106,36 @@ def test_selecting_a_card_publishes_it_so_the_step_verbs_target_it(services, pro
     assert services.actions.spec("steps.rename").state(context).enabled
 
 
+def test_double_clicking_a_card_opens_its_details(app, services, project, tab, monkeypatch):
+    """The card runs the same ``steps.details`` verb every other view's double-click runs,
+    against a context naming exactly its own step."""
+    # A hand-built event rather than QTest.mouseDClick: QTest's press never sees a release,
+    # so QApplication.mouseButtons() would stay "held" for every later test in the process.
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    shown = []
+    monkeypatch.setattr(
+        StepDetailsDialog, "exec", lambda self: shown.append(self.panel.current_step_id())
+    )
+    card = tab.board.ready.cards()[0]
+    centre = QPointF(card.rect().center())
+    app.sendEvent(
+        card,
+        QMouseEvent(
+            QEvent.Type.MouseButtonDblClick,
+            centre,
+            QPointF(card.mapToGlobal(centre.toPoint())),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    assert shown == [project.steps[0].id]
+
+
 def test_a_background_board_does_not_publish_its_selection(services, project, tab):
     """One selection scope; only the pane the user is in may write to it."""
     tab.on_deactivated()

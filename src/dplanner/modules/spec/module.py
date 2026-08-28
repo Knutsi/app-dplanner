@@ -75,8 +75,8 @@ class SpecModule:
     def __init__(self, deps: SpecDeps) -> None:
         self._deps = deps
 
-    def open(self, project_id: NodeId) -> None:
-        self._deps.tabs.open(SPECS_KIND, project_id)
+    def open(self, project_id: NodeId, *, preview: bool = False) -> None:
+        self._deps.tabs.open(SPECS_KIND, project_id, preview=preview)
 
     def register(self) -> None:
         deps = self._deps

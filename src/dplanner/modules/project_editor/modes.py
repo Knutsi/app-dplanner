@@ -606,8 +606,12 @@ class IdleMode(ModeBase):
         return False
 
     def double_click(self, event: CanvasEvent) -> bool:
-        if self.deps.canvas.node_at(event.scene_pos) is not None:
-            return False
+        node = self.deps.canvas.node_at(event.scene_pos)
+        if node is not None:
+            # A gesture is not a special case: select, then run the same verb the menu does.
+            self.deps.canvas.select_step(node.step_id)
+            self.deps.run_action("steps.details")
+            return True
         region = self.deps.canvas.region_at(event.scene_pos)
         if region is not None and region.is_over_title(event.scene_pos):
             self.deps.canvas.select_region(region.region_id)

@@ -180,6 +180,15 @@ root, stop and look for the registry or capability you have not found yet.
   step editor appear twice in a split window, and the fix deleted code rather than adding a
   visibility check — because "only the active pane publishes" already says which selection a
   panel should be showing. `ARCHITECTURE.md`'s *Where a panel goes* has the rest.
+- **Double-clicking a step anywhere runs `steps.details`** — a modal dialog hosting a second
+  `StepPanel`, disposed on close. It is the one gesture across canvas, order, progression and
+  estimates; a table runs it against a context naming exactly the row's step. Reveal-in-graph
+  is the `steps.reveal` verb in the Step menu, not a double-click. `ARCHITECTURE.md`'s *The
+  same panel, briefly modal* has the reasoning.
+- **A single click in the index opens a preview tab** (`tabs.open(..., preview=True)`): at
+  most one preview exists, the next preview replaces it, and a deliberate act — activation,
+  or moving the tab — pins it. A preview-open of anything already open is a plain focus.
+  `ARCHITECTURE.md`'s *A click is a glance* has the rules and why no timer is involved.
 - **Canvas input is a stack of modes, and Escape pops one.** A mode handles input and has
   power over the view; a hook that returns False lets the event fall through to the canvas
   keymap and then to Qt, which is why `IdleMode` is nine lines and why a mode that claims a

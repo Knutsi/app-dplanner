@@ -118,6 +118,90 @@ def test_the_steps_entry_opens_the_project_tab(services, project):
     assert [a.title for a in services.tabs.activities()] == ["Discovery"]
 
 
+# -- single-click previews ---------------------------------------------------------------------
+
+
+def click(panel, item, modifiers=None, button=None):
+    """A plain click on a row, as press-then-release through the panel's event filter.
+
+    Hand-built events rather than QTest.mouseClick: QTest drives the QPA layer, whose
+    button bookkeeping leaks into ``QApplication.mouseButtons()`` for later tests.
+    """
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+
+    modifiers = Qt.KeyboardModifier.NoModifier if modifiers is None else modifiers
+    button = Qt.MouseButton.LeftButton if button is None else button
+    viewport = panel.tree.viewport()
+    pos = QPointF(panel.tree.visualItemRect(item).center())
+    for kind, held in (
+        (QEvent.Type.MouseButtonPress, button),
+        (QEvent.Type.MouseButtonRelease, Qt.MouseButton.NoButton),
+    ):
+        QApplication.sendEvent(
+            viewport,
+            QMouseEvent(
+                kind, pos, QPointF(viewport.mapToGlobal(pos.toPoint())), button, held, modifiers
+            ),
+        )
+
+
+def entry_row(panel, label):
+    row = panel.tree.topLevelItem(0).child(0)
+    return next(row.child(i) for i in range(row.childCount()) if row.child(i).text(0) == label)
+
+
+def test_clicking_an_entry_opens_it_as_a_preview(services, project):
+    panel = services.window.dock.widget_for(INDEX_PANEL_ID)
+    panel.tree.expandAll()
+    click(panel, entry_row(panel, "Steps"))
+
+    (tab,) = services.tabs.activities()
+    assert tab.title == "Discovery"
+    assert services.tabs.is_preview(tab)
+
+
+def test_activating_after_the_click_pins_the_preview(services, project):
+    """The double-click sequence: the first click previews, the activation keeps it."""
+    panel = services.window.dock.widget_for(INDEX_PANEL_ID)
+    panel.tree.expandAll()
+    steps = entry_row(panel, "Steps")
+    click(panel, steps)
+    panel.tree.itemActivated.emit(steps, 0)
+
+    (tab,) = services.tabs.activities()
+    assert not services.tabs.is_preview(tab)
+
+
+def test_the_next_click_replaces_the_preview(services, project):
+    panel = services.window.dock.widget_for(INDEX_PANEL_ID)
+    panel.tree.expandAll()
+    click(panel, entry_row(panel, "Steps"))
+    click(panel, entry_row(panel, "Progression"))
+
+    (tab,) = services.tabs.activities()
+    assert "Progression" in tab.title
+    assert services.tabs.is_preview(tab)
+
+
+def test_a_modified_click_builds_a_selection_and_previews_nothing(services, project):
+    from PySide6.QtCore import Qt
+
+    panel = services.window.dock.widget_for(INDEX_PANEL_ID)
+    panel.tree.expandAll()
+    click(panel, entry_row(panel, "Steps"), modifiers=Qt.KeyboardModifier.ControlModifier)
+    assert services.tabs.activities() == []
+
+
+def test_clicking_a_project_row_previews_nothing(services, project):
+    """A project row is a folder: a click selects it, and that is the whole gesture."""
+    panel = services.window.dock.widget_for(INDEX_PANEL_ID)
+    panel.tree.expandAll()
+    click(panel, panel.tree.topLevelItem(0).child(0))
+    assert services.tabs.activities() == []
+
+
 # -- entry rows under a project ----------------------------------------------------------------
 
 

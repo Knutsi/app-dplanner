@@ -265,6 +265,22 @@ def test_double_clicking_empty_space_creates_a_step_there(app, services, project
     assert project.steps[-1].module_data["project_editor"]["x"] == 592.0
 
 
+def test_double_clicking_a_step_opens_its_details(app, services, project, tab, monkeypatch):
+    """On a node the gesture selects it and runs the same ``steps.details`` verb every
+    other view's double-click runs — and creates nothing."""
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    shown = []
+    monkeypatch.setattr(
+        StepDetailsDialog, "exec", lambda self: shown.append(self.panel.current_step_id())
+    )
+    step = project.steps[0]
+    send(app, tab, QEvent.Type.MouseButtonDblClick, centre_of(scene(tab)._nodes[step.id]))
+
+    assert shown == [step.id]
+    assert len(project.steps) == 2
+
+
 # -- gestures become commands -----------------------------------------------------------------
 
 

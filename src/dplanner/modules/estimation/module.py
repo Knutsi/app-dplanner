@@ -40,10 +40,6 @@ def _no_text(_step_id: StepId) -> str:
     return ""
 
 
-def _no_reveal(_step_id: StepId) -> None:
-    pass
-
-
 @dataclass(frozen=True)
 class EstimationDeps:
     library: Library
@@ -56,8 +52,6 @@ class EstimationDeps:
     # composition root; this module never learns where a description lives.
     step_summary: Callable[[StepId], str] = field(default=_no_text)
     describe_step: Callable[[StepId], str] = field(default=_no_text)
-    # Show a step in whatever edits graphs. Wired by the composition root.
-    reveal_step: Callable[[StepId], None] = field(default=_no_reveal)
 
 
 class EstimationModule:
