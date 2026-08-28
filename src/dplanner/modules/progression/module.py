@@ -1,0 +1,298 @@
+"""Progression mode: the execution surface for a project — as a tab beside its graph.
+
+The graph plans the work; this board is for the weeks the work is *happening*: how far
+along the project is, what is running or stuck, what can be launched right now and what
+one more finish would free. The walk itself is the domain's (``domain/progression.py``)
+— this module renders it and adds nothing to the model, so the tab, ``dplanner
+progression show`` and ``--json`` can never disagree.
+
+Four seams, all established elsewhere in this application:
+
+- **Statuses and estimates arrive as functions** (``status_for``, ``days_for``), wired by
+  the composition root from the aspects' Qt-free readers — this module never learns what
+  either is stored as.
+- **Selecting a card publishes the selection scope**, so the Step menu's verbs target it.
+- **Activating one reveals it in the graph**, through a callback — the same seam as the
+  order table's rows.
+- **Run Agent arrives as a state and a verb** (``agent_state``, ``agent_run``), closed
+  over the real action by the composition root. The button renders the gate's own
+  answer — a disabled one wears the reason — and this module never learns the agent
+  module exists. ``None`` is a build without an agent: the button is absent, not greyed.
+"""
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+
+from PySide6.QtCore import QPoint
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+
+from dplanner.domain.model import NodeId, Product, Project, Step, StepId
+from dplanner.domain.progression import estimated_progress, progression
+from dplanner.framework.action_menu import build_menu
+from dplanner.framework.action_registry import (
+    DISABLED,
+    ENABLED,
+    ActionRegistry,
+    ActionSpec,
+    ActionState,
+)
+from dplanner.framework.activity import ActivityBase
+from dplanner.framework.context import (
+    SCOPE_ACTIVITY,
+    SCOPE_SELECTION,
+    Context,
+    ContextNode,
+    ContextService,
+    Uri,
+    activity_uri,
+    entity_uri,
+    selection_uri,
+)
+from dplanner.framework.tabs import TabHost
+from dplanner.framework.widgets import centered_column
+from dplanner.modules.progression.view import BOARD_MAX_WIDTH, ProgressionBoard, RunControl
+
+MODULE_ID = "progression"
+PROGRESSION_KIND = "progression"
+
+PANEL_MARGIN = 16
+CAPTION_GAP = 6
+BLOCK_GAP = 12
+
+
+def _no_reveal(_step_id: StepId) -> None:
+    pass
+
+
+def _pending(_step: Step) -> str:
+    return "pending"
+
+
+def _no_days(_step: Step) -> float | None:
+    return None
+
+
+def _no_run(_context: Context) -> None:
+    pass
+
+
+@dataclass(frozen=True)
+class ProgressionDeps:
+    product: Product
+    actions: ActionRegistry
+    context: ContextService
+    tabs: TabHost
+    # The stored status claims, as answers. Wired by the composition root from the status
+    # aspect's Qt-free reader; the honest default is a build where nothing is claimed.
+    status_for: Callable[[Step], str] = field(default=_pending)
+    # A step's estimated days, for the weighted header line. Same seam, same owner rule.
+    days_for: Callable[[Step], float | None] = field(default=_no_days)
+    # Show a step in whatever edits graphs. This module never learns that an editor exists.
+    reveal_step: Callable[[StepId], None] = field(default=_no_reveal)
+    # The Run Agent gate and verb, closed over the real action. None is a build without
+    # an agent: the button is absent from the board, not disabled.
+    agent_state: Callable[[Context], ActionState] | None = None
+    agent_run: Callable[[Context], None] = field(default=_no_run)
+
+
+class ProgressionActivity(ActivityBase):
+    """One project's execution board."""
+
+    def __init__(self, deps: ProgressionDeps, project_id: NodeId) -> None:
+        self._deps = deps
+        self._product = deps.product
+        self.project_id = project_id
+        # Only the pane the user is in may write the selection scope — see CLAUDE.md's
+        # "only the active pane speaks for the user".
+        self._is_active = False
+
+        # The caption, note and board share one column capped at a readable measure —
+        # three lanes say nothing more by being wider, so past that the column centres.
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(CAPTION_GAP)
+
+        caption = QLabel("Progression", content)
+        caption.setObjectName("InspectorCaption")
+        layout.addWidget(caption)
+
+        note = QLabel(
+            "What can be launched right now, from the graph and the stored statuses. Ready "
+            "steps rank by what finishing them unblocks; Up next is one finish away.",
+            content,
+        )
+        note.setObjectName("InspectorNote")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        layout.addSpacing(BLOCK_GAP)
+
+        self.board = ProgressionBoard(
+            select=self._publish,
+            reveal=deps.reveal_step,
+            menu=self._on_context_menu,
+            run_control=self._run_control,
+            parent=content,
+        )
+        layout.addWidget(self.board, 1)
+
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
+        outer.addWidget(centered_column(content, BOARD_MAX_WIDTH))
+
+        self._widget = page
+        self._unsubscribes = [
+            self._product.structure_changed.connect(lambda *_a: self._refresh()),
+            self._product.edges_changed.connect(lambda *_a: self._refresh()),
+            self._product.field_changed.connect(lambda *_a: self._refresh()),
+            self._product.module_data_changed.connect(lambda *_a: self._refresh()),
+        ]
+        self._refresh()
+
+    # -- the activity contract -----------------------------------------------------------------
+
+    @property
+    def uri(self) -> Uri:
+        return activity_uri(PROGRESSION_KIND, self.project_id)
+
+    @property
+    def title(self) -> str:
+        return f"{self._project().title or 'Untitled project'} — Progression"
+
+    @property
+    def widget(self) -> QWidget:
+        return self._widget
+
+    def on_activated(self) -> None:
+        self._is_active = True
+        self._deps.context.set_scope(
+            SCOPE_ACTIVITY,
+            (ContextNode(self.uri, (("entity", entity_uri("project", self.project_id)),)),),
+        )
+
+    def on_deactivated(self) -> None:
+        self._is_active = False
+
+    def close(self) -> None:
+        for unsubscribe in self._unsubscribes:
+            unsubscribe()
+        self._unsubscribes.clear()
+
+    # -- internals -----------------------------------------------------------------------------
+
+    def _project(self) -> Project:
+        return self._product.project(self.project_id)
+
+    def _refresh(self) -> None:
+        if not self._product.has(self.project_id):
+            return  # The project was deleted; the tab is about to close.
+        progress = progression(self._product, self._project(), self._deps.status_for)
+        self.board.show_progress(progress, estimated_progress(progress, self._deps.days_for))
+
+    def _publish(self, step_id: StepId | None) -> None:
+        if not self._is_active:
+            return  # See _is_active: a background pane does not speak for the user.
+        nodes = () if step_id is None else (ContextNode(selection_uri("step", step_id)),)
+        self._deps.context.set_scope(SCOPE_SELECTION, nodes)
+
+    def _step_context(self, step_id: StepId) -> Context:
+        """The context the Run Agent gate is asked against: exactly this card's step.
+
+        Synthesised rather than read from the service, so the button launches the step
+        it sits on even when this pane is not the active one and its publish was
+        suppressed.
+        """
+        return Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)})
+
+    def _run_control(self, step_id: StepId) -> RunControl | None:
+        deps = self._deps
+        if deps.agent_state is None:
+            return None  # A build without an agent: the capability is absent, not greyed.
+        state = deps.agent_state(self._step_context(step_id))
+        if not state.visible:
+            return None
+
+        def run() -> None:
+            self._publish(step_id)
+            deps.agent_run(self._step_context(step_id))
+
+        return RunControl(enabled=state.enabled, reason=state.label or "Run Agent", run=run)
+
+    def _on_context_menu(self, _step_id: StepId, position: QPoint) -> None:
+        # The card published its step on the press, so the menu reads the same context
+        # every other presenter does.
+        menu = build_menu(self._deps.actions, self._deps.context, "Step", self.board)
+        menu.exec(position)
+
+
+class ProgressionModule:
+    id = MODULE_ID
+
+    def __init__(self, deps: ProgressionDeps) -> None:
+        self._deps = deps
+
+    def open(self, project_id: NodeId) -> None:
+        self._deps.tabs.open(PROGRESSION_KIND, project_id)
+
+    def register(self) -> None:
+        deps = self._deps
+
+        def factory(target: str | None) -> ProgressionActivity:
+            assert target is not None
+            return ProgressionActivity(deps, target)
+
+        deps.tabs.register_factory(PROGRESSION_KIND, factory)
+        deps.actions.register(
+            ActionSpec(
+                id="progression.open",
+                label="Show &Progression",
+                menu="Project",
+                group="open",
+                order=30,
+                tip="What can be launched right now, and how far along the project is",
+                state=self._on_a_project,
+                run=self._open,
+            )
+        )
+        # The same verb placed in the Step menu, beside Show Order's mirror there.
+        # palette=False: one palette entry.
+        deps.actions.register(
+            ActionSpec(
+                id="progression.open_step",
+                label="Show &Progression",
+                menu="Step",
+                group="open",
+                order=30,
+                tip="What can be launched right now, and how far along the project is",
+                palette=False,
+                state=self._on_a_project,
+                run=self._open,
+            )
+        )
+        deps.product.structure_changed.connect(lambda *_a: self._close_orphan_tabs())
+        deps.product.field_changed.connect(lambda *_a: self._retitle_tabs())
+
+    def _on_a_project(self, context: Context) -> ActionState:
+        project_id = context.focus_entity("project")
+        if project_id is None or not self._deps.product.has(project_id):
+            return DISABLED
+        return ENABLED
+
+    def _open(self, context: Context) -> None:
+        project_id = context.focus_entity("project")
+        if project_id is not None:
+            self.open(project_id)
+
+    def _activities(self) -> list[ProgressionActivity]:
+        return [a for a in self._deps.tabs.activities() if isinstance(a, ProgressionActivity)]
+
+    def _close_orphan_tabs(self) -> None:
+        for activity in self._activities():
+            if not self._deps.product.has(activity.project_id):
+                self._deps.tabs.close_activity(activity)
+
+    def _retitle_tabs(self) -> None:
+        for activity in self._activities():
+            if self._deps.product.has(activity.project_id):
+                self._deps.tabs.set_tab_title(activity, activity.title)

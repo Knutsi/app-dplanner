@@ -405,6 +405,22 @@ def _cross(color: str, alpha: int) -> QPixmap:
     return pixmap
 
 
+def gauge_icon(color: str) -> QIcon:
+    """A dial with its needle past halfway: the progression board."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.4))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    # The dial: an arc open at the bottom.
+    painter.drawArc(QRectF(2.5, 3.0, 11.0, 11.0), -30 * 16, 240 * 16)
+    # The needle, pointing up-right.
+    painter.drawLine(QPointF(8.0, 8.5), QPointF(11.2, 5.3))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(color))
+    painter.drawEllipse(QPointF(8.0, 8.5), 1.3, 1.3)
+    painter.end()
+    return QIcon(pixmap)
+
+
 def list_icon(color: str) -> QIcon:
     """A numbered list: the order table."""
     pixmap, painter = _canvas()

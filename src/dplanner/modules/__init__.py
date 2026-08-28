@@ -69,6 +69,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.product.module import ProductDeps, ProductModule
+    from dplanner.modules.progression.module import ProgressionDeps, ProgressionModule
     from dplanner.modules.project_editor.items import NodeAccent
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_repo.module import ProjectRepoDeps, ProjectRepoModule
@@ -107,7 +108,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         WorkspaceWatchModule,
     )
     from dplanner.modules.workspaces.module import WorkspacesDeps, WorkspacesModule
-    from dplanner.theme.icons import graph_icon, spec_icon
+    from dplanner.theme.icons import gauge_icon, graph_icon, spec_icon
 
     product: Product = services.document
     # The composition root knows the concrete store, exactly as it knows the concrete
@@ -236,6 +237,25 @@ def default_modules(services: "AppServices") -> list["Module"]:
             theme=services.theme,
             parent=services.window,
             files=lambda node_id: store.files(node_id, SPEC_ID),
+        )
+    )
+    # Constructed before the list because the projects index opens the board through it.
+    # Run Agent arrives as the real action's state and verb, resolved lazily so the agent
+    # module's registration order does not matter; neither module knows the other's name.
+    progression = ProgressionModule(
+        ProgressionDeps(
+            product=product,
+            actions=services.actions,
+            context=services.context,
+            tabs=services.tabs,
+            # Statuses and estimates through the aspects' Qt-free readers — the board
+            # never learns what either is stored as.
+            status_for=step_status,
+            days_for=estimated_days,
+            # A card reveals its step the same way an order row does.
+            reveal_step=project_editor.reveal,
+            agent_state=lambda ctx: services.actions.spec("agent.run").state(ctx),
+            agent_run=lambda ctx: services.actions.run("agent.run", ctx),
         )
     )
     estimation = EstimationModule(
@@ -388,6 +408,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
                         menu="Project",
                         order=20,
                     ),
+                    ProjectEntry(
+                        id="progression",
+                        label="Progression",
+                        open=progression.open,
+                        icon=gauge_icon,
+                        menu="Project",
+                        order=30,
+                    ),
                 ),
             )
         ),
@@ -490,6 +518,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 start_bar=estimation.create_start_bar,
             )
         ),
+        progression,
         AgentSkillModule(
             AgentSkillDeps(
                 actions=services.actions,
@@ -658,6 +687,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.github import cli as github_cli
     from dplanner.modules.product import cli as product_cli
+    from dplanner.modules.progression import cli as progression_cli
     from dplanner.modules.project_editor import cli as layout_cli
     from dplanner.modules.project_repo import cli as repo_cli
     from dplanner.modules.project_repo.repo import repository_for as repo_repository_for
@@ -669,6 +699,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.step_order import cli as order_cli
     from dplanner.modules.step_release import cli as release_cli
     from dplanner.modules.step_status import cli as status_cli
+    from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_ticket import cli as ticket_cli
 
     specs = aspect_specs()
@@ -699,6 +730,9 @@ def default_cli_commands() -> list["CliCommand"]:
         *release_cli.commands(),
         *handoff_cli.commands(),
         *order_cli.commands(),
+        # Progression reads statuses and estimates through the aspects' Qt-free readers —
+        # handed over here so no cli.py imports another module's.
+        *progression_cli.commands(status_for=step_status, days_for=estimated_days),
         # The timeline sort reads a step's length through estimation's Qt-free reader —
         # handed over here so neither cli.py imports the other.
         *layout_cli.commands(days_for=estimated_days),

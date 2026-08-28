@@ -62,6 +62,10 @@ still spacing.
 
 - A card is a **well** on the elevated panel: `$BG_BASE`, 1 px `$BORDER`, `RADIUS_MD` —
   the same contrast as a plain field, so a panel of cards and a panel of fields read alike.
+- That contrast assumes **elevated ground**. On a tab page — which is `$BG_BASE`, the same
+  colour as the well — a bare card is one faint border and the list has no shape. Give the
+  list its own ground first: a *lane* (`$BG_ELEVATED`, 1 px `$BORDER`, `RADIUS_MD`) with
+  the cards inside. `#ProgressionLane` is the worked example.
 - 12 px padding inside; one `#InspectorCaption` header (with the feature's glyph in
   `$TEXT_SECONDARY`, repainted on theme change) and 8 px to the body; 12 px between
   cards; the stack keeps the panel's 16 px margins.
