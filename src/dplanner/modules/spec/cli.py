@@ -10,6 +10,7 @@ travels with the step's briefing, and — when the spec is replaced — ``diff``
 """
 
 from argparse import ArgumentParser, Namespace
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -20,7 +21,7 @@ from dplanner.cli.lookup import find_project, find_step
 from dplanner.core.text_diff import diff_hunks
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Product, Project
+from dplanner.domain.model import Product, Project, Step
 from dplanner.modules.spec.aspect import (
     MODULE_ID,
     SpecAttachment,
@@ -170,11 +171,11 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("spec", "attach-to-step"),
-            summary="Copy a spec asset beside a step so its briefing carries the figure "
-            "(or --remove it).",
+            summary="Copy spec assets beside a step so its briefing carries the figures "
+            "(or --remove them).",
             configure=_configure_attach_to_step,
             run=_attach_to_step,
-            examples=("dplanner spec attach-to-step 'Hash passwords' a1",),
+            examples=("dplanner spec attach-to-step 'Hash passwords' a1 a3",),
         ),
         CliCommand(
             path=("spec", "mark"),
@@ -204,10 +205,10 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("spec", "link"),
-            summary="Link a step to a requirement it implements (or --remove the link).",
+            summary="Link a step to the requirements it implements (or --remove the links).",
             configure=_configure_link,
             run=_link,
-            examples=("dplanner spec link 'Hash passwords' r1",),
+            examples=("dplanner spec link 'Hash passwords' r1 r4 r7",),
         ),
     ]
 
@@ -267,8 +268,12 @@ def _configure_render(parser: ArgumentParser) -> None:
 
 def _configure_attach_to_step(parser: ArgumentParser) -> None:
     parser.add_argument("step", help="step id, folder name, or part of its title")
-    parser.add_argument("asset", help="an asset id from `dplanner spec assets`")
-    parser.add_argument("--remove", action="store_true", help="detach it from the step instead")
+    parser.add_argument(
+        "asset", nargs="+", help="asset ids from `dplanner spec assets`; several at once"
+    )
+    parser.add_argument(
+        "--remove", action="store_true", help="detach them from the step instead"
+    )
 
 
 def _configure_unmark(parser: ArgumentParser) -> None:
@@ -283,8 +288,12 @@ def _configure_requirements(parser: ArgumentParser) -> None:
 
 def _configure_link(parser: ArgumentParser) -> None:
     parser.add_argument("step", help="step id, folder name, or part of its title")
-    parser.add_argument("requirement", help="the requirement id in the step's project")
-    parser.add_argument("--remove", action="store_true", help="remove the link instead")
+    parser.add_argument(
+        "requirement",
+        nargs="+",
+        help="requirement ids in the step's project; several at once",
+    )
+    parser.add_argument("--remove", action="store_true", help="remove the links instead")
 
 
 # -- shared lookups ----------------------------------------------------------------------------
@@ -592,44 +601,86 @@ def _assets(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _attach_to_step(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
-    project = context.product.project_of(step.id)
-    index = read_index(project)
-    asset = next((entry for entry in index.assets if entry.id == args.asset), None)
-    if asset is None:
+def _some(noun: str, ids: Sequence[str]) -> str:
+    """"asset 'a1'" or "assets 'a1', 'a2'" — refusals read the same at any count."""
+    listed = ", ".join(repr(entry) for entry in ids)
+    return f"{noun}{'s' if len(ids) != 1 else ''} {listed}"
+
+
+def linked_ids(project: Project, step: Step, ids: Sequence[str]) -> list[str]:
+    """The step's links with ``ids`` added — refusing every unknown id in one message,
+    before anything is written. Shared by ``spec link`` and ``step add --link``."""
+    known = {req.id for req in read_index(project).requirements}
+    unknown = [entry for entry in ids if entry not in known]
+    if unknown:
         raise CliError(
-            f"no asset {args.asset!r} in {project.title!r} — see `dplanner spec assets`"
+            f"no {_some('requirement', unknown)} in {project.title!r} — "
+            "see `dplanner spec requirements`"
         )
-    attachments = read_attachments(step)
-    if args.remove:
-        # The copied blob stays: content-addressed files are cheap, and another
-        # attachment or an old briefing may still name it.
-        attachments = [entry for entry in attachments if entry.asset != asset.id]
-        note = f"{step.title}: {asset.id} detached (its file stays beside the step)"
-        file = asset.file
-    else:
-        data = context.store.files(project.id, MODULE_ID).read_bytes(asset.file)
+    links = read_links(step)
+    return [*links, *[entry for entry in ids if entry not in links]]
+
+
+def copied_to_step(
+    context: CliContext, project: Project, step: Step, asset_ids: Sequence[str]
+) -> tuple[list[SpecAttachment], list[str]]:
+    """Copy each asset's blob beside the step; the updated attachments and copied names.
+
+    Copied, not referenced: the step stays self-contained if the project's spec — or the
+    whole asset — is later removed, and the briefing gets a real file. Every id is
+    resolved and every blob read before the first copy, so a bad id refuses the batch.
+    Shared by ``spec attach-to-step`` and ``step add --attach``.
+    """
+    index = read_index(project)
+    by_id = {asset.id: asset for asset in index.assets}
+    missing = [entry for entry in asset_ids if entry not in by_id]
+    if missing:
+        raise CliError(
+            f"no {_some('asset', missing)} in {project.title!r} — see `dplanner spec assets`"
+        )
+    project_area = context.store.files(project.id, MODULE_ID)
+    blobs: dict[str, bytes] = {}
+    for asset_id in asset_ids:
+        data = project_area.read_bytes(by_id[asset_id].file)
         if data is None:
-            raise CliError(f"{asset.id}: {asset.file} is missing from the workspace")
-        # Copied, not referenced: the step stays self-contained if the project's spec —
-        # or the whole asset — is later removed, and the briefing gets a real file.
-        file = attach(
-            context.store.files(step.id, MODULE_ID), data, PurePosixPath(asset.file).name
-        )
-        if not any(entry.asset == asset.id for entry in attachments):
+            raise CliError(f"{asset_id}: {by_id[asset_id].file} is missing from the workspace")
+        blobs[asset_id] = data
+    attachments = read_attachments(step)
+    copied: list[str] = []
+    step_area = context.store.files(step.id, MODULE_ID)
+    for asset_id in asset_ids:
+        asset = by_id[asset_id]
+        file = attach(step_area, blobs[asset_id], PurePosixPath(asset.file).name)
+        copied.append(file)
+        if not any(entry.asset == asset_id for entry in attachments):
             attachments = [
                 *attachments,
                 SpecAttachment(
-                    file=file, document=asset.document, page=asset.page, asset=asset.id
+                    file=file, document=asset.document, page=asset.page, asset=asset_id
                 ),
             ]
-        note = f"{step.title}: {asset.id} attached as {file}"
+    return attachments, copied
+
+
+def _attach_to_step(context: CliContext, args: Namespace) -> int:
+    step = find_step(context.product, args.step)
+    project = context.product.project_of(step.id)
+    wanted = list(dict.fromkeys(args.asset))
+    if args.remove:
+        # The copied blobs stay: content-addressed files are cheap, and another
+        # attachment or an old briefing may still name them.
+        doomed = set(wanted)
+        attachments = [entry for entry in read_attachments(step) if entry.asset not in doomed]
+        files: list[str] = []
+        note = f"{step.title}: {', '.join(wanted)} detached (the files stay beside the step)"
+    else:
+        attachments, files = copied_to_step(context, project, step, wanted)
+        note = f"{step.title}: attached {', '.join(wanted)}"
     context.apply(
         SetModuleDataCommand(step.id, MODULE_ID, write_step_entry(read_links(step), attachments))
     )
     context.report(
-        {"step": step.id, "asset": asset.id, "file": file, "attachments": len(attachments)},
+        {"step": step.id, "assets": wanted, "files": files, "attachments": len(attachments)},
         note,
     )
     return 0
@@ -760,20 +811,14 @@ def _requirements(context: CliContext, args: Namespace) -> int:
 def _link(context: CliContext, args: Namespace) -> int:
     step = find_step(context.product, args.step)
     project = context.product.project_of(step.id)
-    known = {req.id for req in read_index(project).requirements}
-    links = read_links(step)
+    wanted = list(dict.fromkeys(args.requirement))
     if args.remove:
-        links = [entry for entry in links if entry != args.requirement]
-        note = f"{step.title}: no longer linked to {args.requirement}"
+        doomed = set(wanted)
+        links = [entry for entry in read_links(step) if entry not in doomed]
+        note = f"{step.title}: no longer linked to {', '.join(wanted)}"
     else:
-        if args.requirement not in known:
-            raise CliError(
-                f"no requirement {args.requirement!r} in {project.title!r} — "
-                "see `dplanner spec requirements`"
-            )
-        if args.requirement not in links:
-            links = [*links, args.requirement]
-        note = f"{step.title}: linked to {args.requirement}"
+        links = linked_ids(project, step, wanted)
+        note = f"{step.title}: linked to {', '.join(wanted)}"
     entry = write_step_entry(links, read_attachments(step))
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
     context.report(
