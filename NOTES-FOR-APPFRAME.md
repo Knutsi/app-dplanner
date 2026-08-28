@@ -676,6 +676,33 @@ repository holds several planned directories. `origin_url` replaces storing a re
 that git already knows. Upstream: the multi-scope change is honest generalisation; the
 grouping helper only matters to applications whose document spans providers.
 
+### A repository is built over a source path, not a storage provider
+
+**What.** `Repository` lost its `storage` attribute and `RepositoryFactory` became
+`Callable[[Path], Repository[DocT]]`; `AppBuilder.with_storage(provider)` became
+`with_source(path)` and `SeedFactory` takes the path; `AppServices.storage` is gone.
+DPlanner's `LibraryStore` is built over the library *file* and opens one provider per
+project directory underneath.
+
+**Why.** The framework assumed one document = one provider, and the assumption was wired
+into three seams (`repo.storage`, the builder's stage 1, the services bundle) that nothing
+in the framework actually used beyond construction. A repository that spans several
+providers only had to stop *announcing* one. Upstream candidate: yes — it deletes API and
+widens what a template application's document can be.
+
+### The session lost switching; a different document is a different process
+
+**What.** `AppSession.switch_to`, the switch guards, and the `workspaces/last|recent|roots`
+QSettings all went; the `WorkspaceSwitcher` protocol shrank to `SessionControl.reload()`.
+DPlanner opens a different library by spawning a detached instance instead.
+
+**Why.** With a default library that always exists, "last opened" and "recent" had no
+remaining job, and the in-process switch was the one caller of the guard machinery. The
+full-rebuild discipline stays — reload after a branch switch or an external write is
+unchanged — but the switch-shaped half of it was scaffolding for a flow that no longer
+exists. Upstream: the rebuild reasoning holds either way; whether a template keeps
+`switch_to` depends on whether its documents are cheap enough to share a process.
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class

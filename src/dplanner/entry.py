@@ -13,8 +13,9 @@ import sys
 from dplanner.modules import default_cli_commands, default_module_formats
 
 # Options that take a value, so the value is not mistaken for a command word. Both entry
-# points understand --workspace; everything else Qt is given is a flag.
-VALUE_OPTIONS = ("--workspace",)
+# points understand --library; the CLI also scopes verbs with --project; everything else
+# Qt is given is a flag.
+VALUE_OPTIONS = ("--library", "--project")
 
 
 def cli_nouns() -> set[str]:
@@ -24,9 +25,9 @@ def cli_nouns() -> set[str]:
 def command_words(argv: list[str]) -> list[str]:
     """The positional words, with option values skipped.
 
-    Skipping them is the whole job: ``dplanner --workspace ~/widget project list`` has three
-    non-flag tokens and only the last two are the command. Reading the path as the first word
-    is how this quietly opened a window instead of listing anything.
+    Skipping them is the whole job: ``dplanner --library ~/plans.json project list`` has
+    three non-flag tokens and only the last two are the command. Reading the path as the
+    first word is how this quietly opened a window instead of listing anything.
     """
     words: list[str] = []
     skip = False
@@ -44,7 +45,7 @@ def looks_like_a_verb(argv: list[str]) -> bool:
     """Whether these arguments are a CLI invocation rather than a request for a window.
 
     A registered noun, or a bare request for help. Everything else — no arguments, just a
-    workspace, Qt's own ``-style``/``-platform`` — is the application.
+    library, Qt's own ``-style``/``-platform`` — is the application.
     """
     words = command_words(argv)
     if words:

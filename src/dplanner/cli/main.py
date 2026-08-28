@@ -19,7 +19,8 @@ from collections.abc import Sequence
 from typing import TextIO
 
 from dplanner.cli.command import CliCommand, CliContext, CliError, CliRegistry
-from dplanner.cli.workspace import WORKSPACE_ENV, find_workspace, open_product
+from dplanner.cli.discovery import find_current_project, find_library, open_library
+from dplanner.domain.library_file import LIBRARY_ENV
 from dplanner.core.module_data import ModuleDataFormat
 from dplanner.identity import APP_NAME, APP_VERSION
 
@@ -44,19 +45,29 @@ def _formatter(prog: str) -> HelpFormatter:
 
 
 def _add_common(parser: ArgumentParser, *, suppress: bool = False) -> None:
-    """``--workspace`` and ``--json``, on the top-level parser and on every verb.
+    """``--library``, ``--project`` and ``--json``, on the top level and on every verb.
 
     Argparse wants global options before the subcommand, which is not how anybody types —
     ``dplanner step show x --json`` is the natural order and is what an agent will write. So
-    both options exist in both places, and the verb-level copies default to SUPPRESS so that
+    the options exist in both places, and the verb-level copies default to SUPPRESS so that
     omitting them leaves whatever the top level parsed.
+
+    ``--project`` scopes a verb to one project when the working directory does not; its
+    dest is ``project_scope`` because several verbs already take a positional ``project``.
     """
     default = SUPPRESS if suppress else None
     parser.add_argument(
-        "--workspace",
+        "--library",
         metavar="PATH",
         default=default,
-        help=f"the product to act on (default: found upwards from here, or ${WORKSPACE_ENV})",
+        help=f"the project library to act on (default: the user's, or ${LIBRARY_ENV})",
+    )
+    parser.add_argument(
+        "--project",
+        metavar="NAME",
+        dest="project_scope",
+        default=default,
+        help="the project to act in (default: resolved from the working directory)",
     )
     parser.add_argument(
         "--json",
@@ -77,7 +88,7 @@ def build_tree(registry: CliRegistry) -> tuple[ArgumentParser, dict[str, Argumen
     verb_parsers: dict[str, ArgumentParser] = {}
     parser = ArgumentParser(
         prog=PROG,
-        description=f"{APP_NAME}: plan a product as projects of connected steps.",
+        description=f"{APP_NAME}: plan your projects as graphs of connected steps.",
         formatter_class=_formatter,
     )
     parser.add_argument("--version", action="version", version=f"{PROG} {APP_VERSION}")
@@ -118,16 +129,19 @@ def run(
     out: TextIO | None = None,
     err: TextIO | None = None,
 ) -> int:
-    """Parse, open the product if the verb needs one, and run it."""
+    """Parse, open the library if the verb needs one, and run it."""
     out = out if out is not None else sys.stdout
     err = err if err is not None else sys.stderr
     args: Namespace = build_tree(registry)[0].parse_args(list(argv))
     command: CliCommand = args._command
     try:
-        if not command.needs_workspace:
+        if not command.needs_library:
             return command.run(CliContext(out=out, as_json=args.as_json), args)
-        location = find_workspace(args.workspace)
-        with open_product(location, formats, out, as_json=args.as_json) as context:
+        path = find_library(args.library)
+        with open_library(path, formats, out, as_json=args.as_json) as context:
+            context.current = find_current_project(
+                context.library, context.store, args.project_scope
+            )
             return command.run(context, args)
     except CliError as error:
         print(f"{PROG}: {error}", file=err)

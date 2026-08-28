@@ -19,7 +19,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 from dplanner.cli.command import CliError
-from dplanner.domain.model import Product, Project, Step
+from dplanner.domain.model import Library, Project, Step
 
 
 def step_arg(parser: ArgumentParser) -> None:
@@ -42,15 +42,32 @@ def body_from(file_arg: str) -> str:
     return path.read_text()
 
 
-def find_project(product: Product, needle: str) -> Project:
+def find_project(library: Library, needle: str) -> Project:
     """A project by id, folder name, or a unique part of its title."""
-    return _find(product.projects, needle, "project")
+    return _find(library.projects, needle, "project")
 
 
-def find_step(product: Product, needle: str) -> Step:
-    """A step by id, folder name, or a unique part of its title, anywhere in the product."""
-    steps = [step for project in product.projects for step in project.steps]
+def find_step(library: Library, needle: str, within: Project | None = None) -> Step:
+    """A step by id, folder name, or a unique part of its title.
+
+    ``within`` is the current project, when the invocation has one: a needle that matches
+    there is resolved there, so "the step called review" means *this* project's — and only
+    a needle the current project cannot answer at all falls back to the whole library.
+    """
+    if within is not None and _matches_something(list(within.steps), needle):
+        return _find(list(within.steps), needle, "step")
+    steps = [step for project in library.projects for step in project.steps]
     return _find(steps, needle, "step")
+
+
+def _matches_something(candidates: list[Step], needle: str) -> bool:
+    lowered = needle.lower()
+    return any(
+        needle in (node.id, node.folder_name)
+        or (needle and node.id.startswith(needle))
+        or lowered in node.title.lower()
+        for node in candidates
+    )
 
 
 def _find[NodeT: (Project, Step)](candidates: list[NodeT], needle: str, kind: str) -> NodeT:

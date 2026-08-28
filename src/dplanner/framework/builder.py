@@ -1,7 +1,7 @@
-"""One build: everything needed to run the application against exactly one workspace.
+"""One build: everything needed to run the application against exactly one library.
 
 ``AppBuilder.build()`` assembles a window and its services, in a strict order, and then
-never tears any of it down. Opening a different workspace is a *new build* — see
+never tears any of it down. Reloading the library is a *new build* — see
 :mod:`dplanner.framework.session` for why that is the cheap option rather than the expensive
 one.
 
@@ -10,7 +10,7 @@ unconditional: by the time a module registers, the menus, the panel areas and th
 already exist, so a module may do anything — including opening its own tab — without
 checking whether the world is ready.
 
-1. open the storage provider and load (or seed) the workspace
+1. build the repository over its source path and load (or seed) it
 2. construct the framework services
 3. install the window shell: menu bar, panel dock, index panel, status bar
 4. bundle everything into :class:`AppServices`
@@ -32,7 +32,6 @@ from PySide6.QtWidgets import QApplication
 
 from dplanner.core.module_data import migrate_module_data
 from dplanner.core.repository import RepositoryFactory
-from dplanner.core.storage.provider import StorageProvider
 from dplanner.framework.action_registry import ActionRegistry, MenuStructure
 from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import (
@@ -58,13 +57,15 @@ from dplanner.framework.undo import UndoService
 from dplanner.framework.zoom import ZoomService
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     # Type-only: the session module imports this builder at runtime.
-    from dplanner.framework.session import WorkspaceSwitcher
+    from dplanner.framework.session import SessionControl
 
 type ModuleFactory = Callable[[AppServices], Sequence[Module]]
-# Write a starter workspace into empty storage. Called only when nothing is there yet, and
-# the repository loads it afterwards like any other — so there is exactly one load path.
-type SeedFactory = Callable[[StorageProvider], None]
+# Write starter data at an empty source. Called only when nothing is there yet, and the
+# repository loads it afterwards like any other — so there is exactly one load path.
+type SeedFactory = Callable[[Path], None]
 type WindowFactory = Callable[[TabHost, PanelDock], AppWindow]
 
 # The framework's own panel: the index tree, anchored left. Named so a test — and the
@@ -77,26 +78,27 @@ class AppBuilder:
     than guessing when something is missing."""
 
     def __init__(self) -> None:
-        self._storage: StorageProvider | None = None
+        self._source: Path | None = None
         self._repository: RepositoryFactory[Any] | None = None
         self._menus: MenuStructure | None = None
-        self._switcher: WorkspaceSwitcher | None = None
+        self._session: SessionControl | None = None
         self._module_factory: ModuleFactory = lambda _services: ()
         self._window_factory: WindowFactory = AppWindow
         self._seed: SeedFactory | None = None
         self._progress: Callable[[str], None] | None = None
 
-    def with_storage(self, storage: StorageProvider) -> Self:
-        self._storage = storage
+    def with_source(self, source: Path) -> Self:
+        """The path the repository is built over — for DPlanner, the library file."""
+        self._source = source
         return self
 
     def with_repository(self, factory: RepositoryFactory[Any]) -> Self:
-        """How to build your repository over a storage provider."""
+        """How to build your repository over its source path."""
         self._repository = factory
         return self
 
     def with_seed(self, seed: SeedFactory) -> Self:
-        """What to write into empty storage. Without one, an empty workspace stays empty."""
+        """What to write at an empty source. Without one, an empty source stays empty."""
         self._seed = seed
         return self
 
@@ -104,8 +106,8 @@ class AppBuilder:
         self._menus = menus
         return self
 
-    def with_switcher(self, switcher: WorkspaceSwitcher) -> Self:
-        self._switcher = switcher
+    def with_session(self, session: SessionControl) -> Self:
+        self._session = session
         return self
 
     def with_modules(self, factory: ModuleFactory) -> Self:
@@ -120,20 +122,20 @@ class AppBuilder:
 
     def build(self) -> tuple[AppWindow, AppServices]:
         """Assemble the application. Requires a live ``QApplication``."""
-        storage, repo_factory, menus, switcher = self._require()
+        source, repo_factory, menus, session = self._require()
         qt_app = QApplication.instance()
         if not isinstance(qt_app, QApplication):
             raise RuntimeError("build() requires a live QApplication")
 
         # 1 — data ------------------------------------------------------------------------
-        self._report("Opening workspace…")
-        repo = repo_factory(storage)
-        # A workspace that does not exist yet is seeded rather than opened empty: an
+        self._report("Opening library…")
+        repo = repo_factory(source)
+        # A source that does not exist yet is seeded rather than opened empty: an
         # application whose first screen is blank teaches its user nothing. It is then
         # loaded through the same path as any other, so the repository is never left
         # holding a document it did not read.
         if self._seed is not None and not repo.exists():
-            self._seed(storage)
+            self._seed(source)
         document = repo.load()
 
         # 2 — services --------------------------------------------------------------------
@@ -184,7 +186,6 @@ class AppBuilder:
         theme = ThemeService(qt_app)
         services = AppServices(
             repo=repo,
-            storage=storage,
             document=document,
             context=context,
             actions=actions,
@@ -202,7 +203,7 @@ class AppBuilder:
             tasks=TaskService(),
             llm_providers=llm_providers,
             llm=LLMService(llm_providers),
-            switcher=switcher,
+            switcher=session,
         )
 
         # Index folder glyphs follow the theme's secondary text colour.
@@ -214,7 +215,7 @@ class AppBuilder:
         context.set_scope(SCOPE_APP, (ContextNode(WORKSPACE_URI),))
 
         # 6 and 7 — the composition root, then migrate, then register -----------------------
-        self._report("Preparing workspace…")
+        self._report("Preparing projects…")
         modules = self._module_factory(services)
         services.modules = list(modules)
         # Module data written by an older build is migrated before any module reads it
@@ -233,16 +234,16 @@ class AppBuilder:
 
     def _require(
         self,
-    ) -> tuple[StorageProvider, RepositoryFactory[Any], MenuStructure, WorkspaceSwitcher]:
-        if self._storage is None:
-            raise ValueError("with_storage() must be called before build()")
+    ) -> tuple[Path, RepositoryFactory[Any], MenuStructure, SessionControl]:
+        if self._source is None:
+            raise ValueError("with_source() must be called before build()")
         if self._repository is None:
             raise ValueError("with_repository() must be called before build()")
         if self._menus is None:
             raise ValueError("with_menus() must be called before build()")
-        if self._switcher is None:
-            raise ValueError("with_switcher() must be called before build()")
-        return self._storage, self._repository, self._menus, self._switcher
+        if self._session is None:
+            raise ValueError("with_session() must be called before build()")
+        return self._source, self._repository, self._menus, self._session
 
     def _report(self, message: str) -> None:
         if self._progress is not None:

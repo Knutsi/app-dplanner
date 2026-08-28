@@ -5,7 +5,7 @@ would mean writing every command twice, and the copy would be wrong within a mon
 that describes a flag which no longer exists is worse than no skill, because it is believed.
 
 So the skill is a **projection of the registry**: the hand-written part is the part a
-registry cannot know (what a product is, how to work with the user), and everything else —
+registry cannot know (what a project is, how to work with the user), and everything else —
 the command list, each command's arguments, the aspects — is rendered from the same objects
 ``dplanner --help`` renders. It cannot describe a command that does not exist.
 
@@ -36,9 +36,9 @@ def _description(aspects: Sequence[AspectSpec]) -> str:
     # cannot under-describe a build the way a hand-written enumeration did.
     carried = ", ".join(spec.label for spec in aspects)
     return (
-        "Plan software work as a product of projects, each a graph of steps carrying "
+        "Plan software work as a library of projects, each a graph of steps carrying "
         f"aspects ({carried}). Use when asked to plan, break down or estimate development "
-        "work, or when a DPlanner product is present."
+        "work, or when a DPlanner project is present."
     )
 
 
@@ -69,14 +69,15 @@ def _skill(registry: CliRegistry, aspects: Sequence[AspectSpec]) -> str:
         "",
         preamble().rstrip(),
         "",
-        "## Where the product is",
+        "## Where the project is",
         "",
-        "Commands find the product by walking **up from the working directory** looking for",
-        "`product.json`. If you are already inside the product's checkout and the plan lives",
-        "there, nothing needs configuring. When the plan lives in a subdirectory the walk",
-        "would never enter (say `dplanner-workspace/`), a one-line `.dplanner` file at the",
-        "repository root naming that path points the walk there. Otherwise pass",
-        "`--workspace PATH`, or set `$DPLANNER_WORKSPACE`.",
+        "Commands find the current project by walking **up from the working directory**",
+        "looking for `project.dproj`. If you are already inside the project's repository",
+        "and the plan lives there, nothing needs configuring. When the plan lives in a",
+        "subdirectory the walk would never enter (say `planning/`), a one-line `.dplanner`",
+        "file at the repository root naming that path points the walk there. Otherwise",
+        "pass `--project NAME`. The library of projects is per user; another one can be",
+        "named with `--library PATH` or `$DPLANNER_LIBRARY`.",
         "",
         "## Commands",
         "",
@@ -255,13 +256,13 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
             help=f"install into ~/{SKILL_DIR} (the default)",
         )
         where.add_argument(
-            "--project",
+            "--repo",
             action="store_true",
             help=f"install into ./{SKILL_DIR}, so it travels with the repository",
         )
 
     def where(args: Namespace) -> Path:
-        return target_dir(user=not args.project)
+        return target_dir(user=not args.repo)
 
     def do_install(context: CliContext, args: Namespace) -> int:
         written = install(files(), where(args))
@@ -297,7 +298,7 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
             path=("skill", "show"),
             summary="Print the agent skill for this build, without installing it.",
             run=show,
-            needs_workspace=False,
+            needs_library=False,
             examples=(f"{PROG} skill show",),
         ),
         CliCommand(
@@ -305,7 +306,7 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
             summary="Write the agent skill so a coding agent can find it.",
             configure=configure,
             run=do_install,
-            needs_workspace=False,
+            needs_library=False,
             examples=(f"{PROG} skill install", f"{PROG} skill install --project"),
         ),
         CliCommand(
@@ -313,7 +314,7 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
             summary="Remove the installed agent skill.",
             configure=configure,
             run=do_uninstall,
-            needs_workspace=False,
+            needs_library=False,
             examples=(f"{PROG} skill uninstall",),
         ),
         CliCommand(
@@ -321,7 +322,7 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
             summary="Whether the installed skill matches this build.",
             configure=configure,
             run=do_status,
-            needs_workspace=False,
+            needs_library=False,
             examples=(f"{PROG} skill status",),
         ),
     ]
