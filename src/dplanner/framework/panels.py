@@ -148,7 +148,7 @@ class _PanelFrame(QWidget):
         self.spec = spec
         self.content = content
         # Whether the panel's own contract says it has something to show. Combined with the
-        # user's hide and with immersive mode in PanelDock._refresh.
+        # user's hide in PanelDock._refresh.
         self.has_content = True
 
         self.header = QLabel(spec.title, self)
@@ -186,7 +186,6 @@ class PanelDock(QSplitter):
         self._areas_of: dict[str, PanelArea] = {}
         self._hidden: set[str] = set()
         self._collapsed: set[PanelArea] = {a for a in PanelArea if _stored_collapsed(a)}
-        self._chrome = True
         # Read once and updated on every drag. Kept in memory because the sizes are
         # re-applied on each resize, and QSettings is not free per mouse move.
         self._sizes = {area: _stored_size(area) for area in PanelArea}
@@ -291,11 +290,6 @@ class PanelDock(QSplitter):
         self._refresh()
         self.areas_changed.emit(area)
 
-    def set_chrome_visible(self, visible: bool) -> None:
-        """Immersive mode: every area off, and back exactly as it was."""
-        self._chrome = visible
-        self._refresh()
-
     def dispose(self) -> None:
         """Detach from the context and from the model. Idempotent — a workspace switch
         closes the window, and the suite closes it again."""
@@ -365,8 +359,7 @@ class PanelDock(QSplitter):
             # Collapse is tested on the frame, not just the area splitter: a frame under a
             # hidden parent still answers isHidden() == False, and is_panel_showing reads it.
             frame.setVisible(
-                self._chrome
-                and frame.has_content
+                frame.has_content
                 and panel_id not in self._hidden
                 and self._areas_of[panel_id] not in self._collapsed
             )

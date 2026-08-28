@@ -52,11 +52,6 @@ class TaskRunner(QObject):
     def is_busy(self) -> bool:
         return self._task is not None
 
-    def current_task(self) -> Task | None:
-        """The running body's task — None when idle. Owners that track per-target runs
-        (a task per item, say) grab it right after ``run()`` returns True."""
-        return self._task
-
     def run(
         self,
         label: str,
@@ -95,17 +90,6 @@ class TaskRunner(QObject):
 
         threading.Thread(target=work, daemon=True).start()
         return True
-
-    def abandon(self) -> None:
-        """Give up waiting for the current body: finish its task now and free the runner
-        for new work. The daemon thread keeps running to completion, but its late
-        completion no longer matches ``self._task`` and is dropped. This is the escape
-        hatch for a body stuck in blocking I/O that cooperative cancel cannot reach."""
-        task, self._task = self._task, None
-        if task is None:
-            return
-        self._tasks.finish(task)  # With cancel_requested set this counts as cancelled.
-        self.busy_changed.emit(False)
 
     def cancel_requested(self) -> bool:
         task = self._task

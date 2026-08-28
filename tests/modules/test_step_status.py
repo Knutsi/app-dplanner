@@ -7,10 +7,8 @@ import pytest
 
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import run
-from dplanner.core.storage.local import LocalStorage
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Project, Step
-from dplanner.domain.seed import create_product
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.step_status.aspect import MODULE_ID, STATUSES, read, write
@@ -46,13 +44,6 @@ def test_writing_an_unknown_status_is_refused():
 
 
 # -- the CLI -----------------------------------------------------------------------------------
-
-
-@pytest.fixture
-def workspace(tmp_path):
-    root = tmp_path / "widget"
-    create_product(LocalStorage(root))
-    return root
 
 
 @pytest.fixture

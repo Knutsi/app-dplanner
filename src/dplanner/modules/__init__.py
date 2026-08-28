@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from dplanner.domain.store import ModuleFileArea
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
-    from dplanner.modules.step_agent_instruction.prompt import PromptPart
+    from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
 
 __all__ = [
     "StorageLocation",
@@ -64,6 +64,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.estimation.schedule import start_of
     from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
+    from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.github.module import GithubDeps, GithubModule
     from dplanner.modules.llm.module import LlmDeps, LlmModule
@@ -182,7 +183,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         refs = github_read(step)
         pill = ""
         if refs is not None and refs.has_pr():
-            pill = f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
+            pill = pr_label(refs)
         chip_text, chip_tone = {
             "launched": ("launched", "info"),
             "working": ("working", "info"),
@@ -220,13 +221,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         """
         return schedule(order, estimated_days, start_of(product.project(project_id)))
 
-    # The briefing's blocks come from the shared builders below the list — the same two
-    # functions the CLI wires in — closed over the window's product and store here.
-    def agent_prompt_parts(step_id: str) -> list["PromptPart"]:
-        return _handoff_parts(product, product.step(step_id), store.files)
-
-    def agent_prompt_sections(step_id: str) -> list["PromptPart"]:
-        return _briefing_sections(product, product.step(step_id), store.files)
+    # The one briefing both the window and the CLI assemble from — see _default_briefing.
+    briefing = _default_briefing()
 
     # Three modules constructed before the list, because what each one hands the others
     # reads better as wiring than as ordering:
@@ -392,7 +388,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
         # After sync, so a reload notice lands to the right of the workspace path.
         WorkspaceWatchModule(
             WorkspaceWatchDeps(
-                repo=services.repo,
+                # The narrowed store from above: the watcher needs changed_underneath(),
+                # which the Repository protocol deliberately does not promise.
+                repo=store,
                 autosave=services.autosave,
                 actions=services.actions,
                 switcher=services.switcher,
@@ -444,7 +442,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
             ProductDeps(
                 product=product,
                 actions=services.actions,
-                context=services.context,
                 tabs=services.tabs,
                 undo=services.undo,
                 window=services.window,
@@ -528,10 +525,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 files=store.files,
                 # How staged assets are read at launch — bytes by workspace-relative path.
                 read_asset=store.storage.read_bytes,
-                prompt_parts=agent_prompt_parts,
-                prompt_sections=agent_prompt_sections,
-                epilogue=lambda step_id: _agent_epilogue(product.step(step_id).title),
-                preamble=_agent_preamble(),
+                briefing=briefing,
                 # Where the agent runs: the project's checkout over the product's — the
                 # one resolution rule, closed over step → project here.
                 checkout_for=lambda step_id: repo_checkout_for(
@@ -665,6 +659,7 @@ def _briefing_sections(
     every module's vocabulary — the agent module renders the blocks without learning what
     a description, a requirement or a PR is. An empty fact contributes no section.
     """
+    from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.spec.aspect import attachment_paths, read_links
     from dplanner.modules.spec.documents import read_index
@@ -712,7 +707,7 @@ def _briefing_sections(
         if refs.branch:
             lines.append(f"Branch: {refs.branch}")
         if refs.has_pr():
-            pr = f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
+            pr = pr_label(refs)
             if refs.pr_title:
                 pr += f" — {refs.pr_title}"
             if refs.pr_state:
@@ -723,6 +718,21 @@ def _briefing_sections(
         if lines:
             sections.append(PromptPart(heading="Where the work lands", body="\n".join(lines)))
     return sections
+
+
+def _default_briefing() -> "Briefing":
+    """The briefing every surface assembles from: the shared block builders below, and
+    the root's own opening and closing prose. One object, two callers — the window's
+    Deps and ``dplanner agent prompt`` — so what an agent is launched with and what the
+    verb prints are the same text by construction."""
+    from dplanner.modules.step_agent_instruction.prompt import Briefing
+
+    return Briefing(
+        parts=_handoff_parts,
+        sections=_briefing_sections,
+        epilogue=lambda step: _agent_epilogue(step.title),
+        preamble=_agent_preamble(),
+    )
 
 
 def _agent_preamble() -> str:
@@ -815,12 +825,7 @@ def default_cli_commands() -> list["CliCommand"]:
         *estimation_cli.commands(),
         *ticket_cli.commands(),
         *description_cli.commands(),
-        *agent_cli.commands(
-            prompt_parts=_handoff_parts,
-            prompt_sections=_briefing_sections,
-            epilogue=lambda step: _agent_epilogue(step.title),
-            preamble=_agent_preamble(),
-        ),
+        *agent_cli.commands(briefing=_default_briefing()),
         *agent_state_cli.commands(),
         *status_cli.commands(),
         *release_cli.commands(),
@@ -889,36 +894,35 @@ def aspect_specs() -> list["AspectSpec"]:
     ]
 
 
+# Row phrases lead with where a step *stands* (status, agent run, release) before what it
+# *carries*. Only a preference: an aspect not named here still appears, after these, in
+# aspect_specs() order — so a new aspect reaches every step row without editing this list.
+_PHRASE_ORDER = (
+    "step_status",
+    "step_agent_run",
+    "step_release",
+    "estimation",
+    "step_ticket",
+    "github",
+    "spec",
+    "step_description",
+    "step_agent_instruction",
+    "step_handoff",
+)
+
+
 def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str]]:
     """Each aspect's one-phrase description of a step, for whoever renders a step row.
 
-    ``skip`` is for a surface that already shows one of them in a column of its own — the
-    order table and its Estimate column — so the phrase is not printed twice.
+    A projection of :func:`aspect_specs` — the ``phrase`` on each SPEC — so an aspect
+    cannot exist without a row presence. ``skip`` is for a surface that already shows one
+    of them in a column of its own — the order table and its Estimate column — so the
+    phrase is not printed twice.
     """
-    from dplanner.modules.estimation import aspect as estimation
-    from dplanner.modules.github import aspect as github
-    from dplanner.modules.spec import aspect as spec
-    from dplanner.modules.step_agent_instruction import aspect as agent
-    from dplanner.modules.step_agent_run import aspect as agent_run
-    from dplanner.modules.step_description import aspect as description
-    from dplanner.modules.step_handoff import aspect as handoff
-    from dplanner.modules.step_release import aspect as release
-    from dplanner.modules.step_status import aspect as status
-    from dplanner.modules.step_ticket import aspect as ticket
-
-    pairs = [
-        (status.SPEC.id, status.summary),
-        (agent_run.SPEC.id, agent_run.summary),
-        (release.SPEC.id, release.summary),
-        (estimation.SPEC.id, estimation.summary),
-        (ticket.SPEC.id, ticket.summary),
-        (github.SPEC.id, github.summary),
-        (spec.SPEC.id, spec.summary),
-        (description.SPEC.id, description.summary),
-        (agent.SPEC.id, agent.summary),
-        (handoff.SPEC.id, handoff.summary),
-    ]
-    return [render for aspect_id, render in pairs if aspect_id not in skip]
+    specs = {spec.id: spec for spec in aspect_specs()}
+    ordered = [specs.pop(aspect_id) for aspect_id in _PHRASE_ORDER if aspect_id in specs]
+    ordered += specs.values()
+    return [spec.phrase for spec in ordered if spec.id not in skip]
 
 
 def default_module_formats() -> list[ModuleDataFormat]:

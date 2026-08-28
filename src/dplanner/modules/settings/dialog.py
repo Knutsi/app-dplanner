@@ -1,5 +1,4 @@
-"""The Settings dialog: Project and Global scope as tabs, each with its own tree of
-module-contributed sections.
+"""The Settings dialog: a tree of module-contributed sections beside their pages.
 
 Non-modal, like the task browser — settings changes shouldn't block the rest of the app.
 Built once and reused (``.show()``/``.raise_()``), so leaving it open across an edit
@@ -15,7 +14,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QStackedWidget,
-    QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
     QTreeWidgetItemIterator,
@@ -23,16 +21,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.framework.settings_registry import (
-    SettingsScope,
-    SettingsSection,
-    SettingsSectionRegistry,
-)
+from dplanner.framework.settings_registry import SettingsSection, SettingsSectionRegistry
 
-_TAB_LABELS = {
-    SettingsScope.PROJECT: "Project settings",
-    SettingsScope.GLOBAL: "Global settings",
-}
 _SECTION_ROLE = Qt.ItemDataRole.UserRole
 
 
@@ -52,22 +42,15 @@ class SettingsDialog(QDialog):
         self._empty_page.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._pane.addWidget(self._empty_page)
 
-        self._tabs = QTabWidget(self)
-        self._tabs.setObjectName("SettingsTabs")
-        self._tabs.setMinimumWidth(220)
-        self._tabs.setMaximumWidth(320)
-        self._trees: dict[SettingsScope, QTreeWidget] = {}
-        for scope, label in _TAB_LABELS.items():
-            tree = QTreeWidget(self)
-            tree.setObjectName(f"SettingsTree_{scope.value}")
-            tree.setHeaderHidden(True)
-            tree.currentItemChanged.connect(self._on_current_changed)
-            self._trees[scope] = tree
-            self._tabs.addTab(tree, label)
-        self._tabs.currentChanged.connect(self._on_tab_changed)
+        self._tree = QTreeWidget(self)
+        self._tree.setObjectName("SettingsTree")
+        self._tree.setMinimumWidth(220)
+        self._tree.setMaximumWidth(320)
+        self._tree.setHeaderHidden(True)
+        self._tree.currentItemChanged.connect(self._on_current_changed)
 
         body = QHBoxLayout()
-        body.addWidget(self._tabs)
+        body.addWidget(self._tree)
         body.addWidget(self._pane, stretch=1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
@@ -81,57 +64,36 @@ class SettingsDialog(QDialog):
         self._rebuild()
 
     def _rebuild(self) -> None:
-        for tree in self._trees.values():
-            tree.clear()
-        folder_items: dict[tuple[SettingsScope, tuple[str, ...]], QTreeWidgetItem] = {}
+        self._tree.clear()
+        folder_items: dict[tuple[str, ...], QTreeWidgetItem] = {}
 
-        def folder_item(
-            scope: SettingsScope, path: tuple[str, ...]
-        ) -> QTreeWidget | QTreeWidgetItem:
+        def folder_item(path: tuple[str, ...]) -> QTreeWidget | QTreeWidgetItem:
             """The (non-clickable) tree node for the folders leading up to a section."""
             if not path:
-                return self._trees[scope]
-            key = (scope, path)
-            if key in folder_items:
-                return folder_items[key]
-            parent = folder_item(scope, path[:-1])
+                return self._tree
+            if path in folder_items:
+                return folder_items[path]
+            parent = folder_item(path[:-1])
             item = QTreeWidgetItem(parent, [path[-1]])
-            folder_items[key] = item
+            folder_items[path] = item
             return item
 
         for section in self._registry.sections():
-            parent = folder_item(section.scope, section.category[:-1])
+            parent = folder_item(section.category[:-1])
             leaf = QTreeWidgetItem(parent, [section.category[-1]])
             leaf.setData(0, _SECTION_ROLE, section.id)
 
-        for tree in self._trees.values():
-            tree.expandAll()
-        for tree in self._trees.values():
-            self._select_first_in(tree)
-            if tree.currentItem() is not None:
-                self._tabs.setCurrentWidget(tree)
-                break
+        self._tree.expandAll()
+        self._select_first()
 
-    def show_section(self, section_id: str) -> None:
-        """Deeplink: select the given section's leaf and bring its tab to the front.
-        An unknown id is a no-op — the dialog just opens wherever it was."""
-        for tree in self._trees.values():
-            item = self._find_item(tree, lambda i: i.data(0, _SECTION_ROLE) == section_id)
-            if item is not None:
-                # Item first, tab second: the tab-change handler re-applies the tree's
-                # current item, so this order shows the target page exactly once.
-                tree.setCurrentItem(item)
-                self._tabs.setCurrentWidget(tree)
-                return
-
-    def _select_first_in(self, tree: QTreeWidget) -> None:
-        """Select this tree's own first leaf — a no-op once it already has a selection,
-        so revisiting a tab never disturbs where the user left it."""
-        if tree.currentItem() is not None:
+    def _select_first(self) -> None:
+        """Select the first leaf — a no-op once there already is a selection, so a rebuild
+        never disturbs where the user left off."""
+        if self._tree.currentItem() is not None:
             return
-        item = self._find_item(tree, lambda i: i.data(0, _SECTION_ROLE) is not None)
+        item = self._find_item(self._tree, lambda i: i.data(0, _SECTION_ROLE) is not None)
         if item is not None:
-            tree.setCurrentItem(item)
+            self._tree.setCurrentItem(item)
 
     @staticmethod
     def _find_item(
@@ -144,12 +106,6 @@ class SettingsDialog(QDialog):
                 return item
             it += 1
         return None
-
-    def _on_tab_changed(self, index: int) -> None:
-        tree = self._tabs.widget(index)
-        if isinstance(tree, QTreeWidget):
-            self._select_first_in(tree)  # First visit to this tab: land on its own first leaf.
-            self._on_current_changed(tree.currentItem(), None)
 
     def _on_current_changed(
         self, current: QTreeWidgetItem | None, _previous: QTreeWidgetItem | None

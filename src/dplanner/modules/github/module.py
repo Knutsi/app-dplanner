@@ -43,7 +43,9 @@ class GithubModule:
                 id=f"{MODULE_ID}.tab",
                 label=SPEC.label,
                 order=70,  # After Release (50) and Handoff (60).
-                factory=lambda: GithubSection(deps.product, deps.undo, deps.repository_for),
+                factory=lambda: GithubSection(
+                    deps.product, deps.undo, deps.repository_for, deps.tasks
+                ),
             )
         )
         PrRefresher(deps.product, deps.tasks, deps.repository_for, parent=deps.parent).start()

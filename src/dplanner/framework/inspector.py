@@ -6,10 +6,6 @@ The host panel is created once per tab that shows one, so ``factory`` returns a 
 extension per panel instance and the host drives its lifecycle: ``show_target`` on every
 selection change (``None`` when nothing is shown), ``dispose`` when the panel goes away.
 
-**A section that has nothing to say shows nothing.** ``tab_visible()`` gates the tab, and
-``tab_visibility_changed`` tells the host when that flips — so a feature can occupy a
-permanent slot in the layout without ever being in the way when it is not relevant.
-
 Register sections before the first panel is built. Module order in the composition root is
 what guarantees that, which is why positions there carry comments.
 
@@ -26,18 +22,12 @@ from typing import Protocol
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QWidget
 
-from dplanner.core.signals import Signal
-
 
 class InspectorExtension(Protocol):
     """One module-owned tab in the panel, satisfied structurally."""
 
-    tab_visibility_changed: Signal[bool]
-
     @property
     def widget(self) -> QWidget: ...
-
-    def tab_visible(self) -> bool: ...
 
     def show_target(self, target_id: str | None) -> None: ...
 

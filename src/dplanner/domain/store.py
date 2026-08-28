@@ -140,6 +140,12 @@ class ModuleFileArea:
         self._storage.delete(self.directory)
 
 
+# The store's file lookup, handed to whoever needs a node's module files without
+# holding the store: (node_id, module_id) -> the area. Raises KeyError for a node the
+# store has never flushed. One alias so five features do not spell it five ways.
+FilesFor = Callable[[NodeId, str], ModuleFileArea]
+
+
 class ProductStore:
     """Loads and saves one :class:`Product` through a storage provider.
 

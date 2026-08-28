@@ -32,18 +32,17 @@ class WatchableRepository(Protocol):
 class WorkspaceWatcher(QObject):
     """Polls a repository and emits once each time the workspace changes underneath it."""
 
-    def __init__(self, repo: object, is_busy: Callable[[], bool]) -> None:
+    def __init__(self, repo: WatchableRepository, is_busy: Callable[[], bool]) -> None:
         super().__init__()
         self.changed: Signal[()] = Signal()
-        self._repo = repo if isinstance(repo, WatchableRepository) else None
+        self._repo = repo
         self._is_busy = is_busy
         self._timer = QTimer(self)
         self._timer.setInterval(POLL_MS)
         self._timer.timeout.connect(self._check)
 
     def start(self) -> None:
-        if self._repo is not None:
-            self._timer.start()
+        self._timer.start()
 
     def stop(self) -> None:
         self._timer.stop()
@@ -51,6 +50,6 @@ class WorkspaceWatcher(QObject):
     def _check(self) -> None:
         # Not while a write of our own is pending: the files are about to change because of
         # us, and reporting that as somebody else's edit would be a lie the user acts on.
-        if self._repo is None or self._is_busy() or not self._repo.changed_underneath():
+        if self._is_busy() or not self._repo.changed_underneath():
             return
         self.changed.emit()

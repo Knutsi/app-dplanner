@@ -18,8 +18,8 @@ from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor
-from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
-from dplanner.cli.lookup import find_project, find_step
+from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import (
     AddNodeCommand,
     CompositeCommand,
@@ -31,17 +31,7 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import EDGE_KINDS, Product, Project, Step, StepId, TextEdit
 from dplanner.domain.ordering import placed
-
-PROJECT_ARG = "project id, folder name, or part of its title"
-STEP_ARG = "step id, folder name, or part of its title"
-
-
-def _one_project(parser: ArgumentParser) -> None:
-    parser.add_argument("project", help=PROJECT_ARG)
-
-
-def _one_step(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help=STEP_ARG)
+from dplanner.domain.store import FilesFor
 
 
 def lint_checks() -> list[LintCheck]:
@@ -70,7 +60,7 @@ def lint_checks() -> list[LintCheck]:
 
 def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
     def _configure_step_add(parser: ArgumentParser) -> None:
-        parser.add_argument("project", help=PROJECT_ARG)
+        project_arg(parser)
         parser.add_argument("title", help="what the step is called")
         parser.add_argument(
             "--after",
@@ -116,7 +106,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
         CliCommand(
             path=("project", "show"),
             summary="One project: its summary, its steps and the links between them.",
-            configure=_one_project,
+            configure=project_arg,
             run=_project_show,
             examples=("dplanner project show discovery",),
         ),
@@ -137,7 +127,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
         CliCommand(
             path=("project", "delete"),
             summary="Remove a project and every step in it.",
-            configure=_one_project,
+            configure=project_arg,
             run=_project_delete,
             examples=("dplanner project delete discovery",),
         ),
@@ -145,7 +135,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
             path=("project", "clear-steps"),
             summary="Remove every step, keeping the project and its documents — "
             "the re-plan verb.",
-            configure=_one_project,
+            configure=project_arg,
             run=_project_clear_steps,
             examples=("dplanner project clear-steps discovery",),
         ),
@@ -163,7 +153,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
         CliCommand(
             path=("project", "export"),
             summary="Write one project — steps, links and aspects — as JSON.",
-            configure=_one_project,
+            configure=project_arg,
             run=_project_export,
             examples=("dplanner project export discovery > discovery.json",),
         ),
@@ -180,14 +170,14 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
         CliCommand(
             path=("step", "list"),
             summary="The steps of one project, in order.",
-            configure=_one_project,
+            configure=project_arg,
             run=_step_list,
             examples=("dplanner step list discovery",),
         ),
         CliCommand(
             path=("step", "show"),
             summary="One step: what it waits on, what waits on it, and its aspects.",
-            configure=_one_step,
+            configure=step_arg,
             run=_step_show,
             examples=("dplanner step show read-the-spec",),
         ),
@@ -213,7 +203,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
         CliCommand(
             path=("step", "remove"),
             summary="Delete a step. Links naming it are left alone, so undo stays exact.",
-            configure=_one_step,
+            configure=step_arg,
             run=_step_remove,
             examples=("dplanner step remove read-the-spec",),
         ),
@@ -319,7 +309,7 @@ def _project_show(context: CliContext, args: Namespace) -> int:
 
 
 def _configure_graph(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument(
         "--short",
         action="store_true",
@@ -342,7 +332,7 @@ def _project_create(context: CliContext, args: Namespace) -> int:
 
 
 def _configure_rename(parser: ArgumentParser) -> None:
-    parser.add_argument("project", help=PROJECT_ARG)
+    project_arg(parser)
     parser.add_argument("--title", help="the new title")
     parser.add_argument("--summary", help="the new summary")
 
@@ -437,6 +427,8 @@ def _project_clear_steps(context: CliContext, args: Namespace) -> int:
 def _project_export(context: CliContext, args: Namespace) -> int:
     project = find_project(context.product, args.project)
     document = project_document(context.product, project)
+    # Deliberately not context.report(): export always emits JSON, --json or not — the
+    # output IS the artefact. The one bare print in any module's cli.py.
     print(json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False), file=context.out)
     return 0
 
@@ -542,7 +534,7 @@ def _step_show(context: CliContext, args: Namespace) -> int:
 
 
 def _configure_step_rename(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help=STEP_ARG)
+    step_arg(parser)
     parser.add_argument("--title", required=True, help="the new title")
 
 

@@ -59,14 +59,6 @@ DATA_FORMAT = ModuleDataFormat(
     takeovers=(Takeover(retired=RETIRED_STEP_ESTIMATION, convert=_from_step_estimation),),
 )
 
-SPEC = AspectSpec(
-    id=MODULE_ID,
-    label="Estimate",
-    summary="How many working days a step is thought to take.",
-    data_format=DATA_FORMAT,
-)
-
-
 def read(step: Step) -> float | None:
     """How many days the step is estimated at, or None. Unreadable data reads as absent.
 
@@ -88,3 +80,13 @@ def summary(step: Step) -> str:
     """One short phrase for a step's row, or "" when there is nothing to say."""
     days = read(step)
     return "" if days is None else f"{days:g}d"
+
+
+# Last, because it names the pieces above: the one declaration everything reads.
+SPEC = AspectSpec(
+    id=MODULE_ID,
+    label="Estimate",
+    summary="How many working days a step is thought to take.",
+    data_format=DATA_FORMAT,
+    phrase=summary,
+)

@@ -28,14 +28,6 @@ SCOPES: Final = ("downstream", "project")
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
-SPEC = AspectSpec(
-    id=MODULE_ID,
-    label="Handoff",
-    summary="What this step passes forward: notes and files for later steps' workers.",
-    data_format=DATA_FORMAT,
-)
-
-
 def read_note(step: Step) -> str:
     return step.module_text.get(MODULE_ID, "")
 
@@ -61,3 +53,13 @@ def summary(step: Step) -> str:
     if not read_note(step):
         return ""
     return "hands off (project)" if read_scope(step) == "project" else "hands off"
+
+
+# Last, because it names the pieces above: the one declaration everything reads.
+SPEC = AspectSpec(
+    id=MODULE_ID,
+    label="Handoff",
+    summary="What this step passes forward: notes and files for later steps' workers.",
+    data_format=DATA_FORMAT,
+    phrase=summary,
+)

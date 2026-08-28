@@ -28,8 +28,8 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.context import Context
-from dplanner.modules.project_editor.layout import positions
 from dplanner.modules.project_editor.modes import CONNECT, mode_uri
+from dplanner.modules.project_editor.placement import positions
 
 # Which way each verb looks, as (dx, dy) in scene coordinates — y grows downwards.
 DIRECTIONS: dict[str, tuple[float, float]] = {

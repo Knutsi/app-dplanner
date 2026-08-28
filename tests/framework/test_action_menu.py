@@ -6,7 +6,6 @@ from PySide6.QtWidgets import QMenu, QWidget
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
     DISABLED,
-    HIDDEN,
     ActionRegistry,
     ActionSpec,
     ActionState,
@@ -15,6 +14,7 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import ContextService
 
 MENUS = MenuStructure({"View": ("panels", "tabs"), "File": ("open",)})
+HIDDEN = ActionState(visible=False, enabled=False)
 
 
 def spec(action_id, menu="View", group="tabs", order=50, **kwargs):

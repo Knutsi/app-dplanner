@@ -6,12 +6,11 @@ root in the ``--json`` form so paths can be made absolute.
 """
 
 from argparse import ArgumentParser, Namespace
-from pathlib import Path
 from typing import Any
 
-from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lookup import find_step
-from dplanner.domain.assets import assets, attach
+from dplanner.cli import CliCommand, CliContext
+from dplanner.cli.assets import step_asset_commands
+from dplanner.cli.lookup import body_from, find_step, step_arg
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.model import TextEdit
 from dplanner.modules.step_handoff.aspect import (
@@ -46,36 +45,26 @@ def commands() -> list[CliCommand]:
                 "dplanner handoff show 'Deploy' --inherited --json",
             ),
         ),
-        CliCommand(
-            path=("handoff", "attach"),
-            summary="Add a file to a step's handoff and print the path to reference.",
-            configure=_configure_attach,
-            run=_attach,
-            examples=("dplanner handoff attach 'Set up CI' diagram.png",),
-        ),
-        CliCommand(
-            path=("handoff", "assets"),
-            summary="List the files a step's handoff carries.",
-            configure=_one_step,
-            run=_assets,
-            examples=("dplanner handoff assets 'Set up CI'",),
+        *step_asset_commands(
+            "handoff",
+            MODULE_ID,
+            file_help="the file to copy in beside the step",
+            attach_summary="Add a file to a step's handoff and print the path to reference.",
+            assets_summary="List the files a step's handoff carries.",
+            example_step="'Set up CI'",
         ),
         CliCommand(
             path=("handoff", "clear"),
             summary="Remove a step's handoff note and scope; attached files stay.",
-            configure=_one_step,
+            configure=step_arg,
             run=_clear,
             examples=("dplanner handoff clear 'Set up CI'",),
         ),
     ]
 
 
-def _one_step(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
-
-
 def _configure_set(parser: ArgumentParser) -> None:
-    _one_step(parser)
+    step_arg(parser)
     parser.add_argument("--file", required=True, help="a text file, or - for stdin")
     parser.add_argument(
         "--scope",
@@ -85,7 +74,7 @@ def _configure_set(parser: ArgumentParser) -> None:
 
 
 def _configure_show(parser: ArgumentParser) -> None:
-    _one_step(parser)
+    step_arg(parser)
     parser.add_argument(
         "--inherited",
         action="store_true",
@@ -93,21 +82,8 @@ def _configure_show(parser: ArgumentParser) -> None:
     )
 
 
-def _configure_attach(parser: ArgumentParser) -> None:
-    _one_step(parser)
-    parser.add_argument("file", help="the file to copy in beside the step")
-
-
 def _set(context: CliContext, args: Namespace) -> int:
-    import sys
-
-    if args.file == "-":
-        body = sys.stdin.read()
-    else:
-        path = Path(args.file)
-        if not path.is_file():
-            raise CliError(f"no such file: {args.file}")
-        body = path.read_text()
+    body = body_from(args.file)
 
     step = find_step(context.product, args.step)
     current = read_note(step)
@@ -138,23 +114,6 @@ def _show(context: CliContext, args: Namespace) -> int:
         return 0
     data["handoff"] = _row(handoff)
     context.report(data, _own_text(handoff))
-    return 0
-
-
-def _attach(context: CliContext, args: Namespace) -> int:
-    source = Path(args.file)
-    if not source.is_file():
-        raise CliError(f"no such file: {args.file}")
-    step = find_step(context.product, args.step)
-    name = attach(context.store.files(step.id, MODULE_ID), source.read_bytes(), source.name)
-    context.report({"step": step.id, "asset": name}, name)
-    return 0
-
-
-def _assets(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
-    names = assets(context.store.files(step.id, MODULE_ID))
-    context.report({"step": step.id, "assets": names}, "\n".join(names) or "(none)")
     return 0
 
 

@@ -10,23 +10,20 @@ travels with the step's briefing, and — when the spec is replaced — ``diff``
 """
 
 from argparse import ArgumentParser, Namespace
-from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor, StepAuthored
-from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
-from dplanner.cli.lookup import find_project, find_step
+from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.core.text_diff import diff_hunks
-from dplanner.domain.assets import attach
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Product, Project, Step
-from dplanner.domain.store import ModuleFileArea
+from dplanner.domain.store import FilesFor
 from dplanner.modules.spec.aspect import (
     MODULE_ID,
-    SpecAttachment,
     read_attachments,
     read_links,
     write_step_entry,
@@ -37,18 +34,23 @@ from dplanner.modules.spec.documents import (
     SpecDocument,
     attach_asset,
     binary_refusal,
+    blob_bytes,
+    copied_to_step,
     default_name,
+    document_text,
     import_document,
+    layer_from,
+    linked_ids,
     linked_steps,
     matching_documents,
     next_id,
+    quote_anchors,
     read_index,
     record_asset,
     remove_document,
     write_index,
 )
-from dplanner.modules.spec.pdf import find_quote, render_page, split_pages, text_blob_name
-from dplanner.modules.spec.pdf import text_layer as extract_text_layer
+from dplanner.modules.spec.pdf import render_page, split_pages
 
 
 def step_author() -> StepAuthor:
@@ -81,7 +83,7 @@ def step_author() -> StepAuthor:
         files: list[str] = []
         if args.attach:
             attachments, files = copied_to_step(
-                context, project, step, list(dict.fromkeys(args.attach))
+                context.store.files, project, step, list(dict.fromkeys(args.attach))
             )
         context.apply(
             SetModuleDataCommand(step.id, MODULE_ID, write_step_entry(links, attachments))
@@ -202,7 +204,7 @@ def commands() -> list[CliCommand]:
         CliCommand(
             path=("spec", "list"),
             summary="List a project's spec documents.",
-            configure=_one_project,
+            configure=project_arg,
             run=_list,
             examples=("dplanner spec list 'Search rewrite'",),
         ),
@@ -258,7 +260,7 @@ def commands() -> list[CliCommand]:
         CliCommand(
             path=("spec", "assets"),
             summary="List a project's spec assets: rendered pages and attached images.",
-            configure=_one_project,
+            configure=project_arg,
             run=_assets,
             examples=("dplanner spec assets 'Search rewrite'",),
         ),
@@ -309,12 +311,8 @@ def commands() -> list[CliCommand]:
 # -- parsers -----------------------------------------------------------------------------------
 
 
-def _one_project(parser: ArgumentParser) -> None:
-    parser.add_argument("project", help="project id, folder name, or part of its title")
-
-
 def _one_document(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("document", help="a spec document's name or filename")
 
 
@@ -331,13 +329,13 @@ def _configure_show(parser: ArgumentParser) -> None:
 
 
 def _configure_import(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("file", help="the document to copy in beside the project")
     parser.add_argument("--name", help="the document's name (default: a slug of the filename)")
 
 
 def _configure_attach(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("image", help="the file to copy in beside the specs")
 
 
@@ -365,7 +363,7 @@ def _configure_render(parser: ArgumentParser) -> None:
 
 
 def _configure_attach_to_step(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
+    step_arg(parser)
     parser.add_argument(
         "asset", nargs="+", help="asset ids from `dplanner spec assets`; several at once"
     )
@@ -375,17 +373,17 @@ def _configure_attach_to_step(parser: ArgumentParser) -> None:
 
 
 def _configure_unmark(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("requirement", help="the requirement id to remove")
 
 
 def _configure_requirements(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("--document", help="only requirements marked in this document")
 
 
 def _configure_link(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
+    step_arg(parser)
     parser.add_argument(
         "requirement",
         nargs="+",
@@ -416,38 +414,11 @@ def _blob(document: SpecDocument, previous: bool) -> str:
 
 
 def _content(context: CliContext, project: Project, document: SpecDocument, blob: str) -> bytes:
-    return _blob_bytes(context.store.files(project.id, MODULE_ID), document, blob)
+    return blob_bytes(context.store.files(project.id, MODULE_ID), document, blob)
 
 
-def _blob_bytes(area: ModuleFileArea, document: SpecDocument, blob: str) -> bytes:
-    data = area.read_bytes(blob)
-    if data is None:
-        raise CliError(f"{document.name}: {blob} is missing from the workspace")
-    return data
 
 
-def document_text(area: ModuleFileArea, document: SpecDocument) -> str | None:
-    """The text a quote can anchor in — a PDF's layer, prose decoded — or None when the
-    file is missing or the PDF unreadable. None means "cannot check", never "failed"."""
-    try:
-        if document.kind == KIND_PDF:
-            return _layer_from(area, document, document.file)
-        return _blob_bytes(area, document, document.file).decode("utf-8")
-    except CliError:
-        return None
-
-
-def quote_anchors(text: str, quote: str, kind: str) -> tuple[bool, int | None]:
-    """Whether a quote appears in a document's text, and on which page for a PDF.
-
-    One implementation for ``spec mark`` and ``project lint``, so the mark that passed
-    can never be the requirement lint flags — or the other way round.
-    """
-    if kind == KIND_PDF:
-        page = find_quote(text, quote)
-        return page is not None, page
-    normalized = " ".join(quote.lower().split())
-    return normalized in " ".join(text.lower().split()), None
 
 
 def _absolute(context: CliContext, project: Project, blob: str) -> str:
@@ -544,23 +515,9 @@ def _show(context: CliContext, args: Namespace) -> int:
 def _pdf_text(
     context: CliContext, project: Project, document: SpecDocument, blob: str
 ) -> str:
-    return _layer_from(context.store.files(project.id, MODULE_ID), document, blob)
+    return layer_from(context.store.files(project.id, MODULE_ID), document, blob)
 
 
-def _layer_from(area: ModuleFileArea, document: SpecDocument, blob: str) -> str:
-    """The text layer: the file import wrote, or extracted in memory for a document
-    imported before layers existed — a read verb never writes."""
-    stored = area.read_bytes(text_blob_name(blob))
-    if stored is not None:
-        return stored.decode("utf-8")
-    data = _blob_bytes(area, document, blob)
-    try:
-        return extract_text_layer(data)
-    except Exception as error:  # pdfium raises its own hierarchy.
-        raise CliError(
-            f"{document.name}: could not extract text ({error}) — read the original "
-            f"from `dplanner spec path`"
-        ) from error
 
 
 def _path(context: CliContext, args: Namespace) -> int:
@@ -730,65 +687,6 @@ def _assets(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _some(noun: str, ids: Sequence[str]) -> str:
-    """"asset 'a1'" or "assets 'a1', 'a2'" — refusals read the same at any count."""
-    listed = ", ".join(repr(entry) for entry in ids)
-    return f"{noun}{'s' if len(ids) != 1 else ''} {listed}"
-
-
-def linked_ids(project: Project, step: Step, ids: Sequence[str]) -> list[str]:
-    """The step's links with ``ids`` added — refusing every unknown id in one message,
-    before anything is written. Shared by ``spec link`` and ``step add --link``."""
-    known = {req.id for req in read_index(project).requirements}
-    unknown = [entry for entry in ids if entry not in known]
-    if unknown:
-        raise CliError(
-            f"no {_some('requirement', unknown)} in {project.title!r} — "
-            "see `dplanner spec requirements`"
-        )
-    links = read_links(step)
-    return [*links, *[entry for entry in ids if entry not in links]]
-
-
-def copied_to_step(
-    context: CliContext, project: Project, step: Step, asset_ids: Sequence[str]
-) -> tuple[list[SpecAttachment], list[str]]:
-    """Copy each asset's blob beside the step; the updated attachments and copied names.
-
-    Copied, not referenced: the step stays self-contained if the project's spec — or the
-    whole asset — is later removed, and the briefing gets a real file. Every id is
-    resolved and every blob read before the first copy, so a bad id refuses the batch.
-    Shared by ``spec attach-to-step`` and ``step add --attach``.
-    """
-    index = read_index(project)
-    by_id = {asset.id: asset for asset in index.assets}
-    missing = [entry for entry in asset_ids if entry not in by_id]
-    if missing:
-        raise CliError(
-            f"no {_some('asset', missing)} in {project.title!r} — see `dplanner spec assets`"
-        )
-    project_area = context.store.files(project.id, MODULE_ID)
-    blobs: dict[str, bytes] = {}
-    for asset_id in asset_ids:
-        data = project_area.read_bytes(by_id[asset_id].file)
-        if data is None:
-            raise CliError(f"{asset_id}: {by_id[asset_id].file} is missing from the workspace")
-        blobs[asset_id] = data
-    attachments = read_attachments(step)
-    copied: list[str] = []
-    step_area = context.store.files(step.id, MODULE_ID)
-    for asset_id in asset_ids:
-        asset = by_id[asset_id]
-        file = attach(step_area, blobs[asset_id], PurePosixPath(asset.file).name)
-        copied.append(file)
-        if not any(entry.asset == asset_id for entry in attachments):
-            attachments = [
-                *attachments,
-                SpecAttachment(
-                    file=file, document=asset.document, page=asset.page, asset=asset_id
-                ),
-            ]
-    return attachments, copied
 
 
 def _attach_to_step(context: CliContext, args: Namespace) -> int:
@@ -803,7 +701,7 @@ def _attach_to_step(context: CliContext, args: Namespace) -> int:
         files: list[str] = []
         note = f"{step.title}: {', '.join(wanted)} detached (the files stay beside the step)"
     else:
-        attachments, files = copied_to_step(context, project, step, wanted)
+        attachments, files = copied_to_step(context.store.files, project, step, wanted)
         note = f"{step.title}: attached {', '.join(wanted)}"
     context.apply(
         SetModuleDataCommand(step.id, MODULE_ID, write_step_entry(read_links(step), attachments))

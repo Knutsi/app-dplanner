@@ -226,3 +226,14 @@ def test_the_window_and_the_terminal_agree(services, project, tab, tmp_path):
     derived = derive(services.document, project, status_read)
     assert tab.board.ready.titles() == [row.step.title for row in derived.ready]
     assert tab.board.upcoming.titles() == [c.step.title for c in derived.upcoming]
+
+
+def test_the_domain_speaks_the_status_modules_vocabulary():
+    """domain/progression.py names three of the status aspect's words without importing
+    it (the domain may not learn the module's schema). This is the one place both are
+    importable, so it pins the copy: rename a status in the aspect and this fails instead
+    of the board silently reclassifying every step."""
+    from dplanner.domain import progression
+    from dplanner.modules.step_status.aspect import STATUSES
+
+    assert {progression.DONE, progression.IN_PROGRESS, progression.BLOCKED} <= set(STATUSES)

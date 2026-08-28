@@ -60,14 +60,6 @@ def ui_font() -> QFont:
     return QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont)
 
 
-def manuscript_font(point_size: float = 13.0) -> QFont:
-    """Return the serif font for manuscript text."""
-    font = QFont()
-    font.setFamilies(MANUSCRIPT_FAMILIES)
-    font.setStyleHint(QFont.StyleHint.Serif)
-    font.setPointSizeF(point_size)
-    return font
-
 
 def mono_font(point_size: float = 12.0) -> QFont:
     """Return the monospace font, for metadata and frontmatter views."""

@@ -170,16 +170,6 @@ def test_moving_and_hiding_announce_themselves(dock, registry):
     assert heard == ["index", "index"]
 
 
-def test_immersive_mode_takes_every_area_and_puts_it_back(dock, registry):
-    registry.register(spec("index", area=PanelArea.LEFT))
-    dock.set_chrome_visible(False)
-    assert not dock.is_panel_showing("index")
-    # Still switched on — the user did not hide it, the window did.
-    assert dock.is_panel_visible("index")
-    dock.set_chrome_visible(True)
-    assert dock.is_panel_showing("index")
-
-
 # -- collapsing an area --------------------------------------------------------------------------
 
 
@@ -254,19 +244,6 @@ def test_moving_a_panel_into_a_collapsed_area_expands_it(dock, registry):
     dock.move_panel("index", PanelArea.RIGHT)
     assert not dock.is_area_collapsed(PanelArea.RIGHT)
     assert dock.is_panel_showing("index")
-
-
-def test_immersive_mode_leaves_collapse_alone(dock, registry):
-    registry.register(spec("index", area=PanelArea.LEFT))
-    registry.register(spec("detail", area=PanelArea.RIGHT))
-    dock.set_area_collapsed(PanelArea.LEFT, True)
-
-    dock.set_chrome_visible(False)
-    assert not dock.is_panel_showing("index") and not dock.is_panel_showing("detail")
-    dock.set_chrome_visible(True)
-    assert dock.is_area_collapsed(PanelArea.LEFT)
-    assert not dock.is_panel_showing("index")
-    assert dock.is_panel_showing("detail")
 
 
 def test_collapsing_announces_itself(dock, registry):

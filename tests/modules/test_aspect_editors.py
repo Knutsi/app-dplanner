@@ -56,14 +56,6 @@ def test_every_registered_aspect_became_a_tab(services, panel):
     ]
 
 
-def test_an_editor_stays_usable_when_its_value_is_empty(panel):
-    """`tab_visible()` gates informational sections. An editor that hid itself while the
-    value was empty would be a tab you could never use to set one."""
-    labels = ("Estimate", "Ticket", "Description", "Agent", "Release", "Handoff", "GitHub")
-    for label in labels:
-        assert section(panel, label).tab_visible()
-
-
 # -- estimation ----------------------------------------------------------------------------
 
 
@@ -115,13 +107,16 @@ def test_the_chip_matching_the_value_is_the_checked_one(services, project, panel
     assert [b.text() for b in editor.chips.buttons() if b.isChecked()] == []
 
 
-def test_the_editor_ignores_the_echo_of_its_own_write(services, project, panel):
-    """The Phase 1 origin fix, exercised: without it the editor reloads the field the user
-    is still typing in."""
+def test_the_editor_ignores_the_echo_of_its_own_write_while_editing(services, project, panel):
+    """The origin fix, exercised: without it the editor reloads the field the user is
+    still typing in. "Still typing" is focus — an echo landing while the field is *not*
+    being edited may reload, and an undo (which never carries the editor's origin)
+    always does."""
     editor = section(panel, "Estimate")
+    editor.days.setFocus()
     editor.days.setValue(2.0)
     editor.days.editingFinished.emit()
-    editor.days.setValue(7.0)  # Typed, not yet committed.
+    editor.days.setValue(7.0)  # Typed, not yet committed — the field has focus.
     services.document.set_module_data(
         project.steps[0].id, "estimation", {"days": 2.0, "format": 1}, editor
     )
@@ -173,3 +168,23 @@ def test_prose_detaches_when_nothing_is_selected(services, project, panel):
     panel.show_step(None)
     assert not editor.isEnabled()
     assert editor.edit.toPlainText() == ""
+
+
+def test_an_undo_reaches_the_estimate_even_while_its_field_is_focused(services, project, panel):
+    """The drift this suite once missed: the Estimate editor's hand-rolled echo guard
+    swallowed *every* origin-self event, so an undo made with the field focused never
+    refreshed it. An undo carries UNDO_ORIGIN, never the editor, so focus must not
+    matter."""
+    editor = section(panel, "Estimate")
+    editor.days.setFocus()
+    editor.days.setValue(2.0)
+    editor.days.editingFinished.emit()
+    # An unrelated edit in between, so the two estimates cannot coalesce into one entry.
+    ticket = section(panel, "Ticket")
+    ticket.edits["key"].setText("WID-14")
+    ticket.edits["key"].editingFinished.emit()
+    editor.days.setValue(5.0)
+    editor.days.editingFinished.emit()
+
+    services.undo.undo()
+    assert editor.days.value() == 2.0

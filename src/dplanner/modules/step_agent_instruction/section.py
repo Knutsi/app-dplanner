@@ -36,9 +36,10 @@ from PySide6.QtWidgets import (
 from dplanner.core.signals import Signal
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import NodeId, Product, StepId
-from dplanner.domain.store import ModuleFileArea
+from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionState
 from dplanner.framework.asset_gallery import AssetGallery
+from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.text_binding import TextBinding
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import make_text_well, space_lines
@@ -148,7 +149,7 @@ class AgentSection(QWidget):
         undo: UndoService[Product],
         placeholder: str,
         prompt_parts: Callable[[StepId], Sequence[PromptPart]],
-        files: Callable[[NodeId, str], ModuleFileArea] | None,
+        files: FilesFor | None,
         run_state: Callable[[], ActionState],
         run: Callable[[], None],
         preview_state: Callable[[], ActionState],
@@ -173,7 +174,6 @@ class AgentSection(QWidget):
         self._project_id: NodeId | None = None
         self._step_binding: TextBinding[Product] | None = None
         self._project_binding: TextBinding[Product] | None = None
-        self.tab_visibility_changed: Signal[bool] = Signal()
 
         # -- Project: the standing instruction, editable here and in the project panel.
         self.project_edit = QPlainTextEdit(self)
@@ -323,9 +323,6 @@ class AgentSection(QWidget):
     @property
     def widget(self) -> QWidget:
         return self
-
-    def tab_visible(self) -> bool:
-        return True
 
     def show_target(self, target_id: str | None) -> None:
         self._close_bindings()
@@ -544,76 +541,44 @@ class AgentSection(QWidget):
         self._project_binding = None
 
 
-class ProjectInstructionCard(QWidget):
+class ProjectInstructionCard(ProseSection):
     """The project panel's Agent card: the standing instruction, the tab's same field.
 
     Two editors over one ``ModuleTextField`` — the binding's per-view origin keeps them
-    from echoing each other, and one undo stack serves both.
+    from echoing each other, and one undo stack serves both. The editor half is the
+    framework's :class:`ProseSection` unchanged, the ``DescriptionSection`` shape: this
+    subclass hangs the gallery under it and pins the card's height — a card grows down
+    the stack, not with its content, and the inner scroller is DESIGN.md's accepted trade.
     """
 
     def __init__(
         self,
         product: Product,
         undo: UndoService[Product],
-        files: Callable[[NodeId, str], ModuleFileArea] | None,
+        files: FilesFor | None,
     ) -> None:
-        super().__init__()
-        self._product = product
-        self._undo = undo
+        def field_for(target_id: str) -> ModuleTextField | None:
+            if not product.has(target_id):
+                return None
+            return ModuleTextField(product, target_id, MODULE_ID)
+
+        super().__init__(field_for, undo, PROJECT_PLACEHOLDER)
         self._files = files
-        self._binding: TextBinding[Product] | None = None
-        self.tab_visibility_changed: Signal[bool] = Signal()
-
-        self.edit = QPlainTextEdit(self)
-        self.edit.setObjectName("InspectorNotes")
-        self.edit.setPlaceholderText(PROJECT_PLACEHOLDER)
-        self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
-        # A card grows down the stack, not with its content: a few lines here, the Agent
-        # tab for serious writing. The inner scroller is DESIGN.md's accepted trade.
         self.edit.setFixedHeight(self.edit.fontMetrics().lineSpacing() * 6 + 16)
-        self.assets = AssetGallery(
-            self, editable=True, attach_title="Attach to Instruction"
-        )
-
-        column = QVBoxLayout(self)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(FIELD_GAP)
-        column.addWidget(self.edit)
-        column.addWidget(self.assets)
-
-    @property
-    def widget(self) -> QWidget:
-        return self
-
-    def tab_visible(self) -> bool:
-        # Always: a card that hid itself while the instruction was empty would be a card
-        # you could never use to write one.
-        return True
+        self.assets = AssetGallery(self, editable=True, attach_title="Attach to Instruction")
+        layout = self.layout()
+        if layout is not None:
+            layout.setContentsMargins(0, 0, 0, 0)  # The hosting card carries the margins.
+            layout.setSpacing(FIELD_GAP)
+            layout.addWidget(self.assets)
 
     def show_target(self, target_id: str | None) -> None:
-        self._close_binding()
-        project_id = target_id if target_id and self._product.has(target_id) else None
-        self.setEnabled(project_id is not None)
-        if project_id is not None:
-            self._binding = TextBinding(
-                self.edit, ModuleTextField(self._product, project_id, MODULE_ID), self._undo
-            )
-            files, pid = self._files, project_id
-            self.assets.set_area(
-                (lambda: files(pid, MODULE_ID)) if files is not None else None
-            )
-        else:
-            self.edit.setPlainText("")
+        super().show_target(target_id)
+        files = self._files
+        if target_id is None or files is None or not self.isEnabled():
             self.assets.set_area(None)
-
-    def dispose(self) -> None:
-        self._close_binding()
-
-    def _close_binding(self) -> None:
-        if self._binding is not None:
-            self._binding.close()
-            self._binding.setParent(None)
-            self._binding = None
+        else:
+            self.assets.set_area(lambda: files(target_id, MODULE_ID))
 
 
 def _body(edit: QPlainTextEdit, assets: AssetGallery) -> QWidget:

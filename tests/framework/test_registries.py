@@ -7,13 +7,11 @@ write.
 
 import pytest
 
-from dplanner.framework.exports import ExportRegistry, ExportSpec
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
 from dplanner.framework.panels import PanelRegistry, PanelSpec
 from dplanner.framework.settings_registry import (
-    SettingsScope,
     SettingsSection,
     SettingsSectionRegistry,
 )
@@ -62,13 +60,7 @@ class FakeExtension:
     def __init__(self):
         from PySide6.QtWidgets import QWidget
 
-        from dplanner.core.signals import Signal
-
-        self.tab_visibility_changed: Signal[bool] = Signal()
         self.widget = QWidget()
-
-    def tab_visible(self):
-        return True
 
     def show_target(self, target_id):
         pass
@@ -87,7 +79,6 @@ def _settings(section_id):
     return SettingsSection(
         id=section_id,
         category=(section_id,),
-        scope=SettingsScope.GLOBAL,
         factory=lambda parent: QWidget(parent),
     )
 
@@ -98,18 +89,11 @@ def _panel(panel_id, order=50):
     return PanelSpec(id=panel_id, title=panel_id, factory=QWidget, order=order)
 
 
-def _export(export_id):
-    return ExportSpec(
-        id=export_id, label=export_id, file_filter="x (*.x)", suffix=".x", run=lambda path: None
-    )
-
-
 CASES = [
     pytest.param(IndexSegmentRegistry, _segment, "segments", id="index_segments"),
     pytest.param(InspectorSectionRegistry, _section, "sections", id="inspector_sections"),
     pytest.param(PanelRegistry, _panel, "panels", id="panels"),
     pytest.param(SettingsSectionRegistry, _settings, "sections", id="settings_sections"),
-    pytest.param(ExportRegistry, _export, "specs", id="exports"),
     pytest.param(LLMProviderRegistry, FakeProvider, "providers", id="llm_providers"),
 ]
 

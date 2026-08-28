@@ -35,7 +35,6 @@ class ActionState:
 
 # The common states, named so state callbacks read as intent.
 ENABLED = ActionState()
-HIDDEN = ActionState(visible=False, enabled=False)
 DISABLED = ActionState(enabled=False)
 
 

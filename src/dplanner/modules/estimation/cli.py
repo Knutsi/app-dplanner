@@ -12,8 +12,8 @@ from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor, StepAuthored
-from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
-from dplanner.cli.lookup import find_project, find_step
+from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Product, Project, Step
 from dplanner.domain.schedule import (
@@ -23,6 +23,7 @@ from dplanner.domain.schedule import (
     format_day_count,
     format_days,
 )
+from dplanner.domain.store import FilesFor
 from dplanner.modules.estimation.aspect import MODULE_ID, read, write
 from dplanner.modules.estimation.schedule import (
     critical_finish,
@@ -100,14 +101,14 @@ def commands() -> list[CliCommand]:
         CliCommand(
             path=("estimate", "clear"),
             summary="Remove a step's estimate, leaving no file behind.",
-            configure=_one_step,
+            configure=step_arg,
             run=_clear,
             examples=("dplanner estimate clear 'Read the spec'",),
         ),
         CliCommand(
             path=("estimate", "rollup"),
             summary="Total a project's estimates, and count what is still unestimated.",
-            configure=_one_project,
+            configure=project_arg,
             run=_rollup,
             examples=("dplanner estimate rollup discovery",),
         ),
@@ -124,7 +125,7 @@ def commands() -> list[CliCommand]:
         CliCommand(
             path=("schedule", "show"),
             summary="When each step lands, in the order the work can be done.",
-            configure=_one_project,
+            configure=project_arg,
             run=_show,
             examples=(
                 "dplanner schedule show discovery",
@@ -134,21 +135,13 @@ def commands() -> list[CliCommand]:
     ]
 
 
-def _one_step(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
-
-
-def _one_project(parser: ArgumentParser) -> None:
-    parser.add_argument("project", help="project id, folder name, or part of its title")
-
-
 def _configure_set(parser: ArgumentParser) -> None:
-    _one_step(parser)
+    step_arg(parser)
     parser.add_argument("--days", type=float, required=True, help="working days")
 
 
 def _configure_start(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("--date", help="ISO-8601, e.g. 2026-09-01")
     parser.add_argument(
         "--clear", action="store_true", help="remove the start date, so it starts today"

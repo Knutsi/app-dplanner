@@ -5,11 +5,24 @@ The framework only needs the small surface below; everything else — bindings, 
 context updates — is the activity's own business.
 """
 
-from typing import Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from PySide6.QtWidgets import QWidget
 
-from dplanner.framework.context import Uri
+from dplanner.framework.context import (
+    SCOPE_ACTIVITY,
+    SCOPE_SELECTION,
+    ContextNode,
+    ContextService,
+    Uri,
+    entity_uri,
+)
+
+if TYPE_CHECKING:
+    # Runtime-imported, tabs.py would be a cycle: it imports the Activity protocol above.
+    from dplanner.core.signals import Signal as CoreSignal
+    from dplanner.framework.tabs import TabHost
 
 
 @runtime_checkable
@@ -54,3 +67,89 @@ class ActivityBase:
 
     def close(self) -> None:
         pass
+
+
+class EntityActivity(ActivityBase):
+    """An activity that is a view of one entity, speaking for the user only while current.
+
+    Five modules had copied the same two obligations by hand: publish the activity scope
+    with an entity edge on activation, and publish a selection **only while current** —
+    the window can show panes side by side, and a background pane republishing its
+    selection is what once made the detail panel flicker between two tabs' answers.
+
+    A subclass supplies ``uri``/``title``/``widget`` as ever; extra activity edges come
+    from overriding :meth:`activity_nodes`, and anything more to do on activation from
+    overriding :meth:`on_activated` and calling ``super()``. Selections go through
+    :meth:`publish_selection`, which owns the only-while-current rule.
+    """
+
+    def __init__(self, context: "ContextService", entity_kind: str, entity_id: str) -> None:
+        self._context = context
+        self._entity_kind = entity_kind
+        self.entity_id = entity_id
+        self._is_active = False
+
+    @property
+    def uri(self) -> Uri:
+        raise NotImplementedError
+
+    @property
+    def title(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def widget(self) -> QWidget:
+        raise NotImplementedError
+
+    def activity_nodes(self) -> tuple["ContextNode", ...]:
+        return (
+            ContextNode(
+                self.uri, (("entity", entity_uri(self._entity_kind, self.entity_id)),)
+            ),
+        )
+
+    def on_activated(self) -> None:
+        self._is_active = True
+        self._context.set_scope(SCOPE_ACTIVITY, self.activity_nodes())
+
+    def on_deactivated(self) -> None:
+        self._is_active = False
+
+    def publish_selection(self, nodes: tuple["ContextNode", ...]) -> None:
+        if not self._is_active:
+            return  # A background pane does not speak for the user.
+        self._context.set_scope(SCOPE_SELECTION, nodes)
+
+
+def follow_entity_tabs(
+    tabs: "TabHost",
+    activity_type: type[EntityActivity],
+    still_exists: Callable[[str], bool],
+    *,
+    closes_on: "CoreSignal[*tuple[Any, ...]]",
+    retitles_on: "CoreSignal[*tuple[Any, ...]]",
+) -> None:
+    """Keep a module's entity tabs honest against the model, from one place.
+
+    Connects two upkeep rules every entity-tab module was copying: when ``closes_on``
+    fires (a structure change), a tab whose entity ``still_exists`` denies is closed;
+    when ``retitles_on`` fires (a field change), the survivors' tab titles are re-read.
+    The subscriptions live as long as the tab host — module registration is once per
+    build, so there is nothing to unhook.
+    """
+
+    def activities() -> list[EntityActivity]:
+        return [a for a in tabs.activities() if isinstance(a, activity_type)]
+
+    def close_orphans(*_args: object) -> None:
+        for activity in activities():
+            if not still_exists(activity.entity_id):
+                tabs.close_activity(activity)
+
+    def retitle(*_args: object) -> None:
+        for activity in activities():
+            if still_exists(activity.entity_id):
+                tabs.set_tab_title(activity, activity.title)
+
+    closes_on.connect(close_orphans)
+    retitles_on.connect(retitle)

@@ -35,8 +35,9 @@ from PySide6.QtWidgets import QGraphicsView
 
 from dplanner.core.signals import Signal
 from dplanner.domain.model import StepId
-from dplanner.modules.project_editor.items import RegionItem, StepNodeItem
+from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+from dplanner.modules.project_editor.region_items import RegionItem
 from dplanner.modules.project_editor.regions import MIN_REGION
 from dplanner.modules.project_editor.renderers import RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection
@@ -148,26 +149,6 @@ class CanvasDeps:
 
 
 # -- the stack ---------------------------------------------------------------------------------
-
-
-class CanvasMode(Protocol):
-    name: str
-
-    def enter(self) -> None: ...
-
-    def exit(self) -> None: ...
-
-    def mouse_press(self, event: CanvasEvent) -> bool: ...
-
-    def mouse_move(self, event: CanvasEvent) -> bool: ...
-
-    def mouse_release(self, event: CanvasEvent) -> bool: ...
-
-    def double_click(self, event: CanvasEvent) -> bool: ...
-
-    def key_press(self, key: CanvasKey) -> bool: ...
-
-    def key_release(self, key: CanvasKey) -> bool: ...
 
 
 class ModeBase:

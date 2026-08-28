@@ -8,7 +8,7 @@ agent never has to re-derive the rule.
 from argparse import ArgumentParser, Namespace
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lookup import find_project
+from dplanner.cli.lookup import find_project, project_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.modules.project_repo.repo import (
     MODULE_ID,
@@ -35,26 +35,22 @@ def commands() -> list[CliCommand]:
         CliCommand(
             path=("repo", "show"),
             summary="A project's repository and checkout, effective values included.",
-            configure=_one_project,
+            configure=project_arg,
             run=_show,
             examples=("dplanner repo show discovery --json",),
         ),
         CliCommand(
             path=("repo", "clear"),
             summary="Back to the product's repository and checkout; leaves no file behind.",
-            configure=_one_project,
+            configure=project_arg,
             run=_clear,
             examples=("dplanner repo clear discovery",),
         ),
     ]
 
 
-def _one_project(parser: ArgumentParser) -> None:
-    parser.add_argument("project", help="project id, folder name, or part of its title")
-
-
 def _configure_set(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("--repository", help="https://github.com/owner/repo")
     parser.add_argument("--checkout", help="where this machine has it cloned")
 

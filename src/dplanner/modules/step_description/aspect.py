@@ -23,14 +23,6 @@ from dplanner.domain.model import Step
 MODULE_ID = "step_description"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
-SPEC = AspectSpec(
-    id=MODULE_ID,
-    label="Description",
-    summary="What a step actually is, in markdown, with any images it references.",
-    data_format=DATA_FORMAT,
-)
-
-
 def read(step: Step) -> str:
     return step.module_text.get(MODULE_ID, "")
 
@@ -63,3 +55,13 @@ def summary(step: Step) -> str:
         if stripped and not stripped.startswith("#"):
             return stripped[:60]
     return "described"
+
+
+# Last, because it names the pieces above: the one declaration everything reads.
+SPEC = AspectSpec(
+    id=MODULE_ID,
+    label="Description",
+    summary="What a step actually is, in markdown, with any images it references.",
+    data_format=DATA_FORMAT,
+    phrase=summary,
+)

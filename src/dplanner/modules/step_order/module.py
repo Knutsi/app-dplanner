@@ -40,16 +40,13 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import ActivityBase
+from dplanner.framework.activity import EntityActivity, follow_entity_tabs
 from dplanner.framework.context import (
-    SCOPE_ACTIVITY,
-    SCOPE_SELECTION,
     Context,
     ContextNode,
     ContextService,
     Uri,
     activity_uri,
-    entity_uri,
     selection_uri,
 )
 from dplanner.framework.tabs import TabHost
@@ -108,8 +105,8 @@ class StepOrderDeps:
     product: Product
     actions: ActionRegistry
     context: ContextService
+    parent: QWidget  # The CSV export's file dialog needs a window to parent on.
     tabs: TabHost
-    parent: QWidget
     # Show a step in whatever edits graphs. Wired by the composition root; this module never
     # learns that a graph editor exists.
     reveal_step: Callable[[StepId], None] = field(default=_no_reveal)
@@ -131,17 +128,14 @@ class StepOrderDeps:
     step_icons: Callable[[StepId], tuple[str, ...]] = field(default=_no_icons)
 
 
-class OrderActivity(ActivityBase):
+class OrderActivity(EntityActivity):
     """One project's steps, in waves."""
 
     def __init__(self, deps: StepOrderDeps, project_id: NodeId) -> None:
+        super().__init__(deps.context, "project", project_id)
         self._deps = deps
         self._product = deps.product
         self.project_id = project_id
-        # There is one selection scope and there can be several panes on screen. Only the
-        # pane the user is in may write to it — see CLAUDE.md's "only the active pane speaks
-        # for the user". This table sits beside the graph often, so it matters here.
-        self._is_active = False
 
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -205,15 +199,8 @@ class OrderActivity(ActivityBase):
         return self._widget
 
     def on_activated(self) -> None:
-        self._is_active = True
-        self._deps.context.set_scope(
-            SCOPE_ACTIVITY,
-            (ContextNode(self.uri, (("entity", entity_uri("project", self.project_id)),)),),
-        )
+        super().on_activated()
         self._publish(self.table.selected_step())
-
-    def on_deactivated(self) -> None:
-        self._is_active = False
 
     def close(self) -> None:
         for unsubscribe in self._unsubscribes:
@@ -234,10 +221,8 @@ class OrderActivity(ActivityBase):
         self.table.show_order(self._deps.step_schedule(self.project_id, order))
 
     def _publish(self, step_id: StepId | None) -> None:
-        if not self._is_active:
-            return  # See _is_active: a background pane does not speak for the user.
         nodes = () if step_id is None else (ContextNode(selection_uri("step", step_id)),)
-        self._deps.context.set_scope(SCOPE_SELECTION, nodes)
+        self.publish_selection(nodes)
 
     def _on_selection(self) -> None:
         self._publish(self.table.selected_step())
@@ -316,8 +301,13 @@ class StepOrderModule:
                 run=self._export,
             )
         )
-        deps.product.structure_changed.connect(lambda *_a: self._close_orphan_tabs())
-        deps.product.field_changed.connect(lambda *_a: self._retitle_tabs())
+        follow_entity_tabs(
+            deps.tabs,
+            OrderActivity,
+            deps.product.has,
+            closes_on=deps.product.structure_changed,
+            retitles_on=deps.product.field_changed,
+        )
 
     def _on_a_project(self, context: Context) -> ActionState:
         project_id = context.focus_entity("project")
@@ -350,16 +340,3 @@ class StepOrderModule:
         if path.suffix.lower() != ".csv":
             path = path.with_suffix(".csv")
         write_csv(path, rows)
-
-    def _activities(self) -> list[OrderActivity]:
-        return [a for a in self._deps.tabs.activities() if isinstance(a, OrderActivity)]
-
-    def _close_orphan_tabs(self) -> None:
-        for activity in self._activities():
-            if not self._deps.product.has(activity.project_id):
-                self._deps.tabs.close_activity(activity)
-
-    def _retitle_tabs(self) -> None:
-        for activity in self._activities():
-            if self._deps.product.has(activity.project_id):
-                self._deps.tabs.set_tab_title(activity, activity.title)

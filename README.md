@@ -29,11 +29,13 @@ learning anything about it. `dplanner aspect list` says which exist in a build.
 ## Status
 
 Early, and honest about it. The model, the storage layer, the index tree, the whole CLI, the
-graph editor and the order view are in place and tested. Four aspects ship — estimate,
-ticket, description, agent instruction — each with a tab in the step panel and verbs in the
-CLI. Estimation runs over the graph: a project start date and the estimates give every step
-a running total and a date, in the order table and in `dplanner schedule show`. Reports
-beyond that one are not written.
+graph editor and the order view are in place and tested. Ten aspects ship — estimate,
+ticket, description, agent instruction, agent run, status, release, handoff, GitHub refs
+and spec links — each with verbs in the CLI and most with an editor in the step panel
+(`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: a project start date and
+the estimates give every step a running total and a date, in the order table and in
+`dplanner schedule show`. Progression reads the same graph with the statuses in hand:
+the execution board and `dplanner progression show` say what can be launched right now.
 
 ## Running
 
@@ -139,8 +141,11 @@ src/dplanner/
 │   ├── store.py             the on-disk format above, and the stale-write guard
 │   ├── aspects.py           what an aspect is: id, label, summary, data format
 │   ├── ordering.py          what order a project can be done in, and what can start now
+│   ├── schedule.py          the same walk carrying estimates: running totals and dates
+│   ├── progression.py       the status-aware frontier: what can be launched right now
 │   ├── commands.py          undoable changes — the vocabulary the GUI and CLI share
 │   ├── fields.py            bindable prose, keyed by the module that owns it
+│   ├── assets.py            attaching files to a module's file area, and listing them
 │   ├── migrations.py        the format's version history — append only
 │   └── seed.py              what a brand-new workspace contains
 │
@@ -150,6 +155,9 @@ src/dplanner/
 │   ├── main.py              the argparse tree, built from the registry
 │   ├── lookup.py            an id, a folder name, or part of a title
 │   ├── aspects.py           `aspect list`
+│   ├── assets.py            `<noun> attach`/`assets` — the verb pair any file-carrying aspect offers
+│   ├── lint.py              `lint` — every module's checks over one workspace, one report
+│   ├── authoring.py         `step add` — one verb, each module contributing its flags
 │   └── skill.py             the agent skill, generated from the registry
 │
 ├── framework/             ── from the template, and evolved here. The Qt machinery.
@@ -170,6 +178,10 @@ src/dplanner/
 │   │                        (its panel also hosts the modules' project-level cards)
 │   ├── project_repo/        which repo and checkout a project works against (overrides the product's)
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
+│   │
+│   │   ── the ten aspect modules (`dplanner aspect list`); the `step_` prefix is not the
+│   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /
+│   │      `step_properties` are views of steps, not aspects:
 │   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
@@ -180,6 +192,7 @@ src/dplanner/
 │   ├── step_release/        the steps that mark a release point — the Release tab and the Type ▸ Release toggle
 │   ├── step_handoff/        what a step passes forward, and who inherits it
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, the missing-gh notice
+│   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── progression/         the execution board — what can be launched now — and `dplanner progression show`
 │   ├── spec/                spec documents beside a project, their requirements and figures, `dplanner spec` (pdf.py: text layers and page rendering)

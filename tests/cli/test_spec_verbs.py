@@ -5,16 +5,9 @@ and it has to run where a graphics stack does not exist.
 """
 
 import json
-from io import StringIO
 from pathlib import Path
 
 import pytest
-
-from dplanner.cli.command import CliRegistry
-from dplanner.cli.main import run
-from dplanner.core.storage.local import LocalStorage
-from dplanner.domain.seed import create_product
-from dplanner.modules import default_cli_commands, default_module_formats
 
 PDF = b"%PDF-1.4 not really, but binary enough\xff\xfe\x00"
 
@@ -52,33 +45,6 @@ def tiny_pdf(*page_texts: str) -> bytes:
         f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF\n"
     ).encode()
     return bytes(out)
-
-
-@pytest.fixture
-def registry():
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-    return registry
-
-
-@pytest.fixture
-def workspace(tmp_path):
-    root = tmp_path / "widget"
-    create_product(LocalStorage(root))
-    return root
-
-
-@pytest.fixture
-def cli(registry, workspace):
-    def invoke(*argv, expect=0):
-        out, err = StringIO(), StringIO()
-        code = run(
-            registry, default_module_formats(), ["--workspace", str(workspace), *argv], out, err
-        )
-        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
-        return out.getvalue() + err.getvalue()
-
-    return invoke
 
 
 @pytest.fixture

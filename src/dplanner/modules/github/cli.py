@@ -16,10 +16,17 @@ from dataclasses import replace
 from functools import partial
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lookup import find_project, find_step
+from dplanner.cli.lookup import find_project, find_step, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Product, Project, Step
-from dplanner.modules.github.aspect import MODULE_ID, GithubRefs, read, refreshed, write
+from dplanner.modules.github.aspect import (
+    MODULE_ID,
+    GithubRefs,
+    pr_label,
+    read,
+    refreshed,
+    write,
+)
 from dplanner.modules.github.gh import (
     GhError,
     PrInfo,
@@ -32,16 +39,13 @@ from dplanner.modules.github.gh import (
     which_gh,
 )
 
-# (product, project) -> the repository URL that project's work belongs to. The default
-# knows only the product; the composition root supplies project_repo's resolution.
+# (product, project) -> the repository URL that project's work belongs to. Required:
+# project_repo's resolution is the only authority on it, and the composition root supplies
+# it — a default here would be a second copy of that rule.
 RepositoryFor = Callable[[Product, Project], str]
 
 
-def _product_repository(product: Product, _project: Project) -> str:
-    return product.repository
-
-
-def commands(repository_for: RepositoryFor = _product_repository) -> list[CliCommand]:
+def commands(*, repository_for: RepositoryFor) -> list[CliCommand]:
     return [
         CliCommand(
             path=("github", "set"),
@@ -85,13 +89,13 @@ def commands(repository_for: RepositoryFor = _product_repository) -> list[CliCom
 
 
 def _configure_set(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
+    step_arg(parser)
     parser.add_argument("--branch", default="", help="the branch the work lives on")
     parser.add_argument("--pr", default="", help="PR number (12, #12) or its URL")
 
 
 def _configure_clear(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
+    step_arg(parser)
     parser.add_argument("--branch", action="store_true", help="clear only the branch")
     parser.add_argument("--pr", action="store_true", help="clear only the PR")
 
@@ -264,5 +268,5 @@ def _cleared_half(current: GithubRefs, *, branch: bool) -> GithubRefs:
 def _pr_phrase(refs: GithubRefs) -> str:
     if not refs.has_pr():
         return ""
-    name = f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
+    name = pr_label(refs)
     return f"{name} ({refs.pr_state})" if refs.pr_state else name

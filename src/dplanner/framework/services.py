@@ -23,7 +23,6 @@ from dplanner.core.storage.provider import StorageProvider
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import ContextService
-from dplanner.framework.exports import ExportRegistry
 from dplanner.framework.index_panel import IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
@@ -70,7 +69,6 @@ class AppServices:
     inspector_sections: InspectorSectionRegistry
     detail_cards: InspectorSectionRegistry  # The same registry type, a different host.
     settings_sections: SettingsSectionRegistry
-    exports: ExportRegistry
 
     # -- services ------------------------------------------------------------------------------
     theme: ThemeService

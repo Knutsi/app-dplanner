@@ -9,7 +9,7 @@ Run Agent stamps ``launched``; the agent moves the state along as it works —
 from argparse import ArgumentParser, Namespace
 
 from dplanner.cli import CliCommand, CliContext
-from dplanner.cli.lookup import find_step
+from dplanner.cli.lookup import find_step, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.modules.step_agent_run.aspect import MODULE_ID, STATES, launched, read, write
 
@@ -26,26 +26,22 @@ def commands() -> list[CliCommand]:
         CliCommand(
             path=("agent-state", "show"),
             summary="Where the agent on one step stands, and since when.",
-            configure=_one_step,
+            configure=step_arg,
             run=_show,
             examples=("dplanner agent-state show 'Read the spec'",),
         ),
         CliCommand(
             path=("agent-state", "clear"),
             summary="The run is over; leaves no file behind.",
-            configure=_one_step,
+            configure=step_arg,
             run=_clear,
             examples=("dplanner agent-state clear 'Read the spec'",),
         ),
     ]
 
 
-def _one_step(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
-
-
 def _configure_set(parser: ArgumentParser) -> None:
-    _one_step(parser)
+    step_arg(parser)
     parser.add_argument("state", choices=STATES, help="where the agent stands")
 
 

@@ -46,18 +46,6 @@ class PanelHost(Protocol):
     def is_area_collapsed(self, area: PanelArea) -> bool: ...
 
 
-class ImmersiveHost(Protocol):
-    """Distraction-free mode: full screen without chrome."""
-
-    immersive_changed: Signal[bool]
-
-    def enter_immersive(self) -> None: ...
-
-    def leave_immersive(self) -> None: ...
-
-    def is_immersive(self) -> bool: ...
-
-
 class UnsavedChangesHost(Protocol):
     """Window chrome for "you have unsaved changes": the headline flag and a veto on quit.
 

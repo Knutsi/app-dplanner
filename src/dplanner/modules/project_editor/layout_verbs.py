@@ -29,7 +29,7 @@ from dplanner.framework.context import Context
 from dplanner.framework.undo import UndoService
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.widgets import confirm
-from dplanner.modules.project_editor.layouts import (
+from dplanner.modules.project_editor.named_layouts import (
     Point,
     apply_layout_commands,
     delete_layout_command,

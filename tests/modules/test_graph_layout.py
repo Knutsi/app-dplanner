@@ -9,7 +9,7 @@ ends up on screen.
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Product, Project, Step
 from dplanner.domain.ordering import depths
-from dplanner.modules.project_editor.layout import auto_positions, positions
+from dplanner.modules.project_editor.placement import auto_positions, positions
 from dplanner.modules.project_editor.positions import (
     GRID,
     NODE_H,

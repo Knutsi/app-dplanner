@@ -20,7 +20,7 @@ from dplanner.domain.commands import SetFieldCommand
 from dplanner.domain.model import NodeId, Product
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.activity import ActivityBase
-from dplanner.framework.context import Context, ContextService, Uri, activity_uri
+from dplanner.framework.context import Context, Uri, activity_uri
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import centered_column
@@ -40,7 +40,6 @@ PAGE_WIDTH = 640
 class ProductDeps:
     product: Product
     actions: ActionRegistry
-    context: ContextService
     tabs: TabHost
     undo: UndoService[Product]
     window: QMainWindow

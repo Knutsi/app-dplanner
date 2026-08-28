@@ -7,10 +7,39 @@ conversation's worth of small commands, is most of the friction.
 This lives in ``cli/`` rather than in the projects module because every noun's verbs need
 it. A step aspect resolving a step through the projects package would be one module reaching
 into another, and ``tests/test_architecture.py`` says so.
+
+The *declaration* half lives here for the same reason: :func:`step_arg` / :func:`project_arg`
+are the positional argument every step and project verb takes, so the help text — which
+reaches the generated skill verbatim — has exactly one source, and a verb cannot promise a
+lookup this module does not perform.
 """
+
+import sys
+from argparse import ArgumentParser
+from pathlib import Path
 
 from dplanner.cli.command import CliError
 from dplanner.domain.model import Product, Project, Step
+
+
+def step_arg(parser: ArgumentParser) -> None:
+    """The positional a step verb takes, resolved by :func:`find_step`."""
+    parser.add_argument("step", help="step id, folder name, or part of its title")
+
+
+def project_arg(parser: ArgumentParser) -> None:
+    """The positional a project verb takes, resolved by :func:`find_project`."""
+    parser.add_argument("project", help="project id, folder name, or part of its title")
+
+
+def body_from(file_arg: str) -> str:
+    """A text body from a file, or stdin when the argument is ``-``."""
+    if file_arg == "-":
+        return sys.stdin.read()
+    path = Path(file_arg)
+    if not path.is_file():
+        raise CliError(f"no such file: {file_arg}")
+    return path.read_text()
 
 
 def find_project(product: Product, needle: str) -> Project:

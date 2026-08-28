@@ -51,15 +51,14 @@ HEADLESS_FILES = (
     "cli.py",
     "aspect.py",
     "positions.py",
-    "layout.py",
-    "layouts.py",
+    "placement.py",
+    "named_layouts.py",
     "sorts.py",
     "regions.py",
     "schedule.py",
     "documents.py",
     "handoff.py",
     "prompt.py",
-    "launcher.py",
     "repo.py",
     "gh.py",
     "pdf.py",
@@ -255,9 +254,13 @@ def test_the_cli_never_loads_qt() -> None:
     probe = (
         "import sys;"
         "from dplanner.cli.command import CliRegistry;"
-        "from dplanner.cli.main import build_parser;"
-        "from dplanner.modules import default_cli_commands;"
-        "r = CliRegistry(); r.register_all(default_cli_commands()); build_parser(r);"
+        "from dplanner.cli.main import build_tree;"
+        "from dplanner.modules import aspect_specs, default_cli_commands, default_module_formats;"
+        "r = CliRegistry(); r.register_all(default_cli_commands()); build_tree(r);"
+        # entry.py also calls default_module_formats() at CLI time (aspect_specs() feeds
+        # it and the skill); without them here, a Qt import reached only through those
+        # paths would go unnoticed — the composition root is exempt from the static rules.
+        "default_module_formats(); aspect_specs();"
         "assert 'PySide6' not in sys.modules, sorted(m for m in sys.modules if 'Side' in m)"
     )
     result = subprocess.run(

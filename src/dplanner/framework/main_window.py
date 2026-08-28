@@ -2,8 +2,7 @@
 
 The menu bar's content lives in :mod:`dplanner.framework.menubar`, driven by module-registered
 actions; where an anchored panel sits lives in :mod:`dplanner.framework.panels`. This class is
-layout and window-level behaviour: immersive (distraction-free) mode and, later, the quit-time
-flush.
+layout and window-level behaviour: the quit-time guards and flush.
 """
 
 from __future__ import annotations
@@ -11,12 +10,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QMainWindow, QWidget
 
 from dplanner.core.signals import Signal
-from dplanner.framework.activity import Activity
 from dplanner.framework.panels import PanelArea, PanelDock
 from dplanner.framework.tabs import TabHost
 from dplanner.identity import APP_NAME
@@ -53,18 +50,6 @@ class AppWindow(QMainWindow):
         self.setCentralWidget(dock)
         self.statusBar().showMessage("Ready")
 
-        self._immersive = False
-        self._was_full_screen = False
-        # Fires on enter/leave with the new state, however the change was triggered
-        # (button, Esc, tab switch) — views showing immersive state subscribe here.
-        self.immersive_changed: Signal[bool] = Signal()
-
-        tabs.activity_changed.connect(self._on_activity_changed)
-        # Window-level so it fires regardless of which child has focus; the handler guards
-        # on immersive mode, so Esc keeps its normal meaning everywhere else.
-        self._escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
-        self._escape.activated.connect(self._on_escape)
-
     # -- status (StatusHost) -----------------------------------------------------------------
 
     def show_status(self, text: str, msecs: int = 0) -> None:
@@ -99,41 +84,6 @@ class AppWindow(QMainWindow):
     def add_close_guard(self, guard: Callable[[], bool]) -> None:
         self.close_guards.append(guard)
 
-    # -- immersive (ImmersiveHost): distraction-free mode ------------------------------------
-
-    def is_immersive(self) -> bool:
-        return self._immersive
-
-    def _on_activity_changed(self, _activity: Activity | None) -> None:
-        # Immersive mode belongs to the tab that entered it; switching away restores the
-        # chrome (the only way to switch while immersive is a shortcut).
-        if self._immersive:
-            self.leave_immersive()
-
-    def enter_immersive(self) -> None:
-        if self._immersive:
-            return
-        self._immersive = True
-        self._was_full_screen = self.isFullScreen()
-        self.dock.set_chrome_visible(False)
-        self.menuBar().hide()
-        self.statusBar().hide()
-        self.tabs.set_tab_bar_visible(False)
-        self.showFullScreen()
-        self.immersive_changed.emit(True)
-
-    def leave_immersive(self) -> None:
-        if not self._immersive:
-            return
-        self._immersive = False
-        self.dock.set_chrome_visible(True)
-        self.menuBar().show()
-        self.statusBar().show()
-        self.tabs.set_tab_bar_visible(True)
-        if not self._was_full_screen:
-            self.showNormal()
-        self.immersive_changed.emit(False)
-
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt override
         for guard in self.close_guards:
             if not guard():
@@ -142,7 +92,3 @@ class AppWindow(QMainWindow):
         for hook in self.close_hooks:
             hook()
         super().closeEvent(event)
-
-    def _on_escape(self) -> None:
-        if self._immersive:
-            self.leave_immersive()

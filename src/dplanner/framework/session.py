@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QWidget
 
 from dplanner.core.formats import UnsupportedFormatError
 from dplanner.core.repository import RepositoryFactory
@@ -132,16 +132,20 @@ def describe_open_error(error: Exception, location: StorageLocation) -> OpenFail
     return OpenFailure(text=f"Could not open {where}.", detail=str(error))
 
 
-def show_startup_failure(failure: OpenFailure) -> None:
-    """Before any window exists the dialog is parentless and modal, so the startup flow
-    can wait for the user to read it."""
-    box = QMessageBox()
+def _failure_box(failure: OpenFailure, parent: QWidget | None) -> QMessageBox:
+    box = QMessageBox(parent) if parent is not None else QMessageBox()
     box.setIcon(QMessageBox.Icon.Warning)
     box.setWindowTitle(failure.title)
     box.setText(failure.text)
     box.setInformativeText(failure.informative)
     box.setDetailedText(failure.detail)
-    box.exec()
+    return box
+
+
+def show_startup_failure(failure: OpenFailure) -> None:
+    """Before any window exists the dialog is parentless and modal, so the startup flow
+    can wait for the user to read it."""
+    _failure_box(failure, None).exec()
 
 
 class WorkspaceSwitcher(Protocol):
@@ -176,7 +180,6 @@ class AppSession:
         menus: MenuStructure,
         seed: SeedFactory | None = None,
         pre_open: Callable[[StorageLocation, bool], None] | None = None,
-        report_startup_failure: Callable[[OpenFailure], None] = show_startup_failure,
         clone_into: Path | None = None,
     ) -> None:
         self._module_factory = module_factory
@@ -184,9 +187,6 @@ class AppSession:
         self._menus = menus
         self._seed = seed
         self._pre_open = pre_open
-        # How a failure is shown before any window exists. Injected so a headless test
-        # never runs the modal dialog.
-        self._report_startup_failure = report_startup_failure
         self._clone_into = clone_into
         self.window: AppWindow | None = None
         self.services: AppServices | None = None
@@ -291,13 +291,8 @@ class AppSession:
         if self.window is not None:
             # open(), not exec(): non-blocking, so a refusal can never deadlock a caller
             # (or a headless test) waiting on a modal loop.
-            box = QMessageBox(self.window)
-            box.setIcon(QMessageBox.Icon.Warning)
-            box.setWindowTitle(failure.title)
-            box.setText(failure.text)
-            box.setInformativeText(failure.informative)
-            box.setDetailedText(failure.detail)
+            box = _failure_box(failure, self.window)
             box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
             box.open()
         else:
-            self._report_startup_failure(failure)
+            show_startup_failure(failure)

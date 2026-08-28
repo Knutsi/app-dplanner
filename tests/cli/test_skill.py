@@ -7,7 +7,6 @@ from io import StringIO
 
 import pytest
 
-from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import run
 from dplanner.cli.skill import (
     REFERENCE_FILE,
@@ -21,14 +20,7 @@ from dplanner.cli.skill import (
     uninstall,
     worktree_warning,
 )
-from dplanner.modules import aspect_specs, default_cli_commands, default_module_formats
-
-
-@pytest.fixture
-def registry():
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-    return registry
+from dplanner.modules import aspect_specs, default_module_formats
 
 
 @pytest.fixture

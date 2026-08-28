@@ -1,8 +1,8 @@
 """Tab hosting for activities, in one or more groups side by side.
 
 The TabHost owns the mapping between tabs and activities and drives the activation
-lifecycle. It deliberately does not know the window: immersive mode and window titles are
-the window's reaction to ``activity_changed``, wired in :mod:`dplanner.framework.main_window`.
+lifecycle. It deliberately does not know the window: window titles are the window's
+reaction to ``activity_changed``, wired in :mod:`dplanner.framework.main_window`.
 
 **Groups live in here, and nothing outside knows they exist.** The host is still the single
 widget the window is handed, and every method below means what it always meant — ``open`` may
@@ -51,7 +51,6 @@ class TabHost(QWidget):
         self._current: Activity | None = None
         self._announced: tuple[QTabWidget, Activity | None] | None = None
         self._suspended = 0
-        self._tab_bars_visible = True
 
         self.activity_changed: Signal[Activity | None] = Signal()
         # A tab was right-clicked, and it is now the current one. Carries where to pop up.
@@ -160,12 +159,6 @@ class TabHost(QWidget):
         found = self._locate(activity.widget)
         return "" if found is None else found[0].tabText(found[1])
 
-    def reannounce_current(self) -> None:
-        """Re-emit ``activity_changed`` for an activity that changed identity in place
-        (an editor retargeted by Next/Previous) so observers can follow."""
-        if self._current is not None:
-            self.activity_changed.emit(self._current)
-
     # -- closing -----------------------------------------------------------------------------
 
     def close_current(self) -> None:
@@ -217,12 +210,6 @@ class TabHost(QWidget):
         if self.can_move_left():
             self._move(-1)
 
-    def set_tab_bar_visible(self, visible: bool) -> None:
-        # Remembered, because a group created later has to agree with immersive mode.
-        self._tab_bars_visible = visible
-        for group in self._groups:
-            group.tabBar().setVisible(visible)
-
     def dispose(self) -> None:
         """Stop watching the application. Registered in the builder's close hooks.
 
@@ -239,7 +226,6 @@ class TabHost(QWidget):
         group.setMovable(True)
         group.setTabsClosable(True)
         group.setDocumentMode(True)
-        group.tabBar().setVisible(self._tab_bars_visible)
         group.currentChanged.connect(lambda _index, g=group: self._on_current_changed(g))
         group.tabCloseRequested.connect(lambda index, g=group: self._close(g, index))
         group.tabBar().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)

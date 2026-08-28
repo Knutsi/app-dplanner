@@ -17,14 +17,6 @@ DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
 FIELDS = ("system", "key", "url")
 
-SPEC = AspectSpec(
-    id=MODULE_ID,
-    label="Ticket",
-    summary="Where a step is tracked: which system, which key, and the link to it.",
-    data_format=DATA_FORMAT,
-)
-
-
 @dataclass(frozen=True)
 class Ticket:
     system: str = ""
@@ -56,3 +48,13 @@ def summary(step: Step) -> str:
     if ticket is None:
         return ""
     return ticket.key or ticket.system or ticket.url
+
+
+# Last, because it names the pieces above: the one declaration everything reads.
+SPEC = AspectSpec(
+    id=MODULE_ID,
+    label="Ticket",
+    summary="Where a step is tracked: which system, which key, and the link to it.",
+    data_format=DATA_FORMAT,
+    phrase=summary,
+)

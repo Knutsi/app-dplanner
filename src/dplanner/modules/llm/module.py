@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from dplanner.framework.llm import LLMProviderRegistry
 from dplanner.framework.llm_service import LLMService
 from dplanner.framework.settings_registry import (
-    SettingsScope,
     SettingsSection,
     SettingsSectionRegistry,
 )
@@ -34,7 +33,6 @@ class LlmModule:
             SettingsSection(
                 id="llm.preferred",
                 category=("LLM",),
-                scope=SettingsScope.GLOBAL,
                 factory=lambda parent: build_page(deps.llm_providers, deps.llm, parent),
             )
         )

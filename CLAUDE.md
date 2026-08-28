@@ -146,7 +146,10 @@ to that tuple; a file the rule cannot see is a rule that is only a habit.
    calls it on every context change and takes the panel off screen when it answers False.
    **Never build a panel inside an activity** — see the mechanical fact below.
 7. If it has verbs, add `cli.py` with a `commands()` function returning `CliCommand`s, and
-   list it in `default_cli_commands()`. Keep it Qt-free.
+   list it in `default_cli_commands()`. Keep it Qt-free. When `commands()` needs a
+   cross-module fact, take it as a **keyword-only parameter and close over it in one inner
+   wrapper** — `modules/progression/cli.py` is the worked example; don't invent a fifth
+   injection style.
 8. Construct it in `default_modules()`. **List order is registration order and it matters** —
    status-bar widget order, index folder order, and whether a surface exists before whoever
    renders it is built. Put a comment on any position that is constrained.
@@ -221,6 +224,9 @@ root, stop and look for the registry or capability you have not found yet.
   duplicate ids, which is what makes that the only implementable answer — and the correct one.
 - **Blocking work runs through `TaskRunner`**, never on the GUI thread: storage operations,
   LLM calls, anything that touches the network. It appears in the task centre for free.
+  The one documented exception — storage operations that rewrite the working tree, which
+  must complete before the app touches anything else — is `ARCHITECTURE.md`'s *Storage
+  operations that rewrite the working tree are synchronous*.
 - **An edge lives on the step that waits**, is validated against the project, and is
   deliberately *not* rewritten when a step is deleted — undo has to restore the graph
   exactly. `Product.requires()` skips ids it cannot resolve. Edge kinds this build does not

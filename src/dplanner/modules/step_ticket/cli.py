@@ -3,7 +3,7 @@
 from argparse import ArgumentParser, Namespace
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lookup import find_step
+from dplanner.cli.lookup import find_step, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.modules.step_ticket.aspect import FIELDS, MODULE_ID, Ticket, read, write
 
@@ -20,19 +20,15 @@ def commands() -> list[CliCommand]:
         CliCommand(
             path=("ticket", "clear"),
             summary="Remove a step's ticket, leaving no file behind.",
-            configure=_one_step,
+            configure=step_arg,
             run=_clear,
             examples=("dplanner ticket clear 'Read the spec'",),
         ),
     ]
 
 
-def _one_step(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
-
-
 def _configure_set(parser: ArgumentParser) -> None:
-    _one_step(parser)
+    step_arg(parser)
     parser.add_argument("--system", default="", help="jira, github, linear…")
     parser.add_argument("--key", default="", help="the identifier people quote")
     parser.add_argument("--url", default="", help="a link straight to it")

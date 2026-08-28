@@ -532,6 +532,121 @@ screen — this generalises the `_PdfPage` pattern the spec viewer already got r
 
 **Belongs upstream?** Yes, verbatim.
 
+### The entropy pass: template machinery a year of building never called
+
+**What.** A whole-codebase review deleted every piece of `framework/`/`core/` surface that
+had accumulated zero callers across 27 modules, on the theory that git remembers and a
+dormant seam misleads more than it serves:
+
+- **Immersive mode, whole.** `enter_immersive`/`leave_immersive`/`is_immersive` and the
+  Escape shortcut on `AppWindow`, the `ImmersiveHost` protocol in `framework/window.py`,
+  `PanelDock.set_chrome_visible` and `TabHost.set_tab_bar_visible`. Fully implemented,
+  reachable from nothing — no action, no menu entry, no shortcut ever called it here.
+- **`ExportRegistry`** (`framework/exports.py`, the `AppServices.exports` field). §5 already
+  recorded that it has no clients in the template either; we have now acted on that here.
+- **`InspectorExtension.tab_visible()` / `tab_visibility_changed`.** Nine implementations,
+  every one `return True`; zero emitters. The protocol shrank to
+  `widget`/`show_target`/`dispose`, and both hosts (the step panel's tab bar, the project
+  panel's card stack) lost their dead visibility plumbing. If a section that genuinely
+  appears-and-disappears ever arrives, reintroduce the signal *with* that section — the
+  contract survived nine implementations without one, which is the evidence it was
+  speculative.
+- **`SettingsScope`, `SettingsSection.scope` and `.order`.** Every registrant said
+  `GLOBAL`; the dialog's "Project settings" tab was permanently empty, and `order` was never
+  set nor read. The dialog is now one tree. Workspace-scoped settings remain a plausible
+  future — the enum is one `git show` away, and the right time to restore it is with its
+  first real section.
+- **Dead methods:** `Context.has`/`has_prefix`, `TaskRunner.current_task`/`abandon`,
+  `TabHost.reannounce_current`, `AppBuilder.with_window`, `core/fsio.write_json_atomic`/
+  `read_json`, the `HIDDEN` action-state constant (the one hide site needs a label, so it
+  spells its `ActionState` out). The `domain/` and `core/` package `__init__` re-exports
+  went too — every consumer already imported from the defining module.
+- **Kept deliberately:** `secrets_store.delete_secret` — unused, but a secrets store you
+  can write into and never clear is a trap, not a seam.
+
+**Why the template should know.** Most of these came with the bootstrap. A generated
+application that never grows an exporter, an immersive mode or a project settings scope
+carries this surface forever, and each unused seam reads as a promise the application does
+not keep. The upstream question per item is the same: demonstrate it end to end, or ship it
+as documentation rather than code.
+
+### `framework/module_data_section.py` — the structured twin of `prose_section.py`
+
+**What.** `ModuleDataSection(product, undo, *, module_id, undo_label)`: the scaffold every
+structured aspect editor was hand-rolling — the `module_data_changed` subscription and
+teardown, reload-on-target with commits suppressed, the no-op-when-unchanged commit through
+the undo stack, and the echo rule (*ignore the echo of your own write only while one of
+your fields is being edited; an undo carries `UNDO_ORIGIN`, never the view, so it always
+lands*). A subclass builds widgets, implements `load_step(step)` / `entry(step)`, and calls
+`commit()` from its edit-finished handlers; `editing()` defaults to focus-inside-me.
+
+**Why.** `prose_section.py`'s own rationale — "the binding mechanics are the
+easy-to-get-wrong half, and getting it wrong is quiet" — held for JSON too: by the time we
+wrote this, four hand-rolled copies existed and one had drifted (its echo guard swallowed
+an undo made while its field was focused). Ticket, Release, Estimate and GitHub sections
+are the ports; the drift died in the port.
+
+**Belongs upstream?** Yes, next to `prose_section.py` — any application with aspects-like
+per-module data will re-derive it worse.
+
+### `EntityActivity` and `follow_entity_tabs` in `framework/activity.py`
+
+**What.** `ActivityBase` grew a sibling: `EntityActivity(context, entity_kind, entity_id)`
+owns `_is_active`, publishes the activity scope with an entity edge on activation
+(`activity_nodes()` overridable for extra edges — the canvas adds its input mode), and
+`publish_selection(nodes)` enforces *only the active pane speaks for the user*.
+`follow_entity_tabs(tabs, activity_type, still_exists, closes_on=…, retitles_on=…)`
+closes tabs whose entity is gone and retitles survivors — feature-blind via a
+`still_exists` predicate and two core signals.
+
+**Why.** Five modules carried byte-identical copies of both obligations (the fifth copy
+arrived with the newest feature — evidence the pattern recruits). The rule the base
+enforces is CLAUDE.md's most-repeated comment; now it is enforced by construction and the
+sixth entity tab gets it for free.
+
+**Belongs upstream?** Yes, both — the template's docs already state the rule; this is the
+rule as code.
+
+### `append_action` in `framework/action_menu.py`
+
+**What.** The per-spec body factored out of `build_menu`: greyed when disabled, omitted
+only when hidden, state label over spec label, checkable per state, context re-read at
+trigger time. For a widget that assembles its popup by hand (a toolbar button mixing data
+rows with verbs) and must still render entries under the one presenter policy.
+
+**Why.** The canvas's layout button had reimplemented the policy line for line — its
+docstring admitted it — and had already drifted on separators. A copy of a policy is a
+fork waiting to happen; a function is not.
+
+### `selection_of` / `restore_selection` beside the expansion pair in `index_panel.py`
+
+**What.** The same shape as `expansion_of`/`restore_expansion`, for the tree's selection.
+`restore_selection` returns what it actually restored, so a segment can rebuild under
+blocked signals and only announce a selection change when a selected row truly vanished.
+
+**Why.** A rebuild that drops the selection does not just lose a highlight: the tree
+publishes the now-empty selection scope and every context-following panel abandons what
+the user was looking at. DPlanner's projects segment hit exactly that — any rename
+rebuilt the folder and hid the step panel. The expansion helpers existed for this reason;
+selection needed the same treatment plus the announce-only-real-changes subtlety.
+
+**Belongs upstream?** Yes, as a pair with the expansion helpers.
+
+### Two small honesty fixes: `window_watch` and the startup-failure dialog
+
+**What.** `WorkspaceWatcher` now takes a typed `WatchableRepository` instead of `repo:
+object` with an `isinstance` fallback to a watcher that silently never fires — a wiring
+mistake is a type error again, and the composition root passes its already-narrowed
+store. `AppSession` lost the `report_startup_failure` injection point nothing ever
+injected, and its two near-identical `QMessageBox` builders collapsed into one
+`_failure_box(failure, parent)` used by both the modal pre-window path and the
+non-blocking in-window path.
+
+**Why the template should know.** Both are the same lesson as the entropy list above: a
+defensive `object` parameter and an unused injection seam each read as flexibility and
+behave as a trap — the silent-`None` watcher especially, because the failure mode is "the
+feature just doesn't run".
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class

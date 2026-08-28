@@ -108,29 +108,6 @@ def read_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
-def exit_icon(color: str) -> QIcon:
-    """An arrow stepping out of a door frame: leave."""
-    pixmap, painter = _canvas()
-    painter.setPen(_pen(color, 1.2))
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    # The frame, open on the right.
-    painter.drawPolyline(
-        QPolygonF(
-            [
-                QPointF(8.5, 2.5),
-                QPointF(3.0, 2.5),
-                QPointF(3.0, 13.5),
-                QPointF(8.5, 13.5),
-            ]
-        )
-    )
-    # The arrow out.
-    painter.drawLine(QPointF(6.5, 8.0), QPointF(13.5, 8.0))
-    painter.drawLine(QPointF(10.8, 5.4), QPointF(13.5, 8.0))
-    painter.drawLine(QPointF(10.8, 10.6), QPointF(13.5, 8.0))
-    painter.end()
-    return QIcon(pixmap)
-
 
 def external_icon(color: str) -> QIcon:
     """An arrow leaving a box through its open corner: open outside the application."""
@@ -214,23 +191,6 @@ def spec_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
-def dot_icon(color: str) -> QIcon:
-    """A filled dot: the active item in a list."""
-    pixmap, painter = _canvas()
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor(color))
-    painter.drawEllipse(QPointF(8.0, 8.0), 3.0, 3.0)
-    painter.end()
-    return QIcon(pixmap)
-
-
-def check_icon(color: str) -> QIcon:
-    """A check mark: done / read."""
-    pixmap, painter = _canvas()
-    painter.setPen(_pen(color, 1.8))
-    painter.drawPolyline(QPolygonF([QPointF(3.5, 8.5), QPointF(6.8, 11.8), QPointF(12.5, 4.5)]))
-    painter.end()
-    return QIcon(pixmap)
 
 
 def folder_icon(color: str) -> QIcon:
@@ -262,30 +222,6 @@ def branch_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
-def wrench_icon(color: str) -> QIcon:
-    """A wrench: tools and maintenance."""
-    pixmap, painter = _canvas()
-    painter.setPen(_pen(color, 2.0))
-    painter.drawLine(QPointF(3.5, 12.5), QPointF(8.6, 7.4))
-    painter.setPen(_pen(color, 1.4))
-    # An open-ended head: an arc whose gap faces the handle's far end.
-    painter.drawArc(QRectF(8.2, 2.2, 5.6, 5.6), -45 * 16, 270 * 16)
-    painter.end()
-    return QIcon(pixmap)
-
-
-def sliders_icon(color: str) -> QIcon:
-    """Three sliders: properties and settings."""
-    pixmap, painter = _canvas()
-    painter.setPen(_pen(color, 1.2))
-    for y in (4.0, 8.0, 12.0):
-        painter.drawLine(QPointF(3.0, y), QPointF(13.0, y))
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor(color))
-    for y, knob_x in ((4.0, 10.0), (8.0, 5.5), (12.0, 8.5)):
-        painter.drawEllipse(QPointF(knob_x, y), 1.8, 1.8)
-    painter.end()
-    return QIcon(pixmap)
 
 
 # -- canvas toolbar --------------------------------------------------------------------------

@@ -12,7 +12,6 @@ a module subpackage from here is a layering violation the architecture test refu
 
 import os
 import sys
-from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import QApplication
@@ -141,7 +140,3 @@ def open_at_startup(session: AppSession, location: StorageLocation, interactive:
             return False
         location, interactive = chosen, True
 
-
-def workspace_root_hint() -> Path:
-    """Where new workspaces are suggested. Exposed for tests and for the Open dialog."""
-    return workspace_roots()[0]

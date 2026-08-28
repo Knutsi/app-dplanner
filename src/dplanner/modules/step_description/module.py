@@ -4,13 +4,12 @@ The editor itself is :class:`~dplanner.framework.prose_section.ProseSection` —
 owns the binding mechanics, so all this module supplies is which document to edit.
 """
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from dplanner.domain.fields import ModuleTextField
-from dplanner.domain.model import NodeId, Product
-from dplanner.domain.store import ModuleFileArea
+from dplanner.domain.model import Product
+from dplanner.domain.store import FilesFor
 from dplanner.framework.asset_gallery import AreaFor
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.text_binding import TextField
@@ -28,7 +27,7 @@ class StepDescriptionDeps:
     sections: InspectorSectionRegistry
     # The store's file areas — how the tab shows the images `describe attach` wrote.
     # None is a build without file storage.
-    files: Callable[[NodeId, str], ModuleFileArea] | None = None
+    files: FilesFor | None = None
 
 
 class StepDescriptionModule:

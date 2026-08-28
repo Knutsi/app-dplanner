@@ -32,7 +32,7 @@ from dplanner.framework.context import Context
 from dplanner.framework.session import WorkspaceSwitcher
 from dplanner.framework.widgets import confirm
 from dplanner.framework.window import StatusHost
-from dplanner.framework.window_watch import WorkspaceWatcher
+from dplanner.framework.window_watch import WatchableRepository, WorkspaceWatcher
 
 MODULE_ID = "workspace_watch"
 
@@ -42,7 +42,7 @@ CONFLICT = "The workspace changed outside DPlanner, and there are unsaved edits 
 
 @dataclass(frozen=True)
 class WorkspaceWatchDeps:
-    repo: object  # Typed loosely: the watcher asks for one method, through a protocol.
+    repo: WatchableRepository
     autosave: AutosaveService
     actions: ActionRegistry
     switcher: WorkspaceSwitcher

@@ -1,26 +1,20 @@
 """Settings: a tree-based dialog over module-contributed sections.
 
 The dialog renders whatever the registry holds and knows nothing about any particular
-setting. This module's own job is to open it, to expose the deeplink other modules use
-("AI settings…" jumping straight to the right page), and to register one General page so
-the tree is never empty.
+setting. This module's own job is to open it — the File menu entry and its shortcut.
 
 There is deliberately no settings *schema*. Each section owns how it reads and writes its
-own values — through ``user_config`` for preferences, ``secrets_store`` for credentials, or
-the workspace for project-scoped data — because there is nothing generic to say about that
-which the two scopes do not already say.
+own values — through ``user_config`` for preferences, ``secrets_store`` for credentials —
+because there is nothing generic to say about that.
 """
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QWidget
 
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.context import Context
 from dplanner.framework.settings_registry import (
-    SettingsScope,
-    SettingsSection,
     SettingsSectionRegistry,
 )
 from dplanner.modules.settings.dialog import SettingsDialog
@@ -35,17 +29,6 @@ class SettingsDeps:
     parent: QWidget  # The dialog's parent.
 
 
-def _placeholder_page(parent: QWidget | None) -> QWidget:
-    page = QWidget(parent)
-    page.setObjectName("SettingsPlaceholderPage")
-    layout = QVBoxLayout(page)
-    layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    label = QLabel("Nothing here yet.", page)
-    label.setObjectName("SettingsPlaceholderLabel")
-    layout.addWidget(label)
-    return page
-
-
 class SettingsModule:
     id = MODULE_ID
 
@@ -57,23 +40,8 @@ class SettingsModule:
         self.dialog.raise_()
         self.dialog.activateWindow()
 
-    def open_at(self, section_id: str) -> None:
-        """Open the dialog with one section selected — the deeplink other modules receive
-        through the composition root, so a feature can send the user to the setting it
-        needs without importing this module."""
-        self.dialog.show_section(section_id)
-        self.open()
-
     def register(self) -> None:
         deps = self._deps
-        deps.settings_sections.register(
-            SettingsSection(
-                id="settings.general",
-                category=("General",),
-                scope=SettingsScope.GLOBAL,
-                factory=_placeholder_page,
-            )
-        )
         self.dialog = SettingsDialog(deps.settings_sections, deps.parent)
 
         def run_open(_context: Context) -> None:

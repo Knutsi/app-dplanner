@@ -18,7 +18,6 @@ from typing import Any
 
 from PySide6.QtWidgets import QPlainTextEdit, QVBoxLayout, QWidget
 
-from dplanner.core.signals import Signal
 from dplanner.framework.text_binding import TextBinding, TextField
 from dplanner.framework.undo import UndoService
 
@@ -39,7 +38,6 @@ class ProseSection(QWidget):
         self._field_for = field_for
         self._undo = undo
         self._binding: TextBinding[Any] | None = None
-        self.tab_visibility_changed: Signal[bool] = Signal()
 
         self.edit = QPlainTextEdit(self)
         self.edit.setObjectName("InspectorNotes")
@@ -55,11 +53,6 @@ class ProseSection(QWidget):
     @property
     def widget(self) -> QWidget:
         return self
-
-    def tab_visible(self) -> bool:
-        # Always: a tab that hid itself while the document was empty would be a tab you
-        # could never use to write one.
-        return True
 
     def show_target(self, target_id: str | None) -> None:
         self._close_binding()

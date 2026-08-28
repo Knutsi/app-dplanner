@@ -5,7 +5,6 @@ import pytest
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
-    HIDDEN,
     ActionRegistry,
     ActionSpec,
     ActionState,
@@ -52,7 +51,7 @@ def test_ordering_is_menu_then_group_then_order(registry):
 
 def test_only_runnable_specs_are_offered(registry):
     registry.register(spec("visible"))
-    registry.register(spec("hidden", state=lambda _c: HIDDEN))
+    registry.register(spec("hidden", state=lambda _c: ActionState(visible=False, enabled=False)))
     registry.register(spec("disabled", state=lambda _c: DISABLED))
     offered = [s.id for s, _state in registry.runnable(Context({}))]
     assert offered == ["visible"]

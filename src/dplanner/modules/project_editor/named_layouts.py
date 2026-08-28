@@ -23,7 +23,7 @@ from typing import Any, TypeGuard, cast
 
 from dplanner.domain.commands import Command, SetModuleDataCommand
 from dplanner.domain.model import Product, Project, StepId
-from dplanner.modules.project_editor.layout import positions
+from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import (
     MODULE_ID,
     entry_with,

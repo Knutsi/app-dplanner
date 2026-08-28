@@ -19,18 +19,6 @@ DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
 PR_STATES = ("open", "merged", "closed", "")  # "" = never checked, e.g. recorded gh-less.
 
-SPEC = AspectSpec(
-    id=MODULE_ID,
-    label="GitHub",
-    summary=(
-        "The branch and pull request a step's work lands in; record the branch with "
-        "`dplanner github set --branch` when you start a step, and the PR as soon as it "
-        "exists."
-    ),
-    data_format=DATA_FORMAT,
-)
-
-
 @dataclass(frozen=True)
 class GithubRefs:
     branch: str = ""
@@ -98,12 +86,32 @@ def refreshed(refs: GithubRefs, info: PrInfo) -> GithubRefs:
     )
 
 
+def pr_label(refs: GithubRefs) -> str:
+    """What a PR is called wherever one is named: "PR #12", or "PR" before it has a
+    number. One function, because three surfaces were spelling it themselves."""
+    return f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
+
+
 def summary(step: Step) -> str:
     """One short phrase for a step's row, or "" when there is nothing to say."""
     refs = read(step)
     if refs is None:
         return ""
     if refs.has_pr():
-        name = f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
+        name = pr_label(refs)
         return f"{name} {refs.pr_state}".strip() if refs.pr_state != "open" else name
     return refs.branch
+
+
+# Last, because it names the pieces above: the one declaration everything reads.
+SPEC = AspectSpec(
+    id=MODULE_ID,
+    label="GitHub",
+    summary=(
+        "The branch and pull request a step's work lands in; record the branch with "
+        "`dplanner github set --branch` when you start a step, and the PR as soon as it "
+        "exists."
+    ),
+    data_format=DATA_FORMAT,
+    phrase=summary,
+)

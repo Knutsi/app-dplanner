@@ -5,7 +5,7 @@ snapshot records region rects — and exercising it without one is part of the p
 """
 
 from dplanner.domain.model import Product, Project
-from dplanner.modules.project_editor.layouts import LayoutSnapshot, write_layouts
+from dplanner.modules.project_editor.named_layouts import LayoutSnapshot, write_layouts
 from dplanner.modules.project_editor.positions import MODULE_ID
 from dplanner.modules.project_editor.regions import (
     Region,

@@ -40,14 +40,11 @@ from dplanner.domain.model import NodeId, Product, Project, Step, StepId, TextEd
 from dplanner.domain.ordering import placed
 from dplanner.domain.schedule import format_days
 from dplanner.framework.action_menu import build_menu
-from dplanner.framework.activity import ActivityBase
+from dplanner.framework.activity import EntityActivity
 from dplanner.framework.context import (
-    SCOPE_ACTIVITY,
-    SCOPE_SELECTION,
     ContextNode,
     Uri,
     activity_uri,
-    entity_uri,
     selection_uri,
 )
 from dplanner.modules.estimation.aspect import MODULE_ID, read
@@ -91,19 +88,17 @@ ROW_HEIGHT = 44
 SECONDARY_ALPHA = 160
 
 
-class BulkEstimateActivity(ActivityBase):
+class BulkEstimateActivity(EntityActivity):
     """One project's steps with an estimate input on every row."""
 
     def __init__(self, deps: "EstimationDeps", project_id: NodeId) -> None:
+        super().__init__(deps.context, "project", project_id)
         self._deps = deps
         self._product: Product = deps.product
         self.project_id = project_id
         # The canvas selection this sitting is about, or None for the whole project.
         self._selection: tuple[StepId, ...] | None = None
         self._editors: dict[StepId, EstimateInput] = {}
-        # Only the pane the user is in may write the selection scope — see CLAUDE.md's
-        # "only the active pane speaks for the user".
-        self._is_active = False
 
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -156,15 +151,8 @@ class BulkEstimateActivity(ActivityBase):
         return self._widget
 
     def on_activated(self) -> None:
-        self._is_active = True
-        self._deps.context.set_scope(
-            SCOPE_ACTIVITY,
-            (ContextNode(self.uri, (("entity", entity_uri("project", self.project_id)),)),),
-        )
+        super().on_activated()
         self._publish(self._selected_step())
-
-    def on_deactivated(self) -> None:
-        self._is_active = False
 
     def close(self) -> None:
         for unsubscribe in self._unsubscribes:
@@ -390,10 +378,8 @@ class BulkEstimateActivity(ActivityBase):
     # -- speaking for the user -----------------------------------------------------------------
 
     def _publish(self, step_id: StepId | None) -> None:
-        if not self._is_active:
-            return  # See _is_active: a background pane does not speak for the user.
         nodes = () if step_id is None else (ContextNode(selection_uri("step", step_id)),)
-        self._deps.context.set_scope(SCOPE_SELECTION, nodes)
+        self.publish_selection(nodes)
 
     def _on_selection(self) -> None:
         self._publish(self._selected_step())

@@ -12,9 +12,7 @@ cannot be read the wrong way round.
 them are fields on :class:`Step`. Each is a module's entry in ``module_data`` (JSON) or
 ``module_text`` (prose), namespaced by module id and versioned by the module that writes it,
 so features arrive without the graph learning anything about them.
+
+Import from the defining module (:mod:`dplanner.domain.model`, :mod:`dplanner.domain.store`)
+— this package deliberately re-exports nothing.
 """
-
-from dplanner.domain.model import NodeId, Product, Project, ProjectId, Step, StepId
-from dplanner.domain.store import ProductStore
-
-__all__ = ["NodeId", "Product", "ProductStore", "Project", "ProjectId", "Step", "StepId"]

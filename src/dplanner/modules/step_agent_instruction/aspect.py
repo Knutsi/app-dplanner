@@ -18,24 +18,15 @@ a module is a Takeover that churns every workspace, and the prefix only names wh
 aspect began.
 """
 
-from collections.abc import Callable
 
 from dplanner.core.module_data import ModuleDataFormat
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.assets import assets
 from dplanner.domain.model import NodeId, Project, Step
-from dplanner.domain.store import ModuleFileArea
+from dplanner.domain.store import FilesFor
 
 MODULE_ID = "step_agent_instruction"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
-
-SPEC = AspectSpec(
-    id=MODULE_ID,
-    label="Agent",
-    summary="How a coding agent should carry this step out, in markdown.",
-    data_format=DATA_FORMAT,
-)
-
 
 def read(step: Step) -> str:
     return step.module_text.get(MODULE_ID, "")
@@ -47,7 +38,7 @@ def read_project(project: Project) -> str:
 
 
 def asset_paths(
-    files: Callable[[NodeId, str], ModuleFileArea], node_id: NodeId
+    files: FilesFor, node_id: NodeId
 ) -> tuple[str, ...]:
     """A node's instruction files as workspace-relative paths.
 
@@ -71,3 +62,13 @@ def summary(step: Step) -> str:
     if not body:
         return ""
     return "instructed" if len(body) < 200 else f"instructed ({len(body)} chars)"
+
+
+# Last, because it names the pieces above: the one declaration everything reads.
+SPEC = AspectSpec(
+    id=MODULE_ID,
+    label="Agent",
+    summary="How a coding agent should carry this step out, in markdown.",
+    data_format=DATA_FORMAT,
+    phrase=summary,
+)
