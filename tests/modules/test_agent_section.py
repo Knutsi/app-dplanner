@@ -61,6 +61,35 @@ def test_this_step_opens_expanded_and_the_context_parts_collapsed(services, step
     assert section.step_part.expanded()
     assert not section.project_part.expanded()
     assert not section.inherited_part.expanded()
+    assert not section.context_part.expanded()
+
+
+def test_the_step_context_part_shows_the_briefing_sections(services, step, section):
+    """The step's facts — description, spec figures — appear in the tab, not only in the
+    assembled prompt: the invisibility this part exists to end."""
+    from dplanner.domain.assets import attach
+    from dplanner.framework.asset_gallery import AssetGallery
+
+    services.document.set_text(step.id, "step_description", "What the step is.")
+    attach(services.repo.files(step.id, "spec"), b"png bytes", "fig.png")
+    section.show_target(step.id)
+
+    text = section.context_view.toPlainText()
+    assert "## Description" in text and "What the step is." in text
+    assert "## Figures from the spec" in text
+    assert section.context_part.summary.text() == "2 sections"
+    # One gallery: only the figures section carries files (the description has no images).
+    galleries = section._context_galleries.findChildren(AssetGallery)
+    assert len(galleries) == 1
+    # Read-only: a context gallery never offers an Attach button.
+    assert all(not g.attach_button.isVisibleTo(g) for g in galleries)
+
+
+def test_an_edit_refreshes_the_step_context_without_a_reselect(services, step, section):
+    section.show_target(step.id)
+    assert "## Description" not in section.context_view.toPlainText()
+    services.document.set_text(step.id, "step_description", "Now described.")
+    assert "Now described." in section.context_view.toPlainText()
 
 
 def test_the_chevron_toggles_a_part(services, step, section):
