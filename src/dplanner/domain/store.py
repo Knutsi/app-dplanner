@@ -472,14 +472,30 @@ class LibraryStore:
         )
 
     def _snapshot(self, record: _ProjectRecord) -> dict[str, tuple[int, int]]:
+        """Every file in the project directory, except git's own.
+
+        A project directory is often the repository root itself (New Project's git-init
+        flow makes exactly that), which would put `.git/` inside this walk — and git
+        rewrites its own files constantly: a commit obviously, but even `git status`
+        refreshes `.git/index`. Counting those as "another writer" made every Save read
+        as an outside change and reload the application in a loop. Git's files are not
+        plan content; pruning the directory also keeps the 1.5-second autosave cadence
+        from walking a repository's whole object store.
+        """
         root = record.storage.root
         if not root.is_dir():
             return {}
         found: dict[str, tuple[int, int]] = {}
-        for path in root.rglob("*"):
-            if path.is_file():
-                stat = path.stat()
-                found[str(path.relative_to(root))] = (stat.st_size, stat.st_mtime_ns)
+        stack = [root]
+        while stack:
+            for entry in stack.pop().iterdir():
+                if entry.name == ".git":
+                    continue
+                if entry.is_dir():
+                    stack.append(entry)
+                elif entry.is_file():
+                    stat = entry.stat()
+                    found[str(entry.relative_to(root))] = (stat.st_size, stat.st_mtime_ns)
         return found
 
     def _remember_disk(self, record: _ProjectRecord) -> None:

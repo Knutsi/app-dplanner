@@ -236,6 +236,31 @@ def test_the_library_file_changing_is_noticed_too(store, library):
     assert store.changed_underneath()
 
 
+def test_gits_own_files_are_never_another_writer(tmp_path):
+    """A project at the repository root — New Project's git-init flow — puts `.git/`
+    inside the watched directory, and git rewrites its own files on every commit and
+    even on `git status`. Counting that as an outside change made every Save reload the
+    application in a loop; a real content change must still be seen."""
+    import subprocess
+
+    repo = init_repo(tmp_path / "at-root")
+    project_dir = seed_project(repo, "At Root")
+    path = tmp_path / "library.json"
+    write_library_file(path, [project_dir])
+    store = LibraryStore(path)
+    store.load()
+    assert not store.changed_underneath()
+
+    git = ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-qm", "Save"], check=True, capture_output=True)
+    subprocess.run([*git, "status", "--porcelain"], check=True, capture_output=True)
+    assert not store.changed_underneath()
+
+    (project_dir / "note.md").write_text("left by an agent\n")
+    assert store.changed_underneath()
+
+
 def test_flushing_over_someone_elses_write_is_refused(store, library, project_dir):
     """The scenario this exists for: an agent edits the folder while a window is open.
 
