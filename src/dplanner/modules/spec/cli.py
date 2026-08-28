@@ -256,6 +256,11 @@ def _configure_mark(parser: ArgumentParser) -> None:
     parser.add_argument(
         "--page", type=int, help="the page it sits on (default: where the quote is found)"
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="refuse the mark when the quote is not found, instead of warning",
+    )
 
 
 def _configure_render(parser: ArgumentParser) -> None:
@@ -691,6 +696,13 @@ def _mark(context: CliContext, args: Namespace) -> int:
     document = _document(project, args.document)
     index = read_index(project)
     quote_found, found_page = _validate_quote(context, project, document, args.quote)
+    # Only a definite miss refuses: None means "nothing to check" (no quote, or a PDF
+    # whose text cannot be read), and strictness must not punish the unknowable.
+    if args.strict and quote_found is False:
+        raise CliError(
+            f"--strict: the quote was not found in {document.name} — check the wording "
+            "against `dplanner spec show`, or drop --strict (PDF extraction can mangle text)"
+        )
     page = args.page if args.page is not None else found_page
     requirement = Requirement(
         id=args.id or next_id([req.id for req in index.requirements], "r"),

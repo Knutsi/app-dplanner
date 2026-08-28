@@ -296,6 +296,21 @@ def test_a_page_that_disagrees_with_the_quote_warns_but_is_kept(cli, project, tm
     assert data(cli("spec", "requirements", project, "--json"))["requirements"][0]["page"] == 1
 
 
+def test_strict_refuses_a_quote_that_does_not_anchor(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("Nothing here.")))
+    out = cli(
+        "spec", "mark", project, "s", "--title", "Ghost",
+        "--quote", "does not appear", "--strict", expect=1,
+    )
+    assert "--strict" in out
+    assert data(cli("spec", "requirements", project, "--json"))["requirements"] == []
+    # An anchoring quote passes strict; no quote at all passes too (nothing to refute).
+    cli("spec", "mark", project, "s", "--title", "Real", "--quote", "Nothing here", "--strict")
+    cli("spec", "mark", project, "s", "--title", "Quoteless", "--strict")
+    listed = data(cli("spec", "requirements", project, "--json"))["requirements"]
+    assert [req["title"] for req in listed] == ["Real", "Quoteless"]
+
+
 def test_quotes_are_validated_against_prose_documents_too(cli, project, tmp_path):
     cli("spec", "import", project, source(tmp_path, "s.md", "The rule\nis here."))
     report = data(
