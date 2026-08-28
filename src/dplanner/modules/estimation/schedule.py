@@ -25,7 +25,13 @@ from typing import Any
 from dplanner.core.module_data import stamped
 from dplanner.domain.model import Product, Project
 from dplanner.domain.ordering import placed
-from dplanner.domain.schedule import Scheduled, schedule
+from dplanner.domain.schedule import (
+    CriticalPath,
+    Scheduled,
+    critical_path,
+    schedule,
+    working_days_after,
+)
 from dplanner.modules.estimation.aspect import DATA_FORMAT, MODULE_ID, read
 
 START_KEY = "start"
@@ -72,3 +78,14 @@ def project_schedule(product: Product, project: Project) -> list[Scheduled]:
 def finish_date(rows: list[Scheduled]) -> date | None:
     """When the last step that has a date lands, or None if none of them do."""
     return next((row.finish for row in reversed(rows) if row.finish is not None), None)
+
+
+def project_critical_path(product: Product, project: Project) -> CriticalPath | None:
+    """The longest days-weighted chain, over this module's estimates."""
+    return critical_path(product, project, read)
+
+
+def critical_finish(project: Project, path: CriticalPath) -> date | None:
+    """When the critical path lands from the project's start — None when nothing on any
+    chain is estimated, because a date on a weightless path would read as a promise."""
+    return working_days_after(start_of(project), path.days) if path.days > 0 else None

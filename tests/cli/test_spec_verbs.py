@@ -296,6 +296,21 @@ def test_a_page_that_disagrees_with_the_quote_warns_but_is_kept(cli, project, tm
     assert data(cli("spec", "requirements", project, "--json"))["requirements"][0]["page"] == 1
 
 
+def test_strict_refuses_a_quote_that_does_not_anchor(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("Nothing here.")))
+    out = cli(
+        "spec", "mark", project, "s", "--title", "Ghost",
+        "--quote", "does not appear", "--strict", expect=1,
+    )
+    assert "--strict" in out
+    assert data(cli("spec", "requirements", project, "--json"))["requirements"] == []
+    # An anchoring quote passes strict; no quote at all passes too (nothing to refute).
+    cli("spec", "mark", project, "s", "--title", "Real", "--quote", "Nothing here", "--strict")
+    cli("spec", "mark", project, "s", "--title", "Quoteless", "--strict")
+    listed = data(cli("spec", "requirements", project, "--json"))["requirements"]
+    assert [req["title"] for req in listed] == ["Real", "Quoteless"]
+
+
 def test_quotes_are_validated_against_prose_documents_too(cli, project, tmp_path):
     cli("spec", "import", project, source(tmp_path, "s.md", "The rule\nis here."))
     report = data(
@@ -350,7 +365,7 @@ def test_attach_to_step_copies_the_figure_beside_the_step(cli, project, tmp_path
     cli("step", "add", project, "Hash passwords")
     report = data(cli("spec", "attach-to-step", "Hash passwords", "a1", "--json"))
     copies = list((workspace / "projects").glob("*/steps/*/modules/spec/assets/*.png"))
-    assert len(copies) == 1 and report["file"].endswith(".png")
+    assert len(copies) == 1 and report["files"][0].endswith(".png")
 
     shown = data(cli("step", "show", "Hash passwords", "--json"))
     attachment = shown["aspects"]["spec"]["attachments"][0]
@@ -394,6 +409,44 @@ def test_an_attached_figure_reaches_the_agent_briefing(cli, project, tmp_path):
     shown = data(cli("agent", "prompt", "Hash passwords", "--json"))
     figures = [path for path in shown["files"] if "modules/spec/assets/" in path]
     assert len(figures) == 1 and figures[0] in shown["prompt"]
+
+
+def test_link_takes_several_requirements_in_one_call(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "s.md", "# Spec"))
+    for title in ("One", "Two", "Three"):
+        cli("spec", "mark", project, "s", "--title", title)
+    cli("step", "add", project, "Hash passwords")
+    cli("spec", "link", "Hash passwords", "r1", "r2", "r3")
+    shown = data(cli("step", "show", "Hash passwords", "--json"))
+    assert shown["aspects"]["spec"]["requirements"] == ["r1", "r2", "r3"]
+    cli("spec", "link", "Hash passwords", "r1", "r3", "--remove")
+    shown = data(cli("step", "show", "Hash passwords", "--json"))
+    assert shown["aspects"]["spec"]["requirements"] == ["r2"]
+
+
+def test_one_unknown_id_refuses_the_whole_batch(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "s.md", "# Spec"))
+    cli("spec", "mark", project, "s", "--title", "One")
+    cli("step", "add", project, "Hash passwords")
+    out = cli("spec", "link", "Hash passwords", "r1", "r9", expect=1)
+    assert "'r9'" in out
+    # Nothing was written — not even the id that existed.
+    shown = data(cli("step", "show", "Hash passwords", "--json"))
+    assert "spec" not in shown["aspects"]
+
+
+def test_attach_to_step_takes_several_assets(cli, project, tmp_path, workspace):
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("One.", "Two.")))
+    cli("spec", "render", project, "s", "--page", "1")
+    cli("spec", "render", project, "s", "--page", "2")
+    cli("step", "add", project, "Hash passwords")
+    report = data(cli("spec", "attach-to-step", "Hash passwords", "a1", "a2", "--json"))
+    assert report["assets"] == ["a1", "a2"] and len(report["files"]) == 2
+    copies = list((workspace / "projects").glob("*/steps/*/modules/spec/assets/*.png"))
+    assert len(copies) == 2
+
+    out = cli("spec", "attach-to-step", "Hash passwords", "a1", "a9", expect=1)
+    assert "'a9'" in out
 
 
 def test_the_index_is_stamped_format_2(cli, project, tmp_path, workspace):

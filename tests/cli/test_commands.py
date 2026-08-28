@@ -96,6 +96,29 @@ def test_a_dangling_pointer_is_an_error_not_a_fallthrough(tmp_path):
         find_workspace(start=tmp_path)
 
 
+def test_creating_a_workspace_inside_a_checkout_leaves_a_pointer(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)  # find_repo_root only checks existence.
+    create_product(LocalStorage(repo / "plans" / "widget"))
+    assert (repo / ".dplanner").read_text().strip() == "plans/widget"
+    deep = repo / "src" / "somewhere"
+    deep.mkdir(parents=True)
+    assert find_workspace(start=deep).path == repo / "plans" / "widget"
+
+
+def test_the_pointer_never_clobbers_and_never_points_at_the_root(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".dplanner").write_text("elsewhere\n")
+    create_product(LocalStorage(repo / "plans"))
+    assert (repo / ".dplanner").read_text() == "elsewhere\n"  # the user's word stands
+
+    at_root = tmp_path / "solo"
+    (at_root / ".git").mkdir(parents=True)
+    create_product(LocalStorage(at_root))
+    assert not (at_root / ".dplanner").exists()  # the walk already finds product.json
+
+
 # -- reading -----------------------------------------------------------------------------------
 
 
@@ -312,6 +335,113 @@ def test_agent_prompt_with_no_instruction_anywhere_names_both_fixes(cli):
     assert "agent set --project" in message
 
 
+# -- authoring a step at birth -----------------------------------------------------------------
+
+
+def test_step_add_authors_the_whole_step_in_one_call(cli, cli_stdin, tmp_path):
+    cli("project", "create", "Discovery")
+    spec = tmp_path / "spec.md"
+    spec.write_text("The rule is argon2id.")
+    cli("spec", "import", "Discovery", str(spec))
+    cli("spec", "mark", "Discovery", "spec", "--title", "Hashing", "--quote", "argon2id")
+    figure = tmp_path / "fig.png"
+    figure.write_bytes(b"png bytes")
+    cli("spec", "attach", "Discovery", str(figure))
+    describe = tmp_path / "what.md"
+    describe.write_text("An offline-first store.")
+
+    cli_stdin(
+        "step", "add", "Discovery", "Hash passwords",
+        "--describe-file", str(describe), "--agent-file", "-",
+        "--days", "3", "--link", "r1", "--attach", "a1",
+        stdin="Use argon2id.",
+    )
+
+    assert data(cli("describe", "show", "Hash passwords", "--json"))["markdown"].startswith(
+        "An offline-first"
+    )
+    assert data(cli("agent", "show", "Hash passwords", "--json"))["markdown"] == "Use argon2id."
+    shown = data(cli("step", "show", "Hash passwords", "--json"))
+    assert shown["aspects"]["estimation"]["days"] == 3.0
+    assert shown["aspects"]["spec"]["requirements"] == ["r1"]
+    assert shown["aspects"]["spec"]["attachments"][0]["asset"] == "a1"
+    # One call, and the authoring lint checks have nothing left to say about this step.
+    report = data(cli("project", "lint", "Discovery", "--json", expect=1))
+    complaints = {row["check"] for row in report["findings"] if row["title"] == "Hash passwords"}
+    assert complaints == set()
+
+
+def test_a_failing_author_leaves_no_step_behind(cli, tmp_path):
+    """The transaction is the rollback: a refused flag aborts the whole add."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Doomed", "--days", "-1", expect=1)
+    assert data(cli("step", "list", "Discovery", "--json"))["steps"] == []
+    cli("step", "add", "Discovery", "Doomed", "--link", "r9", expect=1)
+    assert data(cli("step", "list", "Discovery", "--json"))["steps"] == []
+
+
+def test_two_stdin_flags_are_refused_before_either_reads(cli):
+    cli("project", "create", "Discovery")
+    out = cli(
+        "step", "add", "Discovery", "Deploy",
+        "--describe-file", "-", "--agent-file", "-", expect=1,
+    )
+    assert "one flag may read stdin" in out
+    assert data(cli("step", "list", "Discovery", "--json"))["steps"] == []
+
+
+def test_clear_steps_keeps_the_project_and_what_it_owns(cli, tmp_path):
+    cli("project", "create", "Discovery")
+    for title in ("A", "B", "C"):
+        cli("step", "add", "Discovery", title)
+    cli("schedule", "start", "Discovery", "--date", "2026-09-01")
+    spec = tmp_path / "spec.md"
+    spec.write_text("# Spec")
+    cli("spec", "import", "Discovery", str(spec))
+    cli("spec", "mark", "Discovery", "spec", "--title", "A rule")
+
+    report = data(cli("project", "clear-steps", "Discovery", "--json"))
+    assert len(report["removed"]) == 3
+    assert data(cli("step", "list", "Discovery", "--json"))["steps"] == []
+    # The re-plan keeps everything the steps did not own.
+    assert data(cli("schedule", "show", "Discovery", "--json"))["start"] == "2026-09-01"
+    listed = data(cli("spec", "requirements", "Discovery", "--json"))["requirements"]
+    assert [req["id"] for req in listed] == ["r1"]
+
+
+def test_clear_steps_on_an_empty_project_is_a_calm_zero(cli):
+    cli("project", "create", "Discovery")
+    out = cli("project", "clear-steps", "Discovery")
+    assert "all 0 steps" in out
+
+
+# -- the schedule's two assumptions ------------------------------------------------------------
+
+
+def test_schedule_show_names_both_assumptions(cli):
+    """A diamond graph: serial totals every step, the critical path takes the heavier
+    branch — and each line says which assumption produced it."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "A")
+    cli("step", "add", "Discovery", "B", "--after", "A")
+    cli("step", "add", "Discovery", "C", "--after", "A")
+    cli("step", "add", "Discovery", "D", "--after", "B", "--after", "C")
+    for title, days in (("A", "1"), ("B", "2"), ("C", "10"), ("D", "1")):
+        cli("estimate", "set", title, "--days", days)
+    cli("schedule", "start", "Discovery", "--date", "2026-09-07")
+
+    shown = data(cli("schedule", "show", "Discovery", "--json"))
+    assert shown["days"] == 14 and shown["assumption"] == "serial"
+    path = shown["critical_path"]
+    assert path["days"] == 12
+    assert [step["title"] for step in path["steps"]] == ["A", "C", "D"]
+
+    text = cli("schedule", "show", "Discovery")
+    assert "(serial: one worker, steps end to end)" in text
+    assert "critical path:" in text and "unlimited workers" in text
+    assert "A → C → D" in text
+
+
 # -- the graph as text -------------------------------------------------------------------------
 
 
@@ -334,6 +464,16 @@ def test_project_graph_quotes_awkward_titles(cli):
     cli("step", "add", "Discovery", 'Say "hello" [loudly]')
     chart = cli("project", "graph", "Discovery")
     assert '"Say #quot;hello#quot; [loudly]"' in chart
+
+
+def test_project_graph_short_uses_positional_ids_and_cut_titles(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "A step with a very long descriptive title indeed")
+    cli("step", "add", "Discovery", "B", "--after", "A step")
+    chart = cli("project", "graph", "Discovery", "--short")
+    assert 's1["1: A step with a very long…"]' in chart
+    assert 's2["2: B"]' in chart
+    assert "s1 --> s2" in chart
 
 
 def test_project_graph_of_an_empty_project_is_still_a_chart(cli):

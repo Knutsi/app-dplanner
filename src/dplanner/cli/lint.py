@@ -15,7 +15,8 @@ from dataclasses import dataclass
 
 from dplanner.cli.command import CliCommand, CliContext
 from dplanner.cli.lookup import find_project
-from dplanner.domain.model import Product, Project
+from dplanner.domain.model import NodeId, Product, Project
+from dplanner.domain.store import ModuleFileArea
 
 
 @dataclass(frozen=True)
@@ -28,8 +29,13 @@ class LintFinding:
     message: str
 
 
+# The store's file lookup, for checks whose facts live beside a node rather than in it —
+# a quote validated against a document's text layer, an image reference against the files
+# actually attached. Raises KeyError for a node the store has never flushed.
+FilesFor = Callable[[NodeId, str], ModuleFileArea]
+
 # One shape for both scopes: a step-scoped check loops over ``project.steps`` itself.
-LintCheck = Callable[[Product, Project], Sequence[LintFinding]]
+LintCheck = Callable[[Product, Project, FilesFor], Sequence[LintFinding]]
 
 
 def commands(checks: Sequence[LintCheck]) -> list[CliCommand]:
@@ -41,7 +47,10 @@ def commands(checks: Sequence[LintCheck]) -> list[CliCommand]:
         found: list[tuple[Project, LintFinding]] = []
         for project in projects:
             for check in checks:
-                found += [(project, finding) for finding in check(product, project)]
+                found += [
+                    (project, finding)
+                    for finding in check(product, project, context.store.files)
+                ]
         rows = [
             {
                 "project": project.id,

@@ -449,6 +449,20 @@ project card's empty Repository field after a checkout is set.
 *workspace's* repository; asking about somebody else's checkout is a planner concern.
 Upstream would want it only if the template ever grows a "point at another repo" feature.
 
+### `core/storage/pointer.py` — the workspace pointer file, and who may touch it
+
+**What.** `POINTER_FILE = ".dplanner"` and `write_pointer(workspace)`: drop a one-line
+relative path at the enclosing git repository's root when a workspace is created inside a
+checkout — skipping when there is no repo, the workspace *is* the root, or a pointer
+already exists (a hand-written one is never clobbered).
+
+**Why it is core.** The constant used to live in `cli/workspace.py`, but the writer is
+`domain/seed.py` (called through the framework's seed seam) and framework/domain may not
+import `cli/`. `core/storage` is the one layer both sides see. The lesson worth carrying:
+a file format with a reader on one layer and a writer on another belongs below both.
+
+**Belongs upstream?** The pattern yes; the filename is DPlanner's.
+
 ### `core/png.py` — an RGB buffer as PNG bytes, stdlib only
 
 **What.** One function, `encode_rgb(width, height, stride, pixels)`: IHDR + one IDAT +
@@ -463,6 +477,38 @@ addressing has to see that identical pixels are identical bytes.
 
 **Belongs upstream?** Probably, the day the template has a second headless image producer;
 it is small enough that carrying it here until then costs nothing.
+
+### `framework/asset_gallery.py` — the attached-files grid, promoted from a module
+
+**What.** `AssetGallery`: thumbnails for images, filename chips for the rest, click
+opens `ImagePreviewDialog`, optional Attach…/✕ when editable. Two source modes with two
+path vocabularies, never mixed: a node's content-addressed `ModuleFileArea` (editable,
+area-relative names) or an explicit list of workspace-relative paths plus a byte reader
+(read-only — how a briefing's file list is previewed). Thumbnails are rendered at
+`devicePixelRatioF()` and cached by name+ratio; the old module-private strip was soft on
+every HiDPI screen.
+
+**Why.** Promoted from `modules/step_agent_instruction/asset_strip.py` at its third
+consumer (the `make_text_well` lesson again): agent instruction, the step's spec figures
+and the description's images all want the same grid, and modules cannot import each
+other. Carries forward the two traps the strip learned: the *provider*-not-area seam
+(`KeyError` while a node is unflushed, answered in words) and attach/remove being
+deliberately not undoable.
+
+**Belongs upstream?** Yes, for any application adopting the module-files +
+content-addressed-assets convention — the widget knows nothing DPlanner-specific.
+
+### `framework/image_preview.py` — one modal lightbox for everything
+
+**What.** `ImagePreviewDialog(image, name, parent, caption=, path=)`: fitted to ≤80 % of
+the screen, **never upscaled past 1:1**, pixmap built at the device pixel ratio, optional
+Copy Path button. 20 px dialog margins per DESIGN.md.
+
+**Why.** Every module with a picture would otherwise grow its own dialog. The trap worth
+stating upstream: `QPixmap.scaled` without `setDevicePixelRatio` is blurry on every HiDPI
+screen — this generalises the `_PdfPage` pattern the spec viewer already got right.
+
+**Belongs upstream?** Yes, verbatim.
 
 ## 2. Conventions the template documents that we had to change
 

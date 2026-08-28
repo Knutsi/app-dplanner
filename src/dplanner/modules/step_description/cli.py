@@ -4,16 +4,19 @@ from argparse import ArgumentParser, Namespace
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.authoring import StepAuthor, StepAuthored
+from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_step
 from dplanner.domain.assets import assets, attach
 from dplanner.domain.commands import EditTextCommand
 from dplanner.domain.model import Product, Project, Step, TextEdit
-from dplanner.modules.step_description.aspect import MODULE_ID, read
+from dplanner.modules.step_description.aspect import MODULE_ID, image_references, read
 
 
 def lint_checks() -> list[LintCheck]:
-    def missing_descriptions(_product: Product, project: Project) -> list[LintFinding]:
+    def missing_descriptions(
+        _product: Product, project: Project, _files: FilesFor
+    ) -> list[LintFinding]:
         return [
             LintFinding(
                 check="description.missing",
@@ -25,7 +28,35 @@ def lint_checks() -> list[LintCheck]:
             if not read(step)
         ]
 
-    return [missing_descriptions]
+    def missing_images(
+        _product: Product, project: Project, files: FilesFor
+    ) -> list[LintFinding]:
+        """A description that embeds ![](assets/…) naming a file that is not beside the
+        step — the reference an agent's briefing would carry into nothing."""
+        findings = []
+        for step in project.steps:
+            references = image_references(read(step))
+            if not references:
+                continue
+            try:
+                known = set(assets(files(step.id, MODULE_ID)))
+            except KeyError:
+                known = set()  # A never-flushed step has no files yet.
+            findings += [
+                LintFinding(
+                    check="description.image-missing",
+                    subject_id=step.id,
+                    subject=step.title,
+                    message=f"its description references ![]({reference}) but no such "
+                    f"file is beside the step — `dplanner describe attach "
+                    f"'{step.title}' <file>` and use the printed path",
+                )
+                for reference in references
+                if reference not in known
+            ]
+        return findings
+
+    return [missing_descriptions, missing_images]
 
 
 def commands() -> list[CliCommand]:
@@ -82,17 +113,41 @@ def _step(context: CliContext, needle: str) -> Step:
     return find_step(context.product, needle)
 
 
-def _set(context: CliContext, args: Namespace) -> int:
+def _body(file_arg: str) -> str:
+    """A markdown body from a file, or stdin when the argument is ``-``."""
     import sys
 
-    if args.file == "-":
-        body = sys.stdin.read()
-    else:
-        path = Path(args.file)
-        if not path.is_file():
-            raise CliError(f"no such file: {args.file}")
-        body = path.read_text()
+    if file_arg == "-":
+        return sys.stdin.read()
+    path = Path(file_arg)
+    if not path.is_file():
+        raise CliError(f"no such file: {file_arg}")
+    return path.read_text()
 
+
+def step_author() -> StepAuthor:
+    """`step add`'s description flag: the new step arrives already described."""
+
+    def configure(parser: ArgumentParser) -> None:
+        parser.add_argument(
+            "--describe-file",
+            metavar="FILE",
+            help="a markdown description for the new step, or - for stdin",
+        )
+
+    def author(context: CliContext, step: Step, args: Namespace) -> StepAuthored | None:
+        if args.describe_file is None:
+            return None
+        body = _body(args.describe_file)
+        edit = TextEdit(step.id, MODULE_ID, 0, "", body)
+        context.apply(EditTextCommand(edit, label="Set Description"))
+        return StepAuthored({"described": len(body)}, f"description: {len(body)} characters")
+
+    return StepAuthor(configure, author, lambda args: args.describe_file == "-")
+
+
+def _set(context: CliContext, args: Namespace) -> int:
+    body = _body(args.file)
     step = _step(context, args.step)
     current = read(step)
     # One positioned edit over the whole document, labelled so a burst of GUI typing and a

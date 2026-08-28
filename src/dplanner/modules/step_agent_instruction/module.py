@@ -130,6 +130,8 @@ class StepAgentInstructionModule:
                 deps.undo,
                 PLACEHOLDER,
                 prompt_parts=deps.prompt_parts,
+                prompt_sections=deps.prompt_sections,
+                read_asset=deps.read_asset,
                 files=deps.files,
                 run_state=lambda: deps.actions.spec("agent.run").state(deps.context.current()),
                 run=lambda: deps.actions.run("agent.run", deps.context.current()),

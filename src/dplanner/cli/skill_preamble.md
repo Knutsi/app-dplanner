@@ -19,13 +19,21 @@ you work. So:
 
 - **Read before writing.** `dplanner project list`, then `dplanner project show <project>`.
   Say what you found and what you propose before you change it.
-- **Make small, named changes.** One `step add` per step, one `step link` per dependency.
-  Each is a separate line in the diff and a separate thing the user can disagree with.
+- **Make small, named changes — and author them whole.** One `step add` per step, carrying
+  everything the step needs in the same call: `--describe-file F`, `--agent-file F|-`,
+  `--days N`, `--link r1 r2`, `--attach a1`, `--after` for its dependencies. One authored
+  step is one line in the diff and one thing the user can disagree with; five half-steps
+  are noise.
 - **Do not invent structure the user did not ask for.** A plan with twenty imagined steps is
   harder to correct than an empty one.
 - **Show the shape.** `dplanner project graph <project>` renders the step graph as a
   Mermaid flowchart — paste it into a PR description or a report instead of describing the
-  graph in prose.
+  graph in prose (`--short` when full titles render too wide).
+- **Mind the two totals.** `dplanner schedule show` prints the serial total (one worker,
+  steps end to end) *and* the critical path (dependency-aware, unlimited workers). Real
+  staffing lands between them — read the labels, and quote the one you mean.
+- **Re-planning?** `dplanner project clear-steps <project>` removes every step at once and
+  keeps the specs, requirements and start date — then rebuild with authored `step add`s.
 
 ## Linking honestly
 
@@ -43,7 +51,7 @@ and the workflow runs from import to steps an agent can execute *in isolation*:
 
 1. **Import it.** `dplanner spec import <project> spec.pdf` stores the document beside the
    project. Importing under the same name again *replaces* it and keeps the previous
-   version, which is what makes step 6 possible. Importing a PDF also extracts its text
+   version, which is what makes step 7 possible. Importing a PDF also extracts its text
    layer.
 2. **Read it yourself.** `spec show` prints any document — for a PDF it prints the
    extracted text, page by page (`--page N` for one page) — and `spec path` still hands
@@ -51,23 +59,26 @@ and the workflow runs from import to steps an agent can execute *in isolation*:
    than any parser.
 3. **Mark the requirements.** One `dplanner spec mark <project> <doc> --title … --quote …
    --page N` per named obligation you find. The quote is checked against the document and
-   the page is recorded (found automatically when the quote is). Requirements are the
+   the page is recorded (found automatically when the quote is); add `--strict` when you
+   want a quote that does not anchor to stop you rather than warn. Requirements are the
    durable trace of your reading — the next agent starts from them, not from scratch.
-4. **Create the steps and link them.** `step add` and `step link` build the graph (see
-   *Linking honestly*); `dplanner spec link <step> <requirement>` records *why* each step
-   exists.
-5. **Author every step before moving on.** A step with only a title is not a plan — the
-   agent who picks it up has nothing to execute. For each step: `describe set` (what it
-   is), `agent set` (how to carry it out — or set one standing instruction for the whole
-   project with `agent set --project`), `estimate set --days N`, and put the figures the
-   step needs in front of its agent: `spec render <project> <doc> --page N` turns a page
-   into an image, `spec attach-to-step <step> <asset-id>` carries it into the step's
-   briefing. `agent prompt <step>` shows exactly what the executing agent will receive —
-   read it and ask whether it is enough to work from.
+4. **Render the figures once.** `spec render <project> <doc> --page N` turns a page into
+   an image asset (`spec assets` lists them); one rendered page can serve several steps.
+5. **Create each step authored, not as a bare title.** A step with only a title is not a
+   plan — the agent who picks it up has nothing to execute. One `step add` carries it all:
+   `--after` its dependencies (see *Linking honestly*), `--describe-file` (what it is),
+   `--agent-file` (how to carry it out — or one standing instruction for the whole project
+   via `agent set --project`), `--days`, `--link r1 r2` (why it exists), `--attach a1`
+   (the figures its agent must see). The standalone verbs (`describe set`, `agent set`,
+   `estimate set`, `spec link`, `spec attach-to-step` — the last two take several ids per
+   call) remain for editing later. `agent prompt <step>` shows exactly what the executing
+   agent will receive — read it and ask whether it is enough to work from.
 6. **Run `dplanner project lint <project>` before handing the plan over.** It lists every
    step missing a description, instruction, estimate or requirement link, every
-   requirement no step implements, and every dangling link — each with the verb that fixes
-   it — and exits 1 until the plan is complete. Hand over clean.
+   requirement no step implements, every dangling link, every quote that no longer
+   anchors after a spec change, and every description image reference that resolves to
+   nothing — each with the verb that fixes it — and exits 1 until the plan is complete.
+   Hand over clean.
 7. **When the spec changes**, import it again, then `spec diff <project> <doc>` to see what
    moved (PDFs diff by their text layers), and `spec requirements <project> --document
    <doc> --json` to find the linked steps. Update the steps and requirements the diff
@@ -87,13 +98,13 @@ says where the code is:
 - Without `gh`, recording still works — the refs are stored as written, and the state
   fills in when a machine with `gh` refreshes.
 
-Prefer building the project up with `project create` and `step add` when there are only a
-few steps: the user sees each one arrive and can stop you. For something large you have
-already agreed on, `dplanner project export | dplanner project import` is the blessed bulk
-path: the document carries every step's aspects and prose — descriptions, instructions,
-estimates, links — and the project's own, including its standing agent instruction, so a
-whole authored plan moves in one command. (Module *files* — spec blobs, attached images —
-stay behind; import the spec and re-attach figures after.)
+Prefer building the project up with authored `step add`s: the user sees each step arrive
+whole and can stop you. To move an agreed plan into a **new** project in one command,
+`dplanner project export | dplanner project import` carries every step's aspects and prose
+and the project's own, including its standing agent instruction — import always creates,
+never merges. (Module *files* — spec blobs, attached images — stay behind; import the spec
+and re-attach figures after.) To rebuild an **existing** project, `project clear-steps`
+then authored `step add`s.
 
 ## Conventions
 
@@ -108,3 +119,5 @@ stay behind; import the spec and re-attach figures after.)
 - **Someone else may be writing too.** If a command says the workspace changed on disk, a
   window or another run wrote to it. Run the command again — you will be working from what
   is actually there.
+- **A workspace created inside a git checkout announces itself**: a `.dplanner` pointer
+  file is written at the repository root, so discovery works from anywhere in the clone.

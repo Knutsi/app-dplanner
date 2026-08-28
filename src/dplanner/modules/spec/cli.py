@@ -10,17 +10,20 @@ travels with the step's briefing, and — when the spec is replaced — ``diff``
 """
 
 from argparse import ArgumentParser, Namespace
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.authoring import StepAuthor, StepAuthored
+from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.core.text_diff import diff_hunks
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Product, Project
+from dplanner.domain.model import Product, Project, Step
+from dplanner.domain.store import ModuleFileArea
 from dplanner.modules.spec.aspect import (
     MODULE_ID,
     SpecAttachment,
@@ -48,8 +51,57 @@ from dplanner.modules.spec.pdf import find_quote, render_page, split_pages, text
 from dplanner.modules.spec.pdf import text_layer as extract_text_layer
 
 
+def step_author() -> StepAuthor:
+    """`step add`'s spec flags: the new step arrives citing its requirements, figures
+    beside it — through the same cores the standalone verbs use, so the two paths
+    cannot drift."""
+
+    def configure(parser: ArgumentParser) -> None:
+        parser.add_argument(
+            "--link",
+            nargs="+",
+            metavar="R",
+            help="requirement ids the new step implements",
+        )
+        parser.add_argument(
+            "--attach",
+            nargs="+",
+            metavar="A",
+            help="spec asset ids to copy beside the new step",
+        )
+
+    def author(context: CliContext, step: Step, args: Namespace) -> StepAuthored | None:
+        if args.link is None and args.attach is None:
+            return None
+        project = context.product.project_of(step.id)
+        links = read_links(step)
+        attachments = read_attachments(step)
+        if args.link:
+            links = linked_ids(project, step, list(dict.fromkeys(args.link)))
+        files: list[str] = []
+        if args.attach:
+            attachments, files = copied_to_step(
+                context, project, step, list(dict.fromkeys(args.attach))
+            )
+        context.apply(
+            SetModuleDataCommand(step.id, MODULE_ID, write_step_entry(links, attachments))
+        )
+        notes = []
+        if args.link:
+            notes.append(f"linked {', '.join(args.link)}")
+        if args.attach:
+            notes.append(f"attached {', '.join(args.attach)}")
+        return StepAuthored(
+            {"requirements": sorted(set(links)), "attachments": files}, "; ".join(notes)
+        )
+
+    return StepAuthor(configure, author)
+
+
 def lint_checks() -> list[LintCheck]:
-    def spec_findings(_product: Product, project: Project) -> list[LintFinding]:
+    def spec_findings(
+        _product: Product, project: Project, _files: FilesFor
+    ) -> list[LintFinding]:
         requirements = read_index(project).requirements
         known = {requirement.id for requirement in requirements}
         findings = [
@@ -89,7 +141,49 @@ def lint_checks() -> list[LintCheck]:
                 )
         return findings
 
-    return [spec_findings]
+    def unanchored_quotes(
+        _product: Product, project: Project, files: FilesFor
+    ) -> list[LintFinding]:
+        """A requirement whose quote no longer appears in its document — the spec was
+        replaced and the anchor drifted. Re-validated here rather than stored at mark
+        time, because a stored answer is stale the moment `spec import` replaces the
+        document with no window running to notice."""
+        index = read_index(project)
+        cited = [req for req in index.requirements if req.quote]
+        if not cited:
+            return []
+        try:
+            area = files(project.id, MODULE_ID)
+        except KeyError:
+            return []  # A never-flushed project has no documents to check against.
+        documents = {doc.name: doc for doc in index.documents}
+        texts: dict[str, str | None] = {}  # Each document's text is read once, not per quote.
+        findings = []
+        for requirement in cited:
+            document = documents.get(requirement.document)
+            if document is None:
+                continue  # Its document is gone — `spec remove` already reported that.
+            if document.name not in texts:
+                texts[document.name] = document_text(area, document)
+            text = texts[document.name]
+            if text is None:
+                continue  # An unreadable document cannot refute a quote.
+            anchored, _page = quote_anchors(text, requirement.quote, document.kind)
+            if not anchored:
+                findings.append(
+                    LintFinding(
+                        check="spec.quote-unanchored",
+                        subject_id=requirement.id,
+                        subject=requirement.title,
+                        message=f"its quote no longer anchors in {requirement.document} — "
+                        f"re-read the document and re-mark: `dplanner spec mark "
+                        f"'{project.title}' {requirement.document} --id {requirement.id} "
+                        "--title … --quote …`",
+                    )
+                )
+        return findings
+
+    return [spec_findings, unanchored_quotes]
 
 
 def commands() -> list[CliCommand]:
@@ -170,11 +264,11 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("spec", "attach-to-step"),
-            summary="Copy a spec asset beside a step so its briefing carries the figure "
-            "(or --remove it).",
+            summary="Copy spec assets beside a step so its briefing carries the figures "
+            "(or --remove them).",
             configure=_configure_attach_to_step,
             run=_attach_to_step,
-            examples=("dplanner spec attach-to-step 'Hash passwords' a1",),
+            examples=("dplanner spec attach-to-step 'Hash passwords' a1 a3",),
         ),
         CliCommand(
             path=("spec", "mark"),
@@ -204,10 +298,10 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("spec", "link"),
-            summary="Link a step to a requirement it implements (or --remove the link).",
+            summary="Link a step to the requirements it implements (or --remove the links).",
             configure=_configure_link,
             run=_link,
-            examples=("dplanner spec link 'Hash passwords' r1",),
+            examples=("dplanner spec link 'Hash passwords' r1 r4 r7",),
         ),
     ]
 
@@ -255,6 +349,11 @@ def _configure_mark(parser: ArgumentParser) -> None:
     parser.add_argument(
         "--page", type=int, help="the page it sits on (default: where the quote is found)"
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="refuse the mark when the quote is not found, instead of warning",
+    )
 
 
 def _configure_render(parser: ArgumentParser) -> None:
@@ -267,8 +366,12 @@ def _configure_render(parser: ArgumentParser) -> None:
 
 def _configure_attach_to_step(parser: ArgumentParser) -> None:
     parser.add_argument("step", help="step id, folder name, or part of its title")
-    parser.add_argument("asset", help="an asset id from `dplanner spec assets`")
-    parser.add_argument("--remove", action="store_true", help="detach it from the step instead")
+    parser.add_argument(
+        "asset", nargs="+", help="asset ids from `dplanner spec assets`; several at once"
+    )
+    parser.add_argument(
+        "--remove", action="store_true", help="detach them from the step instead"
+    )
 
 
 def _configure_unmark(parser: ArgumentParser) -> None:
@@ -283,8 +386,12 @@ def _configure_requirements(parser: ArgumentParser) -> None:
 
 def _configure_link(parser: ArgumentParser) -> None:
     parser.add_argument("step", help="step id, folder name, or part of its title")
-    parser.add_argument("requirement", help="the requirement id in the step's project")
-    parser.add_argument("--remove", action="store_true", help="remove the link instead")
+    parser.add_argument(
+        "requirement",
+        nargs="+",
+        help="requirement ids in the step's project; several at once",
+    )
+    parser.add_argument("--remove", action="store_true", help="remove the links instead")
 
 
 # -- shared lookups ----------------------------------------------------------------------------
@@ -309,10 +416,38 @@ def _blob(document: SpecDocument, previous: bool) -> str:
 
 
 def _content(context: CliContext, project: Project, document: SpecDocument, blob: str) -> bytes:
-    data = context.store.files(project.id, MODULE_ID).read_bytes(blob)
+    return _blob_bytes(context.store.files(project.id, MODULE_ID), document, blob)
+
+
+def _blob_bytes(area: ModuleFileArea, document: SpecDocument, blob: str) -> bytes:
+    data = area.read_bytes(blob)
     if data is None:
         raise CliError(f"{document.name}: {blob} is missing from the workspace")
     return data
+
+
+def document_text(area: ModuleFileArea, document: SpecDocument) -> str | None:
+    """The text a quote can anchor in — a PDF's layer, prose decoded — or None when the
+    file is missing or the PDF unreadable. None means "cannot check", never "failed"."""
+    try:
+        if document.kind == KIND_PDF:
+            return _layer_from(area, document, document.file)
+        return _blob_bytes(area, document, document.file).decode("utf-8")
+    except CliError:
+        return None
+
+
+def quote_anchors(text: str, quote: str, kind: str) -> tuple[bool, int | None]:
+    """Whether a quote appears in a document's text, and on which page for a PDF.
+
+    One implementation for ``spec mark`` and ``project lint``, so the mark that passed
+    can never be the requirement lint flags — or the other way round.
+    """
+    if kind == KIND_PDF:
+        page = find_quote(text, quote)
+        return page is not None, page
+    normalized = " ".join(quote.lower().split())
+    return normalized in " ".join(text.lower().split()), None
 
 
 def _absolute(context: CliContext, project: Project, blob: str) -> str:
@@ -409,13 +544,16 @@ def _show(context: CliContext, args: Namespace) -> int:
 def _pdf_text(
     context: CliContext, project: Project, document: SpecDocument, blob: str
 ) -> str:
+    return _layer_from(context.store.files(project.id, MODULE_ID), document, blob)
+
+
+def _layer_from(area: ModuleFileArea, document: SpecDocument, blob: str) -> str:
     """The text layer: the file import wrote, or extracted in memory for a document
     imported before layers existed — a read verb never writes."""
-    area = context.store.files(project.id, MODULE_ID)
     stored = area.read_bytes(text_blob_name(blob))
     if stored is not None:
         return stored.decode("utf-8")
-    data = _content(context, project, document, blob)
+    data = _blob_bytes(area, document, blob)
     try:
         return extract_text_layer(data)
     except Exception as error:  # pdfium raises its own hierarchy.
@@ -592,44 +730,86 @@ def _assets(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _attach_to_step(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
-    project = context.product.project_of(step.id)
-    index = read_index(project)
-    asset = next((entry for entry in index.assets if entry.id == args.asset), None)
-    if asset is None:
+def _some(noun: str, ids: Sequence[str]) -> str:
+    """"asset 'a1'" or "assets 'a1', 'a2'" — refusals read the same at any count."""
+    listed = ", ".join(repr(entry) for entry in ids)
+    return f"{noun}{'s' if len(ids) != 1 else ''} {listed}"
+
+
+def linked_ids(project: Project, step: Step, ids: Sequence[str]) -> list[str]:
+    """The step's links with ``ids`` added — refusing every unknown id in one message,
+    before anything is written. Shared by ``spec link`` and ``step add --link``."""
+    known = {req.id for req in read_index(project).requirements}
+    unknown = [entry for entry in ids if entry not in known]
+    if unknown:
         raise CliError(
-            f"no asset {args.asset!r} in {project.title!r} — see `dplanner spec assets`"
+            f"no {_some('requirement', unknown)} in {project.title!r} — "
+            "see `dplanner spec requirements`"
         )
-    attachments = read_attachments(step)
-    if args.remove:
-        # The copied blob stays: content-addressed files are cheap, and another
-        # attachment or an old briefing may still name it.
-        attachments = [entry for entry in attachments if entry.asset != asset.id]
-        note = f"{step.title}: {asset.id} detached (its file stays beside the step)"
-        file = asset.file
-    else:
-        data = context.store.files(project.id, MODULE_ID).read_bytes(asset.file)
+    links = read_links(step)
+    return [*links, *[entry for entry in ids if entry not in links]]
+
+
+def copied_to_step(
+    context: CliContext, project: Project, step: Step, asset_ids: Sequence[str]
+) -> tuple[list[SpecAttachment], list[str]]:
+    """Copy each asset's blob beside the step; the updated attachments and copied names.
+
+    Copied, not referenced: the step stays self-contained if the project's spec — or the
+    whole asset — is later removed, and the briefing gets a real file. Every id is
+    resolved and every blob read before the first copy, so a bad id refuses the batch.
+    Shared by ``spec attach-to-step`` and ``step add --attach``.
+    """
+    index = read_index(project)
+    by_id = {asset.id: asset for asset in index.assets}
+    missing = [entry for entry in asset_ids if entry not in by_id]
+    if missing:
+        raise CliError(
+            f"no {_some('asset', missing)} in {project.title!r} — see `dplanner spec assets`"
+        )
+    project_area = context.store.files(project.id, MODULE_ID)
+    blobs: dict[str, bytes] = {}
+    for asset_id in asset_ids:
+        data = project_area.read_bytes(by_id[asset_id].file)
         if data is None:
-            raise CliError(f"{asset.id}: {asset.file} is missing from the workspace")
-        # Copied, not referenced: the step stays self-contained if the project's spec —
-        # or the whole asset — is later removed, and the briefing gets a real file.
-        file = attach(
-            context.store.files(step.id, MODULE_ID), data, PurePosixPath(asset.file).name
-        )
-        if not any(entry.asset == asset.id for entry in attachments):
+            raise CliError(f"{asset_id}: {by_id[asset_id].file} is missing from the workspace")
+        blobs[asset_id] = data
+    attachments = read_attachments(step)
+    copied: list[str] = []
+    step_area = context.store.files(step.id, MODULE_ID)
+    for asset_id in asset_ids:
+        asset = by_id[asset_id]
+        file = attach(step_area, blobs[asset_id], PurePosixPath(asset.file).name)
+        copied.append(file)
+        if not any(entry.asset == asset_id for entry in attachments):
             attachments = [
                 *attachments,
                 SpecAttachment(
-                    file=file, document=asset.document, page=asset.page, asset=asset.id
+                    file=file, document=asset.document, page=asset.page, asset=asset_id
                 ),
             ]
-        note = f"{step.title}: {asset.id} attached as {file}"
+    return attachments, copied
+
+
+def _attach_to_step(context: CliContext, args: Namespace) -> int:
+    step = find_step(context.product, args.step)
+    project = context.product.project_of(step.id)
+    wanted = list(dict.fromkeys(args.asset))
+    if args.remove:
+        # The copied blobs stay: content-addressed files are cheap, and another
+        # attachment or an old briefing may still name them.
+        doomed = set(wanted)
+        attachments = [entry for entry in read_attachments(step) if entry.asset not in doomed]
+        files: list[str] = []
+        note = f"{step.title}: {', '.join(wanted)} detached (the files stay beside the step)"
+    else:
+        attachments, files = copied_to_step(context, project, step, wanted)
+        note = f"{step.title}: attached {', '.join(wanted)}"
     context.apply(
         SetModuleDataCommand(step.id, MODULE_ID, write_step_entry(read_links(step), attachments))
     )
     context.report(
-        {"step": step.id, "asset": asset.id, "file": file, "attachments": len(attachments)},
+        {"step": step.id, "assets": wanted, "files": files, "attachments": len(attachments)},
         note,
     )
     return 0
@@ -640,6 +820,13 @@ def _mark(context: CliContext, args: Namespace) -> int:
     document = _document(project, args.document)
     index = read_index(project)
     quote_found, found_page = _validate_quote(context, project, document, args.quote)
+    # Only a definite miss refuses: None means "nothing to check" (no quote, or a PDF
+    # whose text cannot be read), and strictness must not punish the unknowable.
+    if args.strict and quote_found is False:
+        raise CliError(
+            f"--strict: the quote was not found in {document.name} — check the wording "
+            "against `dplanner spec show`, or drop --strict (PDF extraction can mangle text)"
+        )
     page = args.page if args.page is not None else found_page
     requirement = Requirement(
         id=args.id or next_id([req.id for req in index.requirements], "r"),
@@ -685,16 +872,10 @@ def _validate_quote(
     """
     if not quote:
         return None, None
-    if document.kind == KIND_PDF:
-        try:
-            layer = _pdf_text(context, project, document, document.file)
-        except CliError:
-            return None, None  # A PDF whose text cannot be read cannot refute a quote.
-        page = find_quote(layer, quote)
-        return page is not None, page
-    body = _content(context, project, document, document.file).decode("utf-8")
-    normalized = " ".join(quote.lower().split())
-    return normalized in " ".join(body.lower().split()), None
+    text = document_text(context.store.files(project.id, MODULE_ID), document)
+    if text is None:
+        return None, None  # A document whose text cannot be read cannot refute a quote.
+    return quote_anchors(text, quote, document.kind)
 
 
 def _unmark(context: CliContext, args: Namespace) -> int:
@@ -760,20 +941,14 @@ def _requirements(context: CliContext, args: Namespace) -> int:
 def _link(context: CliContext, args: Namespace) -> int:
     step = find_step(context.product, args.step)
     project = context.product.project_of(step.id)
-    known = {req.id for req in read_index(project).requirements}
-    links = read_links(step)
+    wanted = list(dict.fromkeys(args.requirement))
     if args.remove:
-        links = [entry for entry in links if entry != args.requirement]
-        note = f"{step.title}: no longer linked to {args.requirement}"
+        doomed = set(wanted)
+        links = [entry for entry in read_links(step) if entry not in doomed]
+        note = f"{step.title}: no longer linked to {', '.join(wanted)}"
     else:
-        if args.requirement not in known:
-            raise CliError(
-                f"no requirement {args.requirement!r} in {project.title!r} — "
-                "see `dplanner spec requirements`"
-            )
-        if args.requirement not in links:
-            links = [*links, args.requirement]
-        note = f"{step.title}: linked to {args.requirement}"
+        links = linked_ids(project, step, wanted)
+        note = f"{step.title}: linked to {', '.join(wanted)}"
     entry = write_step_entry(links, read_attachments(step))
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
     context.report(

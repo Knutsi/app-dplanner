@@ -21,10 +21,10 @@ from typing import TextIO
 from dplanner.cli.command import CliContext, CliError
 from dplanner.core.module_data import ModuleDataFormat, migrate_module_data
 from dplanner.core.storage.locations import StorageLocation, open_storage, parse_location
+from dplanner.core.storage.pointer import POINTER_FILE
 from dplanner.domain.store import PRODUCT_META, ProductStore, StaleWorkspaceError
 
 WORKSPACE_ENV = "DPLANNER_WORKSPACE"
-POINTER_FILE = ".dplanner"
 
 
 def find_workspace(explicit: str | None = None, start: Path | None = None) -> StorageLocation:
@@ -49,8 +49,9 @@ def find_workspace(explicit: str | None = None, start: Path | None = None) -> St
     found = _walk_up(start or Path.cwd())
     if found is None:
         raise CliError(
-            "no product found here. Run inside a product directory, or pass "
-            f"--workspace PATH (or set {WORKSPACE_ENV})."
+            "no product found here. Run inside a product directory or a checkout whose "
+            f"root carries a {POINTER_FILE} pointer file, or pass --workspace PATH "
+            f"(or set {WORKSPACE_ENV})."
         )
     return parse_location(str(found))
 

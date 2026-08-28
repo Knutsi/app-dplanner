@@ -1,11 +1,13 @@
 """The Agent tab: the whole briefing, part by part, with the trigger under it.
 
-Three collapsible parts, in the order the prompt is assembled: the project's standing
+Four collapsible parts, in the order the prompt is assembled: the project's standing
 instruction (editable here and in the project panel's Agent card — one field, one undo
-stack), what earlier steps handed forward (read-only, rendered by the same
-``prompt.part_lines`` the prompt is built with, so the pane and the prompt cannot drift),
-and this step's own instruction. Expanding everything *is* the whole prompt in reading
-order; Preview Prompt shows the exact assembled text.
+stack), the step's own facts — description, requirements, figures — rendered by the same
+``prompt.section_lines`` the prompt is built with and showing each section's files as a
+gallery of real thumbnails, what earlier steps handed forward (read-only, via
+``part_lines`` — the same no-drift rule), and this step's own instruction. Expanding
+everything *is* the whole prompt in reading order; Preview Prompt shows the exact
+assembled text.
 
 The buttons are not second implementations of anything — each evaluates and runs the same
 ``ActionSpec`` the menus do, so the tab and the menu can never disagree about when a run
@@ -31,13 +33,17 @@ from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import NodeId, Product, StepId
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import ActionState
+from dplanner.framework.asset_gallery import AssetGallery
 from dplanner.framework.text_binding import TextBinding
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import make_text_well, space_lines
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
-from dplanner.modules.step_agent_instruction.asset_strip import AssetStrip
-from dplanner.modules.step_agent_instruction.prompt import PromptPart, part_lines
-from dplanner.theme.icons import ICON_SIZE, graph_icon, leaf_icon, project_icon
+from dplanner.modules.step_agent_instruction.prompt import (
+    PromptPart,
+    part_lines,
+    section_lines,
+)
+from dplanner.theme.icons import ICON_SIZE, graph_icon, leaf_icon, project_icon, read_icon
 
 PANEL_MARGIN = 16
 BLOCK_GAP = 12  # DESIGN.md: between blocks; FIELD_GAP is within one.
@@ -127,7 +133,7 @@ class PartRow(QWidget):
 
 
 class AgentSection(QWidget):
-    """The three prompt parts, stacked; Preview and Run under them."""
+    """The four prompt parts, stacked; Preview and Run under them."""
 
     def __init__(
         self,
@@ -140,11 +146,15 @@ class AgentSection(QWidget):
         run: Callable[[], None],
         preview_state: Callable[[], ActionState],
         preview: Callable[[], None],
+        prompt_sections: Callable[[StepId], Sequence[PromptPart]] = lambda _sid: (),
+        read_asset: Callable[[str], bytes | None] | None = None,
     ) -> None:
         super().__init__()
         self._product = product
         self._undo = undo
         self._prompt_parts = prompt_parts
+        self._prompt_sections = prompt_sections
+        self._read_asset = read_asset
         self._files = files
         self._run_state = run_state
         self._preview_state = preview_state
@@ -159,9 +169,31 @@ class AgentSection(QWidget):
         self.project_edit.setObjectName("InspectorNotes")
         self.project_edit.setPlaceholderText(PROJECT_PLACEHOLDER)
         self.project_edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
-        self.project_assets = AssetStrip(self)
+        self.project_assets = AssetGallery(
+            self, editable=True, attach_title="Attach to Instruction"
+        )
         project_body = _body(self.project_edit, self.project_assets)
         self.project_part = PartRow("Project", project_icon, project_body)
+
+        # -- Step context: the step's own facts, exactly as the briefing carries them —
+        # rendered text from section_lines, and each section's files as real thumbnails.
+        self.context_view = QPlainTextEdit(self)
+        self.context_view.setObjectName("InspectorNotes")
+        self.context_view.setReadOnly(True)
+        self.context_view.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        self.context_view.setPlaceholderText("Nothing recorded about this step yet.")
+        make_text_well(self.context_view)
+        self._context_galleries = QWidget(self)
+        self._galleries_column = QVBoxLayout(self._context_galleries)
+        self._galleries_column.setContentsMargins(0, 0, 0, 0)
+        self._galleries_column.setSpacing(FIELD_GAP)
+        context_body = QWidget(self)
+        context_column = QVBoxLayout(context_body)
+        context_column.setContentsMargins(0, 0, 0, 0)
+        context_column.setSpacing(FIELD_GAP)
+        context_column.addWidget(self.context_view, stretch=1)
+        context_column.addWidget(self._context_galleries)
+        self.context_part = PartRow("Step context", read_icon, context_body)
 
         # -- Inherited: read-only, derived on every relevant change, never stored.
         self.inherited_view = QPlainTextEdit(self)
@@ -177,7 +209,9 @@ class AgentSection(QWidget):
         self.edit.setObjectName("InspectorNotes")
         self.edit.setPlaceholderText(placeholder)
         self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
-        self.step_assets = AssetStrip(self)
+        self.step_assets = AssetGallery(
+            self, editable=True, attach_title="Attach to Instruction"
+        )
         step_body = _body(self.edit, self.step_assets)
         self.step_part = PartRow("This step", leaf_icon, step_body, expanded=True)
 
@@ -198,12 +232,13 @@ class AgentSection(QWidget):
         )
         self._column.setSpacing(BLOCK_GAP)
         self._column.addWidget(self.project_part)
+        self._column.addWidget(self.context_part)
         self._column.addWidget(self.inherited_part)
         self._column.addWidget(self.step_part, stretch=1)
         self._column.addLayout(buttons)
 
         # A collapsed part must not keep its share of the height; the expanded ones split it.
-        for part in (self.project_part, self.inherited_part, self.step_part):
+        for part in self._parts():
             part.toggled.connect(lambda _expanded: self._restretch())
         self._restretch()
 
@@ -213,9 +248,9 @@ class AgentSection(QWidget):
         self.project_edit.textChanged.connect(self._refresh_summaries)
 
         self._unsubscribes = [
-            product.text_edited.connect(lambda *_a: self._refresh_inherited()),
-            product.module_data_changed.connect(lambda *_a: self._refresh_inherited()),
-            product.edges_changed.connect(lambda *_a: self._refresh_inherited()),
+            product.text_edited.connect(lambda *_a: self._refresh_derived()),
+            product.module_data_changed.connect(lambda *_a: self._refresh_derived()),
+            product.edges_changed.connect(lambda *_a: self._refresh_derived()),
         ]
 
     # -- the panel's side of the contract ------------------------------------------------------
@@ -246,7 +281,7 @@ class AgentSection(QWidget):
             self.edit.setPlainText("")
             self.project_edit.setPlainText("")
         self._retarget_assets()
-        self._refresh_inherited()
+        self._refresh_derived()
         self._refresh_buttons()
 
     def dispose(self) -> None:
@@ -261,13 +296,16 @@ class AgentSection(QWidget):
         files = self._files
         step_id, project_id = self._step_id, self._project_id
         if files is None or step_id is None or project_id is None:
-            self.step_assets.set_source(None)
-            self.project_assets.set_source(None)
+            self.step_assets.set_area(None)
+            self.project_assets.set_area(None)
             return
-        self.step_assets.set_source(lambda: files(step_id, MODULE_ID))
-        self.project_assets.set_source(lambda: files(project_id, MODULE_ID))
+        self.step_assets.set_area(lambda: files(step_id, MODULE_ID))
+        self.project_assets.set_area(lambda: files(project_id, MODULE_ID))
 
-    def _refresh_inherited(self) -> None:
+    def _refresh_derived(self) -> None:
+        """Everything this tab computes rather than edits: inherited context and the
+        step's own facts. One entry point, so no model change can refresh one pane and
+        leave the other describing an older step."""
         parts: Sequence[PromptPart] = ()
         if self._step_id is not None and self._product.has(self._step_id):
             parts = self._prompt_parts(self._step_id)
@@ -275,16 +313,48 @@ class AgentSection(QWidget):
         self.inherited_view.setPlainText("\n".join(lines).strip())
         make_text_well(self.inherited_view)
         space_lines(self.inherited_view)
+        self._refresh_context()
         self._refresh_summaries()
+
+    def _refresh_context(self) -> None:
+        sections: Sequence[PromptPart] = ()
+        if self._step_id is not None and self._product.has(self._step_id):
+            sections = self._prompt_sections(self._step_id)
+        lines = [line for section in sections for line in section_lines(section)]
+        self.context_view.setPlainText("\n".join(lines).strip())
+        make_text_well(self.context_view)
+        space_lines(self.context_view)
+
+        while (item := self._galleries_column.takeAt(0)) is not None:
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        read = self._read_asset
+        if read is not None:
+            for section in sections:
+                if not section.files:
+                    continue
+                heading = QLabel(section.heading, self._context_galleries)
+                heading.setObjectName("InspectorNote")
+                gallery = AssetGallery(self._context_galleries)
+                gallery.set_files(section.files, read)
+                self._galleries_column.addWidget(heading)
+                self._galleries_column.addWidget(gallery)
 
     def _refresh_summaries(self) -> None:
         self.project_part.set_summary(_prose_summary(self.project_edit.toPlainText()))
         self.step_part.set_summary(_prose_summary(self.edit.toPlainText()))
-        count = 0
+        parts, sections = 0, 0
         if self._step_id is not None and self._product.has(self._step_id):
-            count = len(self._prompt_parts(self._step_id))
+            parts = len(self._prompt_parts(self._step_id))
+            sections = len(self._prompt_sections(self._step_id))
         self.inherited_part.set_summary(
-            "nothing yet" if count == 0 else f"{count} block{'s' if count != 1 else ''}"
+            "nothing yet" if parts == 0 else f"{parts} block{'s' if parts != 1 else ''}"
+        )
+        self.context_part.set_summary(
+            "nothing yet"
+            if sections == 0
+            else f"{sections} section{'s' if sections != 1 else ''}"
         )
 
     def _refresh_buttons(self) -> None:
@@ -301,8 +371,11 @@ class AgentSection(QWidget):
 
     # -- internals -----------------------------------------------------------------------------
 
+    def _parts(self) -> tuple[PartRow, ...]:
+        return (self.project_part, self.context_part, self.inherited_part, self.step_part)
+
     def _restretch(self) -> None:
-        for part in (self.project_part, self.inherited_part, self.step_part):
+        for part in self._parts():
             self._column.setStretchFactor(part, 1 if part.expanded() else 0)
 
     def _close_bindings(self) -> None:
@@ -343,7 +416,9 @@ class ProjectInstructionCard(QWidget):
         # A card grows down the stack, not with its content: a few lines here, the Agent
         # tab for serious writing. The inner scroller is DESIGN.md's accepted trade.
         self.edit.setFixedHeight(self.edit.fontMetrics().lineSpacing() * 6 + 16)
-        self.assets = AssetStrip(self)
+        self.assets = AssetGallery(
+            self, editable=True, attach_title="Attach to Instruction"
+        )
 
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
@@ -369,12 +444,12 @@ class ProjectInstructionCard(QWidget):
                 self.edit, ModuleTextField(self._product, project_id, MODULE_ID), self._undo
             )
             files, pid = self._files, project_id
-            self.assets.set_source(
+            self.assets.set_area(
                 (lambda: files(pid, MODULE_ID)) if files is not None else None
             )
         else:
             self.edit.setPlainText("")
-            self.assets.set_source(None)
+            self.assets.set_area(None)
 
     def dispose(self) -> None:
         self._close_binding()
@@ -386,8 +461,8 @@ class ProjectInstructionCard(QWidget):
             self._binding = None
 
 
-def _body(edit: QPlainTextEdit, assets: AssetStrip) -> QWidget:
-    """An editor with its asset strip under it, as one collapsible body."""
+def _body(edit: QPlainTextEdit, assets: AssetGallery) -> QWidget:
+    """An editor with its asset gallery under it, as one collapsible body."""
     body = QWidget()
     column = QVBoxLayout(body)
     column.setContentsMargins(0, 0, 0, 0)
