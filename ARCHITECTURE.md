@@ -527,6 +527,28 @@ Around that one check:
 The same check is why **two CLI runs need no lock between them**: the second is refused for
 exactly the same reason and can be run again. One mechanism, three cases.
 
+### Storage operations that rewrite the working tree are synchronous
+
+CLAUDE.md's rule says blocking work runs through `TaskRunner`, and the sync module's own
+Save and Update honour it. Four of its operations deliberately do not, and the exception is
+a decision, not a leak:
+
+- **Branch switch and create** (`SyncService.switch_branch_sync` / `create_branch_sync`,
+  run through `_run_guarded` in `modules/sync/module.py`). A checkout rewrites the very
+  files the application is showing; the full rebuild must follow *immediately*, not after
+  an event-loop round trip during which a paint, a context change or an autosave could read
+  a model that no longer matches the tree. `_run_guarded` pauses autosave around the body
+  for the same reason.
+- **The branch list** before the switch dialog opens: a subprocess, but a local one, and
+  the dialog's contents must be current at the moment it appears.
+- **Save at quit** (`service.save_sync()` in the close guard). The window is closing; there
+  is no task centre left to watch a task in, and returning to the event loop mid-teardown
+  is exactly the window a lost write needs.
+
+The boundary to keep: an operation whose completion the *running* application must observe
+before doing anything else at all may be synchronous; anything the user merely waits on goes
+through the runner. A new storage verb defaults to the runner.
+
 ## Syncing an external fact
 
 The GitHub aspect stores each PR's *last-seen* state so a merged PR stays green offline —
@@ -544,10 +566,12 @@ The refresher builds the same `SetModuleDataCommand` every other writer builds, 
   `Product` emits for every model change regardless of who applied it — so the write
   reaches disk without the stack's help.
 - **There is precedent, not exception.** The CLI applies commands the same way (a run is a
-  transaction; version control is the undo), and so do the format migrations at open. The
-  rule "every model change goes through a command" is about having one vocabulary of
-  change, not about the stack: the stack is the *GUI user's* journal, and a background
-  sync is not the GUI user.
+  transaction; version control is the undo). The rule "every model change goes through a
+  command" is about having one vocabulary of change, not about the stack: the stack is the
+  *GUI user's* journal, and a background sync is not the GUI user. (The format migrations
+  at open sit *below* the vocabulary: they run in `core/`, which may not import
+  `domain/commands`, so they write through the `Repository` protocol directly — before any
+  surface that could undo exists.)
 
 The concurrent-writer story needs nothing new: the refresh dirties the workspace like any
 edit, and *Two writers, one workspace* above already covers an agent flushing underneath.
@@ -663,6 +687,16 @@ date" any more, so no empty Date column to explain and no branch to carry it.
 The rule generalises: **derived data may be cached, but it may not be persisted.** A cache
 that is wrong is a bug you find in a session; a file that is wrong is a bug you find in a
 diff, months later, in a workspace nobody can reconstruct.
+
+One carve-out, stated so it stops looking like an oversight: **a derivation keyed by the
+content hash of its input is not a stored answer**, because it cannot disagree with what it
+came from — the input changing changes the key, and the stale entry is simply never read
+again. The worked example is the spec module's PDF text layer
+(`modules/spec/documents.py`): extraction is expensive, so the text is written into the
+module's file area under a name derived from the content-addressed document blob, and the
+read path falls back to extracting in memory when the file is absent. What the rule above
+forbids is a persisted answer that *can* drift from its source; a hash-keyed derivation
+has no way to.
 
 ## Status is an aspect, and step types are emergent
 

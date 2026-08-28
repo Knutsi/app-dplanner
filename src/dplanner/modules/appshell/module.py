@@ -21,7 +21,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.context import SCOPE_APP, Context, ContextService
+from dplanner.framework.context import Context, ContextService
 from dplanner.framework.palette import CommandPalette
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.tabs import TabHost
@@ -60,10 +60,10 @@ class AppShellModule:
         undo = deps.undo
 
         # The registry re-evaluates action states on context changes only, so an undo-stack
-        # change re-asserts the app scope to force a refresh of the Undo/Redo labels. A
+        # change re-emits the context to force a refresh of the Undo/Redo labels. A
         # poke rather than a new signal: one refresh path is easier to reason about than two.
         def poke_context() -> None:
-            deps.context.set_scope(SCOPE_APP, deps.context.current().scope(SCOPE_APP))
+            deps.context.refresh()
 
         undo.changed.connect(poke_context)
 

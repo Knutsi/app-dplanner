@@ -1,11 +1,11 @@
 """Theme-invariant design tokens, and the token → stylesheet mapping.
 
-Theme-dependent colours live on :class:`writer.theme.themes.Theme`; what remains here is
+Theme-dependent colours live on :class:`dplanner.theme.themes.Theme`; what remains here is
 constant across every theme: metrics.
 
 Qt stylesheets have no variable mechanism, so :func:`as_qss_mapping` feeds both these
 constants and the active theme's fields into ``theme.qss`` as ``$TOKEN`` placeholders;
-:mod:`writer.theme.palette` consumes the same theme for the ``QPalette``. One source for
+:mod:`dplanner.theme.palette` consumes the same theme for the ``QPalette``. One source for
 both consumers is what keeps palette and stylesheet from drifting into mismatched greys.
 """
 

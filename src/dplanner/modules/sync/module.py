@@ -29,7 +29,7 @@ from dplanner.core.storage.provider import (
 )
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec, ActionState
 from dplanner.framework.autosave import AutosaveService
-from dplanner.framework.context import SCOPE_APP, Context, ContextService
+from dplanner.framework.context import Context, ContextService
 from dplanner.framework.session import WorkspaceSwitcher
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
@@ -101,7 +101,7 @@ class SyncModule:
         def poke_context() -> None:
             # Action states re-evaluate on context change only, so a storage-state change
             # must trigger one — the same pattern the undo stack uses.
-            deps.context.set_scope(SCOPE_APP, deps.context.current().scope(SCOPE_APP))
+            deps.context.refresh()
 
         def refresh_label(*_args: object) -> None:
             branch = service.branch or "—"

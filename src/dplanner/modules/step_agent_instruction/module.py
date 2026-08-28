@@ -34,7 +34,6 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.settings_registry import (
-    SettingsScope,
     SettingsSection,
     SettingsSectionRegistry,
 )
@@ -192,7 +191,6 @@ class StepAgentInstructionModule:
             SettingsSection(
                 id=f"{MODULE_ID}.launch",
                 category=("Agent",),
-                scope=SettingsScope.GLOBAL,
                 factory=build_page,
             )
         )

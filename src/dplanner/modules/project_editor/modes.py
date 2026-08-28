@@ -136,26 +136,6 @@ class CanvasDeps:
 # -- the stack ---------------------------------------------------------------------------------
 
 
-class CanvasMode(Protocol):
-    name: str
-
-    def enter(self) -> None: ...
-
-    def exit(self) -> None: ...
-
-    def mouse_press(self, event: CanvasEvent) -> bool: ...
-
-    def mouse_move(self, event: CanvasEvent) -> bool: ...
-
-    def mouse_release(self, event: CanvasEvent) -> bool: ...
-
-    def double_click(self, event: CanvasEvent) -> bool: ...
-
-    def key_press(self, key: CanvasKey) -> bool: ...
-
-    def key_release(self, key: CanvasKey) -> bool: ...
-
-
 class ModeBase:
     """Declines every event. A mode overrides only the hooks it has an opinion about."""
 

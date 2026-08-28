@@ -2,7 +2,6 @@
 
 from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget
 
-from dplanner.core.signals import Signal
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import NodeId, Product, StepId
 from dplanner.framework.undo import UndoService
@@ -19,7 +18,6 @@ class ReleaseSection(QWidget):
         self._undo = undo
         self._step_id: StepId | None = None
         self._loading = False
-        self.tab_visibility_changed: Signal[bool] = Signal()
 
         self.label = QLineEdit(self)
         self.label.setPlaceholderText("MVP, v1.0, v2…")
@@ -45,9 +43,6 @@ class ReleaseSection(QWidget):
     @property
     def widget(self) -> QWidget:
         return self
-
-    def tab_visible(self) -> bool:
-        return True
 
     def show_target(self, target_id: str | None) -> None:
         self._step_id = target_id

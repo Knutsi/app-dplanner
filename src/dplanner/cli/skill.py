@@ -31,11 +31,15 @@ SKILL_DIR = ".claude/skills/dplanner"
 SKILL_FILE = "SKILL.md"
 REFERENCE_FILE = "reference.md"
 
-DESCRIPTION = (
-    "Plan software work as a product of projects, each a graph of steps carrying "
-    "estimates, tickets, descriptions and GitHub branch/PR refs. Use when asked to plan, "
-    "break down or estimate development work, or when a DPlanner product is present."
-)
+def _description(aspects: Sequence[AspectSpec]) -> str:
+    # Projected from the build's aspect list like everything else in the skill, so it
+    # cannot under-describe a build the way a hand-written enumeration did.
+    carried = ", ".join(spec.label for spec in aspects)
+    return (
+        "Plan software work as a product of projects, each a graph of steps carrying "
+        f"aspects ({carried}). Use when asked to plan, break down or estimate development "
+        "work, or when a DPlanner product is present."
+    )
 
 
 def preamble() -> str:
@@ -58,7 +62,7 @@ def _skill(registry: CliRegistry, aspects: Sequence[AspectSpec]) -> str:
     lines = [
         "---",
         f"name: {PROG}",
-        f"description: {DESCRIPTION}",
+        f"description: {_description(aspects)}",
         "---",
         "",
         f"# {APP_NAME}",

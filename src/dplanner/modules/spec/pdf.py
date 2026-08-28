@@ -82,15 +82,6 @@ def _normalized(text: str) -> str:
     return " ".join(text.lower().split())
 
 
-def page_count(data: bytes) -> int:
-    import pypdfium2 as pdfium
-
-    document = pdfium.PdfDocument(data)
-    try:
-        return len(document)
-    finally:
-        document.close()
-
 
 def render_page(data: bytes, page_number: int, scale: float) -> bytes:
     """One page as a PNG. ``scale`` multiplies PDF points; 2.0 reads like 144 DPI."""

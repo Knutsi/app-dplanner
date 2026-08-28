@@ -89,7 +89,6 @@ class ProjectPanel(QWidget):
             card = ToolCard(section.label, extension.widget)
             self._cards.append(card)
             self._stack.add_card(card)
-            extension.tab_visibility_changed.connect(card.setVisible)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -132,9 +131,8 @@ class ProjectPanel(QWidget):
         if project_id == self._project_id:
             return
         self._project_id = project_id
-        for card, extension in zip(self._cards, self._extensions, strict=True):
+        for extension in self._extensions:
             extension.show_target(project_id)
-            card.setVisible(extension.tab_visible())
 
     def current_project_id(self) -> NodeId | None:
         return self._project_id

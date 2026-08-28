@@ -173,7 +173,6 @@ class AgentSection(QWidget):
         self._project_id: NodeId | None = None
         self._step_binding: TextBinding[Product] | None = None
         self._project_binding: TextBinding[Product] | None = None
-        self.tab_visibility_changed: Signal[bool] = Signal()
 
         # -- Project: the standing instruction, editable here and in the project panel.
         self.project_edit = QPlainTextEdit(self)
@@ -323,9 +322,6 @@ class AgentSection(QWidget):
     @property
     def widget(self) -> QWidget:
         return self
-
-    def tab_visible(self) -> bool:
-        return True
 
     def show_target(self, target_id: str | None) -> None:
         self._close_bindings()
@@ -562,7 +558,6 @@ class ProjectInstructionCard(QWidget):
         self._undo = undo
         self._files = files
         self._binding: TextBinding[Product] | None = None
-        self.tab_visibility_changed: Signal[bool] = Signal()
 
         self.edit = QPlainTextEdit(self)
         self.edit.setObjectName("InspectorNotes")
@@ -584,11 +579,6 @@ class ProjectInstructionCard(QWidget):
     @property
     def widget(self) -> QWidget:
         return self
-
-    def tab_visible(self) -> bool:
-        # Always: a card that hid itself while the instruction was empty would be a card
-        # you could never use to write one.
-        return True
 
     def show_target(self, target_id: str | None) -> None:
         self._close_binding()

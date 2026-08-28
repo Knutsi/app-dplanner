@@ -371,7 +371,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
             ProductDeps(
                 product=product,
                 actions=services.actions,
-                context=services.context,
                 tabs=services.tabs,
                 undo=services.undo,
                 window=services.window,
@@ -505,7 +504,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 actions=services.actions,
                 context=services.context,
                 tabs=services.tabs,
-                parent=services.window,
                 # Listing steps is one feature; showing one on a canvas is another. This is
                 # the seam between them, and neither module knows the other's name.
                 reveal_step=project_editor.reveal,

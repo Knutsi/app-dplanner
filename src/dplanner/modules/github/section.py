@@ -16,7 +16,6 @@ from PySide6.QtCore import Signal as QtSignal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import QComboBox, QFormLayout, QLabel, QLineEdit, QWidget
 
-from dplanner.core.signals import Signal
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import NodeId, Product, StepId
 from dplanner.framework.undo import UndoService
@@ -96,7 +95,6 @@ class GithubSection(QWidget):
         # Which repo the pickers were (or are being) fetched for. Projects can carry their
         # own repository, so showing a step from another project may mean a refetch.
         self._loaded_repo: str | None = None
-        self.tab_visibility_changed: Signal[bool] = Signal()
 
         layout = QFormLayout(self)
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
@@ -127,9 +125,6 @@ class GithubSection(QWidget):
     @property
     def widget(self) -> QWidget:
         return self
-
-    def tab_visible(self) -> bool:
-        return True
 
     def show_target(self, target_id: str | None) -> None:
         self._step_id = target_id

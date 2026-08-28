@@ -19,7 +19,6 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.context import Context
 from dplanner.framework.settings_registry import (
-    SettingsScope,
     SettingsSection,
     SettingsSectionRegistry,
 )
@@ -57,20 +56,12 @@ class SettingsModule:
         self.dialog.raise_()
         self.dialog.activateWindow()
 
-    def open_at(self, section_id: str) -> None:
-        """Open the dialog with one section selected — the deeplink other modules receive
-        through the composition root, so a feature can send the user to the setting it
-        needs without importing this module."""
-        self.dialog.show_section(section_id)
-        self.open()
-
     def register(self) -> None:
         deps = self._deps
         deps.settings_sections.register(
             SettingsSection(
                 id="settings.general",
                 category=("General",),
-                scope=SettingsScope.GLOBAL,
                 factory=_placeholder_page,
             )
         )

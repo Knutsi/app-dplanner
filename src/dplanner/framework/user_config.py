@@ -1,7 +1,7 @@
 """Namespaced global (per-user-machine) preference storage for module-contributed settings.
 
-CLAUDE.md's non-goal is about the three existing bare ``QSettings()`` call sites
-(``session.py``, ``theme_service.py``, ``zoom.py``) — those stay as they are.
+The framework's own bare ``QSettings()`` call sites (``session.py``,
+``theme_service.py``, ``zoom.py``) stay as they are — each stores one window-level fact.
 This is different: any module with a Global :class:`~dplanner.framework.settings_registry`
 section needs somewhere to put its values, and without a shared convention every module
 would invent its own key scheme. These two functions are that convention — still bare

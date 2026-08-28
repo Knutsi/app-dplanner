@@ -514,6 +514,44 @@ screen — this generalises the `_PdfPage` pattern the spec viewer already got r
 
 **Belongs upstream?** Yes, verbatim.
 
+### The entropy pass: template machinery a year of building never called
+
+**What.** A whole-codebase review deleted every piece of `framework/`/`core/` surface that
+had accumulated zero callers across 27 modules, on the theory that git remembers and a
+dormant seam misleads more than it serves:
+
+- **Immersive mode, whole.** `enter_immersive`/`leave_immersive`/`is_immersive` and the
+  Escape shortcut on `AppWindow`, the `ImmersiveHost` protocol in `framework/window.py`,
+  `PanelDock.set_chrome_visible` and `TabHost.set_tab_bar_visible`. Fully implemented,
+  reachable from nothing — no action, no menu entry, no shortcut ever called it here.
+- **`ExportRegistry`** (`framework/exports.py`, the `AppServices.exports` field). §5 already
+  recorded that it has no clients in the template either; we have now acted on that here.
+- **`InspectorExtension.tab_visible()` / `tab_visibility_changed`.** Nine implementations,
+  every one `return True`; zero emitters. The protocol shrank to
+  `widget`/`show_target`/`dispose`, and both hosts (the step panel's tab bar, the project
+  panel's card stack) lost their dead visibility plumbing. If a section that genuinely
+  appears-and-disappears ever arrives, reintroduce the signal *with* that section — the
+  contract survived nine implementations without one, which is the evidence it was
+  speculative.
+- **`SettingsScope`, `SettingsSection.scope` and `.order`.** Every registrant said
+  `GLOBAL`; the dialog's "Project settings" tab was permanently empty, and `order` was never
+  set nor read. The dialog is now one tree. Workspace-scoped settings remain a plausible
+  future — the enum is one `git show` away, and the right time to restore it is with its
+  first real section.
+- **Dead methods:** `Context.has`/`has_prefix`, `TaskRunner.current_task`/`abandon`,
+  `TabHost.reannounce_current`, `AppBuilder.with_window`, `core/fsio.write_json_atomic`/
+  `read_json`, the `HIDDEN` action-state constant (the one hide site needs a label, so it
+  spells its `ActionState` out). The `domain/` and `core/` package `__init__` re-exports
+  went too — every consumer already imported from the defining module.
+- **Kept deliberately:** `secrets_store.delete_secret` — unused, but a secrets store you
+  can write into and never clear is a trap, not a seam.
+
+**Why the template should know.** Most of these came with the bootstrap. A generated
+application that never grows an exporter, an immersive mode or a project settings scope
+carries this surface forever, and each unused seam reads as a promise the application does
+not keep. The upstream question per item is the same: demonstrate it end to end, or ship it
+as documentation rather than code.
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class

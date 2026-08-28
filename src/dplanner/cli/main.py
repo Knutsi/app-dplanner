@@ -4,10 +4,7 @@ Two levels, always: ``dplanner <noun> <verb>``. The parsers are built from whate
 registered, so adding a verb to a module adds it to ``--help`` and to the generated skill
 without editing anything here.
 
-**Help output is a pure function of the registry.** The formatter is pinned to a fixed
-width rather than the terminal's, because ``skill.py`` renders these same parsers into a
-file that goes into version control — and a help text that reflowed with the window size
-would produce a diff every time somebody regenerated it from a different terminal.
+**Help output is a pure function of the registry** — ``_Formatter`` has the why.
 """
 
 import sys

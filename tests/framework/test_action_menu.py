@@ -6,9 +6,9 @@ from PySide6.QtWidgets import QWidget
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
     DISABLED,
-    HIDDEN,
     ActionRegistry,
     ActionSpec,
+    ActionState,
     MenuStructure,
 )
 from dplanner.framework.context import ContextService
@@ -50,7 +50,8 @@ def test_a_disabled_entry_is_greyed_and_a_hidden_one_is_omitted(app, registry):
     """Same policy as the menu bar: disabled means "not right now" and stays readable;
     hidden means the capability is absent and leaves no trace."""
     registry.register(spec("greyed", group="panels", state=lambda _c: DISABLED))
-    registry.register(spec("gone", group="panels", state=lambda _c: HIDDEN))
+    gone = ActionState(visible=False, enabled=False)
+    registry.register(spec("gone", group="panels", state=lambda _c: gone))
     parent = QWidget()
     popup = build_menu(registry, ContextService(), "View", parent)
     assert entries(popup) == ["greyed", "panel", "|", "move", "close"]

@@ -5,11 +5,9 @@ anything. ``slugify`` transliterates rather than merely stripping, because a fol
 the one part of a workspace a person reads in a file browser.
 """
 
-import json
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any
 
 # Norwegian (plus neighbours) transliterated explicitly: NFKD alone would drop ø entirely
 # rather than fold it to "o", and æ→ae matters for readable folder names.
@@ -49,14 +47,3 @@ def write_atomic(path: Path, text: str) -> None:
     tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
 
-
-def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
-    """Write ``data`` as stable, diff-friendly JSON (sorted keys, trailing newline)."""
-    write_atomic(path, json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
-
-
-def read_json(path: Path) -> dict[str, Any]:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError(f"{path}: expected a JSON object, got {type(data).__name__}")
-    return data

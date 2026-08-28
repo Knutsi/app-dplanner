@@ -7,8 +7,7 @@ in :mod:`dplanner.domain`, and everything Qt lives in :mod:`dplanner.framework`.
 The split is enforced: ``tests/test_architecture.py`` fails the build if anything in here
 imports Qt, your domain, the framework or a module. That is what keeps the storage
 providers swappable — a provider that cannot see your model cannot grow a dependency on it.
+
+Import from the defining module (:mod:`dplanner.core.signals`, :mod:`dplanner.core.storage`)
+— this package deliberately re-exports nothing.
 """
-
-from dplanner.core.signals import Signal
-
-__all__ = ["Signal"]

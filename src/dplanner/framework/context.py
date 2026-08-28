@@ -98,12 +98,6 @@ class Context:
     def scope(self, name: str) -> tuple[ContextNode, ...]:
         return self._scopes.get(name, ())
 
-    def has(self, uri: Uri) -> bool:
-        return any(node.uri == uri for node in self.nodes())
-
-    def has_prefix(self, prefix: str) -> bool:
-        return any(node.uri.startswith(prefix) for node in self.nodes())
-
     def uris_with_prefix(self, prefix: str) -> list[Uri]:
         return [node.uri for node in self.nodes() if node.uri.startswith(prefix)]
 

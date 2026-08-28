@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.core.signals import Signal
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.fields import ModuleTextField
@@ -52,7 +51,6 @@ class HandoffSection(QWidget):
         self._step_id: StepId | None = None
         self._binding: TextBinding[Product] | None = None
         self._loading = False
-        self.tab_visibility_changed: Signal[bool] = Signal()
 
         self.note = QPlainTextEdit(self)
         self.note.setObjectName("InspectorNotes")
@@ -109,9 +107,6 @@ class HandoffSection(QWidget):
     @property
     def widget(self) -> QWidget:
         return self
-
-    def tab_visible(self) -> bool:
-        return True
 
     def show_target(self, target_id: str | None) -> None:
         self._close_binding()

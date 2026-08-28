@@ -41,7 +41,6 @@ from dplanner.framework.context import (
     ContextNode,
     ContextService,
 )
-from dplanner.framework.exports import ExportRegistry
 from dplanner.framework.index_panel import IndexPanel, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
@@ -114,11 +113,6 @@ class AppBuilder:
         self._module_factory = factory
         return self
 
-    def with_window(self, factory: WindowFactory) -> Self:
-        """A window class of your own. Defaults to :class:`AppWindow`."""
-        self._window_factory = factory
-        return self
-
     def with_progress(self, progress: Callable[[str], None] | None) -> Self:
         """Stage-boundary reporting for the startup splash; None stays silent."""
         self._progress = progress
@@ -134,8 +128,6 @@ class AppBuilder:
         # 1 — data ------------------------------------------------------------------------
         self._report("Opening workspace…")
         repo = repo_factory(storage)
-        # A workspace that does not exist yet is seeded rather than opened empty: an
-        # application whose first screen is blank teaches the user nothing.
         # A workspace that does not exist yet is seeded rather than opened empty: an
         # application whose first screen is blank teaches its user nothing. It is then
         # loaded through the same path as any other, so the repository is never left
@@ -205,7 +197,6 @@ class AppBuilder:
             inspector_sections=InspectorSectionRegistry(),
             detail_cards=InspectorSectionRegistry(),
             settings_sections=SettingsSectionRegistry(),
-            exports=ExportRegistry(),
             theme=theme,
             zoom=ZoomService(),
             tasks=TaskService(),

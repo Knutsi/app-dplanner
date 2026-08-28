@@ -10,7 +10,6 @@ with the bulk Estimates tab; this section owns the binding to one step and the c
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from dplanner.core.signals import Signal
 from dplanner.domain.model import NodeId, Product, StepId
 from dplanner.framework.undo import UndoService
 from dplanner.modules.estimation.aspect import MODULE_ID, read
@@ -30,7 +29,6 @@ class EstimateSection(QWidget):
         self._product = product
         self._undo = undo
         self._step_id: StepId | None = None
-        self.tab_visibility_changed: Signal[bool] = Signal()
 
         self._input = EstimateInput(self)
         self._input.edited.connect(self._commit)
@@ -56,11 +54,6 @@ class EstimateSection(QWidget):
     @property
     def widget(self) -> QWidget:
         return self
-
-    def tab_visible(self) -> bool:
-        # Always, once there is a step: a tab that hid itself when the value was empty
-        # would be a tab you could never use to set one.
-        return True
 
     def show_target(self, target_id: str | None) -> None:
         self._step_id = target_id

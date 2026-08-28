@@ -437,6 +437,8 @@ def _project_clear_steps(context: CliContext, args: Namespace) -> int:
 def _project_export(context: CliContext, args: Namespace) -> int:
     project = find_project(context.product, args.project)
     document = project_document(context.product, project)
+    # Deliberately not context.report(): export always emits JSON, --json or not — the
+    # output IS the artefact. The one bare print in any module's cli.py.
     print(json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False), file=context.out)
     return 0
 

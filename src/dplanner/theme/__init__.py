@@ -1,7 +1,7 @@
 """Application theming.
 
-Single entry point: :func:`apply_theme`. This package imports nothing else from ``writer``,
-so it can be exercised in isolation. Themes are declared in :mod:`writer.theme.themes`;
+Single entry point: :func:`apply_theme`. This package imports nothing else from ``dplanner``,
+so it can be exercised in isolation. Themes are declared in :mod:`dplanner.theme.themes`;
 switching at runtime is the framework's ThemeService calling :func:`apply_theme` again.
 """
 
@@ -40,7 +40,7 @@ def apply_theme(app: QApplication, theme: Theme = DEFAULT) -> None:
        Fusion is the palette-driven style, and the reason the result looks identical on macOS
        and Linux — the native macOS style paints from system colours and largely ignores a
        custom palette. It is wrapped in a proxy for the per-platform style hints and the
-       themed standard icons in :mod:`writer.theme.style`, and it is *rebuilt* for each
+       themed standard icons in :mod:`dplanner.theme.style`, and it is *rebuilt* for each
        theme because a style caches the icons it is asked for.
     2. ``setColorScheme`` invalidates Qt's cached system palette, so it must precede our own.
        This is the highest-value call here: on macOS it sets ``NSApp.appearance``, which

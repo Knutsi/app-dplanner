@@ -6,7 +6,6 @@ deliberately not the beginning of a tracker client.
 
 from PySide6.QtWidgets import QFormLayout, QLineEdit, QWidget
 
-from dplanner.core.signals import Signal
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import NodeId, Product, StepId
 from dplanner.framework.undo import UndoService
@@ -29,7 +28,6 @@ class TicketSection(QWidget):
         self._undo = undo
         self._step_id: StepId | None = None
         self._loading = False
-        self.tab_visibility_changed: Signal[bool] = Signal()
 
         layout = QFormLayout(self)
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
@@ -47,9 +45,6 @@ class TicketSection(QWidget):
     @property
     def widget(self) -> QWidget:
         return self
-
-    def tab_visible(self) -> bool:
-        return True
 
     def show_target(self, target_id: str | None) -> None:
         self._step_id = target_id

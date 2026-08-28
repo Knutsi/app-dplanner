@@ -14,7 +14,6 @@ to the step, not to any aspect, and it should stay readable while you move betwe
 """
 
 from collections.abc import Sequence
-from functools import partial
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -81,8 +80,8 @@ class StepPanel(QWidget):
         self.tab_bar.setObjectName("InspectorTabs")
         self.tab_bar.setExpanding(False)
         self.tab_bar.setDrawBase(False)
-        # Five tabs is more than the template ever contemplated for 360 px, so the bar
-        # degrades rather than clipping.
+        # More tabs than the template ever contemplated for 360 px (one per aspect
+        # editor), so the bar degrades rather than clipping.
         self.tab_bar.setUsesScrollButtons(True)
         self.tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
 
@@ -91,9 +90,6 @@ class StepPanel(QWidget):
             self.tab_bar.addTab(section.label)
             self._pages.addWidget(extension.widget)
         self.tab_bar.currentChanged.connect(self._pages.setCurrentIndex)
-        for index, extension in enumerate(self._extensions):
-            extension.tab_visibility_changed.connect(partial(self._set_tab_visible, index))
-            self.tab_bar.setTabVisible(index, extension.tab_visible())
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PANEL_MARGIN, 0, PANEL_MARGIN, 0)
@@ -150,9 +146,6 @@ class StepPanel(QWidget):
     def current_step_id(self) -> StepId | None:
         return self._step_id
 
-    def current_section_index(self) -> int:
-        return self.tab_bar.currentIndex()
-
     def dispose(self) -> None:
         """Full detachment — a disposed panel must never hear another model signal."""
         for unsubscribe in self._unsubscribes:
@@ -167,14 +160,6 @@ class StepPanel(QWidget):
     def _show_in_extensions(self, step_id: StepId | None) -> None:
         for extension in self._extensions:
             extension.show_target(step_id)
-
-    def _set_tab_visible(self, index: int, visible: bool) -> None:
-        self.tab_bar.setTabVisible(index, visible)
-        if not visible and self.tab_bar.currentIndex() == index:
-            first = next((i for i, e in enumerate(self._extensions) if e.tab_visible()), -1)
-            if first >= 0:
-                self.tab_bar.setCurrentIndex(first)
-        self.tab_bar.setVisible(any(e.tab_visible() for e in self._extensions))
 
     def _commit_title(self) -> None:
         # editingFinished also fires during teardown, when the step may already be gone.

@@ -99,7 +99,6 @@ class StepOrderDeps:
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
-    parent: QWidget
     # Show a step in whatever edits graphs. Wired by the composition root; this module never
     # learns that a graph editor exists.
     reveal_step: Callable[[StepId], None] = field(default=_no_reveal)

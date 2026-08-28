@@ -36,7 +36,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.core.signals import Signal as ModelSignal
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import NodeId, Product
 from dplanner.framework.undo import UndoService
@@ -145,9 +144,6 @@ class RepoFieldsWidget(QWidget):
         self._project_id: NodeId | None = None
         self._loading = False
         self._probe: _GhProbe | None = None
-        # The card is how a project gets a repository, so it never hides; the signal is the
-        # extension contract's, never fired here.
-        self.tab_visibility_changed: ModelSignal[bool] = ModelSignal()
 
         self.repository = QLineEdit(self)
         self.repository.setPlaceholderText("https://github.com/owner/repo")
@@ -188,9 +184,6 @@ class RepoFieldsWidget(QWidget):
     @property
     def widget(self) -> QWidget:
         return self
-
-    def tab_visible(self) -> bool:
-        return True
 
     def show_target(self, target_id: NodeId | None) -> None:
         self._project_id = target_id if target_id and self._product.has(target_id) else None
