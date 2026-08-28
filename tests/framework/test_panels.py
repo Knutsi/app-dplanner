@@ -23,6 +23,7 @@ from dplanner.framework.panels import (
     PanelDock,
     PanelRegistry,
     PanelSpec,
+    _stored_collapsed,
 )
 
 
@@ -177,6 +178,108 @@ def test_immersive_mode_takes_every_area_and_puts_it_back(dock, registry):
     assert dock.is_panel_visible("index")
     dock.set_chrome_visible(True)
     assert dock.is_panel_showing("index")
+
+
+# -- collapsing an area --------------------------------------------------------------------------
+
+
+def test_collapsing_an_area_takes_its_panels_off_screen_but_not_switched_off(dock, registry):
+    registry.register(spec("index", area=PanelArea.LEFT))
+    dock.set_area_collapsed(PanelArea.LEFT, True)
+
+    assert dock.is_area_collapsed(PanelArea.LEFT)
+    assert not dock.is_panel_showing("index")
+    # Still switched on — collapse folds the side away, it does not hide the panel.
+    assert dock.is_panel_visible("index")
+    assert dock.sizes()[0] == 0
+
+
+def test_expanding_restores_the_size(dock, registry):
+    registry.register(spec("index", area=PanelArea.LEFT))
+    dock.set_area_collapsed(PanelArea.LEFT, True)
+    dock.set_area_collapsed(PanelArea.LEFT, False)
+    assert dock.is_panel_showing("index")
+    assert dock.sizes()[0] == AREA_DEFAULT_SIZE[PanelArea.LEFT]
+
+
+def test_a_collapsed_area_is_remembered(app, context):
+    QSettings().setValue("layout/areas/left/collapsed", True)
+    registry = PanelRegistry()
+    dock = PanelDock(registry, context, QLabel())
+    registry.register(spec("index", area=PanelArea.LEFT))
+    assert dock.is_area_collapsed(PanelArea.LEFT)
+    assert not dock.is_panel_showing("index")
+
+    dock.set_area_collapsed(PanelArea.LEFT, False)
+    assert not _stored_collapsed(PanelArea.LEFT)
+    dock.dispose()
+
+
+def test_a_collapsed_area_never_persists_a_zero_size(dock, registry):
+    """The splitterMoved handler must not remember the 0 the collapse produced — expanding
+    has to bring back the width the user last dragged to."""
+    registry.register(spec("index", area=PanelArea.LEFT))
+    dock.set_area_collapsed(PanelArea.LEFT, True)
+    dock._persist_outer(0, 1)
+    assert dock._sizes[PanelArea.LEFT] == AREA_DEFAULT_SIZE[PanelArea.LEFT]
+    assert QSettings().value("layout/areas/left") is None
+
+
+def test_something_to_show_does_not_expand_a_collapsed_area(dock, registry, context):
+    """Collapse is the user's choice and survives selection changes — the whole point of it
+    being separate from a panel's own has-content answer."""
+    panel = FakeContextPanel()
+    registry.register(spec("detail", factory=lambda: panel))
+    dock.set_area_collapsed(PanelArea.RIGHT, True)
+    select(context, "thing", "one")
+    assert not dock.is_panel_showing("detail")
+    assert dock.is_area_collapsed(PanelArea.RIGHT)
+
+
+def test_switching_a_panel_on_expands_its_collapsed_area(dock, registry):
+    """A checkmark that turns on with nothing appearing reads as a bug."""
+    registry.register(spec("index", area=PanelArea.LEFT))
+    dock.set_panel_visible("index", False)
+    dock.set_area_collapsed(PanelArea.LEFT, True)
+
+    dock.set_panel_visible("index", True)
+    assert not dock.is_area_collapsed(PanelArea.LEFT)
+    assert dock.is_panel_showing("index")
+
+
+def test_moving_a_panel_into_a_collapsed_area_expands_it(dock, registry):
+    registry.register(spec("index", area=PanelArea.LEFT))
+    dock.set_area_collapsed(PanelArea.RIGHT, True)
+
+    dock.move_panel("index", PanelArea.RIGHT)
+    assert not dock.is_area_collapsed(PanelArea.RIGHT)
+    assert dock.is_panel_showing("index")
+
+
+def test_immersive_mode_leaves_collapse_alone(dock, registry):
+    registry.register(spec("index", area=PanelArea.LEFT))
+    registry.register(spec("detail", area=PanelArea.RIGHT))
+    dock.set_area_collapsed(PanelArea.LEFT, True)
+
+    dock.set_chrome_visible(False)
+    assert not dock.is_panel_showing("index") and not dock.is_panel_showing("detail")
+    dock.set_chrome_visible(True)
+    assert dock.is_area_collapsed(PanelArea.LEFT)
+    assert not dock.is_panel_showing("index")
+    assert dock.is_panel_showing("detail")
+
+
+def test_collapsing_announces_itself(dock, registry):
+    """What the View menu's side-panel checkmarks re-read from — including when a gesture
+    expands the area rather than the toggle."""
+    heard: list[PanelArea] = []
+    dock.areas_changed.connect(heard.append)
+    registry.register(spec("index", area=PanelArea.LEFT))
+
+    dock.set_area_collapsed(PanelArea.LEFT, True)
+    dock.set_area_collapsed(PanelArea.LEFT, True)  # Already collapsed: no echo.
+    dock.set_panel_visible("index", True)  # The reveal path expands, so it announces too.
+    assert heard == [PanelArea.LEFT, PanelArea.LEFT]
 
 
 # -- sizing ----------------------------------------------------------------------------------------

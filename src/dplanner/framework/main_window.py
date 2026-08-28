@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QMainWindow, QWidget
 
 from dplanner.core.signals import Signal
 from dplanner.framework.activity import Activity
-from dplanner.framework.panels import PanelDock
+from dplanner.framework.panels import PanelArea, PanelDock
 from dplanner.framework.tabs import TabHost
 from dplanner.identity import APP_NAME
 
@@ -49,6 +49,7 @@ class AppWindow(QMainWindow):
         # panel, and the dock decides which area it is in.
         self.dock = dock
         self.panels_changed: Signal[str] = dock.panels_changed
+        self.areas_changed: Signal[PanelArea] = dock.areas_changed
         self.setCentralWidget(dock)
         self.statusBar().showMessage("Ready")
 
@@ -79,6 +80,12 @@ class AppWindow(QMainWindow):
 
     def is_panel_visible(self, panel_id: str) -> bool:
         return self.dock.is_panel_visible(panel_id)
+
+    def set_area_collapsed(self, area: PanelArea, collapsed: bool) -> None:
+        self.dock.set_area_collapsed(area, collapsed)
+
+    def is_area_collapsed(self, area: PanelArea) -> bool:
+        return self.dock.is_area_collapsed(area)
 
     # -- unsaved changes (UnsavedChangesHost) -------------------------------------------------
 
