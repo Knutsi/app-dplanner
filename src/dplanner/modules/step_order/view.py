@@ -14,7 +14,7 @@ cheaper to read than a diff and cannot go stale.
 from collections.abc import Callable, Sequence
 
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, Qt
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
@@ -27,16 +27,20 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.model import StepId
 from dplanner.domain.schedule import Scheduled, format_date, format_days
+from dplanner.modules.step_order.export import since_release
+from dplanner.theme.icons import spark_icon, tag_icon
 
-COLUMNS = ("#", "Step", "Wave", "Estimate", "Accumulated", "Date", "")
+COLUMNS = ("#", "Step", "Wave", "Estimate", "Accumulated", "Since release", "Date", "")
 TITLE_COLUMN = 1
 ESTIMATE_COLUMN = 3
 ACCUMULATED_COLUMN = 4
-DATE_COLUMN = 5
-ASPECTS_COLUMN = 6
+SINCE_RELEASE_COLUMN = 5
+DATE_COLUMN = 6
+ASPECTS_COLUMN = 7
 
-# Numbers line up on the right; everything else reads from the left.
-NUMERIC_COLUMNS = (ESTIMATE_COLUMN, ACCUMULATED_COLUMN)
+# Numbers line up on the right; everything else — headers included (DESIGN.md's *Tables*) —
+# reads from the left.
+NUMERIC_COLUMNS = (ESTIMATE_COLUMN, ACCUMULATED_COLUMN, SINCE_RELEASE_COLUMN)
 
 # The step id on a row, so a click can say which step it means.
 STEP_ROLE = int(Qt.ItemDataRole.UserRole) + 1
@@ -48,10 +52,16 @@ RELEASE_ROLE = int(Qt.ItemDataRole.UserRole) + 2
 ROW_HEIGHT = 28
 RELEASE_ROW_EXTRA = 8
 
+# A release's own answers grow a point instead of going bold: emphasis without the weight
+# a bold row puts on a table of mostly-quiet lines.
+RELEASE_POINT_INCREMENT = 1.0
+
 # The release row's marks: the canvas badge's purple family, low-alpha so it reads on every
 # theme (DESIGN.md exception #2). The rule closes the block of work that lands in it.
 RELEASE_ROW_TINT = QColor(150, 130, 220, 22)
 RELEASE_RULE = QColor(150, 130, 220, 160)
+# The tag icon at full strength — a glyph this small needs its whole ink to read.
+RELEASE_ICON_INK = QColor(150, 130, 220)
 
 # Secondary text as opacity rather than a theme colour: an item has only the palette, and an
 # alpha-derived secondary is theme-independent by construction (DESIGN.md exception #1).
@@ -94,6 +104,7 @@ class OrderTable(QTableWidget):
         wave_label: Callable[[int], str],
         step_aspects: Callable[[StepId], list[str]],
         release_label: Callable[[StepId], str] = lambda _step_id: "",
+        step_icons: Callable[[StepId], tuple[str, ...]] = lambda _step_id: (),
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(0, len(COLUMNS), parent)
@@ -101,6 +112,7 @@ class OrderTable(QTableWidget):
         self._wave_label = wave_label
         self._step_aspects = step_aspects
         self._release_label = release_label
+        self._step_icons = step_icons
         self.setItemDelegate(_ReleaseRowDelegate(self))
 
         self.setHorizontalHeaderLabels(list(COLUMNS))
@@ -113,6 +125,7 @@ class OrderTable(QTableWidget):
         self.setWordWrap(False)
 
         header = self.horizontalHeader()
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         for column in range(len(COLUMNS)):
             mode = (
                 QHeaderView.ResizeMode.Interactive
@@ -126,15 +139,18 @@ class OrderTable(QTableWidget):
 
     def show_order(self, order: Sequence[Scheduled]) -> None:
         selected = self.selected_step()
+        spans = since_release(order, self._release_label)
         self.setRowCount(len(order))
         for row, scheduled in enumerate(order):
             place = scheduled.place
+            span = spans.get(place.step.id)
             cells = (
                 str(place.index),
                 place.step.title or "Untitled step",
                 self._wave_label(place.wave - 1),
                 format_days(scheduled.days),
                 format_days(scheduled.accumulated),
+                format_days(span) if span is not None else "",
                 format_date(scheduled.finish) if scheduled.finish else "",
                 " · ".join(self._step_aspects(place.step.id)),
             )
@@ -143,26 +159,54 @@ class OrderTable(QTableWidget):
                 item = QTableWidgetItem(text)
                 item.setData(STEP_ROLE, place.step.id)
                 item.setData(RELEASE_ROLE, release)
-                # A release's date is the milestone's answer: bold, full-strength — the
-                # foreground is deliberately not set, so it stays the palette's and live.
-                highlighted = bool(release) and column in (TITLE_COLUMN, DATE_COLUMN)
+                # A release's own answers — its name, the span it closes, its date — read a
+                # point larger at full strength; the foreground is deliberately not set, so
+                # it stays the palette's and live.
+                highlighted = bool(release) and column in (
+                    TITLE_COLUMN,
+                    SINCE_RELEASE_COLUMN,
+                    DATE_COLUMN,
+                )
                 if column != TITLE_COLUMN and not highlighted:
                     faded = self.palette().text().color()
                     faded.setAlpha(SECONDARY_ALPHA)
                     item.setForeground(faded)
                 if highlighted:
                     font = item.font()
-                    font.setBold(True)
+                    if font.pointSizeF() > 0:
+                        font.setPointSizeF(font.pointSizeF() + RELEASE_POINT_INCREMENT)
                     item.setFont(font)
+                if column == TITLE_COLUMN:
+                    icon = self._title_icon(self._step_icons(place.step.id))
+                    if icon is not None:
+                        item.setIcon(icon)
                 if column in NUMERIC_COLUMNS:
                     item.setTextAlignment(_RIGHT)
                 self.setItem(row, column, item)
             self.setRowHeight(row, ROW_HEIGHT + (RELEASE_ROW_EXTRA if release else 0))
-        # A column of blanks says less than an absent one: nothing estimated, no Date column.
-        self.setColumnHidden(DATE_COLUMN, all(s.finish is None for s in order))
+        # A column of blanks says less than an absent one: nothing estimated, no Date column;
+        # no release to measure to (or no days to measure with), no Since-release column.
+        undated = all(s.finish is None for s in order)
+        self.setColumnHidden(DATE_COLUMN, undated)
+        self.setColumnHidden(SINCE_RELEASE_COLUMN, undated or not spans)
         self.resizeColumnToContents(TITLE_COLUMN)
         if selected is not None:
             self.select_step(selected)
+
+    def _title_icon(self, kinds: tuple[str, ...]) -> QIcon | None:
+        """The first kind's glyph, in the canvas medallions' vocabulary; a plain step has none.
+
+        One icon per row: a step that is several things at once leads with the rarer claim
+        ("tag" sorts first), and the trailing aspects column still says the rest.
+        """
+        for kind in kinds:
+            if kind == "tag":
+                return tag_icon(RELEASE_ICON_INK)
+            if kind == "spark":
+                faded = QColor(self.palette().text().color())
+                faded.setAlpha(SECONDARY_ALPHA)
+                return spark_icon(faded)
+        return None
 
     def step_at(self, row: int) -> StepId | None:
         item = self.item(row, 0)

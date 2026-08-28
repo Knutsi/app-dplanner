@@ -23,10 +23,11 @@ Three seams, all established elsewhere in this application:
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 from typing import Protocol
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFileDialog, QLabel, QVBoxLayout, QWidget
 
 from dplanner.domain.model import NodeId, Product, Project, ProjectId, StepId
 from dplanner.domain.ordering import Placed, placed
@@ -53,6 +54,7 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.tabs import TabHost
 from dplanner.modules.step_order.cli import wave_label
+from dplanner.modules.step_order.export import order_rows, write_csv
 from dplanner.modules.step_order.view import OrderTable
 
 MODULE_ID = "step_order"
@@ -88,6 +90,10 @@ def _no_release(_step_id: StepId) -> str:
     return ""
 
 
+def _no_icons(_step_id: StepId) -> tuple[str, ...]:
+    return ()
+
+
 def _unscheduled(_project_id: ProjectId, order: Sequence[Placed]) -> list[Scheduled]:
     """Nobody in this build knows what a step costs: every row, no days, no dates.
 
@@ -119,6 +125,10 @@ class StepOrderDeps:
     # The label of the release a step is, "" otherwise. Wired by the composition root;
     # this module never learns who owns releases.
     release_label: Callable[[StepId], str] = field(default=_no_release)
+    # What kind of thing a step is, in the canvas medallions' vocabulary ("tag", "spark"),
+    # so the title column wears the same marks the graph does. Wired by the composition
+    # root; this module never learns which aspects the kinds stand for.
+    step_icons: Callable[[StepId], tuple[str, ...]] = field(default=_no_icons)
 
 
 class OrderActivity(ActivityBase):
@@ -159,7 +169,9 @@ class OrderActivity(ActivityBase):
             layout.addWidget(self.start_bar.widget)
             layout.addSpacing(BLOCK_GAP)
 
-        self.table = OrderTable(wave_label, deps.step_aspects, deps.release_label, page)
+        self.table = OrderTable(
+            wave_label, deps.step_aspects, deps.release_label, deps.step_icons, page
+        )
         self.table.itemSelectionChanged.connect(self._on_selection)
         self.table.cellActivated.connect(self._on_activated)
         self.table.customContextMenuRequested.connect(self._on_context_menu)
@@ -172,6 +184,9 @@ class OrderActivity(ActivityBase):
             self._product.edges_changed.connect(lambda *_a: self._refresh()),
             self._product.field_changed.connect(lambda *_a: self._refresh()),
             self._product.module_data_changed.connect(lambda *_a: self._refresh()),
+            # The title column's kind icons read prose presence (an agent instruction), so
+            # a text edit can change what a row wears.
+            self._product.text_edited.connect(lambda *_a: self._refresh()),
         ]
         self._refresh()
 
@@ -286,6 +301,21 @@ class StepOrderModule:
                 run=self._open,
             )
         )
+        # File ▸ Export ▸ Order List: the same rows the table shows, as a CSV a spreadsheet
+        # can compute with. The submenu leaves room for other features' exports beside it.
+        deps.actions.register(
+            ActionSpec(
+                id="order.export",
+                label="&Order List…",
+                menu="File",
+                group="export",
+                submenu="Export",
+                order=10,
+                tip="Write the focused project's order to a CSV file",
+                state=self._on_a_project,
+                run=self._export,
+            )
+        )
         deps.product.structure_changed.connect(lambda *_a: self._close_orphan_tabs())
         deps.product.field_changed.connect(lambda *_a: self._retitle_tabs())
 
@@ -299,6 +329,27 @@ class StepOrderModule:
         project_id = context.focus_entity("project")
         if project_id is not None:
             self.open(project_id)
+
+    def _export(self, context: Context) -> None:
+        project_id = context.focus_entity("project")
+        if project_id is None:
+            return
+        deps = self._deps
+        project = deps.product.project(project_id)
+        order = placed(deps.product, project)
+        rows = order_rows(
+            deps.step_schedule(project_id, order), deps.step_aspects, deps.release_label
+        )
+        suggested = f"{project.title or 'Untitled project'} order.csv"
+        chosen, _filter = QFileDialog.getSaveFileName(
+            deps.parent, "Export Order List", str(Path.home() / suggested), "CSV files (*.csv)"
+        )
+        if not chosen:
+            return
+        path = Path(chosen)
+        if path.suffix.lower() != ".csv":
+            path = path.with_suffix(".csv")
+        write_csv(path, rows)
 
     def _activities(self) -> list[OrderActivity]:
         return [a for a in self._deps.tabs.activities() if isinstance(a, OrderActivity)]
