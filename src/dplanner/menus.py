@@ -34,7 +34,7 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "link" holds the two-step verbs: the canvas publishes both ends into the selection
     # scope on a drop and runs the same action the menu does.
     # "documents" is the spec module's: what a project carries beside its steps.
-    "Project": ("edit", "documents", "open"),
+    "Project": ("edit", "canvas", "documents", "open"),
     # "open" is a surface about the selection — the Step-side mirror of Project's
     # "Show Order". "navigate" is where the canvas's movement verbs live: they select
     # rather than change, so they belong beside the step verbs but not among them.

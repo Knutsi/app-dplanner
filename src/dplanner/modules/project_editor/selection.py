@@ -13,8 +13,9 @@ from dataclasses import dataclass
 
 from dplanner.domain.model import StepId
 
-# The URI's entity kind, beside "step" and "project".
+# The URI's entity kinds, beside "step" and "project".
 EDGE_KIND = "edge"
+REGION_KIND = "region"
 _SEPARATOR = "|"
 
 
@@ -50,3 +51,4 @@ class CanvasSelection:
 
     steps: tuple[StepId, ...] = ()
     edges: tuple[EdgeRef, ...] = ()
+    regions: tuple[str, ...] = ()

@@ -1,0 +1,157 @@
+"""Named layouts: snapshots of the graph, stored on the project node.
+
+No ``qapp`` fixture: ``layouts.py`` is Qt-free by rule — the CLI's ``layout`` verbs are
+built from the same functions — and exercising it without one is part of the proof.
+"""
+
+from dplanner.domain.model import Product, Project, Step
+from dplanner.modules.project_editor.layouts import (
+    LayoutSnapshot,
+    apply_layout_commands,
+    delete_layout_command,
+    is_current,
+    read_layouts,
+    rename_layout_command,
+    save_layout_command,
+    snapshot,
+    write_layouts,
+)
+from dplanner.modules.project_editor.positions import MODULE_ID, read_position, write_position
+
+
+def build():
+    product = Product(name="Widget")
+    project = Project(title="Discovery")
+    product.add_child(product.id, project)
+    for title in ("A", "B", "C"):
+        product.add_child(project.id, Step(title=title))
+    return product, project
+
+
+def save(product, project, name):
+    snap = snapshot(product, project)
+    save_layout_command(project, name, snap).redo(product)
+    return snap
+
+
+def test_save_and_read_round_trip():
+    product, project = build()
+    snap = save(product, project, "Plan")
+    assert read_layouts(project)["Plan"] == snap
+    assert set(snap.steps) == {step.id for step in project.steps}
+
+
+def test_layout_coordinates_are_snapped_floats():
+    """FORMAT.md's numeric rule, one level up: the snapshot stores what a move would."""
+    _product, project = build()
+    entry = write_layouts(project, {"P": LayoutSnapshot(steps={"s": (11.0, 3.0)})})
+    stored = entry["layouts"]["P"]["steps"]["s"]
+    assert stored == [8.0, 0.0]
+    assert all(isinstance(value, float) for value in stored)
+
+
+def test_unreadable_layouts_read_as_absent():
+    """A hand-edited or newer file must not take the picker down with it."""
+    product, project = build()
+    product.set_module_data(
+        project.id,
+        MODULE_ID,
+        {
+            "layouts": {
+                "ok": {"steps": {"a": [1.0, 2.0]}},
+                "bad": "not a snapshot",
+                "partial": {"steps": {"a": [1, 2, 3], "b": ["x", 2], "c": [3, 4]}},
+            }
+        },
+    )
+    found = read_layouts(project)
+    assert set(found) == {"ok", "partial"}
+    assert found["ok"].steps == {"a": (1.0, 2.0)}
+    # The two unreadable coordinate entries vanish; the readable one survives.
+    assert found["partial"].steps == {"c": (3.0, 4.0)}
+
+
+def test_apply_restores_positions_and_skips_unknown_ids():
+    product, project = build()
+    a, b, _c = project.steps
+    product.set_module_data(b.id, MODULE_ID, write_position(504.0, 304.0))
+    snap = snapshot(product, project)
+    ghost = LayoutSnapshot(steps={**snap.steps, "ghost": (0.0, 0.0)})
+    save_layout_command(project, "Plan", ghost).redo(product)
+
+    product.set_module_data(a.id, MODULE_ID, write_position(800.0, 800.0))
+    product.set_module_data(b.id, MODULE_ID, write_position(900.0, 900.0))
+    for command in apply_layout_commands(product, project, "Plan"):
+        command.redo(product)
+
+    assert read_position(b) == (504.0, 304.0)
+    assert read_position(a) == snap.steps[a.id]
+
+
+def test_apply_leaves_steps_the_layout_never_saw_untouched():
+    product, project = build()
+    a, b, _c = project.steps
+    partial = LayoutSnapshot(steps={a.id: (8.0, 8.0)})
+    save_layout_command(project, "Partial", partial).redo(product)
+    product.set_module_data(b.id, MODULE_ID, write_position(504.0, 304.0))
+
+    for command in apply_layout_commands(product, project, "Partial"):
+        command.redo(product)
+
+    assert read_position(a) == (8.0, 8.0)
+    assert read_position(b) == (504.0, 304.0)
+
+
+def test_rename_moves_the_snapshot():
+    product, project = build()
+    snap = save(product, project, "Old")
+    rename_layout_command(project, "Old", "New").redo(product)
+    found = read_layouts(project)
+    assert "Old" not in found
+    assert found["New"] == snap
+
+
+def test_deleting_the_last_layout_leaves_no_file_behind():
+    """Absence encodes the default: an empty entry deletes ``modules/project_editor.json``."""
+    product, project = build()
+    save(product, project, "Plan")
+    delete_layout_command(project, "Plan").redo(product)
+    assert MODULE_ID not in project.module_data
+
+
+def test_is_current_tracks_drift():
+    product, project = build()
+    save(product, project, "Plan")
+    assert is_current(product, project, "Plan")
+
+    moved = project.steps[0]
+    product.set_module_data(moved.id, MODULE_ID, write_position(800.0, 800.0))
+    assert not is_current(product, project, "Plan")
+
+    # A step the snapshot has never heard of counts as drift too.
+    for command in apply_layout_commands(product, project, "Plan"):
+        command.redo(product)
+    assert is_current(product, project, "Plan")
+    product.add_child(project.id, Step(title="D"))
+    assert not is_current(product, project, "Plan")
+
+
+def test_region_rects_ride_along_with_a_layout():
+    product, project = build()
+    region = {"id": "r1", "title": "Database setup", "x": 8.0, "y": 8.0, "w": 320.0, "h": 240.0}
+    product.set_module_data(project.id, MODULE_ID, {"regions": [region], "format": 1})
+
+    save(product, project, "Plan")
+    entry = project.module_data[MODULE_ID]
+    assert entry["regions"] == [region]  # write_layouts carried the other key untouched
+    assert read_layouts(project)["Plan"].regions == {"r1": (8.0, 8.0, 320.0, 240.0)}
+
+    shifted = {**region, "x": 400.0, "y": 400.0}
+    product.set_module_data(
+        project.id, MODULE_ID, {**project.module_data[MODULE_ID], "regions": [shifted]}
+    )
+    for command in apply_layout_commands(product, project, "Plan"):
+        command.redo(product)
+    stored = project.module_data[MODULE_ID]["regions"][0]
+    assert (stored["x"], stored["y"]) == (8.0, 8.0)
+    assert stored["title"] == "Database setup"  # a layout moves a region, never rewrites it

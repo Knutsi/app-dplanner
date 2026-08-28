@@ -21,9 +21,10 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Project, Step
 from dplanner.framework.context import SCOPE_SELECTION
-from dplanner.modules.project_editor.items import FILL_ALPHA, NODE_H, NODE_W
+from dplanner.modules.project_editor.items import FILL_ALPHA
 from dplanner.modules.project_editor.modes import CONNECT, IDLE, PAN
 from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
+from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef
 from dplanner.modules.step_properties.module import PANEL_ID as STEP_PANEL_ID
 from dplanner.theme import apply_theme
@@ -934,3 +935,208 @@ def test_right_clicking_an_unselected_step_makes_it_current(services, project, t
 
     tab._select_for_menu(scene(tab).node(second.id))
     assert scene(tab).selection().steps == (second.id,)
+
+
+# -- the layout picker --------------------------------------------------------------------------
+
+
+def save_layout(services, project, name):
+    from dplanner.modules.project_editor.layout_verbs import set_current_layout_name
+    from dplanner.modules.project_editor.layouts import save_layout_command, snapshot
+
+    snap = snapshot(services.document, project)
+    services.undo.push(save_layout_command(project, name, snap))
+    set_current_layout_name(project.id, name)
+    return snap
+
+
+def popup_texts(tab):
+    return [a.text() for a in tab._layout_button.build_popup().actions() if not a.isSeparator()]
+
+
+def test_the_popup_lists_saved_layouts_with_the_applied_one_checked(services, project, tab):
+    save_layout(services, project, "release plan")
+    popup = tab._layout_button.build_popup()
+    named = [a for a in popup.actions() if a.text() == "release plan"]
+    assert len(named) == 1 and named[0].isChecked()
+    assert "Save Layout &As…" in popup_texts(tab)
+
+
+def test_the_face_wears_the_name_and_a_modified_dot_after_a_drag(services, project, tab):
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.project_editor.positions import write_position
+
+    save_layout(services, project, "release plan")
+    tab._layout_button._refresh_face()
+    assert tab._layout_button.text() == "release plan"
+
+    step = project.steps[0]
+    services.undo.push(
+        SetModuleDataCommand(step.id, "project_editor", write_position(800.0, 800.0))
+    )
+    assert tab._layout_button.text() == "• release plan"
+
+
+def test_a_sort_action_is_one_undo_step(services, project, tab):
+    """An explicit sort persists — through the undo stack, like any drag — and one Ctrl+Z
+    takes the whole arrangement back."""
+    assert tab.run_action("canvas.sort_spine")
+    assert services.undo.undo_text() == "Spine Layout"
+    for step in project.steps:
+        assert "project_editor" in step.module_data
+    services.undo.undo()
+    for step in project.steps:
+        assert "project_editor" not in step.module_data
+
+
+def test_applying_a_layout_is_one_undo_step_that_restores_every_position(services, project, tab):
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.project_editor.layouts import snapshot
+    from dplanner.modules.project_editor.positions import write_position
+
+    saved = save_layout(services, project, "release plan")
+    for index, step in enumerate(project.steps):
+        entry = write_position(800.0 + index * 8, 800.0)
+        services.undo.push(SetModuleDataCommand(step.id, "project_editor", entry))
+    scattered = snapshot(services.document, project)
+    assert scattered.steps != saved.steps
+
+    popup = tab._layout_button.build_popup()
+    next(a for a in popup.actions() if a.text() == "release plan").trigger()
+    assert snapshot(services.document, project).steps == saved.steps
+    assert services.undo.undo_text() == 'Apply Layout "release plan"'
+
+    services.undo.undo()
+    assert snapshot(services.document, project).steps == scattered.steps
+
+
+# -- regions ------------------------------------------------------------------------------------
+
+
+def add_region(services, project, x, y, w, h, title="Region"):
+    from dplanner.modules.project_editor.regions import (
+        new_region,
+        read_regions,
+        set_regions_command,
+    )
+
+    region = new_region(title, x, y, w, h)
+    services.undo.push(
+        set_regions_command(project, [*read_regions(project), region], "Add Region")
+    )
+    return region
+
+
+def regions_of(services, project):
+    from dplanner.modules.project_editor.regions import read_regions
+
+    return read_regions(services.document.project(project.id))
+
+
+def test_dragging_out_a_region_is_one_undo_step(app, services, project, tab):
+    tab.set_region_mode(True)
+    drag(app, tab, QPointF(400.0, 296.0), QPointF(720.0, 536.0))
+
+    found = regions_of(services, project)
+    assert len(found) == 1
+    assert (found[0].x, found[0].y, found[0].w, found[0].h) == (400.0, 296.0, 320.0, 240.0)
+    assert services.undo.undo_text() == "Add Region"
+    # One region ends the mode, the way one link ends connect.
+    assert view(tab).modes.current().name == IDLE
+    services.undo.undo()
+    assert regions_of(services, project) == []
+
+
+def test_a_body_drag_carries_the_steps_whose_centres_lie_inside(app, services, project, tab):
+    first, second = project.steps  # at (40, 40) and (40, 150) in the automatic layout
+    region = add_region(services, project, 0.0, 0.0, 300.0, 120.0)  # first inside, second out
+
+    drag(app, tab, QPointF(250.0, 80.0), QPointF(410.0, 240.0))  # body: off node, off strip
+
+    found = regions_of(services, project)[0]
+    assert (found.x, found.y) == (160.0, 160.0)
+    from dplanner.modules.project_editor.positions import read_position
+
+    assert read_position(services.document.step(first.id)) == (200.0, 200.0)
+    assert read_position(services.document.step(second.id)) is None
+    assert services.undo.undo_text() == "Move Region"
+
+    services.undo.undo()  # One step back restores the frame and the carried step together.
+    assert (regions_of(services, project)[0].x, regions_of(services, project)[0].y) == (
+        region.x,
+        region.y,
+    )
+    assert "project_editor" not in services.document.step(first.id).module_data
+
+
+def test_a_title_drag_moves_the_frame_alone(app, services, project, tab):
+    first, _second = project.steps
+    add_region(services, project, 0.0, 0.0, 300.0, 120.0)
+
+    drag(app, tab, QPointF(260.0, 12.0), QPointF(340.0, 92.0))  # the title strip
+
+    found = regions_of(services, project)[0]
+    assert (found.x, found.y) == (80.0, 80.0)
+    assert "project_editor" not in services.document.step(first.id).module_data
+
+
+def test_the_corner_grip_resizes(app, services, project, tab):
+    add_region(services, project, 400.0, 296.0, 200.0, 120.0)
+
+    drag(app, tab, QPointF(592.0, 408.0), QPointF(840.0, 656.0))  # the bottom-right grip
+
+    found = regions_of(services, project)[0]
+    # The drag runs through the view's pixel grid, so allow one grid cell of rounding.
+    assert abs(found.w - 440.0) <= 8.0 and abs(found.h - 360.0) <= 8.0
+    assert found.w % 8 == 0 and found.h % 8 == 0
+    assert (found.x, found.y) == (400.0, 296.0)
+    assert services.undo.undo_text() == "Resize Region"
+
+
+def test_double_clicking_the_title_renames(app, services, project, tab, monkeypatch):
+    add_region(services, project, 400.0, 300.0, 200.0, 120.0)
+    monkeypatch.setattr(
+        "dplanner.modules.project_editor.region_verbs.QInputDialog.getText",
+        lambda *_args, **_kwargs: ("Database setup", True),
+    )
+
+    send(app, tab, QEvent.Type.MouseButtonDblClick, QPointF(500.0, 312.0))
+
+    assert regions_of(services, project)[0].title == "Database setup"
+    assert services.undo.undo_text() == "Rename Region"
+
+
+def test_the_delete_key_reaches_a_selected_region(app, services, project, tab, monkeypatch):
+    region = add_region(services, project, 400.0, 300.0, 200.0, 120.0)
+    monkeypatch.setattr(
+        "dplanner.modules.project_editor.region_verbs.confirm", lambda *_args: True
+    )
+    scene(tab).select_region(region.id)
+    press_key(app, tab, Qt.Key.Key_Delete)
+
+    assert regions_of(services, project) == []
+    assert services.undo.undo_text() == "Delete Region"
+
+
+def test_a_selected_region_reaches_the_context(services, project, tab):
+    region = add_region(services, project, 400.0, 300.0, 200.0, 120.0)
+    scene(tab).select_region(region.id)
+    uris = [node.uri for node in services.context.current().scope(SCOPE_SELECTION)]
+    assert uris == [f"app://selection/region/{region.id}"]
+
+
+def test_a_node_over_a_region_still_drags_as_a_node(app, services, project, tab):
+    first, _second = project.steps
+    add_region(services, project, 0.0, 0.0, 300.0, 120.0)
+    node = scene(tab)._nodes[first.id]
+
+    start = centre_of(node)
+    send(app, tab, QEvent.Type.MouseButtonPress, start)
+    node.setPos(node.pos() + QPointF(240.0, 0.0))
+    send(app, tab, QEvent.Type.MouseButtonRelease, start, Qt.MouseButton.NoButton)
+
+    assert services.undo.undo_text() == "Move Step"
+    assert (regions_of(services, project)[0].x, regions_of(services, project)[0].y) == (
+        0.0,
+        0.0,
+    )

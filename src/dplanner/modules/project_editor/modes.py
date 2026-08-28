@@ -30,12 +30,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtWidgets import QGraphicsView
 
 from dplanner.core.signals import Signal
 from dplanner.domain.model import StepId
-from dplanner.modules.project_editor.items import NODE_H, NODE_W, StepNodeItem
+from dplanner.modules.project_editor.items import RegionItem, StepNodeItem
+from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+from dplanner.modules.project_editor.regions import MIN_REGION
 from dplanner.modules.project_editor.selection import CanvasSelection
 
 # How the current mode reaches the context, so an action's ``state`` can read it as a pure
@@ -46,6 +48,9 @@ IDLE = "idle"
 CONNECT = "connect"
 PAN = "pan"
 LINK_DRAG = "link-drag"
+REGION_CREATE = "region-create"
+REGION_DRAG = "region-drag"
+REGION_RESIZE = "region-resize"
 
 
 def mode_uri(name: str) -> str:
@@ -78,6 +83,12 @@ class Canvas(Protocol):
     link_requested: Signal[StepId, StepId]
     create_requested: Signal[float, float]
     selection_changed: Signal[CanvasSelection]
+    region_create_requested: Signal[float, float, float, float]
+    # Regions that finished moving, with the steps they carried — one gesture, one emission.
+    regions_moved: Signal[
+        list[tuple[str, float, float]], list[tuple[StepId, float, float]]
+    ]
+    region_resized: Signal[str, float, float, float, float]
 
     def node_at(self, scene_pos: QPointF) -> StepNodeItem | None: ...
 
@@ -94,6 +105,20 @@ class Canvas(Protocol):
     def hide_preview(self) -> None: ...
 
     def set_link_states(self, valid: StepId | None, invalid: StepId | None) -> None: ...
+
+    def region_at(self, scene_pos: QPointF) -> RegionItem | None: ...
+
+    def select_region(self, region_id: str) -> None: ...
+
+    def nodes_inside(self, region: RegionItem) -> list[StepNodeItem]: ...
+
+    def aim_region_preview(self, rect: QRectF) -> None: ...
+
+    def hide_region_preview(self) -> None: ...
+
+    def hold_region(self, region_id: str, step_ids: set[StepId]) -> None: ...
+
+    def release_region(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -400,6 +425,164 @@ class PanMode(ModeBase):
         self.deps.view.setDragMode(self._was)
 
 
+class RegionCreateMode(ModeBase):
+    """Drag out the rectangle a new region covers. One region ends the mode; Esc leaves."""
+
+    name = REGION_CREATE
+
+    def __init__(self, deps: CanvasDeps) -> None:
+        super().__init__(deps)
+        self._anchor: QPointF | None = None
+
+    def enter(self) -> None:
+        self.deps.view.viewport().setCursor(Qt.CursorShape.CrossCursor)
+        self.deps.status("Region: drag out the area it covers. Esc leaves.")
+
+    def exit(self) -> None:
+        self.deps.view.viewport().unsetCursor()
+        self.deps.canvas.hide_region_preview()
+
+    def mouse_press(self, event: CanvasEvent) -> bool:
+        self._anchor = event.scene_pos
+        return True
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        if self._anchor is not None:
+            self.deps.canvas.aim_region_preview(
+                QRectF(self._anchor, event.scene_pos).normalized()
+            )
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        if self._anchor is None:
+            return True
+        rect = QRectF(self._anchor, event.scene_pos).normalized()
+        self._anchor = None
+        self.deps.canvas.hide_region_preview()
+        if rect.width() >= MIN_REGION and rect.height() >= MIN_REGION:
+            self.deps.canvas.region_create_requested.emit(
+                rect.x(), rect.y(), rect.width(), rect.height()
+            )
+            if self.stack is not None:
+                self.stack.pop()
+        return True
+
+    def double_click(self, event: CanvasEvent) -> bool:
+        return True  # No step-creating double clicks while drawing regions.
+
+
+class RegionDragMode(ModeBase):
+    """A region grabbed by its body: the frame moves, and so do the steps inside it.
+
+    Which steps ride along is decided **at the press** — centres inside the rect — and held
+    for the whole gesture, so a step half-carried out does not fall off mid-drag. Lives for
+    one drag; a press that never moves is a click, and a click on a region selects it.
+    """
+
+    name = REGION_DRAG
+
+    def __init__(self, deps: CanvasDeps, region: RegionItem, grab: QPointF) -> None:
+        super().__init__(deps)
+        self._region = region
+        self._offset = grab - region.pos()
+        self._start = region.pos()
+        self._carried: dict[StepId, QPointF] = {}
+
+    def enter(self) -> None:
+        canvas = self.deps.canvas
+        self._carried = {
+            node.step_id: node.pos() for node in canvas.nodes_inside(self._region)
+        }
+        canvas.hold_region(self._region.region_id, set(self._carried))
+
+    def exit(self) -> None:
+        self.deps.canvas.release_region()
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        self._region.setPos(event.scene_pos - self._offset)
+        delta = self._region.pos() - self._start
+        for step_id, was in self._carried.items():
+            node = self.deps.canvas.node(step_id)
+            if node is not None:
+                node.setPos(was + delta)
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        canvas = self.deps.canvas
+        at = self._region.pos()
+        if at != self._start:
+            carried = []
+            for step_id in self._carried:
+                node = canvas.node(step_id)
+                if node is not None:
+                    carried.append((step_id, node.pos().x(), node.pos().y()))
+            canvas.regions_moved.emit([(self._region.region_id, at.x(), at.y())], carried)
+        else:
+            canvas.select_region(self._region.region_id)
+        self._pop()
+        return True
+
+    def key_press(self, key: CanvasKey) -> bool:
+        if key.key == Qt.Key.Key_Escape:
+            self._region.setPos(self._start)
+            for step_id, was in self._carried.items():
+                node = self.deps.canvas.node(step_id)
+                if node is not None:
+                    node.setPos(was)
+            self._pop()
+            return True
+        return False
+
+    def _pop(self) -> None:
+        if self.stack is not None:
+            self.stack.pop()
+
+
+class RegionResizeMode(ModeBase):
+    """A region grabbed by its corner grip. Lives for one resize; Esc puts it back."""
+
+    name = REGION_RESIZE
+
+    def __init__(self, deps: CanvasDeps, region: RegionItem) -> None:
+        super().__init__(deps)
+        self._region = region
+        self._was = region.size()
+
+    def enter(self) -> None:
+        self.deps.canvas.hold_region(self._region.region_id, set())
+        self.deps.view.viewport().setCursor(Qt.CursorShape.SizeFDiagCursor)
+
+    def exit(self) -> None:
+        self.deps.view.viewport().unsetCursor()
+        self.deps.canvas.release_region()
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        local = event.scene_pos - self._region.pos()
+        self._region.set_rect(max(MIN_REGION, local.x()), max(MIN_REGION, local.y()))
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        w, h = self._region.size()
+        if (w, h) != self._was:
+            at = self._region.pos()
+            self.deps.canvas.region_resized.emit(
+                self._region.region_id, at.x(), at.y(), w, h
+            )
+        self._pop()
+        return True
+
+    def key_press(self, key: CanvasKey) -> bool:
+        if key.key == Qt.Key.Key_Escape:
+            self._region.set_rect(*self._was)
+            self._pop()
+            return True
+        return False
+
+    def _pop(self) -> None:
+        if self.stack is not None:
+            self.stack.pop()
+
+
 class IdleMode(ModeBase):
     """The base. Qt does selection, rubber banding and node dragging; this catches the rest."""
 
@@ -407,16 +590,34 @@ class IdleMode(ModeBase):
 
     def mouse_press(self, event: CanvasEvent) -> bool:
         node = self.deps.canvas.node_at(event.scene_pos)
-        if node is None or not node.is_over_handle(event.scene_pos):
+        if node is not None and node.is_over_handle(event.scene_pos):
+            # Claimed before Qt sees it, so the press starts neither a move nor a rubber band.
+            if self.stack is not None:
+                self.stack.push(LinkDragMode(self.deps, node.step_id))
+            return True
+        if node is not None:
             return False
-        # Claimed before Qt sees it, so the press starts neither a move nor a rubber band.
-        if self.stack is not None:
-            self.stack.push(LinkDragMode(self.deps, node.step_id))
-        return True
+        region = self.deps.canvas.region_at(event.scene_pos)
+        if region is not None and self.stack is not None:
+            # A region's body is invisible to Qt's hit-testing (see RegionItem.shape), so
+            # these two gestures are claimed here; the title strip and border fall through
+            # to Qt, which selects and moves the frame alone.
+            if region.is_over_grip(event.scene_pos):
+                self.stack.push(RegionResizeMode(self.deps, region))
+                return True
+            if region.is_over_body(event.scene_pos):
+                self.stack.push(RegionDragMode(self.deps, region, event.scene_pos))
+                return True
+        return False
 
     def double_click(self, event: CanvasEvent) -> bool:
         if self.deps.canvas.node_at(event.scene_pos) is not None:
             return False
+        region = self.deps.canvas.region_at(event.scene_pos)
+        if region is not None and region.is_over_title(event.scene_pos):
+            self.deps.canvas.select_region(region.region_id)
+            self.deps.run_action("regions.rename")
+            return True
         point = event.scene_pos
         self.deps.canvas.create_requested.emit(point.x() - NODE_W / 2, point.y() - NODE_H / 2)
         return True

@@ -27,6 +27,7 @@ MARGIN = 8.0
 PADDING = 60.0
 NODE_RADIUS = 1.5
 NODE_ALPHA = 150
+REGION_ALPHA = 60
 
 
 @dataclass(frozen=True)
@@ -68,18 +69,22 @@ class Minimap(QWidget):
         self.raise_()
         self._view = view
         self._nodes: list[QRectF] = []
+        self._regions: list[QRectF] = []
         self._looking_at = QRectF()
         self.hide()
 
-    def show_graph(self, nodes: list[QRectF], looking_at: QRectF) -> None:
+    def show_graph(
+        self, nodes: list[QRectF], looking_at: QRectF, regions: list[QRectF] | None = None
+    ) -> None:
         """Draw this graph, seen through this rectangle.
 
         An empty graph takes the map off screen rather than framing nothing — DESIGN.md's
         rule for a panel with nothing to say, one surface down.
         """
         self._nodes = nodes
+        self._regions = regions or []
         self._looking_at = looking_at
-        self.setVisible(bool(nodes))
+        self.setVisible(bool(nodes) or bool(self._regions))
         self.update()
 
     def place(self) -> None:
@@ -98,6 +103,13 @@ class Minimap(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         palette = self.palette()
+
+        faint = QColor(palette.text().color())
+        faint.setAlpha(REGION_ALPHA)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(faint, 1.0))
+        for rect in self._regions:
+            painter.drawRoundedRect(fit.to_map(rect), NODE_RADIUS, NODE_RADIUS)
 
         ink = QColor(palette.text().color())
         ink.setAlpha(NODE_ALPHA)
@@ -140,11 +152,11 @@ class Minimap(QWidget):
         graph the size of the well until you actually pan off it, and then opens out just
         far enough to show that you have.
         """
-        if not self._nodes:
+        if not self._nodes and not self._regions:
             return None
         here = self._looking_at.center()
         shown = QRectF(here.x(), here.y(), 1.0, 1.0)
-        for rect in self._nodes:
+        for rect in self._nodes + self._regions:
             shown = shown.united(rect)
         shown = shown.adjusted(-PADDING, -PADDING, PADDING, PADDING)
         box = self._box()

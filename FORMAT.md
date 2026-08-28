@@ -156,7 +156,9 @@ Two behaviours follow, and both matter once a workspace is shared:
 
 **A module's namespace may span node kinds.** `estimation` writes `{"days": 3.0}` beside a
 step and `{"start": "2026-09-01"}` beside the project those steps belong to — one module id,
-one `ModuleDataFormat`, two shapes. `step_agent_instruction` does the same with prose: the
+one `ModuleDataFormat`, two shapes. `project_editor` is the second instance: a position
+beside each step, and the named layouts and regions beside the project
+(`{"layouts": {...}, "regions": [...]}`, coordinates as grid-snapped floats). `step_agent_instruction` does the same with prose: the
 step's own instruction beside the step, the project's standing instruction (prepended to
 every briefing) as `modules/step_agent_instruction.md` beside the project, images in the
 file area at either level. `module_data` is on every node and `set_module_data` is flat

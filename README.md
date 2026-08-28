@@ -164,7 +164,7 @@ src/dplanner/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
 │   ├── product/             the product's identity: name, repository, checkout
 │   ├── projects/            the Projects folder in the index, and the project verbs
-│   ├── project_editor/      a project in a tab: the graph canvas, its modes, toolbar and map
+│   ├── project_editor/      a project in a tab: the canvas, its modes, sorts, named layouts and regions
 │   │                        (its panel also hosts the modules' project-level cards)
 │   ├── project_repo/        which repo and checkout a project works against (overrides the product's)
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
