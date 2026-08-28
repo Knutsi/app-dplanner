@@ -32,10 +32,9 @@ from dplanner.theme.themes import DARK, DEFAULT, LIGHT
 
 
 @pytest.fixture
-def project(services):
+def project(services, make_project):
     library = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(library.id, project).redo(library)
+    project = make_project("Discovery")
     for title in ("Read the spec", "Draft the model"):
         AddNodeCommand(project.id, Step(title=title)).redo(library)
     return project

@@ -364,7 +364,7 @@ def test_agent_prompt_with_no_instruction_anywhere_names_both_fixes(cli):
     cli("step", "add", "Discovery", "Deploy")
     message = cli("agent", "prompt", "Deploy", expect=1)
     assert "agent set 'Deploy'" in message
-    assert "agent set --project" in message
+    assert "agent set --for-project" in message
 
 
 # -- authoring a step at birth -----------------------------------------------------------------

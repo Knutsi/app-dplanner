@@ -694,6 +694,18 @@ in the framework actually used beyond construction. A repository that spans seve
 providers only had to stop *announcing* one. Upstream candidate: yes — it deletes API and
 widens what a template application's document can be.
 
+### A replaced window's close guards must not run
+
+**What.** `AppSession._open` clears `old_window.close_guards` before closing the window it
+is replacing; close *hooks* (the final autosave flush) still run.
+
+**Why.** Guards exist to interrupt a person quitting ("Record changes before quitting?").
+A rebuild is not a quit: the changes are on disk and the new window shows the same dirty
+state — but the guard cannot know that, so a watcher-triggered reload with anything
+uncommitted opened a modal nobody was there to answer. Found as a test hang; a real user's
+reload would have blocked the same way. Upstream candidate: yes — any application with
+both a close guard and a rebuild path has this bug latent.
+
 ### The session lost switching; a different document is a different process
 
 **What.** `AppSession.switch_to`, the switch guards, and the `workspaces/last|recent|roots`

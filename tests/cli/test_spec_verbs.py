@@ -1,4 +1,4 @@
-"""``dplanner spec``: documents, versions, requirements, links — over a real workspace.
+"""``dplanner spec``: documents, versions, requirements, links — over a real library.
 
 **No ``qapp`` fixture anywhere in this file**: the spec workflow is an agent's workflow,
 and it has to run where a graphics stack does not exist.

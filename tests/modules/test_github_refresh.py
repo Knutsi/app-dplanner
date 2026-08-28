@@ -5,7 +5,7 @@ import time
 import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.modules.github import refresh as refresh_mod
 from dplanner.modules.github.aspect import MODULE_ID, GithubRefs, read, write
 from dplanner.modules.github.gh import PrInfo
@@ -15,10 +15,9 @@ MERGED = PrInfo(number=12, title="Add login flow", state="merged", url="u12", he
 
 
 @pytest.fixture
-def step(services):
+def step(services, make_project):
     library = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(library.id, project).redo(library)
+    project = make_project("Discovery")
     step = Step(title="Read the spec")
     AddNodeCommand(project.id, step).redo(library)
     SetModuleDataCommand(step.id, MODULE_ID, write(GithubRefs(pr_number=12))).redo(library)

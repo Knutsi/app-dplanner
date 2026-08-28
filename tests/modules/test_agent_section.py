@@ -8,7 +8,7 @@ one undo stack), the inherited context (derived, read-only, rendered by the prom
 import pytest
 
 from dplanner.domain.commands import AddNodeCommand
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
 
@@ -16,12 +16,10 @@ from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
 
 
 @pytest.fixture
-def step(services):
-    library = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(library.id, project).redo(library)
+def step(services, make_project):
+    project = make_project("Discovery")
     step = Step(title="Deploy")
-    AddNodeCommand(project.id, step).redo(library)
+    AddNodeCommand(project.id, step).redo(services.document)
     return step
 
 
@@ -252,7 +250,7 @@ def test_the_project_panel_shows_the_agent_card(services, step):
     )
     panel = services.window.dock.widget_for("project_editor.project")
     titles = [c.title.text() for c in panel._cards]
-    assert "Agent" in titles and "Repository" in titles
+    assert "Agent" in titles
 
 
 # -- the preview -------------------------------------------------------------------------------

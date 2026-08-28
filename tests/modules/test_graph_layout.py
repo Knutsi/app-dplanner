@@ -31,7 +31,7 @@ from dplanner.modules.project_editor.sorts import (
 
 
 def build():
-    library = Library(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
     for title in ("A", "B", "C"):
@@ -108,7 +108,7 @@ def test_an_unreadable_position_reads_as_absent():
 
 def braided(flip_edges=False):
     """Two chains that cross, a shared gate, and a loose end — enough shape to tangle."""
-    library = Library(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
     steps = {}
@@ -164,9 +164,9 @@ def test_every_sort_is_deterministic_and_overlap_free():
 
 def test_edge_list_order_does_not_change_a_sort():
     library, project, steps = braided()
-    flipped_product, flipped_project, flipped_steps = braided(flip_edges=True)
+    flipped_library, flipped_project, flipped_steps = braided(flip_edges=True)
     one = every_sort(library, project)
-    other = every_sort(flipped_product, flipped_project)
+    other = every_sort(flipped_library, flipped_project)
     for name in one:
         by_title = {title: one[name][step.id] for title, step in steps.items()}
         flipped = {title: other[name][step.id] for title, step in flipped_steps.items()}

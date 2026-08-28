@@ -3,8 +3,8 @@
 The verbs an agent uses on itself: ``show`` before starting the work, ``set`` when the user
 has told it something worth keeping for next time, ``prompt`` for the whole assembled
 briefing — project instruction, step instruction, inherited context — which is also what
-Run Agent in the window launches with. ``show``/``set`` take either a step or ``--project``,
-because the aspect lives at both levels and the verbs should not care.
+Run Agent in the window launches with. ``show``/``set`` take either a step or
+``--for-project``, because the aspect lives at both levels and the verbs should not care.
 
 ``commands()`` takes the context assembly as typed parameters, supplied by the composition
 root — the CLI-side twin of a module ``Deps`` callback, and the same generalisation
@@ -66,7 +66,7 @@ def lint_checks() -> list[LintCheck]:
                 subject=step.title,
                 message="no agent instruction and no standing one — "
                 f"`dplanner agent set '{step.title}' --file -`, or "
-                f"`dplanner agent set --project '{project.title}' --file -`",
+                f"`dplanner agent set --for-project '{project.title}' --file -`",
             )
             for step in project.steps
             if not read(step)
@@ -85,7 +85,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             raise CliError(
                 f"{step.title!r} has no agent instruction and neither does its project — "
                 f"set one with `dplanner agent set {step.title!r} --file …`, or a standing "
-                f"one with `dplanner agent set --project {project.title!r} --file …`"
+                f"one with `dplanner agent set --for-project {project.title!r} --file …`"
             )
         assembled = assemble(
             step_title=step.title or "Untitled step",
@@ -111,24 +111,24 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
     return [
         CliCommand(
             path=("agent", "show"),
-            summary="Print how a step — or with --project, a whole project — should be "
+            summary="Print how a step — or with --for-project, a whole project — should be "
             "carried out. Read this before starting a step.",
             configure=_one_target,
             run=_show,
             examples=(
                 "dplanner agent show 'Read the spec'",
-                "dplanner agent show --project 'Search rewrite'",
+                "dplanner agent show --for-project 'Search rewrite'",
             ),
         ),
         CliCommand(
             path=("agent", "set"),
-            summary="Replace a step's — or with --project, the project's standing — agent "
+            summary="Replace a step's — or with --for-project, the project's standing — agent "
             "instruction from a file or stdin.",
             configure=_configure_set,
             run=_set,
             examples=(
                 "dplanner agent set 'Read the spec' --file notes.md",
-                "echo 'Follow FORMAT.md' | dplanner agent set --project Rewrite --file -",
+                "echo 'Follow FORMAT.md' | dplanner agent set --for-project Rewrite --file -",
             ),
         ),
         CliCommand(

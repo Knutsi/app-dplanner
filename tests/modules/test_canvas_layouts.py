@@ -20,7 +20,7 @@ from dplanner.modules.project_editor.positions import MODULE_ID, read_position, 
 
 
 def build():
-    library = Library(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
     for title in ("A", "B", "C"):
@@ -43,7 +43,7 @@ def test_save_and_read_round_trip():
 
 def test_layout_coordinates_are_snapped_floats():
     """FORMAT.md's numeric rule, one level up: the snapshot stores what a move would."""
-    _product, project = build()
+    _library, project = build()
     entry = write_layouts(project, {"P": LayoutSnapshot(steps={"s": (11.0, 3.0)})})
     stored = entry["layouts"]["P"]["steps"]["s"]
     assert stored == [8.0, 0.0]

@@ -9,8 +9,7 @@ from pathlib import Path
 import pypdfium2 as pdfium
 import pytest
 
-from dplanner.domain.commands import AddNodeCommand, RemoveNodeCommand, SetModuleDataCommand
-from dplanner.domain.model import Project
+from dplanner.domain.commands import RemoveNodeCommand, SetModuleDataCommand
 from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.spec.activity import DETAIL_ROLE, SpecsActivity
@@ -35,10 +34,8 @@ def one_pixel_png(tmp_path: Path) -> bytes:
 
 
 @pytest.fixture
-def project(services):
-    project = Project(title="Discovery")
-    AddNodeCommand(services.document.id, project).redo(services.document)
-    return project
+def project(make_project):
+    return make_project("Discovery")
 
 
 def imported(services, project, name, data, filename):

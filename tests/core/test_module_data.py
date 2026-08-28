@@ -10,7 +10,6 @@ from dplanner.core.module_data import (
     stamped,
 )
 from dplanner.domain.model import Library, Project
-from dplanner.domain.store import ProductStore
 
 
 class FakeRepo:
@@ -29,7 +28,7 @@ class FakeRepo:
 
 @pytest.fixture
 def repo():
-    library = Library(name="Widget")
+    library = Library()
     library.add_child(library.id, Project(title="Build"))
     return FakeRepo(library)
 
@@ -52,7 +51,7 @@ def test_a_format_must_declare_one_migration_per_version():
 
 
 def test_older_data_is_brought_forward(repo):
-    child = repo.owners()[1]
+    child = repo.owners()[0]
     repo.set_module_data(child.id, "m", {"old": 1})
     fmt = ModuleDataFormat("m", version=2, migrations=(lambda d: {"new": d["old"]},))
     changed = migrate_module_data(repo, [fmt])
@@ -62,7 +61,7 @@ def test_older_data_is_brought_forward(repo):
 
 def test_newer_data_is_left_alone(repo):
     """An older build must never overwrite a newer one's data — it just looks empty."""
-    child = repo.owners()[1]
+    child = repo.owners()[0]
     repo.set_module_data(child.id, "m", {"future": True, "format": 9})
     changed = migrate_module_data(repo, [ModuleDataFormat("m", version=1)])
     assert changed == []
@@ -70,7 +69,7 @@ def test_newer_data_is_left_alone(repo):
 
 
 def test_a_successor_takes_over_a_retired_module(repo):
-    child = repo.owners()[1]
+    child = repo.owners()[0]
     repo.set_module_data(child.id, "old_module", {"value": 5})
     retired = ModuleDataFormat("old_module", version=1)
     takeover = Takeover(retired=retired, convert=lambda old, existing: {"kept": old["value"]})
@@ -82,14 +81,22 @@ def test_a_successor_takes_over_a_retired_module(repo):
 
 def test_unknown_entries_survive_a_round_trip(tmp_path):
     """Data belonging to a module this build does not have must come back untouched."""
-    from dplanner.core.storage.local import LocalStorage
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.library_file import write_library_file
+    from dplanner.domain.seed import seed_project
+    from dplanner.domain.store import LibraryStore
 
-    storage = LocalStorage(tmp_path / "ws")
-    store = ProductStore(storage)
-    library = Library(name="Widget")
-    store.create(library)
-    library.set_module_data(library.id, "from_the_future", {"anything": [1, 2], "format": 7})
-    store.flush({(library.id, "module_data")})
+    directory = seed_project(init_repo(tmp_path / "repo") / "build", "Build")
+    path = tmp_path / "library.json"
+    write_library_file(path, [directory])
+    store = LibraryStore(path)
+    library = store.load()
+    project = library.projects[0]
+    library.set_module_data(project.id, "from_the_future", {"anything": [1, 2], "format": 7})
+    store.flush({(project.id, "module_data")})
 
-    reloaded = ProductStore(storage).load()
-    assert reloaded.module_data["from_the_future"] == {"anything": [1, 2], "format": 7}
+    reloaded = LibraryStore(path).load()
+    assert reloaded.projects[0].module_data["from_the_future"] == {
+        "anything": [1, 2],
+        "format": 7,
+    }

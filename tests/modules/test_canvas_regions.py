@@ -17,7 +17,7 @@ from dplanner.modules.project_editor.regions import (
 
 
 def build():
-    library = Library(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
     return library, project
@@ -32,7 +32,7 @@ def test_write_and_read_round_trip_in_creation_order():
 
 
 def test_rects_snap_and_are_stored_as_floats():
-    _product, project = build()
+    _library, project = build()
     entry = write_regions(project, [Region("r1", "DB", 11.0, 3.0, 101.0, 55.0)])
     stored = entry["regions"][0]
     assert (stored["x"], stored["y"]) == (8.0, 0.0)

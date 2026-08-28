@@ -157,6 +157,11 @@ class AppSession:
         # Shown first, then the old one closed: the screen never goes empty, and the old
         # build takes any unbalanced autosave pause with it when it is discarded.
         if old_window is not None:
+            # The old build is being replaced, not quit: its changes are on disk and the
+            # new window shows the same dirty state, so the quit-time guards must not run
+            # — a reload asked for by the watcher would otherwise block on a modal nobody
+            # is quitting through.
+            old_window.close_guards.clear()
             old_window.close()  # Runs close hooks — the final autosave flush.
             old_window.deleteLater()
         if old_services is not None:

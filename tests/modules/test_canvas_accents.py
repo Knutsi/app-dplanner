@@ -8,7 +8,7 @@ end to end.
 import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.modules.project_editor.renderers import NodeAccent
 from dplanner.modules.step_agent_run import aspect as agent_run
 from dplanner.modules.step_release import aspect as release
@@ -16,10 +16,9 @@ from dplanner.modules.step_status import aspect as status
 
 
 @pytest.fixture
-def project(services):
+def project(services, make_project):
     library = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(library.id, project).redo(library)
+    project = make_project("Discovery")
     for title in ("Read the spec", "Ship the beta"):
         AddNodeCommand(project.id, Step(title=title)).redo(library)
     return project

@@ -307,7 +307,7 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
             configure=configure,
             run=do_install,
             needs_library=False,
-            examples=(f"{PROG} skill install", f"{PROG} skill install --project"),
+            examples=(f"{PROG} skill install", f"{PROG} skill install --repo"),
         ),
         CliCommand(
             path=("skill", "uninstall"),

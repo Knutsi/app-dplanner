@@ -4,17 +4,15 @@ import pytest
 
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import AddNodeCommand
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.modules.step_description.aspect import MODULE_ID
 
 
 @pytest.fixture
-def step(services):
-    library = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(library.id, project).redo(library)
+def step(services, make_project):
+    project = make_project("Discovery")
     step = Step(title="Deploy")
-    AddNodeCommand(project.id, step).redo(library)
+    AddNodeCommand(project.id, step).redo(services.document)
     return step
 
 

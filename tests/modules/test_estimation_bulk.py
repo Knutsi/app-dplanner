@@ -14,18 +14,17 @@ from dplanner.domain.commands import (
     SetFieldCommand,
     SetModuleDataCommand,
 )
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, activity_uri, selection_uri
 from dplanner.modules.estimation.aspect import read as read_estimate
 from dplanner.modules.estimation.bulk import ESTIMATE_KIND, BulkEstimateActivity
 
 
 @pytest.fixture
-def project(services):
+def project(services, make_project):
     """A → B, A → C, and D waiting on both B and C: a known topological order."""
     library = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(library.id, project).redo(library)
+    project = make_project("Discovery")
     for title in ("A", "B", "C", "D"):
         AddNodeCommand(project.id, Step(title=title)).redo(library)
     a, b, c, d = project.steps

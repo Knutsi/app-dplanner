@@ -1,16 +1,10 @@
 """Run Agent: the assembled briefing, the cross-platform launch, and the fallback."""
 
 import json
-from io import StringIO
 from pathlib import Path
 
 import pytest
 
-from dplanner.cli.command import CliRegistry
-from dplanner.cli.main import run
-from dplanner.core.storage.local import LocalStorage
-from dplanner.domain.seed import create_product
-from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.launcher import (
     LaunchFiles,
@@ -263,15 +257,13 @@ def test_nothing_found_answers_none_not_an_error(tmp_path):
 
 
 @pytest.fixture
-def step(services):
+def step(services, make_project):
     from dplanner.domain.commands import AddNodeCommand
-    from dplanner.domain.model import Project, Step
+    from dplanner.domain.model import Step
 
-    library = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(library.id, project).redo(library)
+    project = make_project("Discovery")
     step = Step(title="Deploy")
-    AddNodeCommand(project.id, step).redo(library)
+    AddNodeCommand(project.id, step).redo(services.document)
     return step
 
 
@@ -291,41 +283,42 @@ def test_without_an_instruction_the_action_is_greyed_with_the_reason(services, s
     assert state.label is not None and "instruction" in state.label
 
 
-def test_without_a_checkout_the_reason_names_both_places(services, step):
+def test_without_a_repository_the_reason_says_so(services, step, library_repo):
+    """A project whose folder lost its repository: greyed, and the label explains."""
+    import shutil
+
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    shutil.rmtree(library_repo / ".git")
     select(services, step)
     state = services.actions.spec("agent.run").state(services.context.current())
     assert state.visible and not state.enabled
-    assert state.label is not None and "project or the library" in state.label
+    assert state.label is not None and "git repository" in state.label
 
 
-def test_the_project_checkout_wins_over_the_products(services, step, tmp_path, monkeypatch):
-    from dplanner.modules.project_repo.repo import MODULE_ID as REPO_ID
-    from dplanner.modules.project_repo.repo import write_association
+def test_each_projects_own_repository_root_is_the_workdir(
+    services, make_project, step, tmp_path, monkeypatch
+):
+    """Two projects, two repositories: a step's agent runs in its own project's repo root."""
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.commands import AddNodeCommand
+    from dplanner.domain.model import Step
+    from dplanner.domain.seed import seed_project
 
-    product_dir = tmp_path / "mono"
-    project_dir = tmp_path / "satellite"
-    product_dir.mkdir()
-    project_dir.mkdir()
-    services.document.set_field(services.document.id, "checkout", str(product_dir))
-    project = services.document.project_of(step.id)
-    services.document.set_module_data(
-        project.id, REPO_ID, write_association("", str(project_dir))
-    )
-    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
-    select(services, step)
+    second_repo = init_repo(tmp_path / "second")
+    directory = seed_project(second_repo / "satellite", "Satellite")
+    satellite = services.repo.attach(directory)
+    services.document.add_child(services.document.id, satellite)
+    other = Step(title="Wire the antenna")
+    AddNodeCommand(satellite.id, other).redo(services.document)
+    services.document.set_text(other.id, "step_agent_instruction", "Ship it.")
+    select(services, other)
 
     calls: list[tuple[list[str], Path]] = []
     monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append((cmd, cwd)))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     ((_command, cwd),) = calls
-    assert cwd == project_dir
-
-    # Clearing the project's association falls back to the library's.
-    services.document.set_module_data(project.id, REPO_ID, {})
-    services.actions.run("agent.run", services.context.current())
-    assert calls[-1][1] == product_dir
+    assert cwd == second_repo
 
 
 def _agent_section(services):
@@ -337,7 +330,9 @@ def _agent_section(services):
     return spec.factory()
 
 
-def test_the_agent_tab_has_the_trigger_following_the_action_state(services, step, tmp_path):
+def test_the_agent_tab_has_the_trigger_following_the_action_state(services, step, library_repo):
+    import shutil
+
     select(services, step)
     section = _agent_section(services)
     section.show_target(step.id)
@@ -346,16 +341,16 @@ def test_the_agent_tab_has_the_trigger_following_the_action_state(services, step
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     section.show_target(step.id)  # A reselect re-evaluates, as the panel does.
-    assert "checkout" in section.run_button.toolTip()
-
-    services.document.set_field(services.document.id, "checkout", str(tmp_path))
-    section.show_target(step.id)
     assert section.run_button.isEnabled()
+
+    shutil.rmtree(library_repo / ".git")  # The project's folder loses its repository.
+    section.show_target(step.id)
+    assert not section.run_button.isEnabled()
+    assert "git repository" in section.run_button.toolTip()
     section.dispose()
 
 
-def test_typing_the_first_instruction_arms_the_button(services, step, tmp_path):
-    services.document.set_field(services.document.id, "checkout", str(tmp_path))
+def test_typing_the_first_instruction_arms_the_button(services, step):
     select(services, step)
     section = _agent_section(services)
     section.show_target(step.id)
@@ -365,9 +360,8 @@ def test_typing_the_first_instruction_arms_the_button(services, step, tmp_path):
     section.dispose()
 
 
-def test_the_order_view_selection_reaches_run_agent(services, step, tmp_path, monkeypatch):
+def test_the_order_view_selection_reaches_run_agent(services, step, monkeypatch):
     """No coupling needed: the order tab publishes the step, the action reads the context."""
-    services.document.set_field(services.document.id, "checkout", str(tmp_path))
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     project = services.document.project_of(step.id)
     tab = services.tabs.open("order", project.id)
@@ -382,8 +376,7 @@ def test_the_order_view_selection_reaches_run_agent(services, step, tmp_path, mo
     assert calls == [["fake-term"]]
 
 
-def test_the_button_runs_the_same_action(services, step, tmp_path, monkeypatch):
-    services.document.set_field(services.document.id, "checkout", str(tmp_path))
+def test_the_button_runs_the_same_action(services, step, monkeypatch):
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
     calls: list[list[str]] = []
@@ -396,8 +389,9 @@ def test_the_button_runs_the_same_action(services, step, tmp_path, monkeypatch):
     section.dispose()
 
 
-def test_running_spawns_a_terminal_in_the_checkout(services, step, tmp_path, monkeypatch):
-    services.document.set_field(services.document.id, "checkout", str(tmp_path))
+def test_running_spawns_a_terminal_in_the_projects_repo_root(
+    services, step, library_repo, monkeypatch
+):
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
 
@@ -409,14 +403,13 @@ def test_running_spawns_a_terminal_in_the_checkout(services, step, tmp_path, mon
     services.actions.run("agent.run", services.context.current())
     ((command, cwd),) = calls
     assert command[0] == "fake-term"
-    assert cwd == tmp_path
+    assert cwd == library_repo
 
 
-def test_a_successful_launch_stamps_the_run_state(services, step, tmp_path, monkeypatch):
+def test_a_successful_launch_stamps_the_run_state(services, step, monkeypatch):
     """The stamp records an external fact, so it never lands on the undo stack."""
     from dplanner.modules.step_agent_run.aspect import launched, read
 
-    services.document.set_field(services.document.id, "checkout", str(tmp_path))
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
     monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: None)
@@ -427,12 +420,11 @@ def test_a_successful_launch_stamps_the_run_state(services, step, tmp_path, monk
     assert not services.undo.can_undo()
 
 
-def test_the_prompt_fallback_does_not_stamp(services, step, tmp_path, monkeypatch):
+def test_the_prompt_fallback_does_not_stamp(services, step, monkeypatch):
     """No shell was started, so nothing claims one was."""
     import dplanner.modules.step_agent_instruction.module as agent_module
     from dplanner.modules.step_agent_run.aspect import read
 
-    services.document.set_field(services.document.id, "checkout", str(tmp_path))
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: None)
@@ -449,11 +441,10 @@ def test_the_prompt_fallback_does_not_stamp(services, step, tmp_path, monkeypatc
     assert read(step) == ""
 
 
-def test_a_run_stages_attached_images_beside_the_prompt(services, step, tmp_path, monkeypatch):
-    """The agent runs in the checkout, so the prompt must reference copies it can reach."""
+def test_a_run_stages_attached_images_beside_the_prompt(services, step, monkeypatch):
+    """The agent runs in the repository, so the prompt must reference copies it can reach."""
     from dplanner.domain.assets import attach
 
-    services.document.set_field(services.document.id, "checkout", str(tmp_path))
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     project = services.document.project_of(step.id)
     services.document.set_text(project.id, "step_agent_instruction", "House rules.")
@@ -489,36 +480,14 @@ def test_a_run_stages_attached_images_beside_the_prompt(services, step, tmp_path
 # -- the CLI -----------------------------------------------------------------------------------
 
 
-def test_agent_prompt_carries_handoffs_and_the_epilogue(tmp_path):
-    root = tmp_path / "widget"
-    create_product(LocalStorage(root))
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
+def test_agent_prompt_carries_handoffs_and_the_epilogue(cli_stdin, workspace):
+    cli_stdin("project", "create", "Discovery")
+    cli_stdin("step", "add", "Discovery", "Set up CI")
+    cli_stdin("step", "add", "Discovery", "Deploy", "--after", "Set up CI")
+    cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    cli_stdin("handoff", "set", "Set up CI", "--file", "-", stdin="Keys in vault.")
 
-    def cli(*argv, stdin=""):
-        import sys
-
-        out, err = StringIO(), StringIO()
-        if stdin:
-            real = sys.stdin
-            sys.stdin = StringIO(stdin)
-        try:
-            code = run(
-                registry, default_module_formats(), ["--workspace", str(root), *argv], out, err
-            )
-        finally:
-            if stdin:
-                sys.stdin = real
-        assert code == 0, err.getvalue() + out.getvalue()
-        return out.getvalue()
-
-    cli("project", "create", "Discovery")
-    cli("step", "add", "Discovery", "Set up CI")
-    cli("step", "add", "Discovery", "Deploy", "--after", "Set up CI")
-    cli("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
-    cli("handoff", "set", "Set up CI", "--file", "-", stdin="Keys in vault.")
-
-    shown = json.loads(cli("agent", "prompt", "Deploy", "--json"))
+    shown = json.loads(cli_stdin("agent", "prompt", "Deploy", "--json"))
     assert "Ship it." in shown["prompt"]
     assert 'From "Set up CI"' in shown["prompt"]
     assert "Keys in vault." in shown["prompt"]
@@ -528,4 +497,4 @@ def test_agent_prompt_carries_handoffs_and_the_epilogue(tmp_path):
     # The preflight comes first: no skill, no work.
     assert "dplanner skill status" in shown["prompt"]
     assert shown["prompt"].index("skill status") < shown["prompt"].index("Ship it.")
-    assert shown["root"] == str(root)
+    assert shown["root"] == str(workspace / "discovery")

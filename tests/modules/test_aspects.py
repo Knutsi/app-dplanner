@@ -13,32 +13,22 @@ import pytest
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import run
 from dplanner.core.module_data import stamped
-from dplanner.core.storage.local import LocalStorage
-from dplanner.domain.store import ProductStore
+from dplanner.domain.store import LibraryStore
 from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.estimation.aspect import DATA_FORMAT, read, write
 
 
 @pytest.fixture
-def cli(workspace):
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-
-    def invoke(*argv, expect=0):
-        out, err = StringIO(), StringIO()
-        code = run(
-            registry, default_module_formats(), ["--workspace", str(workspace), *argv], out, err
-        )
-        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
-        return out.getvalue() + err.getvalue()
-
-    invoke("project", "create", "Discovery")
-    invoke("step", "add", "Discovery", "Read the spec")
-    return invoke
+def cli(cli):
+    """The shared CLI over a seeded project — the conftest fixture, pre-populated."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Read the spec")
+    return cli
 
 
-def reload(workspace):
-    return ProductStore(LocalStorage(workspace)).load()
+@pytest.fixture
+def reload(cli_library):
+    return lambda: LibraryStore(cli_library).load()
 
 
 def first_step(library):
@@ -76,9 +66,9 @@ def test_aspect_list_needs_no_product(tmp_path):
 # -- estimation --------------------------------------------------------------------------------
 
 
-def test_an_estimate_is_written_and_read_back(cli, workspace):
+def test_an_estimate_is_written_and_read_back(cli, reload):
     cli("estimate", "set", "Read the spec", "--days", "3")
-    assert read(first_step(reload(workspace))) == 3.0
+    assert read(first_step(reload())) == 3.0
 
 
 def test_an_integer_estimate_is_stored_as_a_float(cli, workspace):
@@ -94,9 +84,9 @@ def test_an_integer_estimate_is_stored_as_a_float(cli, workspace):
     assert '"days": 3.0' in path.read_text()
 
 
-def test_unestimated_is_not_zero(cli, workspace):
+def test_unestimated_is_not_zero(cli, reload):
     """ "We have not estimated this" and "this is free" are different claims."""
-    assert read(first_step(reload(workspace))) is None
+    assert read(first_step(reload())) is None
     assert "1 unestimated" in cli("estimate", "rollup", "Discovery")
 
 
@@ -123,7 +113,7 @@ def test_data_newer_than_this_build_is_left_alone(cli, workspace):
     assert json.loads(path.read_text()) == future
 
 
-def test_a_step_estimation_entry_is_taken_over_and_loses_its_confidence(cli, workspace):
+def test_a_step_estimation_entry_is_taken_over_and_loses_its_confidence(cli, workspace, reload):
     """`step_estimation` retired into `estimation`; its data comes with, its confidence does not.
 
     The on-disk id was always the contract between the two modules, which is why the rename
@@ -138,7 +128,7 @@ def test_a_step_estimation_entry_is_taken_over_and_loses_its_confidence(cli, wor
     cli("project", "list")  # Any verb: opening runs the module-data migrations.
     assert not (modules / "step_estimation.json").exists()
     assert json.loads((modules / "estimation.json").read_text()) == {"days": 3.0, "format": 1}
-    assert read(first_step(reload(workspace))) == 3.0
+    assert read(first_step(reload())) == 3.0
 
 
 def test_a_step_estimation_entry_newer_than_that_module_ever_wrote_is_not_taken_over(
@@ -155,7 +145,7 @@ def test_a_step_estimation_entry_newer_than_that_module_ever_wrote_is_not_taken_
     assert not (modules / "estimation.json").exists()
 
 
-def test_older_data_is_migrated_by_the_cli_too(cli, workspace, monkeypatch):
+def test_older_data_is_migrated_by_the_cli_too(cli, workspace, cli_library, monkeypatch):
     """`migrate_module_data` runs in AppBuilder; a CLI that skipped it would stamp one node
     at the current format while its siblings stayed behind."""
     from dplanner.core.module_data import ModuleDataFormat
@@ -168,7 +158,7 @@ def test_older_data_is_migrated_by_the_cli_too(cli, workspace, monkeypatch):
     monkeypatch.setattr("dplanner.modules.default_module_formats", lambda: [bumped])
     registry = CliRegistry()
     registry.register_all(default_cli_commands())
-    assert run(registry, [bumped], ["--workspace", str(workspace), "project", "list"]) == 0
+    assert run(registry, [bumped], ["--library", str(cli_library), "project", "list"]) == 0
     assert json.loads(path.read_text()) == stamped({"new": 1}, 2)
 
 
@@ -190,7 +180,7 @@ def test_a_start_date_has_to_be_a_date(cli):
     assert "either --date or --clear" in cli("schedule", "start", "Discovery", expect=1)
 
 
-def test_the_schedule_dates_each_step_from_the_start(cli, workspace):
+def test_the_schedule_dates_each_step_from_the_start(cli, reload):
     cli("estimate", "set", "Read the spec", "--days", "3")
     cli("schedule", "start", "Discovery", "--date", "2026-09-07")  # A Monday.
 
@@ -199,7 +189,7 @@ def test_the_schedule_dates_each_step_from_the_start(cli, workspace):
     assert report["finish"] == "2026-09-09"
     assert report["steps"][0] == {
         "index": 1,
-        "id": first_step(reload(workspace)).id,
+        "id": first_step(reload()).id,
         "title": "Read the spec",
         "days": 3.0,
         "accumulated": 3.0,
@@ -226,9 +216,9 @@ def test_the_schedule_counts_what_nobody_has_sized(cli):
 # -- ticket ------------------------------------------------------------------------------------
 
 
-def test_a_ticket_records_where_the_work_is_tracked(cli, workspace):
+def test_a_ticket_records_where_the_work_is_tracked(cli, reload):
     cli("ticket", "set", "Read the spec", "--system", "jira", "--key", "WID-14")
-    entry = first_step(reload(workspace)).module_data["step_ticket"]
+    entry = first_step(reload()).module_data["step_ticket"]
     assert entry["key"] == "WID-14"
 
 
@@ -239,14 +229,14 @@ def test_an_empty_ticket_is_refused_rather_than_stored(cli):
 # -- description -------------------------------------------------------------------------------
 
 
-def test_prose_is_a_markdown_file_beside_the_step(cli, workspace, tmp_path):
+def test_prose_is_a_markdown_file_beside_the_step(cli, workspace, reload, tmp_path):
     source = tmp_path / "notes.md"
     source.write_text("# Read it\n\nTwice.\n")
     cli("describe", "set", "Read the spec", "--file", str(source))
 
     document = workspace / "discovery/steps/read-the-spec/modules/step_description.md"
     assert document.read_text() == "# Read it\n\nTwice.\n"
-    assert first_step(reload(workspace)).module_text["step_description"].startswith("# Read it")
+    assert first_step(reload()).module_text["step_description"].startswith("# Read it")
 
 
 def test_an_image_lands_in_the_modules_file_area(cli, workspace, tmp_path):

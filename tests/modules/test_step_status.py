@@ -1,16 +1,12 @@
 """The status aspect: its vocabulary on disk, its CLI, and its Status submenu."""
 
 import json
-from io import StringIO
 
 import pytest
 
-from dplanner.cli.command import CliRegistry
-from dplanner.cli.main import run
 from dplanner.domain.commands import AddNodeCommand
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.step_status.aspect import MODULE_ID, STATUSES, read, write
 
 # -- the aspect, with no application at all ----------------------------------------------------
@@ -47,21 +43,11 @@ def test_writing_an_unknown_status_is_refused():
 
 
 @pytest.fixture
-def cli(workspace):
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-
-    def invoke(*argv, expect=0):
-        out, err = StringIO(), StringIO()
-        code = run(
-            registry, default_module_formats(), ["--workspace", str(workspace), *argv], out, err
-        )
-        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
-        return out.getvalue() + err.getvalue()
-
-    invoke("project", "create", "Discovery")
-    invoke("step", "add", "Discovery", "Read the spec")
-    return invoke
+def cli(cli):
+    """The shared CLI over a seeded project — the conftest fixture, pre-populated."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Read the spec")
+    return cli
 
 
 def test_set_show_and_clear(cli, workspace):
@@ -101,12 +87,10 @@ def test_list_groups_by_status_in_working_order(cli):
 
 
 @pytest.fixture
-def step(services):
-    library = services.document
-    project = Project(title="Discovery")
-    AddNodeCommand(library.id, project).redo(library)
+def step(services, make_project):
+    project = make_project("Discovery")
     step = Step(title="Read the spec")
-    AddNodeCommand(project.id, step).redo(library)
+    AddNodeCommand(project.id, step).redo(services.document)
     return step
 
 

@@ -5,14 +5,11 @@ stands in for a store that has never flushed the node, which is also the real ed
 """
 
 import json
-from io import StringIO
+from pathlib import Path
 
 import pytest
 
-from dplanner.cli.command import CliRegistry
-from dplanner.cli.main import run
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.step_handoff.aspect import (
     MODULE_ID,
     read_scope,
@@ -27,7 +24,7 @@ def _no_files(_step_id, _module_id):
 
 def build(edges):
     """A library with one project whose steps and requires-edges are given as a dict."""
-    library = Library(name="Widget")
+    library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
     steps = {}
@@ -117,41 +114,18 @@ def test_an_unknown_scope_reads_as_downstream():
 
 
 @pytest.fixture
-def cli(workspace):
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-
-    def invoke(*argv, expect=0, stdin=""):
-        import sys
-
-        out, err = StringIO(), StringIO()
-        if stdin:
-            real = sys.stdin
-            sys.stdin = StringIO(stdin)
-        try:
-            code = run(
-                registry,
-                default_module_formats(),
-                ["--workspace", str(workspace), *argv],
-                out,
-                err,
-            )
-        finally:
-            if stdin:
-                sys.stdin = real
-        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
-        return out.getvalue() + err.getvalue()
-
-    invoke("project", "create", "Discovery")
-    invoke("step", "add", "Discovery", "Set up CI")
-    invoke("step", "add", "Discovery", "Deploy", "--after", "Set up CI")
-    return invoke
+def cli(cli_stdin):
+    """The shared stdin-capable CLI over a seeded project — the conftest fixture."""
+    cli_stdin("project", "create", "Discovery")
+    cli_stdin("step", "add", "Discovery", "Set up CI")
+    cli_stdin("step", "add", "Discovery", "Deploy", "--after", "Set up CI")
+    return cli_stdin
 
 
 def test_set_show_and_inherit_through_the_cli(cli, workspace):
     cli("handoff", "set", "Set up CI", "--file", "-", stdin="The keys live in the vault.")
     shown = json.loads(cli("handoff", "show", "Deploy", "--inherited", "--json"))
-    assert shown["root"] == str(workspace)
+    assert shown["root"] == str(workspace / "discovery")
     (row,) = shown["inherited"]
     assert row["title"] == "Set up CI"
     assert row["note"] == "The keys live in the vault."
@@ -165,8 +139,9 @@ def test_attach_makes_the_file_part_of_the_inheritance(cli, workspace, tmp_path)
     assert name.startswith("assets/")
     shown = json.loads(cli("handoff", "show", "Deploy", "--inherited", "--json"))
     (row,) = shown["inherited"]
-    assert len(row["assets"]) == 1
-    assert (workspace / row["assets"][0]).is_file()
+    (asset,) = row["assets"]
+    # Absolute on purpose: one library spans several roots, and the agent runs elsewhere.
+    assert Path(asset).is_absolute() and Path(asset).is_file()
 
 
 def test_scope_project_reaches_everyone_and_clear_removes_it(cli, workspace):

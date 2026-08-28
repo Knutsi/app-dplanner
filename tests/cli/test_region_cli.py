@@ -1,50 +1,39 @@
-"""``dplanner region …`` end to end, over a real workspace. No ``qapp`` fixture."""
+"""``dplanner region …`` end to end, over a real library. No ``qapp`` fixture."""
 
 import json
-from io import StringIO
 
 import pytest
 
-from dplanner.cli.command import CliRegistry
-from dplanner.cli.main import run
-from dplanner.core.storage.local import LocalStorage
-from dplanner.domain.store import ProductStore
-from dplanner.modules import default_cli_commands, default_module_formats
+from dplanner.domain.store import LibraryStore
 from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.modules.project_editor.regions import read_regions
 
 
 @pytest.fixture
-def cli(workspace):
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-
-    def invoke(*argv, expect=0):
-        out, err = StringIO(), StringIO()
-        code = run(
-            registry, default_module_formats(), ["--workspace", str(workspace), *argv], out, err
-        )
-        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
-        return out.getvalue() + err.getvalue()
-
-    invoke("project", "create", "Discovery")
-    invoke("step", "add", "Discovery", "Design schema")
-    invoke("step", "add", "Discovery", "Write migrations")
-    invoke("step", "add", "Discovery", "Ship it")
-    return invoke
+def cli(cli):
+    """The shared CLI, with a three-step project already in place."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Design schema")
+    cli("step", "add", "Discovery", "Write migrations")
+    cli("step", "add", "Discovery", "Ship it")
+    return cli
 
 
-def reload_project(workspace):
-    return ProductStore(LocalStorage(workspace)).load().projects[0]
+def reload_library(library_path):
+    return LibraryStore(library_path).load()
 
 
-def test_add_around_steps_wraps_them_where_they_sit(cli, workspace):
+def reload_project(library_path):
+    return reload_library(library_path).projects[0]
+
+
+def test_add_around_steps_wraps_them_where_they_sit(cli, cli_library):
     said = cli("region", "add", "Discovery", "Database setup", "--steps", "schema", "migrations")
     # The report names what the rectangle actually covers, so a caught neighbour is visible.
     assert "2 steps: Design schema, Write migrations" in said
 
-    library = ProductStore(LocalStorage(workspace)).load()
+    library = reload_library(cli_library)
     project = library.projects[0]
     region = read_regions(project)[0]
     assert region.title == "Database setup"
@@ -90,14 +79,14 @@ def test_list_names_the_steps_each_region_covers(cli):
     assert by_title["Elsewhere"]["steps"] == []
 
 
-def test_fit_rewraps_in_place_and_keeps_the_id(cli, workspace):
+def test_fit_rewraps_in_place_and_keeps_the_id(cli, cli_library):
     cli("region", "add", "Discovery", "Database setup", "--rect", "5000", "5000", "100", "100")
-    before = read_regions(reload_project(workspace))[0]
+    before = read_regions(reload_project(cli_library))[0]
 
     said = cli("region", "fit", "Discovery", "Database setup", "--steps", "schema", "migrations")
     assert "2 steps: Design schema, Write migrations" in said
 
-    library = ProductStore(LocalStorage(workspace)).load()
+    library = reload_library(cli_library)
     project = library.projects[0]
     after = read_regions(project)[0]
     assert after.id == before.id  # a saved layout's rect entry still points at it
@@ -112,17 +101,17 @@ def test_fit_rewraps_in_place_and_keeps_the_id(cli, workspace):
     )
 
 
-def test_rename_and_delete_find_a_region_by_title_or_id(cli, workspace):
+def test_rename_and_delete_find_a_region_by_title_or_id(cli, cli_library):
     cli("region", "add", "Discovery", "Database setup", "--rect", "0", "0", "100", "100")
     cli("region", "add", "Discovery", "Finalize release", "--rect", "200", "0", "100", "100")
 
     cli("region", "rename", "Discovery", "Database setup", "Data layer")
-    titles = {region.title for region in read_regions(reload_project(workspace))}
+    titles = {region.title for region in read_regions(reload_project(cli_library))}
     assert titles == {"Data layer", "Finalize release"}
 
-    region_id = read_regions(reload_project(workspace))[0].id
+    region_id = read_regions(reload_project(cli_library))[0].id
     cli("region", "delete", "Discovery", region_id[:8])
-    assert [r.title for r in read_regions(reload_project(workspace))] == ["Finalize release"]
+    assert [r.title for r in read_regions(reload_project(cli_library))] == ["Finalize release"]
 
 
 def test_an_ambiguous_or_unknown_region_is_refused(cli):
