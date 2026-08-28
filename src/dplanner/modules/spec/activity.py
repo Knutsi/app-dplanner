@@ -84,6 +84,7 @@ ICONS: dict[str, Callable[[str], QIcon]] = {
 PANEL_MARGIN = 16
 CAPTION_GAP = 6
 BLOCK_GAP = 12
+STRIP_MARGIN = 8  # DESIGN.md's 4-point scale: a toolbar strip breathes at 8.
 
 ROW_PADDING_V = 10
 ROW_PADDING_H = 12
@@ -327,6 +328,9 @@ class SpecsActivity(EntityActivity):
         self._editing = None
         self._flush_edit()
         self._drop_session()
+        # The render cache's early-return assumes the right widget is already up — while
+        # the editor page is showing, it is not. A Done with no edits must still swap back.
+        self._shown = None
         self._show_current()
         self._publish_activity()
 
@@ -388,25 +392,48 @@ class SpecsActivity(EntityActivity):
             self._session_blobs.discard(superseded)
 
     def _build_editor_page(self) -> QWidget:
+        # The formatting strip is the editor's own chrome, flush on top of the text area —
+        # the canvas toolbar idiom (`#EditorToolbar` shares `#CanvasToolbar`'s QSS), so it
+        # cannot be read as an extension of the document list's toolbar across the splitter.
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(CAPTION_GAP)
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        strip = QWidget(page)
+        strip.setObjectName("EditorToolbar")
+        row = QHBoxLayout(strip)
+        row.setContentsMargins(STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN)
         row.setSpacing(6)
-        buttons: tuple[tuple[str, str, Callable[[], None]], ...] = (
-            ("B", "Bold (Ctrl+B)", self._editor.toggle_bold),
-            ("I", "Italic (Ctrl+I)", self._editor.toggle_italic),
-            ("H1", "Heading 1", lambda: self._editor.set_heading(1)),
-            ("H2", "Heading 2", lambda: self._editor.set_heading(2)),
-            ("H3", "Heading 3", lambda: self._editor.set_heading(3)),
-            ("•", "Bullet list", self._editor.bullet_list),
-            ("1.", "Numbered list", self._editor.numbered_list),
-            ("Image…", "Insert an image at the cursor", self._editor.insert_image_from_file),
+        groups: tuple[tuple[tuple[str, str, Callable[[], None]], ...], ...] = (
+            (
+                ("B", "Bold (Ctrl+B)", self._editor.toggle_bold),
+                ("I", "Italic (Ctrl+I)", self._editor.toggle_italic),
+            ),
+            (
+                ("H1", "Heading 1", lambda: self._editor.set_heading(1)),
+                ("H2", "Heading 2", lambda: self._editor.set_heading(2)),
+                ("H3", "Heading 3", lambda: self._editor.set_heading(3)),
+            ),
+            (
+                ("•", "Bullet list", self._editor.bullet_list),
+                ("1.", "Numbered list", self._editor.numbered_list),
+            ),
+            (
+                (
+                    "Image…",
+                    "Insert an image at the cursor",
+                    self._editor.insert_image_from_file,
+                ),
+            ),
         )
-        for face, tip, handler in buttons:
-            row.addWidget(_tool_button(face, tip, handler))
+        for index, group in enumerate(groups):
+            if index:
+                rule = QWidget(strip)
+                rule.setObjectName("ToolbarRule")
+                rule.setFixedWidth(1)
+                row.addWidget(rule)
+            for face, tip, handler in group:
+                row.addWidget(_tool_button(face, tip, handler))
         row.addStretch(1)
         # Done leaves through the verb, so the menu, the palette and this button agree.
         row.addWidget(
@@ -416,7 +443,7 @@ class SpecsActivity(EntityActivity):
                 lambda: self._actions.run("spec.edit", self._context.current()),
             )
         )
-        layout.addLayout(row)
+        layout.addWidget(strip)
         self._editor_note = QLabel("Editing will reformat this document to Qt's markdown style.")
         self._editor_note.setObjectName("InspectorNote")
         self._editor_note.setWordWrap(True)

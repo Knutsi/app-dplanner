@@ -302,3 +302,19 @@ def test_a_pasted_image_is_indexed_at_save(services, project):
     index = read_index(services.document.project(project.id))
     assert len(index.assets) == 1 and index.assets[0].file.startswith("assets/")
     assert index.assets[0].id == "a1"
+
+
+def test_done_with_no_edits_still_returns_to_the_viewer(services, project):
+    """View → edit → Done without typing: the render cache must not strand the editor page.
+
+    The cache's early-return assumes the shown widget is right; after a no-op session it
+    is the editor page. This is the bug where Done uncheck the toggle but changed nothing.
+    """
+    imported(services, project, "auth", b"# Auth\n", "auth.md")
+    activity = specs_tab(services, project)
+    activity.select_document("auth")  # Renders the viewer, warming the cache.
+    assert activity._views.currentWidget() is activity._text
+    activity.begin_edit()
+    assert activity._views.currentWidget() is activity._editor_page
+    activity.end_edit()
+    assert activity._views.currentWidget() is activity._text
