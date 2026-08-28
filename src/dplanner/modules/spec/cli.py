@@ -22,6 +22,7 @@ from dplanner.core.text_diff import diff_hunks
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Product, Project, Step
+from dplanner.domain.store import ModuleFileArea
 from dplanner.modules.spec.aspect import (
     MODULE_ID,
     SpecAttachment,
@@ -92,7 +93,49 @@ def lint_checks() -> list[LintCheck]:
                 )
         return findings
 
-    return [spec_findings]
+    def unanchored_quotes(
+        _product: Product, project: Project, files: FilesFor
+    ) -> list[LintFinding]:
+        """A requirement whose quote no longer appears in its document — the spec was
+        replaced and the anchor drifted. Re-validated here rather than stored at mark
+        time, because a stored answer is stale the moment `spec import` replaces the
+        document with no window running to notice."""
+        index = read_index(project)
+        cited = [req for req in index.requirements if req.quote]
+        if not cited:
+            return []
+        try:
+            area = files(project.id, MODULE_ID)
+        except KeyError:
+            return []  # A never-flushed project has no documents to check against.
+        documents = {doc.name: doc for doc in index.documents}
+        texts: dict[str, str | None] = {}  # Each document's text is read once, not per quote.
+        findings = []
+        for requirement in cited:
+            document = documents.get(requirement.document)
+            if document is None:
+                continue  # Its document is gone — `spec remove` already reported that.
+            if document.name not in texts:
+                texts[document.name] = document_text(area, document)
+            text = texts[document.name]
+            if text is None:
+                continue  # An unreadable document cannot refute a quote.
+            anchored, _page = quote_anchors(text, requirement.quote, document.kind)
+            if not anchored:
+                findings.append(
+                    LintFinding(
+                        check="spec.quote-unanchored",
+                        subject_id=requirement.id,
+                        subject=requirement.title,
+                        message=f"its quote no longer anchors in {requirement.document} — "
+                        f"re-read the document and re-mark: `dplanner spec mark "
+                        f"'{project.title}' {requirement.document} --id {requirement.id} "
+                        "--title … --quote …`",
+                    )
+                )
+        return findings
+
+    return [spec_findings, unanchored_quotes]
 
 
 def commands() -> list[CliCommand]:
@@ -325,10 +368,38 @@ def _blob(document: SpecDocument, previous: bool) -> str:
 
 
 def _content(context: CliContext, project: Project, document: SpecDocument, blob: str) -> bytes:
-    data = context.store.files(project.id, MODULE_ID).read_bytes(blob)
+    return _blob_bytes(context.store.files(project.id, MODULE_ID), document, blob)
+
+
+def _blob_bytes(area: ModuleFileArea, document: SpecDocument, blob: str) -> bytes:
+    data = area.read_bytes(blob)
     if data is None:
         raise CliError(f"{document.name}: {blob} is missing from the workspace")
     return data
+
+
+def document_text(area: ModuleFileArea, document: SpecDocument) -> str | None:
+    """The text a quote can anchor in — a PDF's layer, prose decoded — or None when the
+    file is missing or the PDF unreadable. None means "cannot check", never "failed"."""
+    try:
+        if document.kind == KIND_PDF:
+            return _layer_from(area, document, document.file)
+        return _blob_bytes(area, document, document.file).decode("utf-8")
+    except CliError:
+        return None
+
+
+def quote_anchors(text: str, quote: str, kind: str) -> tuple[bool, int | None]:
+    """Whether a quote appears in a document's text, and on which page for a PDF.
+
+    One implementation for ``spec mark`` and ``project lint``, so the mark that passed
+    can never be the requirement lint flags — or the other way round.
+    """
+    if kind == KIND_PDF:
+        page = find_quote(text, quote)
+        return page is not None, page
+    normalized = " ".join(quote.lower().split())
+    return normalized in " ".join(text.lower().split()), None
 
 
 def _absolute(context: CliContext, project: Project, blob: str) -> str:
@@ -425,13 +496,16 @@ def _show(context: CliContext, args: Namespace) -> int:
 def _pdf_text(
     context: CliContext, project: Project, document: SpecDocument, blob: str
 ) -> str:
+    return _layer_from(context.store.files(project.id, MODULE_ID), document, blob)
+
+
+def _layer_from(area: ModuleFileArea, document: SpecDocument, blob: str) -> str:
     """The text layer: the file import wrote, or extracted in memory for a document
     imported before layers existed — a read verb never writes."""
-    area = context.store.files(project.id, MODULE_ID)
     stored = area.read_bytes(text_blob_name(blob))
     if stored is not None:
         return stored.decode("utf-8")
-    data = _content(context, project, document, blob)
+    data = _blob_bytes(area, document, blob)
     try:
         return extract_text_layer(data)
     except Exception as error:  # pdfium raises its own hierarchy.
@@ -750,16 +824,10 @@ def _validate_quote(
     """
     if not quote:
         return None, None
-    if document.kind == KIND_PDF:
-        try:
-            layer = _pdf_text(context, project, document, document.file)
-        except CliError:
-            return None, None  # A PDF whose text cannot be read cannot refute a quote.
-        page = find_quote(layer, quote)
-        return page is not None, page
-    body = _content(context, project, document, document.file).decode("utf-8")
-    normalized = " ".join(quote.lower().split())
-    return normalized in " ".join(body.lower().split()), None
+    text = document_text(context.store.files(project.id, MODULE_ID), document)
+    if text is None:
+        return None, None  # A document whose text cannot be read cannot refute a quote.
+    return quote_anchors(text, quote, document.kind)
 
 
 def _unmark(context: CliContext, args: Namespace) -> int:

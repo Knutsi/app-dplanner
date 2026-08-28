@@ -135,6 +135,31 @@ def test_spec_checks_track_the_link_lifecycle(cli, tmp_path):
     assert "spec.link-dangling" in checks_in(report)
 
 
+def test_a_replaced_document_exposes_quotes_that_no_longer_anchor(cli, tmp_path):
+    def doc(name, text):
+        path = tmp_path / name
+        path.write_text(text)
+        return str(path)
+
+    cli("project", "create", "Discovery")
+    cli("spec", "import", "Discovery", doc("s.md", "The rule is argon2id."), "--name", "s")
+    cli("spec", "mark", "Discovery", "s", "--title", "Hashing", "--quote", "argon2id")
+    cli("spec", "mark", "Discovery", "s", "--title", "Quoteless")
+    cli("step", "add", "Discovery", "Deploy")
+    cli("spec", "link", "Deploy", "r1", "r2")
+
+    report = data(cli("project", "lint", "Discovery", "--json", expect=1))
+    assert "spec.quote-unanchored" not in checks_in(report)
+
+    cli("spec", "import", "Discovery", doc("s2.md", "The rule is scrypt now."), "--name", "s")
+    report = data(cli("project", "lint", "Discovery", "--json", expect=1))
+    assert "spec.quote-unanchored" in checks_in(report)
+    flagged = [row for row in report["findings"] if row["check"] == "spec.quote-unanchored"]
+    # Only the quoted requirement is flagged; a quoteless one has nothing to drift.
+    assert [row["subject"] for row in flagged] == ["r1"]
+    assert "spec mark" in flagged[0]["message"]
+
+
 def test_an_edge_kept_after_a_remove_is_finally_visible(cli):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "A")
