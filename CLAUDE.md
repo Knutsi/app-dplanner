@@ -276,6 +276,11 @@ root, stop and look for the registry or capability you have not found yet.
 - **Inherited handoffs are computed, never stored** — `step_handoff/handoff.py` is one
   function with three readers (tab, CLI, agent prompt). Same rule as the ordering, and the
   reasoning is in `ARCHITECTURE.md`'s *Pass-forward is derived at read time*.
+- **Progression is derived, never stored** — `domain/progression.py` is the graph's
+  readiness with a `status_for(step)` handed in like `days_for`; the board, `dplanner
+  progression show` and `--json` are three readers of one function, and the frontier is a
+  per-step check, not `ordering.ready()`'s wave one. `ARCHITECTURE.md`'s *Progression is
+  the status-aware frontier* has the partition rules and why each was a decision.
 - **A module's project-level editor is a card, registered into `services.detail_cards`.**
   Same `InspectorSection` contract as a step tab, with a project id in `show_target`; the
   project panel renders the stack. Register before `project_editor` in `default_modules()` —

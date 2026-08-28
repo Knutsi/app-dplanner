@@ -678,8 +678,8 @@ is *finished* or *stuck* — yet storing it does not make it a field: `VALUE_FIE
 is still `("title",)`, and that is the central design decision of the model holding. As an
 aspect it costs no product-format migration, absence encodes `pending`, both surfaces got
 the verb from one declaration (`dplanner status set '<step>' done` is how an agent reports
-back), and a derivation that one day wants it — a status-aware `ready()` — will be handed a
-`status_for(step)` function, exactly as `schedule()` is handed `days_for`.
+back), and the derivation that wants it — the progression board's status-aware frontier —
+is handed a `status_for(step)` function, exactly as `schedule()` is handed `days_for`.
 
 The one enum also shows where an aspect's GUI does not have to be a tab: status registers a
 *Status* submenu of checkable Step verbs instead, and the canvas right-click, the order
@@ -775,6 +775,47 @@ signed-in check (a network round trip with no timeout) runs once per process on 
 thread with its answer cached. The future `github` module will make its own checks —
 deliberately: a shared probe would be coupling, and the check is two lines.
 
+## Progression is the status-aware frontier
+
+`ordering.ready()` answers what the *graph* allows — wave one, nothing waited on. During
+execution that is the wrong question: a step deep in the graph whose prerequisites have all
+been finished is launchable today, and no wave number says so. `domain/progression.py`
+answers the execution question — every step in exactly one of *done / running / attention /
+ready / upcoming / waiting* — and it is deliberately a **new derivation beside the old one,
+not a refactor of it**: the frontier is a per-step check ("every `requires` target reads
+done"), not wave membership, and the two only coincide in a project where nothing has been
+finished yet. A test pins that equivalence; shared code would have pinned a coincidence.
+
+The rules worth writing down, because each was a decision:
+
+- **A stored claim beats the graph.** A step marked done whose prerequisites are not is
+  honoured as done, and its dependents may become ready through it. The graph gates
+  *launching*, not *recording* — an agent reporting `status set … done` out of order is
+  reporting a fact, and a derivation that refused it would be arguing with reality.
+- **Blocked is attention, not waiting.** A blocked step is stuck on a person, so it leads
+  the running column wearing a warning rather than disappearing into the waited-on mass —
+  it is the row that needs eyes, and the board exists to route eyes.
+- **A blocked prerequisite still counts as "on the board"** for the one-move lookahead:
+  its dependents stay in *upcoming*, pointing at it. The alternative — demoting them to
+  waiting — would make the queue churn every time a prerequisite flips between in-progress
+  and blocked, and would hide exactly the lane that stalled.
+- **The lookahead is one move, not a forecast.** A step whose prerequisite is merely
+  *upcoming* stays in waiting. Anything deeper is the order table's job.
+- **The frontier ranks by unlocks** — the count of transitive not-done dependents — because
+  all of the frontier is valid and the ranking is what makes some of it urgent. A done
+  dependent is walked through but not counted: its own dependents still wait through it.
+
+The seam is the one the schedule made: `status_for(step)` and `days_for(step)` are handed
+in by the composition root from the aspects' Qt-free readers, so the domain never learns
+what either is stored as, and the derivation is tested with a dict-backed function. Nothing
+is persisted, for the ordering's reason — `dplanner status set` changes the answer with no
+window running to notice. The tab (`modules/progression/`), `dplanner progression show` and
+`--json` are three readers of the one function, so no surface can recommend a launch
+another surface would dispute. The Run Agent button on a ready card is the same rule at the
+module layer: it renders the real `agent.run` action's state — evaluated against a context
+synthesised for exactly that card's step — so the gate's reason appears verbatim and no
+second copy of "what launching needs" exists.
+
 ## Where this is going
 
 - **A second edge kind that can be drawn rather than only typed.** The mode stack is where it
@@ -787,6 +828,3 @@ deliberately: a shared probe would be coupling, and the check is two lines.
 - **Reports** — new folders in the index tree, which is the shape the registry was built for.
   `dplanner schedule show` is the first of them, and it lives in the module that owns the
   numbers rather than in the one that owns the table.
-- **Status-aware readiness.** `ordering.ready()` is still a pure graph fact; "ready and not
-  done" is a `status_for(step)` parameter away, handed in by the composition root the way
-  `days_for` is — the seam exists, nothing threads it yet.
