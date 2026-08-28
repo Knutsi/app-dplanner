@@ -180,6 +180,7 @@ src/dplanner/
 │   ├── step_handoff/        what a step passes forward, and who inherits it
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, the missing-gh notice
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
+│   ├── progression/         the execution board — what can be launched now — and `dplanner progression show`
 │   ├── spec/                spec documents beside a project, their requirements and figures, `dplanner spec` (pdf.py: text layers and page rendering)
 │   ├── workspace_watch/     reloading when something else writes to the workspace
 │   ├── agent_skill/         the skill dialog, and the install that puts dplanner on PATH

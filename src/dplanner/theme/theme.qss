@@ -595,6 +595,16 @@ QScrollBar::sub-page {
     background-color: $BORDER;
 }
 
+/* Progression lanes (modules/progression/view.py): a list on a tab page needs its own
+ * ground, or its shape is one faint border. Elevated, so the #ToolCard rows inside sit
+ * on the surface that well was designed against — see DESIGN.md §Cards. No colour here,
+ * for #ToolCard's reason: it would cascade onto every label inside. */
+#ProgressionLane {
+    background-color: $BG_ELEVATED;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
+}
+
 /* Open Manuscript dialog: tabs need explicit rules (nothing else in the app shows a
  * QTabBar through QSS), buttons share the reader-toolbar look. */
 /* Underline-style tabs: text with an accent bar under the active one — chrome that
