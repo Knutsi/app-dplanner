@@ -48,9 +48,14 @@ INVALID_TINT = QColor(220, 110, 110, 180)
 BUSY_TINT = QColor(110, 160, 220, 180)
 BADGE_TINT = QColor(150, 130, 220, 70)
 BADGE_BORDER = QColor(150, 130, 220, 160)
-# A highlighted body: the badge's purple family over the whole node, so a milestone node,
-# its badge and the order table's release row read as one identity.
+# A toned body colours the whole node, so its kind reads at any zoom. "highlight" is the
+# badge's purple family — a milestone node, its badge and the order table's release row
+# are one identity; "good" is the green family — finished work recedes into a calm green
+# column the eye can skip. Fill low-alpha, border full-strength.
 HIGHLIGHT_FILL = QColor(150, 130, 220, 36)
+GOOD_FILL = QColor(120, 200, 140, 36)
+GOOD_BORDER = QColor(120, 200, 140, 160)
+BODY_TONES = {"highlight": (HIGHLIGHT_FILL, BADGE_BORDER), "good": (GOOD_FILL, GOOD_BORDER)}
 CHIP_INFO_TINT = QColor(90, 170, 200, 70)
 CHIP_INFO_BORDER = QColor(90, 170, 200, 160)
 CHIP_ATTENTION_TINT = QColor(220, 170, 90, 70)
@@ -114,7 +119,7 @@ class NodeAccent:
     bar_tone: str = ""  # "" none | "good" | "busy" | "bad".
     chip_text: str = ""  # "" → no chip.
     chip_tone: str = ""  # "" neutral | "info" | "attention".
-    body_tone: str = ""  # "" plain | "highlight": the node itself is a different kind.
+    body_tone: str = ""  # "" plain | "highlight" | "good": the node itself is a kind.
     # Icon medallions on the top edge, left end, in order: "tag" (a milestone the graph
     # aims at), "spark" (there is machine guidance here).
     icons: tuple[str, ...] = ()
@@ -179,14 +184,16 @@ def paint_body(
 ) -> None:
     """The rounded rect: fill, border (selection and link aim win), and the status bar.
 
-    A "highlight" body tone tints the whole node and strengthens its border — this node is
-    a different kind of thing, legible at any zoom — but selection and a link drag's
+    A body tone tints the whole node and strengthens its border — this node is a
+    different kind of thing, legible at any zoom — but selection and a link drag's
     verdict still outrank it.
     """
     muted = accent.muted
-    highlighted = accent.body_tone == "highlight"
-    fill = QColor(HIGHLIGHT_FILL) if highlighted else QColor(palette.text().color())
-    if not highlighted:
+    toned = BODY_TONES.get(accent.body_tone)
+    if toned is not None:
+        fill = QColor(toned[0])
+    else:
+        fill = QColor(palette.text().color())
         fill.setAlpha(MUTED_FILL_ALPHA if muted else FILL_ALPHA)
     border = QColor(palette.highlight().color())
     width = 2.0 if state.selected or state.link_state else 1.0
@@ -195,8 +202,8 @@ def paint_body(
     elif state.link_state == "invalid":
         border = INVALID_TINT
     elif not state.selected:
-        if highlighted:
-            border = QColor(BADGE_BORDER)
+        if toned is not None:
+            border = QColor(toned[1])
             width = 1.5
         else:
             border = QColor(palette.text().color())

@@ -158,13 +158,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
     def step_accent(step_id: str) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
-        A done step is muted with a good bar; in-progress and blocked wear busy and bad
-        bars; a release is a highlighted node wearing its label as a badge, a tag medallion
-        and the schedule's accumulated days and date as its stat; an agent instruction is
-        the spark medallion; a PR is a pill with its state as a tone and a branch the fork
-        glyph; a live agent run is the chip on the bottom edge; a plain step's stat is its
-        own estimate. Everything worn here is skipped from the canvas subtitle below, so
-        nothing is said twice.
+        A done step is muted with a green body — finished work recedes into a colour the
+        eye can skip; in-progress and blocked wear busy and bad bars; a release is a
+        purple-highlighted node wearing its label as a badge, a tag medallion and the
+        schedule's accumulated days and date as its stat (done outranks it on the body —
+        a shipped release reads finished, and the tag still says what it was); an agent
+        instruction is the spark medallion; a PR is a pill with its state as a tone and a
+        branch the fork glyph; a live agent run is the chip on the bottom edge; a plain
+        step's stat is its own estimate. Everything worn here is skipped from the canvas
+        subtitle below, so nothing is said twice.
         """
         step = product.step(step_id)
         refs = github_read(step)
@@ -194,10 +196,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
             pill_text=pill,
             pill_tone={"merged": "good", "closed": "bad"}.get(refs.pr_state, "") if refs else "",
             branch=bool(refs is not None and refs.branch),
-            bar_tone={"done": "good", "in-progress": "busy", "blocked": "bad"}.get(status, ""),
+            # Done colours the whole body, so its bar would only repeat the same green.
+            bar_tone={"in-progress": "busy", "blocked": "bad"}.get(status, ""),
             chip_text=chip_text,
             chip_tone=chip_tone,
-            body_tone="highlight" if release else "",
+            body_tone="good" if status == "done" else ("highlight" if release else ""),
             icons=icons,
             stat_text=stat,
             stat_strong=bool(release),

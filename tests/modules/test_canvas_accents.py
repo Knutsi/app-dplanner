@@ -38,12 +38,23 @@ def test_a_plain_step_has_no_accent(project, tab):
     assert node(tab, project.steps[0])._accent == NodeAccent()
 
 
-def test_a_done_step_is_muted_with_a_good_bar(services, project, tab):
+def test_a_done_step_is_muted_with_a_green_body(services, project, tab):
     step = project.steps[0]
     services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("done")))
     accent = node(tab, step)._accent
     assert accent.muted is True
-    assert accent.bar_tone == "good"
+    assert accent.body_tone == "good"
+    assert accent.bar_tone == ""  # The body wears the green; a bar would say it twice.
+
+
+def test_a_shipped_release_reads_finished(services, project, tab):
+    """Done outranks the release purple on the body; the tag still says what it was."""
+    step = project.steps[1]
+    services.undo.push(SetModuleDataCommand(step.id, release.MODULE_ID, release.write("MVP")))
+    services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("done")))
+    accent = node(tab, step)._accent
+    assert accent.body_tone == "good"
+    assert "tag" in accent.icons and accent.badge == "MVP"
 
 
 def test_a_release_is_a_highlighted_node_with_a_tag(services, project, tab):
