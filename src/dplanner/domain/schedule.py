@@ -135,6 +135,12 @@ def format_days(days: float | None) -> str:
     return f"{days:g}d"
 
 
+def format_day_count(days: float) -> str:
+    """A day count as prose: "1 day", "2.5 days" — for sentences, where ``format_days``
+    feeds columns. The grammar lives here so no verb prints "1 days" again."""
+    return f"{days:g} day" if days == 1 else f"{days:g} days"
+
+
 def schedule(
     order: Sequence[Placed],
     days_for: Callable[[Step], float | None],

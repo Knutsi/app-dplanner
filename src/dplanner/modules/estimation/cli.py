@@ -15,7 +15,7 @@ from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Product, Project
-from dplanner.domain.schedule import Scheduled, format_date, format_days
+from dplanner.domain.schedule import Scheduled, format_date, format_day_count, format_days
 from dplanner.modules.estimation.aspect import MODULE_ID, read, write
 from dplanner.modules.estimation.schedule import (
     finish_date,
@@ -128,7 +128,7 @@ def _set(context: CliContext, args: Namespace) -> int:
     step = find_step(context.product, args.step)
     entry = write(args.days)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
-    context.report({"step": step.id} | entry, f"{step.title}: {args.days:g} days")
+    context.report({"step": step.id} | entry, f"{step.title}: {format_day_count(args.days)}")
     return 0
 
 
@@ -156,7 +156,10 @@ def _rollup(context: CliContext, args: Namespace) -> int:
         "unestimated": missing,
     }
     tail = f", {missing} unestimated" if missing else ""
-    context.report(data, f"{project.title}: {total:g} days over {len(project.steps)} steps{tail}")
+    context.report(
+        data,
+        f"{project.title}: {format_day_count(total)} over {len(project.steps)} steps{tail}",
+    )
     return 0
 
 

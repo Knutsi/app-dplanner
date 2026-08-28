@@ -164,3 +164,14 @@ def test_each_row_keeps_its_place_in_the_order(project):
 
     assert [row.place.index for row in rows] == [1, 2, 3, 4]
     assert [row.place.wave for row in rows] == [1, 2, 3, 4]
+
+
+# -- day counts as prose -----------------------------------------------------------------------
+
+
+def test_one_day_is_singular_and_everything_else_plural():
+    from dplanner.domain.schedule import format_day_count
+
+    assert format_day_count(1) == "1 day"
+    assert format_day_count(2.5) == "2.5 days"
+    assert format_day_count(0) == "0 days"
