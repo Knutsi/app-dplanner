@@ -32,6 +32,23 @@ def gh_authenticated() -> bool:
     return subprocess.run([gh, "auth", "status"], capture_output=True, check=False).returncode == 0
 
 
+def repository_url(checkout: Path) -> str | None:
+    """The GitHub URL of the repository at ``checkout``, or None when gh cannot say.
+
+    Silence covers every refusal the same way — gh missing, not signed in, not a
+    repository, no GitHub remote — because the callers treat the answer as advisory.
+    """
+    if gh_path() is None:
+        return None
+    try:
+        out = _run_gh(
+            "repo", "view", "--json", "url", "--jq", ".url", cwd=checkout.expanduser(), timeout=20.0
+        )
+    except (StorageError, OSError):
+        return None
+    return out.strip() or None
+
+
 def _run_gh(*args: str, cwd: Path | None = None, timeout: float = 120.0) -> str:
     gh = gh_path()
     if gh is None:
