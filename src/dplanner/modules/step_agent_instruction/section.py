@@ -1,13 +1,16 @@
-"""The Agent tab: the whole briefing, part by part, with the trigger under it.
+"""The Agent tab: the briefing itself, and the components it is assembled from.
 
-Four collapsible parts, in the order the prompt is assembled: the project's standing
-instruction (editable here and in the project panel's Agent card — one field, one undo
-stack), the step's own facts — description, requirements, figures — rendered by the same
-``prompt.section_lines`` the prompt is built with and showing each section's files as a
-gallery of real thumbnails, what earlier steps handed forward (read-only, via
-``part_lines`` — the same no-drift rule), and this step's own instruction. Expanding
-everything *is* the whole prompt in reading order; Preview Prompt shows the exact
-assembled text.
+Two inner tabs. **Prompt** is the thing to inspect: the exact assembled text Run Agent
+will launch with — not a rendering of it — plus every image it references, in reading
+order, as one gallery. Refreshed lazily: model changes mark it stale, and it recomputes
+only while it is the visible page, because re-laying a multi-kilobyte document per
+keystroke would fight the person typing on the other tab.
+
+**Components** is the editing surface: four collapsible parts in the order the prompt is
+assembled — the project's standing instruction (editable here and in the project panel's
+Agent card — one field, one undo stack), the step's own facts rendered by the same
+``prompt.section_lines`` the prompt is built with, what earlier steps handed forward
+(via ``part_lines`` — the same no-drift rule), and this step's own instruction.
 
 The buttons are not second implementations of anything — each evaluates and runs the same
 ``ActionSpec`` the menus do, so the tab and the menu can never disagree about when a run
@@ -23,6 +26,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QStackedLayout,
+    QTabBar,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -39,6 +44,7 @@ from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import make_text_well, space_lines
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
 from dplanner.modules.step_agent_instruction.prompt import (
+    AssembledPrompt,
     PromptPart,
     part_lines,
     section_lines,
@@ -133,7 +139,7 @@ class PartRow(QWidget):
 
 
 class AgentSection(QWidget):
-    """The four prompt parts, stacked; Preview and Run under them."""
+    """The assembled prompt and its four component parts; Preview and Run under both."""
 
     def __init__(
         self,
@@ -148,6 +154,7 @@ class AgentSection(QWidget):
         preview: Callable[[], None],
         prompt_sections: Callable[[StepId], Sequence[PromptPart]] = lambda _sid: (),
         read_asset: Callable[[str], bytes | None] | None = None,
+        assembled: Callable[[StepId], AssembledPrompt] | None = None,
     ) -> None:
         super().__init__()
         self._product = product
@@ -155,6 +162,9 @@ class AgentSection(QWidget):
         self._prompt_parts = prompt_parts
         self._prompt_sections = prompt_sections
         self._read_asset = read_asset
+        self._assemble = assembled
+        self._assembled_now: AssembledPrompt | None = None
+        self._prompt_stale = True
         self._files = files
         self._run_state = run_state
         self._preview_state = preview_state
@@ -215,6 +225,39 @@ class AgentSection(QWidget):
         step_body = _body(self.edit, self.step_assets)
         self.step_part = PartRow("This step", leaf_icon, step_body, expanded=True)
 
+        # -- The Prompt page: the exact text Run Agent launches with, and every image it
+        # references — not a rendering, the thing itself.
+        self.prompt_view = QPlainTextEdit(self)
+        self.prompt_view.setObjectName("InspectorNotes")
+        self.prompt_view.setReadOnly(True)
+        self.prompt_view.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        self.prompt_view.setPlaceholderText("Select a step to see its briefing.")
+        make_text_well(self.prompt_view)
+        self.prompt_gallery = AssetGallery(self)
+        self.copy_button = QPushButton("Copy Prompt", self)
+        self.copy_button.clicked.connect(self._copy_prompt)
+        copy_row = QHBoxLayout()
+        copy_row.setSpacing(FIELD_GAP)
+        copy_row.addStretch(1)
+        copy_row.addWidget(self.copy_button)
+        prompt_page = QWidget(self)
+        prompt_column = QVBoxLayout(prompt_page)
+        prompt_column.setContentsMargins(0, 0, 0, 0)
+        prompt_column.setSpacing(FIELD_GAP)
+        prompt_column.addWidget(self.prompt_view, stretch=1)
+        prompt_column.addWidget(self.prompt_gallery)
+        prompt_column.addLayout(copy_row)
+
+        # -- The Components page: the four parts, exactly as before the split.
+        components_page = QWidget(self)
+        self._parts_column = QVBoxLayout(components_page)
+        self._parts_column.setContentsMargins(0, 0, 0, 0)
+        self._parts_column.setSpacing(BLOCK_GAP)
+        self._parts_column.addWidget(self.project_part)
+        self._parts_column.addWidget(self.context_part)
+        self._parts_column.addWidget(self.inherited_part)
+        self._parts_column.addWidget(self.step_part, stretch=1)
+
         self.preview_button = QPushButton("Preview Prompt…", self)
         self.preview_button.clicked.connect(lambda: preview())
         self.run_button = QPushButton("Run Agent…", self)
@@ -226,15 +269,29 @@ class AgentSection(QWidget):
         buttons.addWidget(self.preview_button)
         buttons.addWidget(self.run_button)
 
+        # The panel's own tab idiom (step_properties/panel.py): a bare QTabBar over a
+        # QStackedLayout, styled by #InspectorTabs. Prompt first — it is what a reader
+        # came to inspect; Components is where the writing happens.
+        self.tab_bar = QTabBar(self)
+        self.tab_bar.setObjectName("InspectorTabs")
+        self.tab_bar.setExpanding(False)
+        self.tab_bar.setDrawBase(False)
+        self.tab_bar.addTab("Prompt")
+        self.tab_bar.addTab("Components")
+        self._pages = QStackedLayout()
+        self._pages.addWidget(prompt_page)
+        self._pages.addWidget(components_page)
+        self.tab_bar.currentChanged.connect(self._pages.setCurrentIndex)
+        self.tab_bar.currentChanged.connect(lambda _index: self._refresh_prompt_if_shown())
+
         self._column = QVBoxLayout(self)
         self._column.setContentsMargins(
             PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN
         )
         self._column.setSpacing(BLOCK_GAP)
-        self._column.addWidget(self.project_part)
-        self._column.addWidget(self.context_part)
-        self._column.addWidget(self.inherited_part)
-        self._column.addWidget(self.step_part, stretch=1)
+        self._column.addWidget(self.tab_bar)
+        self._column.addLayout(self._pages, stretch=1)
+        # The verbs belong to the section, not to a page: one button row under both.
         self._column.addLayout(buttons)
 
         # A collapsed part must not keep its share of the height; the expanded ones split it.
@@ -242,10 +299,14 @@ class AgentSection(QWidget):
             part.toggled.connect(lambda _expanded: self._restretch())
         self._restretch()
 
-        # Typing the first instruction is what arms the buttons; the summaries follow too.
+        # Typing the first instruction is what arms the buttons; the summaries follow too,
+        # and the assembled prompt goes stale (the binding's origin suppresses the model
+        # echo back into this view, so the local signal is the one that fires here).
         self.edit.textChanged.connect(self._refresh_buttons)
         self.edit.textChanged.connect(self._refresh_summaries)
+        self.edit.textChanged.connect(self._mark_prompt_stale)
         self.project_edit.textChanged.connect(self._refresh_summaries)
+        self.project_edit.textChanged.connect(self._mark_prompt_stale)
 
         self._unsubscribes = [
             product.text_edited.connect(lambda *_a: self._refresh_derived()),
@@ -315,6 +376,43 @@ class AgentSection(QWidget):
         space_lines(self.inherited_view)
         self._refresh_context()
         self._refresh_summaries()
+        self._mark_prompt_stale()
+
+    def _mark_prompt_stale(self) -> None:
+        self._prompt_stale = True
+        self._refresh_prompt_if_shown()
+
+    def _refresh_prompt_if_shown(self) -> None:
+        # Gate on the tab bar, never isVisible(): the whole section reports not-visible
+        # while its panel tab is offscreen — the trap PartRow's own state documents.
+        if self.tab_bar.currentIndex() == 0 and self._prompt_stale:
+            self._refresh_prompt()
+
+    def _refresh_prompt(self) -> None:
+        assembled: AssembledPrompt | None = None
+        if (
+            self._assemble is not None
+            and self._step_id is not None
+            and self._product.has(self._step_id)
+        ):
+            assembled = self._assemble(self._step_id)
+        self._assembled_now = assembled
+        self._prompt_stale = False
+        self.copy_button.setEnabled(assembled is not None)
+        if assembled is None:
+            self.prompt_view.setPlainText("")
+            self.prompt_gallery.set_files([], None)
+            return
+        self.prompt_view.setPlainText(assembled.text)
+        make_text_well(self.prompt_view)
+        space_lines(self.prompt_view)
+        self.prompt_gallery.set_files(assembled.files, self._read_asset)
+
+    def _copy_prompt(self) -> None:
+        from PySide6.QtGui import QGuiApplication
+
+        if self._assembled_now is not None:
+            QGuiApplication.clipboard().setText(self._assembled_now.text)
 
     def _refresh_context(self) -> None:
         sections: Sequence[PromptPart] = ()
@@ -376,7 +474,7 @@ class AgentSection(QWidget):
 
     def _restretch(self) -> None:
         for part in self._parts():
-            self._column.setStretchFactor(part, 1 if part.expanded() else 0)
+            self._parts_column.setStretchFactor(part, 1 if part.expanded() else 0)
 
     def _close_bindings(self) -> None:
         for binding in (self._step_binding, self._project_binding):
