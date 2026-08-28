@@ -9,7 +9,7 @@ from dplanner.cli.lookup import find_step
 from dplanner.domain.assets import assets, attach
 from dplanner.domain.commands import EditTextCommand
 from dplanner.domain.model import Product, Project, Step, TextEdit
-from dplanner.modules.step_description.aspect import MODULE_ID, read
+from dplanner.modules.step_description.aspect import MODULE_ID, image_references, read
 
 
 def lint_checks() -> list[LintCheck]:
@@ -27,7 +27,35 @@ def lint_checks() -> list[LintCheck]:
             if not read(step)
         ]
 
-    return [missing_descriptions]
+    def missing_images(
+        _product: Product, project: Project, files: FilesFor
+    ) -> list[LintFinding]:
+        """A description that embeds ![](assets/…) naming a file that is not beside the
+        step — the reference an agent's briefing would carry into nothing."""
+        findings = []
+        for step in project.steps:
+            references = image_references(read(step))
+            if not references:
+                continue
+            try:
+                known = set(assets(files(step.id, MODULE_ID)))
+            except KeyError:
+                known = set()  # A never-flushed step has no files yet.
+            findings += [
+                LintFinding(
+                    check="description.image-missing",
+                    subject_id=step.id,
+                    subject=step.title,
+                    message=f"its description references ![]({reference}) but no such "
+                    f"file is beside the step — `dplanner describe attach "
+                    f"'{step.title}' <file>` and use the printed path",
+                )
+                for reference in references
+                if reference not in known
+            ]
+        return findings
+
+    return [missing_descriptions, missing_images]
 
 
 def commands() -> list[CliCommand]:

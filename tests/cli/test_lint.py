@@ -160,6 +160,26 @@ def test_a_replaced_document_exposes_quotes_that_no_longer_anchor(cli, tmp_path)
     assert "spec mark" in flagged[0]["message"]
 
 
+def test_a_description_image_that_resolves_nothing_is_reported(cli, cli_stdin, tmp_path):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    cli_stdin(
+        "describe", "set", "Deploy", "--file", "-",
+        stdin="See ![](assets/nope.png) and ![web](https://example.com/x.png).",
+    )
+    report = data(cli("project", "lint", "Discovery", "--json", expect=1))
+    flagged = [row for row in report["findings"] if row["check"] == "description.image-missing"]
+    # The web image is not the module's file; only the area reference is checked.
+    assert len(flagged) == 1 and "assets/nope.png" in flagged[0]["message"]
+
+    figure = tmp_path / "diagram.png"
+    figure.write_bytes(b"png bytes")
+    attached = data(cli("describe", "attach", "Deploy", str(figure), "--json"))["asset"]
+    cli_stdin("describe", "set", "Deploy", "--file", "-", stdin=f"See ![]({attached}).")
+    report = data(cli("project", "lint", "Discovery", "--json", expect=1))
+    assert "description.image-missing" not in checks_in(report)
+
+
 def test_an_edge_kept_after_a_remove_is_finally_visible(cli):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "A")
