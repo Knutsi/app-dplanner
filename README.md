@@ -179,6 +179,7 @@ src/dplanner/
 │   ├── project_editor/      a project in a tab: the canvas, its modes and renderers, sorts, named layouts and regions
 │   │                        (its panel also hosts the modules' project-level cards)
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
+│   │                        (and `steps.details`: the same panel as the double-click's modal)
 │   │
 │   │   ── the ten aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /

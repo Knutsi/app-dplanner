@@ -312,14 +312,17 @@ def test_a_background_tab_does_not_publish(services, project):
     assert services.context.current().selected_entities("step") == []
 
 
-def test_activating_a_row_reveals_it_in_the_graph(services, project):
+def test_activating_a_row_opens_its_details(services, project, monkeypatch):
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
     b = project.steps[1]
     select(services, b)
     run_estimate_open(services)
     tab = estimate_tab(services)
 
+    shown = []
+    monkeypatch.setattr(
+        StepDetailsDialog, "exec", lambda self: shown.append(self.panel.current_step_id())
+    )
     tab.table.cellActivated.emit(0, 0)
-    current = services.tabs.current_activity()
-    assert current is not None
-    assert current.uri == activity_uri("project", project.id)
-    assert current._scene.selection().steps == (b.id,)
+    assert shown == [b.id]

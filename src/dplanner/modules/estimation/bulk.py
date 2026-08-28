@@ -42,6 +42,8 @@ from dplanner.domain.schedule import format_days
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.activity import EntityActivity
 from dplanner.framework.context import (
+    SCOPE_SELECTION,
+    Context,
     ContextNode,
     Uri,
     activity_uri,
@@ -55,6 +57,11 @@ if TYPE_CHECKING:
     from dplanner.modules.estimation.module import EstimationDeps
 
 ESTIMATE_KIND = "estimate"
+
+
+def _step_context(step_id: StepId) -> Context:
+    """A context naming exactly one step — what a row's double-click runs a verb against."""
+    return Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)})
 
 STEP_COLUMN = 0
 DESCRIPTION_COLUMN = 1
@@ -387,7 +394,9 @@ class BulkEstimateActivity(EntityActivity):
     def _on_row_activated(self, row: int, _column: int) -> None:
         step_id = self._step_at(row)
         if step_id is not None:
-            self._deps.reveal_step(step_id)
+            # Against a context naming exactly this row's step, not the service's — the
+            # double-click means the row under it even if a publish was suppressed.
+            self._deps.actions.run("steps.details", _step_context(step_id))
 
     def _on_context_menu(self, position: object) -> None:
         assert isinstance(position, QPoint)

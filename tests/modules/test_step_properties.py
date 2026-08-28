@@ -1,7 +1,9 @@
 """THE step detail panel: what the context puts in it, and what it survives.
 
 Every test reaches the panel the way the application does — one panel, anchored in the
-window — because the point of that seam is that nobody constructs a second one.
+window — because the point of that seam is that no *surface* constructs a second one. The
+details dialog is the sanctioned exception: a transient second host of the same sections,
+opened by the ``steps.details`` verb and disposed when it closes.
 """
 
 import pytest
@@ -105,3 +107,56 @@ def test_a_disposed_panel_hears_nothing(services, project, panel):
     panel.dispose()
     services.undo.push(SetFieldCommand(step.id, "title", "After disposal"))
     assert panel.title_edit.text() == "Read the spec"
+
+
+# -- the details dialog ----------------------------------------------------------------------
+
+
+def test_details_needs_exactly_one_selected_step(services, project):
+    """Disabled, never hidden: none or several selected teaches the precondition."""
+    spec = services.actions.spec("steps.details")
+    select(services)
+    assert not spec.state(services.context.current()).enabled
+    select(services, *[step.id for step in project.steps])
+    assert not spec.state(services.context.current()).enabled
+    select(services, project.steps[0].id)
+    assert spec.state(services.context.current()).enabled
+
+
+def test_details_opens_a_dialog_that_is_the_panel_and_disposes_it(
+    services, project, monkeypatch
+):
+    """The dialog hosts a second StepPanel over the same sections — 1:1 with the anchored
+    one by construction — and stops hearing the model once closed."""
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    step = project.steps[0]
+    opened = []
+    monkeypatch.setattr(StepDetailsDialog, "exec", lambda self: opened.append(self))
+    select(services, step.id)
+    services.actions.run("steps.details", services.context.current())
+
+    (dialog,) = opened
+    assert dialog.panel.current_step_id() == step.id
+    assert dialog.panel.tab_bar.count() > 0  # The aspect tabs arrived.
+    # exec() returned, so run() has already disposed it: a model change must not reach it.
+    services.undo.push(SetFieldCommand(step.id, "title", "After closing"))
+    assert dialog.panel.title_edit.text() == "Read the spec"
+
+
+def test_an_edit_in_the_dialog_lands_on_the_undo_stack(services, project, monkeypatch):
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    step = project.steps[0]
+
+    def edit_title(dialog):
+        dialog.panel.title_edit.setText("Read the whole spec")
+        dialog.panel.title_edit.editingFinished.emit()
+
+    monkeypatch.setattr(StepDetailsDialog, "exec", edit_title)
+    select(services, step.id)
+    services.actions.run("steps.details", services.context.current())
+
+    assert step.title == "Read the whole spec"
+    services.undo.undo()
+    assert step.title == "Read the spec"

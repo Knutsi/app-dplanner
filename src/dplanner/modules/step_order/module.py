@@ -11,9 +11,9 @@ Three seams, all established elsewhere in this application:
 
 - **Selecting a step publishes the selection scope**, so the Step menu's verbs target it —
   this view never learns that those verbs exist.
-- **Activating one reveals it in the graph**, through a callback the composition root
-  supplies. This module does not import the project editor, and the project editor does not
-  know this view exists.
+- **Activating one opens its details**, by running ``steps.details`` against a context
+  naming exactly that row's step — the same registry path the menus use, so whoever owns
+  the dialog is not this module's business.
 - **The schedule arrives as an answer, not as data to interpret.** Whoever owns estimates
   hands over the order already carrying days and dates, and lends the widget that sets the
   start date. This module never learns what an estimate is stored as, and there is a working
@@ -42,6 +42,7 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.activity import EntityActivity, follow_entity_tabs
 from dplanner.framework.context import (
+    SCOPE_SELECTION,
     Context,
     ContextNode,
     ContextService,
@@ -79,8 +80,9 @@ def _no_aspects(_step_id: StepId) -> list[str]:
     return []
 
 
-def _no_reveal(_step_id: StepId) -> None:
-    pass
+def _step_context(step_id: StepId) -> Context:
+    """A context naming exactly one step — what a row's double-click runs a verb against."""
+    return Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)})
 
 
 def _no_release(_step_id: StepId) -> str:
@@ -107,9 +109,6 @@ class StepOrderDeps:
     context: ContextService
     parent: QWidget  # The CSV export's file dialog needs a window to parent on.
     tabs: TabHost
-    # Show a step in whatever edits graphs. Wired by the composition root; this module never
-    # learns that a graph editor exists.
-    reveal_step: Callable[[StepId], None] = field(default=_no_reveal)
     # What the aspect modules have to say about a step, one short phrase each.
     step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
     # The order carrying what each step costs and when it lands. Wired by the composition
@@ -230,7 +229,9 @@ class OrderActivity(EntityActivity):
     def _on_activated(self, row: int, _column: int) -> None:
         step_id = self.table.step_at(row)
         if step_id is not None:
-            self._deps.reveal_step(step_id)
+            # Against a context naming exactly this row's step, not the service's — the
+            # double-click means the row under it even if a publish was suppressed.
+            self._deps.actions.run("steps.details", _step_context(step_id))
 
     def _on_context_menu(self, position: object) -> None:
         assert isinstance(position, QPoint)

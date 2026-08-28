@@ -194,6 +194,35 @@ activity.
 **Upstream?** The reorder guard, unreservedly. The groups and the watcher, as a pair, if the
 template ever wants a split view — and the three notes above are most of what makes it work.
 
+### Preview tabs: `TabHost.open(..., preview=True)`, and the index's `clicked` hook
+
+**What.** The VS Code arrangement. `open` grew a keyword-only `preview` flag; the host keeps
+at most one preview activity, the next preview-open replaces it (one `_announce` for the
+whole replace), and a deliberate act pins it — a non-preview open of its URI, or moving its
+tab (both `_move` and a `tabMoved` drag). `is_preview(activity)` answers for tests and
+painting. The preview tab's title paints in italics: `_TabGroup` installs a `_PreviewTabBar`
+(``setTabBar`` is protected, so the subclass exists to call it) whose `paintEvent` defers
+wholly to Qt when the bar holds no preview and otherwise draws each tab through
+`initStyleOption` — which carries `setTabTextColor`, so `_paint_active`'s dimming sweep keeps
+working underneath, and the sweep is also what pushes the preview index to each bar.
+Alongside it, `IndexSegmentView` grew a fifth hook, `clicked(item)`: the panel forwards only
+plain left-clicks (a viewport event filter remembers the press's button and modifiers, since
+`itemClicked` fires for every button and a Ctrl/Shift-click is building a selection).
+
+**Why the double-click needs no timer.** The sequence is press/release (clicked → preview
+opens), press again (activated → a non-preview open pins it), release (clicked again — a
+preview-open of something already open is a plain focus and changes nothing). Every step is
+idempotent, so the two gestures compose instead of racing.
+
+**A trap.** `QTest.mouseDClick` sends a press that never sees a release, so
+`QApplication.mouseButtons()` reports a held button for the rest of the process — anything
+that consults it (the canvas's space-pan release does) misbehaves in every later test. Send a
+hand-built `QMouseEvent` instead.
+
+**Upstream?** Yes as a set: the flag, the pin rules and the bar belong together, and none is
+DPlanner vocabulary. The `clicked` hook goes with them — a preview nobody can open is dead
+weight.
+
 ### `framework/window_watch.py`
 
 **What.** A `WorkspaceWatcher` that polls a repository through a one-method
