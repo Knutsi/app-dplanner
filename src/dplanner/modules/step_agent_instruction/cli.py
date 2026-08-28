@@ -19,7 +19,7 @@ from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
 from dplanner.domain.commands import EditTextCommand
-from dplanner.domain.model import Node, Product, Project, Step, TextEdit
+from dplanner.domain.model import Library, Node, Project, Step, TextEdit
 from dplanner.domain.store import FilesFor
 from dplanner.modules.step_agent_instruction.aspect import (
     MODULE_ID,
@@ -53,7 +53,7 @@ def step_author() -> StepAuthor:
 
 def lint_checks() -> list[LintCheck]:
     def missing_instructions(
-        _product: Product, project: Project, _files: FilesFor
+        _product: Library, project: Project, _files: FilesFor
     ) -> list[LintFinding]:
         # A standing instruction covers every step, so it silences this check — the same
         # rule `agent prompt`'s guard applies.
@@ -77,8 +77,8 @@ def lint_checks() -> list[LintCheck]:
 
 def commands(*, briefing: Briefing) -> list[CliCommand]:
     def _prompt(context: CliContext, args: Namespace) -> int:
-        step = find_step(context.product, args.step)
-        project = context.product.project_of(step.id)
+        step = find_step(context.library, args.step)
+        project = context.library.project_of(step.id)
         instruction = read(step)
         project_instruction = read_project(project)
         if not instruction and not project_instruction:
@@ -91,8 +91,8 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             step_title=step.title or "Untitled step",
             project_title=project.title or "Untitled project",
             instruction=instruction,
-            parts=briefing.parts(context.product, step, context.store.files),
-            sections=briefing.sections(context.product, step, context.store.files),
+            parts=briefing.parts(context.library, step, context.store.files),
+            sections=briefing.sections(context.library, step, context.store.files),
             epilogue=briefing.epilogue(step),
             preamble=briefing.preamble,
             project_instruction=project_instruction,
@@ -101,7 +101,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
         )
         data = {
             "step": step.id,
-            "root": str(context.store.storage.root),
+            "root": str(context.store.project_dir(project.id)),
             "prompt": assembled.text,
             "files": list(assembled.files),
         }
@@ -147,8 +147,14 @@ def _one_target(parser: ArgumentParser) -> None:
         "step", nargs="?", help="step id, folder name, or part of its title"
     )
     parser.add_argument(
-        "--project",
-        help="a project instead: its standing instruction, prepended to every briefing",
+        "--for-project",
+        dest="for_project",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="PROJECT",
+        help="the project instead: its standing instruction, prepended to every "
+        "briefing (defaults to the current project)",
     )
 
 
@@ -159,11 +165,13 @@ def _configure_set(parser: ArgumentParser) -> None:
 
 def _target(context: CliContext, args: Namespace) -> Node:
     """The step or the project the verb addresses — exactly one of the two."""
-    if (args.step is None) == (args.project is None):
-        raise CliError("name a step, or --project, but not both")
-    if args.project is not None:
-        return find_project(context.product, args.project)
-    return find_step(context.product, args.step)
+    if (args.step is None) == (args.for_project is None):
+        raise CliError("name a step, or --for-project, but not both")
+    if args.for_project is not None:
+        if args.for_project:
+            return find_project(context.library, args.for_project)
+        return context.project
+    return find_step(context.library, args.step, context.current)
 
 
 def _show(context: CliContext, args: Namespace) -> int:

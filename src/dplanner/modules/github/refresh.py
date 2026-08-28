@@ -21,7 +21,7 @@ from PySide6.QtCore import QObject, QTimer
 from PySide6.QtCore import Signal as QtSignal
 
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Product, StepId
+from dplanner.domain.model import Library, StepId
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.modules.github.aspect import MODULE_ID, read, refreshed, write
@@ -45,13 +45,13 @@ class PrRefresher(QObject):
 
     def __init__(
         self,
-        product: Product,
+        library: Library,
         tasks: TaskService,
         repository_for: Callable[[StepId], str],
         parent: QObject,
     ) -> None:
         super().__init__(parent)
-        self._product = product
+        self._product = library
         self._repository_for = repository_for
         self._runner = TaskRunner(tasks, parent=self)
         self._timer = QTimer(self)
@@ -68,8 +68,8 @@ class PrRefresher(QObject):
     def _tick(self) -> None:
         # Snapshot on the GUI thread: the model has no thread affinity and may only be
         # read here — the worker body sees plain ids, numbers and repo names, never the
-        # product. Each step carries its own repo, because a project can override the
-        # product's repository.
+        # library. Each step carries its own repo, because a project can override the
+        # library's repository.
         targets = [
             (step.id, refs.pr_number, repo)
             for project in self._product.projects

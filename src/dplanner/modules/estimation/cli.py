@@ -15,7 +15,7 @@ from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Product, Project, Step
+from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.schedule import (
     CriticalPath,
     Scheduled,
@@ -60,7 +60,7 @@ def step_author() -> StepAuthor:
 
 def lint_checks() -> list[LintCheck]:
     def missing_estimates(
-        _product: Product, project: Project, _files: FilesFor
+        _product: Library, project: Project, _files: FilesFor
     ) -> list[LintFinding]:
         findings = [
             LintFinding(
@@ -151,7 +151,7 @@ def _configure_start(parser: ArgumentParser) -> None:
 def _set(context: CliContext, args: Namespace) -> int:
     if args.days < 0:
         raise CliError("an estimate cannot be negative")
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     entry = write(args.days)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
     context.report({"step": step.id} | entry, f"{step.title}: {format_day_count(args.days)}")
@@ -159,7 +159,7 @@ def _set(context: CliContext, args: Namespace) -> int:
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
     context.report({"step": step.id}, f"{step.title}: estimate cleared")
     return 0
@@ -171,7 +171,7 @@ def _rollup(context: CliContext, args: Namespace) -> int:
     The count of unestimated steps is not decoration: a total that silently treats them as
     zero understates the plan, and the person reading it has no way to tell.
     """
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     estimates = [read(step) for step in project.steps]
     total = sum(days for days in estimates if days is not None)
     missing = sum(1 for days in estimates if days is None)
@@ -198,7 +198,7 @@ def _start(context: CliContext, args: Namespace) -> int:
             start = date.fromisoformat(args.date)
         except ValueError as error:
             raise CliError(f"{args.date!r} is not an ISO-8601 date, e.g. 2026-09-01") from error
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_start(start)))
     said = (
         f"starts today, {format_date(date.today())}"
@@ -217,12 +217,12 @@ def _show(context: CliContext, args: Namespace) -> int:
     always printed, each labelled with the assumption it makes — a single number here
     would be a guess wearing a date.
     """
-    project = find_project(context.product, args.project)
-    rows = project_schedule(context.product, project)
+    project = find_project(context.library, args.project)
+    rows = project_schedule(context.library, project)
     start = start_of(project)
     unestimated = sum(1 for row in rows if row.days is None)
     landing = finish_date(rows)
-    path = project_critical_path(context.product, project)
+    path = project_critical_path(context.library, project)
     path_landing = critical_finish(project, path) if path is not None else None
     data: dict[str, Any] = {
         "project": project.id,

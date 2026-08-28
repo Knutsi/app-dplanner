@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.core.signals import Signal
 from dplanner.domain.fields import ModuleTextField
-from dplanner.domain.model import NodeId, Product, StepId
+from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionState
 from dplanner.framework.asset_gallery import AssetGallery
@@ -145,8 +145,8 @@ class AgentSection(QWidget):
 
     def __init__(
         self,
-        product: Product,
-        undo: UndoService[Product],
+        library: Library,
+        undo: UndoService[Library],
         placeholder: str,
         prompt_parts: Callable[[StepId], Sequence[PromptPart]],
         files: FilesFor | None,
@@ -159,7 +159,7 @@ class AgentSection(QWidget):
         assembled: Callable[[StepId], AssembledPrompt] | None = None,
     ) -> None:
         super().__init__()
-        self._product = product
+        self._product = library
         self._undo = undo
         self._prompt_parts = prompt_parts
         self._prompt_sections = prompt_sections
@@ -172,8 +172,8 @@ class AgentSection(QWidget):
         self._preview_state = preview_state
         self._step_id: StepId | None = None
         self._project_id: NodeId | None = None
-        self._step_binding: TextBinding[Product] | None = None
-        self._project_binding: TextBinding[Product] | None = None
+        self._step_binding: TextBinding[Library] | None = None
+        self._project_binding: TextBinding[Library] | None = None
 
         # -- Project: the standing instruction, editable here and in the project panel.
         self.project_edit = QPlainTextEdit(self)
@@ -313,9 +313,9 @@ class AgentSection(QWidget):
         self.project_edit.textChanged.connect(self._mark_prompt_stale)
 
         self._unsubscribes = [
-            product.text_edited.connect(lambda *_a: self._refresh_derived()),
-            product.module_data_changed.connect(lambda *_a: self._refresh_derived()),
-            product.edges_changed.connect(lambda *_a: self._refresh_derived()),
+            library.text_edited.connect(lambda *_a: self._refresh_derived()),
+            library.module_data_changed.connect(lambda *_a: self._refresh_derived()),
+            library.edges_changed.connect(lambda *_a: self._refresh_derived()),
         ]
 
     # -- the panel's side of the contract ------------------------------------------------------
@@ -553,14 +553,14 @@ class ProjectInstructionCard(ProseSection):
 
     def __init__(
         self,
-        product: Product,
-        undo: UndoService[Product],
+        library: Library,
+        undo: UndoService[Library],
         files: FilesFor | None,
     ) -> None:
         def field_for(target_id: str) -> ModuleTextField | None:
-            if not product.has(target_id):
+            if not library.has(target_id):
                 return None
-            return ModuleTextField(product, target_id, MODULE_ID)
+            return ModuleTextField(library, target_id, MODULE_ID)
 
         super().__init__(field_for, undo, PROJECT_PLACEHOLDER)
         self._files = files

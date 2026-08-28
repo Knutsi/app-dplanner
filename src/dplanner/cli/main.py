@@ -20,8 +20,8 @@ from typing import TextIO
 
 from dplanner.cli.command import CliCommand, CliContext, CliError, CliRegistry
 from dplanner.cli.discovery import find_current_project, find_library, open_library
-from dplanner.domain.library_file import LIBRARY_ENV
 from dplanner.core.module_data import ModuleDataFormat
+from dplanner.domain.library_file import LIBRARY_ENV
 from dplanner.identity import APP_NAME, APP_VERSION
 
 PROG = "dplanner"

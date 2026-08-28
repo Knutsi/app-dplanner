@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from PySide6.QtWidgets import QWidget
 
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Product, Step
+from dplanner.domain.model import Library, Step
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
@@ -36,8 +36,8 @@ from dplanner.modules.step_release.section import ReleaseSection
 
 @dataclass(frozen=True)
 class StepReleaseDeps:
-    product: Product
-    undo: UndoService[Product]
+    library: Library
+    undo: UndoService[Library]
     sections: InspectorSectionRegistry
     actions: ActionRegistry
     parent: QWidget  # confirm()'s parent, as the delete verb's is.
@@ -57,7 +57,7 @@ class StepReleaseModule:
                 id=f"{MODULE_ID}.tab",
                 label=SPEC.label,
                 order=50,
-                factory=lambda: ReleaseSection(deps.product, deps.undo),
+                factory=lambda: ReleaseSection(deps.library, deps.undo),
             )
         )
         deps.actions.register(
@@ -86,7 +86,7 @@ class StepReleaseModule:
             return
         label = read(step)
         if not label:
-            project = self._deps.product.project_of(step.id)
+            project = self._deps.library.project_of(step.id)
             new = next_release_label(project_labels(project, skip=step.id))
             self._deps.undo.push(
                 SetModuleDataCommand(step.id, MODULE_ID, write(new), label="Mark as Release")
@@ -104,6 +104,6 @@ class StepReleaseModule:
 
     def _focused(self, context: Context) -> Step | None:
         step_id = context.focus_entity("step")
-        if step_id is None or not self._deps.product.has(step_id):
+        if step_id is None or not self._deps.library.has(step_id):
             return None
-        return self._deps.product.step(step_id)
+        return self._deps.library.step(step_id)

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from dplanner.domain.fields import ModuleTextField
-from dplanner.domain.model import Product
+from dplanner.domain.model import Library
 from dplanner.domain.store import FilesFor
 from dplanner.framework.asset_gallery import AreaFor
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
@@ -22,8 +22,8 @@ PLACEHOLDER = "What this step is. Markdown; images go in with `dplanner describe
 
 @dataclass(frozen=True)
 class StepDescriptionDeps:
-    product: Product
-    undo: UndoService[Product]
+    library: Library
+    undo: UndoService[Library]
     sections: InspectorSectionRegistry
     # The store's file areas — how the tab shows the images `describe attach` wrote.
     # None is a build without file storage.
@@ -41,13 +41,13 @@ class StepDescriptionModule:
         deps = self._deps
 
         def field_for(step_id: str) -> TextField[Any] | None:
-            if not deps.product.has(step_id):
+            if not deps.library.has(step_id):
                 return None
-            return ModuleTextField(deps.product, step_id, MODULE_ID)
+            return ModuleTextField(deps.library, step_id, MODULE_ID)
 
         def area_for_target(step_id: str) -> AreaFor | None:
             files = deps.files
-            if files is None or not deps.product.has(step_id):
+            if files is None or not deps.library.has(step_id):
                 return None
             return lambda: files(step_id, MODULE_ID)
 

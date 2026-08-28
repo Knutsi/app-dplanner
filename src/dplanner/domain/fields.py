@@ -13,7 +13,7 @@ document stay in sync without rebuilding.
 from collections.abc import Callable
 
 from dplanner.domain.commands import Command, EditTextCommand
-from dplanner.domain.model import NodeId, Library, TextEdit
+from dplanner.domain.model import Library, NodeId, TextEdit
 
 
 class ModuleTextField:

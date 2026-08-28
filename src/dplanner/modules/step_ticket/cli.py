@@ -38,7 +38,7 @@ def _set(context: CliContext, args: Namespace) -> int:
     ticket = Ticket(system=args.system, key=args.key, url=args.url)
     if ticket.is_empty():
         raise CliError(f"nothing to set — pass one of {', '.join('--' + f for f in FIELDS)}")
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     entry = write(ticket)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
     context.report({"step": step.id} | entry, f"{step.title}: {ticket.key or ticket.url}")
@@ -46,7 +46,7 @@ def _set(context: CliContext, args: Namespace) -> int:
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     if read(step) is None:
         raise CliError(f"{step.title!r} has no ticket")
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))

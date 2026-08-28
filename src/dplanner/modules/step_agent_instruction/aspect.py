@@ -40,7 +40,11 @@ def read_project(project: Project) -> str:
 def asset_paths(
     files: FilesFor, node_id: NodeId
 ) -> tuple[str, ...]:
-    """A node's instruction files as workspace-relative paths.
+    """A node's instruction files as absolute paths.
+
+    Absolute because one library spans several project directories: a relative path would
+    need to say which root it is relative to, and the agent runs in the repository, not in
+    any store root, so the prompt needs the absolute form anyway.
 
     A node the store has never flushed has no directory yet, and the store says so with a
     ``KeyError`` — a node created this run simply has no files to list.
@@ -49,7 +53,7 @@ def asset_paths(
         area = files(node_id, MODULE_ID)
     except KeyError:
         return ()
-    return tuple(f"{area.directory}/{name}" for name in assets(area))
+    return tuple(str(area.absolute(name)) for name in assets(area))
 
 
 def summary(step: Step) -> str:

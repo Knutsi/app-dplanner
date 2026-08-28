@@ -18,10 +18,11 @@ that does not exist is vocabulary that lies, and the next person goes looking fo
 from typing import Final
 
 MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
-    # "open" and "save"/"branch" come from the workspaces and sync modules; "window" from
+    # "project" (New/Open Project) and "library" (New/Open Project Library, Reload) come
+    # from the library module and the watcher; "save"/"branch" from sync; "window" from
     # the app shell and the settings dialog. "export" holds the Export submenu — one entry
     # per feature that can write itself out (the order list's CSV today).
-    "File": ("open", "product", "save", "branch", "export", "window"),
+    "File": ("project", "library", "save", "branch", "export", "window"),
     "Edit": ("history",),
     # "palette" is the command palette alone — the way to *any* verb, set off from the
     # panel toggles below it. "areas" is the whole-side collapse switches, ahead of the

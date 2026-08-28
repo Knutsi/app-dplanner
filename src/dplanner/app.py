@@ -10,22 +10,22 @@ may import the composition root (:mod:`dplanner.modules`) and nothing deeper —
 a module subpackage from here is a layering violation the architecture test refuses.
 """
 
-import os
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import QApplication
 
-from dplanner.core.storage.locations import StorageLocation, parse_location
-from dplanner.domain.seed import create_product
-from dplanner.domain.store import ProductStore
+from dplanner.domain.library_file import resolve_library_path
+from dplanner.domain.seed import create_library
+from dplanner.domain.store import LibraryStore
 from dplanner.framework.action_registry import MenuStructure
-from dplanner.framework.session import AppSession, last_opened, workspace_roots
+from dplanner.framework.session import AppSession
 from dplanner.framework.splash import StartupSplash
 from dplanner.framework.theme_service import saved_theme
 from dplanner.identity import APP_DOMAIN, APP_ID, APP_NAME, APP_VERSION
 from dplanner.menus import MENU_STRUCTURE
-from dplanner.modules import choose_workspace, default_modules
+from dplanner.modules import default_modules
 from dplanner.theme import apply_theme
 
 
@@ -63,17 +63,13 @@ def build_application(argv: list[str]) -> QApplication:
     return app
 
 
-def explicit_workspace(argv: list[str]) -> StorageLocation | None:
-    """A workspace named on the command line or in the environment, or None.
-
-    An explicit location is a request: a directory that holds nothing yet is *seeded*, which
-    is how a new workspace is started. Everything implicit goes through the last-opened
-    setting and the Open dialog instead, which only ever open what already exists.
-    """
-    if "--workspace" in argv:
-        return parse_location(argv[argv.index("--workspace") + 1])
-    env = os.environ.get(f"{APP_ID.upper()}_WORKSPACE")
-    return parse_location(env) if env else None
+def chosen_library(argv: list[str]) -> Path:
+    """The library this instance runs on: ``--library``, ``$DPLANNER_LIBRARY``, or the
+    per-user default. The default (and any explicitly named path that does not exist yet)
+    is seeded by the builder, so a plain first launch opens an empty library rather than
+    asking anything."""
+    explicit = argv[argv.index("--library") + 1] if "--library" in argv else None
+    return resolve_library_path(explicit)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -81,25 +77,16 @@ def main(argv: list[str] | None = None) -> int:
     # Qt consumes -style, -platform and -stylesheet from argv, and argv[0] names the
     # process, so the real sys.argv is passed through rather than an empty list.
     args = list(sys.argv if argv is None else argv)
-    explicit = explicit_workspace(args)
+    library_path = chosen_library(args)
     # Our own arguments must not reach Qt's argv parsing.
-    if "--workspace" in args:
-        index = args.index("--workspace")
+    if "--library" in args:
+        index = args.index("--library")
         del args[index : index + 2]
 
     app = build_application(args)
 
-    # QSettings resolves its storage from the identity set in configure_application, so the
-    # last-opened lookup has to come after build_application.
-    location = explicit or last_opened()
-    interactive = location is None
-    if location is None:
-        location = choose_workspace()
-    if location is None:
-        return 0  # Cancelled the Open dialog with nothing to open.
-
     session = new_session()
-    if not open_at_startup(session, location, interactive):
+    if not open_at_startup(session, library_path):
         return 0
     return app.exec()
 
@@ -108,35 +95,27 @@ def new_session() -> AppSession:
     """The session, wired to this application's model, menus and modules.
 
     Everything application-specific the framework needs is handed over here: how to build a
-    repository over a provider, what to put in an empty workspace, what the menus are called
-    and which modules exist. Swap the first two and the same framework runs a different
-    application.
+    repository over its source path, what an empty library file contains, what the menus
+    are called and which modules exist. Swap the first two and the same framework runs a
+    different application.
     """
     return AppSession(
         module_factory=default_modules,
-        repository=ProductStore,
+        repository=LibraryStore,
         menus=MenuStructure(MENU_STRUCTURE),
-        seed=create_product,
-        clone_into=workspace_roots()[0],
+        seed=create_library,
     )
 
 
-def open_at_startup(session: AppSession, location: StorageLocation, interactive: bool) -> bool:
-    """Open the first workspace behind a splash, offering the picker again on failure.
+def open_at_startup(session: AppSession, library_path: Path) -> bool:
+    """Open the library behind a splash.
 
-    A failure has already been explained to the user by the session's startup reporter, so
-    this only decides whether to ask again or give up.
+    A failure has already been explained to the user by the session's startup reporter —
+    and with a library that is auto-seeded there is nothing sensible to re-ask, so a
+    failure simply gives up.
     """
-    while True:
-        splash = StartupSplash()
-        try:
-            opened = session.open_initial(location, interactive, progress=splash.status)
-        finally:
-            splash.close()
-        if opened:
-            return True
-        chosen = choose_workspace()
-        if chosen is None:
-            return False
-        location, interactive = chosen, True
-
+    splash = StartupSplash()
+    try:
+        return session.open_initial(library_path, progress=splash.status)
+    finally:
+        splash.close()

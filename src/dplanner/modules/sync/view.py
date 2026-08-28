@@ -1,8 +1,11 @@
 """Widgets for the sync module's status-bar presence and its diff dialog."""
 
+from collections.abc import Callable
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextDocument
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -86,13 +89,23 @@ class _DiffHighlighter(QSyntaxHighlighter):
 
 
 class DiffDialog(QDialog):
-    """A compact, read-only view of what has changed since the last Save."""
+    """A compact, read-only view of what has changed since the last Save.
+
+    A library spans repositories, so the dialog carries a picker; it stays hidden while
+    there is only one repository with changes to show.
+    """
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("DiffDialog")
         self.setWindowTitle("Changes Since Last Save")
         self.resize(720, 560)
+        self._sources: list[tuple[str, Callable[[], str]]] = []
+
+        self._picker = QComboBox(self)
+        self._picker.setObjectName("DiffRepoPicker")
+        self._picker.currentIndexChanged.connect(self._show_current)
+        self._picker.hide()
 
         self._text = QPlainTextEdit(self)
         self._text.setObjectName("DiffText")
@@ -109,8 +122,27 @@ class DiffDialog(QDialog):
         self.save_button = buttons.addButton("&Save Now", QDialogButtonBox.ButtonRole.ActionRole)
 
         layout = QVBoxLayout(self)
+        layout.addWidget(self._picker)
         layout.addWidget(self._text)
         layout.addWidget(buttons)
+
+    def set_sources(self, sources: list[tuple[str, Callable[[], str]]]) -> None:
+        """One (label, read-the-diff) pair per repository; the diff is read on demand."""
+        self._sources = list(sources)
+        self._picker.blockSignals(True)
+        self._picker.clear()
+        for label, _read in self._sources:
+            self._picker.addItem(label)
+        self._picker.blockSignals(False)
+        self._picker.setVisible(len(self._sources) > 1)
+        self._show_current()
+
+    def _show_current(self) -> None:
+        index = self._picker.currentIndex()
+        if 0 <= index < len(self._sources):
+            self.set_diff(self._sources[index][1]())
+        else:
+            self.set_diff("")
 
     def set_diff(self, text: str) -> None:
         self._text.setPlainText(text or "No changes since the last save.")

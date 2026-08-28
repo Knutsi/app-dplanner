@@ -19,7 +19,7 @@ step, telling the canvas what to select, needs the window at all.
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from dplanner.domain.model import NodeId, Product, StepId
+from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -47,7 +47,7 @@ OFF_AXIS_COST = 2.0
 
 @dataclass(frozen=True)
 class CanvasVerbs:
-    product: Product
+    library: Library
     # Which project the current tab is showing, as for the step verbs.
     current_project: Callable[[], NodeId | None]
     # The window capabilities these steer. Each is a no-op when no canvas is current.
@@ -126,9 +126,9 @@ class CanvasVerbs:
 
     def _has_steps(self, _context: Context) -> ActionState:
         project_id = self.current_project()
-        if project_id is None or not self.product.has(project_id):
+        if project_id is None or not self.library.has(project_id):
             return DISABLED
-        return ENABLED if self.product.project(project_id).steps else DISABLED
+        return ENABLED if self.library.project(project_id).steps else DISABLED
 
     def _can_go(self, name: str) -> Callable[[Context], ActionState]:
         def state(context: Context) -> ActionState:
@@ -150,10 +150,10 @@ class CanvasVerbs:
         """The step to move to, or None when there is nowhere that way."""
         project_id = self.current_project()
         from_id = context.focus_entity("step")
-        if project_id is None or not self.product.has(project_id):
+        if project_id is None or not self.library.has(project_id):
             return None
-        project = self.product.project(project_id)
-        placed = positions(self.product, project)
+        project = self.library.project(project_id)
+        placed = positions(self.library, project)
         if from_id is None or from_id not in placed:
             # Nothing picked yet: the first press lands on the step nearest the origin, so a
             # keyboard-only user can start without touching the mouse.
@@ -181,6 +181,6 @@ class CanvasVerbs:
 
     def _select_all(self, _context: Context) -> None:
         project_id = self.current_project()
-        if project_id is None or not self.product.has(project_id):
+        if project_id is None or not self.library.has(project_id):
             return
-        self.select_steps([step.id for step in self.product.project(project_id).steps])
+        self.select_steps([step.id for step in self.library.project(project_id).steps])

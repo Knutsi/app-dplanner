@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from dplanner.domain.model import Product
+from dplanner.domain.model import Library
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_ticket.aspect import DATA_FORMAT, MODULE_ID, SPEC
@@ -11,8 +11,8 @@ from dplanner.modules.step_ticket.section import TicketSection
 
 @dataclass(frozen=True)
 class StepTicketDeps:
-    product: Product
-    undo: UndoService[Product]
+    library: Library
+    undo: UndoService[Library]
     sections: InspectorSectionRegistry
 
 
@@ -30,6 +30,6 @@ class StepTicketModule:
                 id=f"{MODULE_ID}.tab",
                 label=SPEC.label,
                 order=20,
-                factory=lambda: TicketSection(deps.product, deps.undo),
+                factory=lambda: TicketSection(deps.library, deps.undo),
             )
         )

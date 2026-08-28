@@ -24,14 +24,13 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from dplanner.core.module_data import ModuleDataFormat
-from dplanner.core.storage.locations import StorageLocation
 
 if TYPE_CHECKING:
     from collections.abc import Container, Sequence
 
     from dplanner.cli import CliCommand
     from dplanner.domain.aspects import AspectSpec
-    from dplanner.domain.model import Product, Step
+    from dplanner.domain.model import Library, Step
     from dplanner.domain.ordering import Placed
     from dplanner.domain.schedule import Scheduled
     from dplanner.domain.store import ModuleFileArea
@@ -40,9 +39,7 @@ if TYPE_CHECKING:
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
 
 __all__ = [
-    "StorageLocation",
     "aspect_specs",
-    "choose_workspace",
     "default_cli_commands",
     "default_module_formats",
     "default_modules",
@@ -50,12 +47,13 @@ __all__ = [
 
 
 def default_modules(services: "AppServices") -> list["Module"]:
-    from dplanner.core.storage.git import find_repo_root
-    from dplanner.core.storage.github import gh_authenticated, gh_path, repository_url
-    from dplanner.domain.model import Product
+    from pathlib import Path
+
+    from dplanner.core.storage.locations import find_repo_root, origin_url
+    from dplanner.domain.model import Library
     from dplanner.domain.ordering import placed
     from dplanner.domain.schedule import format_date, format_days, schedule
-    from dplanner.domain.store import ProductStore
+    from dplanner.domain.store import LibraryStore
     from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
@@ -67,16 +65,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.github.module import GithubDeps, GithubModule
+    from dplanner.modules.library.module import LibraryDeps, LibraryModule
+    from dplanner.modules.library_watch.module import LibraryWatchDeps, LibraryWatchModule
     from dplanner.modules.llm.module import LlmDeps, LlmModule
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
-    from dplanner.modules.product.module import ProductDeps, ProductModule
     from dplanner.modules.progression.module import ProgressionDeps, ProgressionModule
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
-    from dplanner.modules.project_repo.module import ProjectRepoDeps, ProjectRepoModule
-    from dplanner.modules.project_repo.repo import checkout_for as repo_checkout_for
-    from dplanner.modules.project_repo.repo import repository_for as repo_repository_for
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
@@ -112,18 +108,42 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
-    from dplanner.modules.workspace_watch.module import (
-        WorkspaceWatchDeps,
-        WorkspaceWatchModule,
-    )
-    from dplanner.modules.workspaces.module import WorkspacesDeps, WorkspacesModule
     from dplanner.theme.icons import gauge_icon, graph_icon, spec_icon
 
-    product: Product = services.document
+    library: Library = services.document
     # The composition root knows the concrete store, exactly as it knows the concrete
     # document — modules reach a file area only through the typed callback on their Deps.
     store = services.repo
-    assert isinstance(store, ProductStore)
+    assert isinstance(store, LibraryStore)
+
+    def project_dir_of(step_id: str) -> "Path":
+        return store.project_dir(library.project_of(step_id).id)
+
+    def read_absolute(path: str) -> bytes | None:
+        """Asset bytes by absolute path — module file areas hand those out now."""
+        file = Path(path)
+        return file.read_bytes() if file.is_file() else None
+
+    def focused_project(context: object) -> str | None:
+        """The project the user is in: the focused project, else the focused step's."""
+        from dplanner.framework.context import Context
+
+        assert isinstance(context, Context)
+        project_id = context.focus_entity("project")
+        if project_id is not None and library.has(project_id):
+            return project_id
+        step_id = context.focus_entity("step")
+        if step_id is not None and library.has(step_id):
+            return library.project_of(step_id).id
+        return None
+
+    def projects_in(group: object) -> list[str]:
+        """The titles a repository group covers — for the diff picker and quit dialog."""
+        return [
+            project.title or project.folder_name
+            for project in library.projects
+            if store.repo_for(project.id) is group
+        ]
 
     def skill_files() -> dict[str, str]:
         from dplanner.cli.command import CliRegistry
@@ -135,7 +155,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
 
     def step_aspects(step_id: str, skip: "Container[str]" = ()) -> list[str]:
         """One short phrase per aspect that has something to say about this step."""
-        step = product.step(step_id)
+        step = library.step(step_id)
         summaries = aspect_summaries(skip)
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
 
@@ -146,8 +166,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         that row — the same pair the order table's release row highlights. Falls back to
         nothing when the project carries no estimates at all.
         """
-        project = product.project_of(step.id)
-        order = placed(product, project)
+        project = library.project_of(step.id)
+        order = placed(library, project)
         for scheduled in step_schedule(project.id, order):
             if scheduled.place.step.id == step.id:
                 if scheduled.finish is not None:
@@ -179,7 +199,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         step's stat is its own estimate. Everything worn here is skipped from the canvas
         subtitle below, so nothing is said twice.
         """
-        step = product.step(step_id)
+        step = library.step(step_id)
         refs = github_read(step)
         pill = ""
         if refs is not None and refs.has_pr():
@@ -219,7 +239,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         The domain never learns where an estimate is stored — it is handed a function that
         answers for a step — and the order view never learns that estimates exist.
         """
-        return schedule(order, estimated_days, start_of(product.project(project_id)))
+        return schedule(order, estimated_days, start_of(library.project(project_id)))
 
     # The one briefing both the window and the CLI assemble from — see _default_briefing.
     briefing = _default_briefing()
@@ -241,28 +261,16 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # below.
     step_properties = StepPropertiesModule(
         StepPropertiesDeps(
-            product=product,
+            library=library,
             undo=services.undo,
             panels=services.panels,
             sections=services.inspector_sections,
             theme=services.theme,
         )
     )
-    # The probes are advisory status only; the github module makes its own checks.
-    project_repo = ProjectRepoModule(
-        ProjectRepoDeps(
-            product=product,
-            undo=services.undo,
-            cards=services.detail_cards,
-            is_git_repo=lambda path: find_repo_root(path) is not None,
-            gh_installed=lambda: gh_path() is not None,
-            gh_signed_in=gh_authenticated,
-            repository_url_for=repository_url,
-        )
-    )
     project_editor = ProjectEditorModule(
         ProjectEditorDeps(
-            product=product,
+            library=library,
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
@@ -298,7 +306,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # same seam as open_project, one level down.
     spec = SpecModule(
         SpecDeps(
-            product=product,
+            library=library,
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
@@ -313,7 +321,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # module's registration order does not matter; neither module knows the other's name.
     progression = ProgressionModule(
         ProgressionDeps(
-            product=product,
+            library=library,
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
@@ -329,7 +337,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
     estimation = EstimationModule(
         EstimationDeps(
-            product=product,
+            library=library,
             undo=services.undo,
             sections=services.inspector_sections,
             actions=services.actions,
@@ -337,8 +345,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             tabs=services.tabs,
             # A step's description, one line for the row and the prose for its tooltip.
             # Handed as answers, so the estimation module never learns where prose lives.
-            step_summary=lambda step_id: description_summary(product.step(step_id)),
-            describe_step=lambda step_id: description_read(product.step(step_id)),
+            step_summary=lambda step_id: description_summary(library.step(step_id)),
+            describe_step=lambda step_id: description_read(library.step(step_id)),
             # An Estimates row reveals its step the same way an order row does.
             reveal_step=project_editor.reveal,
         )
@@ -361,33 +369,51 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 chrome=services.window,
             )
         ),
-        WorkspacesModule(
-            WorkspacesDeps(
+        LibraryModule(
+            LibraryDeps(
+                library=library,
                 actions=services.actions,
-                tasks=services.tasks,
                 parent=services.window,
-                switcher=services.switcher,
+                status=services.window,
+                window=services.window,
+                library_path=store.library_path,
+                # The store's membership face: attach/detach track directories, the model
+                # change itself is the caller's, applied off the undo stack.
+                attach=store.attach,
+                detach=store.detach,
+                project_dirs=lambda: (
+                    [store.project_dir(project.id).resolve() for project in library.projects]
+                    + [problem.path.resolve() for problem in store.problems()]
+                ),
+                problems=store.problems,
             )
         ),
-        # Before the task centre, so the workspace path and branch sit left of the task
+        # Before the task centre, so the library path and branch sit left of the task
         # button in the status bar.
         SyncModule(
             SyncDeps(
                 actions=services.actions,
                 autosave=services.autosave,
                 context=services.context,
-                storage=services.storage,
                 status=services.window,
                 tasks=services.tasks,
                 chrome=services.window,
                 theme=services.theme,
                 parent=services.window,
                 switcher=services.switcher,
+                library=library,
+                library_path=store.library_path,
+                # One provider per distinct git repository, scoped to its projects'
+                # directories — the store owns the grouping, sync only operates on it.
+                repos=store.repo_groups,
+                repo_for=store.repo_for,
+                focused_project=focused_project,
+                projects_in=projects_in,
             )
         ),
-        # After sync, so a reload notice lands to the right of the workspace path.
-        WorkspaceWatchModule(
-            WorkspaceWatchDeps(
+        # After sync, so a reload notice lands to the right of the library path.
+        LibraryWatchModule(
+            LibraryWatchDeps(
                 # The narrowed store from above: the watcher needs changed_underneath(),
                 # which the Repository protocol deliberately does not promise.
                 repo=store,
@@ -438,18 +464,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
             )
         ),
         # -- the planner ------------------------------------------------------------------
-        ProductModule(
-            ProductDeps(
-                product=product,
-                actions=services.actions,
-                tabs=services.tabs,
-                undo=services.undo,
-                window=services.window,
-            )
-        ),
         ProjectsModule(
             ProjectsDeps(
-                product=product,
+                library=library,
                 actions=services.actions,
                 context=services.context,
                 undo=services.undo,
@@ -458,6 +475,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 parent=services.window,
                 # The index opens a project without knowing what an editor is.
                 open_project=project_editor.open,
+                detach=store.detach,
+                problems=store.problems,
                 # Rows under each project — a project row itself only folds; these are
                 # what opens. Each renders the Project menu: the row stands for its
                 # project, and the project's verbs all live there.
@@ -490,21 +509,18 @@ def default_modules(services: "AppServices") -> list["Module"]:
             )
         ),
         spec,
-        # Before project_editor: its Repository card must be registered when the project
-        # panel is built. The builder also reads its data_format from the list.
-        project_repo,
         # -- the step aspects --------------------------------------------------------------
         # Each registers one tab into the step detail panel. They must come before
         # step_properties, which builds the panel from whatever has registered by then.
         estimation,
         StepTicketModule(
             StepTicketDeps(
-                product=product, undo=services.undo, sections=services.inspector_sections
+                library=library, undo=services.undo, sections=services.inspector_sections
             )
         ),
         StepDescriptionModule(
             StepDescriptionDeps(
-                product=product,
+                library=library,
                 undo=services.undo,
                 sections=services.inspector_sections,
                 files=store.files,
@@ -512,7 +528,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         StepAgentInstructionModule(
             StepAgentInstructionDeps(
-                product=product,
+                library=library,
                 undo=services.undo,
                 sections=services.inspector_sections,
                 actions=services.actions,
@@ -523,17 +539,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # Its project-level card: the standing instruction every briefing opens with.
                 cards=services.detail_cards,
                 files=store.files,
-                # How staged assets are read at launch — bytes by workspace-relative path.
-                read_asset=store.storage.read_bytes,
+                # How staged assets are read at launch — bytes by absolute path.
+                read_asset=read_absolute,
+                # Where the agent runs: the project's git repository root, derived from
+                # its directory. "" (a disabled verb) when the repository has vanished.
+                workdir_for=lambda step_id: str(find_repo_root(project_dir_of(step_id)) or ""),
                 briefing=briefing,
-                # Where the agent runs: the project's checkout over the product's — the
-                # one resolution rule, closed over step → project here.
-                checkout_for=lambda step_id: repo_checkout_for(
-                    product, product.project_of(step_id)
-                ),
                 # The launch stamp: written directly, off the undo stack — Ctrl+Z cannot
                 # un-launch a shell.
-                record_launch=lambda step_id: agent_run_launch(product, step_id),
+                record_launch=lambda step_id: agent_run_launch(library, step_id),
             )
         ),
         # Declares the agent-run format only; Run Agent and the CLI write it, the canvas
@@ -541,7 +555,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepAgentRunModule(),
         StepHandoffModule(
             StepHandoffDeps(
-                product=product,
+                library=library,
                 undo=services.undo,
                 sections=services.inspector_sections,
                 files=store.files,
@@ -549,7 +563,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         StepReleaseModule(
             StepReleaseDeps(
-                product=product,
+                library=library,
                 undo=services.undo,
                 sections=services.inspector_sections,
                 actions=services.actions,
@@ -558,27 +572,25 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
         StepStatusModule(
-            StepStatusDeps(product=product, undo=services.undo, actions=services.actions)
+            StepStatusDeps(library=library, undo=services.undo, actions=services.actions)
         ),
         GithubModule(
             GithubDeps(
-                product=product,
+                library=library,
                 undo=services.undo,
                 sections=services.inspector_sections,
                 tasks=services.tasks,
                 parent=services.window,
-                # Which repository a step's refs belong to: the project's own over the
-                # product's — the one resolution rule, closed over step → project here.
-                repository_for=lambda step_id: repo_repository_for(
-                    product, product.project_of(step_id)
-                ),
+                # Which repository a step's refs belong to: derived from its project's
+                # directory — git's answer, so nothing stored can disagree with it.
+                repository_for=lambda step_id: origin_url(project_dir_of(step_id)),
             )
         ),
         step_properties,
         project_editor,
         StepOrderModule(
             StepOrderDeps(
-                product=product,
+                library=library,
                 actions=services.actions,
                 context=services.context,
                 tabs=services.tabs,
@@ -595,9 +607,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 start_bar=estimation.create_start_bar,
                 # A release row wears a rule and a tint; the name itself stays in the
                 # trailing aspects column, which is why RELEASE_ID is not skipped here.
-                release_label=lambda step_id: release_read(product.step(step_id)),
+                release_label=lambda step_id: release_read(library.step(step_id)),
                 # The same kind vocabulary the canvas medallions wear, one translation.
-                step_icons=lambda step_id: step_type_icons(product.step(step_id)),
+                step_icons=lambda step_id: step_type_icons(library.step(step_id)),
             )
         ),
         progression,
@@ -626,18 +638,18 @@ def default_modules(services: "AppServices") -> list["Module"]:
 def _module_asset_paths(
     files: "Callable[[str, str], ModuleFileArea]", node_id: str, module_id: str
 ) -> tuple[str, ...]:
-    """A node's module files as workspace-relative paths; a never-flushed node has none."""
+    """A node's module files as absolute paths; a never-flushed node has none."""
     from dplanner.domain.assets import assets
 
     try:
         area = files(node_id, module_id)
     except KeyError:
         return ()
-    return tuple(f"{area.directory}/{name}" for name in assets(area))
+    return tuple(str(area.absolute(name)) for name in assets(area))
 
 
 def _handoff_parts(
-    product: "Product", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
+    library: "Library", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
 ) -> "list[PromptPart]":
     """The briefing's inherited blocks: handoffs become prompt parts here, and neither the
     agent module nor the handoff module learns the other's name. Both surfaces call this
@@ -647,12 +659,12 @@ def _handoff_parts(
 
     return [
         PromptPart(heading=h.title, body=h.note, files=h.assets)
-        for h in inherited(product, step, files)
+        for h in inherited(library, step, files)
     ]
 
 
 def _briefing_sections(
-    product: "Product", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
+    library: "Library", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
 ) -> "list[PromptPart]":
     """The step's own facts as briefing sections: what it is, why it exists, where the
     work lands. Cross-module prose, so it is worded here in the one file allowed to know
@@ -676,7 +688,7 @@ def _briefing_sections(
         )
     links = read_links(step)
     if links:
-        requirements = read_index(product.project_of(step.id)).requirements
+        requirements = read_index(library.project_of(step.id)).requirements
         by_id = {requirement.id: requirement for requirement in requirements}
         lines: list[str] = []
         for link in links:
@@ -790,11 +802,9 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.github import cli as github_cli
-    from dplanner.modules.product import cli as product_cli
+    from dplanner.modules.library import cli as library_cli
     from dplanner.modules.progression import cli as progression_cli
     from dplanner.modules.project_editor import cli as layout_cli
-    from dplanner.modules.project_repo import cli as repo_cli
-    from dplanner.modules.project_repo.repo import repository_for as repo_repository_for
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
@@ -809,7 +819,7 @@ def default_cli_commands() -> list["CliCommand"]:
 
     specs = aspect_specs()
     commands = [
-        *product_cli.commands(),
+        *library_cli.commands(),
         # The step authors let `step add` author the step in the same call; the list
         # order is the report order — the same order the skill teaches authoring in.
         *projects_cli.commands(
@@ -820,7 +830,6 @@ def default_cli_commands() -> list["CliCommand"]:
                 spec_cli.step_author(),
             ]
         ),
-        *repo_cli.commands(),
         *spec_cli.commands(),
         *estimation_cli.commands(),
         *ticket_cli.commands(),
@@ -837,9 +846,7 @@ def default_cli_commands() -> list["CliCommand"]:
         # The timeline sort reads a step's length through estimation's Qt-free reader —
         # handed over here so neither cli.py imports the other.
         *layout_cli.commands(days_for=estimated_days),
-        # Which repository a step's refs belong to is project_repo's rule — the project's
-        # own over the product's — handed over here so neither cli.py imports the other.
-        *github_cli.commands(repository_for=repo_repository_for),
+        *github_cli.commands(),
         *aspect_commands(specs),
         # Each module exports what "missing" means for its own aspect; the list order is
         # the report order — the graph's integrity first, then authoring, then the spec.
@@ -934,24 +941,9 @@ def default_module_formats() -> list[ModuleDataFormat]:
     format missing here is data the CLI silently declines to bring forward.
     """
     from dplanner.modules.project_editor import positions
-    from dplanner.modules.project_repo import repo
 
-    # The aspects, plus the module data that is not an aspect: the graph's node positions
-    # and a project's repo association. Deriving this list from aspect_specs() alone would
-    # silently omit them. A project's start date needs no entry: it rides on the estimation
-    # aspect's format, which is the same module writing under the same id on another node.
-    return [spec.data_format for spec in aspect_specs()] + [
-        positions.DATA_FORMAT,
-        repo.DATA_FORMAT,
-    ]
-
-
-def choose_workspace() -> StorageLocation | None:
-    """Ask the user which workspace to open.
-
-    A thin wrapper so ``app.py`` reaches the workspaces module through the composition root
-    rather than into its package, and so importing this file stays free of Qt.
-    """
-    from dplanner.modules.workspaces.module import choose_workspace as ask
-
-    return ask()
+    # The aspects, plus the module data that is not an aspect: the graph's node positions.
+    # Deriving this list from aspect_specs() alone would silently omit it. A project's
+    # start date needs no entry: it rides on the estimation aspect's format, which is the
+    # same module writing under the same id on another node.
+    return [spec.data_format for spec in aspect_specs()] + [positions.DATA_FORMAT]

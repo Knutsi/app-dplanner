@@ -16,7 +16,7 @@ The gaps are chosen so the default node lands on round pitches: ``NODE_W + H_GAP
 from collections.abc import Callable
 from math import cos, sin, tau
 
-from dplanner.domain.model import Product, Project, Step, StepId
+from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import depths
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 
@@ -44,27 +44,27 @@ def node_size(_step: Step) -> tuple[float, float]:
 
 
 def layered_flow(
-    product: Product, project: Project, size_for: SizeFor = node_size
+    library: Library, project: Project, size_for: SizeFor = node_size
 ) -> dict[StepId, Point]:
     """Dependency depth left to right, crossings reduced, columns centred."""
-    return _layered(product, project, size_for, vertical=False)
+    return _layered(library, project, size_for, vertical=False)
 
 
 def layered_down(
-    product: Product, project: Project, size_for: SizeFor = node_size
+    library: Library, project: Project, size_for: SizeFor = node_size
 ) -> dict[StepId, Point]:
     """The same layering flowing top to bottom."""
-    return _layered(product, project, size_for, vertical=True)
+    return _layered(library, project, size_for, vertical=True)
 
 
 def _layered(
-    product: Product, project: Project, size_for: SizeFor, vertical: bool
+    library: Library, project: Project, size_for: SizeFor, vertical: bool
 ) -> dict[StepId, Point]:
     steps = project.steps
     if not steps:
         return {}
     order = {step.id: index for index, step in enumerate(steps)}
-    by_depth = depths(product, project)
+    by_depth = depths(library, project)
     columns: dict[int, list[Step]] = {}
     for step in steps:
         columns.setdefault(by_depth.get(step.id, 0), []).append(step)
@@ -131,7 +131,7 @@ def _layered(
 
 
 def spine(
-    product: Product, project: Project, size_for: SizeFor = node_size
+    library: Library, project: Project, size_for: SizeFor = node_size
 ) -> dict[StepId, Point]:
     """The longest dependency chain on a central line, feeder chains branching back-left
     above and below it — the tree fallen on its side."""
@@ -140,7 +140,7 @@ def spine(
         return {}
     order = {step.id: index for index, step in enumerate(steps)}
     by_id = {step.id: step for step in steps}
-    by_depth = depths(product, project)
+    by_depth = depths(library, project)
     sizes = {step.id: size_for(step) for step in steps}
     lane_height = max(h for _w, h in sizes.values()) + V_GAP
 
@@ -220,7 +220,7 @@ def spine(
 
 
 def timeline(
-    product: Product,
+    library: Library,
     project: Project,
     size_for: SizeFor = node_size,
     days_for: DaysFor | None = None,
@@ -265,7 +265,7 @@ def timeline(
 # -- radial ------------------------------------------------------------------------------------
 
 
-def most_connected(product: Product, project: Project) -> StepId | None:
+def most_connected(library: Library, project: Project) -> StepId | None:
     """The step with the most links either way — radial's centre when none is chosen."""
     steps = project.steps
     if not steps:
@@ -281,7 +281,7 @@ def most_connected(product: Product, project: Project) -> StepId | None:
 
 
 def radial(
-    product: Product,
+    library: Library,
     project: Project,
     size_for: SizeFor = node_size,
     center: StepId | None = None,
@@ -294,7 +294,7 @@ def radial(
     order = {step.id: index for index, step in enumerate(steps)}
     sizes = {step.id: size_for(step) for step in steps}
     if center is None or all(step.id != center for step in steps):
-        center = most_connected(product, project)
+        center = most_connected(library, project)
         assert center is not None
 
     neighbours: dict[StepId, list[StepId]] = {step.id: [] for step in steps}

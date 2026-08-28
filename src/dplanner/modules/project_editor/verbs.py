@@ -33,7 +33,7 @@ from dplanner.domain.commands import (
     SetEdgesCommand,
     SetFieldCommand,
 )
-from dplanner.domain.model import NodeId, Product, Step, StepId
+from dplanner.domain.model import Library, NodeId, Step, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -49,8 +49,8 @@ from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef, parse_
 
 @dataclass(frozen=True)
 class StepVerbs:
-    product: Product
-    undo: UndoService[Product]
+    library: Library
+    undo: UndoService[Library]
     parent: QWidget
     # Which project a new step goes into: the one the current tab is showing.
     current_project: Callable[[], NodeId | None]
@@ -122,13 +122,13 @@ class StepVerbs:
         step_id = context.focus_entity("step")
         if step_id is None:
             return DISABLED
-        return ENABLED if self.product.has(step_id) else DISABLED
+        return ENABLED if self.library.has(step_id) else DISABLED
 
     def _focused(self, context: Context) -> Step | None:
         step_id = context.focus_entity("step")
-        if step_id is None or not self.product.has(step_id):
+        if step_id is None or not self.library.has(step_id):
             return None
-        return self.product.step(step_id)
+        return self.library.step(step_id)
 
     # -- linking -------------------------------------------------------------------------------
 
@@ -139,7 +139,7 @@ class StepVerbs:
         if len(chosen) != 2:
             return None
         source, waiter = chosen
-        if not (self.product.has(source) and self.product.has(waiter)):
+        if not (self.library.has(source) and self.library.has(waiter)):
             return None
         return source, waiter
 
@@ -150,7 +150,7 @@ class StepVerbs:
             return None
         source, waiter = pair
         for waits, other in ((waiter, source), (source, waiter)):
-            for kind, targets in self.product.step(waits).edges.items():
+            for kind, targets in self.library.step(waits).edges.items():
                 if other in targets:
                     return waits, kind
         return None
@@ -166,7 +166,7 @@ class StepVerbs:
             # an already-linked node.
             return ActionState(visible=False, enabled=False, label="Already linked")
         source, waiter = pair
-        refusal = self.product.link_refusal(waiter, "requires", source)
+        refusal = self.library.link_refusal(waiter, "requires", source)
         if refusal is None:
             return ENABLED
         # The label carries the reason, so a greyed entry says why rather than just being
@@ -178,7 +178,7 @@ class StepVerbs:
         if pair is None:
             return  # The state gate already prevents this; stay honest.
         source, waiter = pair
-        waiting = self.product.step(waiter).edges.get("requires", [])
+        waiting = self.library.step(waiter).edges.get("requires", [])
         self.undo.push(SetEdgesCommand(waiter, "requires", [*waiting, source]))
 
     def _picked_edges(self, context: Context) -> list[EdgeRef]:
@@ -188,8 +188,8 @@ class StepVerbs:
             ref
             for ref in found
             if ref is not None
-            and self.product.has(ref.waiter)
-            and ref.source in self.product.step(ref.waiter).edges.get(ref.kind, [])
+            and self.library.has(ref.waiter)
+            and ref.source in self.library.step(ref.waiter).edges.get(ref.kind, [])
         ]
 
     def _can_unlink(self, context: Context) -> ActionState:
@@ -226,7 +226,7 @@ class StepVerbs:
             SetEdgesCommand(
                 waiter,
                 kind,
-                [t for t in self.product.step(waiter).edges.get(kind, []) if t not in gone],
+                [t for t in self.library.step(waiter).edges.get(kind, []) if t not in gone],
             )
             for (waiter, kind), gone in sorted(by_list.items())
         ]
@@ -256,11 +256,11 @@ class StepVerbs:
 
     def _doomed(self, context: Context) -> list[StepId]:
         """Every selected step, or the one the activity is about — one prompt covers them."""
-        chosen = [s for s in context.selected_entities("step") if self.product.has(s)]
+        chosen = [s for s in context.selected_entities("step") if self.library.has(s)]
         if chosen:
             return chosen
         step_id = context.focus_entity("step")
-        return [step_id] if step_id is not None and self.product.has(step_id) else []
+        return [step_id] if step_id is not None and self.library.has(step_id) else []
 
     def _can_delete(self, context: Context) -> ActionState:
         doomed = self._doomed(context)
@@ -275,7 +275,7 @@ class StepVerbs:
         if not doomed:
             return
         if len(doomed) == 1:
-            title = self.product.step(doomed[0]).title or "this step"
+            title = self.library.step(doomed[0]).title or "this step"
             question = f"Delete {title!r}?"
         else:
             question = f"Delete {len(doomed)} steps?"

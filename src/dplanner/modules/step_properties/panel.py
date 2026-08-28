@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.domain.commands import SetFieldCommand
-from dplanner.domain.model import NodeId, Product, StepId
+from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.framework.context import Context
 from dplanner.framework.inspector import InspectorExtension, InspectorSection
 from dplanner.framework.theme_service import ThemeService
@@ -49,8 +49,8 @@ class StepPanel(QWidget):
 
     def __init__(
         self,
-        product: Product,
-        undo: UndoService[Product],
+        library: Library,
+        undo: UndoService[Library],
         sections: Sequence[InspectorSection] = (),
         theme: ThemeService | None = None,
         parent: QWidget | None = None,
@@ -59,7 +59,7 @@ class StepPanel(QWidget):
         self.setObjectName("InspectorPanel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
-        self._product = product
+        self._product = library
         self._undo = undo
         self._step_id: StepId | None = None
 
@@ -106,9 +106,9 @@ class StepPanel(QWidget):
                     self.tab_bar.setTabIcon(index, section.icon(current.text_secondary))
 
         self._unsubscribes = [
-            product.field_changed.connect(self._on_field),
-            product.edges_changed.connect(self._on_edges),
-            product.structure_changed.connect(self._on_structure),
+            library.field_changed.connect(self._on_field),
+            library.edges_changed.connect(self._on_edges),
+            library.structure_changed.connect(self._on_structure),
         ]
         if theme is not None:
             # A panel is shorter-lived than the theme service; detach in dispose().

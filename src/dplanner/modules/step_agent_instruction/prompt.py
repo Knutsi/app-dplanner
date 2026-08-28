@@ -11,7 +11,7 @@ of them can drift.
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from dplanner.domain.model import Product, Step
+from dplanner.domain.model import Library, Step
 from dplanner.domain.store import FilesFor
 
 
@@ -24,12 +24,12 @@ class PromptPart:
     files: tuple[str, ...] = ()
 
 
-# (product, step, files) -> the blocks a briefing carries. The store's file lookup is the
+# (library, step, files) -> the blocks a briefing carries. The store's file lookup is the
 # third argument so a block can name real asset paths.
-PartsFor = Callable[[Product, Step, FilesFor], Sequence[PromptPart]]
+PartsFor = Callable[[Library, Step, FilesFor], Sequence[PromptPart]]
 
 
-def _no_parts(_product: Product, _step: Step, _files: FilesFor) -> Sequence[PromptPart]:
+def _no_parts(_product: Library, _step: Step, _files: FilesFor) -> Sequence[PromptPart]:
     return ()
 
 

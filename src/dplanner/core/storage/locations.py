@@ -25,7 +25,21 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from dplanner.core.storage.git import GitStorage, find_repo_root
+# find_repo_root, init_repo and origin_url are re-exported (the `as` form marks it
+# deliberate): this module is the storage layer's public front door, and callers above it
+# may not name a provider module.
+from dplanner.core.storage.git import (
+    GitStorage,
+)
+from dplanner.core.storage.git import (
+    find_repo_root as find_repo_root,
+)
+from dplanner.core.storage.git import (
+    init_repo as init_repo,
+)
+from dplanner.core.storage.git import (
+    origin_url as origin_url,
+)
 from dplanner.core.storage.github import GitHubStorage
 from dplanner.core.storage.local import LocalStorage
 from dplanner.core.storage.provider import StorageError, StorageProvider

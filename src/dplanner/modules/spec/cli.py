@@ -20,7 +20,7 @@ from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.core.text_diff import diff_hunks
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Product, Project, Step
+from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor
 from dplanner.modules.spec.aspect import (
     MODULE_ID,
@@ -75,7 +75,7 @@ def step_author() -> StepAuthor:
     def author(context: CliContext, step: Step, args: Namespace) -> StepAuthored | None:
         if args.link is None and args.attach is None:
             return None
-        project = context.product.project_of(step.id)
+        project = context.library.project_of(step.id)
         links = read_links(step)
         attachments = read_attachments(step)
         if args.link:
@@ -102,7 +102,7 @@ def step_author() -> StepAuthor:
 
 def lint_checks() -> list[LintCheck]:
     def spec_findings(
-        _product: Product, project: Project, _files: FilesFor
+        _product: Library, project: Project, _files: FilesFor
     ) -> list[LintFinding]:
         requirements = read_index(project).requirements
         known = {requirement.id for requirement in requirements}
@@ -144,7 +144,7 @@ def lint_checks() -> list[LintCheck]:
         return findings
 
     def unanchored_quotes(
-        _product: Product, project: Project, files: FilesFor
+        _product: Library, project: Project, files: FilesFor
     ) -> list[LintFinding]:
         """A requirement whose quote no longer appears in its document — the spec was
         replaced and the anchor drifted. Re-validated here rather than stored at mark
@@ -438,7 +438,7 @@ def _import(context: CliContext, args: Namespace) -> int:
     if refusal is not None:
         raise CliError(refusal)
 
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     index = read_index(project)
     today = datetime.now(UTC).date().isoformat()
     area = context.store.files(project.id, MODULE_ID)
@@ -461,7 +461,7 @@ def _import(context: CliContext, args: Namespace) -> int:
 
 
 def _list(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     index = read_index(project)
     docs = index.documents
     marked = {
@@ -494,7 +494,7 @@ def _list(context: CliContext, args: Namespace) -> int:
 
 
 def _show(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     document = _document(project, args.document)
     blob = _blob(document, args.previous)
     if document.kind == KIND_PDF:
@@ -521,7 +521,7 @@ def _pdf_text(
 
 
 def _path(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     document = _document(project, args.document)
     blob = _blob(document, args.previous)
     _content(context, project, document, blob)  # Refuse a path that would dangle.
@@ -531,7 +531,7 @@ def _path(context: CliContext, args: Namespace) -> int:
 
 
 def _remove(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     document = _document(project, args.document)
     index = read_index(project)
     docs, requirements, dropped = remove_document(
@@ -566,7 +566,7 @@ def _remove(context: CliContext, args: Namespace) -> int:
 
 
 def _diff(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     document = _document(project, args.document)
     if document.previous is None:
         raise CliError(f"{document.name} has no previous version — it was never replaced")
@@ -608,7 +608,7 @@ def _attach(context: CliContext, args: Namespace) -> int:
     source = Path(args.image)
     if not source.is_file():
         raise CliError(f"no such file: {args.image}")
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     index = read_index(project)
     area = context.store.files(project.id, MODULE_ID)
     name = attach_asset(area, source.read_bytes(), source.name)
@@ -626,7 +626,7 @@ def _attach(context: CliContext, args: Namespace) -> int:
 
 
 def _render(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     document = _document(project, args.document)
     if document.kind != KIND_PDF:
         raise CliError(f"{document.name} is {document.kind} — only a PDF has pages to render")
@@ -660,7 +660,7 @@ def _render(context: CliContext, args: Namespace) -> int:
 
 
 def _assets(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     index = read_index(project)
     context.report(
         {
@@ -690,8 +690,8 @@ def _assets(context: CliContext, args: Namespace) -> int:
 
 
 def _attach_to_step(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
-    project = context.product.project_of(step.id)
+    step = find_step(context.library, args.step)
+    project = context.library.project_of(step.id)
     wanted = list(dict.fromkeys(args.asset))
     if args.remove:
         # The copied blobs stay: content-addressed files are cheap, and another
@@ -714,7 +714,7 @@ def _attach_to_step(context: CliContext, args: Namespace) -> int:
 
 
 def _mark(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     document = _document(project, args.document)
     index = read_index(project)
     quote_found, found_page = _validate_quote(context, project, document, args.quote)
@@ -777,7 +777,7 @@ def _validate_quote(
 
 
 def _unmark(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     index = read_index(project)
     if args.requirement not in [req.id for req in index.requirements]:
         raise CliError(f"no requirement {args.requirement!r} in {project.title!r}")
@@ -801,7 +801,7 @@ def _unmark(context: CliContext, args: Namespace) -> int:
 
 
 def _requirements(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     requirements = read_index(project).requirements
     if args.document is not None:
         name = _document(project, args.document).name
@@ -837,8 +837,8 @@ def _requirements(context: CliContext, args: Namespace) -> int:
 
 
 def _link(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
-    project = context.product.project_of(step.id)
+    step = find_step(context.library, args.step)
+    project = context.library.project_of(step.id)
     wanted = list(dict.fromkeys(args.requirement))
     if args.remove:
         doomed = set(wanted)

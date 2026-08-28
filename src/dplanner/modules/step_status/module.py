@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Product, Step
+from dplanner.domain.model import Library, Step
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
@@ -30,8 +30,8 @@ from dplanner.modules.step_status.aspect import (
 
 @dataclass(frozen=True)
 class StepStatusDeps:
-    product: Product
-    undo: UndoService[Product]
+    library: Library
+    undo: UndoService[Library]
     actions: ActionRegistry
 
 
@@ -80,6 +80,6 @@ class StepStatusModule:
 
     def _focused(self, context: Context) -> Step | None:
         step_id = context.focus_entity("step")
-        if step_id is None or not self._deps.product.has(step_id):
+        if step_id is None or not self._deps.library.has(step_id):
             return None
-        return self._deps.product.step(step_id)
+        return self._deps.library.step(step_id)

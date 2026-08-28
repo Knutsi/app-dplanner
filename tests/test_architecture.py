@@ -59,7 +59,7 @@ HEADLESS_FILES = (
     "documents.py",
     "handoff.py",
     "prompt.py",
-    "repo.py",
+    "membership.py",
     "gh.py",
     "pdf.py",
 )
@@ -117,14 +117,12 @@ def collect_violations() -> list[str]:
 
         for line, name in imported_names(path):
             # -- rule 7, checked for every file -------------------------------------------
-            # app.py chooses a location, never a provider class; the workspaces module is
-            # the one feature allowed near GitHub, because choosing a workspace is what it
-            # is for. `locations` is the public front door and stays open to everyone.
+            # app.py chooses a library path, never a provider class. `locations` is the
+            # public front door and stays open to everyone.
             may_name_a_provider = (
                 in_storage
                 or is_composition_root
                 or parts in (("app.py",), ("entry.py",))
-                or module_dir_of(path) == "workspaces"
                 or name.endswith(".locations")
             )
             if name in CONCRETE_STORAGE and not may_name_a_provider:

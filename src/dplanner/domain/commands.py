@@ -26,9 +26,9 @@ from typing import Any, Protocol
 
 from dplanner.domain.model import (
     FIELD_LABELS,
+    Library,
     Node,
     NodeId,
-    Library,
     StepId,
     TextEdit,
 )

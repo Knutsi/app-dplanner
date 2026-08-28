@@ -6,20 +6,23 @@ halves of one model in two packages. When a graph editor module arrives it can t
 changing.
 
 Every verb builds the same command from ``domain/commands.py`` that the menu does, so an
-edit made here is undoable in a window open on the same product.
+edit made here is undoable in a window open on the same library.
 
 Qt-free by rule — see ``tests/test_architecture.py``.
 """
 
 import json
+import shutil
 from argparse import ArgumentParser, Namespace
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
+from dplanner.core.storage.locations import find_repo_root, init_repo, origin_url
 from dplanner.domain.commands import (
     AddNodeCommand,
     CompositeCommand,
@@ -29,14 +32,15 @@ from dplanner.domain.commands import (
     SetFieldCommand,
     SetModuleDataCommand,
 )
-from dplanner.domain.model import EDGE_KINDS, Product, Project, Step, StepId, TextEdit
+from dplanner.domain.model import EDGE_KINDS, Library, Project, Step, StepId, TextEdit
 from dplanner.domain.ordering import placed
+from dplanner.domain.seed import seed_project
 from dplanner.domain.store import FilesFor
 
 
 def lint_checks() -> list[LintCheck]:
     def dangling_requires(
-        _product: Product, project: Project, _files: FilesFor
+        _product: Library, project: Project, _files: FilesFor
     ) -> list[LintFinding]:
         # remove_child keeps edges naming a deleted step so undo restores the graph
         # exactly, and requires()/depths() silently skip them — this is the one reader
@@ -75,16 +79,16 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
     def _step_add(context: CliContext, args: Namespace) -> int:
         if sum(1 for author in step_authors if author.reads_stdin(args)) > 1:
             raise CliError("only one flag may read stdin (-) per call")
-        product = context.product
-        project = find_project(product, args.project)
+        library = context.library
+        project = find_project(library, args.project)
         step = Step(title=args.title)
         context.apply(AddNodeCommand(project.id, step))
-        waiting = [find_step(product, needle).id for needle in args.after]
+        waiting = [find_step(library, needle).id for needle in args.after]
         if waiting:
             context.apply(SetEdgesCommand(step.id, "requires", waiting))
         # Composition-root order is report order. No rollback: an author that raises
         # aborts the run, and the transaction writes nothing — the step included.
-        data, notes = _step_row(product, step), []
+        data, notes = _step_row(library, step), []
         for author in step_authors:
             contributed = author.author(context, step, args)
             if contributed is not None:
@@ -99,7 +103,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
     return [
         CliCommand(
             path=("project", "list"),
-            summary="Every project in this product, with its step count.",
+            summary="Every project in this library, with its step count.",
             run=_project_list,
             examples=("dplanner project list", "dplanner project list --json"),
         ),
@@ -112,7 +116,8 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
         ),
         CliCommand(
             path=("project", "create"),
-            summary="Add a project to this product.",
+            summary="Create a project directory inside a git repository and add it "
+            "to the library.",
             configure=_configure_create,
             run=_project_create,
             examples=("dplanner project create 'Search rewrite' --summary 'Replace the index'",),
@@ -126,7 +131,8 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
         ),
         CliCommand(
             path=("project", "delete"),
-            summary="Remove a project and every step in it.",
+            summary="Remove a project from the library AND delete its directory "
+            "from disk. `library remove` keeps the files.",
             configure=project_arg,
             run=_project_delete,
             examples=("dplanner project delete discovery",),
@@ -163,8 +169,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
             configure=_configure_import,
             run=_project_import,
             examples=(
-                "dplanner project import < discovery.json",
-                "cat spec.json | dplanner project import",
+                "dplanner project import --dir ~/code/widget/planning < discovery.json",
             ),
         ),
         CliCommand(
@@ -230,7 +235,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
 # -- serialising --------------------------------------------------------------------------------
 
 
-def project_document(product: Product, project: Project) -> dict[str, Any]:
+def project_document(library: Library, project: Project) -> dict[str, Any]:
     """One project as plain data — what ``export`` writes and ``import`` reads.
 
     Folder names are deliberately absent: they are presentation, frozen at creation, and an
@@ -258,20 +263,26 @@ def project_document(product: Product, project: Project) -> dict[str, Any]:
     }
 
 
-def _project_row(project: Project) -> dict[str, Any]:
+def _project_row(context: CliContext, project: Project) -> dict[str, Any]:
+    directory = context.store.project_dir(project.id)
+    repo_root = find_repo_root(directory)
     return {
         "id": project.id,
         "title": project.title,
         "summary": project.summary,
         "steps": len(project.steps),
+        # Derived, never stored: the directory decides its repository, git its remote.
+        "dir": str(directory),
+        "repo_root": str(repo_root) if repo_root else "",
+        "remote": origin_url(directory),
     }
 
 
-def _step_row(product: Product, step: Step) -> dict[str, Any]:
+def _step_row(library: Library, step: Step) -> dict[str, Any]:
     return {
         "id": step.id,
         "title": step.title,
-        "requires": [other.id for other in product.requires(step.id)],
+        "requires": [other.id for other in library.requires(step.id)],
         "aspects": sorted(step.module_data),
     }
 
@@ -280,10 +291,13 @@ def _step_row(product: Product, step: Step) -> dict[str, Any]:
 
 
 def _project_list(context: CliContext, _args: Namespace) -> int:
-    product = context.product
-    rows = [_project_row(project) for project in product.projects]
+    library = context.library
+    rows = [_project_row(context, project) for project in library.projects]
     if not rows:
-        context.report({"projects": []}, "No projects yet. `dplanner project create <title>`.")
+        context.report(
+            {"projects": []},
+            "No projects yet. `dplanner project create <title> --dir PATH`.",
+        )
         return 0
     width = max(len(row["title"]) for row in rows)
     text = "\n".join(
@@ -294,12 +308,14 @@ def _project_list(context: CliContext, _args: Namespace) -> int:
 
 
 def _project_show(context: CliContext, args: Namespace) -> int:
-    product = context.product
-    project = find_project(product, args.project)
-    data = _project_row(project) | {"steps": [_step_row(product, step) for step in project.steps]}
+    library = context.library
+    project = find_project(library, args.project)
+    data = _project_row(context, project) | {
+        "steps": [_step_row(library, step) for step in project.steps]
+    }
     lines = [project.title, f"  {project.summary}" if project.summary else "", "  Steps:"]
     for step in project.steps:
-        waiting = product.requires(step.id)
+        waiting = library.requires(step.id)
         suffix = f"  (after {', '.join(s.title for s in waiting)})" if waiting else ""
         lines.append(f"    {step.title}{suffix}  {step.id[:8]}")
     if not project.steps:
@@ -321,13 +337,46 @@ def _configure_graph(parser: ArgumentParser) -> None:
 
 def _configure_create(parser: ArgumentParser) -> None:
     parser.add_argument("title", help="what the project is called")
+    parser.add_argument(
+        "--dir",
+        required=True,
+        dest="directory",
+        help="the project's directory, inside a git repository",
+    )
+    parser.add_argument(
+        "--init-repo",
+        action="store_true",
+        help="run git init on the directory when no repository encloses it",
+    )
     parser.add_argument("--summary", default="", help="one line on what it delivers")
 
 
+def _materialize(context: CliContext, directory: Path, title: str, *, init: bool) -> Project:
+    """Seed a project directory and attach it — the CLI's half of File ▸ New Project."""
+    directory = directory.expanduser()
+    if find_repo_root(directory) is None:
+        if not init:
+            raise CliError(
+                f"{directory} is not inside a git repository — pass --init-repo, "
+                "or run git init there first"
+            )
+        init_repo(directory)
+    for existing in context.library.projects:
+        if context.store.project_dir(existing.id).resolve() == directory.resolve():
+            raise CliError(f"{directory} is already in the library")
+    seed_project(directory, title)
+    project = context.store.attach(directory)
+    # Membership is applied directly: the CLI has no undo stack, and the GUI's half of
+    # this verb is off the stack too — a repository cannot be un-inited.
+    context.library.add_child(context.library.id, project)
+    return project
+
+
 def _project_create(context: CliContext, args: Namespace) -> int:
-    project = Project(title=args.title, summary=args.summary)
-    context.apply(AddNodeCommand(context.product.id, project))
-    context.report(_project_row(project), f"Created {project.title!r}  {project.id}")
+    project = _materialize(context, Path(args.directory), args.title, init=args.init_repo)
+    if args.summary:
+        context.apply(SetFieldCommand(project.id, "summary", args.summary))
+    context.report(_project_row(context, project), f"Created {project.title!r}  {project.id}")
     return 0
 
 
@@ -338,23 +387,27 @@ def _configure_rename(parser: ArgumentParser) -> None:
 
 
 def _project_rename(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     if args.title is None and args.summary is None:
         raise CliError("nothing to change — pass --title or --summary")
     if args.title is not None:
         context.apply(SetFieldCommand(project.id, "title", args.title))
     if args.summary is not None:
         context.apply(SetFieldCommand(project.id, "summary", args.summary))
-    context.report(_project_row(project), f"{project.title}")
+    context.report(_project_row(context, project), f"{project.title}")
     return 0
 
 
 def _project_delete(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
+    directory = context.store.project_dir(project.id)
     title, steps = project.title, len(project.steps)
-    context.apply(RemoveNodeCommand(project.id))
+    context.library.remove_child(project.id)
+    context.store.detach(project.id)
+    shutil.rmtree(directory, ignore_errors=True)
     context.report(
-        {"deleted": project.id, "steps": steps}, f"Deleted {title!r} and its {steps} steps"
+        {"deleted": project.id, "steps": steps, "dir": str(directory)},
+        f"Deleted {title!r} and its {steps} steps, and removed {directory}",
     )
     return 0
 
@@ -362,7 +415,7 @@ def _project_delete(context: CliContext, args: Namespace) -> int:
 SHORT_TITLE = 24  # Where a compact label cuts a title; enough to recognise, not to read.
 
 
-def mermaid(product: Product, project: Project, short: bool = False) -> str:
+def mermaid(library: Library, project: Project, short: bool = False) -> str:
     """The step graph as a Mermaid flowchart — the same map the canvas draws, as text.
 
     Deliberately structure-only: waves become subgraphs so parallelism is visible at a
@@ -375,7 +428,7 @@ def mermaid(product: Product, project: Project, short: bool = False) -> str:
     default form remains the diff-stable one.
     """
     lines = ["flowchart TD"]
-    rows = placed(product, project)
+    rows = placed(library, project)
     if not rows:
         return "flowchart TD\n    %% no steps yet"
     node_ids = {
@@ -392,14 +445,14 @@ def mermaid(product: Product, project: Project, short: bool = False) -> str:
                 lines.append(f'        {node_ids[row.step.id]}["{title}"]')
         lines.append("    end")
     for row in rows:
-        for other in product.requires(row.step.id):
+        for other in library.requires(row.step.id):
             lines.append(f"    {node_ids[other.id]} --> {node_ids[row.step.id]}")
     return "\n".join(lines)
 
 
 def _project_graph(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
-    chart = mermaid(context.product, project, short=args.short)
+    project = find_project(context.library, args.project)
+    chart = mermaid(context.library, project, short=args.short)
     context.report({"project": project.id, "mermaid": chart}, chart)
     return 0
 
@@ -408,7 +461,7 @@ def _project_clear_steps(context: CliContext, args: Namespace) -> int:
     """The same composite the canvas's delete-N-steps gesture builds — one undoable
     object in a window, one transaction here. No confirmation, matching `project
     delete`: a run is a transaction and version control is the undo."""
-    project = find_project(context.product, args.project)
+    project = find_project(context.library, args.project)
     doomed = list(project.steps)
     if doomed:
         context.apply(
@@ -425,8 +478,8 @@ def _project_clear_steps(context: CliContext, args: Namespace) -> int:
 
 
 def _project_export(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.product, args.project)
-    document = project_document(context.product, project)
+    project = find_project(context.library, args.project)
+    document = project_document(context.library, project)
     # Deliberately not context.report(): export always emits JSON, --json or not — the
     # output IS the artefact. The one bare print in any module's cli.py.
     print(json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False), file=context.out)
@@ -434,6 +487,17 @@ def _project_export(context: CliContext, args: Namespace) -> int:
 
 
 def _configure_import(parser: ArgumentParser) -> None:
+    parser.add_argument(
+        "--dir",
+        required=True,
+        dest="directory",
+        help="the new project's directory, inside a git repository",
+    )
+    parser.add_argument(
+        "--init-repo",
+        action="store_true",
+        help="run git init on the directory when no repository encloses it",
+    )
     parser.add_argument(
         "--title", help="override the title in the document (default: use the document's)"
     )
@@ -456,11 +520,11 @@ def _project_import(context: CliContext, args: Namespace) -> int:
     if not isinstance(document, dict):
         raise CliError("expected a JSON object in the shape `dplanner project export` writes")
 
-    project = Project(
-        title=args.title or str(document.get("title", "Imported project")),
-        summary=str(document.get("summary", "")),
-    )
-    context.apply(AddNodeCommand(context.product.id, project))
+    title = args.title or str(document.get("title", "Imported project"))
+    project = _materialize(context, Path(args.directory), title, init=args.init_repo)
+    summary = str(document.get("summary", ""))
+    if summary:
+        context.apply(SetFieldCommand(project.id, "summary", summary))
     for module_id, entry in dict(document.get("aspects", {})).items():
         context.apply(SetModuleDataCommand(project.id, str(module_id), dict(entry)))
     for module_id, body in dict(document.get("text", {})).items():
@@ -490,7 +554,7 @@ def _project_import(context: CliContext, args: Namespace) -> int:
                 context.apply(SetEdgesCommand(target, kind, wanted))
 
     context.report(
-        _project_row(project),
+        _project_row(context, project),
         f"Imported {project.title!r} with {len(project.steps)} steps  {project.id}",
     )
     return 0
@@ -500,29 +564,29 @@ def _project_import(context: CliContext, args: Namespace) -> int:
 
 
 def _step_list(context: CliContext, args: Namespace) -> int:
-    product = context.product
-    project = find_project(product, args.project)
-    rows = [_step_row(product, step) for step in project.steps]
+    library = context.library
+    project = find_project(library, args.project)
+    rows = [_step_row(library, step) for step in project.steps]
     text = "\n".join(f"{row['title']}  {row['id'][:8]}" for row in rows) or "No steps yet."
     context.report({"steps": rows}, text)
     return 0
 
 
 def _step_show(context: CliContext, args: Namespace) -> int:
-    product = context.product
-    step = find_step(product, args.step)
-    project = product.project_of(step.id)
-    data = _step_row(product, step) | {
+    library = context.library
+    step = find_step(library, args.step)
+    project = library.project_of(step.id)
+    data = _step_row(library, step) | {
         "project": project.id,
-        "dependents": [other.id for other in product.dependents(step.id)],
+        "dependents": [other.id for other in library.dependents(step.id)],
         "aspects": {key: dict(value) for key, value in sorted(step.module_data.items())},
         "text": sorted(step.module_text),
     }
     lines = [f"{step.title}  {step.id}", f"  in {project.title}"]
-    waiting = product.requires(step.id)
+    waiting = library.requires(step.id)
     if waiting:
         lines.append("  waits on: " + ", ".join(s.title for s in waiting))
-    blocked = product.dependents(step.id)
+    blocked = library.dependents(step.id)
     if blocked:
         lines.append("  blocks:   " + ", ".join(s.title for s in blocked))
     for key, value in sorted(step.module_data.items()):
@@ -539,14 +603,14 @@ def _configure_step_rename(parser: ArgumentParser) -> None:
 
 
 def _step_rename(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     context.apply(SetFieldCommand(step.id, "title", args.title))
-    context.report(_step_row(context.product, step), step.title)
+    context.report(_step_row(context.library, step), step.title)
     return 0
 
 
 def _step_remove(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.product, args.step)
+    step = find_step(context.library, args.step)
     title = step.title
     context.apply(RemoveNodeCommand(step.id))
     context.report({"deleted": step.id}, f"Removed {title!r}")
@@ -565,9 +629,9 @@ def _configure_link(parser: ArgumentParser) -> None:
 
 
 def _link_ends(context: CliContext, args: Namespace) -> tuple[Step, StepId]:
-    product = context.product
-    step = find_step(product, args.step)
-    other = find_step(product, args.on)
+    library = context.library
+    step = find_step(library, args.step)
+    other = find_step(library, args.on)
     return step, other.id
 
 
@@ -576,8 +640,8 @@ def _step_link(context: CliContext, args: Namespace) -> int:
     targets = [*step.edges.get(args.kind, []), other_id]
     context.apply(SetEdgesCommand(step.id, args.kind, targets))
     context.report(
-        _step_row(context.product, step),
-        f"{step.title!r} now {args.kind} {context.product.step(other_id).title!r}",
+        _step_row(context.library, step),
+        f"{step.title!r} now {args.kind} {context.library.step(other_id).title!r}",
     )
     return 0
 
@@ -586,5 +650,5 @@ def _step_unlink(context: CliContext, args: Namespace) -> int:
     step, other_id = _link_ends(context, args)
     targets = [target for target in step.edges.get(args.kind, []) if target != other_id]
     context.apply(SetEdgesCommand(step.id, args.kind, targets))
-    context.report(_step_row(context.product, step), f"Unlinked from {step.title!r}")
+    context.report(_step_row(context.library, step), f"Unlinked from {step.title!r}")
     return 0

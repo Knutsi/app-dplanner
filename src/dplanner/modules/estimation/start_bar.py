@@ -16,7 +16,7 @@ from PySide6.QtCore import QDate, QLocale
 from PySide6.QtWidgets import QDateEdit, QHBoxLayout, QLabel, QWidget
 
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import NodeId, Product, ProjectId
+from dplanner.domain.model import Library, NodeId, ProjectId
 from dplanner.framework.undo import UndoService
 from dplanner.modules.estimation.aspect import MODULE_ID
 from dplanner.modules.estimation.schedule import start_of, write_start
@@ -30,13 +30,13 @@ class StartDateBar(QWidget):
 
     def __init__(
         self,
-        product: Product,
-        undo: UndoService[Product],
+        library: Library,
+        undo: UndoService[Library],
         project_id: ProjectId,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._product = product
+        self._product = library
         self._undo = undo
         self._project_id = project_id
         self._loading = False
@@ -60,7 +60,7 @@ class StartDateBar(QWidget):
         row.addWidget(self.date)
         row.addStretch(1)
 
-        self._unsubscribe = product.module_data_changed.connect(self._on_module_data)
+        self._unsubscribe = library.module_data_changed.connect(self._on_module_data)
         self._load()
 
     # -- the host's side of the contract -------------------------------------------------------

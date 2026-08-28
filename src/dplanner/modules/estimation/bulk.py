@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.domain.model import NodeId, Product, Project, Step, StepId, TextEdit
+from dplanner.domain.model import Library, NodeId, Project, Step, StepId, TextEdit
 from dplanner.domain.ordering import placed
 from dplanner.domain.schedule import format_days
 from dplanner.framework.action_menu import build_menu
@@ -94,7 +94,7 @@ class BulkEstimateActivity(EntityActivity):
     def __init__(self, deps: "EstimationDeps", project_id: NodeId) -> None:
         super().__init__(deps.context, "project", project_id)
         self._deps = deps
-        self._product: Product = deps.product
+        self._product: Library = deps.library
         self.project_id = project_id
         # The canvas selection this sitting is about, or None for the whole project.
         self._selection: tuple[StepId, ...] | None = None

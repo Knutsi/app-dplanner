@@ -34,7 +34,7 @@ from dplanner.domain.commands import (
     CompositeCommand,
     SetModuleDataCommand,
 )
-from dplanner.domain.model import NodeId, Product, Project, Step, StepId
+from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import EntityActivity, follow_entity_tabs
@@ -107,11 +107,11 @@ def _no_days(_step: Step) -> float | None:
 
 @dataclass(frozen=True)
 class ProjectEditorDeps:
-    product: Product
+    library: Library
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
-    undo: UndoService[Product]
+    undo: UndoService[Library]
     status: StatusHost
     parent: QWidget
     panels: PanelRegistry
@@ -144,7 +144,7 @@ class ProjectActivity(EntityActivity):
         # what the active pane published. EntityActivity owns that rule.
         super().__init__(deps.context, "project", project_id)
         self._deps = deps
-        self._product = deps.product
+        self._product = deps.library
         self._verbs = verbs
         self._layout_verbs = layout_verbs
         self.project_id = project_id
@@ -483,13 +483,13 @@ class ProjectEditorModule:
     def __init__(self, deps: ProjectEditorDeps) -> None:
         self._deps = deps
         self._verbs = StepVerbs(
-            product=deps.product,
+            library=deps.library,
             undo=deps.undo,
             parent=deps.parent,
             current_project=self._current_project,
         )
         self._layout_verbs = LayoutVerbs(
-            product=deps.product,
+            library=deps.library,
             undo=deps.undo,
             parent=deps.parent,
             current_project=self._current_project,
@@ -497,7 +497,7 @@ class ProjectEditorModule:
             days_for=deps.days_for,
         )
         self._canvas_verbs = CanvasVerbs(
-            product=deps.product,
+            library=deps.library,
             current_project=self._current_project,
             select_step=self.reveal,
             select_steps=self._select_steps,
@@ -505,7 +505,7 @@ class ProjectEditorModule:
             frame=self._frame,
         )
         self._region_verbs = RegionVerbs(
-            product=deps.product,
+            library=deps.library,
             undo=deps.undo,
             parent=deps.parent,
             current_project=self._current_project,
@@ -522,9 +522,9 @@ class ProjectEditorModule:
         The capability the composition root hands to anything that lists steps — the order
         view today — so it can say "show me this one" without knowing what a canvas is.
         """
-        if not self._deps.product.has(step_id):
+        if not self._deps.library.has(step_id):
             return
-        project = self._deps.product.project_of(step_id)
+        project = self._deps.library.project_of(step_id)
         self.open(project.id)
         for activity in self._activities():
             if activity.project_id == project.id:
@@ -544,7 +544,7 @@ class ProjectEditorModule:
                 id=PANEL_ID,
                 title="Project",
                 factory=lambda: ProjectPanel(
-                    deps.product, deps.undo, cards=deps.cards.sections(), theme=deps.theme
+                    deps.library, deps.undo, cards=deps.cards.sections(), theme=deps.theme
                 ),
                 area=PanelArea.RIGHT,
                 order=10,
@@ -558,9 +558,9 @@ class ProjectEditorModule:
         follow_entity_tabs(
             deps.tabs,
             ProjectActivity,
-            deps.product.has,
-            closes_on=deps.product.structure_changed,
-            retitles_on=deps.product.field_changed,
+            deps.library.has,
+            closes_on=deps.library.structure_changed,
+            retitles_on=deps.library.field_changed,
         )
 
     # -- tabs ------------------------------------------------------------------------------------

@@ -14,7 +14,7 @@ Three rules keep it small:
   item dragging and hand-scrolling. :class:`IdleMode` is nine lines because of this.
 - **A mode reports; it never writes.** It emits the canvas's signals and the activity turns
   those into commands, exactly as before. Nothing here reaches the model or the undo stack.
-- **A mode asks the model.** Whether a link is legal is ``Product.link_refusal`` under the
+- **A mode asks the model.** Whether a link is legal is ``Library.link_refusal`` under the
   cursor, reached through :class:`Canvas`. There is no second reachability rule in here.
 
 :class:`Canvas` is the whole of a mode's power over the canvas, which is why it is written

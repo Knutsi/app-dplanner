@@ -53,9 +53,9 @@ def _configure(parser: ArgumentParser) -> None:
 
 
 def _show(context: CliContext, args: Namespace) -> int:
-    product = context.product
-    project = find_project(product, args.project)
-    found = placed(product, project)
+    library = context.library
+    project = find_project(library, args.project)
+    found = placed(library, project)
     if args.ready:
         found = [place for place in found if place.wave == 1]
 
