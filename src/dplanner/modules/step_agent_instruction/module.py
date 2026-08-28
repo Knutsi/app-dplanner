@@ -22,8 +22,8 @@ from pathlib import Path
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.fsio import slugify
-from dplanner.domain.model import NodeId, Product, Step, StepId
-from dplanner.domain.store import ModuleFileArea
+from dplanner.domain.model import Product, Step, StepId
+from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -101,7 +101,7 @@ class StepAgentInstructionDeps:
     cards: InspectorSectionRegistry | None = None
     # The store's file areas and raw byte access — how instruction images are listed for
     # the prompt and staged beside it at launch. None is a build without file storage.
-    files: Callable[[NodeId, str], ModuleFileArea] | None = None
+    files: FilesFor | None = None
     read_asset: Callable[[str], bytes | None] | None = None
     # The briefing's blocks — handed-forward context, the step's own facts — and its
     # opening and closing words, assembled by the composition root — the one place

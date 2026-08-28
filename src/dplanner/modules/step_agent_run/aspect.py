@@ -21,12 +21,6 @@ STATES: Final = ("launched", "working", "plan-for-review", "pending-approval")
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
-SPEC = AspectSpec(
-    id=MODULE_ID,
-    label="Agent run",
-    summary="Where a launched agent stands: launched, working, plan-for-review, pending-approval.",
-    data_format=DATA_FORMAT,
-)
 
 # The launch stamp's origin: no view claims it, so every surface treats the write as
 # foreign and repaints — the github refresher's pattern.
@@ -83,3 +77,13 @@ def record_launch(product: Product, step_id: StepId) -> None:
     SetModuleDataCommand(step_id, MODULE_ID, write("launched"), view_origin=LAUNCH_ORIGIN).redo(
         product
     )
+
+
+# Last, because it names the pieces above: the one declaration everything reads.
+SPEC = AspectSpec(
+    id=MODULE_ID,
+    label="Agent run",
+    summary="Where a launched agent stands: launched, working, plan-for-review, pending-approval.",
+    data_format=DATA_FORMAT,
+    phrase=summary,
+)

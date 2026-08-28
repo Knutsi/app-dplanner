@@ -14,7 +14,7 @@ from collections.abc import Callable
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lookup import find_project, find_step
+from dplanner.cli.lookup import find_project, find_step, project_arg
 from dplanner.domain.commands import Command
 from dplanner.domain.model import Project, Step
 from dplanner.modules.project_editor.layout import positions
@@ -91,7 +91,7 @@ def commands(days_for: Callable[[Step], float | None]) -> list[CliCommand]:
         CliCommand(
             path=("layout", "list"),
             summary="The saved layouts of a project's graph.",
-            configure=_one_project,
+            configure=project_arg,
             run=_list,
             examples=("dplanner layout list discovery --json",),
         ),
@@ -126,7 +126,7 @@ def commands(days_for: Callable[[Step], float | None]) -> list[CliCommand]:
         CliCommand(
             path=("region", "list"),
             summary="The titled areas drawn behind a project's graph.",
-            configure=_one_project,
+            configure=project_arg,
             run=_region_list,
             examples=("dplanner region list discovery --json",),
         ),
@@ -164,23 +164,19 @@ def commands(days_for: Callable[[Step], float | None]) -> list[CliCommand]:
     ]
 
 
-def _one_project(parser: ArgumentParser) -> None:
-    parser.add_argument("project", help="project id, folder name, or part of its title")
-
-
 def _project_and_name(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("name", help="the layout's name")
 
 
 def _rename_args(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("old", help="the layout's current name")
     parser.add_argument("new", help="what to call it instead")
 
 
 def _sort_args(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("algorithm", choices=SORT_NAMES, help="how to arrange the graph")
     parser.add_argument(
         "--center", help="radial only: the step to fan out from (default: most connected)"
@@ -266,7 +262,7 @@ def _delete(context: CliContext, args: Namespace) -> int:
 
 
 def _region_add_args(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("title", help="what the area is about")
     parser.add_argument(
         "--steps",
@@ -284,7 +280,7 @@ def _region_add_args(parser: ArgumentParser) -> None:
 
 
 def _region_args(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("region", help="region id, id prefix, or part of its title")
 
 

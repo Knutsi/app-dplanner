@@ -12,7 +12,6 @@ import pytest
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import run
 from dplanner.core.storage.local import LocalStorage
-from dplanner.domain.seed import create_product
 from dplanner.domain.store import ProductStore
 from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.github import cli as github_cli
@@ -21,13 +20,6 @@ from dplanner.modules.github.gh import PrInfo
 
 MERGED = PrInfo(number=12, title="Add login flow", state="merged", url="u12", head_ref="feat/login")
 OPEN = PrInfo(number=7, title="Fix crash", state="open", url="u7", head_ref="fix/crash")
-
-
-@pytest.fixture
-def workspace(tmp_path):
-    root = tmp_path / "widget"
-    create_product(LocalStorage(root))
-    return root
 
 
 @pytest.fixture

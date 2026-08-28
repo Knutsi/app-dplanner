@@ -64,6 +64,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.estimation.schedule import start_of
     from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
+    from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.github.module import GithubDeps, GithubModule
     from dplanner.modules.llm.module import LlmDeps, LlmModule
@@ -182,7 +183,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         refs = github_read(step)
         pill = ""
         if refs is not None and refs.has_pr():
-            pill = f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
+            pill = pr_label(refs)
         chip_text, chip_tone = {
             "launched": ("launched", "info"),
             "working": ("working", "info"),
@@ -664,6 +665,7 @@ def _briefing_sections(
     every module's vocabulary — the agent module renders the blocks without learning what
     a description, a requirement or a PR is. An empty fact contributes no section.
     """
+    from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.spec.aspect import attachment_paths, read_links
     from dplanner.modules.spec.documents import read_index
@@ -711,7 +713,7 @@ def _briefing_sections(
         if refs.branch:
             lines.append(f"Branch: {refs.branch}")
         if refs.has_pr():
-            pr = f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
+            pr = pr_label(refs)
             if refs.pr_title:
                 pr += f" — {refs.pr_title}"
             if refs.pr_state:
@@ -888,36 +890,35 @@ def aspect_specs() -> list["AspectSpec"]:
     ]
 
 
+# Row phrases lead with where a step *stands* (status, agent run, release) before what it
+# *carries*. Only a preference: an aspect not named here still appears, after these, in
+# aspect_specs() order — so a new aspect reaches every step row without editing this list.
+_PHRASE_ORDER = (
+    "step_status",
+    "step_agent_run",
+    "step_release",
+    "estimation",
+    "step_ticket",
+    "github",
+    "spec",
+    "step_description",
+    "step_agent_instruction",
+    "step_handoff",
+)
+
+
 def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str]]:
     """Each aspect's one-phrase description of a step, for whoever renders a step row.
 
-    ``skip`` is for a surface that already shows one of them in a column of its own — the
-    order table and its Estimate column — so the phrase is not printed twice.
+    A projection of :func:`aspect_specs` — the ``phrase`` on each SPEC — so an aspect
+    cannot exist without a row presence. ``skip`` is for a surface that already shows one
+    of them in a column of its own — the order table and its Estimate column — so the
+    phrase is not printed twice.
     """
-    from dplanner.modules.estimation import aspect as estimation
-    from dplanner.modules.github import aspect as github
-    from dplanner.modules.spec import aspect as spec
-    from dplanner.modules.step_agent_instruction import aspect as agent
-    from dplanner.modules.step_agent_run import aspect as agent_run
-    from dplanner.modules.step_description import aspect as description
-    from dplanner.modules.step_handoff import aspect as handoff
-    from dplanner.modules.step_release import aspect as release
-    from dplanner.modules.step_status import aspect as status
-    from dplanner.modules.step_ticket import aspect as ticket
-
-    pairs = [
-        (status.SPEC.id, status.summary),
-        (agent_run.SPEC.id, agent_run.summary),
-        (release.SPEC.id, release.summary),
-        (estimation.SPEC.id, estimation.summary),
-        (ticket.SPEC.id, ticket.summary),
-        (github.SPEC.id, github.summary),
-        (spec.SPEC.id, spec.summary),
-        (description.SPEC.id, description.summary),
-        (agent.SPEC.id, agent.summary),
-        (handoff.SPEC.id, handoff.summary),
-    ]
-    return [render for aspect_id, render in pairs if aspect_id not in skip]
+    specs = {spec.id: spec for spec in aspect_specs()}
+    ordered = [specs.pop(aspect_id) for aspect_id in _PHRASE_ORDER if aspect_id in specs]
+    ordered += specs.values()
+    return [spec.phrase for spec in ordered if spec.id not in skip]
 
 
 def default_module_formats() -> list[ModuleDataFormat]:

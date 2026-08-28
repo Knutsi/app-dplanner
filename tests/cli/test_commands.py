@@ -10,39 +10,9 @@ from io import StringIO
 
 import pytest
 
-from dplanner.cli.command import CliRegistry
-from dplanner.cli.main import run
 from dplanner.cli.workspace import find_workspace
 from dplanner.core.storage.local import LocalStorage
 from dplanner.domain.seed import create_product
-from dplanner.modules import default_cli_commands, default_module_formats
-
-
-@pytest.fixture
-def registry():
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-    return registry
-
-
-@pytest.fixture
-def workspace(tmp_path):
-    root = tmp_path / "widget"
-    create_product(LocalStorage(root))
-    return root
-
-
-@pytest.fixture
-def cli(registry, workspace):
-    def invoke(*argv, expect=0):
-        out, err = StringIO(), StringIO()
-        code = run(
-            registry, default_module_formats(), ["--workspace", str(workspace), *argv], out, err
-        )
-        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
-        return out.getvalue() + err.getvalue()
-
-    return invoke
 
 
 def data(text):
@@ -204,30 +174,6 @@ def test_unlink_removes_only_that_edge(cli):
 
 
 # -- the agent instruction at both levels ------------------------------------------------------
-
-
-@pytest.fixture
-def cli_stdin(registry, workspace):
-    def invoke(*argv, expect=0, stdin=""):
-        import sys
-
-        out, err = StringIO(), StringIO()
-        real = sys.stdin
-        sys.stdin = StringIO(stdin)
-        try:
-            code = run(
-                registry,
-                default_module_formats(),
-                ["--workspace", str(workspace), *argv],
-                out,
-                err,
-            )
-        finally:
-            sys.stdin = real
-        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
-        return out.getvalue() + err.getvalue()
-
-    return invoke
 
 
 def test_agent_set_and_show_take_a_project(cli, cli_stdin, workspace):

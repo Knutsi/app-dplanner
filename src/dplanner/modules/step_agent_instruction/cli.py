@@ -14,15 +14,14 @@ module, so what crosses modules arrives as arguments.
 
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable, Sequence
-from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor, StepAuthored
-from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
-from dplanner.cli.lookup import find_project, find_step
+from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
 from dplanner.domain.commands import EditTextCommand
-from dplanner.domain.model import Node, Product, Project, Step, StepId, TextEdit
-from dplanner.domain.store import ModuleFileArea
+from dplanner.domain.model import Node, Product, Project, Step, TextEdit
+from dplanner.domain.store import FilesFor
 from dplanner.modules.step_agent_instruction.aspect import (
     MODULE_ID,
     asset_paths,
@@ -35,31 +34,19 @@ from dplanner.modules.step_agent_instruction.prompt import PromptPart, assemble
 # ``prompt_parts``, the step's own facts for ``prompt_sections``. ``files`` is the store's
 # file lookup, passed through so the blocks can name real asset paths.
 PartsFor = Callable[
-    [Product, Step, Callable[[StepId, str], ModuleFileArea]], Sequence[PromptPart]
+    [Product, Step, FilesFor], Sequence[PromptPart]
 ]
 EpilogueFor = Callable[[Step], str]
 
 
 def _no_parts(
-    _product: Product, _step: Step, _files: Callable[[StepId, str], ModuleFileArea]
+    _product: Product, _step: Step, _files: FilesFor
 ) -> Sequence[PromptPart]:
     return ()
 
 
 def _no_epilogue(_step: Step) -> str:
     return ""
-
-
-def _file_body(file_arg: str) -> str:
-    """A markdown body from a file, or stdin when the argument is ``-``."""
-    import sys
-
-    if file_arg == "-":
-        return sys.stdin.read()
-    path = Path(file_arg)
-    if not path.is_file():
-        raise CliError(f"no such file: {file_arg}")
-    return path.read_text()
 
 
 def step_author() -> StepAuthor:
@@ -75,7 +62,7 @@ def step_author() -> StepAuthor:
     def author(context: CliContext, step: Step, args: Namespace) -> StepAuthored | None:
         if args.agent_file is None:
             return None
-        body = _file_body(args.agent_file)
+        body = body_from(args.agent_file)
         edit = TextEdit(step.id, MODULE_ID, 0, "", body)
         context.apply(EditTextCommand(edit, label="Set Agent Instruction"))
         return StepAuthored({"agent": len(body)}, f"instruction: {len(body)} characters")
@@ -172,15 +159,11 @@ def commands(
             path=("agent", "prompt"),
             summary="Print the full briefing for a step: instructions, description, "
             "requirements, branch and inherited context — everything, in one read.",
-            configure=_one_step,
+            configure=step_arg,
             run=_prompt,
             examples=("dplanner agent prompt 'Read the spec' --json",),
         ),
     ]
-
-
-def _one_step(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
 
 
 def _one_target(parser: ArgumentParser) -> None:
@@ -215,7 +198,7 @@ def _show(context: CliContext, args: Namespace) -> int:
 
 
 def _set(context: CliContext, args: Namespace) -> int:
-    body = _file_body(args.file)
+    body = body_from(args.file)
     node = _target(context, args)
     current = node.module_text.get(MODULE_ID, "")
     edit = TextEdit(node.id, MODULE_ID, 0, current, body)

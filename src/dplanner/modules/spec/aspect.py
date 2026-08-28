@@ -12,7 +12,7 @@ reads as a dangling id, not an error — the same philosophy as an edge naming a
 step, and for the same reason (undo must be able to restore either side independently).
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,7 +20,7 @@ from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.assets import assets
 from dplanner.domain.model import NodeId, Step
-from dplanner.domain.store import ModuleFileArea
+from dplanner.domain.store import FilesFor
 
 MODULE_ID = "spec"
 
@@ -37,14 +37,6 @@ DATA_FORMAT = ModuleDataFormat(MODULE_ID, 2, (_to_format_2,))
 
 LINKS_KEY = "requirements"
 ATTACHMENTS_KEY = "attachments"
-
-SPEC = AspectSpec(
-    id=MODULE_ID,
-    label="Spec requirements",
-    summary="Which spec requirements a step implements; link with `dplanner spec link`.",
-    data_format=DATA_FORMAT,
-)
-
 
 def read_links(step: Step) -> list[str]:
     """The requirement ids this step is linked to. Unreadable data reads as no links."""
@@ -105,7 +97,7 @@ def write_step_entry(
 
 
 def attachment_paths(
-    files: Callable[[NodeId, str], ModuleFileArea], step_id: NodeId
+    files: FilesFor, step_id: NodeId
 ) -> tuple[str, ...]:
     """A step's spec figures as workspace-relative paths — what a briefing lists and the
     launcher stages. A step the store has never flushed has no directory, and no files."""
@@ -122,3 +114,13 @@ def summary(step: Step) -> str:
     if count == 0:
         return ""
     return "meets 1 requirement" if count == 1 else f"meets {count} requirements"
+
+
+# Last, because it names the pieces above: the one declaration everything reads.
+SPEC = AspectSpec(
+    id=MODULE_ID,
+    label="Spec requirements",
+    summary="Which spec requirements a step implements; link with `dplanner spec link`.",
+    data_format=DATA_FORMAT,
+    phrase=summary,
+)

@@ -116,3 +116,75 @@ def _fresh_session_settings():
         settings.beginGroup(group)
         settings.remove("")
         settings.endGroup()
+
+
+# -- the headless CLI, over a real workspace ---------------------------------------------------
+# Shared by tests/cli/ and by module tests exercising their verbs. These build no Qt
+# objects; the CLI's no-Qt property itself is proven by test_architecture's subprocess
+# probes, not by anything in this process.
+
+
+@pytest.fixture
+def registry():
+    from dplanner.cli.command import CliRegistry
+    from dplanner.modules import default_cli_commands
+
+    registry = CliRegistry()
+    registry.register_all(default_cli_commands())
+    return registry
+
+
+@pytest.fixture
+def workspace(tmp_path):
+    from dplanner.core.storage.local import LocalStorage
+    from dplanner.domain.seed import create_product
+
+    root = tmp_path / "widget"
+    create_product(LocalStorage(root))
+    return root
+
+
+@pytest.fixture
+def cli(registry, workspace):
+    from io import StringIO
+
+    from dplanner.cli.main import run
+    from dplanner.modules import default_module_formats
+
+    def invoke(*argv, expect=0):
+        out, err = StringIO(), StringIO()
+        code = run(
+            registry, default_module_formats(), ["--workspace", str(workspace), *argv], out, err
+        )
+        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
+        return out.getvalue() + err.getvalue()
+
+    return invoke
+
+
+@pytest.fixture
+def cli_stdin(registry, workspace):
+    import sys
+    from io import StringIO
+
+    from dplanner.cli.main import run
+    from dplanner.modules import default_module_formats
+
+    def invoke(*argv, expect=0, stdin=""):
+        out, err = StringIO(), StringIO()
+        real = sys.stdin
+        sys.stdin = StringIO(stdin)
+        try:
+            code = run(
+                registry,
+                default_module_formats(),
+                ["--workspace", str(workspace), *argv],
+                out,
+                err,
+            )
+        finally:
+            sys.stdin = real
+        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
+        return out.getvalue() + err.getvalue()
+
+    return invoke

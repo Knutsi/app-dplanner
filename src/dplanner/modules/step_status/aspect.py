@@ -21,14 +21,6 @@ STATUSES: Final = ("pending", "in-progress", "done", "blocked")
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
-SPEC = AspectSpec(
-    id=MODULE_ID,
-    label="Status",
-    summary="Where a step stands: pending, in-progress, done, or blocked.",
-    data_format=DATA_FORMAT,
-)
-
-
 def read(step: Step) -> str:
     """The step's status. Absent or unreadable data reads as ``pending``, never as an error.
 
@@ -54,3 +46,13 @@ def summary(step: Step) -> str:
     """One short phrase for a step's row, or "" when the step is simply pending."""
     status = read(step)
     return "" if status == "pending" else status.replace("-", " ")
+
+
+# Last, because it names the pieces above: the one declaration everything reads.
+SPEC = AspectSpec(
+    id=MODULE_ID,
+    label="Status",
+    summary="Where a step stands: pending, in-progress, done, or blocked.",
+    data_format=DATA_FORMAT,
+    phrase=summary,
+)

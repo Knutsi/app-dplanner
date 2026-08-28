@@ -8,7 +8,7 @@ grouped by status, each group in the order the work can be done.
 from argparse import ArgumentParser, Namespace
 
 from dplanner.cli import CliCommand, CliContext
-from dplanner.cli.lookup import find_project, find_step
+from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.ordering import placed
 from dplanner.modules.step_status.aspect import MODULE_ID, STATUSES, read, write
@@ -26,37 +26,29 @@ def commands() -> list[CliCommand]:
         CliCommand(
             path=("status", "show"),
             summary="Where one step stands.",
-            configure=_one_step,
+            configure=step_arg,
             run=_show,
             examples=("dplanner status show 'Read the spec'",),
         ),
         CliCommand(
             path=("status", "clear"),
             summary="Back to pending, leaving no file behind.",
-            configure=_one_step,
+            configure=step_arg,
             run=_clear,
             examples=("dplanner status clear 'Read the spec'",),
         ),
         CliCommand(
             path=("status", "list"),
             summary="A project's steps grouped by status, in working order.",
-            configure=_one_project,
+            configure=project_arg,
             run=_list,
             examples=("dplanner status list discovery",),
         ),
     ]
 
 
-def _one_step(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
-
-
-def _one_project(parser: ArgumentParser) -> None:
-    parser.add_argument("project", help="project id, folder name, or part of its title")
-
-
 def _configure_set(parser: ArgumentParser) -> None:
-    _one_step(parser)
+    step_arg(parser)
     parser.add_argument("state", choices=STATUSES, help="where the step stands")
 
 

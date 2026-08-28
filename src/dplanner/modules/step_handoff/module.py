@@ -3,10 +3,10 @@
 from dataclasses import dataclass
 
 from dplanner.domain.model import Product
+from dplanner.domain.store import FilesFor
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_handoff.aspect import DATA_FORMAT, MODULE_ID, SPEC
-from dplanner.modules.step_handoff.handoff import FilesFor
 from dplanner.modules.step_handoff.section import HandoffSection
 
 

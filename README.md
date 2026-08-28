@@ -155,6 +155,7 @@ src/dplanner/
 │   ├── main.py              the argparse tree, built from the registry
 │   ├── lookup.py            an id, a folder name, or part of a title
 │   ├── aspects.py           `aspect list`
+│   ├── assets.py            `<noun> attach`/`assets` — the verb pair any file-carrying aspect offers
 │   ├── lint.py              `lint` — every module's checks over one workspace, one report
 │   ├── authoring.py         `step add` — one verb, each module contributing its flags
 │   └── skill.py             the agent skill, generated from the registry

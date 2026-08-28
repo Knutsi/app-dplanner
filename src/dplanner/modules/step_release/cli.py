@@ -7,7 +7,7 @@ derived from the same walk every other order comes from.
 from argparse import ArgumentParser, Namespace
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.lookup import find_project, find_step
+from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.ordering import placed
 from dplanner.modules.step_release.aspect import (
@@ -34,30 +34,22 @@ def commands() -> list[CliCommand]:
         CliCommand(
             path=("release", "clear"),
             summary="A step is no longer a release point; leaves no file behind.",
-            configure=_one_step,
+            configure=step_arg,
             run=_clear,
             examples=("dplanner release clear 'Ship the beta'",),
         ),
         CliCommand(
             path=("release", "list"),
             summary="A project's release points, in the order the work lands.",
-            configure=_one_project,
+            configure=project_arg,
             run=_list,
             examples=("dplanner release list discovery",),
         ),
     ]
 
 
-def _one_step(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
-
-
-def _one_project(parser: ArgumentParser) -> None:
-    parser.add_argument("project", help="project id, folder name, or part of its title")
-
-
 def _configure_set(parser: ArgumentParser) -> None:
-    _one_step(parser)
+    step_arg(parser)
     parser.add_argument(
         "--label",
         help="what to call it: MVP, v1.0, v2 (omitted: generated from the project's labels)",

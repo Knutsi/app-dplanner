@@ -18,14 +18,6 @@ MODULE_ID = "step_release"
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
-SPEC = AspectSpec(
-    id=MODULE_ID,
-    label="Release",
-    summary="Marks a step as a release point, labelled: MVP, v1.0, v2.",
-    data_format=DATA_FORMAT,
-)
-
-
 def read(step: Step) -> str:
     """The release label, or "" when the step is not a release."""
     entry = step.module_data.get(MODULE_ID)
@@ -78,3 +70,13 @@ def next_release_label(existing: Iterable[str]) -> str:
     version, prefix = max(numbered)
     bumped = (version[0] + 1, *(0 for _ in version[1:]))
     return prefix + ".".join(str(part) for part in bumped)
+
+
+# Last, because it names the pieces above: the one declaration everything reads.
+SPEC = AspectSpec(
+    id=MODULE_ID,
+    label="Release",
+    summary="Marks a step as a release point, labelled: MVP, v1.0, v2.",
+    data_format=DATA_FORMAT,
+    phrase=summary,
+)

@@ -7,9 +7,7 @@ import pytest
 
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import run
-from dplanner.core.storage.local import LocalStorage
 from dplanner.domain.model import Step
-from dplanner.domain.seed import create_product
 from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.step_release.aspect import (
     MODULE_ID,
@@ -76,13 +74,6 @@ def test_a_generated_label_never_collides():
 
 
 # -- the CLI -----------------------------------------------------------------------------------
-
-
-@pytest.fixture
-def workspace(tmp_path):
-    root = tmp_path / "widget"
-    create_product(LocalStorage(root))
-    return root
 
 
 @pytest.fixture

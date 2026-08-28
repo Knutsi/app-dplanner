@@ -17,13 +17,13 @@ from pathlib import Path, PurePosixPath
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor, StepAuthored
-from dplanner.cli.lint import FilesFor, LintCheck, LintFinding
-from dplanner.cli.lookup import find_project, find_step
+from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.core.text_diff import diff_hunks
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Product, Project, Step
-from dplanner.domain.store import ModuleFileArea
+from dplanner.domain.store import FilesFor, ModuleFileArea
 from dplanner.modules.spec.aspect import (
     MODULE_ID,
     SpecAttachment,
@@ -202,7 +202,7 @@ def commands() -> list[CliCommand]:
         CliCommand(
             path=("spec", "list"),
             summary="List a project's spec documents.",
-            configure=_one_project,
+            configure=project_arg,
             run=_list,
             examples=("dplanner spec list 'Search rewrite'",),
         ),
@@ -258,7 +258,7 @@ def commands() -> list[CliCommand]:
         CliCommand(
             path=("spec", "assets"),
             summary="List a project's spec assets: rendered pages and attached images.",
-            configure=_one_project,
+            configure=project_arg,
             run=_assets,
             examples=("dplanner spec assets 'Search rewrite'",),
         ),
@@ -309,12 +309,8 @@ def commands() -> list[CliCommand]:
 # -- parsers -----------------------------------------------------------------------------------
 
 
-def _one_project(parser: ArgumentParser) -> None:
-    parser.add_argument("project", help="project id, folder name, or part of its title")
-
-
 def _one_document(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("document", help="a spec document's name or filename")
 
 
@@ -331,13 +327,13 @@ def _configure_show(parser: ArgumentParser) -> None:
 
 
 def _configure_import(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("file", help="the document to copy in beside the project")
     parser.add_argument("--name", help="the document's name (default: a slug of the filename)")
 
 
 def _configure_attach(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("image", help="the file to copy in beside the specs")
 
 
@@ -365,7 +361,7 @@ def _configure_render(parser: ArgumentParser) -> None:
 
 
 def _configure_attach_to_step(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
+    step_arg(parser)
     parser.add_argument(
         "asset", nargs="+", help="asset ids from `dplanner spec assets`; several at once"
     )
@@ -375,17 +371,17 @@ def _configure_attach_to_step(parser: ArgumentParser) -> None:
 
 
 def _configure_unmark(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("requirement", help="the requirement id to remove")
 
 
 def _configure_requirements(parser: ArgumentParser) -> None:
-    _one_project(parser)
+    project_arg(parser)
     parser.add_argument("--document", help="only requirements marked in this document")
 
 
 def _configure_link(parser: ArgumentParser) -> None:
-    parser.add_argument("step", help="step id, folder name, or part of its title")
+    step_arg(parser)
     parser.add_argument(
         "requirement",
         nargs="+",

@@ -11,17 +11,13 @@ The file area is handed in as a function rather than a store, the way
 live, and this module works headless with no store at all.
 """
 
-from collections.abc import Callable
 from dataclasses import dataclass
 
 from dplanner.domain.assets import assets
 from dplanner.domain.model import Product, Step, StepId
 from dplanner.domain.ordering import placed
-from dplanner.domain.store import ModuleFileArea
+from dplanner.domain.store import FilesFor
 from dplanner.modules.step_handoff.aspect import MODULE_ID, read_note, read_scope
-
-# The seam: (step id, module id) -> that module's file area. ``ProductStore.files`` is one.
-FilesFor = Callable[[StepId, str], ModuleFileArea]
 
 
 @dataclass(frozen=True)

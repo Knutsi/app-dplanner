@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
 from dplanner.core.signals import Signal
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import NodeId, Product, StepId
-from dplanner.domain.store import ModuleFileArea
+from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionState
 from dplanner.framework.asset_gallery import AssetGallery
 from dplanner.framework.text_binding import TextBinding
@@ -148,7 +148,7 @@ class AgentSection(QWidget):
         undo: UndoService[Product],
         placeholder: str,
         prompt_parts: Callable[[StepId], Sequence[PromptPart]],
-        files: Callable[[NodeId, str], ModuleFileArea] | None,
+        files: FilesFor | None,
         run_state: Callable[[], ActionState],
         run: Callable[[], None],
         preview_state: Callable[[], ActionState],
@@ -551,7 +551,7 @@ class ProjectInstructionCard(QWidget):
         self,
         product: Product,
         undo: UndoService[Product],
-        files: Callable[[NodeId, str], ModuleFileArea] | None,
+        files: FilesFor | None,
     ) -> None:
         super().__init__()
         self._product = product
