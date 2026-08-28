@@ -73,6 +73,17 @@ class CanvasVerbs:
                 state=self._can_connect,
                 run=self._connect,
             ),
+            ActionSpec(
+                id="steps.reveal",
+                # Order 5: before the Go submenu — it is the "take me there" of this group.
+                label="Re&veal in Graph",  # &v: R is Rename's.
+                menu="Step",
+                group="navigate",
+                order=5,
+                tip="Show this step on its project's canvas",
+                state=self._can_reveal,
+                run=self._reveal,
+            ),
             *[
                 ActionSpec(
                     id=f"steps.go_{name}",
@@ -130,6 +141,17 @@ class CanvasVerbs:
             return DISABLED
         return ENABLED if self.library.project(project_id).steps else DISABLED
 
+    def _can_reveal(self, context: Context) -> ActionState:
+        """One selected, resolvable step — deliberately not gated on a current canvas.
+
+        The verb's home is the order table's and the board's context menus, where no canvas
+        is current; ``select_step`` opens the step's project tab on its way there.
+        """
+        step_id = context.selected_entity("step")
+        if step_id is None or not self.library.has(step_id):
+            return DISABLED
+        return ENABLED
+
     def _can_go(self, name: str) -> Callable[[Context], ActionState]:
         def state(context: Context) -> ActionState:
             return ENABLED if self._neighbour(context, name) is not None else DISABLED
@@ -175,6 +197,11 @@ class CanvasVerbs:
         return None if best is None else best[1]
 
     # -- run -----------------------------------------------------------------------------------
+
+    def _reveal(self, context: Context) -> None:
+        step_id = context.selected_entity("step")
+        if step_id is not None and self.library.has(step_id):
+            self.select_step(step_id)
 
     def _connect(self, context: Context) -> None:
         self.set_connect_mode(context.edge("mode") != mode_uri(CONNECT))

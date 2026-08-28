@@ -31,8 +31,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtGui import QIcon, QMouseEvent
 from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from dplanner.core.signals import Signal
@@ -49,11 +49,20 @@ class IndexSegmentView(Protocol):
 
     The panel creates the folder item and hands it over; from then on the segment owns its
     contents. Every hook is optional in spirit — a segment with nothing to say returns
-    nothing — but all four exist so the panel never has to guess.
+    nothing — but all five exist so the panel never has to guess.
     """
 
     def selection_nodes(self, items: Sequence[QTreeWidgetItem]) -> Sequence[ContextNode]:
         """The context nodes for whichever of this segment's rows are selected."""
+        ...
+
+    def clicked(self, item: QTreeWidgetItem) -> None:
+        """The user plainly left-clicked one of this segment's rows — a glance, not a keep.
+
+        The panel has already filtered out right-clicks and modified clicks (a
+        Ctrl/Shift-click is building a selection), so a segment only ever hears the
+        gesture that may open a preview.
+        """
         ...
 
     def activated(self, item: QTreeWidgetItem) -> None:
@@ -125,8 +134,14 @@ class IndexPanel(QWidget):
         layout.addWidget(self._tree)
 
         self._tree.itemActivated.connect(self._on_activated)
+        self._tree.itemClicked.connect(self._on_clicked)
         self._tree.itemSelectionChanged.connect(self._on_selection)
         self._tree.customContextMenuRequested.connect(self._on_context_menu)
+        # itemClicked fires for every button and says nothing about modifiers, so the press
+        # is remembered here and _on_clicked forwards only the plain left-click.
+        self._press_button = Qt.MouseButton.NoButton
+        self._press_modifiers = Qt.KeyboardModifier.NoModifier
+        self._tree.viewport().installEventFilter(self)
 
         self._context = context
         for segment in segments.segments():
@@ -173,10 +188,28 @@ class IndexPanel(QWidget):
             item = item.parent()
         return None
 
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt override
+        if watched is self._tree.viewport() and event.type() == QEvent.Type.MouseButtonPress:
+            assert isinstance(event, QMouseEvent)
+            self._press_button = event.button()
+            self._press_modifiers = event.modifiers()
+        return super().eventFilter(watched, event)
+
     def _on_activated(self, item: QTreeWidgetItem, _column: int) -> None:
         owner = self._owner_of(item)
         if owner is not None and item is not self._roots[owner]:
             self._views[owner].activated(item)
+
+    def _on_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
+        if self._press_button != Qt.MouseButton.LeftButton:
+            return
+        if self._press_modifiers & (
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+        ):
+            return  # Building a multi-selection, not glancing at a row.
+        owner = self._owner_of(item)
+        if owner is not None and item is not self._roots[owner]:
+            self._views[owner].clicked(item)
 
     def _on_selection(self) -> None:
         """Collect every segment's nodes and publish the selection scope exactly once."""

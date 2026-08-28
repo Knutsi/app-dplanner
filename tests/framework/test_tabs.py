@@ -419,3 +419,93 @@ def test_tab_titles_follow_a_theme_change(themed, app, host):
 
     apply_theme(app, LIGHT)
     assert tab_bar(host).tabTextColor(0).name() == LIGHT.text_primary
+
+
+# -- preview tabs ------------------------------------------------------------------------------
+
+
+def test_a_preview_open_is_marked_as_the_preview(host):
+    first = host.open("thing", "a", preview=True)
+    assert host.is_preview(first)
+    assert host.current_activity() is first
+
+
+def test_the_next_preview_replaces_the_old_one(host):
+    first = host.open("thing", "a", preview=True)
+    second = host.open("thing", "b", preview=True)
+
+    assert first.closed == 1
+    assert host.activities() == [second]
+    assert host.is_preview(second)
+
+
+def test_replacing_the_preview_announces_once(host):
+    host.open("thing", "a", preview=True)
+    seen = announcements(host)
+    second = host.open("thing", "b", preview=True)
+    assert seen == [second.uri]
+
+
+def test_previewing_something_already_open_is_a_plain_focus(host):
+    """The trailing click of a double-click lands here too, which is why it must change
+    nothing: the pinned tab stays pinned and the preview stays where it was."""
+    pinned = host.open("thing", "a")
+    preview = host.open("thing", "b", preview=True)
+
+    assert host.open("thing", "a", preview=True) is pinned
+    assert host.current_activity() is pinned
+    assert not host.is_preview(pinned)
+    assert host.is_preview(preview)
+    assert len(host.activities()) == 2
+
+
+def test_re_previewing_the_preview_keeps_it_a_preview(host):
+    preview = host.open("thing", "a", preview=True)
+    assert host.open("thing", "a", preview=True) is preview
+    assert host.is_preview(preview)
+
+
+def test_a_non_preview_open_pins_the_preview(host):
+    """The double-click path: activation re-opens without the flag, and that is the keep."""
+    preview = host.open("thing", "a", preview=True)
+    assert host.open("thing", "a") is preview
+    assert not host.is_preview(preview)
+
+    # The slot is free again: the next preview opens beside the pinned tab.
+    second = host.open("thing", "b", preview=True)
+    assert len(host.activities()) == 2
+    assert host.is_preview(second)
+
+
+def test_closing_the_preview_clears_the_slot(host):
+    preview = host.open("thing", "a", preview=True)
+    host.close_activity(preview)
+
+    second = host.open("thing", "b", preview=True)
+    assert host.activities() == [second]
+    assert host.is_preview(second)
+
+
+def test_moving_the_preview_to_another_group_pins_it(host):
+    host.open("thing", "a")
+    preview = host.open("thing", "b", preview=True)
+    host.move_current_right()
+    assert not host.is_preview(preview)
+
+
+def test_dragging_the_preview_within_its_bar_pins_it(host):
+    host.open("thing", "a")
+    preview = host.open("thing", "b", preview=True)
+    host.reorder_current(0)
+    assert not host.is_preview(preview)
+
+
+def test_the_tab_bar_wears_the_preview_mark(host):
+    """The bar knows which tab is the preview — the italics follow that one index —
+    and forgets it when the preview is pinned."""
+    host.open("thing", "a")
+    host.open("thing", "b", preview=True)
+    assert tab_bar(host)._preview_index == 1
+
+    host.open("thing", "b")
+    assert tab_bar(host)._preview_index == -1

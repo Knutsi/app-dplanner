@@ -2,7 +2,7 @@
 
 Pure rendering — the domain's :class:`~dplanner.domain.progression.Progression` arrives
 computed and the board redraws wholesale, so nothing here can disagree with the model.
-Callbacks carry every gesture out: selecting, revealing, the context menu and the Run
+Callbacks carry every gesture out: selecting, opening details, the context menu and the Run
 Agent button all belong to the activity, which is what keeps this file free of commands
 and of other modules' names.
 
@@ -197,7 +197,7 @@ class StepCard(QFrame):
         *,
         dimmed: bool = False,
         select: Callable[[StepId], None],
-        reveal: Callable[[StepId], None],
+        details: Callable[[StepId], None],
         menu: Callable[[StepId, QPoint], None],
         run: RunControl | None = None,
         parent: QWidget | None = None,
@@ -207,7 +207,7 @@ class StepCard(QFrame):
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.step_id = step_id
         self._select = select
-        self._reveal = reveal
+        self._details = details
         self._menu = menu
 
         layout = QVBoxLayout(self)
@@ -252,7 +252,7 @@ class StepCard(QFrame):
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
         if event.button() == Qt.MouseButton.LeftButton:
-            self._reveal(self.step_id)
+            self._details(self.step_id)
         super().mouseDoubleClickEvent(event)
 
 
@@ -330,14 +330,14 @@ class ProgressionBoard(QWidget):
         self,
         *,
         select: Callable[[StepId], None],
-        reveal: Callable[[StepId], None],
+        details: Callable[[StepId], None],
         menu: Callable[[StepId, QPoint], None],
         run_control: Callable[[StepId], RunControl | None],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._select = select
-        self._reveal = reveal
+        self._details = details
         self._menu = menu
         self._run_control = run_control
 
@@ -374,7 +374,7 @@ class ProgressionBoard(QWidget):
                 detail,
                 dimmed=dimmed,
                 select=self._select,
-                reveal=self._reveal,
+                details=self._details,
                 menu=self._menu,
                 run=self._run_control(step_id) if with_run else None,
             )

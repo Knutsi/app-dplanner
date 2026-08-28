@@ -10,7 +10,9 @@ The segment publishes what is selected and opens what is activated. A project ro
 folder: double-clicking it folds and unfolds (Qt's own double-click behaviour — activation
 adds nothing, so nothing here fights it). What *opens* is an entry row, through the
 ``entry.open`` callback the composition root supplied; the segment never learns what an
-editor is.
+editor is. A plain click on an entry opens the same surface as a *preview* tab through
+``entry.open_preview`` — the glance that VS Code's next glance replaces — and activation
+is what keeps it.
 """
 
 from collections.abc import Callable, Sequence
@@ -57,6 +59,9 @@ class ProjectEntry:
     label: str
     # Show this entry's surface for a project. Activation calls it, nothing else does.
     open: Callable[[NodeId], None]
+    # The same surface as a preview tab — what a single click opens. None is an entry
+    # whose surface has no preview form; a click then only selects the row.
+    open_preview: Callable[[NodeId], None] | None = None
     icon: Callable[[str], QIcon] | None = None
     # The MENU_STRUCTURE menu the row's right-click renders; None means no menu.
     menu: str | None = None
@@ -110,6 +115,15 @@ class ProjectsSegment:
             if uri not in uris:
                 uris.append(uri)
         return [ContextNode(uri) for uri in uris]
+
+    def clicked(self, item: QTreeWidgetItem) -> None:
+        kind, _node_id = self._identity(item)
+        if kind == "entry":
+            entry = self._entry_of(item)
+            project_id = self._entry_project(item)
+            if entry and project_id and entry.open_preview is not None:
+                entry.open_preview(project_id)
+        # A project row: a click selects it, and that is the whole gesture.
 
     def activated(self, item: QTreeWidgetItem) -> None:
         kind, _node_id = self._identity(item)

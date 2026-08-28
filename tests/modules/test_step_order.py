@@ -260,10 +260,24 @@ def test_selecting_a_step_publishes_it_so_the_step_verbs_target_it(services, pro
     assert services.actions.spec("steps.rename").state(context).enabled
 
 
-def test_activating_a_step_reveals_it_in_the_graph(services, project, tab):
-    """The other seam: a callback from the composition root, so neither module imports the
-    other."""
+def test_activating_a_step_opens_its_details(services, project, tab, monkeypatch):
+    """The other seam: the row runs the same ``steps.details`` verb the Step menu offers,
+    against a context naming exactly that row's step."""
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    shown = []
+    monkeypatch.setattr(
+        StepDetailsDialog, "exec", lambda self: shown.append(self.panel.current_step_id())
+    )
     tab.table.cellActivated.emit(0, 1)
+    assert shown == [project.steps[0].id]
+
+
+def test_reveal_in_graph_shows_the_step_on_the_canvas(services, project, tab):
+    """Double-click no longer reveals, so the verb has to: it opens the project tab and
+    selects the step there, from a table with no canvas in sight."""
+    tab.table.selectRow(0)
+    services.actions.run("steps.reveal", services.context.current())
 
     graph = next(
         a for a in services.tabs.activities() if a.uri.startswith("app://activity/project")

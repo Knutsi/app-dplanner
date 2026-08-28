@@ -512,15 +512,15 @@ class ProjectEditorModule:
             set_region_mode=self._set_region_mode,
         )
 
-    def open(self, project_id: NodeId) -> None:
+    def open(self, project_id: NodeId, *, preview: bool = False) -> None:
         """Show a project in a tab. Handed to the index segment as a plain function."""
-        self._deps.tabs.open(PROJECT_KIND, project_id)
+        self._deps.tabs.open(PROJECT_KIND, project_id, preview=preview)
 
     def reveal(self, step_id: StepId) -> None:
         """Show the step's project and select it there.
 
-        The capability the composition root hands to anything that lists steps — the order
-        view today — so it can say "show me this one" without knowing what a canvas is.
+        What the ``steps.reveal`` verb does, and how the Go movement verbs land: any view
+        that lists steps reaches this through the registry without knowing what a canvas is.
         """
         if not self._deps.library.has(step_id):
             return

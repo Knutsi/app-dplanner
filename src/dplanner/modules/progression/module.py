@@ -12,8 +12,8 @@ Four seams, all established elsewhere in this application:
   the composition root from the aspects' Qt-free readers — this module never learns what
   either is stored as.
 - **Selecting a card publishes the selection scope**, so the Step menu's verbs target it.
-- **Activating one reveals it in the graph**, through a callback — the same seam as the
-  order table's rows.
+- **Activating one opens its details**, by running ``steps.details`` against a context
+  naming exactly that card's step — the same seam the Run button already uses.
 - **Run Agent arrives as a state and a verb** (``agent_state``, ``agent_run``), closed
   over the real action by the composition root. The button renders the gate's own
   answer — a disabled one wears the reason — and this module never learns the agent
@@ -58,10 +58,6 @@ CAPTION_GAP = 6
 BLOCK_GAP = 12
 
 
-def _no_reveal(_step_id: StepId) -> None:
-    pass
-
-
 def _pending(_step: Step) -> str:
     return "pending"
 
@@ -85,8 +81,6 @@ class ProgressionDeps:
     status_for: Callable[[Step], str] = field(default=_pending)
     # A step's estimated days, for the weighted header line. Same seam, same owner rule.
     days_for: Callable[[Step], float | None] = field(default=_no_days)
-    # Show a step in whatever edits graphs. This module never learns that an editor exists.
-    reveal_step: Callable[[StepId], None] = field(default=_no_reveal)
     # The Run Agent gate and verb, closed over the real action. None is a build without
     # an agent: the button is absent from the board, not disabled.
     agent_state: Callable[[Context], ActionState] | None = None
@@ -125,7 +119,7 @@ class ProgressionActivity(EntityActivity):
 
         self.board = ProgressionBoard(
             select=self._publish,
-            reveal=deps.reveal_step,
+            details=self._open_details,
             menu=self._on_context_menu,
             run_control=self._run_control,
             parent=content,
@@ -189,6 +183,12 @@ class ProgressionActivity(EntityActivity):
         """
         return Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)})
 
+    def _open_details(self, step_id: StepId) -> None:
+        # Select first, so the window agrees about what the dialog is showing; then run the
+        # verb against this card's own step, the same way the Run button does.
+        self._publish(step_id)
+        self._deps.actions.run("steps.details", self._step_context(step_id))
+
     def _run_control(self, step_id: StepId) -> RunControl | None:
         deps = self._deps
         if deps.agent_state is None:
@@ -216,8 +216,8 @@ class ProgressionModule:
     def __init__(self, deps: ProgressionDeps) -> None:
         self._deps = deps
 
-    def open(self, project_id: NodeId) -> None:
-        self._deps.tabs.open(PROGRESSION_KIND, project_id)
+    def open(self, project_id: NodeId, *, preview: bool = False) -> None:
+        self._deps.tabs.open(PROGRESSION_KIND, project_id, preview=preview)
 
     def register(self) -> None:
         deps = self._deps

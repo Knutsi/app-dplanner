@@ -143,6 +143,29 @@ a framework spec; and **expansion state survives a rebuild** through shared help
 rebuilding on change is the normal case and that bookkeeping is what every segment would
 otherwise copy.
 
+### A click is a glance: preview tabs
+
+A single click on an entry row opens its surface as a **preview tab** — VS Code's
+arrangement, adopted whole rather than reinvented. The host (`framework/tabs.py`) keeps at
+most one preview; the next preview replaces it, and a deliberate act keeps it: activating
+the row again (a non-preview open of the same URI), or moving the tab. A preview-open of
+something already open is a plain focus that changes nothing — the tab you kept stays kept,
+the preview stays where it was.
+
+Two consequences fell out of making every step idempotent. **The double-click needs no
+timer**: click one previews, click two's activation pins, and the trailing click event Qt
+fires after an activation lands on "already open → focus" and disturbs nothing. And **"jump
+to the thing that is open" needed no code at all** — the host already deduplicates by URI,
+so a click on an entry whose tab exists anywhere simply focuses it, in whichever pane it
+lives. The preview's mark is an italic title, painted by the tab bar itself so the host's
+active-pane dimming keeps working underneath it.
+
+The gesture reaches the segment through a fifth `IndexSegmentView` hook, `clicked`, and the
+panel forwards only plain left-clicks — a Ctrl/Shift-click is building a selection, and a
+right-click is asking for a menu. On the entry it is `open_preview`, a second callback
+beside `open`, both closed over the owning module's `open(..., preview=…)` by the
+composition root; `None` is an entry whose surface has no preview form.
+
 ## How a gesture becomes a change on screen
 
 This is the application's central mechanism, and everything else here is a consequence of it.
@@ -350,6 +373,17 @@ and making the project form a peer of the aspects would force every aspect edito
 exists to delete. It is a peer of the *panel* instead: a second panel in the same area, with its
 own answer to `show_context`. Both ask `Context.selected_entity("step")`, so "there is exactly
 one step in front of the user" has one definition rather than two that can drift apart.
+
+**The same panel, briefly modal.** `steps.details` puts a second `StepPanel` in a dialog —
+what every view's double-click on a step runs. That is not a breach of "one panel, not one
+per tab": the rule forbids a panel *per surface*, where N tabs meant N copies on screen at
+once; the dialog is one transient host the user summoned, disposed when it closes. Building
+a second stack is the section contract's sanctioned use — one extension instance per host —
+and the project panel's cards were already the proof. The dialog never reads the context:
+it is opened *about* a step and stays on it, driven by `show_step` directly, which is what
+lets a table row open it for the row under the cursor even when that pane's publish was
+suppressed. The double-click the tables used to spend on reveal-in-graph moved to the Step
+menu as `steps.reveal`, where every view's right-click already renders it.
 
 **The project panel hosts the same contract, as cards.** A module with something to say about
 a *project* registers an `InspectorSection` into `services.detail_cards` — the registry type

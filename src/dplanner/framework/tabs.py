@@ -25,7 +25,18 @@ place.
 from collections.abc import Callable
 
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt
-from PySide6.QtWidgets import QApplication, QSplitter, QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtGui import QFont, QPaintEvent
+from PySide6.QtWidgets import (
+    QApplication,
+    QSplitter,
+    QStyle,
+    QStyleOptionTab,
+    QStylePainter,
+    QTabBar,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from dplanner.core.signals import Signal
 from dplanner.framework.activity import Activity
@@ -35,6 +46,52 @@ type ActivityFactory = Callable[[str | None], Activity]
 
 # Three is enough to be useful and few enough that every pane stays wide enough to work in.
 MAX_GROUPS = 3
+
+
+class _PreviewTabBar(QTabBar):
+    """A tab bar that can paint one tab's title in italics — the preview tab's mark.
+
+    With no preview in the bar it defers wholly to Qt's own painting, so the ordinary case
+    carries no custom-paint risk. With one, every tab is drawn through the style with the
+    same option ``initStyleOption`` fills — which carries ``setTabTextColor``, so the
+    host's active/inactive dimming keeps working underneath the italics.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._preview_index = -1
+
+    def set_preview_index(self, index: int) -> None:
+        if index != self._preview_index:
+            self._preview_index = index
+            self.update()
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 - Qt override
+        if not 0 <= self._preview_index < self.count():
+            super().paintEvent(event)
+            return
+        painter = QStylePainter(self)
+        italic = QFont(self.font())
+        italic.setItalic(True)
+        # The selected tab is drawn last so its shape overlaps its neighbours, the way the
+        # native painting layers them.
+        indexes = [i for i in range(self.count()) if i != self.currentIndex()]
+        if self.currentIndex() != -1:
+            indexes.append(self.currentIndex())
+        option = QStyleOptionTab()
+        for index in indexes:
+            self.initStyleOption(option, index)
+            painter.setFont(italic if index == self._preview_index else self.font())
+            painter.drawControl(QStyle.ControlElement.CE_TabBarTab, option)
+
+
+class _TabGroup(QTabWidget):
+    """A QTabWidget wearing a :class:`_PreviewTabBar` — ``setTabBar`` is protected, so
+    installing one takes a subclass."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setTabBar(_PreviewTabBar(self))
 
 
 class TabHost(QWidget):
@@ -51,6 +108,9 @@ class TabHost(QWidget):
         self._current: Activity | None = None
         self._announced: tuple[QTabWidget, Activity | None] | None = None
         self._suspended = 0
+        # At most one preview tab in the host: the VS Code arrangement, where a glance
+        # opens into a slot the next glance reuses, and only a deliberate act keeps it.
+        self._preview: Activity | None = None
 
         self.activity_changed: Signal[Activity | None] = Signal()
         # A tab was right-clicked, and it is now the current one. Carries where to pop up.
@@ -79,15 +139,23 @@ class TabHost(QWidget):
 
     # -- opening ---------------------------------------------------------------------------
 
-    def open(self, kind: str, target: str | None = None) -> Activity:
+    def open(self, kind: str, target: str | None = None, *, preview: bool = False) -> Activity:
         """Open (or focus) the activity identified by ``kind`` and ``target``.
 
         Dedupe is global: one tab per URI across every group, so opening something already
         open brings you to it rather than making a second copy.
+
+        ``preview=True`` opens a *preview* tab — the next preview replaces it, and a
+        deliberate act keeps it: a non-preview open of its URI, or moving its tab, pins it.
+        A preview-open of something already open is a plain focus and changes nothing —
+        which is also what makes the double-click sequence work with no timer: the first
+        click previews, the second's activation pins, and any trailing click re-focuses.
         """
         uri = activity_uri(kind, target)
         existing = self._by_uri(uri)
         if existing is not None:
+            if not preview:
+                self._pin(existing)
             self.focus(existing)
             return existing
 
@@ -98,14 +166,41 @@ class TabHost(QWidget):
         if duplicate is not None:
             activity.close()
             activity.widget.deleteLater()
+            if not preview:
+                self._pin(duplicate)
             self.focus(duplicate)
             return duplicate
 
-        self._activities[activity.widget] = activity
-        index = self._active.addTab(activity.widget, activity.title)
-        self._active.setCurrentIndex(index)
+        self._suspended += 1
+        try:
+            if preview and self._preview is not None:
+                # Replace, not accumulate: closing the old preview and adding the new one
+                # is a single move to the user, so it announces once, below.
+                found = self._locate(self._preview.widget)
+                if found is not None:
+                    self._close(*found)
+            self._activities[activity.widget] = activity
+            index = self._active.addTab(activity.widget, activity.title)
+            self._active.setCurrentIndex(index)
+            if preview:
+                self._preview = activity
+        finally:
+            self._suspended -= 1
         self._announce()
         return activity
+
+    def is_preview(self, activity: Activity) -> bool:
+        return activity is self._preview
+
+    def _pin(self, activity: Activity) -> None:
+        """Make a preview permanent. A no-op for anything that is not the preview.
+
+        Repaints itself: pinning the tab the user is already on changes nothing the
+        announcement would notice, and the italics must still go.
+        """
+        if self._preview is activity:
+            self._preview = None
+            self._paint_active()
 
     def focus(self, activity: Activity) -> bool:
         """Make ``activity``'s tab current, in whichever group holds it. False if closed."""
@@ -221,7 +316,7 @@ class TabHost(QWidget):
     # -- internals ---------------------------------------------------------------------------
 
     def _new_group(self, position: int) -> QTabWidget:
-        group = QTabWidget(self)
+        group = _TabGroup(self)
         group.setObjectName("ActivityTabs")
         group.setMovable(True)
         group.setTabsClosable(True)
@@ -232,6 +327,7 @@ class TabHost(QWidget):
         group.tabBar().customContextMenuRequested.connect(
             lambda position, g=group: self._on_tab_menu(g, position)
         )
+        group.tabBar().tabMoved.connect(lambda _frm, to, g=group: self._on_tab_moved(g, to))
         self._groups.insert(position, group)
         self._splitter.insertWidget(position, group)
         self._even_sizes()
@@ -274,6 +370,10 @@ class TabHost(QWidget):
         if widget is None:
             return
         title = source.tabText(index)
+        activity = self._activities.get(widget)
+        if activity is not None and activity is self._preview:
+            # Moving a tab to another pane is arranging the window around it — keeping it.
+            self._preview = None
         position = self._groups.index(source) + offset
         self._suspended += 1
         try:
@@ -295,11 +395,26 @@ class TabHost(QWidget):
             self._suspended -= 1
         self._announce()
 
+    def _on_tab_moved(self, group: QTabWidget, to: int) -> None:
+        """A drag within a bar. Dragging the preview itself is keeping it — that pins.
+
+        Any drag also shifts its neighbours' indexes, so the preview mark is re-derived
+        either way.
+        """
+        widget = group.widget(to)
+        activity = self._activities.get(widget) if widget is not None else None
+        if activity is not None and activity is self._preview:
+            self._pin(activity)
+        else:
+            self._paint_active()
+
     def _close(self, group: QTabWidget, index: int) -> None:
         widget = group.widget(index)
         if widget is None:
             return
         activity = self._activities.pop(widget, None)
+        if activity is not None and activity is self._preview:
+            self._preview = None
         self._suspended += 1
         try:
             # removeTab fires currentChanged (handling deactivation) when the current tab
@@ -404,8 +519,14 @@ class TabHost(QWidget):
         faded.setAlpha(110)
         for group in self._groups:
             colour = primary if group is self._active else faded
+            bar = group.tabBar()
             for index in range(group.count()):
-                group.tabBar().setTabTextColor(index, colour)
+                bar.setTabTextColor(index, colour)
+            if isinstance(bar, _PreviewTabBar):
+                # The preview mark rides the same sweep, so there is one refresh path.
+                bar.set_preview_index(
+                    -1 if self._preview is None else group.indexOf(self._preview.widget)
+                )
 
     def reorder_current(self, position: int) -> None:
         """Move the current tab to ``position`` within its own bar — what a drag does.
