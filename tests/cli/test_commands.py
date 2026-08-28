@@ -70,6 +70,32 @@ def test_an_explicit_workspace_wins(workspace, tmp_path):
     assert find_workspace(str(workspace), start=tmp_path).path == workspace
 
 
+def test_a_pointer_file_reaches_a_workspace_the_walk_never_enters(workspace, tmp_path):
+    """A plan in `dplanner-workspace/` under a repo root is invisible to an upward walk;
+    a one-line `.dplanner` at the root is how the repo says where it is."""
+    repo = tmp_path / "repo"
+    deep = repo / "src" / "somewhere"
+    deep.mkdir(parents=True)
+    (repo / ".dplanner").write_text(f"{workspace}\n")  # absolute path
+    assert find_workspace(start=deep).path == workspace
+
+    (repo / ".dplanner").write_text("../widget\n")  # relative to the pointer's directory
+    assert find_workspace(start=deep).path == workspace
+
+
+def test_a_real_workspace_wins_over_a_pointer_beside_it(workspace, tmp_path):
+    (workspace / ".dplanner").write_text(str(tmp_path / "elsewhere"))
+    assert find_workspace(start=workspace).path == workspace
+
+
+def test_a_dangling_pointer_is_an_error_not_a_fallthrough(tmp_path):
+    from dplanner.cli.command import CliError
+
+    (tmp_path / ".dplanner").write_text("nowhere")
+    with pytest.raises(CliError, match="points at"):
+        find_workspace(start=tmp_path)
+
+
 # -- reading -----------------------------------------------------------------------------------
 
 

@@ -60,7 +60,9 @@ does not exist; `dplanner skill status` says whether the installed copy matches 
 and *Tools ▸ Install Agent Skill…* does the same from the window.
 
 Commands find the product by walking up from the working directory for `product.json`, so an
-agent already sitting in the checkout needs no configuration. Everything takes `--json`.
+agent already sitting in the checkout needs no configuration. A plan kept in a subdirectory
+the walk would never enter is reachable through a one-line `.dplanner` pointer file at the
+repository root — see `FORMAT.md`. Everything takes `--json`.
 
 ```bash
 dplanner project list

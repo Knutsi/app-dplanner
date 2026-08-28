@@ -83,6 +83,17 @@ mean different things to different people. **A kind this build does not know is 
 written back untouched**, so a colleague's newer link survives an older build opening the
 file.
 
+### The `.dplanner` pointer file
+
+The CLI finds a product by walking up from the working directory for `product.json`. A plan
+kept in a subdirectory the walk would never enter — `dplanner-workspace/` beside the code,
+say — is reachable through a `.dplanner` file: one line, the workspace's path relative to
+the pointer's own directory (an absolute path also works). A `product.json` in the same
+directory wins over a pointer beside it, and a pointer that leads to no `product.json` is an
+error rather than a fallthrough — the walk never quietly acts on some other workspace above
+one the user explicitly named. The file is meant to be committed, so everyone who clones the
+repository — people and agents alike — gets the discovery for free.
+
 ### Changing it
 
 The chain lives in `domain/migrations.py` and the engine in `core/formats.py`. DPlanner is
