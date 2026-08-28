@@ -266,8 +266,12 @@ class SpecsActivity(ActivityBase):
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         keep = self._current_name()
-        documents, requirements = read_index(self._project())
-        marked = {doc.name: sum(r.document == doc.name for r in requirements) for doc in documents}
+        index = read_index(self._project())
+        documents = index.documents
+        marked = {
+            doc.name: sum(r.document == doc.name for r in index.requirements)
+            for doc in documents
+        }
         self.list.blockSignals(True)
         self.list.clear()
         for doc in documents:
@@ -294,7 +298,7 @@ class SpecsActivity(ActivityBase):
 
     def _show_current(self) -> None:
         name = self._current_name()
-        documents, _requirements = read_index(self._project())
+        documents = read_index(self._project()).documents
         document = next((doc for doc in documents if doc.name == name), None)
         if document is None:
             self._say("No spec documents yet — add one, or `dplanner spec import` from a shell.")

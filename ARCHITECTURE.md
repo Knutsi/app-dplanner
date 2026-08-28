@@ -544,6 +544,29 @@ client; it is useful to people and to CI; and it needs no process lifecycle. If 
 Claude-specific integration is wanted later, `dplanner mcp serve` is a thin adapter over the
 same registry and introduces no second description of any command.
 
+## Lint belongs to no feature
+
+`dplanner project lint` asks whether a plan is complete enough to hand to an agent — and
+completeness is a fact about *every* feature at once: an unestimated step is estimation's
+concern, an uncited requirement is the spec's, a dangling edge is the graph's. No module can
+own that question without importing the others, so the verb lives in `cli/lint.py` beside
+`cli/aspects.py`, whose rationale it repeats: a command that answers a question *about* the
+features takes them as arguments.
+
+The split is what makes it right rather than merely legal. `cli/lint.py` owns the shapes
+(`LintFinding`, `LintCheck`), the report and the exit code; each owning module's Qt-free
+`cli.py` exports `lint_checks()`, so the knowledge of *what missing looks like* — and which
+verb closes the gap, which every message names — stays with the module that owns the aspect.
+`default_cli_commands()` assembles the list, and its order is the report's order. The
+alternative — a verb inside `projects/cli.py` with injected predicates — would put a
+cross-feature report inside one feature and grow that module's signature with facts that are
+not its business.
+
+Two deliberate behaviours: findings exit 1, so an agent gates a handover on lint exactly as
+it gates on a test suite; and the conditional checks (spec citations only where requirements
+exist, a start date only where estimates do) keep the report an obligation list rather than
+noise about features a project never adopted.
+
 ## Deriving rather than storing
 
 `domain/ordering.py` answers "what order can this be done in" as a pure function, and the
@@ -638,7 +661,19 @@ CLI instead (`status set`, `handoff set`), which the two-writers machinery alrea
 The briefing opens with the **project's standing instruction** — the same module's prose on
 the project node, edited in the project panel's Agent card and in the Agent tab's Project
 part (two bindings over one field, one undo stack) — ahead of the step's own instruction and
-the inherited context. Files attached at either level are **staged into the per-run
+the inherited context.
+
+The briefing is deliberately **self-contained**: between the standing instruction and the
+step's own sit the step's facts — its description (with attached figures), the requirements
+it implements (titles *and* quotes, so the agent reads the obligation rather than chasing an
+id), and the branch or PR the work lands on. The agent module renders these as opaque
+blocks; the composition root words them, exactly as it words the preamble and epilogue,
+because each names another module's vocabulary. Two block kinds, two framings: *parts* are
+context handed forward from earlier steps (`### From "…"`), *sections* are facts about this
+step (`## …`). One builder per kind lives in `modules/__init__.py` and both surfaces — Run
+Agent and `dplanner agent prompt` — call the same two functions, so the window and the CLI
+cannot brief a step two ways. An executing agent needs `agent prompt` and nothing else;
+needing five verbs to reconstruct a briefing was the failure this replaces. Files attached at either level are **staged into the per-run
 directory** beside `prompt.md` and referenced by their staged absolute paths: the agent runs
 in the checkout, not the workspace, so a workspace-relative path in the prompt would point at
 nothing it can reach. Asset names are content-addressed, so staging is a flat, collision-safe

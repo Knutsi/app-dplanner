@@ -6,7 +6,7 @@ verbs, and the Specs entry row under a project renders that same menu.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -148,7 +148,7 @@ class SpecModule:
         name = context.selected_entity(DOCUMENT_ENTITY)
         if name is None:
             return None
-        documents, _requirements = read_index(self._deps.product.project(project_id))
+        documents = read_index(self._deps.product.project(project_id)).documents
         document = next((doc for doc in documents if doc.name == name), None)
         return None if document is None else (project_id, document)
 
@@ -174,11 +174,11 @@ class SpecModule:
             return
 
         project = self._deps.product.project(project_id)
-        documents, requirements = read_index(project)
+        index = read_index(project)
         today = datetime.now(UTC).date().isoformat()
         documents, _document, outcome = import_document(
             self._deps.files(project_id),
-            documents,
+            index.documents,
             default_name(source.name),
             data,
             source.name,
@@ -186,7 +186,9 @@ class SpecModule:
         )
         if outcome != "unchanged":
             self._deps.undo.push(
-                SetModuleDataCommand(project_id, MODULE_ID, write_index(documents, requirements))
+                SetModuleDataCommand(
+                    project_id, MODULE_ID, write_index(replace(index, documents=documents))
+                )
             )
         self.open(project_id)
 
@@ -195,8 +197,10 @@ class SpecModule:
         if found is None:
             return  # The state gate already prevents this; stay honest anyway.
         project_id, document = found
-        documents, requirements = read_index(self._deps.product.project(project_id))
-        documents, requirements, dropped = remove_document(documents, requirements, document.name)
+        index = read_index(self._deps.product.project(project_id))
+        documents, requirements, dropped = remove_document(
+            index.documents, index.requirements, document.name
+        )
         detail = f" and its {len(dropped)} requirements" if dropped else ""
         question = f"Remove {document.name!r}{detail}? The file stays on disk."
         if not confirm(self._deps.parent, "Remove Spec Document", question):
@@ -205,7 +209,7 @@ class SpecModule:
             SetModuleDataCommand(
                 project_id,
                 MODULE_ID,
-                write_index(documents, requirements),
+                write_index(replace(index, documents=documents, requirements=requirements)),
                 label="Remove Spec Document",
             )
         )

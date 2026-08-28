@@ -24,15 +24,18 @@ from dplanner.core.storage.locations import StorageLocation, open_storage, parse
 from dplanner.domain.store import PRODUCT_META, ProductStore, StaleWorkspaceError
 
 WORKSPACE_ENV = "DPLANNER_WORKSPACE"
+POINTER_FILE = ".dplanner"
 
 
 def find_workspace(explicit: str | None = None, start: Path | None = None) -> StorageLocation:
     """Where the product is, in the order a person would expect.
 
     ``--workspace``, then ``$DPLANNER_WORKSPACE``, then **upwards from the working
-    directory** looking for a ``product.json``. That last one is the whole point: an agent is
-    already sitting in the product's checkout, so if the plan lives in the repository the
-    CLI needs no configuration at all.
+    directory** looking for a ``product.json`` — or a ``.dplanner`` pointer file whose one
+    line is the workspace's path, relative to the pointer's own directory. That walk is the
+    whole point: an agent is already sitting in the product's checkout, so if the plan lives
+    in the repository — even in a subdirectory the walk alone would never enter — the CLI
+    needs no configuration at all.
 
     There is deliberately no "last opened" fallback. That value lives in Qt's settings, and
     this layer does not load Qt — guessing at a workspace the user cannot see named on the
@@ -54,9 +57,29 @@ def find_workspace(explicit: str | None = None, start: Path | None = None) -> St
 
 def _walk_up(start: Path) -> Path | None:
     for directory in [start, *start.parents]:
+        # A real workspace wins over a pointer beside it.
         if (directory / PRODUCT_META).is_file():
             return directory
+        pointed = _follow_pointer(directory)
+        if pointed is not None:
+            return pointed
     return None
+
+
+def _follow_pointer(directory: Path) -> Path | None:
+    """The workspace a ``.dplanner`` file names, or None when there is no pointer here.
+
+    A pointer that leads nowhere raises rather than letting the walk continue past it:
+    silently acting on some workspace further up when the user explicitly named this one
+    is the failure they cannot see.
+    """
+    pointer = directory / POINTER_FILE
+    if not pointer.is_file():
+        return None
+    target = (directory / pointer.read_text().strip()).resolve()
+    if not (target / PRODUCT_META).is_file():
+        raise CliError(f"{pointer} points at {target}, but there is no {PRODUCT_META} there")
+    return target
 
 
 @contextmanager

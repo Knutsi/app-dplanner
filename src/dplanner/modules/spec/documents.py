@@ -48,10 +48,31 @@ class Requirement:
     document: str  # The SpecDocument.name it was marked in.
     title: str
     quote: str = ""  # The passage anchoring it to the document's text.
+    page: int | None = None  # Where in the document, for a PDF; None for prose.
 
 
-def read_index(project: Project) -> tuple[list[SpecDocument], list[Requirement]]:
-    """The documents and requirements beside ``project``. Unreadable entries read as absent."""
+@dataclass(frozen=True)
+class SpecAsset:
+    """An image beside the specs: a rendered page, or something attached by hand."""
+
+    id: str  # "a1", "a2", … — what `spec attach-to-step` addresses.
+    file: str  # assets/<sha256[:16]><suffix> in the module file area.
+    document: str = ""  # The SpecDocument.name it was rendered from, when it was.
+    page: int | None = None
+    imported: str = ""  # ISO date it arrived.
+
+
+@dataclass(frozen=True)
+class SpecIndex:
+    """Everything ``modules/spec.json`` holds beside a project."""
+
+    documents: list[SpecDocument]
+    requirements: list[Requirement]
+    assets: list[SpecAsset]
+
+
+def read_index(project: Project) -> SpecIndex:
+    """The index beside ``project``. Unreadable entries read as absent."""
     entry = project.module_data.get(DATA_FORMAT.module_id, {})
     documents = [
         SpecDocument(
@@ -71,11 +92,23 @@ def read_index(project: Project) -> tuple[list[SpecDocument], list[Requirement]]
             document=raw.get("document", ""),
             title=raw.get("title", ""),
             quote=raw.get("quote", ""),
+            page=_page(raw.get("page")),
         )
         for raw in _dicts(entry.get("requirements"))
         if isinstance(raw.get("id"), str)
     ]
-    return documents, requirements
+    assets = [
+        SpecAsset(
+            id=raw["id"],
+            file=raw["file"],
+            document=raw.get("document", ""),
+            page=_page(raw.get("page")),
+            imported=raw.get("imported", ""),
+        )
+        for raw in _dicts(entry.get("assets"))
+        if isinstance(raw.get("id"), str) and isinstance(raw.get("file"), str)
+    ]
+    return SpecIndex(documents=documents, requirements=requirements, assets=assets)
 
 
 def _dicts(value: Any) -> list[dict[str, Any]]:
@@ -84,12 +117,14 @@ def _dicts(value: Any) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)]
 
 
-def write_index(
-    documents: Sequence[SpecDocument], requirements: Sequence[Requirement]
-) -> dict[str, Any]:
-    """The module_data entry for this index — ``{}`` (remove the file) when both are empty."""
+def _page(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def write_index(index: SpecIndex) -> dict[str, Any]:
+    """The module_data entry for this index — ``{}`` (remove the file) when it is empty."""
     data: dict[str, Any] = {}
-    if documents:
+    if index.documents:
         data["documents"] = [
             {
                 "name": doc.name,
@@ -99,17 +134,29 @@ def write_index(
                 **({"previous": doc.previous} if doc.previous else {}),
                 "imported": doc.imported,
             }
-            for doc in documents
+            for doc in index.documents
         ]
-    if requirements:
+    if index.requirements:
         data["requirements"] = [
             {
                 "id": req.id,
                 "document": req.document,
                 "title": req.title,
                 **({"quote": req.quote} if req.quote else {}),
+                **({"page": req.page} if req.page is not None else {}),
             }
-            for req in requirements
+            for req in index.requirements
+        ]
+    if index.assets:
+        data["assets"] = [
+            {
+                "id": asset.id,
+                "file": asset.file,
+                **({"document": asset.document} if asset.document else {}),
+                **({"page": asset.page} if asset.page is not None else {}),
+                "imported": asset.imported,
+            }
+            for asset in index.assets
         ]
     return stamped(data, DATA_FORMAT.version)
 
@@ -180,6 +227,8 @@ def import_document(
     if existing is not None and existing.file == blob:
         return list(documents), existing, "unchanged"
     area.write_bytes(blob, data)
+    if document_kind(filename) == KIND_PDF:
+        _write_text_layer(area, blob, data)
     if existing is None:
         document = SpecDocument(
             name=name,
@@ -200,6 +249,20 @@ def import_document(
     )
     updated = [document if doc.name == name else doc for doc in documents]
     return updated, document, "replaced"
+
+
+def _write_text_layer(area: ModuleFileArea, blob: str, data: bytes) -> None:
+    """Extract and store a PDF's text beside it — the cache ``show``/``mark``/``diff``
+    read first, named after the blob so it is derived, never pointed at. A file pdfium
+    cannot parse does not fail the import: the read verbs extract in memory and will say
+    what is wrong when actually asked for text."""
+    from dplanner.modules.spec.pdf import text_blob_name, text_layer
+
+    try:
+        layer = text_layer(data)
+    except Exception:  # pdfium raises its own hierarchy.
+        return
+    area.write_bytes(text_blob_name(blob), layer.encode("utf-8"))
 
 
 def remove_document(
@@ -229,12 +292,44 @@ def matching_documents(documents: Sequence[SpecDocument], needle: str) -> list[S
     return [doc for doc in documents if lowered in doc.name.lower()]
 
 
-def next_requirement_id(requirements: Sequence[Requirement]) -> str:
-    """The next free "rN" — ids a person can say out loud and an agent can guess the shape of."""
+def next_id(existing: Sequence[str], prefix: str) -> str:
+    """The next free "<prefix>N" — requirements are "r1, r2, …", assets "a1, a2, …":
+    ids a person can say out loud and an agent can guess the shape of."""
     numbers = [
-        int(req.id[1:]) for req in requirements if req.id.startswith("r") and req.id[1:].isdigit()
+        int(entry[len(prefix) :])
+        for entry in existing
+        if entry.startswith(prefix) and entry[len(prefix) :].isdigit()
     ]
-    return f"r{max(numbers, default=0) + 1}"
+    return f"{prefix}{max(numbers, default=0) + 1}"
+
+
+def record_asset(
+    assets: Sequence[SpecAsset], file: str, document: str, page: int | None, today: str
+) -> tuple[list[SpecAsset], SpecAsset, str]:
+    """Index an asset blob — or find it already indexed, since blobs are content-addressed.
+
+    Returns the updated list, the entry, and ``"added"`` or ``"unchanged"``. The match is
+    on (file, document, page): re-rendering the same page gives the same bytes and so the
+    same file, and re-recording it must return the existing id rather than mint a new one.
+    """
+    existing = next(
+        (
+            asset
+            for asset in assets
+            if (asset.file, asset.document, asset.page) == (file, document, page)
+        ),
+        None,
+    )
+    if existing is not None:
+        return list(assets), existing, "unchanged"
+    asset = SpecAsset(
+        id=next_id([asset.id for asset in assets], "a"),
+        file=file,
+        document=document,
+        page=page,
+        imported=today,
+    )
+    return [*assets, asset], asset, "added"
 
 
 def linked_steps(project: Project, requirement_id: str) -> list[Step]:

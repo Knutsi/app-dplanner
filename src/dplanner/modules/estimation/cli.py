@@ -11,16 +11,48 @@ from datetime import date
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.model import Product, Project
 from dplanner.domain.schedule import Scheduled, format_date, format_days
 from dplanner.modules.estimation.aspect import MODULE_ID, read, write
 from dplanner.modules.estimation.schedule import (
     finish_date,
     project_schedule,
+    read_start,
     start_of,
     write_start,
 )
+
+
+def lint_checks() -> list[LintCheck]:
+    def missing_estimates(_product: Product, project: Project) -> list[LintFinding]:
+        findings = [
+            LintFinding(
+                check="estimate.missing",
+                subject_id=step.id,
+                subject=step.title,
+                message=f"no estimate — `dplanner estimate set '{step.title}' --days N`",
+            )
+            for step in project.steps
+            if read(step) is None
+        ]
+        # A start date only matters once somebody has started sizing the work; flagging it
+        # on every unestimated project would be noise.
+        if read_start(project) is None and any(read(step) is not None for step in project.steps):
+            findings.append(
+                LintFinding(
+                    check="schedule.start-missing",
+                    subject_id=project.id,
+                    subject=project.title,
+                    message="estimates but no start date — "
+                    f"`dplanner schedule start '{project.title}' --date YYYY-MM-DD`",
+                )
+            )
+        return findings
+
+    return [missing_estimates]
 
 
 def commands() -> list[CliCommand]:

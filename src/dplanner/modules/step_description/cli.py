@@ -4,11 +4,28 @@ from argparse import ArgumentParser, Namespace
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_step
 from dplanner.domain.assets import assets, attach
 from dplanner.domain.commands import EditTextCommand
-from dplanner.domain.model import Step, TextEdit
+from dplanner.domain.model import Product, Project, Step, TextEdit
 from dplanner.modules.step_description.aspect import MODULE_ID, read
+
+
+def lint_checks() -> list[LintCheck]:
+    def missing_descriptions(_product: Product, project: Project) -> list[LintFinding]:
+        return [
+            LintFinding(
+                check="description.missing",
+                subject_id=step.id,
+                subject=step.title,
+                message=f"no description — `dplanner describe set '{step.title}' --file -`",
+            )
+            for step in project.steps
+            if not read(step)
+        ]
+
+    return [missing_descriptions]
 
 
 def commands() -> list[CliCommand]:

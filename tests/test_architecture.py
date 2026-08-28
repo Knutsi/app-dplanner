@@ -58,6 +58,7 @@ HEADLESS_FILES = (
     "launcher.py",
     "repo.py",
     "gh.py",
+    "pdf.py",
 )
 CONCRETE_STORAGE = (
     f"{PACKAGE}.core.storage.local",

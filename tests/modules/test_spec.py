@@ -15,7 +15,12 @@ from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.spec.activity import DETAIL_ROLE, SpecsActivity
 from dplanner.modules.spec.aspect import MODULE_ID
-from dplanner.modules.spec.documents import attach_asset, import_document, write_index
+from dplanner.modules.spec.documents import (
+    SpecIndex,
+    attach_asset,
+    import_document,
+    write_index,
+)
 from dplanner.modules.spec.viewer import PdfPageView, SpecTextBrowser
 
 
@@ -40,7 +45,8 @@ def imported(services, project, name, data, filename):
     """Import a document the way both surfaces do: blob into the area, index as a command."""
     area = services.repo.files(project.id, MODULE_ID)
     docs, document, _outcome = import_document(area, [], name, data, filename, "2026-08-27")
-    SetModuleDataCommand(project.id, MODULE_ID, write_index(docs, [])).redo(services.document)
+    entry = write_index(SpecIndex(documents=docs, requirements=[], assets=[]))
+    SetModuleDataCommand(project.id, MODULE_ID, entry).redo(services.document)
     return document
 
 
@@ -121,6 +127,22 @@ def test_a_pdf_document_renders_pages(services, project):
     assert len(view._pages) == 1
 
 
+def test_a_rendered_page_is_a_png_qt_can_decode(services, project):
+    """The stdlib encoder in core/png.py, validated by a real decoder."""
+    import io
+
+    from PySide6.QtGui import QImage
+
+    from dplanner.modules.spec.pdf import render_page
+
+    doc = pdfium.PdfDocument.new()
+    doc.new_page(200, 100)
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    image = QImage.fromData(render_page(buffer.getvalue(), 1, 1.0))
+    assert not image.isNull() and image.width() == 200 and image.height() == 100
+
+
 def test_a_missing_blob_is_a_notice_not_a_crash(services, project):
     document = imported(services, project, "auth", b"body", "auth.txt")
     services.repo.files(project.id, MODULE_ID).remove(document.file)
@@ -173,19 +195,19 @@ def test_remove_takes_the_document_and_its_requirements_and_undoes(services, pro
     monkeypatch.setattr(spec_module, "confirm", lambda *a, **k: True)
     opened(services, project)
     imported(services, project, "auth", b"body", "auth.txt")
-    docs, _reqs = read_index(services.document.project(project.id))
+    docs = read_index(services.document.project(project.id)).documents
     requirement = Requirement(id="r1", document="auth", title="Hash passwords")
-    SetModuleDataCommand(project.id, MODULE_ID, write_index(docs, [requirement])).redo(
-        services.document
-    )
+    marked = SpecIndex(documents=docs, requirements=[requirement], assets=[])
+    SetModuleDataCommand(project.id, MODULE_ID, write_index(marked)).redo(services.document)
 
     services.actions.run("spec.remove", services.context.current())
-    assert read_index(services.document.project(project.id)) == ([], [])
+    emptied = read_index(services.document.project(project.id))
+    assert emptied.documents == [] and emptied.requirements == []
     # The blob outlives the index entry — that is what makes the removal undoable.
     assert services.repo.files(project.id, MODULE_ID).read_bytes(docs[0].file) == b"body"
 
     services.undo.undo()
-    assert read_index(services.document.project(project.id)) == (docs, [requirement])
+    assert read_index(services.document.project(project.id)) == marked
 
 
 def test_remove_respects_a_declined_confirm(services, project, monkeypatch):
@@ -196,7 +218,7 @@ def test_remove_respects_a_declined_confirm(services, project, monkeypatch):
     opened(services, project)
     imported(services, project, "auth", b"body", "auth.txt")
     services.actions.run("spec.remove", services.context.current())
-    docs, _reqs = read_index(services.document.project(project.id))
+    docs = read_index(services.document.project(project.id)).documents
     assert [doc.name for doc in docs] == ["auth"]
 
 
@@ -236,11 +258,10 @@ def test_the_viewer_survives_an_index_edit_that_keeps_the_blob(services, project
     imported(services, project, "auth", b"body", "auth.txt")
     shown = activity._shown
     assert shown is not None
-    docs, _reqs = read_index(services.document.project(project.id))
+    docs = read_index(services.document.project(project.id)).documents
     requirement = Requirement(id="r1", document="auth", title="Hash passwords")
-    SetModuleDataCommand(project.id, MODULE_ID, write_index(docs, [requirement])).redo(
-        services.document
-    )
+    marked = SpecIndex(documents=docs, requirements=[requirement], assets=[])
+    SetModuleDataCommand(project.id, MODULE_ID, write_index(marked)).redo(services.document)
     # A requirements-only edit repaints the list but never rebuilds the viewer.
     assert activity._shown is shown
     assert "1 requirements" in activity.list.item(0).data(DETAIL_ROLE)

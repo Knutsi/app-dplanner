@@ -19,6 +19,41 @@ from dplanner.modules import default_cli_commands, default_module_formats
 PDF = b"%PDF-1.4 not really, but binary enough\xff\xfe\x00"
 
 
+def tiny_pdf(*page_texts: str) -> bytes:
+    """A minimal but real PDF, one page per string — built by hand so these tests need
+    no Qt and no PDF writer, only the reader under test."""
+    objects: list[bytes] = []
+    page_ids = [4 + 2 * i for i in range(len(page_texts))]
+    kids = " ".join(f"{page_id} 0 R" for page_id in page_ids)
+    objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
+    objects.append(f"<< /Type /Pages /Kids [{kids}] /Count {len(page_texts)} >>".encode())
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    for page_id, text in zip(page_ids, page_texts, strict=True):
+        content = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
+        objects.append(
+            (
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                f"/Resources << /Font << /F1 3 0 R >> >> /Contents {page_id + 1} 0 R >>"
+            ).encode()
+        )
+        objects.append(
+            b"<< /Length %d >>\nstream\n%s\nendstream" % (len(content), content)
+        )
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref_at = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n".encode() + b"0000000000 65535 f \n"
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF\n"
+    ).encode()
+    return bytes(out)
+
+
 @pytest.fixture
 def registry():
     registry = CliRegistry()
@@ -106,7 +141,37 @@ def test_show_prints_text_and_previous(cli, project, tmp_path):
     assert cli("spec", "show", project, "spec", "--previous").strip() == "one"
 
 
-def test_show_refuses_a_pdf_and_points_at_path(cli, project, tmp_path):
+def test_show_prints_a_pdfs_text_layer_with_page_markers(cli, project, tmp_path):
+    pdf = tiny_pdf("First rule.", "Second rule.")
+    cli("spec", "import", project, source(tmp_path, "spec.pdf", pdf))
+    out = cli("spec", "show", project, "spec")
+    assert "--- page 1 ---" in out and "First rule." in out and "Second rule." in out
+    only = cli("spec", "show", project, "spec", "--page", "2")
+    assert "Second rule." in only and "First rule." not in only
+    assert "no page 9" in cli("spec", "show", project, "spec", "--page", "9", expect=1)
+
+
+def test_import_writes_the_text_layer_beside_the_documents(cli, project, tmp_path, workspace):
+    cli("spec", "import", project, source(tmp_path, "spec.pdf", tiny_pdf("A rule.")))
+    layers = list((workspace / "projects").glob("*/modules/spec/text/*.txt"))
+    assert len(layers) == 1 and "A rule." in layers[0].read_text()
+
+
+def test_a_pdf_imported_before_text_layers_still_shows(cli, project, tmp_path, workspace):
+    """Read verbs extract in memory and never write — no lazy backfill."""
+    cli("spec", "import", project, source(tmp_path, "spec.pdf", tiny_pdf("A rule.")))
+    for layer in (workspace / "projects").glob("*/modules/spec/text/*.txt"):
+        layer.unlink()
+    assert "A rule." in cli("spec", "show", project, "spec")
+    assert list((workspace / "projects").glob("*/modules/spec/text/*.txt")) == []
+
+
+def test_pages_are_a_pdf_thing(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "spec.md", "# Spec"))
+    assert "pages are a PDF thing" in cli("spec", "show", project, "spec", "--page", "1", expect=1)
+
+
+def test_show_on_an_unparseable_pdf_points_at_path(cli, project, tmp_path):
     cli("spec", "import", project, source(tmp_path, "spec.pdf", PDF))
     out = cli("spec", "show", project, "spec", expect=1)
     assert "spec path" in out
@@ -134,10 +199,14 @@ def test_diff_reports_hunks_between_versions(cli, project, tmp_path):
     assert hunks and hunks[0]["removed"] == "a" and hunks[0]["added"] == "b"
 
 
-def test_diff_on_a_pdf_hands_over_both_paths(cli, project, tmp_path):
-    cli("spec", "import", project, source(tmp_path, "s.pdf", PDF), "--name", "s")
-    cli("spec", "import", project, source(tmp_path, "s2.pdf", PDF + b"x"), "--name", "s")
+def test_diff_on_a_pdf_diffs_the_text_layers(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("Old rule.")), "--name", "s")
+    cli("spec", "import", project, source(tmp_path, "s2.pdf", tiny_pdf("New rule.")), "--name", "s")
     report = data(cli("spec", "diff", project, "s", "--json"))
+    assert report["hunks"], "a changed PDF should produce text hunks"
+    joined = json.dumps(report["hunks"])
+    assert "Old" in joined and "New" in joined
+    # The original files stay on offer for an agent that wants them.
     assert Path(report["previous"]).is_file() and Path(report["current"]).is_file()
 
 
@@ -196,6 +265,141 @@ def test_requirements_filter_by_document(cli, marked, tmp_path):
         ]
     ]
     assert ids == ["r1"]
+
+
+# -- quote validation and pages ----------------------------------------------------------------
+
+
+def test_mark_finds_the_quote_and_records_its_page(cli, project, tmp_path):
+    pdf = tiny_pdf("Nothing here.", "All credentials MUST be hashed.")
+    cli("spec", "import", project, source(tmp_path, "s.pdf", pdf))
+    quote = "MUST be hashed"
+    report = data(
+        cli("spec", "mark", project, "s", "--title", "Hashing", "--quote", quote, "--json")
+    )
+    assert report["quote_found"] is True and report["page"] == 2
+    listed = data(cli("spec", "requirements", project, "--json"))["requirements"]
+    assert listed[0]["page"] == 2
+
+
+def test_an_absent_quote_warns_but_still_marks(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("Nothing here.")))
+    out = cli("spec", "mark", project, "s", "--title", "Ghost", "--quote", "does not appear")
+    assert "warning" in out and "not found" in out
+    assert data(cli("spec", "requirements", project, "--json"))["requirements"]
+
+
+def test_a_page_that_disagrees_with_the_quote_warns_but_is_kept(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("Nothing.", "The rule.")))
+    out = cli("spec", "mark", project, "s", "--title", "Rule", "--quote", "The rule", "--page", "1")
+    assert "found on page 2" in out
+    assert data(cli("spec", "requirements", project, "--json"))["requirements"][0]["page"] == 1
+
+
+def test_quotes_are_validated_against_prose_documents_too(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "s.md", "The rule\nis here."))
+    report = data(
+        cli("spec", "mark", project, "s", "--title", "Rule", "--quote", "rule is here", "--json")
+    )
+    assert report["quote_found"] is True and report["page"] is None
+
+
+# -- rendered pages and assets -----------------------------------------------------------------
+
+
+def test_render_makes_an_indexed_png_asset(cli, project, tmp_path, workspace):
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("A rule.")))
+    report = data(cli("spec", "render", project, "s", "--page", "1", "--json"))
+    assert report["asset"] == "a1" and report["outcome"] == "added"
+    path = Path(report["path"])
+    assert path.is_file() and path.read_bytes().startswith(b"\x89PNG")
+    listed = data(cli("spec", "assets", project, "--json"))["assets"]
+    assert listed == [
+        {
+            "id": "a1",
+            "file": report["path"].split("modules/spec/")[-1],
+            "document": "s",
+            "page": 1,
+            "imported": listed[0]["imported"],
+            "path": report["path"],
+        }
+    ]
+
+
+def test_rendering_the_same_page_again_is_the_same_asset(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("A rule.")))
+    first = data(cli("spec", "render", project, "s", "--page", "1", "--json"))
+    again = data(cli("spec", "render", project, "s", "--page", "1", "--json"))
+    assert again["asset"] == first["asset"] and again["outcome"] == "unchanged"
+
+
+def test_rendering_a_missing_page_is_refused(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("A rule.")))
+    assert "no page 9" in cli("spec", "render", project, "s", "--page", "9", expect=1)
+
+
+def test_attach_now_records_an_asset_id(cli, project, tmp_path):
+    cli("spec", "attach", project, source(tmp_path, "dot.png", b"png bytes"))
+    listed = data(cli("spec", "assets", project, "--json"))["assets"]
+    assert listed[0]["id"] == "a1" and listed[0]["document"] == ""
+
+
+def test_attach_to_step_copies_the_figure_beside_the_step(cli, project, tmp_path, workspace):
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("A rule.")))
+    cli("spec", "render", project, "s", "--page", "1")
+    cli("step", "add", project, "Hash passwords")
+    report = data(cli("spec", "attach-to-step", "Hash passwords", "a1", "--json"))
+    copies = list((workspace / "projects").glob("*/steps/*/modules/spec/assets/*.png"))
+    assert len(copies) == 1 and report["file"].endswith(".png")
+
+    shown = data(cli("step", "show", "Hash passwords", "--json"))
+    attachment = shown["aspects"]["spec"]["attachments"][0]
+    assert attachment["document"] == "s" and attachment["page"] == 1 and attachment["asset"] == "a1"
+
+    cli("spec", "attach-to-step", "Hash passwords", "a1", "--remove")
+    shown = data(cli("step", "show", "Hash passwords", "--json"))
+    assert "attachments" not in shown["aspects"].get("spec", {})
+    # The copied blob stays — content-addressed files are cheap and undo may want it.
+    assert list((workspace / "projects").glob("*/steps/*/modules/spec/assets/*.png"))
+
+
+def test_linking_does_not_erase_attachments(cli, project, tmp_path):
+    """write_step_entry exists because write_links rewrote the whole entry from the links
+    alone — this is the regression that must never come back."""
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("A rule.")))
+    cli("spec", "render", project, "s", "--page", "1")
+    cli("spec", "mark", project, "s", "--title", "Rule")
+    cli("step", "add", project, "Hash passwords")
+    cli("spec", "attach-to-step", "Hash passwords", "a1")
+    cli("spec", "link", "Hash passwords", "r1")
+    shown = data(cli("step", "show", "Hash passwords", "--json"))
+    assert shown["aspects"]["spec"]["requirements"] == ["r1"]
+    assert shown["aspects"]["spec"]["attachments"][0]["asset"] == "a1"
+
+
+def test_an_attached_figure_reaches_the_agent_briefing(cli, project, tmp_path):
+    import sys
+    from io import StringIO as StdinIO
+
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("A rule.")))
+    cli("spec", "render", project, "s", "--page", "1")
+    cli("step", "add", project, "Hash passwords")
+    cli("spec", "attach-to-step", "Hash passwords", "a1")
+    real = sys.stdin
+    sys.stdin = StdinIO("Ship it.")
+    try:
+        cli("agent", "set", "Hash passwords", "--file", "-")
+    finally:
+        sys.stdin = real
+    shown = data(cli("agent", "prompt", "Hash passwords", "--json"))
+    figures = [path for path in shown["files"] if "modules/spec/assets/" in path]
+    assert len(figures) == 1 and figures[0] in shown["prompt"]
+
+
+def test_the_index_is_stamped_format_2(cli, project, tmp_path, workspace):
+    cli("spec", "import", project, source(tmp_path, "s.md", "# Spec"))
+    entry = json.loads(next((workspace / "projects").glob("*/modules/spec.json")).read_text())
+    assert entry["format"] == 2
 
 
 # -- removing ----------------------------------------------------------------------------------

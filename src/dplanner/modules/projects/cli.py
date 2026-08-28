@@ -16,15 +16,18 @@ from argparse import ArgumentParser, Namespace
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import (
     AddNodeCommand,
+    EditTextCommand,
     RemoveNodeCommand,
     SetEdgesCommand,
     SetFieldCommand,
     SetModuleDataCommand,
 )
-from dplanner.domain.model import EDGE_KINDS, Product, Project, Step, StepId
+from dplanner.domain.model import EDGE_KINDS, Product, Project, Step, StepId, TextEdit
+from dplanner.domain.ordering import placed
 
 PROJECT_ARG = "project id, folder name, or part of its title"
 STEP_ARG = "step id, folder name, or part of its title"
@@ -36,6 +39,28 @@ def _one_project(parser: ArgumentParser) -> None:
 
 def _one_step(parser: ArgumentParser) -> None:
     parser.add_argument("step", help=STEP_ARG)
+
+
+def lint_checks() -> list[LintCheck]:
+    def dangling_requires(_product: Product, project: Project) -> list[LintFinding]:
+        # remove_child keeps edges naming a deleted step so undo restores the graph
+        # exactly, and requires()/depths() silently skip them — this is the one reader
+        # that says they are there.
+        ids = {step.id for step in project.steps}
+        return [
+            LintFinding(
+                check="graph.requires-dangling",
+                subject_id=step.id,
+                subject=step.title,
+                message=f"waits on {target[:8]}, a step that no longer exists "
+                "(the edge is kept so undo stays exact) — recreate the step, or ignore",
+            )
+            for step in project.steps
+            for target in step.edges.get("requires", [])
+            if target not in ids
+        ]
+
+    return [dangling_requires]
 
 
 def commands() -> list[CliCommand]:
@@ -73,6 +98,14 @@ def commands() -> list[CliCommand]:
             configure=_one_project,
             run=_project_delete,
             examples=("dplanner project delete discovery",),
+        ),
+        CliCommand(
+            path=("project", "graph"),
+            summary="The step graph as a Mermaid flowchart: waves as rows, requires as "
+            "arrows. Paste it into a PR or a report.",
+            configure=_one_project,
+            run=_project_graph,
+            examples=("dplanner project graph discovery",),
         ),
         CliCommand(
             path=("project", "export"),
@@ -153,14 +186,17 @@ def project_document(product: Product, project: Project) -> dict[str, Any]:
     """One project as plain data — what ``export`` writes and ``import`` reads.
 
     Folder names are deliberately absent: they are presentation, frozen at creation, and an
-    imported project earns its own.
+    imported project earns its own. Module *file areas* — spec document blobs, attached
+    images — are absent too: the document carries data and prose, not binaries.
     """
     return {
         "title": project.title,
         "summary": project.summary,
-        # A project owns module data of its own — its start date, for one — so the document
-        # carries it too. Without this, exporting and importing quietly drops it.
+        # A project owns module data and prose of its own — its start date, its standing
+        # agent instruction — so the document carries both. Without this, exporting and
+        # importing quietly drops them.
         "aspects": {key: dict(value) for key, value in sorted(project.module_data.items())},
+        "text": dict(sorted(project.module_text.items())),
         "steps": [
             {
                 "id": step.id,
@@ -264,6 +300,39 @@ def _project_delete(context: CliContext, args: Namespace) -> int:
     return 0
 
 
+def mermaid(product: Product, project: Project) -> str:
+    """The step graph as a Mermaid flowchart — the same map the canvas draws, as text.
+
+    Deliberately structure-only: waves become subgraphs so parallelism is visible at a
+    glance, ``requires`` edges order them, and nothing else is styled in. The walk is
+    ``placed()``, whose order is stable, so regenerating the chart after an unrelated edit
+    diffs clean. Dangling edges are skipped, as everywhere ``requires()`` is read.
+    """
+    lines = ["flowchart TD"]
+    rows = placed(product, project)
+    if not rows:
+        return "flowchart TD\n    %% no steps yet"
+    node_ids = {row.step.id: f"s{row.step.id[:12]}" for row in rows}
+    for wave in range(1, rows[-1].wave + 1):
+        lines.append(f'    subgraph wave{wave}["Wave {wave}"]')
+        for row in rows:
+            if row.wave == wave:
+                title = (row.step.title or "Untitled step").replace('"', "#quot;")
+                lines.append(f'        {node_ids[row.step.id]}["{title}"]')
+        lines.append("    end")
+    for row in rows:
+        for other in product.requires(row.step.id):
+            lines.append(f"    {node_ids[other.id]} --> {node_ids[row.step.id]}")
+    return "\n".join(lines)
+
+
+def _project_graph(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.product, args.project)
+    chart = mermaid(context.product, project)
+    context.report({"project": project.id, "mermaid": chart}, chart)
+    return 0
+
+
 def _project_export(context: CliContext, args: Namespace) -> int:
     project = find_project(context.product, args.project)
     document = project_document(context.product, project)
@@ -301,6 +370,9 @@ def _project_import(context: CliContext, args: Namespace) -> int:
     context.apply(AddNodeCommand(context.product.id, project))
     for module_id, entry in dict(document.get("aspects", {})).items():
         context.apply(SetModuleDataCommand(project.id, str(module_id), dict(entry)))
+    for module_id, body in dict(document.get("text", {})).items():
+        edit = TextEdit(project.id, str(module_id), 0, "", str(body))
+        context.apply(EditTextCommand(edit, label="Import"))
 
     # Ids in the document are the document's own. Steps get fresh ones and the links are
     # rewritten through this map, so importing the same file twice cannot collide.

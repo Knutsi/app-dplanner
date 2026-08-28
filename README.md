@@ -60,7 +60,9 @@ does not exist; `dplanner skill status` says whether the installed copy matches 
 and *Tools ▸ Install Agent Skill…* does the same from the window.
 
 Commands find the product by walking up from the working directory for `product.json`, so an
-agent already sitting in the checkout needs no configuration. Everything takes `--json`.
+agent already sitting in the checkout needs no configuration. A plan kept in a subdirectory
+the walk would never enter is reachable through a one-line `.dplanner` pointer file at the
+repository root — see `FORMAT.md`. Everything takes `--json`.
 
 ```bash
 dplanner project list
@@ -129,6 +131,7 @@ src/dplanner/
 │   ├── repository.py        what the framework knows about the model, and no more
 │   ├── formats.py           the format-migration engine
 │   ├── module_data.py       per-module JSON, its versions and takeovers
+│   ├── png.py               RGB buffer → PNG bytes, stdlib only, deterministic
 │   ├── signals.py  fsio.py  text_diff.py
 │
 ├── domain/                ── the planner itself. Qt-free.
@@ -175,7 +178,7 @@ src/dplanner/
 │   ├── step_handoff/        what a step passes forward, and who inherits it
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, the missing-gh notice
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
-│   ├── spec/                spec documents beside a project, their requirements, `dplanner spec`
+│   ├── spec/                spec documents beside a project, their requirements and figures, `dplanner spec` (pdf.py: text layers and page rendering)
 │   ├── workspace_watch/     reloading when something else writes to the workspace
 │   ├── agent_skill/         the skill dialog, and the install that puts dplanner on PATH
 │   ├── appshell/  workspaces/  sync/  settings/  taskcenter/  debug/

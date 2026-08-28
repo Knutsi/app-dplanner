@@ -1,21 +1,33 @@
 """``dplanner spec …`` — a project's specification documents and their requirements.
 
-This is the agent's surface: import a spec beside a project, read it (``show`` for text,
-``path`` for anything — a PDF is the agent's to read, not this tool's to parse), mark the
-requirements found in it, link the steps created from them, and — when the spec is
-replaced — ``diff`` what changed and ``requirements`` to find the steps affected.
+This is the agent's surface: import a spec beside a project, read it (``show`` prints text,
+markdown *and* PDFs — import extracts a PDF's text layer, and ``--page`` narrows to one
+page; ``path`` still hands over the original file), mark the requirements found in it —
+``--quote`` is validated against the document and ``--page`` anchors it — link the steps
+created from them, ``render`` a page into an image and ``attach-to-step`` it so a figure
+travels with the step's briefing, and — when the spec is replaced — ``diff`` what changed
+(PDFs diff by their text layers) and ``requirements`` to find the steps affected.
 """
 
 from argparse import ArgumentParser, Namespace
+from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.core.text_diff import diff_hunks
+from dplanner.domain.assets import attach
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Project
-from dplanner.modules.spec.aspect import MODULE_ID, read_links, write_links
+from dplanner.domain.model import Product, Project
+from dplanner.modules.spec.aspect import (
+    MODULE_ID,
+    SpecAttachment,
+    read_attachments,
+    read_links,
+    write_step_entry,
+)
 from dplanner.modules.spec.documents import (
     KIND_PDF,
     Requirement,
@@ -26,11 +38,58 @@ from dplanner.modules.spec.documents import (
     import_document,
     linked_steps,
     matching_documents,
-    next_requirement_id,
+    next_id,
     read_index,
+    record_asset,
     remove_document,
     write_index,
 )
+from dplanner.modules.spec.pdf import find_quote, render_page, split_pages, text_blob_name
+from dplanner.modules.spec.pdf import text_layer as extract_text_layer
+
+
+def lint_checks() -> list[LintCheck]:
+    def spec_findings(_product: Product, project: Project) -> list[LintFinding]:
+        requirements = read_index(project).requirements
+        known = {requirement.id for requirement in requirements}
+        findings = [
+            LintFinding(
+                check="spec.requirement-unimplemented",
+                subject_id=requirement.id,
+                subject=requirement.title,
+                message="no step implements it — "
+                f"`dplanner spec link <step> {requirement.id}`",
+            )
+            for requirement in requirements
+            if not linked_steps(project, requirement.id)
+        ]
+        for step in project.steps:
+            links = read_links(step)
+            findings += [
+                LintFinding(
+                    check="spec.link-dangling",
+                    subject_id=step.id,
+                    subject=step.title,
+                    message=f"links {link}, which is not in the spec index — "
+                    f"`dplanner spec link '{step.title}' {link} --remove`",
+                )
+                for link in links
+                if link not in known
+            ]
+            # Only a project that has requirements can expect its steps to cite them.
+            if requirements and not links:
+                findings.append(
+                    LintFinding(
+                        check="spec.step-unlinked",
+                        subject_id=step.id,
+                        subject=step.title,
+                        message="implements no requirement — "
+                        f"`dplanner spec link '{step.title}' <requirement>`",
+                    )
+                )
+        return findings
+
+    return [spec_findings]
 
 
 def commands() -> list[CliCommand]:
@@ -55,14 +114,18 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("spec", "show"),
-            summary="Print a text or markdown spec document; PDFs are read via `spec path`.",
-            configure=_configure_versioned,
+            summary="Print a spec document — a PDF prints its extracted text layer, "
+            "and --page narrows to one page.",
+            configure=_configure_show,
             run=_show,
-            examples=("dplanner spec show 'Search rewrite' auth-spec",),
+            examples=(
+                "dplanner spec show 'Search rewrite' auth-spec",
+                "dplanner spec show 'Search rewrite' auth-spec --page 3",
+            ),
         ),
         CliCommand(
             path=("spec", "path"),
-            summary="Print the absolute path of a spec document's file — read PDFs yourself.",
+            summary="Print the absolute path of a spec document's original file.",
             configure=_configure_versioned,
             run=_path,
             examples=("dplanner spec path 'Search rewrite' auth-spec",),
@@ -84,20 +147,45 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("spec", "attach"),
-            summary="Add an image beside a project's specs and print the path to link to.",
+            summary="Add an image beside a project's specs; it gets an asset id and a "
+            "path markdown can link to.",
             configure=_configure_attach,
             run=_attach,
             examples=("dplanner spec attach 'Search rewrite' diagram.png",),
         ),
         CliCommand(
+            path=("spec", "render"),
+            summary="Render one page of a PDF spec to a PNG asset — the way a figure "
+            "gets in front of a step's agent.",
+            configure=_configure_render,
+            run=_render,
+            examples=("dplanner spec render 'Search rewrite' auth-spec --page 3",),
+        ),
+        CliCommand(
+            path=("spec", "assets"),
+            summary="List a project's spec assets: rendered pages and attached images.",
+            configure=_one_project,
+            run=_assets,
+            examples=("dplanner spec assets 'Search rewrite'",),
+        ),
+        CliCommand(
+            path=("spec", "attach-to-step"),
+            summary="Copy a spec asset beside a step so its briefing carries the figure "
+            "(or --remove it).",
+            configure=_configure_attach_to_step,
+            run=_attach_to_step,
+            examples=("dplanner spec attach-to-step 'Hash passwords' a1",),
+        ),
+        CliCommand(
             path=("spec", "mark"),
-            summary="Mark a requirement in a spec document, or update one by id.",
+            summary="Mark a requirement in a spec document, or update one by id; the "
+            "quote is checked against the document.",
             configure=_configure_mark,
             run=_mark,
             examples=(
                 "dplanner spec mark 'Search rewrite' auth-spec"
                 " --title 'Passwords hashed with argon2id'"
-                " --quote 'All stored credentials MUST use argon2id'",
+                " --quote 'All stored credentials MUST use argon2id' --page 4",
             ),
         ),
         CliCommand(
@@ -143,6 +231,11 @@ def _configure_versioned(parser: ArgumentParser) -> None:
     )
 
 
+def _configure_show(parser: ArgumentParser) -> None:
+    _configure_versioned(parser)
+    parser.add_argument("--page", type=int, help="one page of a PDF's text (1-based)")
+
+
 def _configure_import(parser: ArgumentParser) -> None:
     _one_project(parser)
     parser.add_argument("file", help="the document to copy in beside the project")
@@ -159,6 +252,23 @@ def _configure_mark(parser: ArgumentParser) -> None:
     parser.add_argument("--title", required=True, help="the obligation, in one line")
     parser.add_argument("--id", help="requirement id (default: the next free rN)")
     parser.add_argument("--quote", default="", help="the passage anchoring it to the document")
+    parser.add_argument(
+        "--page", type=int, help="the page it sits on (default: where the quote is found)"
+    )
+
+
+def _configure_render(parser: ArgumentParser) -> None:
+    _one_document(parser)
+    parser.add_argument("--page", type=int, required=True, help="the page to render (1-based)")
+    parser.add_argument(
+        "--scale", type=float, default=2.0, help="multiplies PDF points; 2.0 reads like 144 DPI"
+    )
+
+
+def _configure_attach_to_step(parser: ArgumentParser) -> None:
+    parser.add_argument("step", help="step id, folder name, or part of its title")
+    parser.add_argument("asset", help="an asset id from `dplanner spec assets`")
+    parser.add_argument("--remove", action="store_true", help="detach it from the step instead")
 
 
 def _configure_unmark(parser: ArgumentParser) -> None:
@@ -181,8 +291,7 @@ def _configure_link(parser: ArgumentParser) -> None:
 
 
 def _document(project: Project, needle: str) -> SpecDocument:
-    docs, _requirements = read_index(project)
-    found = matching_documents(docs, needle)
+    found = matching_documents(read_index(project).documents, needle)
     if len(found) == 1:
         return found[0]
     if not found:
@@ -224,14 +333,15 @@ def _import(context: CliContext, args: Namespace) -> int:
         raise CliError(refusal)
 
     project = find_project(context.product, args.project)
-    docs, requirements = read_index(project)
+    index = read_index(project)
     today = datetime.now(UTC).date().isoformat()
     area = context.store.files(project.id, MODULE_ID)
-    docs, document, outcome = import_document(area, docs, name, data, source.name, today)
+    docs, document, outcome = import_document(
+        area, index.documents, name, data, source.name, today
+    )
     if outcome != "unchanged":
-        context.apply(
-            SetModuleDataCommand(project.id, MODULE_ID, write_index(docs, requirements))
-        )
+        updated = replace(index, documents=docs)
+        context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(updated)))
     notes = {
         "added": f"{name}: added ({document.kind})",
         "replaced": f"{name}: replaced — previous version kept for `dplanner spec diff`",
@@ -246,8 +356,11 @@ def _import(context: CliContext, args: Namespace) -> int:
 
 def _list(context: CliContext, args: Namespace) -> int:
     project = find_project(context.product, args.project)
-    docs, requirements = read_index(project)
-    marked = {doc.name: [r.id for r in requirements if r.document == doc.name] for doc in docs}
+    index = read_index(project)
+    docs = index.documents
+    marked = {
+        doc.name: [r.id for r in index.requirements if r.document == doc.name] for doc in docs
+    }
     context.report(
         {
             "project": project.id,
@@ -277,15 +390,39 @@ def _list(context: CliContext, args: Namespace) -> int:
 def _show(context: CliContext, args: Namespace) -> int:
     project = find_project(context.product, args.project)
     document = _document(project, args.document)
+    blob = _blob(document, args.previous)
     if document.kind == KIND_PDF:
-        raise CliError(
-            f"{document.name} is a PDF — read it yourself from `dplanner spec path "
-            f"{args.project!r} {document.name}`"
-        )
-    data = _content(context, project, document, _blob(document, args.previous))
-    body = data.decode("utf-8")
+        body = _pdf_text(context, project, document, blob)
+        if args.page is not None:
+            pages = split_pages(body)
+            if not 1 <= args.page <= len(pages):
+                raise CliError(f"no page {args.page} — {document.name} has {len(pages)} pages")
+            body = pages[args.page - 1]
+    elif args.page is not None:
+        raise CliError(f"{document.name} is {document.kind} — pages are a PDF thing")
+    else:
+        body = _content(context, project, document, blob).decode("utf-8")
     context.report({"project": project.id, "document": document.name, "content": body}, body)
     return 0
+
+
+def _pdf_text(
+    context: CliContext, project: Project, document: SpecDocument, blob: str
+) -> str:
+    """The text layer: the file import wrote, or extracted in memory for a document
+    imported before layers existed — a read verb never writes."""
+    area = context.store.files(project.id, MODULE_ID)
+    stored = area.read_bytes(text_blob_name(blob))
+    if stored is not None:
+        return stored.decode("utf-8")
+    data = _content(context, project, document, blob)
+    try:
+        return extract_text_layer(data)
+    except Exception as error:  # pdfium raises its own hierarchy.
+        raise CliError(
+            f"{document.name}: could not extract text ({error}) — read the original "
+            f"from `dplanner spec path`"
+        ) from error
 
 
 def _path(context: CliContext, args: Namespace) -> int:
@@ -301,9 +438,12 @@ def _path(context: CliContext, args: Namespace) -> int:
 def _remove(context: CliContext, args: Namespace) -> int:
     project = find_project(context.product, args.project)
     document = _document(project, args.document)
-    docs, requirements = read_index(project)
-    docs, requirements, dropped = remove_document(docs, requirements, document.name)
-    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(docs, requirements)))
+    index = read_index(project)
+    docs, requirements, dropped = remove_document(
+        index.documents, index.requirements, document.name
+    )
+    updated = replace(index, documents=docs, requirements=requirements)
+    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(updated)))
     still_linked = {req.id: linked_steps(project, req.id) for req in dropped}
     note = f"{document.name}: removed"
     if dropped:
@@ -336,21 +476,18 @@ def _diff(context: CliContext, args: Namespace) -> int:
     if document.previous is None:
         raise CliError(f"{document.name} has no previous version — it was never replaced")
     if document.kind == KIND_PDF:
-        before = _absolute(context, project, document.previous)
-        after = _absolute(context, project, document.file)
-        context.report(
-            {
-                "project": project.id,
-                "document": document.name,
-                "previous": before,
-                "current": after,
-            },
-            f"{document.name} is a PDF — compare the two versions yourself:\n"
-            f"previous: {before}\ncurrent:  {after}",
-        )
-        return 0
-    before = _content(context, project, document, document.previous).decode("utf-8")
-    after = _content(context, project, document, document.file).decode("utf-8")
+        # Text layers make PDFs diffable like anything else; the real files stay in the
+        # JSON payload for an agent that wants the originals.
+        before = _pdf_text(context, project, document, document.previous)
+        after = _pdf_text(context, project, document, document.file)
+        extra = {
+            "previous": _absolute(context, project, document.previous),
+            "current": _absolute(context, project, document.file),
+        }
+    else:
+        before = _content(context, project, document, document.previous).decode("utf-8")
+        after = _content(context, project, document, document.file).decode("utf-8")
+        extra = {}
     hunks = diff_hunks(before, after)
     rendered = "\n".join(
         f"@ {hunk.pos}\n"
@@ -365,7 +502,8 @@ def _diff(context: CliContext, args: Namespace) -> int:
             "hunks": [
                 {"pos": hunk.pos, "removed": hunk.removed, "added": hunk.added} for hunk in hunks
             ],
-        },
+        }
+        | extra,
         rendered or f"{document.name}: the two versions are identical",
     )
     return 0
@@ -376,11 +514,123 @@ def _attach(context: CliContext, args: Namespace) -> int:
     if not source.is_file():
         raise CliError(f"no such file: {args.image}")
     project = find_project(context.product, args.project)
+    index = read_index(project)
     area = context.store.files(project.id, MODULE_ID)
     name = attach_asset(area, source.read_bytes(), source.name)
+    today = datetime.now(UTC).date().isoformat()
+    assets, asset, outcome = record_asset(index.assets, name, "", None, today)
+    if outcome != "unchanged":
+        updated = replace(index, assets=assets)
+        context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(updated)))
     context.report(
-        {"project": project.id, "asset": name},
-        f"{name}\nReference it from a markdown spec as ![]({name})",
+        {"project": project.id, "asset": asset.id, "file": name},
+        f"{asset.id}: {name}\nReference it from a markdown spec as ![]({name}), or put it"
+        f" in front of a step's agent with `dplanner spec attach-to-step <step> {asset.id}`",
+    )
+    return 0
+
+
+def _render(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.product, args.project)
+    document = _document(project, args.document)
+    if document.kind != KIND_PDF:
+        raise CliError(f"{document.name} is {document.kind} — only a PDF has pages to render")
+    data = _content(context, project, document, document.file)
+    try:
+        image = render_page(data, args.page, args.scale)
+    except ValueError as error:
+        raise CliError(f"{document.name}: {error}") from error
+    index = read_index(project)
+    area = context.store.files(project.id, MODULE_ID)
+    name = attach_asset(area, image, f"page{args.page}.png")
+    today = datetime.now(UTC).date().isoformat()
+    assets, asset, outcome = record_asset(index.assets, name, document.name, args.page, today)
+    if outcome != "unchanged":
+        updated = replace(index, assets=assets)
+        context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(updated)))
+    context.report(
+        {
+            "project": project.id,
+            "document": document.name,
+            "asset": asset.id,
+            "page": args.page,
+            "path": _absolute(context, project, name),
+            "outcome": outcome,
+        },
+        f"{asset.id}: page {args.page} of {document.name} → {name}"
+        + (" (already rendered — same image)" if outcome == "unchanged" else "")
+        + f"\nAttach it to a step with `dplanner spec attach-to-step <step> {asset.id}`",
+    )
+    return 0
+
+
+def _assets(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.product, args.project)
+    index = read_index(project)
+    context.report(
+        {
+            "project": project.id,
+            "assets": [
+                {
+                    "id": asset.id,
+                    "file": asset.file,
+                    "document": asset.document,
+                    "page": asset.page,
+                    "imported": asset.imported,
+                    "path": _absolute(context, project, asset.file),
+                }
+                for asset in index.assets
+            ],
+        },
+        "\n".join(
+            f"{asset.id}  {asset.file}"
+            + (f"  ({asset.document}, page {asset.page})" if asset.document else "")
+            for asset in index.assets
+        )
+        or "(no assets — `dplanner spec render` a PDF page, or `dplanner spec attach`)",
+    )
+    return 0
+
+
+def _attach_to_step(context: CliContext, args: Namespace) -> int:
+    step = find_step(context.product, args.step)
+    project = context.product.project_of(step.id)
+    index = read_index(project)
+    asset = next((entry for entry in index.assets if entry.id == args.asset), None)
+    if asset is None:
+        raise CliError(
+            f"no asset {args.asset!r} in {project.title!r} — see `dplanner spec assets`"
+        )
+    attachments = read_attachments(step)
+    if args.remove:
+        # The copied blob stays: content-addressed files are cheap, and another
+        # attachment or an old briefing may still name it.
+        attachments = [entry for entry in attachments if entry.asset != asset.id]
+        note = f"{step.title}: {asset.id} detached (its file stays beside the step)"
+        file = asset.file
+    else:
+        data = context.store.files(project.id, MODULE_ID).read_bytes(asset.file)
+        if data is None:
+            raise CliError(f"{asset.id}: {asset.file} is missing from the workspace")
+        # Copied, not referenced: the step stays self-contained if the project's spec —
+        # or the whole asset — is later removed, and the briefing gets a real file.
+        file = attach(
+            context.store.files(step.id, MODULE_ID), data, PurePosixPath(asset.file).name
+        )
+        if not any(entry.asset == asset.id for entry in attachments):
+            attachments = [
+                *attachments,
+                SpecAttachment(
+                    file=file, document=asset.document, page=asset.page, asset=asset.id
+                ),
+            ]
+        note = f"{step.title}: {asset.id} attached as {file}"
+    context.apply(
+        SetModuleDataCommand(step.id, MODULE_ID, write_step_entry(read_links(step), attachments))
+    )
+    context.report(
+        {"step": step.id, "asset": asset.id, "file": file, "attachments": len(attachments)},
+        note,
     )
     return 0
 
@@ -388,35 +638,73 @@ def _attach(context: CliContext, args: Namespace) -> int:
 def _mark(context: CliContext, args: Namespace) -> int:
     project = find_project(context.product, args.project)
     document = _document(project, args.document)
-    docs, requirements = read_index(project)
+    index = read_index(project)
+    quote_found, found_page = _validate_quote(context, project, document, args.quote)
+    page = args.page if args.page is not None else found_page
     requirement = Requirement(
-        id=args.id or next_requirement_id(requirements),
+        id=args.id or next_id([req.id for req in index.requirements], "r"),
         document=document.name,
         title=args.title,
         quote=args.quote,
+        page=page,
     )
-    existing = [req.id for req in requirements]
-    if requirement.id in existing:
+    requirements = index.requirements
+    if requirement.id in [req.id for req in requirements]:
         requirements = [requirement if req.id == requirement.id else req for req in requirements]
         outcome = "updated"
     else:
         requirements = [*requirements, requirement]
         outcome = "marked"
-    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(docs, requirements)))
+    updated = replace(index, requirements=requirements)
+    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(updated)))
+    note = f"{requirement.id}: {requirement.title} ({outcome} in {document.name})"
+    if args.quote and quote_found is False:
+        note += "\nwarning: the quote was not found in the document — check it anchors"
+    elif args.page is not None and found_page is not None and args.page != found_page:
+        note += f"\nwarning: the quote was found on page {found_page}, not {args.page}"
     context.report(
-        {"project": project.id, "requirement": requirement.id, "outcome": outcome},
-        f"{requirement.id}: {requirement.title} ({outcome} in {document.name})",
+        {
+            "project": project.id,
+            "requirement": requirement.id,
+            "outcome": outcome,
+            "quote_found": quote_found,
+            "page": page,
+        },
+        note,
     )
     return 0
 
 
+def _validate_quote(
+    context: CliContext, project: Project, document: SpecDocument, quote: str
+) -> tuple[bool | None, int | None]:
+    """(was the quote found, on which page). (None, None) when there is nothing to check.
+
+    A warning, never a refusal: PDF extraction loses ligatures and hyphenation, and a
+    mark that failed on rendering noise would teach people to stop quoting.
+    """
+    if not quote:
+        return None, None
+    if document.kind == KIND_PDF:
+        try:
+            layer = _pdf_text(context, project, document, document.file)
+        except CliError:
+            return None, None  # A PDF whose text cannot be read cannot refute a quote.
+        page = find_quote(layer, quote)
+        return page is not None, page
+    body = _content(context, project, document, document.file).decode("utf-8")
+    normalized = " ".join(quote.lower().split())
+    return normalized in " ".join(body.lower().split()), None
+
+
 def _unmark(context: CliContext, args: Namespace) -> int:
     project = find_project(context.product, args.project)
-    docs, requirements = read_index(project)
-    if args.requirement not in [req.id for req in requirements]:
+    index = read_index(project)
+    if args.requirement not in [req.id for req in index.requirements]:
         raise CliError(f"no requirement {args.requirement!r} in {project.title!r}")
-    remaining = [req for req in requirements if req.id != args.requirement]
-    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(docs, remaining)))
+    remaining = [req for req in index.requirements if req.id != args.requirement]
+    updated = replace(index, requirements=remaining)
+    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(updated)))
     still_linked = linked_steps(project, args.requirement)
     note = f"{args.requirement}: removed"
     if still_linked:
@@ -435,7 +723,7 @@ def _unmark(context: CliContext, args: Namespace) -> int:
 
 def _requirements(context: CliContext, args: Namespace) -> int:
     project = find_project(context.product, args.project)
-    _docs, requirements = read_index(project)
+    requirements = read_index(project).requirements
     if args.document is not None:
         name = _document(project, args.document).name
         requirements = [req for req in requirements if req.document == name]
@@ -449,6 +737,7 @@ def _requirements(context: CliContext, args: Namespace) -> int:
                     "document": req.document,
                     "title": req.title,
                     "quote": req.quote,
+                    "page": req.page,
                     "steps": [{"id": step.id, "title": step.title} for step in linked[req.id]],
                 }
                 for req in requirements
@@ -471,8 +760,7 @@ def _requirements(context: CliContext, args: Namespace) -> int:
 def _link(context: CliContext, args: Namespace) -> int:
     step = find_step(context.product, args.step)
     project = context.product.project_of(step.id)
-    _docs, requirements = read_index(project)
-    known = {req.id for req in requirements}
+    known = {req.id for req in read_index(project).requirements}
     links = read_links(step)
     if args.remove:
         links = [entry for entry in links if entry != args.requirement]
@@ -486,7 +774,8 @@ def _link(context: CliContext, args: Namespace) -> int:
         if args.requirement not in links:
             links = [*links, args.requirement]
         note = f"{step.title}: linked to {args.requirement}"
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, write_links(links)))
+    entry = write_step_entry(links, read_attachments(step))
+    context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
     context.report(
         {"step": step.id, "requirements": sorted(set(links))},
         note,

@@ -17,9 +17,10 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step
 from dplanner.domain.commands import EditTextCommand
-from dplanner.domain.model import Node, Product, Step, StepId, TextEdit
+from dplanner.domain.model import Node, Product, Project, Step, StepId, TextEdit
 from dplanner.domain.store import ModuleFileArea
 from dplanner.modules.step_agent_instruction.aspect import (
     MODULE_ID,
@@ -29,8 +30,9 @@ from dplanner.modules.step_agent_instruction.aspect import (
 )
 from dplanner.modules.step_agent_instruction.prompt import PromptPart, assemble
 
-# (product, step, files) -> the context blocks the prompt should carry. ``files`` is the
-# store's file lookup, passed through so the parts can name real asset paths.
+# (product, step, files) -> blocks the prompt should carry: handed-forward context for
+# ``prompt_parts``, the step's own facts for ``prompt_sections``. ``files`` is the store's
+# file lookup, passed through so the blocks can name real asset paths.
 PartsFor = Callable[
     [Product, Step, Callable[[StepId, str], ModuleFileArea]], Sequence[PromptPart]
 ]
@@ -47,25 +49,54 @@ def _no_epilogue(_step: Step) -> str:
     return ""
 
 
+def lint_checks() -> list[LintCheck]:
+    def missing_instructions(_product: Product, project: Project) -> list[LintFinding]:
+        # A standing instruction covers every step, so it silences this check — the same
+        # rule `agent prompt`'s guard applies.
+        if read_project(project):
+            return []
+        return [
+            LintFinding(
+                check="agent.missing",
+                subject_id=step.id,
+                subject=step.title,
+                message="no agent instruction and no standing one — "
+                f"`dplanner agent set '{step.title}' --file -`, or "
+                f"`dplanner agent set --project '{project.title}' --file -`",
+            )
+            for step in project.steps
+            if not read(step)
+        ]
+
+    return [missing_instructions]
+
+
 def commands(
     prompt_parts: PartsFor = _no_parts,
+    prompt_sections: PartsFor = _no_parts,
     epilogue: EpilogueFor = _no_epilogue,
     preamble: str = "",
 ) -> list[CliCommand]:
     def _prompt(context: CliContext, args: Namespace) -> int:
         step = find_step(context.product, args.step)
-        instruction = read(step)
-        if not instruction:
-            raise CliError(f"{step.title!r} has no agent instruction")
         project = context.product.project_of(step.id)
+        instruction = read(step)
+        project_instruction = read_project(project)
+        if not instruction and not project_instruction:
+            raise CliError(
+                f"{step.title!r} has no agent instruction and neither does its project — "
+                f"set one with `dplanner agent set {step.title!r} --file …`, or a standing "
+                f"one with `dplanner agent set --project {project.title!r} --file …`"
+            )
         assembled = assemble(
             step_title=step.title or "Untitled step",
             project_title=project.title or "Untitled project",
             instruction=instruction,
             parts=prompt_parts(context.product, step, context.store.files),
+            sections=prompt_sections(context.product, step, context.store.files),
             epilogue=epilogue(step),
             preamble=preamble,
-            project_instruction=read_project(project),
+            project_instruction=project_instruction,
             project_files=asset_paths(context.store.files, project.id),
             instruction_files=asset_paths(context.store.files, step.id),
         )
@@ -103,8 +134,8 @@ def commands(
         ),
         CliCommand(
             path=("agent", "prompt"),
-            summary="Print the full briefing for a step: project and step instructions "
-            "plus inherited context.",
+            summary="Print the full briefing for a step: instructions, description, "
+            "requirements, branch and inherited context — everything, in one read.",
             configure=_one_step,
             run=_prompt,
             examples=("dplanner agent prompt 'Read the spec' --json",),

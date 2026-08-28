@@ -70,6 +70,32 @@ def test_an_explicit_workspace_wins(workspace, tmp_path):
     assert find_workspace(str(workspace), start=tmp_path).path == workspace
 
 
+def test_a_pointer_file_reaches_a_workspace_the_walk_never_enters(workspace, tmp_path):
+    """A plan in `dplanner-workspace/` under a repo root is invisible to an upward walk;
+    a one-line `.dplanner` at the root is how the repo says where it is."""
+    repo = tmp_path / "repo"
+    deep = repo / "src" / "somewhere"
+    deep.mkdir(parents=True)
+    (repo / ".dplanner").write_text(f"{workspace}\n")  # absolute path
+    assert find_workspace(start=deep).path == workspace
+
+    (repo / ".dplanner").write_text("../widget\n")  # relative to the pointer's directory
+    assert find_workspace(start=deep).path == workspace
+
+
+def test_a_real_workspace_wins_over_a_pointer_beside_it(workspace, tmp_path):
+    (workspace / ".dplanner").write_text(str(tmp_path / "elsewhere"))
+    assert find_workspace(start=workspace).path == workspace
+
+
+def test_a_dangling_pointer_is_an_error_not_a_fallthrough(tmp_path):
+    from dplanner.cli.command import CliError
+
+    (tmp_path / ".dplanner").write_text("nowhere")
+    with pytest.raises(CliError, match="points at"):
+        find_workspace(start=tmp_path)
+
+
 # -- reading -----------------------------------------------------------------------------------
 
 
@@ -133,6 +159,16 @@ def test_an_ambiguous_name_asks_rather_than_guessing(cli):
     # The message has to say what to type next, so it names the ids.
     ids = [row["id"][:8] for row in data(cli("project", "list", "--json"))["projects"]]
     assert all(short in message for short in ids)
+    # And what it says to type has to work: the short id it printed resolves.
+    shown = data(cli("project", "show", ids[0], "--json"))
+    assert shown["id"].startswith(ids[0])
+
+
+def test_a_short_id_prefix_finds_a_step(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    full = data(cli("step", "show", "Deploy", "--json"))["id"]
+    assert data(cli("step", "show", full[:8], "--json"))["id"] == full
 
 
 def test_unlink_removes_only_that_edge(cli):
@@ -201,6 +237,110 @@ def test_agent_prompt_opens_with_the_project_instruction(cli, cli_stdin):
     assert shown["prompt"].index("House rules.") < shown["prompt"].index("Ship it.")
 
 
+def test_agent_prompt_works_from_the_standing_instruction_alone(cli, cli_stdin):
+    """The standing instruction is "prepended to every briefing" — so a step with no
+    instruction of its own still has a briefing, exactly as the GUI's Preview shows."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
+    shown = data(cli("agent", "prompt", "Deploy", "--json"))
+    assert "House rules." in shown["prompt"]
+    # No empty section for the instruction the step does not have.
+    assert "## Instructions" not in shown["prompt"]
+
+
+def test_agent_prompt_is_a_self_contained_briefing(cli, cli_stdin, tmp_path):
+    """One read gives an executing agent everything: description, the requirements the
+    step answers to (titles AND quotes), where the work lands, then the instructions."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    cli_stdin("describe", "set", "Deploy", "--file", "-", stdin="The release step.")
+    spec = tmp_path / "spec.txt"
+    spec.write_text("The system must deploy on tag.\n")
+    cli("spec", "import", "Discovery", str(spec))
+    cli(
+        "spec", "mark", "Discovery", "spec",
+        "--title", "Deploy on tag", "--quote", "must deploy on tag",
+    )
+    cli("spec", "link", "Deploy", "r1")
+    cli("github", "set", "Deploy", "--branch", "deploy-work")
+
+    prompt = data(cli("agent", "prompt", "Deploy", "--json"))["prompt"]
+    assert "## Description" in prompt and "The release step." in prompt
+    assert "**Deploy on tag** (r1, in spec)" in prompt
+    assert "> must deploy on tag" in prompt
+    assert "Branch: deploy-work" in prompt
+    # What the step is, before why it exists, before how to carry it out.
+    assert prompt.index("## Description") < prompt.index("## Requirements")
+    assert prompt.index("## Requirements") < prompt.index("## Instructions")
+    assert prompt.index("## Instructions") < prompt.index("Ship it.")
+
+
+def test_agent_prompt_says_when_a_requirement_link_dangles(cli, cli_stdin, tmp_path):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    spec = tmp_path / "spec.txt"
+    spec.write_text("The system must deploy on tag.\n")
+    cli("spec", "import", "Discovery", str(spec))
+    cli("spec", "mark", "Discovery", "spec", "--title", "Deploy on tag")
+    cli("spec", "link", "Deploy", "r1")
+    cli("spec", "unmark", "Discovery", "r1")
+    prompt = data(cli("agent", "prompt", "Deploy", "--json"))["prompt"]
+    assert "r1 (no longer in the spec index)" in prompt
+
+
+def test_agent_prompt_lists_description_figures_as_files(cli, cli_stdin, tmp_path):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    figure = tmp_path / "diagram.png"
+    figure.write_bytes(b"png bytes")
+    cli("describe", "attach", "Deploy", str(figure))
+    shown = data(cli("agent", "prompt", "Deploy", "--json"))
+    attached = [path for path in shown["files"] if "step_description" in path]
+    assert len(attached) == 1 and attached[0].endswith(".png")
+    assert attached[0] in shown["prompt"]
+
+
+def test_agent_prompt_with_no_instruction_anywhere_names_both_fixes(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    message = cli("agent", "prompt", "Deploy", expect=1)
+    assert "agent set 'Deploy'" in message
+    assert "agent set --project" in message
+
+
+# -- the graph as text -------------------------------------------------------------------------
+
+
+def test_project_graph_draws_waves_and_edges(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Read the spec")
+    cli("step", "add", "Discovery", "Draft the model", "--after", "Read the spec")
+    cli("step", "add", "Discovery", "Interview users")
+    chart = data(cli("project", "graph", "Discovery", "--json"))["mermaid"]
+    assert chart.startswith("flowchart TD")
+    # Both independent steps sit in wave 1, the dependent one in wave 2.
+    assert 'subgraph wave1["Wave 1"]' in chart and 'subgraph wave2["Wave 2"]' in chart
+    read = data(cli("step", "show", "Read the spec", "--json"))["id"][:12]
+    draft = data(cli("step", "show", "Draft the model", "--json"))["id"][:12]
+    assert f"s{read} --> s{draft}" in chart
+
+
+def test_project_graph_quotes_awkward_titles(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", 'Say "hello" [loudly]')
+    chart = cli("project", "graph", "Discovery")
+    assert '"Say #quot;hello#quot; [loudly]"' in chart
+
+
+def test_project_graph_of_an_empty_project_is_still_a_chart(cli):
+    cli("project", "create", "Discovery")
+    assert "no steps yet" in cli("project", "graph", "Discovery")
+
+
 # -- export and import -------------------------------------------------------------------------
 
 
@@ -232,6 +372,26 @@ def test_a_projects_own_module_data_survives_the_round_trip(cli, monkeypatch):
     monkeypatch.setattr("sys.stdin", StringIO(json.dumps(document)))
     cli("project", "import", "--title", "Copy")
     assert data(cli("schedule", "show", "Copy", "--json"))["start"] == "2026-09-01"
+
+
+def test_the_standing_instruction_survives_the_round_trip(cli, cli_stdin, monkeypatch):
+    """The project's prose — its standing agent instruction — is as much the plan as its
+    start date; a document without it made export-then-import quietly lossy."""
+    cli("project", "create", "Discovery")
+    cli_stdin("agent", "set", "--project", "Discovery", "--file", "-", stdin="House rules.")
+    document = data(cli("project", "export", "Discovery"))
+    assert document["text"]["step_agent_instruction"] == "House rules."
+
+    monkeypatch.setattr("sys.stdin", StringIO(json.dumps(document)))
+    cli("project", "import", "--title", "Copy")
+    shown = data(cli("agent", "show", "--project", "Copy", "--json"))
+    assert shown["markdown"] == "House rules."
+
+
+def test_a_document_from_before_text_existed_still_imports(cli, monkeypatch):
+    monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"title": "Old", "steps": []})))
+    cli("project", "import")
+    assert "Old" in cli("project", "list")
 
 
 def test_import_refuses_something_that_is_not_a_document(cli, monkeypatch):

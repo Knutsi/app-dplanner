@@ -25,7 +25,12 @@ def find_step(product: Product, needle: str) -> Step:
 
 
 def _find[NodeT: (Project, Step)](candidates: list[NodeT], needle: str, kind: str) -> NodeT:
-    """Exact identity first, then a unique partial title.
+    """Exact identity first, then a unique id prefix, then a unique partial title.
+
+    The prefix pass is what makes the 8-character ids the CLI *prints* the ids it also
+    *accepts* — a message that says "use an id" must take the id it showed. It applies to
+    ids only: folder names stay exact, because a folder-name prefix is indistinguishable
+    from the start of a title and the title pass already covers that intent.
 
     An ambiguous name is refused rather than resolved to the first match: silently acting on
     one of two things a person might have meant is the failure they cannot see.
@@ -33,6 +38,12 @@ def _find[NodeT: (Project, Step)](candidates: list[NodeT], needle: str, kind: st
     exact = [node for node in candidates if needle in (node.id, node.folder_name)]
     if exact:
         return exact[0]
+    prefixed = [node for node in candidates if needle and node.id.startswith(needle)]
+    if len(prefixed) == 1:
+        return prefixed[0]
+    if prefixed:
+        names = ", ".join(sorted(f"{node.title} ({node.id[:8]})" for node in prefixed))
+        raise CliError(f"{needle!r} is the start of several {kind} ids — type more of it: {names}")
     lowered = needle.lower()
     partial = [node for node in candidates if lowered in node.title.lower()]
     if len(partial) == 1:
