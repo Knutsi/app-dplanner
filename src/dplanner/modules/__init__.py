@@ -217,6 +217,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # — the badge the label, the pill and glyph the PR and branch.
             step_aspects=lambda step_id: step_aspects(step_id, skip={RELEASE_ID, GITHUB_ID}),
             step_accent=step_accent,
+            # The timeline sort reads a step's length through this seam; estimation owns it.
+            days_for=estimated_days,
             # The project panel renders whatever registered a card here — the project-level
             # counterpart of the step panel's inspector_sections.
             cards=services.detail_cards,
@@ -653,8 +655,10 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.cli.lint import commands as lint_commands
     from dplanner.cli.skill import commands as skill_commands
     from dplanner.modules.estimation import cli as estimation_cli
+    from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.github import cli as github_cli
     from dplanner.modules.product import cli as product_cli
+    from dplanner.modules.project_editor import cli as layout_cli
     from dplanner.modules.project_repo import cli as repo_cli
     from dplanner.modules.project_repo.repo import repository_for as repo_repository_for
     from dplanner.modules.projects import cli as projects_cli
@@ -695,6 +699,9 @@ def default_cli_commands() -> list["CliCommand"]:
         *release_cli.commands(),
         *handoff_cli.commands(),
         *order_cli.commands(),
+        # The timeline sort reads a step's length through estimation's Qt-free reader —
+        # handed over here so neither cli.py imports the other.
+        *layout_cli.commands(days_for=estimated_days),
         # Which repository a step's refs belong to is project_repo's rule — the project's
         # own over the product's — handed over here so neither cli.py imports the other.
         *github_cli.commands(repository_for=repo_repository_for),

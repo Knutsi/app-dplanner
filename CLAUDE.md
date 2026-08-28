@@ -257,9 +257,13 @@ root, stop and look for the registry or capability you have not found yet.
   id and a converter and the data moves at open — see `modules/estimation/aspect.py` and
   `FORMAT.md`'s *Retiring a module*. No product-format change, and no module importing
   another.
-- **Automatic graph layout is never persisted.** A node nobody moved is placed by dependency
-  depth every time the project opens. Storing that would make merely opening a tab dirty the
-  workspace, and every CLI-created step would grow a position file behind the user's back.
+- **Automatic graph layout is never persisted; an explicit sort is.** A node nobody moved is
+  placed by dependency depth every time the project opens — storing that would make merely
+  opening a tab dirty the workspace, and every CLI-created step would grow a position file
+  behind the user's back. A sort *action* (`canvas.sort_*`, `dplanner layout sort`) is a
+  user gesture, so it writes through the undo stack like a drag. Named layouts and regions
+  are project-level entries under the same `project_editor` id — `ARCHITECTURE.md`'s *An
+  explicit sort persists; the ambient layout never does* has the reasoning.
 - **A module that writes a number owes it a `float`.** An `int` writes as `5` where a
   reloaded float writes as `5.0`, making a file's bytes depend on whether the workspace had
   been reopened. `module_data` is opaque to the model, so the coercion belongs in the

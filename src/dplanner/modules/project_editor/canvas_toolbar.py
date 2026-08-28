@@ -11,8 +11,8 @@ between groups; :mod:`dplanner.framework.toolbar` renders one group each and kno
 about the others.
 
 Every button is its glyph alone with the spec's label left as the tooltip — except the mode
-switch, which is a word and no glyph. A mode you are in has to be readable at a glance, and a
-checked button is filled with the accent, where a glyph painted in the secondary text colour
+switches, which are words and no glyph. A mode you are in has to be readable at a glance, and
+a checked button is filled with the accent, where a glyph painted in the secondary text colour
 would have nothing left to say.
 """
 
@@ -39,14 +39,15 @@ from dplanner.theme.icons import (
 GROUPS: tuple[tuple[str, ...], ...] = (
     ("steps.new", "steps.rename", "steps.delete"),
     ("steps.connect", "steps.unlink"),
+    ("regions.new",),
     ("appshell.undo", "appshell.redo"),
     ("canvas.frame", "order.open"),
 )
 
+# The two mode switches are worded; everything else is its glyph.
+_WORDED = {"steps.connect": "Connect", "regions.new": "Region"}
 BUTTON_TEXT = {
-    action_id: ("Connect" if action_id == "steps.connect" else "")
-    for group in GROUPS
-    for action_id in group
+    action_id: _WORDED.get(action_id, "") for group in GROUPS for action_id in group
 }
 
 ICONS: dict[str, Callable[[str], QIcon]] = {
@@ -75,6 +76,7 @@ class CanvasToolbar(QWidget):
         theme: ThemeService,
         parent: QWidget | None = None,
         groups: Sequence[Sequence[str]] = GROUPS,
+        trailing: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("CanvasToolbar")
@@ -95,6 +97,9 @@ class CanvasToolbar(QWidget):
             row.addWidget(bar)
             self._bars.append(bar)
         row.addStretch(1)
+        if trailing is not None:
+            # The far end of the strip — the layout picker's seat, owned by whoever made it.
+            row.addWidget(trailing)
 
         self._unsubscribe = theme.changed.connect(lambda _theme: self._paint(theme))
         self._paint(theme)

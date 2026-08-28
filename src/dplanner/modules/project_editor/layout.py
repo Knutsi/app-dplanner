@@ -1,46 +1,30 @@
 """Where a step's node goes when nobody has placed it.
 
 Plain functions over the model, with no Qt anywhere, so the interesting part — does the graph
-read left to right in dependency order — is testable without a widget in sight. Writer's
-corkboard splits its move rules out for the same reason.
+read left to right in dependency order — is testable without a widget in sight.
 
-The dependency walk itself lives in ``domain/ordering.py``: a column here is a wave there, and
-one implementation serves the canvas, the order view and the CLI.
+The arrangement itself is ``sorts.layered_flow``, the same algorithm the Sort menu offers —
+one implementation, whether the layout is ambient or asked for. The difference is what
+happens to the result: a sort *action* is a user gesture and persists through the undo
+stack; the fallback here is recomputed every time the project opens.
 
 **Nothing here is ever written to disk.** A computed position is recomputed every time the
-project opens; only a step somebody actually dragged earns a stored one. Persisting the
-automatic layout would mean that merely opening a tab dirtied the workspace, autosave would
-flush it 1.5 seconds later, and every step an agent created through the CLI would grow a
-position file the next time a window happened to open.
+project opens; only a step somebody actually dragged — or a sort somebody actually ran —
+earns a stored one. Persisting the automatic layout would mean that merely opening a tab
+dirtied the workspace, autosave would flush it 1.5 seconds later, and every step an agent
+created through the CLI would grow a position file the next time a window happened to open.
 """
 
 from dplanner.domain.model import Product, Project, StepId
-from dplanner.domain.ordering import depths
-
-# Roughly a node and a half apart, so an edge is visible between two columns.
-COLUMN_SPACING = 260.0
-ROW_SPACING = 110.0
-ORIGIN_X = 40.0
-ORIGIN_Y = 40.0
+from dplanner.modules.project_editor.sorts import layered_flow
 
 
 def auto_positions(product: Product, project: Project) -> dict[StepId, tuple[float, float]]:
-    """A position for every step: a column per dependency depth, in the project's own order.
+    """A position for every step, from the graph alone.
 
     A pure function of the graph, so it only moves a node when the graph itself changed.
     """
-    by_depth = depths(product, project)
-    rows: dict[int, int] = {}
-    placed: dict[StepId, tuple[float, float]] = {}
-    for step in project.steps:
-        column = by_depth.get(step.id, 0)
-        row = rows.get(column, 0)
-        rows[column] = row + 1
-        placed[step.id] = (
-            ORIGIN_X + column * COLUMN_SPACING,
-            ORIGIN_Y + row * ROW_SPACING,
-        )
-    return placed
+    return layered_flow(product, project)
 
 
 def positions(product: Product, project: Project) -> dict[StepId, tuple[float, float]]:

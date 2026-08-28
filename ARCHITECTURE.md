@@ -416,6 +416,35 @@ canvas through a typed callback on their own `Deps`. Where a node *is* is still 
 model — `layout.positions()` answers it — so "the nearest node to the right" is a pure function
 and only the last step, telling the canvas what to select, needs a window.
 
+### An explicit sort persists; the ambient layout never does
+
+Two things place a node, and they persist differently on purpose. The **ambient layout** —
+where a never-moved node sits — is recomputed from the graph every time the project opens
+(`layout.auto_positions`, which is `sorts.layered_flow`). Storing it would mean opening a tab
+dirties the workspace, autosave flushes it 1.5 seconds later, and every step an agent creates
+through the CLI grows a position file the next time a window happens to open. A **sort
+action** (`canvas.sort_*`, or `dplanner layout sort`) is different in kind: somebody asked
+for that arrangement, so it is a gesture like a drag — one `CompositeCommand` of position
+writes on the undo stack, and one Ctrl+Z takes the whole arrangement back. The rule
+"derived facts are computed, never stored" survives intact because what is stored is not the
+derivation but the user's decision to keep its output.
+
+The same line separates the two other things this feature stores. A **named layout** is a
+snapshot a person saved — authored, not derived — kept as one entry on the *project* node
+under the same `project_editor` id as the per-step positions (the `estimation` cross-level
+precedent in `FORMAT.md`). Applying one builds the same position commands a sort does, which
+is what makes a CLI `layout apply` undoable in an open window. **Which layout is currently
+applied** is per-user presentation state and lives in `user_config` (QSettings), never the
+workspace: two people sharing a repository can be looking at different layouts of the same
+graph. The picker's modified dot is a comparison against the snapshot, recomputed — never
+stored.
+
+**Regions** ride the same project-level entry: titled rectangles painted below the edges,
+annotation the model never learns about. Every region gesture is one command writing the
+whole list; a body drag also carries the steps whose centres lie inside, as one composite —
+undo restores frame and steps together. A named layout snapshots region rects along with
+step positions, and applying it moves regions it still finds — never creates or deletes one.
+
 ### The canvas is a plane, and why that is one decision rather than three
 
 `GraphScene` sets its scene rect once, in its constructor: a square centred on the origin,

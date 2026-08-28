@@ -59,12 +59,31 @@ from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import NodeAccent, StepNodeItem
 from dplanner.modules.project_editor.layout import positions
-from dplanner.modules.project_editor.modes import CONNECT, ConnectMode, IdleMode
+from dplanner.modules.project_editor.layout_button import LayoutButton
+from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
+from dplanner.modules.project_editor.modes import (
+    CONNECT,
+    REGION_CREATE,
+    ConnectMode,
+    IdleMode,
+    RegionCreateMode,
+)
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
 from dplanner.modules.project_editor.positions import DATA_FORMAT, write_position
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.project_panel import ProjectPanel
-from dplanner.modules.project_editor.selection import EDGE_KIND, CanvasSelection, EdgeRef
+from dplanner.modules.project_editor.region_verbs import RegionVerbs
+from dplanner.modules.project_editor.regions import (
+    new_region,
+    read_regions,
+    set_regions_command,
+)
+from dplanner.modules.project_editor.selection import (
+    EDGE_KIND,
+    REGION_KIND,
+    CanvasSelection,
+    EdgeRef,
+)
 from dplanner.modules.project_editor.verbs import StepVerbs
 
 MODULE_ID = "project_editor"
@@ -80,6 +99,10 @@ def _no_aspects(_step_id: StepId) -> list[str]:
 
 def _no_accent(_step_id: StepId) -> NodeAccent:
     return NodeAccent()
+
+
+def _no_days(_step: Step) -> float | None:
+    return None
 
 
 @dataclass(frozen=True)
@@ -98,6 +121,9 @@ class ProjectEditorDeps:
     # How a step should look beyond its text — muted, badged — in the canvas's own
     # vocabulary, so the editor never learns which aspects mean what.
     step_accent: Callable[[StepId], NodeAccent] = field(default=_no_accent)
+    # How long a step takes, from whichever module owns estimates — the timeline sort reads
+    # time through this, the same seam domain/schedule.py uses one level down.
+    days_for: Callable[[Step], float | None] = field(default=_no_days)
     # The project panel renders every section registered here as a card — the registry the
     # composition root exposes as services.detail_cards. This module never learns whose.
     cards: InspectorSectionRegistry = field(default_factory=InspectorSectionRegistry)
@@ -106,10 +132,17 @@ class ProjectEditorDeps:
 class ProjectActivity(ActivityBase):
     """One project, as a graph. What is selected on it is published; the panels follow."""
 
-    def __init__(self, deps: ProjectEditorDeps, project_id: NodeId, verbs: StepVerbs) -> None:
+    def __init__(
+        self,
+        deps: ProjectEditorDeps,
+        project_id: NodeId,
+        verbs: StepVerbs,
+        layout_verbs: LayoutVerbs,
+    ) -> None:
         self._deps = deps
         self._product = deps.product
         self._verbs = verbs
+        self._layout_verbs = layout_verbs
         self.project_id = project_id
         # There is one selection scope, one detail panel and several panes on screen. Only
         # the pane the user is in may write to the scope: a background one re-syncing its
@@ -132,6 +165,9 @@ class ProjectActivity(ActivityBase):
         self._scene.nodes_moved.connect(self._on_nodes_moved)
         self._scene.link_requested.connect(self._on_link_requested)
         self._scene.create_requested.connect(self._on_create)
+        self._scene.region_create_requested.connect(self._on_region_create)
+        self._scene.regions_moved.connect(self._on_regions_moved)
+        self._scene.region_resized.connect(self._on_region_resized)
         self._view.modes.changed.connect(lambda _name: self._publish_activity())
 
         self._unsubscribes = [
@@ -179,6 +215,14 @@ class ProjectActivity(ActivityBase):
         elif self._view.modes.current().name == CONNECT:
             self._view.modes.pop()
 
+    def set_region_mode(self, on: bool) -> None:
+        """Enter or leave region-drawing mode, the same shape as connect."""
+        if on:
+            if self._view.modes.current().name != REGION_CREATE:
+                self._view.modes.push(RegionCreateMode(self._view.deps))
+        elif self._view.modes.current().name == REGION_CREATE:
+            self._view.modes.pop()
+
     def frame(self) -> None:
         self._view.frame_content()
 
@@ -206,6 +250,7 @@ class ProjectActivity(ActivityBase):
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
+        self._layout_button.dispose()
         self._toolbar.dispose()
         self._view.modes.dispose()
 
@@ -216,7 +261,20 @@ class ProjectActivity(ActivityBase):
         column = QVBoxLayout(page)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
-        toolbar = CanvasToolbar(self._deps.actions, self._deps.context, self._deps.theme, page)
+        self._layout_button = LayoutButton(
+            self._product,
+            self.project_id,
+            self._deps.actions,
+            self._deps.context,
+            self._layout_verbs,
+        )
+        toolbar = CanvasToolbar(
+            self._deps.actions,
+            self._deps.context,
+            self._deps.theme,
+            page,
+            trailing=self._layout_button,
+        )
         column.addWidget(toolbar)
         column.addWidget(self._view, 1)
         return page, toolbar
@@ -251,7 +309,7 @@ class ProjectActivity(ActivityBase):
             for kind, targets in step.edges.items()
             for source in targets
         ]
-        self._scene.sync(nodes, edges)
+        self._scene.sync(nodes, edges, read_regions(project))
 
     def _on_structure(self, _parent_id: NodeId, _origin: object = None) -> None:
         if not self._product.has(self.project_id):
@@ -295,10 +353,16 @@ class ProjectActivity(ActivityBase):
     def _publish_selection(self, selection: CanvasSelection) -> None:
         if not self._is_active:
             return  # See _is_active: a background pane does not speak for the user.
-        nodes = tuple(
-            ContextNode(selection_uri("step", step_id)) for step_id in selection.steps
-        ) + tuple(
-            ContextNode(selection_uri(EDGE_KIND, edge.entity_id())) for edge in selection.edges
+        nodes = (
+            tuple(ContextNode(selection_uri("step", step_id)) for step_id in selection.steps)
+            + tuple(
+                ContextNode(selection_uri(EDGE_KIND, edge.entity_id()))
+                for edge in selection.edges
+            )
+            + tuple(
+                ContextNode(selection_uri(REGION_KIND, region_id))
+                for region_id in selection.regions
+            )
         )
         self._deps.context.set_scope(SCOPE_SELECTION, nodes)
 
@@ -341,6 +405,50 @@ class ProjectActivity(ActivityBase):
         )
         self._scene.select_step(step.id)
 
+    def _on_region_create(self, x: float, y: float, w: float, h: float) -> None:
+        project = self._project()
+        created = new_region("Region", x, y, w, h)
+        self._deps.undo.push(
+            set_regions_command(
+                project, [*read_regions(project), created], "Add Region", view_origin=self
+            )
+        )
+        self._deps.undo.break_coalescing()
+        self._scene.select_region(created.id)
+
+    def _on_regions_moved(
+        self,
+        moves: list[tuple[str, float, float]],
+        carried: list[tuple[StepId, float, float]],
+    ) -> None:
+        project = self._project()
+        placed = {region_id: (x, y) for region_id, x, y in moves}
+        updated = [
+            region.moved_to(*placed[region.id]) if region.id in placed else region
+            for region in read_regions(project)
+        ]
+        label = "Move Region" if len(moves) == 1 else f"Move {len(moves)} Regions"
+        commands: list[Command] = [
+            set_regions_command(project, updated, label, view_origin=self)
+        ]
+        commands += [self._move_command(step_id, x, y) for step_id, x, y in carried]
+        if len(commands) == 1:
+            self._deps.undo.push(commands[0])
+        else:
+            self._deps.undo.push(CompositeCommand(label, commands))
+        self._deps.undo.break_coalescing()
+
+    def _on_region_resized(self, region_id: str, x: float, y: float, w: float, h: float) -> None:
+        project = self._project()
+        updated = [
+            region.moved_to(x, y).sized(w, h) if region.id == region_id else region
+            for region in read_regions(project)
+        ]
+        self._deps.undo.push(
+            set_regions_command(project, updated, "Resize Region", view_origin=self)
+        )
+        self._deps.undo.break_coalescing()
+
     def _select_for_menu(self, node: StepNodeItem | None) -> None:
         """Make the thing under the cursor current — without collapsing a multi-selection
         the click landed inside, or the menu's verbs would lose the other N-1 steps."""
@@ -352,8 +460,17 @@ class ProjectActivity(ActivityBase):
 
         assert isinstance(position, QPoint)
         scene_pos = self._view.mapToScene(position)
-        self._select_for_menu(self._scene.node_at(scene_pos))
-        menu: QMenu = build_menu(self._deps.actions, self._deps.context, "Step", self._view)
+        node = self._scene.node_at(scene_pos)
+        region = self._scene.region_at(scene_pos) if node is None else None
+        if region is not None:
+            if region.region_id not in self._scene.selection().regions:
+                self._scene.select_region(region.region_id)
+            menu: QMenu = build_menu(
+                self._deps.actions, self._deps.context, "Project", self._view, submenu="Region"
+            )
+        else:
+            self._select_for_menu(node)
+            menu = build_menu(self._deps.actions, self._deps.context, "Step", self._view)
         menu.exec(self._view.viewport().mapToGlobal(position))
 
 
@@ -369,6 +486,14 @@ class ProjectEditorModule:
             parent=deps.parent,
             current_project=self._current_project,
         )
+        self._layout_verbs = LayoutVerbs(
+            product=deps.product,
+            undo=deps.undo,
+            parent=deps.parent,
+            current_project=self._current_project,
+            status=lambda text: deps.status.show_status(text, 4000),
+            days_for=deps.days_for,
+        )
         self._canvas_verbs = CanvasVerbs(
             product=deps.product,
             current_project=self._current_project,
@@ -376,6 +501,13 @@ class ProjectEditorModule:
             select_steps=self._select_steps,
             set_connect_mode=self._set_connect_mode,
             frame=self._frame,
+        )
+        self._region_verbs = RegionVerbs(
+            product=deps.product,
+            undo=deps.undo,
+            parent=deps.parent,
+            current_project=self._current_project,
+            set_region_mode=self._set_region_mode,
         )
 
     def open(self, project_id: NodeId) -> None:
@@ -401,7 +533,7 @@ class ProjectEditorModule:
 
         def factory(target: str | None) -> ProjectActivity:
             assert target is not None
-            return ProjectActivity(deps, target, self._verbs)
+            return ProjectActivity(deps, target, self._verbs, self._layout_verbs)
 
         deps.tabs.register_factory(PROJECT_KIND, factory)
         # Order 10: above the step panel, because a project is what a step is part of.
@@ -418,6 +550,8 @@ class ProjectEditorModule:
         )
         self._verbs.register_into(deps.actions)
         self._canvas_verbs.register_into(deps.actions)
+        self._layout_verbs.register_into(deps.actions)
+        self._region_verbs.register_into(deps.actions)
         # A project that goes away takes its tab with it, and a rename reaches the tab.
         deps.product.structure_changed.connect(lambda *_args: self._close_orphan_tabs())
         deps.product.field_changed.connect(lambda *_args: self._retitle_tabs())
@@ -439,6 +573,11 @@ class ProjectEditorModule:
         current = self._current_activity()
         if current is not None:
             current.set_connect_mode(on)
+
+    def _set_region_mode(self, on: bool) -> None:
+        current = self._current_activity()
+        if current is not None:
+            current.set_region_mode(on)
 
     def _select_steps(self, step_ids: list[StepId]) -> None:
         current = self._current_activity()

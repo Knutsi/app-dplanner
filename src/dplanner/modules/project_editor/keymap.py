@@ -38,8 +38,8 @@ CANVAS_KEYS: Final[dict[Binding, tuple[str, ...]]] = {
     (Qt.Key.Key_F, _NONE): ("canvas.frame",),
     (Qt.Key.Key_N, _NONE): ("steps.new",),
     (Qt.Key.Key_R, _NONE): ("steps.rename",),
-    (Qt.Key.Key_Delete, _NONE): ("steps.unlink", "steps.delete"),
-    (Qt.Key.Key_Backspace, _NONE): ("steps.unlink", "steps.delete"),
+    (Qt.Key.Key_Delete, _NONE): ("steps.unlink", "steps.delete", "regions.delete"),
+    (Qt.Key.Key_Backspace, _NONE): ("steps.unlink", "steps.delete", "regions.delete"),
     # Modified, but still bound here rather than as a shortcut: Ctrl+A means "select the
     # text" in every editor, and only the canvas may take it to mean steps.
     (Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier): ("steps.select_all",),

@@ -16,13 +16,23 @@ migration list — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 from typing import Any
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
-from dplanner.domain.model import Step
+from dplanner.domain.model import Project, Step
 
 MODULE_ID = "project_editor"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
 # Positions snap to this, which keeps a hand-arranged graph tidy and the JSON short.
 GRID = 8.0
+
+# A node's footprint. It lives here rather than in items.py so the Qt-free sort algorithms
+# can default to it; the canvas imports it back.
+NODE_W = 180.0
+NODE_H = 56.0
+
+
+def snapped(value: float) -> float:
+    """A coordinate on the grid, as the float every number that reaches disk owes."""
+    return float(round(value / GRID) * GRID)
 
 
 def read_position(step: Step) -> tuple[float, float] | None:
@@ -46,7 +56,21 @@ def write_position(x: float, y: float) -> dict[str, Any]:
     workspace had been reopened. ``FORMAT.md`` states the rule; ``estimation`` is the
     other place that owes it.
     """
-    return stamped(
-        {"x": float(round(x / GRID) * GRID), "y": float(round(y / GRID) * GRID)},
-        DATA_FORMAT.version,
-    )
+    return stamped({"x": snapped(x), "y": snapped(y)}, DATA_FORMAT.version)
+
+
+def entry_with(project: Project, key: str, value: Any) -> dict[str, Any]:
+    """The project-level entry with one key replaced, the other keys carried untouched.
+
+    The named layouts and the regions share ``projects/<p>/modules/project_editor.json``,
+    and this is what lets each be written without knowing the other's shape. An empty value
+    drops its key, and ``stamped`` turns a bare entry into ``{}``, which deletes the file.
+    """
+    entry = {
+        k: v
+        for k, v in (project.module_data.get(MODULE_ID) or {}).items()
+        if k not in (key, "format")
+    }
+    if value:
+        entry[key] = value
+    return stamped(entry, DATA_FORMAT.version)

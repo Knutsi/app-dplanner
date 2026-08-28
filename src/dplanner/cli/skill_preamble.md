@@ -44,6 +44,34 @@ steps are what let two agents — or two weeks — run in parallel; `dplanner or
 groups steps into waves of what can start together, and `project graph` makes the same
 shape visible. If the waves are all singletons, revisit the links before adding more steps.
 
+## Leave the graph readable
+
+The graph is what the user reviews, so when a plan settles, make its shape carry meaning
+rather than leaving the steps wherever they landed:
+
+- **Sort it.** `dplanner layout sort <project> flow` arranges by dependency depth, left to
+  right; `spine` lays the main chain on a central line with feeder work branching off it —
+  the right shape when a project drives toward releases; `timeline` spaces steps by their
+  estimates so the graph reads as a schedule. A sort is one undo step in an open window.
+- **Name the areas with regions — coarsely.** A region is a titled rectangle painted
+  behind the steps — "Database setup", "Finalize release" — pure annotation, with no
+  effect on the plan. `dplanner region add <project> "Database setup" --steps schema
+  migrate seed` wraps those steps where they sit, and reports every step the rectangle
+  actually covers — read that list, because a wrap can catch a neighbour nobody named.
+  A region earns its place by naming a phase or a theme: one or two steps per region is
+  usually too granular, and a region whose title restates a step's title says nothing. A
+  project rarely wants more than five or six regions — fewer is better, and not every
+  step needs one. Use your judgement; a handful of well-named regions is what lets the
+  user take a forty-step plan in at a glance.
+- **Sort first, regions second — and re-fit after re-sorting.** The wrap uses where steps
+  sit, so a later `layout sort` moves steps out from under their regions. When that
+  happens, `dplanner region fit <project> "Database setup" --steps schema migrate seed`
+  re-wraps a region in place, keeping its identity so saved layouts still know it.
+  `region list` shows what each region covers now — check it before handing the plan over.
+- **Save the arrangement.** `dplanner layout save <project> "review"` snapshots every step
+  position and region under a name, and the user can return to it from the canvas toolbar
+  whenever later edits scatter things.
+
 ## Working from a specification
 
 A project can carry the documents it answers to — a PDF, a markdown file, plain text —
