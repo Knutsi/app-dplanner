@@ -120,7 +120,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
-    from dplanner.theme.icons import gauge_icon, graph_icon, spec_icon
+    from dplanner.modules.time_estimates.module import TimeEstimatesDeps, TimeEstimatesModule
+    from dplanner.theme.icons import clock_icon, gauge_icon, graph_icon, spec_icon
 
     library: Library = services.document
     # The composition root knows the concrete store, exactly as it knows the concrete
@@ -402,6 +403,23 @@ def default_modules(services: "AppServices") -> list["Module"]:
             describe_step=lambda step_id: description_read(library.step(step_id)),
         )
     )
+    # Constructed before the list because the projects index opens the matrix through it,
+    # and after estimation, whose start-date bar it hosts above the calendar grid.
+    time_estimates = TimeEstimatesModule(
+        TimeEstimatesDeps(
+            library=library,
+            undo=services.undo,
+            actions=services.actions,
+            context=services.context,
+            tabs=services.tabs,
+            # Estimates, agent-ness and the start date through the owners' Qt-free
+            # readers — the matrix never learns what any of them is stored as.
+            days_for=estimated_days,
+            is_agent=agent_enabled,
+            start_of=lambda project_id: start_of(library.project(project_id)),
+            start_bar=estimation.create_start_bar,
+        )
+    )
 
     return [
         # -- the shell -------------------------------------------------------------------
@@ -561,6 +579,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
                         menu="Project",
                         order=30,
                     ),
+                    ProjectEntry(
+                        id="time",
+                        label="Time Estimates",
+                        open=time_estimates.open,
+                        open_preview=lambda pid: time_estimates.open(pid, preview=True),
+                        icon=clock_icon,
+                        menu="Project",
+                        order=40,
+                    ),
                 ),
             )
         ),
@@ -680,6 +707,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             )
         ),
         progression,
+        time_estimates,
         AgentSkillModule(
             AgentSkillDeps(
                 actions=services.actions,
@@ -901,6 +929,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.cli.skill import commands as skill_commands
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
+    from dplanner.modules.estimation.schedule import start_of
     from dplanner.modules.github import cli as github_cli
     from dplanner.modules.library import cli as library_cli
     from dplanner.modules.progression import cli as progression_cli
@@ -908,6 +937,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
+    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_marked
     from dplanner.modules.step_agent_run import cli as agent_state_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_description.aspect import read as description_read
@@ -917,6 +947,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_ticket import cli as ticket_cli
+    from dplanner.modules.time_estimates import cli as time_cli
 
     specs = aspect_specs()
     commands = [
@@ -947,6 +978,9 @@ def default_cli_commands() -> list["CliCommand"]:
         # The timeline sort reads a step's length through estimation's Qt-free reader —
         # handed over here so neither cli.py imports the other.
         *layout_cli.commands(days_for=estimated_days),
+        # The staffing matrix reads estimates, agent-ness and the start date through the
+        # owners' Qt-free readers — handed over here so no cli.py imports another module's.
+        *time_cli.commands(days_for=estimated_days, is_agent=agent_marked, start_of=start_of),
         *github_cli.commands(),
         *aspect_commands(specs),
         # Each module exports what "missing" means for its own aspect; the list order is
@@ -1044,9 +1078,14 @@ def default_module_formats() -> list[ModuleDataFormat]:
     format missing here is data the CLI silently declines to bring forward.
     """
     from dplanner.modules.project_editor import positions
+    from dplanner.modules.time_estimates import schedule as time_schedule
 
-    # The aspects, plus the module data that is not an aspect: the graph's node positions.
-    # Deriving this list from aspect_specs() alone would silently omit it. A project's
-    # start date needs no entry: it rides on the estimation aspect's format, which is the
-    # same module writing under the same id on another node.
-    return [spec.data_format for spec in aspect_specs()] + [positions.DATA_FORMAT]
+    # The aspects, plus the module data that is not an aspect: the graph's node positions
+    # and the time report's focus factor. Deriving this list from aspect_specs() alone
+    # would silently omit them. A project's start date needs no entry: it rides on the
+    # estimation aspect's format, which is the same module writing under the same id on
+    # another node.
+    return [spec.data_format for spec in aspect_specs()] + [
+        positions.DATA_FORMAT,
+        time_schedule.DATA_FORMAT,
+    ]

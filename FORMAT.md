@@ -200,10 +200,12 @@ carrying only the old prose file still reads as agent-on, so no migration ships 
 `modules/project_editor.json` beside the step, and it is deliberately *not* an `AspectSpec`:
 an aspect is a fact about the work that an agent may want to write, and a layout is
 presentation. It is per step rather than one map on the project so that moving a node is a
-one-file diff — the same reasoning as ordering living in the parent's list. The distinction
-has one practical consequence worth knowing: the CLI's migration list is built from the
-aspects *plus* anything like this, and a format missing from it is data the CLI silently
-declines to bring forward.
+one-file diff — the same reasoning as ordering living in the parent's list. The time
+report's focus factor is the second instance: `modules/time_estimates.json` beside the
+project, `{"efficiency": 0.5}` — an assumption about the team, not a fact about a step. The
+distinction has one practical consequence worth knowing: the CLI's migration list is built
+from the aspects *plus* anything like this, and a format missing from it is data the CLI
+silently declines to bring forward.
 
 **A module that writes a number owes it a `float`.** The old format enforced this at the
 model boundary, because an `int` writes as `5` where a reloaded float writes as `5.0`

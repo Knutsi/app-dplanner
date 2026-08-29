@@ -336,6 +336,15 @@ root, stop and look for the registry or capability you have not found yet.
   progression show` and `--json` are three readers of one function, and the frontier is a
   per-step check, not `ordering.ready()`'s wave one. `ARCHITECTURE.md`'s *Progression is
   the status-aware frontier* has the partition rules and why each was a decision.
+- **Staffing what-ifs are derived; only the focus factor is stored.** The time estimates
+  tab and `dplanner schedule matrix` are one derivation — `domain/schedule.py`'s
+  `parallel_finish`, a deterministic two-pool greedy simulation (longest remaining chain
+  first, ties by project order) handed `days_for` and `is_agent` as functions. Calendar
+  time is the same walk over a wrapped `days_for` (`time_estimates/schedule.py`'s
+  `stretched`), so the domain never learns what an efficiency is; the focus factor itself
+  is the one stored value — project-node module data, written by the tab's spinbox and
+  `dplanner schedule focus` alike. `ARCHITECTURE.md`'s *Time estimates: two worker pools,
+  one greedy simulation* has the reasoning.
 - **A module's project-level editor is a card, registered into `services.detail_cards`.**
   Same `InspectorSection` contract as a step tab, with a project id in `show_target`; the
   project panel renders the stack. Register before `project_editor` in `default_modules()` —

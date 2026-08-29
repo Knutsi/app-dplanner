@@ -11,11 +11,12 @@ works for any other source of days somebody wires in later. That is the same sea
 lets the order table, ``dplanner schedule show``, ``--json`` and every report after them read
 one implementation.
 
-**Two named assumptions, no pretend precision.** ``schedule`` is serial — one worker, steps
+**Named assumptions, no pretend precision.** ``schedule`` is serial — one worker, steps
 end to end down the topological order, weekends skipped, a week is five working days.
 ``critical_path`` is the other bracket: unlimited workers, bounded only by the ``requires``
-chains. Real staffing lands between the two, and a report that prints both labelled is
-honest where a single number would be a guess wearing a date.
+chains. Real staffing lands between the two — ``parallel_finish`` simulates it for a stated
+worker cap — and a report that prints its assumption labelled is honest where a single
+number would be a guess wearing a date.
 
 **Every plan has a start.** A project nobody has dated starts today — the caller resolves
 that (see ``estimation/schedule.py``'s ``start_of``) and this file is simply handed a date.
@@ -156,6 +157,114 @@ def schedule(
         finish = working_days_after(start, accumulated) if days is not None else None
         scheduled.append(Scheduled(place=place, days=days, accumulated=accumulated, finish=finish))
     return scheduled
+
+
+@dataclass(frozen=True)
+class ParallelFinish:
+    """Makespan under a fixed worker cap — the bracket between ``schedule`` and
+    ``critical_path``.
+
+    ``unestimated`` counts every step that ran as zero days, project-wide — broader than
+    ``CriticalPath.unestimated``, which counts only the chain, because here every step
+    takes a slot and every zero is in the answer.
+    """
+
+    days: float  # Simulated makespan in working days.
+    unestimated: int  # Steps that ran as zero days — the number's honesty.
+
+
+def parallel_finish(
+    library: Library,
+    project: Project,
+    days_for: Callable[[Step], float | None],
+    is_agent: Callable[[Step], bool],
+    *,
+    humans: int,
+    agents: int,
+) -> ParallelFinish | None:
+    """The makespan with ``humans`` people and ``agents`` coding agents. None only when
+    the project has no steps.
+
+    Two pools, handed as a predicate the way ``days_for`` is handed as a function: an
+    agent step waits for an agent slot, every other step for a human one, and neither
+    pool ever takes the other's work. Anything else about staffing — an efficiency
+    factor, say — belongs to the caller, who can wrap ``days_for`` before handing it in;
+    this walk never learns such a thing exists.
+
+    The simulation is greedy list scheduling: whenever a slot frees, it takes the ready
+    step with the longest remaining ``requires`` chain, ties broken by project step
+    order. That is a deterministic model of "the team picks the longest pole first", not
+    an optimum — but with ample slots it meets ``critical_path`` exactly, and with one
+    human on all-human work it meets ``schedule``'s serial total, so the brackets pin it.
+    """
+    if humans < 1 or agents < 1:
+        raise ValueError("a pool with work in it needs at least one worker")
+    if not project.steps:
+        return None
+    order = {step.id: index for index, step in enumerate(project.steps)}
+    days = {step.id: days_for(step) for step in project.steps}
+    waiting: dict[StepId, set[StepId]] = {}
+    dependents: dict[StepId, list[StepId]] = {step.id: [] for step in project.steps}
+    for step in project.steps:
+        requires = {
+            target
+            for target in step.edges.get("requires", [])
+            if project.step(target) is not None
+        }
+        waiting[step.id] = requires
+        for target in requires:
+            dependents[target].append(step.id)
+
+    tails: dict[StepId, float] = {}
+
+    def tail_of(step_id: StepId, seen: frozenset[StepId]) -> float:
+        if step_id in tails:
+            return tails[step_id]
+        if step_id in seen:  # Defensive: a hand-edited file could still contain a cycle.
+            return 0.0
+        ahead = max(
+            (tail_of(after, seen | {step_id}) for after in dependents[step_id]),
+            default=0.0,
+        )
+        tails[step_id] = (days[step_id] or 0.0) + ahead
+        return tails[step_id]
+
+    for step in project.steps:
+        tail_of(step.id, frozenset())
+
+    free = {True: agents, False: humans}  # Keyed by is_agent's answer.
+    pool = {step.id: is_agent(step) for step in project.steps}
+    ready: dict[bool, list[StepId]] = {True: [], False: []}
+    for step in project.steps:
+        if not waiting[step.id]:
+            ready[pool[step.id]].append(step.id)
+    running: list[tuple[float, StepId]] = []
+    now = 0.0
+    remaining = len(project.steps)
+    while remaining:
+        for lane, queue in ready.items():
+            while queue and free[lane]:
+                queue.sort(key=lambda step_id: (-tails[step_id], order[step_id]))
+                step_id = queue.pop(0)
+                free[lane] -= 1
+                running.append((now + (days[step_id] or 0.0), step_id))
+        if not running:  # Defensive: unreachable steps under a hand-edited cycle.
+            break
+        now = min(finish for finish, _ in running)
+        for finish, step_id in tuple(running):
+            if finish > now:
+                continue
+            running.remove((finish, step_id))
+            free[pool[step_id]] += 1
+            remaining -= 1
+            for after in dependents[step_id]:
+                waiting[after].discard(step_id)
+                if not waiting[after]:
+                    ready[pool[after]].append(after)
+    return ParallelFinish(
+        days=now,
+        unestimated=sum(1 for value in days.values() if value is None),
+    )
 
 
 @dataclass(frozen=True)

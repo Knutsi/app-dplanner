@@ -234,3 +234,109 @@ def test_an_empty_project_has_no_path():
     project = Project(title="Discovery")
     library.add_child(library.id, project)
     assert critical_path(library, project, days_of({})) is None
+
+
+# -- staffing between the brackets ---------------------------------------------------------------
+
+
+def agents_named(*titles):
+    return lambda step: step.title in titles
+
+
+NOBODY = agents_named()
+
+
+def loose(*sized):
+    """Steps with no edges at all — pure contention, no graph."""
+    library = Library()
+    project = Project(title="Discovery")
+    library.add_child(library.id, project)
+    for title, _days in sized:
+        library.add_child(project.id, Step(title=title))
+    return library, project, days_of(dict(sized))
+
+
+def test_one_worker_meets_the_serial_total_and_ample_workers_the_path():
+    from dplanner.domain.schedule import critical_path, parallel_finish
+
+    library, project = diamond()
+    estimates = days_of({"A": 1, "B": 2, "C": 10, "D": 1})
+    alone = parallel_finish(library, project, estimates, NOBODY, humans=1, agents=1)
+    crowd = parallel_finish(library, project, estimates, NOBODY, humans=4, agents=1)
+    path = critical_path(library, project, estimates)
+    assert alone is not None and alone.days == 14.0  # one human, steps end to end
+    assert crowd is not None and path is not None and crowd.days == path.days == 12.0
+
+
+def test_neither_pool_takes_the_others_work():
+    from dplanner.domain.schedule import parallel_finish
+
+    library, project, estimates = loose(("H", 5.0), ("X", 1.0), ("Y", 1.0), ("Z", 1.0))
+    is_agent = agents_named("X", "Y", "Z")
+    lone = parallel_finish(library, project, estimates, is_agent, humans=1, agents=1)
+    fleet = parallel_finish(library, project, estimates, is_agent, humans=1, agents=3)
+    assert lone is not None and lone.days == 5.0  # agent work serialises under the human's 5d
+    assert fleet is not None and fleet.days == 5.0  # more agents cannot shorten human work
+    idle = parallel_finish(library, project, estimates, is_agent, humans=4, agents=1)
+    assert idle is not None and idle.days == 5.0  # idle humans never pick up agent steps
+
+
+def test_a_free_slot_takes_the_longest_remaining_chain_first():
+    from dplanner.domain.schedule import parallel_finish
+
+    # In project order: A 1d, D 2d, C 4d, B 5d requiring A. Greedy-by-index starts A and D
+    # and lands at 8; taking the longest tail starts A and C, follows A with B, and lands
+    # at 6 — the assertion that pins the priority rule.
+    library = Library()
+    project = Project(title="Discovery")
+    library.add_child(library.id, project)
+    for title in ("A", "D", "C", "B"):
+        library.add_child(project.id, Step(title=title))
+    a, _d, _c, b = project.steps
+    library.set_edges(b.id, "requires", [a.id])
+    estimates = days_of({"A": 1, "B": 5, "C": 4, "D": 2})
+    pair = parallel_finish(library, project, estimates, NOBODY, humans=2, agents=1)
+    assert pair is not None and pair.days == 6.0
+
+
+def test_unestimated_steps_cost_nothing_and_are_all_counted():
+    from dplanner.domain.schedule import parallel_finish
+
+    library, project = diamond()
+    finish = parallel_finish(
+        library, project, days_of({"A": 1, "D": 1}), NOBODY, humans=2, agents=1
+    )
+    assert finish is not None
+    assert finish.days == 2.0  # B and C run as zero days
+    assert finish.unestimated == 2  # project-wide, not just the winning chain
+
+
+def test_a_chain_of_unestimated_steps_terminates_at_zero(project):
+    from dplanner.domain.schedule import parallel_finish
+
+    library, found = project
+    finish = parallel_finish(library, found, days_of({}), NOBODY, humans=1, agents=1)
+    assert finish is not None
+    assert finish.days == 0.0
+    assert finish.unestimated == 4
+
+
+def test_quarter_days_sum_exactly():
+    from dplanner.domain.schedule import parallel_finish
+
+    library, found, estimates = loose(("A", 0.25), ("B", 0.75), ("C", 0.25))
+    finish = parallel_finish(library, found, estimates, NOBODY, humans=1, agents=1)
+    assert finish is not None and finish.days == 1.25
+
+
+def test_an_empty_project_has_no_makespan_and_an_empty_pool_is_refused():
+    from dplanner.domain.schedule import parallel_finish
+
+    library = Library()
+    project = Project(title="Discovery")
+    library.add_child(library.id, project)
+    assert parallel_finish(library, project, days_of({}), NOBODY, humans=1, agents=1) is None
+    with pytest.raises(ValueError):
+        parallel_finish(library, project, days_of({}), NOBODY, humans=0, agents=1)
+    with pytest.raises(ValueError):
+        parallel_finish(library, project, days_of({}), NOBODY, humans=1, agents=0)
