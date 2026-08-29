@@ -62,6 +62,29 @@ def test_the_skill_teaches_description_as_the_briefing(files):
     assert "agent set --project" not in skill
 
 
+def test_the_skill_teaches_two_part_descriptions(files):
+    """The convention the first field run surfaced: a human part first, then a delimited
+    agent section that names the figures — and the way back from a separate instruction."""
+    skill = files[SKILL_FILE]
+    assert "## Writing descriptions" in skill
+    assert "## Approach" in skill
+    assert "Name every attached figure" in skill
+    assert "agent set <step> --clear" in skill
+
+
+def test_the_skill_states_the_argument_shape_and_idempotency_rules(files):
+    """The two shape rules agents guessed wrong at: which noun is the positional, and
+    that clearing what is already clear succeeds."""
+    skill = files[SKILL_FILE]
+    assert "The positional names the thing the verb acts on" in skill
+    assert "Already clear is success" in skill
+
+
+def test_the_skill_says_page_disambiguates_a_recurring_quote(files):
+    prose = " ".join(files[SKILL_FILE].split())
+    assert "when the same sentence appears on several pages" in prose
+
+
 def test_the_skill_says_how_the_current_project_is_found(files):
     """The half a registry cannot render: the walk, the pointer file, and the library."""
     skill = files[SKILL_FILE]
