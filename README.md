@@ -167,6 +167,7 @@ src/dplanner/
 │   ├── index_panel.py       the index tree: folders from whoever registered them
 │   ├── inspector.py         what a module registers to appear in a detail panel
 │   ├── prose_section.py     a panel section over one document, bound to the undo stack
+│   ├── text_dialog.py       the same document in a big modal editor — a second binding
 │   ├── asset_gallery.py     a module's attached files as thumbnails; click to view
 │   ├── image_preview.py     the modal lightbox the gallery (and anyone) opens
 │   ├── window_watch.py      noticing that another writer changed the library
@@ -179,7 +180,8 @@ src/dplanner/
 │   ├── project_editor/      a project in a tab: the canvas, its modes and renderers, sorts, named layouts and regions
 │   │                        (its panel also hosts the modules' project-level cards)
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
-│   │                        (and `steps.details`: the same panel as the double-click's modal)
+│   │                        (its first tab, details.py, stacks whatever registered a Details
+│   │                        block; and `steps.details`: the same panel as the double-click's modal)
 │   │
 │   │   ── the ten aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /

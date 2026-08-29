@@ -34,23 +34,35 @@ def panel(services, project):
     return services.window.dock.widget_for(PANEL_ID)
 
 
+# The editors that moved onto the Details tab, by the label the tests know them as.
+DETAILS_BLOCKS = {"Estimate": "estimation.details", "Description": "step_description.details"}
+
+
 def section(panel, label):
-    index = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())].index(label)
-    return panel._pages.widget(index)
+    """An aspect editor by its label — a tab of the panel, or a block on its Details tab."""
+    labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
+    if label in DETAILS_BLOCKS:
+        return panel._pages.widget(labels.index("Details")).block(DETAILS_BLOCKS[label])
+    return panel._pages.widget(labels.index(label))
 
 
 # -- the seam ------------------------------------------------------------------------------
 
 
-def test_every_registered_aspect_became_a_tab(services, panel):
+def test_every_registered_aspect_became_a_tab_or_a_details_block(services, panel):
     assert [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())] == [
-        "Estimate",
+        "Details",
         "Ticket",
-        "Description",
         "Agent",
         "Release",
         "Handoff",
         "GitHub",
+    ]
+    details = panel._pages.widget(0)
+    assert [block.section.id for block in details._blocks] == [
+        "estimation.details",
+        "step_description.details",
+        "spec.figures",
     ]
 
 

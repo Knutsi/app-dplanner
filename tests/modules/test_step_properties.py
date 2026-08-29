@@ -59,9 +59,9 @@ def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
     toggleable ones (Ticket, Agent, Release) stay off screen until the step carries them."""
     select(services, project.steps[0].id)
     all_labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
-    expected = ["Estimate", "Ticket", "Description", "Agent", "Release", "Handoff", "GitHub"]
+    expected = ["Details", "Ticket", "Agent", "Release", "Handoff", "GitHub"]
     assert all_labels == expected
-    assert visible_labels(panel) == ["Estimate", "Description", "Handoff", "GitHub"]
+    assert visible_labels(panel) == ["Details", "Handoff", "GitHub"]
 
 
 def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
@@ -85,7 +85,7 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
     services.undo.push(SetModuleDataCommand(step.id, AGENT_ID, write_state(True)))
     services.undo.push(SetModuleDataCommand(step.id, TICKET_ID, enabled_entry()))
     assert visible_labels(panel) == [
-        "Estimate", "Ticket", "Description", "Agent", "Release", "Handoff", "GitHub",
+        "Details", "Ticket", "Agent", "Release", "Handoff", "GitHub",
     ]
 
     # Land on the Release tab, then clear the aspect: the tab leaves and the current

@@ -197,6 +197,7 @@ class AppBuilder:
             panels=panels,
             inspector_sections=InspectorSectionRegistry(),
             detail_cards=InspectorSectionRegistry(),
+            step_details=InspectorSectionRegistry(),
             settings_sections=SettingsSectionRegistry(),
             theme=theme,
             zoom=ZoomService(),

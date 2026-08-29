@@ -185,9 +185,22 @@ root, stop and look for the registry or capability you have not found yet.
   `InspectorSection` with a `shown_for` predicate so its tab exists only on a step that
   carries the aspect. **The description is an agent step's instructions** — the briefing's
   `## Instructions` block, decided by the composition root's `_briefing_instruction`; a
-  *separate* instruction (the checkbox in the Description tab, `dplanner agent set`) is
-  the opt-out for a step whose how-to-execute differs from what-it-is. `ARCHITECTURE.md`'s
-  *The description is the instructions* has the reasoning.
+  *separate* instruction (the checkbox in the Details tab's Description block,
+  `dplanner agent set`; dropped atomically with `agent set --clear`) is the opt-out for a
+  step whose how-to-execute differs from what-it-is. `ARCHITECTURE.md`'s *The description
+  is the instructions* has the reasoning.
+- **The step panel's first tab is Details, composed from blocks.** A module that wants its
+  editor there instead of behind a tab of its own registers into `services.step_details` —
+  the `InspectorSectionRegistry`'s third instantiation; estimate, description and the spec
+  figures are the registrants, and `modules/step_properties/details.py` stacks them
+  (`stretch` on the section says who gets the leftover height, `shown_for` hides a block
+  with nothing to say). `ARCHITECTURE.md`'s *The Details tab hosts the same contract, as
+  blocks* has the reasoning — including why a host is a registry instance, never a flag.
+- **A large text field expands into a modal editor** — `framework/text_dialog.py`: a
+  second `TextBinding` over the same `TextField`, live-synced through the foreign-change
+  path, opened from the corner button `attach_expand` pins onto the editor.
+  `ARCHITECTURE.md`'s *Expanding an editor is a second binding, not a copy* has the
+  reasoning; never copy text out into a dialog and back.
 - **Double-clicking a step anywhere runs `steps.details`** — a modal dialog hosting a second
   `StepPanel`, disposed on close. It is the one gesture across canvas, order, progression and
   estimates; a table runs it against a context naming exactly the row's step. Reveal-in-graph

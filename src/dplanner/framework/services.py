@@ -66,6 +66,9 @@ class AppServices:
     panels: PanelRegistry
     inspector_sections: InspectorSectionRegistry
     detail_cards: InspectorSectionRegistry  # The same registry type, a different host.
+    # Blocks composed into the step panel's first tab ("Details") — a third host of the
+    # same contract, for the editors a step should show before any aspect tab is opened.
+    step_details: InspectorSectionRegistry
     settings_sections: SettingsSectionRegistry
 
     # -- services ------------------------------------------------------------------------------

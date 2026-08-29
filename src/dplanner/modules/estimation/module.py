@@ -1,8 +1,8 @@
 """Estimation, in the running application.
 
-Two registrations and one offer. The first registration is the Estimate tab in the step
-detail panel: which panel shows it, and what else is beside it, is not this module's
-business. The second is the bulk Estimates activity — one tab per project for sizing many
+Two registrations and one offer. The first registration is the Estimate block on the step
+detail panel's Details tab: which host shows it, and what else is beside it, is not this
+module's business. The second is the bulk Estimates activity — one tab per project for sizing many
 steps in a sitting — and the ``Step ▸ Estimate Steps`` verb that opens it scoped to the
 selection. The offer is the start-date bar — a widget somebody else hosts, exposed as a
 ``create_…`` the way ``step_properties`` exposes its panel, because a control that belongs
@@ -44,7 +44,8 @@ def _no_text(_step_id: StepId) -> str:
 class EstimationDeps:
     library: Library
     undo: UndoService[Library]
-    sections: InspectorSectionRegistry
+    # The step panel's Details tab — the estimate is a compact row there, not a tab.
+    details: InspectorSectionRegistry
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
@@ -88,9 +89,9 @@ class EstimationModule:
 
     def register(self) -> None:
         deps = self._deps
-        deps.sections.register(
+        deps.details.register(
             InspectorSection(
-                id=f"{MODULE_ID}.tab",
+                id=f"{MODULE_ID}.details",
                 label=SPEC.label,
                 order=10,
                 factory=lambda: EstimateSection(deps.library, deps.undo),

@@ -91,7 +91,8 @@ def test_set_and_clear(cli, workspace):
 
 
 def test_clearing_a_step_that_is_not_a_release_says_so(cli):
-    assert "is not a release" in cli("release", "clear", "Build the core", expect=1)
+    # Already clear is success — state-clearing verbs must survive batches.
+    assert "not a release" in cli("release", "clear", "Build the core")
 
 
 def test_set_without_label_generates_the_next_one(cli, workspace):

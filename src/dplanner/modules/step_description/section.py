@@ -1,5 +1,5 @@
-"""The Description tab: the prose, the images the prose references, and the one switch
-that decides whether an agent step gets instructions of its own.
+"""The Description block on the Details tab: the prose, the images the prose references,
+and the one switch that decides whether an agent step gets instructions of its own.
 
 `dplanner describe attach` has always written images beside the step; this is the first
 surface that shows them. The editor half is the framework's :class:`ProseSection`
@@ -29,7 +29,7 @@ FIELD_GAP = 6
 
 @dataclass(frozen=True)
 class SeparateInstructionLink:
-    """The Description tab's window onto the agent aspect, in this module's vocabulary."""
+    """The Description block's window onto the agent aspect, in this module's vocabulary."""
 
     agent_enabled: Callable[[str], bool]  # Is this an agent step at all?
     separate: Callable[[str], bool]  # Does it keep instructions distinct from the prose?
@@ -49,7 +49,8 @@ class DescriptionSection(ProseSection):
         agent_link: SeparateInstructionLink | None = None,
         library: Library | None = None,
     ) -> None:
-        super().__init__(field_for, undo, placeholder)
+        # margin 0: the Details tab hosts this as a block and owns the outer spacing.
+        super().__init__(field_for, undo, placeholder, margin=0, expand_title="Description")
         self._area_for_target = area_for_target
         self._agent_link = agent_link
         self._target_id: str | None = None

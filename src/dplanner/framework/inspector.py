@@ -11,8 +11,10 @@ what guarantees that, which is why positions there carry comments.
 
 The registry is deliberately instantiated more than once: the contract for "a module-owned
 surface that appears when it has something to say" turned out to be identical for a panel
-tab and for a card stacked inside one, so the second use reuses the type rather than
-copying it. The only difference is which host renders the sections.
+tab, for a card stacked inside one, and for a block on the step panel's Details tab, so
+each later use reuses the type rather than copying it. The only difference is which host
+renders the sections — and a host is addressed by which registry instance you register
+into, never by a mode field on the section.
 """
 
 from collections.abc import Callable
@@ -48,6 +50,10 @@ class InspectorSection:
     # change and on model changes to the shown target, so a toggled-off aspect's tab
     # disappears rather than sitting empty.
     shown_for: Callable[[str | None], bool] | None = None
+    # How much of the leftover height a vertically stacking host gives this section's
+    # widget; tab and card hosts ignore it. One editor per host claims the room (1), the
+    # compact rows keep their size hint (0).
+    stretch: int = 0
 
 
 class InspectorSectionRegistry:

@@ -325,9 +325,10 @@ and neither has heard of the other.
 
 ## How a panel gets editors it has never heard of
 
-The step detail panel shows a tab per aspect — Estimate, Ticket, Description, Agent — and
-nothing in it knows those four exist. Two seams do that, and they are worth naming because they
-answer every "feature A needs feature B" question this application will have.
+The step detail panel shows a Details tab first — estimate, description, figures — and a tab
+per remaining aspect — Ticket, Agent, Release — and nothing in it knows any of them exist.
+Two seams do that, and they are worth naming because they answer every "feature A needs
+feature B" question this application will have.
 
 **Nobody hosts the panel.** `step_properties` owns it and registers it into `services.panels`;
 where it sits is the dock's business and what it shows is the context's. Before the dock existed
@@ -397,6 +398,40 @@ the moment a second module wanted a project surface, "whoever turns up" became t
 question, and a registry is for whoever turns up. The `step_agent_instruction` card — the
 project's standing instruction — is the second registrant, and each card must be registered
 before `project_editor` builds the panel, which the composition root's list order says.
+
+**The Details tab hosts the same contract, as blocks.** The first thing a step should show —
+what it is, how big it is, what it looks like — was scattered across an Estimate tab and a
+Description tab, each one click away. Now a module that wants its editor on the first tab
+registers an `InspectorSection` into `services.step_details`, the registry's third
+instantiation, and `step_properties` contributes one ordinary section labelled "Details"
+whose extension (`modules/step_properties/details.py`) stacks the blocks: a caption from
+each section's `label`, the widget under it, and the section's `stretch` deciding who gets
+the leftover height — the description says `stretch=1` and takes the room, the estimate
+stays a compact row, the spec module's read-only Figures gallery appears only on a step
+that carries attachments (`shown_for`, re-asked on model changes exactly as the panel
+re-asks it for tabs). Why a third registry instance and not a `placement` flag on
+`InspectorSection`: a host is addressed by *which registry you register into*. That keeps
+each host's vocabulary greppable, spares every host from filtering every section by a mode
+field, and is the same reasoning that made `detail_cards` a second instance rather than a
+`kind` — three hosts now, and the dataclass still has no idea. Because the composite is
+just a section, the docked panel and the `steps.details` dialog render it identically for
+free.
+
+## Expanding an editor is a second binding, not a copy
+
+A side panel gives prose a few hundred pixels, and some descriptions and instructions are
+screens long. The expand affordance (`framework/text_dialog.py`) opens the same document in
+a modal editor sized to the screen — and the mechanism is the whole point: the dialog holds
+a second `TextBinding` over the *same* `TextField`, nothing else. Each binding treats the
+other's commands as foreign changes — the exact path a CLI edit or an undo already travels —
+so the inline editor tracks the dialog keystroke for keystroke, one undo stack serves both,
+and closing the dialog can lose nothing because nothing ever lived only there. The
+alternative — copy the text out, edit, copy it back on OK — would have invented a second
+place where prose lives and a Cancel button that discards work, both of which the binding
+discipline exists to prevent. The affordance is a small corner button `attach_expand` pins
+onto the editor itself, so every host — the Description block, the Agent tab's two
+instruction editors, the project card — offers the same gesture without growing a header
+row.
 
 ## The graph, and what it stores
 
