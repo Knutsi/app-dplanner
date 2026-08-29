@@ -357,6 +357,18 @@ def gauge_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
+def clock_icon(color: str) -> QIcon:
+    """A clock face reading shortly before ten past ten: the time estimates."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.4))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(QRectF(2.5, 2.5, 11.0, 11.0))
+    painter.drawLine(QPointF(8.0, 8.0), QPointF(8.0, 4.5))
+    painter.drawLine(QPointF(8.0, 8.0), QPointF(10.8, 9.6))
+    painter.end()
+    return QIcon(pixmap)
+
+
 def list_icon(color: str) -> QIcon:
     """A numbered list: the order table."""
     pixmap, painter = _canvas()

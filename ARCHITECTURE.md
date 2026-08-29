@@ -1038,6 +1038,46 @@ module layer: it renders the real `agent.run` action's state — evaluated again
 synthesised for exactly that card's step — so the gate's reason appears verbatim and no
 second copy of "what launching needs" exists.
 
+## Time estimates: two worker pools, one greedy simulation
+
+`schedule()` and `critical_path()` print the honest brackets — one worker, unlimited
+workers. The time estimates tab and `dplanner schedule matrix` answer what lands between
+them: `domain/schedule.py`'s `parallel_finish` simulates the graph under a stated cap of
+*humans* and *coding agents*, and a small grid of those simulations is the report. The
+decisions worth writing down:
+
+- **Two pools, pure.** An agent step waits for an agent slot, every other step for a human
+  one, and neither pool takes the other's work — even an idle human never picks up an agent
+  step. That is a modelling choice, not a scheduling inevitability: mixing pools would need
+  a claim about who *may* do what that the model does not carry, and the clean partition is
+  what makes the matrix's axes mean something. Which steps are agent work arrives as a
+  predicate (`is_agent`), the same seam as `days_for` — the domain learns "two kinds of
+  workers", never what marks a step.
+- **Greedy list scheduling, not an optimum.** A free slot takes the ready step with the
+  longest remaining `requires` chain, ties by project step order. Deterministic, honest
+  ("the team picks the longest pole first"), and pinned at both ends: with ample workers it
+  meets the critical path exactly, with one human on all-human work it meets the serial
+  total. An ILP would be tighter in contrived graphs and impossible to explain in a cell.
+- **Calendar time is the same walk over stretched estimates.** The focus factor — how much
+  of a person's working day this project actually gets — divides human steps' days via a
+  wrapped `days_for` (`time_estimates/schedule.py`'s `stretched`), so the domain never
+  learns an efficiency exists. Agent steps are not stretched: their human-in-the-loop cost
+  is already inside the quarter-day estimate convention, and the factor prices the person's
+  divided week, not the agent's.
+- **The factor is the only thing stored; the matrix never is.** Twelve cells are recomputed
+  on every change for the ordering's reason — `dplanner estimate set` changes the answer
+  with no window running to notice. The factor is an assumption a person chose, so it
+  persists like the start date does: project-node module data, written through one command
+  (the tab's spinbox and `dplanner schedule focus` push the same write).
+- **The grid is a heatmap: more time is more ink.** Tiles carry one constant low-alpha
+  hue scaled by the makespan (the diff tint's trick, so it reads on every theme), which
+  makes the dependency floor visible as the flat, lightest region — "more capacity
+  changes nothing" needs no legend, and the computed insight line says it in words. The
+  printed number is the dependable channel; the tint only orients. The page leads with
+  the *selected* team's landing date, because "when does this land for us" is the
+  question the report exists to answer; the two units are a lens toggle over one grid,
+  never two tables.
+
 ## Pressure points, named before they hurt
 
 A whole-codebase review (2026-08) found the architecture holding; these are the places
@@ -1073,9 +1113,8 @@ recognises the moment. None needs action today.
   goes: a `relates` variant of the linking mode, and nothing else moves.
 - **Rebindable keys.** `modules/project_editor/keymap.py` is the table a settings page would
   read; nothing reads it yet, which is the only reason it is a constant.
-- **A schedule that knows about parallelism** — today's dates run the steps one after
-  another down the order. The waves already say which of them could run side by side, so an
-  earliest-finish walk is a change to `domain/schedule.py` and to nothing else.
 - **Reports** — new folders in the index tree, which is the shape the registry was built for.
   `dplanner schedule show` is the first of them, and it lives in the module that owns the
-  numbers rather than in the one that owns the table.
+  numbers rather than in the one that owns the table. (The schedule that knows about
+  parallelism, once listed here, landed as `parallel_finish` and the time estimates tab —
+  see *Time estimates: two worker pools, one greedy simulation*.)
