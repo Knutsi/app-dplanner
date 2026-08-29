@@ -58,8 +58,7 @@ def tab(services, project):
 def test_the_headline_answers_for_the_default_team(tab):
     assert tab.headline.text() == "Lands 16 September"
     assert "1 person + 1 agent" in tab.detail.text()
-    assert "1.6w of calendar time at 50% focus" in tab.detail.text()
-    assert "4d of project time" in tab.detail.text()
+    assert "1.6w of calendar time" in tab.detail.text()
     assert tab.matrix.value_at(1, 1) == "1.6w"
     assert not tab.unestimated_note.isVisibleTo(tab.widget)
     assert not tab.agent_note.isVisibleTo(tab.widget)
@@ -106,6 +105,16 @@ def test_the_insight_names_the_smallest_team_on_the_floor(services, project, tab
     services.undo.push(SetEdgesCommand(draft.id, "requires", []))
     assert "2 people + 1 agent" in tab.insight.text()
     assert "dependency floor" in tab.insight.text()
+
+
+def test_the_months_light_the_work_period(tab):
+    assert tab.months.span == (date(2026, 9, 7), date(2026, 9, 16))
+    assert tab.months.first_month == date(2026, 8, 1)  # one month before the start
+    assert tab.months.month_count == 6
+    assert "the work starts" in tab.months.day_tooltip(date(2026, 9, 7))
+    assert "working day 4 of 8" in tab.months.day_tooltip(date(2026, 9, 10))
+    assert "weekend, not counted" in tab.months.day_tooltip(date(2026, 9, 12))
+    assert "the work lands" in tab.months.day_tooltip(date(2026, 9, 16))
 
 
 def test_an_unestimated_step_is_flagged(services, project, tab):

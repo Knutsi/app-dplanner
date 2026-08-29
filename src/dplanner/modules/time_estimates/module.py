@@ -20,7 +20,16 @@ from typing import Protocol
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QButtonGroup,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QScrollArea,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from dplanner.domain.model import Library, NodeId, Project, ProjectId, Step
 from dplanner.domain.schedule import format_date, format_day_count, format_days
@@ -35,6 +44,7 @@ from dplanner.framework.activity import EntityActivity, follow_entity_tabs
 from dplanner.framework.context import Context, ContextService, Uri, activity_uri
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
+from dplanner.modules.time_estimates.months import MonthsView
 from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
     Cell,
@@ -141,7 +151,8 @@ class TimeEstimatesActivity(EntityActivity):
         self.matrix.scenario_changed.connect(self._render)
         layout.addWidget(self.matrix, 0, Qt.AlignmentFlag.AlignLeft)
 
-        # The result reads below the choice: pick a tile, the landing date answers under it.
+        # The result reads below the choice: pick a tile, the landing date answers under it,
+        # and the months show the same answer as a lit span on a real calendar.
         layout.addSpacing(BLOCK_GAP)
         self.headline = QLabel(page)
         loud = QFont(self.headline.font())
@@ -153,6 +164,10 @@ class TimeEstimatesActivity(EntityActivity):
         self.detail.setObjectName("InspectorNote")
         self.detail.setWordWrap(True)
         layout.addWidget(self.detail)
+
+        layout.addSpacing(BLOCK_GAP)
+        self.months = MonthsView(page)
+        layout.addWidget(self.months, 0, Qt.AlignmentFlag.AlignLeft)
 
         layout.addSpacing(BLOCK_GAP)
         self.insight = QLabel(page)
@@ -176,7 +191,13 @@ class TimeEstimatesActivity(EntityActivity):
 
         layout.addStretch(1)
 
-        self._widget = page
+        # The grid and the months are fixed-size drawings, so a small window scrolls the
+        # page rather than clipping them or squeezing the text below into them.
+        scroller = QScrollArea()
+        scroller.setWidget(page)
+        scroller.setWidgetResizable(True)
+        scroller.setFrameShape(QFrame.Shape.NoFrame)
+        self._widget = scroller
         self._unsubscribes = [
             self._product.structure_changed.connect(lambda *_a: self._refresh()),
             self._product.edges_changed.connect(lambda *_a: self._refresh()),
@@ -244,7 +265,7 @@ class TimeEstimatesActivity(EntityActivity):
     def _render(self) -> None:
         report = self._report
         has_report = report is not None
-        for widget in (self.lens_bar, self.matrix, self.insight):
+        for widget in (self.lens_bar, self.matrix, self.months, self.insight):
             widget.setVisible(has_report)
         if report is None:
             self.headline.setText("No steps yet")
@@ -259,15 +280,12 @@ class TimeEstimatesActivity(EntityActivity):
 
         selected = self.matrix.selection
         calendar = self._cell(report.calendar, selected)
-        project_time = self._cell(report.parallel, selected)
         if calendar.finish is not None:
             self.headline.setText(f"Lands {format_date(calendar.finish)}")
         else:
             self.headline.setText("Nothing estimated yet")
-        self.detail.setText(
-            f"{_team(*selected)} · {format_days(calendar.days)} of calendar time at "
-            f"{report.efficiency:.0%} focus · {format_days(project_time.days)} of project time"
-        )
+        self.detail.setText(f"{_team(*selected)} · {format_days(calendar.days)} of calendar time")
+        self.months.show_span(report.start, calendar.finish)
 
         self.insight.setText(self._insight(report, cells, floor))
         self.unestimated_note.setVisible(report.unestimated > 0)
