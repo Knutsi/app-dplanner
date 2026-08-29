@@ -1,4 +1,4 @@
-"""The time estimates tab: the staffing matrices on screen, and the one stored assumption."""
+"""The time estimates tab: the headline, the heatmap, and the one stored assumption."""
 
 from datetime import date
 
@@ -21,7 +21,7 @@ from dplanner.modules.time_estimates.schedule import (
     read_efficiency,
     stretched,
 )
-from dplanner.modules.time_estimates.view import LABEL_COLUMN, SECONDARY_ALPHA
+from dplanner.modules.time_estimates.view import TINT_MIN_ALPHA
 
 
 @pytest.fixture
@@ -52,41 +52,60 @@ def tab(services, project):
     return services.tabs.open("time", project.id)
 
 
-def column_of(agents: int) -> int:
-    return LABEL_COLUMN + agents
+# -- the headline and the grid ---------------------------------------------------------------
 
 
-# -- what it shows ---------------------------------------------------------------------------
-
-
-def test_both_matrices_price_the_scenario(tab):
-    assert tab.parallel.item(0, column_of(1)).text() == "4d"
-    assert tab.parallel.item(2, column_of(4)).text() == "4d"
-    assert tab.calendar.item(0, column_of(1)).text() == "1.6w · 16 September"
-    assert tab.parallel.item(0, LABEL_COLUMN).text() == "1 human"
-    assert "4d human, 1d agent" in tab.summary.text()
+def test_the_headline_answers_for_the_default_team(tab):
+    assert tab.headline.text() == "Lands 16 September"
+    assert "1 person + 1 agent" in tab.detail.text()
+    assert "1.6w of calendar time at 50% focus" in tab.detail.text()
+    assert "4d of project time" in tab.detail.text()
+    assert tab.matrix.value_at(1, 1) == "1.6w"
     assert not tab.unestimated_note.isVisibleTo(tab.widget)
     assert not tab.agent_note.isVisibleTo(tab.widget)
 
 
+def test_selecting_a_tile_re_asks_the_question(tab):
+    tab.matrix.select(2, 3)
+    assert "2 people + 3 agents" in tab.detail.text()
+    assert tab.headline.text() == "Lands 16 September"  # the chain does not care
+
+
+def test_the_lens_toggle_swaps_the_grid_not_the_answer(tab):
+    tab.project_button.click()
+    assert tab.matrix.value_at(1, 1) == "4d"  # project working days now
+    assert "1.6w of calendar time" in tab.detail.text()  # the headline strip keeps both
+    tab.calendar_button.click()
+    assert tab.matrix.value_at(1, 1) == "1.6w"
+
+
 def test_the_matrix_follows_the_graph(services, project, tab):
     """Nothing is stored: unlinking the chain halves the makespan with two humans."""
+    tab.project_button.click()
     _read, draft, _docs = project.steps
     services.undo.push(SetEdgesCommand(draft.id, "requires", []))
-    assert tab.parallel.item(0, column_of(1)).text() == "4d"  # one human still serialises
-    assert tab.parallel.item(1, column_of(1)).text() == "2d"
+    assert tab.matrix.value_at(1, 1) == "4d"  # one human still serialises
+    assert tab.matrix.value_at(2, 1) == "2d"
     services.undo.undo()
-    assert tab.parallel.item(1, column_of(1)).text() == "4d"
+    assert tab.matrix.value_at(2, 1) == "4d"
 
 
-def test_cells_on_the_dependency_floor_fade(services, project, tab):
-    """With the chain broken, one human is above the 2d floor and two humans sit on it."""
+def test_more_time_wears_more_ink_and_the_floor_is_lightest(services, project, tab):
+    """With the chain broken, one human sits above the 2d floor and two humans on it."""
+    tab.project_button.click()
     _read, draft, _docs = project.steps
     services.undo.push(SetEdgesCommand(draft.id, "requires", []))
-    working = tab.parallel.item(0, column_of(1))
-    floored = tab.parallel.item(1, column_of(1))
-    assert working.foreground().color().alpha() == 255
-    assert floored.foreground().color().alpha() == SECONDARY_ALPHA
+    assert tab.matrix.tint_alpha(1, 1) > tab.matrix.tint_alpha(2, 1)
+    assert tab.matrix.tint_alpha(2, 1) == TINT_MIN_ALPHA
+
+
+def test_the_insight_names_the_smallest_team_on_the_floor(services, project, tab):
+    assert "Staffing does not change this plan" in tab.insight.text()
+    tab.project_button.click()
+    _read, draft, _docs = project.steps
+    services.undo.push(SetEdgesCommand(draft.id, "requires", []))
+    assert "2 people + 1 agent" in tab.insight.text()
+    assert "dependency floor" in tab.insight.text()
 
 
 def test_an_unestimated_step_is_flagged(services, project, tab):
@@ -102,13 +121,13 @@ def test_an_unestimated_step_is_flagged(services, project, tab):
 def test_without_agent_steps_the_agent_columns_collapse(services, project, tab):
     _read, _draft, docs = project.steps
     services.undo.push(SetModuleDataCommand(docs.id, AGENT_ID, {}))
-    assert tab.parallel.isColumnHidden(column_of(2))
-    assert tab.parallel.horizontalHeaderItem(column_of(1)).text() == "any agents"
+    assert tab.matrix.agent_counts == (1,)
+    assert tab.matrix.header_text(1) == "any agents"
     assert tab.agent_note.isVisibleTo(tab.widget)
 
     services.undo.undo()
-    assert not tab.parallel.isColumnHidden(column_of(2))
-    assert tab.parallel.horizontalHeaderItem(column_of(1)).text() == "1 agent"
+    assert tab.matrix.agent_counts == (1, 2, 3, 4)
+    assert tab.matrix.header_text(1) == "1 agent"
 
 
 def test_a_separate_instruction_moves_a_step_between_pools(services, project, tab):
@@ -131,7 +150,8 @@ def test_the_focus_spinbox_commits_one_undoable_float(services, project, tab):
     tab.focus_bar.percent.setValue(25)
     entry = project.module_data[MODULE_ID]
     assert entry["efficiency"] == 0.25 and isinstance(entry["efficiency"], float)
-    assert tab.calendar.item(0, column_of(1)).text() == "3.2w · 28 September"
+    assert tab.matrix.value_at(1, 1) == "3.2w"
+    assert tab.headline.text() == "Lands 28 September"
     services.undo.undo()
     assert MODULE_ID not in project.module_data
     assert tab.focus_bar.percent.value() == 50  # the bar reloads off its own echo's undo
@@ -142,7 +162,7 @@ def test_a_foreign_focus_write_refreshes_bar_and_cells(services, project, tab):
         SetModuleDataCommand(project.id, MODULE_ID, {"efficiency": 0.8, "format": 1})
     )
     assert tab.focus_bar.percent.value() == 80
-    assert tab.calendar.item(0, column_of(1)).text().startswith("5d")
+    assert tab.matrix.value_at(1, 1) == "5d"
 
 
 def test_unreadable_focus_reads_as_the_default(services, project):
@@ -173,9 +193,9 @@ def test_stretching_prices_human_steps_only(project):
 def test_a_stepless_project_says_so_instead_of_a_grid_of_zeros(services, make_project):
     empty = make_project("Empty")
     tab = services.tabs.open("time", empty.id)
-    assert "No steps yet" in tab.summary.text()
-    assert not tab.parallel.isVisibleTo(tab.widget)
-    assert not tab.calendar.isVisibleTo(tab.widget)
+    assert tab.headline.text() == "No steps yet"
+    assert not tab.matrix.isVisibleTo(tab.widget)
+    assert not tab.lens_bar.isVisibleTo(tab.widget)
 
 
 def test_the_tab_titles_itself_after_the_project(tab):

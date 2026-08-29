@@ -1069,9 +1069,14 @@ decisions worth writing down:
   with no window running to notice. The factor is an assumption a person chose, so it
   persists like the start date does: project-node module data, written through one command
   (the tab's spinbox and `dplanner schedule focus` push the same write).
-- **Cells on the dependency floor fade.** Once a cell equals the critical path priced with
-  that grid's own estimates, more capacity buys nothing — the fade is the report saying
-  where the graph, not the staffing, is the constraint.
+- **The grid is a heatmap: more time is more ink.** Tiles carry one constant low-alpha
+  hue scaled by the makespan (the diff tint's trick, so it reads on every theme), which
+  makes the dependency floor visible as the flat, lightest region — "more capacity
+  changes nothing" needs no legend, and the computed insight line says it in words. The
+  printed number is the dependable channel; the tint only orients. The page leads with
+  the *selected* team's landing date, because "when does this land for us" is the
+  question the report exists to answer; the two units are a lens toggle over one grid,
+  never two tables.
 
 ## Pressure points, named before they hurt
 

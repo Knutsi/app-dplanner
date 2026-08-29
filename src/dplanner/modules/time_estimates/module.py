@@ -1,15 +1,16 @@
 """How long the project takes with a stated team, as a tab beside the graph it prices.
 
-``schedule show`` and the order table print the brackets — serial, critical path. This tab
-prints what lands between them: a small grid of people by coding agents, each cell the
-simulated makespan under that cap, once in project working days and once in calendar days
-with a person's divided focus priced in. The simulation is the domain's
-(``parallel_finish``); this module renders it and stores exactly one thing — the focus
-factor (see ``schedule.py`` beside this file).
+The page leads with the answer: a landing date for the selected team, then one heatmap of
+every staffing (clicking a tile re-asks the question), then a computed sentence saying
+what the grid means — which axis still buys time, and where the dependency floor is.
+Calendar days and project days are two lenses on one simulation, so they are a toggle
+over one grid rather than two tables side by side.
 
-The estimate, agent-step and start-date readers arrive as functions on the Deps, so this
-module never learns what an estimate is stored as or what marks a step for an agent — the
-same seams the progression board uses.
+The simulation is the domain's (``parallel_finish``); this module renders it and stores
+exactly one thing — the focus factor (see ``schedule.py`` beside this file). The
+estimate, agent-step and start-date readers arrive as functions on the Deps, so this
+module never learns what an estimate is stored as or what marks a step for an agent —
+the same seams the progression board uses.
 """
 
 from collections.abc import Callable
@@ -17,10 +18,12 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, ProjectId, Step
-from dplanner.domain.schedule import format_days
+from dplanner.domain.schedule import format_date, format_day_count, format_days
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -32,18 +35,28 @@ from dplanner.framework.activity import EntityActivity, follow_entity_tabs
 from dplanner.framework.context import Context, ContextService, Uri, activity_uri
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
-from dplanner.modules.time_estimates.schedule import MODULE_ID, read_efficiency, time_report
-from dplanner.modules.time_estimates.view import FocusBar, MatrixTable
+from dplanner.modules.time_estimates.schedule import (
+    MODULE_ID,
+    Cell,
+    TimeReport,
+    read_efficiency,
+    time_report,
+)
+from dplanner.modules.time_estimates.view import FLOOR_TOLERANCE, FocusBar, MatrixView
 
 TIME_KIND = "time"
 
 PANEL_MARGIN = 16
 CAPTION_GAP = 6
 BLOCK_GAP = 12
+BUTTON_GAP = 4
+
+# The headline is the one loud thing on the page: the answer, a few points up.
+HEADLINE_POINTS = 5
 
 
 class StartBar(Protocol):
-    """The control the calendar grid is measured from.
+    """The control the calendar lens is measured from.
 
     Consumer-owned interface, satisfied structurally by the estimation module's start-date
     bar via the composition root — the order view's arrangement, redeclared here because
@@ -73,14 +86,21 @@ class TimeEstimatesDeps:
     start_bar: Callable[[ProjectId, QWidget], StartBar] | None = None
 
 
+def _team(humans: int, agents: int) -> str:
+    people = f"{humans} {'person' if humans == 1 else 'people'}"
+    return f"{people} + {agents} {'agent' if agents == 1 else 'agents'}"
+
+
 class TimeEstimatesActivity(EntityActivity):
-    """One project's staffing matrix, twice: project days, then calendar days."""
+    """One project's staffing heatmap, led by the selected team's landing date."""
 
     def __init__(self, deps: TimeEstimatesDeps, project_id: NodeId) -> None:
         super().__init__(deps.context, "project", project_id)
         self._deps = deps
         self._product = deps.library
         self.project_id = project_id
+        self._report: TimeReport | None = None
+        self._calendar_lens = True
 
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -98,30 +118,50 @@ class TimeEstimatesActivity(EntityActivity):
             layout.addWidget(self.start_bar.widget)
         self.focus_bar = FocusBar(deps.library, deps.undo, project_id, page)
         layout.addWidget(self.focus_bar)
-        layout.addSpacing(BLOCK_GAP)
 
-        self.summary = QLabel(page)
-        self.summary.setWordWrap(True)
-        layout.addWidget(self.summary)
+        layout.addSpacing(BLOCK_GAP)
+        self.headline = QLabel(page)
+        loud = QFont(self.headline.font())
+        loud.setPointSizeF(loud.pointSizeF() + HEADLINE_POINTS)
+        loud.setWeight(QFont.Weight.DemiBold)
+        self.headline.setFont(loud)
+        layout.addWidget(self.headline)
+        self.detail = QLabel(page)
+        self.detail.setObjectName("InspectorNote")
+        self.detail.setWordWrap(True)
+        layout.addWidget(self.detail)
+
+        layout.addSpacing(BLOCK_GAP)
+        self.lens_bar = QWidget(page)
+        lens_row = QHBoxLayout(self.lens_bar)
+        lens_row.setContentsMargins(0, 0, 0, 0)
+        lens_row.setSpacing(BUTTON_GAP)
+        self._lenses = QButtonGroup(page)
+        self._lenses.setExclusive(True)
+        self.calendar_button = self._lens_button("Calendar days")
+        self.project_button = self._lens_button("Project days")
+        for index, button in enumerate((self.calendar_button, self.project_button)):
+            self._lenses.addButton(button, index)
+            lens_row.addWidget(button)
+        lens_row.addStretch(1)
+        self.calendar_button.setChecked(True)
+        self._lenses.idClicked.connect(self._on_lens)
+        layout.addWidget(self.lens_bar)
+
+        self.matrix = MatrixView(page)
+        self.matrix.tooltip_for = self._tooltip
+        self.matrix.scenario_changed.connect(self._render)
+        layout.addWidget(self.matrix, 0, Qt.AlignmentFlag.AlignLeft)
+
+        self.insight = QLabel(page)
+        self.insight.setObjectName("InspectorNote")
+        self.insight.setWordWrap(True)
+        layout.addWidget(self.insight)
 
         self.unestimated_note = QLabel(page)
         self.unestimated_note.setObjectName("InspectorNote")
         self.unestimated_note.setWordWrap(True)
         layout.addWidget(self.unestimated_note)
-
-        layout.addSpacing(BLOCK_GAP)
-        self.parallel_caption = QLabel("Parallel-adjusted time", page)
-        self.parallel_caption.setObjectName("InspectorCaption")
-        layout.addWidget(self.parallel_caption)
-        self.parallel = MatrixTable(page)
-        layout.addWidget(self.parallel)
-
-        layout.addSpacing(BLOCK_GAP)
-        self.calendar_caption = QLabel("Calendar time", page)
-        self.calendar_caption.setObjectName("InspectorCaption")
-        layout.addWidget(self.calendar_caption)
-        self.calendar = MatrixTable(page)
-        layout.addWidget(self.calendar)
 
         self.agent_note = QLabel(
             "No agent steps — agent capacity does not change these numbers. Mark steps for "
@@ -144,6 +184,14 @@ class TimeEstimatesActivity(EntityActivity):
             self._product.text_edited.connect(lambda *_a: self._refresh()),
         ]
         self._refresh()
+
+    def _lens_button(self, label: str) -> QToolButton:
+        button = QToolButton(self.lens_bar)
+        button.setObjectName("ToolbarButton")
+        button.setText(label)
+        button.setCheckable(True)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        return button
 
     # -- the activity contract -----------------------------------------------------------------
 
@@ -172,12 +220,16 @@ class TimeEstimatesActivity(EntityActivity):
     def _project(self) -> Project:
         return self._product.project(self.project_id)
 
+    def _on_lens(self, chosen: int) -> None:
+        self._calendar_lens = chosen == 0
+        self._render()
+
     def _refresh(self) -> None:
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         deps = self._deps
         project = self._project()
-        report = time_report(
+        self._report = time_report(
             self._product,
             project,
             deps.days_for,
@@ -185,33 +237,93 @@ class TimeEstimatesActivity(EntityActivity):
             start=deps.start_of(self.project_id),
             efficiency=read_efficiency(project),
         )
+        self._render()
+
+    def _render(self) -> None:
+        report = self._report
         has_report = report is not None
-        for widget in (
-            self.parallel_caption,
-            self.parallel,
-            self.calendar_caption,
-            self.calendar,
-        ):
+        for widget in (self.lens_bar, self.matrix, self.insight):
             widget.setVisible(has_report)
         if report is None:
-            self.summary.setText("No steps yet — the matrix appears with the first one.")
+            self.headline.setText("No steps yet")
+            self.detail.setText("The matrix appears with the first one.")
             self.unestimated_note.setVisible(False)
             self.agent_note.setVisible(False)
             return
-        self.summary.setText(
-            f"{format_days(report.total_days)} of work — "
-            f"{format_days(report.human_days)} human, {format_days(report.agent_days)} "
-            f"agent · dependency floor {format_days(report.floor)}"
+        cells = report.calendar if self._calendar_lens else report.parallel
+        floor = report.calendar_floor if self._calendar_lens else report.floor
+        collapse = not report.has_agent_steps
+        self.matrix.show_cells(cells, floor, collapse)
+
+        selected = self.matrix.selection
+        calendar = self._cell(report.calendar, selected)
+        project_time = self._cell(report.parallel, selected)
+        if calendar.finish is not None:
+            self.headline.setText(f"Lands {format_date(calendar.finish)}")
+        else:
+            self.headline.setText("Nothing estimated yet")
+        self.detail.setText(
+            f"{_team(*selected)} · {format_days(calendar.days)} of calendar time at "
+            f"{report.efficiency:.0%} focus · {format_days(project_time.days)} of project time"
         )
+
+        self.insight.setText(self._insight(report, cells, floor))
         self.unestimated_note.setVisible(report.unestimated > 0)
         self.unestimated_note.setText(
             f"{report.unestimated} step{'s' if report.unestimated != 1 else ''} "
             "unestimated — they run as zero days here."
         )
-        collapse = not report.has_agent_steps
-        self.parallel.show_cells(report.parallel, report.floor, collapse)
-        self.calendar.show_cells(report.calendar, report.calendar_floor, collapse)
         self.agent_note.setVisible(collapse)
+
+    @staticmethod
+    def _cell(cells: tuple[Cell, ...], seat: tuple[int, int]) -> Cell:
+        return next(cell for cell in cells if (cell.humans, cell.agents) == seat)
+
+    def _tooltip(self, cell: Cell) -> str:
+        report = self._report
+        assert report is not None  # tiles exist only while a report is shown
+        seat = (cell.humans, cell.agents)
+        calendar = self._cell(report.calendar, seat)
+        project_time = self._cell(report.parallel, seat)
+        lines = [
+            _team(*seat),
+            f"{format_days(project_time.days)} of project time",
+            f"{format_days(calendar.days)} of calendar time at {report.efficiency:.0%} focus",
+        ]
+        if calendar.finish is not None:
+            lines.append(f"lands {format_date(calendar.finish)}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _insight(report: TimeReport, cells: tuple[Cell, ...], floor: float) -> str:
+        """The grid's takeaway in one breath: the effort split, then what staffing buys."""
+        # The prose formatter, not the column one: "9.75 days of work", never "1.95w".
+        effort = (
+            f"{format_day_count(report.total_days)} of work — "
+            f"{format_day_count(report.human_days)} human, "
+            f"{format_day_count(report.agent_days)} agent."
+        )
+        fastest = min(cell.days for cell in cells)
+        slowest = max(cell.days for cell in cells)
+        if slowest - fastest <= FLOOR_TOLERANCE:
+            return (
+                f"{effort} Staffing does not change this plan — "
+                "the dependency chain sets the pace."
+            )
+        team = min(
+            (cell for cell in cells if cell.days - fastest <= FLOOR_TOLERANCE),
+            key=lambda cell: (cell.humans + cell.agents, cell.humans),
+        )
+        who = _team(team.humans, team.agents)
+        if fastest - floor <= FLOOR_TOLERANCE:
+            return (
+                f"{effort} {who} reaches the {format_days(floor)} dependency floor — "
+                "more capacity changes nothing."
+            )
+        return (
+            f"{effort} {who} is fastest here at {format_days(fastest)}; "
+            f"the dependencies alone would allow {format_days(floor)}."
+        )
 
 
 class TimeEstimatesModule:

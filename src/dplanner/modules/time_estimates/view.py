@@ -1,48 +1,50 @@
-"""The staffing matrices, and the focus control the calendar one is priced with.
+"""The staffing heatmap, and the focus control the calendar lens is priced with.
 
-Two small tables of the same cells — project working days, then calendar days with landing
-dates — because the comparison *is* the report: the gap between a cell and its calendar
-twin is what divided attention costs. Both render through ``domain/schedule.py``'s
-formatters, so the tab and ``dplanner schedule matrix`` cannot print one number two ways.
+One custom-painted grid instead of two tables of strings, because the report's job is
+*magnitude*: which staffings are fast, where the floor is, which axis still buys time.
+Each tile carries one number (through ``domain/schedule.py``'s formatter, so the tab and
+``dplanner schedule matrix`` cannot print one number two ways) over a sequential tint —
+one hue, more time is more ink. The tint is reinforcement, never the only channel: the
+value is printed in every tile, and the flat lightest region *is* the dependency floor,
+so "more capacity changes nothing" is visible as uniform colour rather than needing a
+legend.
 
-A cell sitting on the dependency floor fades to secondary: past that point more capacity
-buys nothing, and the eye should go to the cells where it still does.
+The tint is a constant low-alpha colour (DESIGN.md's deliberate exception #2) so it reads
+on every theme; everything else — text, headers, the selection ring — comes from the
+palette at paint time, never stored.
+
+Clicking a tile selects a scenario; the hosting page turns that into its headline. The
+widget itself only renders and reports, like every input here.
 
 Rebuilt whole whenever the model changes — twelve simulations over tens of steps, cheaper
 to redo than to diff (the order table's argument).
 """
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QAbstractItemView,
-    QAbstractScrollArea,
-    QHBoxLayout,
-    QHeaderView,
-    QLabel,
-    QSizePolicy,
-    QSpinBox,
-    QTableWidget,
-    QTableWidgetItem,
-    QWidget,
+from collections.abc import Callable
+
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import (
+    QColor,
+    QFontMetricsF,
+    QHelpEvent,
+    QKeyEvent,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
 )
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSpinBox, QToolTip, QWidget
 
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, ProjectId
-from dplanner.domain.schedule import format_date, format_days
+from dplanner.domain.schedule import format_days
 from dplanner.framework.undo import UndoService
 from dplanner.modules.time_estimates.schedule import (
-    AGENTS,
-    HUMANS,
     MODULE_ID,
     Cell,
     read_efficiency,
     write_efficiency,
 )
-
-LABEL_COLUMN = 0
-COLUMNS = ("", *(f"{count} {'agent' if count == 1 else 'agents'}" for count in AGENTS))
-ROW_LABELS = tuple(f"{count} {'human' if count == 1 else 'humans'}" for count in HUMANS)
-ROW_HEIGHT = 28
 
 # Secondary text as opacity rather than a theme colour — DESIGN.md exception #1, the same
 # constant the order table uses.
@@ -54,15 +56,21 @@ FLOOR_TOLERANCE = 1e-9
 
 ROW_GAP = 8
 
-_RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+# The sequential tint: one blue, low-alpha over the surface (DESIGN.md exception #2), so
+# more time reads as more ink on every theme. The span is deliberately modest — the tint
+# orients, the printed number answers.
+TINT = QColor(95, 135, 215)
+TINT_MIN_ALPHA = 18
+TINT_MAX_ALPHA = 88
 
-
-def cell_text(cell: Cell) -> str:
-    """One scenario as the tables and the CLI's calendar grid print it."""
-    said = format_days(cell.days)
-    if cell.finish is not None:
-        said += f" · {format_date(cell.finish)}"
-    return said
+# Tile geometry: 4-point-scale gaps doing the separating (never borders), mark-spec
+# rounding, and a hit target comfortably past the 24 px minimum.
+TILE_WIDTH = 84
+TILE_HEIGHT = 40
+TILE_GAP = 4
+TILE_RADIUS = 4
+HEADER_GAP = 6
+SELECTION_PEN = 2.0
 
 
 class FocusBar(QWidget):
@@ -139,55 +147,192 @@ class FocusBar(QWidget):
         self._load()
 
 
-class MatrixTable(QTableWidget):
-    """People down, agents across, a makespan in every cell. Numbers, not entities — no
-    selection, no focus, nothing to click."""
+def _agent_header(count: int, collapsed: bool) -> str:
+    if collapsed:
+        return "any agents"
+    return f"{count} {'agent' if count == 1 else 'agents'}"
+
+
+def _human_label(count: int) -> str:
+    return f"{count} {'human' if count == 1 else 'humans'}"
+
+
+class MatrixView(QWidget):
+    """People down, agents across, a makespan tile in every seat.
+
+    ``scenario_changed`` fires when a click or an arrow key moves the selection; the
+    selected (humans, agents) pair is ``selection``. Tooltips come from ``tooltip_for``,
+    handed in by the host so this widget never learns what the other lens would say.
+    """
+
+    scenario_changed = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(len(HUMANS), len(COLUMNS), parent)
-        self.setObjectName("TimeMatrixTable")
-        self.setHorizontalHeaderLabels(list(COLUMNS))
-        self.verticalHeader().setVisible(False)
-        self.setShowGrid(False)
-        self.setAlternatingRowColors(False)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.setWordWrap(False)
-        self.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
-        self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        super().__init__(parent)
+        self._cells: dict[tuple[int, int], Cell] = {}
+        self._humans: tuple[int, ...] = ()
+        self._agents: tuple[int, ...] = ()
+        self._floor = 0.0
+        self._collapsed = False
+        self._span = (0.0, 0.0)  # (min days, max days) across the shown cells
+        self.selection: tuple[int, int] = (1, 1)
+        self.tooltip_for: Callable[[Cell], str] | None = None
+        self._gutter = 0.0
+        self._header = 0.0
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        header = self.horizontalHeader()
-        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        for column in range(len(COLUMNS)):
-            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
-        header.setStretchLastSection(False)
-        header.setHighlightSections(False)
+    # -- the host's side of the contract -------------------------------------------------------
 
     def show_cells(self, cells: tuple[Cell, ...], floor: float, collapse_agents: bool) -> None:
-        at = {(cell.humans, cell.agents): cell for cell in cells}
-        for row, humans in enumerate(HUMANS):
-            self.setRowHeight(row, ROW_HEIGHT)
-            label = QTableWidgetItem(ROW_LABELS[row])
-            faded = self.palette().text().color()
-            faded.setAlpha(SECONDARY_ALPHA)
-            label.setForeground(faded)
-            self.setItem(row, LABEL_COLUMN, label)
-            for column, agents in enumerate(AGENTS, start=1):
-                cell = at[(humans, agents)]
-                item = QTableWidgetItem(cell_text(cell))
-                item.setTextAlignment(_RIGHT)
-                if abs(cell.days - floor) <= FLOOR_TOLERANCE:
-                    item.setForeground(faded)
-                    # The fade's one explanation — the page carries no legend for it.
-                    item.setToolTip("On the dependency floor — more capacity no longer helps.")
-                self.setItem(row, column, item)
-        # A project with no agent steps answers the same in every column; one column
-        # saying so beats four saying it four times (the order table hides its all-blank
-        # Date column for the same reason).
-        for column in range(2, len(COLUMNS)):
-            self.setColumnHidden(column, collapse_agents)
-        header = QTableWidgetItem("any agents" if collapse_agents else COLUMNS[1])
-        self.setHorizontalHeaderItem(1, header)
-        self.resizeColumnsToContents()
-        self.updateGeometry()
+        self._collapsed = collapse_agents
+        shown = tuple(cell for cell in cells if not collapse_agents or cell.agents == 1)
+        self._cells = {(cell.humans, cell.agents): cell for cell in shown}
+        self._humans = tuple(sorted({cell.humans for cell in shown}))
+        self._agents = tuple(sorted({cell.agents for cell in shown}))
+        self._floor = floor
+        days = [cell.days for cell in shown]
+        self._span = (min(days, default=0.0), max(days, default=0.0))
+        if self.selection not in self._cells and self._humans and self._agents:
+            self.selection = (self._humans[0], self._agents[0])
+        metrics = QFontMetricsF(self.font())
+        self._gutter = max(
+            (metrics.horizontalAdvance(_human_label(count)) for count in self._humans),
+            default=0.0,
+        ) + ROW_GAP
+        self._header = metrics.height() + HEADER_GAP
+        width = self._gutter + len(self._agents) * (TILE_WIDTH + TILE_GAP) - TILE_GAP
+        height = self._header + len(self._humans) * (TILE_HEIGHT + TILE_GAP) - TILE_GAP
+        self.setFixedSize(round(width), round(height))
+        self.update()
+
+    def select(self, humans: int, agents: int) -> None:
+        if (humans, agents) not in self._cells or (humans, agents) == self.selection:
+            return
+        self.selection = (humans, agents)
+        self.update()
+        self.scenario_changed.emit()
+
+    # -- what the tests read off the widget ----------------------------------------------------
+
+    @property
+    def human_counts(self) -> tuple[int, ...]:
+        return self._humans
+
+    @property
+    def agent_counts(self) -> tuple[int, ...]:
+        return self._agents
+
+    def header_text(self, agents: int) -> str:
+        return _agent_header(agents, self._collapsed)
+
+    def value_at(self, humans: int, agents: int) -> str:
+        return format_days(self._cells[(humans, agents)].days)
+
+    def tint_alpha(self, humans: int, agents: int) -> int:
+        """The tile's ink, scaled across the shown span — the floor region is lightest."""
+        low, high = self._span
+        if high - low <= FLOOR_TOLERANCE:
+            return TINT_MIN_ALPHA
+        share = (self._cells[(humans, agents)].days - low) / (high - low)
+        return round(TINT_MIN_ALPHA + share * (TINT_MAX_ALPHA - TINT_MIN_ALPHA))
+
+    # -- painting ------------------------------------------------------------------------------
+
+    def _tile_rect(self, row: int, column: int) -> QRectF:
+        return QRectF(
+            self._gutter + column * (TILE_WIDTH + TILE_GAP),
+            self._header + row * (TILE_HEIGHT + TILE_GAP),
+            TILE_WIDTH,
+            TILE_HEIGHT,
+        )
+
+    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt override
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        ink = self.palette().text().color()
+        secondary = QColor(ink)
+        secondary.setAlpha(SECONDARY_ALPHA)
+        # Headers read from the left with everything else (DESIGN.md's table rule).
+        painter.setPen(secondary)
+        for column, agents in enumerate(self._agents):
+            slot = self._tile_rect(0, column)
+            painter.drawText(
+                QRectF(slot.left(), 0.0, slot.width(), self._header - HEADER_GAP),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                self.header_text(agents),
+            )
+        for row, humans in enumerate(self._humans):
+            seat = self._tile_rect(row, 0)
+            painter.drawText(
+                QRectF(0.0, seat.top(), self._gutter - ROW_GAP, seat.height()),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                _human_label(humans),
+            )
+        for row, humans in enumerate(self._humans):
+            for column, agents in enumerate(self._agents):
+                rect = self._tile_rect(row, column)
+                tint = QColor(TINT)
+                tint.setAlpha(self.tint_alpha(humans, agents))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(tint)
+                painter.drawRoundedRect(rect, TILE_RADIUS, TILE_RADIUS)
+                if (humans, agents) == self.selection:
+                    ring = QPen(self.palette().highlight().color(), SELECTION_PEN)
+                    painter.setPen(ring)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    inset = SELECTION_PEN / 2
+                    painter.drawRoundedRect(
+                        rect.adjusted(inset, inset, -inset, -inset), TILE_RADIUS, TILE_RADIUS
+                    )
+                painter.setPen(ink)
+                painter.drawText(
+                    rect,
+                    Qt.AlignmentFlag.AlignCenter,
+                    self.value_at(humans, agents),
+                )
+        painter.end()
+
+    # -- input ---------------------------------------------------------------------------------
+
+    def _seat_at(self, position: QPointF) -> tuple[int, int] | None:
+        for row, humans in enumerate(self._humans):
+            for column, agents in enumerate(self._agents):
+                # The gap belongs to the tile's hit area — no dead pixels between seats.
+                rect = self._tile_rect(row, column).adjusted(0, 0, TILE_GAP, TILE_GAP)
+                if rect.contains(position):
+                    return (humans, agents)
+        return None
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
+        seat = self._seat_at(event.position())
+        if seat is not None:
+            self.select(*seat)
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 - Qt override
+        steps = {
+            Qt.Key.Key_Left: (0, -1),
+            Qt.Key.Key_Right: (0, 1),
+            Qt.Key.Key_Up: (-1, 0),
+            Qt.Key.Key_Down: (1, 0),
+        }
+        step = steps.get(Qt.Key(event.key()))
+        if step is None or not self._humans:
+            super().keyPressEvent(event)
+            return
+        row = self._humans.index(self.selection[0]) + step[0]
+        column = self._agents.index(self.selection[1]) + step[1]
+        if 0 <= row < len(self._humans) and 0 <= column < len(self._agents):
+            self.select(self._humans[row], self._agents[column])
+
+    def event(self, found: QEvent) -> bool:
+        if found.type() == QEvent.Type.ToolTip and self.tooltip_for is not None:
+            assert isinstance(found, QHelpEvent)
+            seat = self._seat_at(QPointF(found.pos()))
+            if seat is not None:
+                QToolTip.showText(found.globalPos(), self.tooltip_for(self._cells[seat]), self)
+            else:
+                QToolTip.hideText()
+            return True
+        return super().event(found)
