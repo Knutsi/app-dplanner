@@ -21,10 +21,16 @@ you work. So:
 - **Read before writing.** `dplanner project list`, then `dplanner project show <project>`.
   Say what you found and what you propose before you change it.
 - **Make small, named changes — and author them whole.** One `step add` per step, carrying
-  everything the step needs in the same call: `--describe-file F`, `--agent-file F|-`,
-  `--days N`, `--link r1 r2`, `--attach a1`, `--after` for its dependencies. One authored
-  step is one line in the diff and one thing the user can disagree with; five half-steps
-  are noise.
+  everything the step needs in the same call: `--describe-file F`, `--agent` if an agent
+  will execute it, `--days N`, `--link r1 r2`, `--attach a1`, `--after` for its
+  dependencies. One authored step is one line in the diff and one thing the user can
+  disagree with; five half-steps are noise.
+- **The description is the briefing.** Write one good description per step — what it is,
+  what done means — and mark agent-executed steps with `--agent` (or `dplanner agent on`
+  later). The executing agent receives the description as its instructions; do not write
+  the same text twice. `--agent-file F|-` / `agent set` exist only for the rare step whose
+  *how* genuinely differs from its description, and project-wide conventions belong in one
+  standing instruction (`agent set --for-project <project> --file -`), not in every step.
 - **Do not invent structure the user did not ask for.** A plan with twenty imagined steps is
   harder to correct than an empty one.
 - **Show the shape.** `dplanner project graph <project>` renders the step graph as a
@@ -95,16 +101,18 @@ and the workflow runs from import to steps an agent can execute *in isolation*:
    an image asset (`spec assets` lists them); one rendered page can serve several steps.
 5. **Create each step authored, not as a bare title.** A step with only a title is not a
    plan — the agent who picks it up has nothing to execute. One `step add` carries it all:
-   `--after` its dependencies (see *Linking honestly*), `--describe-file` (what it is),
-   `--agent-file` (how to carry it out — or one standing instruction for the whole project
-   via `agent set --project`), `--days`, `--link r1 r2` (why it exists), `--attach a1`
-   (the figures its agent must see). The standalone verbs (`describe set`, `agent set`,
+   `--after` its dependencies (see *Linking honestly*), `--describe-file` (what it is —
+   and, on an agent step, the instructions the executing agent receives), `--agent` (an
+   agent will execute it), `--days`, `--link r1 r2` (why it exists), `--attach a1` (the
+   figures its agent must see). Project-wide conventions go in one standing instruction
+   (`agent set --for-project <project> --file -`); `--agent-file` only where a step's
+   *how* differs from its description. The standalone verbs (`describe set`, `agent on`,
    `estimate set`, `spec link`, `spec attach-to-step` — the last two take several ids per
    call) remain for editing later. `agent prompt <step>` shows exactly what the executing
    agent will receive — read it and ask whether it is enough to work from.
 6. **Run `dplanner project lint <project>` before handing the plan over.** It lists every
-   step missing a description, instruction, estimate or requirement link, every
-   requirement no step implements, every dangling link, every quote that no longer
+   step missing a description, estimate or requirement link, every agent step with
+   nothing to brief it, every requirement no step implements, every dangling link, every quote that no longer
    anchors after a spec change, and every description image reference that resolves to
    nothing — each with the verb that fixes it — and exits 1 until the plan is complete.
    Hand over clean.

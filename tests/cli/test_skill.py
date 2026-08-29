@@ -53,6 +53,15 @@ def test_the_edge_vocabulary_is_described(files):
     assert "cycles are refused" in files[SKILL_FILE]
 
 
+def test_the_skill_teaches_description_as_the_briefing(files):
+    """The de-confusion the preamble carries: one text per step, and the real flag name —
+    `--project` parses as the scope option and then fails, so the skill must never say it."""
+    skill = files[SKILL_FILE]
+    assert "The description is the briefing" in skill
+    assert "agent set --for-project" in skill
+    assert "agent set --project" not in skill
+
+
 def test_the_skill_says_how_the_current_project_is_found(files):
     """The half a registry cannot render: the walk, the pointer file, and the library."""
     skill = files[SKILL_FILE]

@@ -132,6 +132,9 @@ def test_the_step_context_part_shows_the_briefing_sections(services, step, secti
     from dplanner.domain.assets import attach
     from dplanner.framework.asset_gallery import AssetGallery
 
+    # With a separate instruction, the description stays a section of its own; without
+    # one it becomes the ## Instructions block instead (tested below).
+    services.document.set_text(step.id, MODULE_ID, "Ship it.")
     services.document.set_text(step.id, "step_description", "What the step is.")
     attach(services.repo.files(step.id, "spec"), b"png bytes", "fig.png")
     section.show_target(step.id)
@@ -148,10 +151,41 @@ def test_the_step_context_part_shows_the_briefing_sections(services, step, secti
 
 
 def test_an_edit_refreshes_the_step_context_without_a_reselect(services, step, section):
+    services.document.set_text(step.id, MODULE_ID, "Ship it.")
     section.show_target(step.id)
     assert "## Description" not in section.context_view.toPlainText()
     services.document.set_text(step.id, "step_description", "Now described.")
     assert "Now described." in section.context_view.toPlainText()
+
+
+def test_a_described_step_briefs_with_the_description_once(services, step, section):
+    """No separate instruction: the description renders as ## Instructions and no
+    ## Description section repeats it."""
+    from dplanner.modules.step_agent_instruction.aspect import write_state
+
+    services.document.set_module_data(step.id, MODULE_ID, write_state(True))
+    services.document.set_text(step.id, "step_description", "The release step.")
+    section.show_target(step.id)
+    text = section.prompt_view.toPlainText()
+    assert "## Instructions" in text and "The release step." in text
+    assert "## Description" not in text
+    assert text.count("The release step.") == 1
+
+
+def test_the_editor_appears_only_with_a_separate_instruction(services, step, section):
+    """The description is the instructions by default, so the This-step editor stays off
+    screen and a note says where the text lives; separate text brings it back."""
+    from dplanner.modules.step_agent_instruction.aspect import write_state
+
+    services.document.set_module_data(step.id, MODULE_ID, write_state(True))
+    section.show_target(step.id)
+    section.tab_bar.setCurrentIndex(1)  # Components — the page the editor lives on.
+    assert not section.step_part.isVisibleTo(section)
+    assert section.step_note.isVisibleTo(section)
+
+    services.document.set_module_data(step.id, MODULE_ID, write_state(True, separate=True))
+    assert section.step_part.isVisibleTo(section)
+    assert not section.step_note.isVisibleTo(section)
 
 
 def test_the_chevron_toggles_a_part(services, step, section):
@@ -256,10 +290,19 @@ def test_the_project_panel_shows_the_agent_card(services, step):
 # -- the preview -------------------------------------------------------------------------------
 
 
-def test_preview_is_enabled_with_a_step_and_shows_the_assembly(services, step, section):
+def test_preview_is_enabled_on_an_agent_step_and_greyed_with_the_reason_off_one(
+    services, step, section
+):
+    from dplanner.modules.step_agent_instruction.aspect import write_state
+
     select(services, step)
     state = services.actions.spec("agent.preview").state(services.context.current())
-    assert state.visible and state.enabled
+    assert state.visible and not state.enabled  # Not an agent step: nothing to preview.
+    assert state.label is not None and "agent step" in state.label
+
+    services.document.set_module_data(step.id, MODULE_ID, write_state(True))
+    state = services.actions.spec("agent.preview").state(services.context.current())
+    assert state.enabled
 
     section.show_target(step.id)
     assert section.preview_button.isEnabled()

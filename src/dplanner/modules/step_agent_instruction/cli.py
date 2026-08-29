@@ -1,10 +1,10 @@
-"""``dplanner agent …`` — the instruction an agent should read before doing a step.
+"""``dplanner agent …`` — mark steps for agent execution, and read their briefings.
 
-The verbs an agent uses on itself: ``show`` before starting the work, ``set`` when the user
-has told it something worth keeping for next time, ``prompt`` for the whole assembled
-briefing — project instruction, step instruction, inherited context — which is also what
-Run Agent in the window launches with. ``show``/``set`` take either a step or
-``--for-project``, because the aspect lives at both levels and the verbs should not care.
+The description is the briefing's instructions: ``agent on`` is all most agent steps need
+beside ``describe set``. ``agent set`` writes the *separate* instruction — only for a step
+whose how-to-execute genuinely differs from its description — or, with ``--for-project``,
+the project's standing instruction prepended to every briefing. ``prompt`` prints the whole
+assembled briefing, which is also what Run Agent in the window launches with.
 
 ``commands()`` takes the context assembly as typed parameters, supplied by the composition
 root — the CLI-side twin of a module ``Deps`` callback, and the same generalisation
@@ -13,46 +13,73 @@ module, so what crosses modules arrives as arguments.
 """
 
 from argparse import ArgumentParser, Namespace
+from collections.abc import Callable
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
-from dplanner.domain.commands import EditTextCommand
+from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Node, Project, Step, TextEdit
 from dplanner.domain.store import FilesFor
 from dplanner.modules.step_agent_instruction.aspect import (
     MODULE_ID,
     asset_paths,
+    enabled,
     read,
     read_project,
+    separate_instruction,
+    write_state,
 )
 from dplanner.modules.step_agent_instruction.prompt import Briefing, assemble
 
 
 def step_author() -> StepAuthor:
-    """`step add`'s instruction flag: the new step arrives ready to hand to an agent."""
+    """`step add`'s agent flags: the new step arrives ready to hand to an agent.
+
+    ``--agent`` marks the step (its description is the briefing); ``--agent-file`` also
+    writes a separate instruction for the rare step whose execution guidance differs.
+    """
 
     def configure(parser: ArgumentParser) -> None:
         parser.add_argument(
+            "--agent",
+            action="store_true",
+            help="mark the new step for agent execution; its description is the briefing",
+        )
+        parser.add_argument(
             "--agent-file",
             metavar="FILE",
-            help="an agent instruction for the new step, or - for stdin",
+            help="a separate agent instruction, or - for stdin — only when how-to-execute"
+            " differs from the description",
         )
 
     def author(context: CliContext, step: Step, args: Namespace) -> StepAuthored | None:
-        if args.agent_file is None:
-            return None
-        body = body_from(args.agent_file)
-        edit = TextEdit(step.id, MODULE_ID, 0, "", body)
-        context.apply(EditTextCommand(edit, label="Set Agent Instruction"))
-        return StepAuthored({"agent": len(body)}, f"instruction: {len(body)} characters")
+        if args.agent_file is not None:
+            body = body_from(args.agent_file)
+            edit = TextEdit(step.id, MODULE_ID, 0, "", body)
+            context.apply(EditTextCommand(edit, label="Set Agent Instruction"))
+            return StepAuthored(
+                {"agent": True, "instruction": len(body)},
+                f"agent step, separate instruction: {len(body)} characters",
+            )
+        if args.agent:
+            context.apply(
+                SetModuleDataCommand(
+                    step.id, MODULE_ID, write_state(True), label="Set Agent Aspect"
+                )
+            )
+            return StepAuthored({"agent": True}, "agent step")
+        return None
 
     return StepAuthor(configure, author, lambda args: args.agent_file == "-")
 
 
-def lint_checks() -> list[LintCheck]:
-    def missing_instructions(
+def lint_checks(*, described: Callable[[Step], bool]) -> list[LintCheck]:
+    """``described`` is the description aspect's reader, handed over by the composition
+    root — this file never imports another module's."""
+
+    def missing_briefing(
         _product: Library, project: Project, _files: FilesFor
     ) -> list[LintFinding]:
         # A standing instruction covers every step, so it silences this check — the same
@@ -64,40 +91,46 @@ def lint_checks() -> list[LintCheck]:
                 check="agent.missing",
                 subject_id=step.id,
                 subject=step.title,
-                message="no agent instruction and no standing one — "
-                f"`dplanner agent set '{step.title}' --file -`, or "
-                f"`dplanner agent set --for-project '{project.title}' --file -`",
+                message="an agent step with nothing to brief it — "
+                f"`dplanner describe set '{step.title}' --file -`, or a separate "
+                f"instruction with `dplanner agent set '{step.title}' --file -`",
             )
             for step in project.steps
-            if not read(step)
+            if enabled(step) and not read(step) and not described(step)
         ]
 
-    return [missing_instructions]
+    return [missing_briefing]
 
 
 def commands(*, briefing: Briefing) -> list[CliCommand]:
     def _prompt(context: CliContext, args: Namespace) -> int:
         step = find_step(context.library, args.step)
         project = context.library.project_of(step.id)
-        instruction = read(step)
-        project_instruction = read_project(project)
-        if not instruction and not project_instruction:
+        if not enabled(step):
             raise CliError(
-                f"{step.title!r} has no agent instruction and neither does its project — "
-                f"set one with `dplanner agent set {step.title!r} --file …`, or a standing "
-                f"one with `dplanner agent set --for-project {project.title!r} --file …`"
+                f"{step.title!r} is not an agent step — mark it with "
+                f"`dplanner agent on {step.title!r}`"
+            )
+        instruction = briefing.instruction(context.library, step, context.store.files)
+        project_instruction = read_project(project)
+        if not instruction.body and not instruction.files and not project_instruction:
+            raise CliError(
+                f"{step.title!r} has nothing to brief an agent with — describe it with "
+                f"`dplanner describe set {step.title!r} --file …`, or set a standing "
+                f"instruction with `dplanner agent set --for-project {project.title!r} "
+                "--file …`"
             )
         assembled = assemble(
             step_title=step.title or "Untitled step",
             project_title=project.title or "Untitled project",
-            instruction=instruction,
+            instruction=instruction.body,
             parts=briefing.parts(context.library, step, context.store.files),
             sections=briefing.sections(context.library, step, context.store.files),
             epilogue=briefing.epilogue(step),
             preamble=briefing.preamble,
             project_instruction=project_instruction,
             project_files=asset_paths(context.store.files, project.id),
-            instruction_files=asset_paths(context.store.files, step.id),
+            instruction_files=instruction.files,
         )
         data = {
             "step": step.id,
@@ -110,9 +143,24 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
 
     return [
         CliCommand(
+            path=("agent", "on"),
+            summary="Mark a step for agent execution; its description is the briefing's "
+            "instructions.",
+            configure=step_arg,
+            run=_on,
+            examples=("dplanner agent on 'Read the spec'",),
+        ),
+        CliCommand(
+            path=("agent", "off"),
+            summary="Unmark an agent step, dropping any separate instruction it carried.",
+            configure=step_arg,
+            run=_off,
+            examples=("dplanner agent off 'Read the spec'",),
+        ),
+        CliCommand(
             path=("agent", "show"),
-            summary="Print how a step — or with --for-project, a whole project — should be "
-            "carried out. Read this before starting a step.",
+            summary="Print a step's separate agent instruction — or with --for-project, "
+            "the project's standing one.",
             configure=_one_target,
             run=_show,
             examples=(
@@ -122,8 +170,9 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
         ),
         CliCommand(
             path=("agent", "set"),
-            summary="Replace a step's — or with --for-project, the project's standing — agent "
-            "instruction from a file or stdin.",
+            summary="Write a step's separate agent instruction — only when how-to-execute "
+            "differs from its description — or with --for-project, the project's standing "
+            "instruction.",
             configure=_configure_set,
             run=_set,
             examples=(
@@ -133,8 +182,8 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
         ),
         CliCommand(
             path=("agent", "prompt"),
-            summary="Print the full briefing for a step: instructions, description, "
-            "requirements, branch and inherited context — everything, in one read.",
+            summary="Print the full briefing for a step: instructions, requirements, "
+            "branch and inherited context — everything, in one read.",
             configure=step_arg,
             run=_prompt,
             examples=("dplanner agent prompt 'Read the spec' --json",),
@@ -174,10 +223,55 @@ def _target(context: CliContext, args: Namespace) -> Node:
     return find_step(context.library, args.step, context.current)
 
 
+def _on(context: CliContext, args: Namespace) -> int:
+    step = find_step(context.library, args.step)
+    if enabled(step):
+        context.report({"step": step.id, "agent": True}, f"{step.title}: already an agent step")
+        return 0
+    context.apply(
+        SetModuleDataCommand(step.id, MODULE_ID, write_state(True), label="Set Agent Aspect")
+    )
+    context.report({"step": step.id, "agent": True}, f"{step.title}: agent step")
+    return 0
+
+
+def _off(context: CliContext, args: Namespace) -> int:
+    step = find_step(context.library, args.step)
+    if not enabled(step):
+        raise CliError(f"{step.title!r} is not an agent step")
+    current = read(step)
+    if current:
+        edit = TextEdit(step.id, MODULE_ID, 0, current, "")
+        context.apply(EditTextCommand(edit, label="Set Agent Instruction"))
+    context.apply(
+        SetModuleDataCommand(step.id, MODULE_ID, {}, label="Clear Agent Aspect")
+    )
+    context.report({"step": step.id, "agent": False}, f"{step.title}: not an agent step")
+    return 0
+
+
 def _show(context: CliContext, args: Namespace) -> int:
     node = _target(context, args)
     body = node.module_text.get(MODULE_ID, "")
-    context.report({node.kind: node.id, "markdown": body}, body or "(no instruction)")
+    if node.kind != "step":
+        context.report({node.kind: node.id, "markdown": body}, body or "(no instruction)")
+        return 0
+    step = context.library.step(node.id)
+    data = {
+        "step": step.id,
+        "markdown": body,
+        "agent": enabled(step),
+        "separate": separate_instruction(step),
+    }
+    if body:
+        context.report(data, body)
+    elif enabled(step):
+        context.report(
+            data,
+            "(no separate instruction — the description is the briefing's instructions)",
+        )
+    else:
+        context.report(data, f"(not an agent step — `dplanner agent on {step.title!r}`)")
     return 0
 
 

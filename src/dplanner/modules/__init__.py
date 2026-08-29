@@ -50,7 +50,13 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from pathlib import Path
 
     from dplanner.core.storage.locations import find_repo_root, origin_url
-    from dplanner.domain.model import Library
+    from dplanner.domain.commands import (
+        Command,
+        CompositeCommand,
+        EditTextCommand,
+        SetModuleDataCommand,
+    )
+    from dplanner.domain.model import Library, TextEdit
     from dplanner.domain.ordering import placed
     from dplanner.domain.schedule import format_date, format_days, schedule
     from dplanner.domain.store import LibraryStore
@@ -78,7 +84,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
     from dplanner.modules.spec.module import SpecDeps, SpecModule
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_INSTRUCTION_ID
+    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_agent_instruction.aspect import read as agent_instruction_read
+    from dplanner.modules.step_agent_instruction.aspect import (
+        separate_instruction as agent_separate,
+    )
+    from dplanner.modules.step_agent_instruction.aspect import write_state as agent_write_state
     from dplanner.modules.step_agent_instruction.module import (
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
@@ -93,6 +104,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepDescriptionDeps,
         StepDescriptionModule,
     )
+    from dplanner.modules.step_description.section import SeparateInstructionLink
     from dplanner.modules.step_handoff.module import StepHandoffDeps, StepHandoffModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
     from dplanner.modules.step_properties.module import (
@@ -179,11 +191,50 @@ def default_modules(services: "AppServices") -> list["Module"]:
 
     def step_type_icons(step: "Step") -> tuple[str, ...]:
         """What kind of thing a step is, in the medallion vocabulary the canvas painted
-        first: "tag" a release, "spark" machine guidance. The order table's title column
+        first: "tag" a release, "spark" an agent step. The order table's title column
         reads the same answer, so a step is the same kind everywhere."""
         return (
             *(("tag",) if release_read(step) else ()),
-            *(("spark",) if agent_instruction_read(step) else ()),
+            *(("spark",) if agent_enabled(step) else ()),
+        )
+
+    def set_separate_instruction(step_id: str, separate: bool) -> None:
+        """The Description tab's checkbox, translated into the agent aspect's writes.
+
+        Unchecking merges back into the description — the separate text is dropped and
+        the mark stays — as one undo step, so Ctrl+Z restores text and flag together.
+        """
+        if separate:
+            services.undo.push(
+                SetModuleDataCommand(
+                    step_id,
+                    AGENT_INSTRUCTION_ID,
+                    agent_write_state(True, separate=True),
+                    label="Separate Agent Instruction",
+                )
+            )
+            return
+        current = agent_instruction_read(library.step(step_id))
+        mark: Command = SetModuleDataCommand(
+            step_id,
+            AGENT_INSTRUCTION_ID,
+            agent_write_state(True),
+            label="Use Description as Instructions",
+        )
+        if not current:
+            services.undo.push(mark)
+            return
+        services.undo.push(
+            CompositeCommand(
+                "Use Description as Instructions",
+                [
+                    EditTextCommand(
+                        TextEdit(step_id, AGENT_INSTRUCTION_ID, 0, current, ""),
+                        label="Set Agent Instruction",
+                    ),
+                    mark,
+                ],
+            )
         )
 
     def step_accent(step_id: str) -> "NodeAccent":
@@ -518,7 +569,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
         estimation,
         StepTicketModule(
             StepTicketDeps(
-                library=library, undo=services.undo, sections=services.inspector_sections
+                library=library,
+                undo=services.undo,
+                sections=services.inspector_sections,
+                actions=services.actions,
+                parent=services.window,
             )
         ),
         StepDescriptionModule(
@@ -527,6 +582,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 undo=services.undo,
                 sections=services.inspector_sections,
                 files=store.files,
+                # The "Separate agent instruction" checkbox: the agent aspect through
+                # typed callbacks, so neither module learns the other's name.
+                agent_link=SeparateInstructionLink(
+                    agent_enabled=lambda sid: agent_enabled(library.step(sid)),
+                    separate=lambda sid: agent_separate(library.step(sid)),
+                    has_text=lambda sid: bool(agent_instruction_read(library.step(sid))),
+                    set_separate=set_separate_instruction,
+                ),
             )
         ),
         StepAgentInstructionModule(
@@ -675,14 +738,17 @@ def _briefing_sections(
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.spec.aspect import attachment_paths, read_links
     from dplanner.modules.spec.documents import read_index
+    from dplanner.modules.step_agent_instruction.aspect import read as instruction_read
     from dplanner.modules.step_agent_instruction.prompt import PromptPart
     from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
     from dplanner.modules.step_description.aspect import read as description_read
 
     sections: list[PromptPart] = []
+    # Without a separate instruction the description IS the ## Instructions block (see
+    # _briefing_instruction), so a Description section here would say everything twice.
     description = description_read(step)
     description_files = _module_asset_paths(files, step.id, DESCRIPTION_ID)
-    if description or description_files:
+    if instruction_read(step) and (description or description_files):
         sections.append(
             PromptPart(heading="Description", body=description, files=description_files)
         )
@@ -732,6 +798,35 @@ def _briefing_sections(
     return sections
 
 
+def _briefing_instruction(
+    library: "Library", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
+) -> "PromptPart":
+    """The briefing's ``## Instructions`` block: the description is the instructions.
+
+    A step's separate instruction wins when one exists; otherwise the description body and
+    its images take the block — one text an agent step needs, written once. Cross-module
+    (it reads the description on the agent module's behalf), so it is decided here, in the
+    one file allowed to know both. Instruction-area files always ride with the block: they
+    were attached to it.
+    """
+    from dplanner.modules.step_agent_instruction.aspect import asset_paths
+    from dplanner.modules.step_agent_instruction.aspect import read as instruction_read
+    from dplanner.modules.step_agent_instruction.prompt import PromptPart
+    from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
+    from dplanner.modules.step_description.aspect import read as description_read
+
+    own = instruction_read(step)
+    instruction_files = asset_paths(files, step.id)
+    if own:
+        return PromptPart(heading="Instructions", body=own, files=instruction_files)
+    description_files = _module_asset_paths(files, step.id, DESCRIPTION_ID)
+    return PromptPart(
+        heading="Instructions",
+        body=description_read(step),
+        files=(*description_files, *instruction_files),
+    )
+
+
 def _default_briefing() -> "Briefing":
     """The briefing every surface assembles from: the shared block builders below, and
     the root's own opening and closing prose. One object, two callers — the window's
@@ -744,6 +839,7 @@ def _default_briefing() -> "Briefing":
         sections=_briefing_sections,
         epilogue=lambda step: _agent_epilogue(step.title),
         preamble=_agent_preamble(),
+        instruction=_briefing_instruction,
     )
 
 
@@ -810,6 +906,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_agent_run import cli as agent_state_cli
     from dplanner.modules.step_description import cli as description_cli
+    from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_handoff import cli as handoff_cli
     from dplanner.modules.step_order import cli as order_cli
     from dplanner.modules.step_release import cli as release_cli
@@ -854,7 +951,9 @@ def default_cli_commands() -> list["CliCommand"]:
             checks=[
                 *projects_cli.lint_checks(),
                 *description_cli.lint_checks(),
-                *agent_cli.lint_checks(),
+                # An agent step is briefed by its description unless it carries a separate
+                # instruction; the description's reader arrives here, not by import.
+                *agent_cli.lint_checks(described=lambda step: bool(description_read(step))),
                 *estimation_cli.lint_checks(),
                 *spec_cli.lint_checks(),
             ]

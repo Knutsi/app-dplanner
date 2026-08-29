@@ -22,7 +22,13 @@ from pathlib import Path
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.fsio import slugify
-from dplanner.domain.model import Library, Step, StepId
+from dplanner.domain.commands import (
+    Command,
+    CompositeCommand,
+    EditTextCommand,
+    SetModuleDataCommand,
+)
+from dplanner.domain.model import Library, Step, StepId, TextEdit
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -38,6 +44,7 @@ from dplanner.framework.settings_registry import (
     SettingsSectionRegistry,
 )
 from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import confirm
 from dplanner.framework.window import StatusHost
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.aspect import (
@@ -45,8 +52,10 @@ from dplanner.modules.step_agent_instruction.aspect import (
     MODULE_ID,
     SPEC,
     asset_paths,
+    enabled,
     read,
     read_project,
+    write_state,
 )
 from dplanner.modules.step_agent_instruction.prompt import (
     EMPTY_BRIEFING,
@@ -155,6 +164,9 @@ class StepAgentInstructionModule:
                 label=SPEC.label,
                 order=40,
                 factory=make_section,
+                shown_for=lambda step_id: step_id is not None
+                and deps.library.has(step_id)
+                and enabled(deps.library.step(step_id)),
             )
         )
         if deps.cards is not None:
@@ -169,6 +181,19 @@ class StepAgentInstructionModule:
                     icon=typewriter_icon,
                 )
             )
+        deps.actions.register(
+            ActionSpec(
+                id="agent.toggle",
+                label="Agent",
+                menu="Step",
+                group="type",
+                submenu="Type",
+                order=20,
+                tip="Mark this step for agent execution; its description is the briefing",
+                state=self._aspect_state,
+                run=self._toggle_aspect,
+            )
+        )
         deps.actions.register(
             ActionSpec(
                 id="agent.run",
@@ -201,6 +226,51 @@ class StepAgentInstructionModule:
             )
         )
 
+    # -- the aspect itself ---------------------------------------------------------------------
+
+    def _aspect_state(self, context: Context) -> ActionState:
+        step = self._focused(context)
+        if step is None:
+            return DISABLED
+        return ActionState(checked=enabled(step))
+
+    def _toggle_aspect(self, context: Context) -> None:
+        step = self._focused(context)
+        if step is None:
+            return
+        if not enabled(step):
+            self._deps.undo.push(
+                SetModuleDataCommand(
+                    step.id, MODULE_ID, write_state(True), label="Mark as Agent Step"
+                )
+            )
+            return
+        current = read(step)
+        if current:
+            question = (
+                f"Stop treating {step.title or 'this step'!r} as an agent step?"
+                " Its separate agent instruction is not kept."
+            )
+            if not confirm(self._deps.parent, "Clear Agent Aspect", question):
+                return
+        commands: list[Command] = []
+        if current:
+            commands.append(
+                EditTextCommand(
+                    TextEdit(step.id, MODULE_ID, 0, current, ""),
+                    label="Set Agent Instruction",
+                )
+            )
+        commands.append(
+            SetModuleDataCommand(step.id, MODULE_ID, {}, label="Clear Agent Aspect")
+        )
+        # One undo step restores both the mark and the instruction text.
+        self._deps.undo.push(
+            commands[0]
+            if len(commands) == 1
+            else CompositeCommand("Clear Agent Aspect", commands)
+        )
+
     # -- running -------------------------------------------------------------------------------
 
     def _can_run(self, context: Context) -> ActionState:
@@ -212,11 +282,23 @@ class StepAgentInstructionModule:
         step = self._focused(context)
         if step is None:
             return DISABLED
-        if not read(step):
+        deps = self._deps
+        if not enabled(step):
             return ActionState(
-                enabled=False, label="Run Agent — write an agent instruction first"
+                enabled=False,
+                label="Run Agent — mark the step as an agent step first (Step ▸ Type ▸ Agent)",
             )
-        if not self._deps.workdir_for(step.id):
+        briefed = deps.briefing.instruction(deps.library, step, deps.files)
+        if (
+            not briefed.body
+            and not briefed.files
+            and not read_project(deps.library.project_of(step.id))
+        ):
+            return ActionState(
+                enabled=False,
+                label="Run Agent — describe the step, or write an agent instruction first",
+            )
+        if not deps.workdir_for(step.id):
             return ActionState(
                 enabled=False,
                 label="Run Agent — the project's folder is not in a git repository",
@@ -224,9 +306,16 @@ class StepAgentInstructionModule:
         return ENABLED
 
     def _can_preview(self, context: Context) -> ActionState:
-        """A preview needs only a step: an empty instruction still has a project part and
-        inherited context worth seeing."""
-        return DISABLED if self._focused(context) is None else ENABLED
+        """A preview needs an agent step: with the aspect off there is no briefing to see."""
+        step = self._focused(context)
+        if step is None:
+            return DISABLED
+        if not enabled(step):
+            return ActionState(
+                enabled=False,
+                label="Preview Agent Prompt — mark the step as an agent step first",
+            )
+        return ENABLED
 
     def _assembled(self, step: Step, staged: Mapping[str, str] | None = None) -> AssembledPrompt:
         """The briefing, with every referenced file path mapped through ``staged``."""
@@ -246,18 +335,20 @@ class StepAgentInstructionModule:
             for section in deps.briefing.sections(deps.library, step, deps.files)
         ]
         project_files = place(asset_paths(deps.files, project.id))
-        instruction_files = place(asset_paths(deps.files, step.id))
+        # The ## Instructions block comes from the briefing — the separate instruction
+        # when one exists, the description otherwise, decided by the composition root.
+        instruction = deps.briefing.instruction(deps.library, step, deps.files)
         return assemble(
             step_title=step.title or "Untitled step",
             project_title=project.title or "Untitled project",
-            instruction=read(step),
+            instruction=instruction.body,
             parts=parts,
             sections=sections,
             epilogue=deps.briefing.epilogue(step),
             preamble=deps.briefing.preamble,
             project_instruction=read_project(project),
             project_files=project_files,
-            instruction_files=instruction_files,
+            instruction_files=place(instruction.files),
         )
 
     def _run(self, context: Context) -> None:

@@ -187,6 +187,15 @@ file area at either level. `module_data` is on every node and `set_module_data` 
 over ids, so nothing in the model has to know. The cost is on whoever writes the next
 migration for that format: it sees both shapes and owes both a thought.
 
+**An aspect toggled on with nothing to say yet is a marker entry.** A step's "on/off" for
+a toggleable aspect is the presence of its `module_data` entry, and two aspects need a
+shape for "on, but empty": `step_ticket` writes `{"on": true}` when the Type toggle
+enables it before any field is filled (a filled ticket's entry replaces the marker), and
+`step_agent_instruction` writes `{"on": true}` — plus `"separate": true` when the step
+opts into an instruction distinct from its description — beside the step whose prose file
+may not exist at all. Both are format 1 of their existing `ModuleDataFormat`s; a step
+carrying only the old prose file still reads as agent-on, so no migration ships with them.
+
 **Not every module entry is an aspect.** The graph editor stores each node's position as
 `modules/project_editor.json` beside the step, and it is deliberately *not* an `AspectSpec`:
 an aspect is a fact about the work that an agent may want to write, and a layout is

@@ -43,7 +43,7 @@ from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.text_binding import TextBinding
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import make_text_well, space_lines
-from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
+from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, separate_instruction
 from dplanner.modules.step_agent_instruction.prompt import (
     AssembledPrompt,
     PromptPart,
@@ -225,6 +225,17 @@ class AgentSection(QWidget):
         )
         step_body = _body(self.edit, self.step_assets)
         self.step_part = PartRow("This step", leaf_icon, step_body, expanded=True)
+        # Shown in the editor's place while the description is the instructions — most
+        # agent steps carry no separate text, and an empty editor would invite writing
+        # the same thing twice.
+        self.step_note = QLabel(
+            "The description is this step's instructions. Tick “Separate agent"
+            " instruction” on the Description tab to write execution-specific guidance.",
+            self,
+        )
+        self.step_note.setObjectName("InspectorNote")
+        self.step_note.setWordWrap(True)
+        self.step_note.hide()
 
         # -- The Prompt page: the exact text Run Agent launches with, and every image it
         # references — not a rendering, the thing itself.
@@ -261,6 +272,7 @@ class AgentSection(QWidget):
         self._parts_column.addWidget(self.context_part)
         self._parts_column.addWidget(self.inherited_part)
         self._parts_column.addWidget(self.step_part, stretch=1)
+        self._parts_column.addWidget(self.step_note)
 
         self.preview_button = QPushButton("Preview Prompt…", self)
         self.preview_button.clicked.connect(lambda: preview())
@@ -345,6 +357,7 @@ class AgentSection(QWidget):
         self._retarget_assets()
         self._refresh_derived()
         self._refresh_buttons()
+        self._update_step_part()
 
     def dispose(self) -> None:
         self._close_bindings()
@@ -377,6 +390,7 @@ class AgentSection(QWidget):
         space_lines(self.inherited_view)
         self._refresh_context()
         self._refresh_summaries()
+        self._update_step_part()
         self._mark_prompt_stale()
 
     def _mark_prompt_stale(self) -> None:
@@ -520,6 +534,16 @@ class AgentSection(QWidget):
         self.preview_button.setToolTip(
             preview.label or "See the exact briefing Run Agent will launch with"
         )
+
+    def _update_step_part(self) -> None:
+        """The editor appears only where the step opted into a separate instruction; the
+        note holds its place everywhere else, so the page still says where the text is."""
+        separate = False
+        if self._step_id is not None and self._product.has(self._step_id):
+            separate = separate_instruction(self._product.step(self._step_id))
+        self.step_part.setVisible(separate)
+        self.step_note.setVisible(not separate and self._step_id is not None)
+        self._restretch()
 
     # -- internals -----------------------------------------------------------------------------
 

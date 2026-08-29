@@ -293,15 +293,27 @@ def test_agent_prompt_opens_with_the_project_instruction(cli, cli_stdin):
 
 
 def test_agent_prompt_works_from_the_standing_instruction_alone(cli, cli_stdin):
-    """The standing instruction is "prepended to every briefing" — so a step with no
-    instruction of its own still has a briefing, exactly as the GUI's Preview shows."""
+    """The standing instruction is "prepended to every briefing" — so an agent step with
+    no prose of its own still has a briefing, exactly as the GUI's Preview shows."""
     cli("project", "create", "Discovery")
-    cli("step", "add", "Discovery", "Deploy")
+    cli("step", "add", "Discovery", "Deploy", "--agent")
     cli_stdin("agent", "set", "--for-project", "Discovery", "--file", "-", stdin="House rules.")
     shown = data(cli("agent", "prompt", "Deploy", "--json"))
     assert "House rules." in shown["prompt"]
     # No empty section for the instruction the step does not have.
     assert "## Instructions" not in shown["prompt"]
+
+
+def test_agent_prompt_briefs_with_the_description(cli, cli_stdin):
+    """The description is the instructions: on an agent step with no separate instruction
+    it renders once, under ## Instructions, not as a ## Description section too."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy", "--agent")
+    cli_stdin("describe", "set", "Deploy", "--file", "-", stdin="The release step.")
+    prompt = data(cli("agent", "prompt", "Deploy", "--json"))["prompt"]
+    assert "## Instructions" in prompt and "The release step." in prompt
+    assert "## Description" not in prompt
+    assert prompt.count("The release step.") == 1
 
 
 def test_agent_prompt_is_a_self_contained_briefing(cli, cli_stdin, tmp_path):
@@ -359,12 +371,41 @@ def test_agent_prompt_lists_description_figures_as_files(cli, cli_stdin, tmp_pat
     assert attached[0] in shown["prompt"]
 
 
-def test_agent_prompt_with_no_instruction_anywhere_names_both_fixes(cli):
+def test_agent_prompt_refuses_a_step_that_is_not_an_agent_step(cli):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "Deploy")
     message = cli("agent", "prompt", "Deploy", expect=1)
-    assert "agent set 'Deploy'" in message
+    assert "not an agent step" in message
+    assert "agent on 'Deploy'" in message
+
+
+def test_agent_prompt_with_nothing_to_brief_names_both_fixes(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy", "--agent")
+    message = cli("agent", "prompt", "Deploy", expect=1)
+    assert "describe set 'Deploy'" in message
     assert "agent set --for-project" in message
+
+
+def test_agent_on_and_off_bracket_the_aspect(cli, cli_stdin):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    shown = data(cli("agent", "show", "Deploy", "--json"))
+    assert shown["agent"] is False
+
+    cli("agent", "on", "Deploy")
+    shown = data(cli("agent", "show", "Deploy", "--json"))
+    assert shown["agent"] is True and shown["separate"] is False
+    assert "already an agent step" in cli("agent", "on", "Deploy")
+
+    # A separate instruction implies the aspect; `off` drops both.
+    cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    shown = data(cli("agent", "show", "Deploy", "--json"))
+    assert shown["separate"] is True
+    cli("agent", "off", "Deploy")
+    shown = data(cli("agent", "show", "Deploy", "--json"))
+    assert shown["agent"] is False and shown["markdown"] == ""
+    assert "not an agent step" in cli("agent", "off", "Deploy", expect=1)
 
 
 # -- authoring a step at birth -----------------------------------------------------------------
