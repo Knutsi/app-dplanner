@@ -14,8 +14,8 @@ strip itself stays wordless.
 
 from datetime import date, timedelta
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QHelpEvent, QPainter, QPaintEvent, QPen
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QHelpEvent, QMouseEvent, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QToolTip, QWidget
 
 from dplanner.domain.schedule import SATURDAY, format_date
@@ -65,7 +65,14 @@ def _month_span(start: date, finish: date | None) -> tuple[date, int]:
 
 
 class MonthsView(QWidget):
-    """The months around the plan, the work period filled in."""
+    """The months around the plan, the work period filled in.
+
+    The calendar is also the start-date control: clicking a day reports it through
+    ``day_picked``, and the host turns that into the one undoable write. The widget
+    itself never writes — the same contract as every input here.
+    """
+
+    day_picked = Signal(object)  # a datetime.date
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -74,6 +81,8 @@ class MonthsView(QWidget):
         self._today = date.today()
         self._begin = date.today().replace(day=1)
         self._count = 0
+        self._offset = 0  # months the user has paged away from the plan's own window
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     # -- the host's side of the contract -------------------------------------------------------
 
@@ -82,6 +91,7 @@ class MonthsView(QWidget):
         self._finish = finish
         self._today = today or date.today()
         self._begin, self._count = _month_span(start, finish)
+        self._begin = _add_months(self._begin, self._offset)
         rows = (self._count + MONTHS_PER_ROW - 1) // MONTHS_PER_ROW
         columns = min(self._count, MONTHS_PER_ROW)
         month_width = 7 * (CELL + CELL_GAP) - CELL_GAP
@@ -90,6 +100,12 @@ class MonthsView(QWidget):
             columns * month_width + (columns - 1) * MONTH_GAP,
             rows * month_height + (rows - 1) * MONTH_GAP,
         )
+        self.update()
+
+    def page(self, months: int) -> None:
+        """Move the window through time; the plan's own window is offset zero."""
+        self._offset += months
+        self._begin = _add_months(self._begin, months)
         self.update()
 
     @property
@@ -126,6 +142,8 @@ class MonthsView(QWidget):
                 )
                 start_note = " — the work starts, " if when == start else " — "
                 said += f"{start_note}working day {worked} of {total}"
+        else:
+            said += " — click to start the work here"
         if when == self._today:
             said += " · today"
         return said
@@ -226,6 +244,12 @@ class MonthsView(QWidget):
         painter.end()
 
     # -- input ---------------------------------------------------------------------------------
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
+        when = self._day_at(event.position())
+        if when is not None:
+            self.day_picked.emit(when)
+        super().mousePressEvent(event)
 
     def event(self, found: QEvent) -> bool:
         if found.type() == QEvent.Type.ToolTip:

@@ -107,6 +107,26 @@ def test_the_insight_names_the_smallest_team_on_the_floor(services, project, tab
     assert "dependency floor" in tab.insight.text()
 
 
+def test_clicking_a_day_re_dates_the_plan_undoably(services, project, tab):
+    tab.months.day_picked.emit(date(2026, 9, 14))
+    assert project.module_data[ESTIMATION_ID]["start"] == "2026-09-14"
+    assert tab.months.span[0] == date(2026, 9, 14)
+    tab.months.day_picked.emit(date(2026, 9, 14))  # the same day is not a second edit
+    services.undo.undo()
+    assert project.module_data[ESTIMATION_ID]["start"] == "2026-09-07"
+
+
+def test_the_arrows_page_the_window_through_time(tab):
+    assert tab.months.first_month == date(2026, 8, 1)
+    tab.earlier.click()
+    assert tab.months.first_month == date(2026, 7, 1)
+    tab.later.click()
+    tab.later.click()
+    assert tab.months.first_month == date(2026, 9, 1)
+    tab.matrix.select(2, 2)  # a re-render keeps the paged window
+    assert tab.months.first_month == date(2026, 9, 1)
+
+
 def test_the_months_light_the_work_period(tab):
     assert tab.months.span == (date(2026, 9, 7), date(2026, 9, 16))
     assert tab.months.first_month == date(2026, 8, 1)  # one month before the start

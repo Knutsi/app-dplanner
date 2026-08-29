@@ -300,19 +300,11 @@ def test_the_action_opens_it_for_the_focused_project(services, project):
     assert [a.uri for a in services.tabs.activities()] == [f"app://activity/order/{project.id}"]
 
 
-def test_the_step_menu_mirror_opens_the_same_tab(services, project):
-    """The verb's second placement: the canvas right-click builds the Step menu, so the
-    order view is reachable from a step too — one palette entry, though."""
-    from dplanner.framework.context import ContextNode, selection_uri
-
-    services.context.set_scope(
-        SCOPE_SELECTION, (ContextNode(selection_uri("project", project.id)),)
-    )
-    services.actions.run("order.open_step", services.context.current())
-    assert [a.uri for a in services.tabs.activities()] == [f"app://activity/order/{project.id}"]
-
-    mirror = services.actions.spec("order.open_step")
-    assert (mirror.menu, mirror.group, mirror.palette) == ("Step", "open", False)
+def test_the_verb_sits_in_the_step_menu_only(services):
+    """The Project side is the index tree's Order row, so the verb's one menu seat is
+    the Step menu — the canvas right-click and toolbar reach the same id."""
+    spec = services.actions.spec("order.open")
+    assert (spec.menu, spec.group, spec.palette) == ("Step", "open", True)
 
 
 # -- the export ------------------------------------------------------------------------------

@@ -16,7 +16,6 @@ the same seams the progression board uses.
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
-from typing import Protocol
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -65,20 +64,6 @@ BUTTON_GAP = 4
 HEADLINE_POINTS = 5
 
 
-class StartBar(Protocol):
-    """The control the calendar lens is measured from.
-
-    Consumer-owned interface, satisfied structurally by the estimation module's start-date
-    bar via the composition root — the order view's arrangement, redeclared here because
-    modules never import each other.
-    """
-
-    @property
-    def widget(self) -> QWidget: ...
-
-    def dispose(self) -> None: ...
-
-
 @dataclass(frozen=True)
 class TimeEstimatesDeps:
     library: Library
@@ -90,10 +75,10 @@ class TimeEstimatesDeps:
     # learns what either is stored as.
     days_for: Callable[[Step], float | None]
     is_agent: Callable[[Step], bool]
-    # When the project's work begins; whoever owns start dates answers.
+    # When the project's work begins, and how a calendar click re-dates it — whoever
+    # owns start dates answers both, one undoable command per click.
     start_of: Callable[[ProjectId], date]
-    # The widget that sets that date. None is a legitimate build.
-    start_bar: Callable[[ProjectId, QWidget], StartBar] | None = None
+    set_start: Callable[[ProjectId, date], None]
 
 
 def _team(humans: int, agents: int) -> str:
@@ -121,11 +106,7 @@ class TimeEstimatesActivity(EntityActivity):
         caption.setObjectName("InspectorCaption")
         layout.addWidget(caption)
 
-        self.start_bar: StartBar | None = None
         layout.addSpacing(BLOCK_GAP)
-        if deps.start_bar is not None:
-            self.start_bar = deps.start_bar(project_id, page)
-            layout.addWidget(self.start_bar.widget)
         self.focus_bar = FocusBar(deps.library, deps.undo, project_id, page)
         layout.addWidget(self.focus_bar)
 
@@ -166,7 +147,20 @@ class TimeEstimatesActivity(EntityActivity):
         layout.addWidget(self.detail)
 
         layout.addSpacing(BLOCK_GAP)
+        pager = QWidget(page)
+        pager_row = QHBoxLayout(pager)
+        pager_row.setContentsMargins(0, 0, 0, 0)
+        pager_row.setSpacing(BUTTON_GAP)
+        self.earlier = self._pager_button(pager, Qt.ArrowType.LeftArrow, "Earlier months")
+        self.later = self._pager_button(pager, Qt.ArrowType.RightArrow, "Later months")
+        pager_row.addWidget(self.earlier)
+        pager_row.addWidget(self.later)
+        pager_row.addStretch(1)
+        layout.addWidget(pager)
+        self.pager = pager
+
         self.months = MonthsView(page)
+        self.months.day_picked.connect(self._on_day_picked)
         layout.addWidget(self.months, 0, Qt.AlignmentFlag.AlignLeft)
 
         layout.addSpacing(BLOCK_GAP)
@@ -216,6 +210,17 @@ class TimeEstimatesActivity(EntityActivity):
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         return button
 
+    def _pager_button(self, parent: QWidget, arrow: Qt.ArrowType, tip: str) -> QToolButton:
+        button = QToolButton(parent)
+        button.setObjectName("ToolbarButton")
+        button.setArrowType(arrow)
+        button.setToolTip(tip)
+        button.setAutoRepeat(True)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        step = -1 if arrow == Qt.ArrowType.LeftArrow else 1
+        button.clicked.connect(lambda: self.months.page(step))
+        return button
+
     # -- the activity contract -----------------------------------------------------------------
 
     @property
@@ -235,8 +240,6 @@ class TimeEstimatesActivity(EntityActivity):
             unsubscribe()
         self._unsubscribes.clear()
         self.focus_bar.dispose()
-        if self.start_bar is not None:
-            self.start_bar.dispose()
 
     # -- internals -----------------------------------------------------------------------------
 
@@ -246,6 +249,11 @@ class TimeEstimatesActivity(EntityActivity):
     def _on_lens(self, chosen: int) -> None:
         self._calendar_lens = chosen == 0
         self._render()
+
+    def _on_day_picked(self, when: date) -> None:
+        if self._report is None or when == self._report.start:
+            return
+        self._deps.set_start(self.project_id, when)  # the model change refreshes the tab
 
     def _refresh(self) -> None:
         if not self._product.has(self.project_id):
@@ -265,7 +273,7 @@ class TimeEstimatesActivity(EntityActivity):
     def _render(self) -> None:
         report = self._report
         has_report = report is not None
-        for widget in (self.lens_bar, self.matrix, self.months, self.insight):
+        for widget in (self.lens_bar, self.matrix, self.pager, self.months, self.insight):
             widget.setVisible(has_report)
         if report is None:
             self.headline.setText("No steps yet")

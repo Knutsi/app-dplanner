@@ -249,8 +249,8 @@ class StepOrderModule:
     def __init__(self, deps: StepOrderDeps) -> None:
         self._deps = deps
 
-    def open(self, project_id: NodeId) -> None:
-        self._deps.tabs.open(ORDER_KIND, project_id)
+    def open(self, project_id: NodeId, *, preview: bool = False) -> None:
+        self._deps.tabs.open(ORDER_KIND, project_id, preview=preview)
 
     def register(self) -> None:
         deps = self._deps
@@ -260,29 +260,17 @@ class StepOrderModule:
             return OrderActivity(deps, target)
 
         deps.tabs.register_factory(ORDER_KIND, factory)
+        # The Project side is the index tree's "Order" row now; the verb's menu seat is
+        # the Step menu, so the canvas right-click still offers it — and the canvas
+        # toolbar reaches the same id through the registry.
         deps.actions.register(
             ActionSpec(
                 id="order.open",
-                label="Show &Order",
-                menu="Project",
-                group="open",
-                order=20,
-                tip="What can be started now, and what waits for what",
-                state=self._on_a_project,
-                run=self._open,
-            )
-        )
-        # The same verb placed in the Step menu — menus.py names its "open" group the
-        # Step-side mirror of Project's "Show Order". palette=False: one palette entry.
-        deps.actions.register(
-            ActionSpec(
-                id="order.open_step",
                 label="Show &Order",
                 menu="Step",
                 group="open",
                 order=20,
                 tip="What can be started now, and what waits for what",
-                palette=False,
                 state=self._on_a_project,
                 run=self._open,
             )

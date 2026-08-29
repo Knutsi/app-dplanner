@@ -61,9 +61,9 @@ def test_the_specs_entry_opens_the_specs_tab(services, project):
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
     row = panel.tree.topLevelItem(0).child(0)
     entries = [row.child(i).text(0) for i in range(row.childCount())]
-    assert entries == ["Steps", "Specs", "Progression", "Time Estimates"]
-    panel.tree.itemActivated.emit(row.child(1), 0)
-    panel.tree.itemActivated.emit(row.child(1), 0)  # Dedupes on the activity uri.
+    assert entries == ["Steps", "Order", "Specs", "Progression", "Time Estimates"]
+    panel.tree.itemActivated.emit(row.child(2), 0)
+    panel.tree.itemActivated.emit(row.child(2), 0)  # Dedupes on the activity uri.
     assert [a.title for a in services.tabs.activities()] == ["Discovery — Specs"]
 
 
