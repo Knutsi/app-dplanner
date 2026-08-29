@@ -34,6 +34,7 @@ from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
     Cell,
     TimeReport,
+    quarter_up,
     read_efficiency,
     stretched,
     time_report,
@@ -202,10 +203,11 @@ def _one_scenario(
         agents=args.agents,
     )
     assert raw is not None and slow is not None  # the caller checked project.steps
-    landing = working_days_after(start, slow.days) if slow.days > 0 else None
+    slow_days = quarter_up(slow.days)
+    landing = working_days_after(start, slow_days) if slow_days > 0 else None
     return (
         (Cell(humans=args.humans, agents=args.agents, days=raw.days),),
-        (Cell(humans=args.humans, agents=args.agents, days=slow.days, finish=landing),),
+        (Cell(humans=args.humans, agents=args.agents, days=slow_days, finish=landing),),
     )
 
 

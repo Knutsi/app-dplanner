@@ -20,7 +20,7 @@ from typing import Protocol
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, ProjectId, Step
-from dplanner.domain.schedule import format_date, format_days
+from dplanner.domain.schedule import format_days
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -91,16 +91,6 @@ class TimeEstimatesActivity(EntityActivity):
         caption.setObjectName("InspectorCaption")
         layout.addWidget(caption)
 
-        note = QLabel(
-            "How long the project takes with a given team: rows are people, columns are "
-            "coding agents working in parallel. Agent steps wait for an agent, every other "
-            "step for a person, and the dependency graph decides what can overlap.",
-            page,
-        )
-        note.setObjectName("InspectorNote")
-        note.setWordWrap(True)
-        layout.addWidget(note)
-
         self.start_bar: StartBar | None = None
         layout.addSpacing(BLOCK_GAP)
         if deps.start_bar is not None:
@@ -123,9 +113,6 @@ class TimeEstimatesActivity(EntityActivity):
         self.parallel_caption = QLabel("Parallel-adjusted time", page)
         self.parallel_caption.setObjectName("InspectorCaption")
         layout.addWidget(self.parallel_caption)
-        self.parallel_note = QLabel("Working days of project time under each staffing.", page)
-        self.parallel_note.setObjectName("InspectorNote")
-        layout.addWidget(self.parallel_note)
         self.parallel = MatrixTable(page)
         layout.addWidget(self.parallel)
 
@@ -133,19 +120,8 @@ class TimeEstimatesActivity(EntityActivity):
         self.calendar_caption = QLabel("Calendar time", page)
         self.calendar_caption.setObjectName("InspectorCaption")
         layout.addWidget(self.calendar_caption)
-        self.calendar_note = QLabel(page)
-        self.calendar_note.setObjectName("InspectorNote")
-        self.calendar_note.setWordWrap(True)
-        layout.addWidget(self.calendar_note)
         self.calendar = MatrixTable(page)
         layout.addWidget(self.calendar)
-
-        self.floor_note = QLabel(
-            "Faded cells sit on the dependency floor — more capacity no longer helps.", page
-        )
-        self.floor_note.setObjectName("InspectorNote")
-        self.floor_note.setWordWrap(True)
-        layout.addWidget(self.floor_note)
 
         self.agent_note = QLabel(
             "No agent steps — agent capacity does not change these numbers. Mark steps for "
@@ -212,12 +188,9 @@ class TimeEstimatesActivity(EntityActivity):
         has_report = report is not None
         for widget in (
             self.parallel_caption,
-            self.parallel_note,
             self.parallel,
             self.calendar_caption,
-            self.calendar_note,
             self.calendar,
-            self.floor_note,
         ):
             widget.setVisible(has_report)
         if report is None:
@@ -237,10 +210,6 @@ class TimeEstimatesActivity(EntityActivity):
         )
         collapse = not report.has_agent_steps
         self.parallel.show_cells(report.parallel, report.floor, collapse)
-        self.calendar_note.setText(
-            f"At {report.efficiency:.0%} focus, from {format_date(report.start)} — "
-            "each cell is calendar working days and the date it lands."
-        )
         self.calendar.show_cells(report.calendar, report.calendar_floor, collapse)
         self.agent_note.setVisible(collapse)
 

@@ -25,6 +25,7 @@ inside the quarter-day estimate convention; the factor prices the *person's* div
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
+from math import ceil
 from typing import Any
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
@@ -82,6 +83,15 @@ def stretched(
         return days / efficiency
 
     return calendar_days
+
+
+def quarter_up(days: float) -> float:
+    """``days`` rounded up to the quarter day — the estimate vocabulary's own granularity.
+
+    Dividing by a focus factor produces repeating decimals ("4.83333d"), which read as
+    precision nobody has. Rounding *up* keeps the number honest — a calendar answer is
+    never understated — and the epsilon keeps an exact multiple from bumping a step."""
+    return ceil(days * 4 - 1e-9) / 4
 
 
 @dataclass(frozen=True)
@@ -154,12 +164,13 @@ def time_report(
             assert raw is not None and slow is not None  # project.steps checked above
             unestimated = raw.unestimated
             parallel.append(Cell(humans=humans, agents=agents, days=raw.days))
+            slow_days = quarter_up(slow.days)
             calendar.append(
                 Cell(
                     humans=humans,
                     agents=agents,
-                    days=slow.days,
-                    finish=working_days_after(start, slow.days) if slow.days > 0 else None,
+                    days=slow_days,
+                    finish=working_days_after(start, slow_days) if slow_days > 0 else None,
                 )
             )
     human_days = sum(
@@ -174,7 +185,8 @@ def time_report(
         unestimated=unestimated,
         has_agent_steps=any(is_agent(step) for step in project.steps),
         floor=path.days if path else 0.0,
-        calendar_floor=calendar_path.days if calendar_path else 0.0,
+        # Rounded like the cells, so a cell on the floor still matches it exactly.
+        calendar_floor=quarter_up(calendar_path.days) if calendar_path else 0.0,
         parallel=tuple(parallel),
         calendar=tuple(calendar),
     )

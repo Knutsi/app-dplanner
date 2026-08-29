@@ -179,6 +179,8 @@ class MatrixTable(QTableWidget):
                 item.setTextAlignment(_RIGHT)
                 if abs(cell.days - floor) <= FLOOR_TOLERANCE:
                     item.setForeground(faded)
+                    # The fade's one explanation — the page carries no legend for it.
+                    item.setToolTip("On the dependency floor — more capacity no longer helps.")
                 self.setItem(row, column, item)
         # A project with no agent steps answers the same in every column; one column
         # saying so beats four saying it four times (the order table hides its all-blank
