@@ -27,6 +27,7 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.context import Context, ContextService
+from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
@@ -37,7 +38,7 @@ from dplanner.modules.spec.activity import (
     SPECS_KIND,
     SpecsActivity,
 )
-from dplanner.modules.spec.aspect import DATA_FORMAT, MODULE_ID
+from dplanner.modules.spec.aspect import DATA_FORMAT, MODULE_ID, read_attachments
 from dplanner.modules.spec.documents import (
     KIND_MARKDOWN,
     KIND_PDF,
@@ -50,6 +51,7 @@ from dplanner.modules.spec.documents import (
     remove_document,
     write_index,
 )
+from dplanner.modules.spec.figures_section import FiguresSection
 
 FILE_FILTER = "Spec documents (*.pdf *.md *.markdown *.txt);;All files (*)"
 
@@ -66,6 +68,8 @@ class SpecDeps:
     # The module's file area beside any node. Wired by the composition root, which is the
     # only place that knows the concrete store.
     files: Callable[[NodeId], ModuleFileArea]
+    # The step panel's Details tab — where a step's attached figures are shown.
+    details: InspectorSectionRegistry
 
 
 class SpecModule:
@@ -94,6 +98,23 @@ class SpecModule:
             )
 
         deps.tabs.register_factory(SPECS_KIND, factory)
+
+        def has_figures(step_id: str | None) -> bool:
+            if step_id is None or not deps.library.has(step_id):
+                return False
+            return bool(read_attachments(deps.library.step(step_id)))
+
+        # The Details tab shows a step's figures only when it carries any — the block
+        # follows the aspect the way a toggleable aspect's tab does.
+        deps.details.register(
+            InspectorSection(
+                id=f"{MODULE_ID}.figures",
+                label="Figures",
+                order=30,
+                shown_for=has_figures,
+                factory=lambda: FiguresSection(deps.library, deps.files),
+            )
+        )
         deps.actions.register(
             ActionSpec(
                 id="spec.new",

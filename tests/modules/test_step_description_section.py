@@ -1,4 +1,4 @@
-"""The Description tab: prose binding plus the gallery that finally shows its images."""
+"""The Description block on the Details tab: prose binding plus the gallery."""
 
 import pytest
 
@@ -19,7 +19,7 @@ def step(services, make_project):
 @pytest.fixture
 def section(services, step):
     spec = next(
-        s for s in services.inspector_sections.sections() if s.id == "step_description.tab"
+        s for s in services.step_details.sections() if s.id == "step_description.details"
     )
     section = spec.factory()
     yield section

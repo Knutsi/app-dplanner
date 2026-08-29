@@ -405,7 +405,58 @@ def test_agent_on_and_off_bracket_the_aspect(cli, cli_stdin):
     cli("agent", "off", "Deploy")
     shown = data(cli("agent", "show", "Deploy", "--json"))
     assert shown["agent"] is False and shown["markdown"] == ""
-    assert "not an agent step" in cli("agent", "off", "Deploy", expect=1)
+    # Already in the target state is success, so a batch of offs survives.
+    assert "already not an agent step" in cli("agent", "off", "Deploy")
+
+
+def test_agent_set_clear_drops_the_instruction_but_keeps_the_mark(cli, cli_stdin):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    # The mark here is implied by the text alone — clearing must still leave an agent step.
+    cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    assert data(cli("agent", "show", "Deploy", "--json"))["separate"] is True
+
+    said = cli("agent", "set", "Deploy", "--clear")
+    assert "description is the briefing" in said
+    shown = data(cli("agent", "show", "Deploy", "--json"))
+    assert shown["agent"] is True and shown["separate"] is False and shown["markdown"] == ""
+
+    # Idempotent: clearing again is success, and still does not unmark.
+    cli("agent", "set", "Deploy", "--clear")
+    assert data(cli("agent", "show", "Deploy", "--json"))["agent"] is True
+
+
+def test_agent_set_clear_on_a_plain_step_does_not_mark_it(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    assert "no separate instruction" in cli("agent", "set", "Deploy", "--clear")
+    assert data(cli("agent", "show", "Deploy", "--json"))["agent"] is False
+
+
+def test_agent_set_needs_exactly_one_of_file_and_clear(cli, tmp_path):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    assert "give --file or --clear" in cli("agent", "set", "Deploy", expect=1)
+    notes = tmp_path / "notes.md"
+    notes.write_text("Ship it.")
+    said = cli("agent", "set", "Deploy", "--file", str(notes), "--clear", expect=1)
+    assert "give --file or --clear" in said
+
+
+def test_agent_set_clear_for_project_empties_the_standing_instruction(cli, cli_stdin):
+    cli("project", "create", "Discovery")
+    cli_stdin("agent", "set", "--for-project", "Discovery", "--file", "-", stdin="House rules.")
+    assert "House rules." in cli("agent", "show", "--for-project", "Discovery")
+    assert "no standing instruction" in cli("agent", "set", "--for-project", "Discovery", "--clear")
+    assert "(no instruction)" in cli("agent", "show", "--for-project", "Discovery")
+
+
+def test_state_clearing_verbs_treat_already_clear_as_success(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    assert "not a release" in cli("release", "clear", "Deploy")
+    assert "no ticket" in cli("ticket", "clear", "Deploy")
+    assert "no GitHub refs" in cli("github", "clear", "Deploy")
 
 
 # -- authoring a step at birth -----------------------------------------------------------------

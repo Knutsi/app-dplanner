@@ -34,23 +34,35 @@ def panel(services, project):
     return services.window.dock.widget_for(PANEL_ID)
 
 
+# The editors that moved onto the Details tab, by the label the tests know them as.
+DETAILS_BLOCKS = {"Estimate": "estimation.details", "Description": "step_description.details"}
+
+
 def section(panel, label):
-    index = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())].index(label)
-    return panel._pages.widget(index)
+    """An aspect editor by its label — a tab of the panel, or a block on its Details tab."""
+    labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
+    if label in DETAILS_BLOCKS:
+        return panel._pages.widget(labels.index("Details")).block(DETAILS_BLOCKS[label])
+    return panel._pages.widget(labels.index(label))
 
 
 # -- the seam ------------------------------------------------------------------------------
 
 
-def test_every_registered_aspect_became_a_tab(services, panel):
+def test_every_registered_aspect_became_a_tab_or_a_details_block(services, panel):
     assert [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())] == [
-        "Estimate",
+        "Details",
         "Ticket",
-        "Description",
         "Agent",
         "Release",
         "Handoff",
         "GitHub",
+    ]
+    details = panel._pages.widget(0)
+    assert [block.section.id for block in details._blocks] == [
+        "estimation.details",
+        "step_description.details",
+        "spec.figures",
     ]
 
 
@@ -87,11 +99,14 @@ def test_a_change_made_elsewhere_reaches_the_estimate(services, project, panel):
 def test_a_quick_pick_chip_sets_the_estimate_in_one_gesture(services, project, panel):
     """Most steps are one of a handful of sizes; typing a half day is three gestures."""
     editor = section(panel, "Estimate")
-    editor.chips.button(1).click()  # ½ a day.
+    editor.chips.button(2).click()  # ½ a day — ids count quarter-days.
 
     assert read_estimate(services.document.step(project.steps[0].id)) == 0.5
     services.undo.undo()
     assert read_estimate(services.document.step(project.steps[0].id)) is None
+
+    editor.chips.button(1).click()  # ¼ — one agent task, about 90 minutes.
+    assert read_estimate(services.document.step(project.steps[0].id)) == 0.25
 
 
 def test_the_chip_matching_the_value_is_the_checked_one(services, project, panel):

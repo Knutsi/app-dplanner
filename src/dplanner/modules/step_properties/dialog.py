@@ -29,9 +29,10 @@ SECTION_GAP = 12
 SIDE_MARGIN = DIALOG_MARGIN - PANEL_MARGIN
 
 # Roomier than the 360 px side panel it mirrors — prose and tables breathe here — but
-# clamped to the screen so a laptop never gets a dialog it cannot show whole.
-DIALOG_WIDTH = 680
-DIALOG_HEIGHT = 620
+# clamped to the screen so a laptop never gets a dialog it cannot show whole. Sized for
+# the Details tab: estimate row, a description worth reading, and a figure row below it.
+DIALOG_WIDTH = 720
+DIALOG_HEIGHT = 680
 SCREEN_CLEARANCE = 80  # Left around the dialog when the screen is the constraint.
 
 

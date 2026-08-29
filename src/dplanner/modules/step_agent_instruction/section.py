@@ -41,6 +41,7 @@ from dplanner.framework.action_registry import ActionState
 from dplanner.framework.asset_gallery import AssetGallery
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.text_binding import TextBinding
+from dplanner.framework.text_dialog import ExpandedTextDialog, attach_expand
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import make_text_well, space_lines
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, separate_instruction
@@ -180,6 +181,12 @@ class AgentSection(QWidget):
         self.project_edit.setObjectName("InspectorNotes")
         self.project_edit.setPlaceholderText(PROJECT_PLACEHOLDER)
         self.project_edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        self.project_expand = attach_expand(self.project_edit)
+        self.project_expand.clicked.connect(
+            lambda: self._expand(
+                self._project_id, "Project Agent Instruction", PROJECT_PLACEHOLDER
+            )
+        )
         self.project_assets = AssetGallery(
             self, editable=True, attach_title="Attach to Instruction"
         )
@@ -220,6 +227,10 @@ class AgentSection(QWidget):
         self.edit.setObjectName("InspectorNotes")
         self.edit.setPlaceholderText(placeholder)
         self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        self.step_expand = attach_expand(self.edit)
+        self.step_expand.clicked.connect(
+            lambda: self._expand(self._step_id, "Agent Instruction", placeholder)
+        )
         self.step_assets = AssetGallery(
             self, editable=True, attach_title="Attach to Instruction"
         )
@@ -230,7 +241,7 @@ class AgentSection(QWidget):
         # the same thing twice.
         self.step_note = QLabel(
             "The description is this step's instructions. Tick “Separate agent"
-            " instruction” on the Description tab to write execution-specific guidance.",
+            " instruction” on the Details tab to write execution-specific guidance.",
             self,
         )
         self.step_note.setObjectName("InspectorNote")
@@ -364,6 +375,21 @@ class AgentSection(QWidget):
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
+
+    def _expand(self, node_id: NodeId | None, title: str, placeholder: str) -> None:
+        """The same instruction in a big modal editor — a second binding over the same
+        field, so the inline editor tracks every keystroke."""
+        if node_id is None or not self._product.has(node_id):
+            return
+        dialog = ExpandedTextDialog(
+            ModuleTextField(self._product, node_id, MODULE_ID),
+            self._undo,
+            title=title,
+            placeholder=placeholder,
+            parent=self.window(),
+        )
+        dialog.exec()
+        dialog.dispose()
 
     # -- reading -------------------------------------------------------------------------------
 
@@ -586,7 +612,9 @@ class ProjectInstructionCard(ProseSection):
                 return None
             return ModuleTextField(library, target_id, MODULE_ID)
 
-        super().__init__(field_for, undo, PROJECT_PLACEHOLDER)
+        super().__init__(
+            field_for, undo, PROJECT_PLACEHOLDER, expand_title="Project Agent Instruction"
+        )
         self._files = files
         self.edit.setFixedHeight(self.edit.fontMetrics().lineSpacing() * 6 + 16)
         self.assets = AssetGallery(self, editable=True, attach_title="Attach to Instruction")

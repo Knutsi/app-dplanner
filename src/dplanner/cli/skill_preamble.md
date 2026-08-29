@@ -26,11 +26,13 @@ you work. So:
   dependencies. One authored step is one line in the diff and one thing the user can
   disagree with; five half-steps are noise.
 - **The description is the briefing.** Write one good description per step — what it is,
-  what done means — and mark agent-executed steps with `--agent` (or `dplanner agent on`
-  later). The executing agent receives the description as its instructions; do not write
-  the same text twice. `--agent-file F|-` / `agent set` exist only for the rare step whose
-  *how* genuinely differs from its description, and project-wide conventions belong in one
-  standing instruction (`agent set --for-project <project> --file -`), not in every step.
+  what done means (see *Writing descriptions*) — and mark agent-executed steps with
+  `--agent` (or `dplanner agent on` later). The executing agent receives the description
+  as its instructions; do not write the same text twice. `--agent-file F|-` / `agent set`
+  exist only for the rare step whose *how* genuinely differs from its description
+  (`agent set <step> --clear` merges one back without unmarking the step), and
+  project-wide conventions belong in one standing instruction
+  (`agent set --for-project <project> --file -`), not in every step.
 - **Do not invent structure the user did not ask for.** A plan with twenty imagined steps is
   harder to correct than an empty one.
 - **Show the shape.** `dplanner project graph <project>` renders the step graph as a
@@ -41,6 +43,52 @@ you work. So:
   staffing lands between them — read the labels, and quote the one you mean.
 - **Re-planning?** `dplanner project clear-steps <project>` removes every step at once and
   keeps the specs, requirements and start date — then rebuild with authored `step add`s.
+
+## Writing descriptions
+
+A description serves two readers: the person reviewing the plan, and — on an agent step —
+the agent executing it, who receives the description verbatim as its instructions. Write
+it in two parts:
+
+- **Open with the human part.** Two or three sentences anyone can skim: what the step is,
+  why it exists, what done means.
+- **On an agent step, follow with a clearly delimited section** — a `## Approach` heading
+  works well — of numbered **tasks to accomplish**, each stated as an outcome: what to
+  read first, what to build, what to verify. Name the tasks, not the route: the executing
+  agent makes its own plan (usually in plan mode), so a how-to sequence only belongs there
+  when the order genuinely is the point. Anything the agent must not miss belongs in that
+  section, not in prose a reviewer skims.
+- **Name every attached figure and what to take from it.** An image attached with
+  `describe attach` or `--attach` reaches the agent as a bare file path; the text is what
+  says why it matters. Reference each one from the markdown and say what it shows.
+- **Do not restate the standing instruction.** Project-wide conventions are prepended to
+  every briefing already; the description carries only what is specific to this step.
+
+```
+dplanner describe set 'Build the quick-reg modal' --file - <<'EOF'
+A one-keystroke registration dialog for the lab bench. It exists because bench
+operators log readings mid-procedure; done means a reading lands without touching
+the mouse.
+
+## Approach
+1. Read ![](assets/3fb2a1c9d4e58807.png) — the three error-modal sketches from
+   spec page 6; build the middle one.
+2. Add the dialog behind the `quick-reg` action; it must be fully keyboard-driven —
+   that is its point.
+3. Verify: open with F2, submit with Enter, and the reading appears in the ledger.
+EOF
+```
+
+`agent prompt <step>` shows the result the way its consumer will see it — read it and ask
+whether it is enough to work from.
+
+## Estimating agent work
+
+With a human in the loop — reviewing the plan, answering questions, checking the result —
+an agent step runs at roughly **90 minutes per task** in its `## Approach` list. So count
+the tasks: one task is a quarter day (`--days 0.25`, the ¼ chip in the window), three are
+about half a day, five or six fill one. A step whose list runs past six tasks is usually
+two steps — split it rather than inflating the estimate.
 
 ## Linking honestly
 
@@ -60,6 +108,9 @@ rather than leaving the steps wherever they landed:
   right; `spine` lays the main chain on a central line with feeder work branching off it —
   the right shape when a project drives toward releases; `timeline` spaces steps by their
   estimates so the graph reads as a schedule. A sort is one undo step in an open window.
+- **Mark the milestones.** `dplanner release set 'Ship the beta' --label MVP` makes a
+  step a release point (`--label` omitted, one is generated); the spine sort drives
+  toward them, and `release list` reads as a roadmap.
 - **Name the areas with regions — coarsely.** A region is a titled rectangle painted
   behind the steps — "Database setup", "Finalize release" — pure annotation, with no
   effect on the plan. `dplanner region add <project> "Database setup" --steps schema
@@ -94,7 +145,9 @@ and the workflow runs from import to steps an agent can execute *in isolation*:
    than any parser.
 3. **Mark the requirements.** One `dplanner spec mark <project> <doc> --title … --quote …
    --page N` per named obligation you find. The quote is checked against the document and
-   the page is recorded (found automatically when the quote is); add `--strict` when you
+   the page is recorded (found automatically when the quote is); when the same sentence
+   appears on several pages, `--page` records the occurrence you mean — any page the
+   quote anchors on is accepted, another warns and names them. Add `--strict` when you
    want a quote that does not anchor to stop you rather than warn. Requirements are the
    durable trace of your reading — the next agent starts from them, not from scratch.
 4. **Render the figures once.** `spec render <project> <doc> --page N` turns a page into
@@ -150,6 +203,14 @@ then authored `step add`s.
 - **Names or ids.** Anywhere a project or step is named you may use its id, its folder name,
   or a unique part of its title. An ambiguous name is refused and the message lists the ids —
   use one of those rather than guessing.
+- **The positional names the thing the verb acts on.** A step verb (`describe set`,
+  `agent on`, `release set`, `estimate set`) takes the *step*; a project verb (`step add`,
+  `spec …`, `order show`, `region …`, `layout …`) takes the *project*. A step verb finds
+  its project itself — from the working directory or `--project` — never as a second
+  positional.
+- **Already clear is success.** State-clearing verbs (`status clear`, `estimate clear`,
+  `release clear`, `ticket clear`, `handoff clear`, `github clear`, `agent off`,
+  `agent set --clear`) exit 0 when there is nothing to clear — safe to batch.
 - **Exit 1 with one line on stderr** means something you can fix. A traceback means a bug in
   DPlanner; report it rather than working around it.
 - **Nothing is written when a command fails.** A run is a transaction.

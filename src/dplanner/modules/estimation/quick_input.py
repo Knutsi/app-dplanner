@@ -31,9 +31,11 @@ CHIP_GAP = 8
 
 MAX_DAYS = 999.0
 
-# The sizes a step usually is. Half a day is where most of the small work sits and the top of
-# the range is where precision stops being real, so the scale opens fine and coarsens.
+# The sizes a step usually is. A quarter day is one agent task (about 90 minutes with a
+# human in the loop), half a day is where most small human work sits, and the top of the
+# range is where precision stops being real, so the scale opens fine and coarsens.
 QUICK_DAYS = (
+    (0.25, "¼"),
     (0.5, "½"),
     (1.0, "1"),
     (2.0, "2"),
@@ -44,6 +46,14 @@ QUICK_DAYS = (
 )
 
 
+class _DaysBox(QDoubleSpinBox):
+    """A spin box that prints days the way ``format_days`` does: "0.25", "0.5", "3" —
+    never "1.00". Two decimals exist so a quarter day is sayable; the padding is not."""
+
+    def textFromValue(self, value: float) -> str:  # noqa: N802 - Qt override
+        return f"{value:g}"
+
+
 class EstimateInput(QWidget):
     """Days, set by hand or by chip. Emits ``edited``; the owner commits."""
 
@@ -52,10 +62,10 @@ class EstimateInput(QWidget):
         self._loading = False
         self.edited: Signal[()] = Signal()
 
-        self.days = QDoubleSpinBox(self)
+        self.days = _DaysBox(self)
         self.days.setRange(0.0, MAX_DAYS)
-        self.days.setDecimals(1)
-        self.days.setSingleStep(0.5)
+        self.days.setDecimals(2)
+        self.days.setSingleStep(0.25)
         # A table row has half a pane; the panel can afford the word.
         self.days.setSuffix("d" if horizontal else " days")
         # "Not estimated" and "free" are different claims, so 0 has to be sayable as
@@ -76,7 +86,11 @@ class EstimateInput(QWidget):
             chip.setObjectName("EstimateChip")
             chip.setCheckable(True)
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
-            chip.setToolTip(f"{value:g} days")
+            chip.setToolTip(
+                "0.25 days — one agent task, about 90 minutes with a human in the loop"
+                if value == 0.25
+                else f"{value:g} days"
+            )
             self.chips.addButton(chip, self._chip_id(value))
             chip_row.addWidget(chip)
         if not horizontal:
@@ -105,8 +119,8 @@ class EstimateInput(QWidget):
 
     @staticmethod
     def _chip_id(value: float) -> int:
-        """A button id per quick value. Halves exist, so the id counts half-days."""
-        return int(value * 2)
+        """A button id per quick value. Quarters exist, so the id counts quarter-days."""
+        return int(value * 4)
 
     def _show_chip(self, days: float | None) -> None:
         """Check the chip for ``days``, or none of them when the value is not one of them."""
@@ -119,7 +133,7 @@ class EstimateInput(QWidget):
     def _on_chip(self, chip_id: int) -> None:
         if self._loading:
             return
-        self.days.setValue(chip_id / 2)
+        self.days.setValue(chip_id / 4)
         self._on_edited()
 
     def _on_edited(self) -> None:

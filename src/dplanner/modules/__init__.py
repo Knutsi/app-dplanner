@@ -199,7 +199,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
 
     def set_separate_instruction(step_id: str, separate: bool) -> None:
-        """The Description tab's checkbox, translated into the agent aspect's writes.
+        """The Description block's checkbox, translated into the agent aspect's writes.
 
         Unchecking merges back into the description — the separate text is dropped and
         the mark stays — as one undo step, so Ctrl+Z restores text and flag together.
@@ -318,6 +318,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             actions=services.actions,
             parent=services.window,
             sections=services.inspector_sections,
+            details=services.step_details,
             theme=services.theme,
         )
     )
@@ -367,6 +368,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             theme=services.theme,
             parent=services.window,
             files=lambda node_id: store.files(node_id, SPEC_ID),
+            details=services.step_details,
         )
     )
     # Constructed before the list because the projects index opens the board through it.
@@ -390,7 +392,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         EstimationDeps(
             library=library,
             undo=services.undo,
-            sections=services.inspector_sections,
+            details=services.step_details,
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
@@ -564,8 +566,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         spec,
         # -- the step aspects --------------------------------------------------------------
-        # Each registers one tab into the step detail panel. They must come before
-        # step_properties, which builds the panel from whatever has registered by then.
+        # Each registers one tab into the step detail panel — or, for the estimate and
+        # description, a block into its Details tab (services.step_details). They must
+        # come before step_properties, which builds the panel from whatever has
+        # registered by then.
         estimation,
         StepTicketModule(
             StepTicketDeps(
@@ -580,7 +584,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             StepDescriptionDeps(
                 library=library,
                 undo=services.undo,
-                sections=services.inspector_sections,
+                details=services.step_details,
                 files=store.files,
                 # The "Separate agent instruction" checkbox: the agent aspect through
                 # typed callbacks, so neither module learns the other's name.

@@ -28,10 +28,11 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.context import Context
-from dplanner.framework.inspector import InspectorSectionRegistry
+from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.modules.step_properties.details import DetailsSection
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
 from dplanner.modules.step_properties.panel import StepPanel
 
@@ -49,6 +50,9 @@ class StepPropertiesDeps:
     # Whoever registered an aspect editor. Read when the panel is built, not here, so a
     # contributing module's position in the composition root is free.
     sections: InspectorSectionRegistry
+    # Whoever registered a block for the first tab. Read inside the Details factory, so
+    # the same freedom holds — a block registrant only has to come before a panel exists.
+    details: InspectorSectionRegistry
     theme: ThemeService  # Tab glyphs follow the theme's secondary text colour.
 
 
@@ -59,6 +63,18 @@ class StepPropertiesModule:
         self._deps = deps
 
     def register(self) -> None:
+        # The first tab: the blocks other modules registered into `details`, stacked. This
+        # module contributes the host, not the content — same seam as the panel itself.
+        self._deps.sections.register(
+            InspectorSection(
+                id=f"{MODULE_ID}.details",
+                label="Details",
+                order=10,
+                factory=lambda: DetailsSection(
+                    self._deps.library, self._deps.details.sections()
+                ),
+            )
+        )
         # Order 20: below the project form, which is about the thing the step is part of.
         self._deps.panels.register(
             PanelSpec(

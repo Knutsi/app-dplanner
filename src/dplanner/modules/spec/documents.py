@@ -34,7 +34,7 @@ from dplanner.modules.spec.aspect import (
     read_attachments,
     read_links,
 )
-from dplanner.modules.spec.pdf import find_quote, text_blob_name
+from dplanner.modules.spec.pdf import find_quote_pages, text_blob_name
 from dplanner.modules.spec.pdf import text_layer as extract_text_layer
 
 DOCUMENTS_DIR = "documents"
@@ -461,17 +461,19 @@ def document_text(area: ModuleFileArea, document: SpecDocument) -> str | None:
         return None
 
 
-def quote_anchors(text: str, quote: str, kind: str) -> tuple[bool, int | None]:
-    """Whether a quote appears in a document's text, and on which page for a PDF.
+def quote_anchors(text: str, quote: str, kind: str) -> tuple[bool, list[int]]:
+    """Whether a quote appears in a document's text, and on which pages for a PDF —
+    every page, because the same sentence can recur and ``--page`` naming any
+    occurrence is right.
 
     One implementation for ``spec mark`` and ``project lint``, so the mark that passed
     can never be the requirement lint flags — or the other way round.
     """
     if kind == KIND_PDF:
-        page = find_quote(text, quote)
-        return page is not None, page
+        pages = find_quote_pages(text, quote)
+        return bool(pages), pages
     normalized = " ".join(quote.lower().split())
-    return normalized in " ".join(text.lower().split()), None
+    return normalized in " ".join(text.lower().split()), []
 
 
 def layer_from(area: ModuleFileArea, document: SpecDocument, blob: str) -> str:

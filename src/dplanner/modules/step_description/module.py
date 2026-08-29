@@ -1,4 +1,5 @@
-"""The description aspect, in the running application: one registration, the Description tab.
+"""The description aspect, in the running application: one registration, the Description
+block on the step panel's Details tab.
 
 The editor itself is :class:`~dplanner.framework.prose_section.ProseSection` — the framework
 owns the binding mechanics, so all this module supplies is which document to edit.
@@ -30,7 +31,8 @@ PLACEHOLDER = (
 class StepDescriptionDeps:
     library: Library
     undo: UndoService[Library]
-    sections: InspectorSectionRegistry
+    # The step panel's Details tab — the description is its main block, not a tab.
+    details: InspectorSectionRegistry
     # The store's file areas — how the tab shows the images `describe attach` wrote.
     # None is a build without file storage.
     files: FilesFor | None = None
@@ -60,11 +62,12 @@ class StepDescriptionModule:
                 return None
             return lambda: files(step_id, MODULE_ID)
 
-        deps.sections.register(
+        deps.details.register(
             InspectorSection(
-                id=f"{MODULE_ID}.tab",
+                id=f"{MODULE_ID}.details",
                 label=SPEC.label,
-                order=30,
+                order=20,
+                stretch=1,  # The prose is what the leftover height is for.
                 factory=lambda: DescriptionSection(
                     field_for,
                     deps.undo,

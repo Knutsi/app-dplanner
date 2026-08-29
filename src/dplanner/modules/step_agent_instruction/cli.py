@@ -172,12 +172,13 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             path=("agent", "set"),
             summary="Write a step's separate agent instruction — only when how-to-execute "
             "differs from its description — or with --for-project, the project's standing "
-            "instruction.",
+            "instruction; --clear drops it while keeping the agent mark.",
             configure=_configure_set,
             run=_set,
             examples=(
                 "dplanner agent set 'Read the spec' --file notes.md",
                 "echo 'Follow FORMAT.md' | dplanner agent set --for-project Rewrite --file -",
+                "dplanner agent set 'Read the spec' --clear",
             ),
         ),
         CliCommand(
@@ -209,7 +210,13 @@ def _one_target(parser: ArgumentParser) -> None:
 
 def _configure_set(parser: ArgumentParser) -> None:
     _one_target(parser)
-    parser.add_argument("--file", required=True, help="a markdown file, or - for stdin")
+    parser.add_argument("--file", help="a markdown file, or - for stdin")
+    parser.add_argument(
+        "--clear",
+        action="store_true",
+        help="drop the separate instruction; the description becomes the briefing again"
+        " — the agent mark stays",
+    )
 
 
 def _target(context: CliContext, args: Namespace) -> Node:
@@ -238,7 +245,12 @@ def _on(context: CliContext, args: Namespace) -> int:
 def _off(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step)
     if not enabled(step):
-        raise CliError(f"{step.title!r} is not an agent step")
+        # Already in the target state is success — a batch of offs must survive a step
+        # somebody else already unmarked.
+        context.report(
+            {"step": step.id, "agent": False}, f"{step.title}: already not an agent step"
+        )
+        return 0
     current = read(step)
     if current:
         edit = TextEdit(step.id, MODULE_ID, 0, current, "")
@@ -276,6 +288,10 @@ def _show(context: CliContext, args: Namespace) -> int:
 
 
 def _set(context: CliContext, args: Namespace) -> int:
+    if (args.file is None) == (not args.clear):
+        raise CliError("give --file or --clear")
+    if args.clear:
+        return _clear_instruction(context, args)
     body = body_from(args.file)
     node = _target(context, args)
     current = node.module_text.get(MODULE_ID, "")
@@ -285,4 +301,41 @@ def _set(context: CliContext, args: Namespace) -> int:
     context.report(
         {node.kind: node.id, "characters": len(body)}, f"{title}: {len(body)} characters"
     )
+    return 0
+
+
+def _clear_instruction(context: CliContext, args: Namespace) -> int:
+    """The atomic way back from a separate instruction: text and ``separate`` flag both
+    go, the agent mark stays — the two-verb off/on dance briefly unmarked the step."""
+    node = _target(context, args)
+    title = getattr(node, "title", "") or node.id
+    current = node.module_text.get(MODULE_ID, "")
+    if node.kind != "step":
+        if current:
+            edit = TextEdit(node.id, MODULE_ID, 0, current, "")
+            context.apply(EditTextCommand(edit, label="Set Agent Instruction"))
+        context.report({node.kind: node.id, "characters": 0}, f"{title}: no standing instruction")
+        return 0
+    step = context.library.step(node.id)
+    was_agent = enabled(step)
+    if current:
+        edit = TextEdit(step.id, MODULE_ID, 0, current, "")
+        context.apply(EditTextCommand(edit, label="Set Agent Instruction"))
+    if was_agent:
+        # Re-assert the bare mark: it drops a stored ``separate`` flag, and keeps a step
+        # whose mark was implied by the text just cleared an agent step.
+        context.apply(
+            SetModuleDataCommand(
+                step.id, MODULE_ID, write_state(True), label="Use Description as Instructions"
+            )
+        )
+        context.report(
+            {"step": step.id, "agent": True, "separate": False},
+            f"{title}: the description is the briefing's instructions",
+        )
+    else:
+        context.report(
+            {"step": step.id, "agent": False, "separate": False},
+            f"{title}: no separate instruction",
+        )
     return 0

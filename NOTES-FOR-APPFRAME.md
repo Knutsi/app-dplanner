@@ -765,6 +765,52 @@ difference between "a section registry" and "a section registry every conditiona
 has to work around". The trap worth documenting with it: the host must re-ask on *model*
 changes, not just selection changes, or a toggle only takes effect on reselect.
 
+### `InspectorSection` grew `stretch`, and the registry its third instantiation
+
+**What.** Two small things, one feature. `framework/inspector.py`'s `InspectorSection`
+gained `stretch: int = 0` — how much of the leftover height a *vertically stacking* host
+gives the section's widget; tab and card hosts ignore it. And `AppServices` gained a third
+`InspectorSectionRegistry` instance, `step_details`: blocks composed into the step panel's
+first tab ("Details"), rendered by a composite that is itself an ordinary section
+(`modules/step_properties/details.py` — app side, not framework).
+
+**Why.** The editors a step should show *first* (estimate, description, its figures) were
+one tab each; stacking them needed a host that knows who takes the room, and a frozen field
+on the section is the honest way to say it — sniffing size policies would be implicit.
+Addressing the host by registry instance rather than a `placement` flag on the section is
+the `detail_cards` reasoning, third time: each host's registrants stay greppable and no
+host filters every section by a mode field. The `stretch` field belongs upstream with the
+type; the third instance is per-application composition.
+
+### `framework/prose_section.py` gained a `margin` parameter
+
+**What.** `ProseSection(…, margin: int = PANEL_MARGIN)` — the outer margins, previously
+hard-coded to 16 px. Hosts that own the spacing themselves (a card, DPlanner's Details tab
+block) pass 0; every existing caller keeps the default. Retires the
+`layout.setContentsMargins(0, 0, 0, 0)` mutation the project card was doing from outside.
+
+**Why.** A reusable section cannot know whether its host already provides the panel
+margin, and double 16 px reads as a layout bug. One constructor parameter beats mutating
+the layout after the fact. Belongs upstream.
+
+### `framework/text_dialog.py` — expand any bound editor into a modal
+
+**What.** New file, two exports. `ExpandedTextDialog(field, undo, *, title, placeholder,
+parent)`: a `QPlainTextEdit` text well sized to 80 % of the screen, holding its own
+`TextBinding` over the caller's `TextField`; the opener owes `dispose()` after `exec()`,
+the same contract as DPlanner's step-details dialog. `attach_expand(editor)`: a small
+auto-raise `⤢` `QToolButton` pinned to the editor's top-right corner by an event filter,
+returned for the caller to wire and enable/disable. `ProseSection` wires it in for every
+subclass (`expand_title` names the dialog).
+
+**Why.** Side-panel prose is a few hundred pixels tall and instructions run to screens.
+Because `TextBinding` already treats every other binding's commands as foreign changes,
+the dialog is *only* a second binding — live-synced both ways, one undo stack, nothing
+that can be lost on close — where a copy-out/copy-back dialog would have invented a second
+home for the text and a Cancel that discards work. Belongs upstream beside `text_binding`;
+the corner-button affordance is the part to review (it assumes the editor is a
+`QPlainTextEdit` with a vertical scrollbar).
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class

@@ -48,7 +48,9 @@ def _set(context: CliContext, args: Namespace) -> int:
 def _clear(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step)
     if not enabled(step):
-        raise CliError(f"{step.title!r} has no ticket")
+        # Already clear is success — state-clearing verbs must survive batches.
+        context.report({"step": step.id}, f"{step.title}: no ticket")
+        return 0
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
     context.report({"step": step.id}, f"{step.title}: ticket cleared")
     return 0

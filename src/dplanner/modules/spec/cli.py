@@ -755,7 +755,7 @@ def _mark(context: CliContext, args: Namespace) -> int:
     project = find_project(context.library, args.project)
     document = _document(project, args.document)
     index = read_index(project)
-    quote_found, found_page = _validate_quote(context, project, document, args.quote)
+    quote_found, found_pages = _validate_quote(context, project, document, args.quote)
     # Only a definite miss refuses: None means "nothing to check" (no quote, or a PDF
     # whose text cannot be read), and strictness must not punish the unknowable.
     if args.strict and quote_found is False:
@@ -763,7 +763,7 @@ def _mark(context: CliContext, args: Namespace) -> int:
             f"--strict: the quote was not found in {document.name} — check the wording "
             "against `dplanner spec show`, or drop --strict (PDF extraction can mangle text)"
         )
-    page = args.page if args.page is not None else found_page
+    page = args.page if args.page is not None else (found_pages[0] if found_pages else None)
     requirement = Requirement(
         id=args.id or next_id([req.id for req in index.requirements], "r"),
         document=document.name,
@@ -783,8 +783,10 @@ def _mark(context: CliContext, args: Namespace) -> int:
     note = f"{requirement.id}: {requirement.title} ({outcome} in {document.name})"
     if args.quote and quote_found is False:
         note += "\nwarning: the quote was not found in the document — check it anchors"
-    elif args.page is not None and found_page is not None and args.page != found_page:
-        note += f"\nwarning: the quote was found on page {found_page}, not {args.page}"
+    elif args.page is not None and found_pages and args.page not in found_pages:
+        # A quote can recur; --page naming any occurrence is disambiguation, not a miss.
+        anchored = ", ".join(str(number) for number in found_pages)
+        note += f"\nwarning: the quote was not found on page {args.page} — it anchors on {anchored}"
     context.report(
         {
             "project": project.id,
@@ -800,17 +802,17 @@ def _mark(context: CliContext, args: Namespace) -> int:
 
 def _validate_quote(
     context: CliContext, project: Project, document: SpecDocument, quote: str
-) -> tuple[bool | None, int | None]:
-    """(was the quote found, on which page). (None, None) when there is nothing to check.
+) -> tuple[bool | None, list[int]]:
+    """(was the quote found, on which pages). (None, []) when there is nothing to check.
 
     A warning, never a refusal: PDF extraction loses ligatures and hyphenation, and a
     mark that failed on rendering noise would teach people to stop quoting.
     """
     if not quote:
-        return None, None
+        return None, []
     text = document_text(context.store.files(project.id, MODULE_ID), document)
     if text is None:
-        return None, None  # A document whose text cannot be read cannot refute a quote.
+        return None, []  # A document whose text cannot be read cannot refute a quote.
     return quote_anchors(text, quote, document.kind)
 
 

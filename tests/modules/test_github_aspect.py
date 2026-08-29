@@ -143,7 +143,8 @@ def test_clearing_halves_and_the_whole(cli, workspace, reload, gh_less):
     assert read(first_step(reload())) == GithubRefs(branch="feat/login")
     cli("github", "clear", "Read the spec")
     assert not (modules / "github.json").exists()
-    assert "no GitHub refs" in cli("github", "clear", "Read the spec", expect=1)
+    # Already clear is success — state-clearing verbs must survive batches.
+    assert "no GitHub refs" in cli("github", "clear", "Read the spec")
 
 
 # -- the gh-gated verbs ------------------------------------------------------------------------

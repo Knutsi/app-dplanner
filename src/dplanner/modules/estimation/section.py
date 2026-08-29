@@ -1,4 +1,4 @@
-"""The Estimate tab: how big a step is.
+"""The Estimate block on the Details tab: how big a step is.
 
 An :class:`~dplanner.framework.inspector.InspectorExtension` — a widget that a panel shows,
 told which step to display and nothing else. It never learns which panel it is in, and the
@@ -13,7 +13,7 @@ from typing import Any
 from PySide6.QtWidgets import QLabel, QVBoxLayout
 
 from dplanner.domain.model import Library, Step
-from dplanner.framework.module_data_section import FIELD_GAP, PANEL_MARGIN, ModuleDataSection
+from dplanner.framework.module_data_section import FIELD_GAP, ModuleDataSection
 from dplanner.framework.undo import UndoService
 from dplanner.modules.estimation.aspect import MODULE_ID, read, write
 from dplanner.modules.estimation.quick_input import EstimateInput
@@ -35,12 +35,13 @@ class EstimateSection(ModuleDataSection):
         note.setObjectName("InspectorNote")
         note.setWordWrap(True)
 
+        # A compact row: the hosting Details tab owns the margins and gives the leftover
+        # height to the description editor, so no stretch and no margins of its own.
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(FIELD_GAP)
         layout.addWidget(self._input)
         layout.addWidget(note)
-        layout.addStretch(1)
 
     def load_step(self, step: Step | None) -> None:
         self._input.show_days(read(step) if step is not None else None)

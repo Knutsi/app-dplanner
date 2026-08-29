@@ -44,6 +44,15 @@ def test_add_around_steps_wraps_them_where_they_sit(cli, cli_library):
     assert not region.contains_centre(*placed[ship.id], NODE_W, NODE_H)
 
 
+def test_add_and_fit_report_only_the_affected_region(cli):
+    # Regression: a batch of region verbs must not echo the whole region list per call.
+    cli("region", "add", "Discovery", "Database setup", "--steps", "schema", "migrations")
+    said = cli("region", "add", "Discovery", "Finalize release", "--steps", "Ship")
+    assert "Database setup" not in said
+    said = cli("region", "fit", "Discovery", "Finalize release", "--steps", "Ship")
+    assert "Database setup" not in said
+
+
 def test_add_needs_exactly_one_way_of_saying_where(cli):
     assert "either --steps or --rect" in cli("region", "add", "Discovery", "DB", expect=1)
     said = cli(
