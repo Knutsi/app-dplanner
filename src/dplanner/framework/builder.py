@@ -54,6 +54,7 @@ from dplanner.framework.tabs import TabHost
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.framework.user_config import library_scope
 from dplanner.framework.zoom import ZoomService
 
 if TYPE_CHECKING:
@@ -164,7 +165,11 @@ class AppBuilder:
         # rather than in its spec's factory because its glyph colour and its disposal are
         # wired here too — it is the framework's own panel, not a module's.
         index_segments = IndexSegmentRegistry()
-        index_panel = IndexPanel(index_segments, context)
+        # Derived once and shared through AppServices: which folders are open, and which
+        # tabs, is true of this source alone, so opening a second library never restores
+        # the first one's tree.
+        scope = library_scope(source)
+        index_panel = IndexPanel(index_segments, context, scope=scope)
         panels.register(
             PanelSpec(
                 id=INDEX_PANEL_ID,
@@ -187,6 +192,7 @@ class AppBuilder:
         services = AppServices(
             repo=repo,
             document=document,
+            source_scope=scope,
             context=context,
             actions=actions,
             tabs=tabs,

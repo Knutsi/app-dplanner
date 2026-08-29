@@ -113,6 +113,11 @@ class TabHost(QWidget):
         self._preview: Activity | None = None
 
         self.activity_changed: Signal[Activity | None] = Signal()
+        # Which tabs are open, or in what order, changed — opened, closed, moved between
+        # panes or dragged within one. Distinct from ``activity_changed``, which is only
+        # about which tab is *current*: closing a tab the user is not on changes the list
+        # and nothing else, and a listener that persists the list would never hear of it.
+        self.tabs_changed: Signal[()] = Signal()
         # A tab was right-clicked, and it is now the current one. Carries where to pop up.
         # The host builds no menu of its own: what a tab offers is application vocabulary,
         # and the module that owns the tab verbs renders them from the action registry.
@@ -136,6 +141,16 @@ class TabHost(QWidget):
         if kind in self._factories:
             raise ValueError(f"activity kind {kind!r} already registered")
         self._factories[kind] = factory
+
+    def can_open(self, kind: str) -> bool:
+        """Whether this build has an activity of that kind at all.
+
+        :meth:`open` raises for one it does not, which is right for a caller naming a kind
+        it registered itself. A caller working from a *remembered* kind is asking a real
+        question — a feature can be gone since it was written down — and this is how it
+        asks without an exception for control flow.
+        """
+        return kind in self._factories
 
     # -- opening ---------------------------------------------------------------------------
 
@@ -187,6 +202,7 @@ class TabHost(QWidget):
         finally:
             self._suspended -= 1
         self._announce()
+        self.tabs_changed.emit()
         return activity
 
     def is_preview(self, activity: Activity) -> bool:
@@ -394,6 +410,7 @@ class TabHost(QWidget):
         finally:
             self._suspended -= 1
         self._announce()
+        self.tabs_changed.emit()
 
     def _on_tab_moved(self, group: QTabWidget, to: int) -> None:
         """A drag within a bar. Dragging the preview itself is keeping it — that pins.
@@ -407,6 +424,7 @@ class TabHost(QWidget):
             self._pin(activity)
         else:
             self._paint_active()
+        self.tabs_changed.emit()
 
     def _close(self, group: QTabWidget, index: int) -> None:
         widget = group.widget(index)
@@ -427,6 +445,7 @@ class TabHost(QWidget):
             activity.close()
         widget.deleteLater()
         self._announce()
+        self.tabs_changed.emit()
 
     def activate_group_of(self, widget: QWidget | None) -> None:
         """The user touched something: make its group active, if it is in one.

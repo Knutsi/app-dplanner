@@ -203,6 +203,7 @@ src/dplanner/
 │   ├── spec/                spec documents beside a project, their requirements and figures, `dplanner spec` (pdf.py: text layers and page rendering; editor.py: the in-app markdown editor)
 │   ├── library_watch/       reloading when something else writes to a project or the library file
 │   ├── agent_skill/         the skill dialog, and the install that puts dplanner on PATH
+│   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
 │   ├── appshell/  sync/  settings/  taskcenter/  debug/
 │   └── llm/  llm_openai/  llm_anthropic/
 │

@@ -141,7 +141,8 @@ otherwise fight over it); **a segment supplies its own menu** rather than the sp
 `MENU_STRUCTURE` menu, because a menu name is application vocabulary and has no business in
 a framework spec; and **expansion state survives a rebuild** through shared helpers, because
 rebuilding on change is the normal case and that bookkeeping is what every segment would
-otherwise copy.
+otherwise copy — and survives a *restart* too, which is *Where the user left off is
+remembered by key* below.
 
 ### A click is a glance: preview tabs
 
@@ -165,6 +166,76 @@ panel forwards only plain left-clicks — a Ctrl/Shift-click is building a selec
 right-click is asking for a menu. On the entry it is `open_preview`, a second callback
 beside `open`, both closed over the owning module's `open(..., preview=…)` by the
 composition root; `None` is an entry whose surface has no preview form.
+
+## Where the user left off is remembered by key
+
+Two things follow a person across a restart: which folders in the index tree were open, and
+which tabs the window had. Neither is a property of the plan — a colleague pulling the
+repository must not inherit somebody's open tabs — so neither goes near the project
+directory. They live in the per-user store, and `framework/user_config.py` now has two
+scopes because two different kinds of thing are being kept.
+
+**A preference is the person's; where they left off is the library's.** "Reopen my tabs" and
+"which model" follow the user into every library they open: that is `get_global`. "These
+tabs were open, these folders were unfolded" is true of exactly one library, and restoring
+library A's tabs into library B would be nonsense: that is `get_scoped`, under a scope
+`library_scope(path)` derives from the library file's resolved path. The scope is a digest
+rather than the path itself only because a QSettings key is a `/`-separated tree, and a path
+put in one whole fans out into a directory's worth of empty groups.
+
+### Restoring by key is what makes a changed library safe
+
+Both halves write down **node ids**, never positions, and restore by looking each one up.
+That single choice is what answers "what if the library changed underneath?" — a remembered
+project id that names no row is simply not there any more, so the tree comes back with fewer
+folders open, and a tab whose project was deleted is not reopened. There is no validation
+pass, no version stamp and no migration, because the check *is* the lookup. The obvious
+first design — saving the tree's shape, or tab indexes — is the one that comes back wrong
+rather than short.
+
+Reopening a tab has two more ways to be stale, and each is a question asked of somebody who
+knows the answer. The activity *kind* may be gone from this build, which the tab host
+answers (`can_open`); the *target* may be gone from the model, which the composition root
+answers by handing the module `Library.has` — so `modules/reopen_tabs/` never learns what a
+project is. A third guard catches whatever is left: a factory that raises costs the user one
+tab and never the launch, which is the one place in this codebase where a deliberately broad
+`except` is the honest answer.
+
+### Written on every change, not at close
+
+Both halves write as the user works rather than on the way out, and the reason is the reload
+path rather than crash-safety (though it covers that too). Reloading a library builds the
+new window *before* closing the old one — see *Two writers, one folder* — so a list written
+in a close hook would be written **after** the window that was going to read it, and every
+reload would bring back the tabs from one session ago.
+
+That is also why `TabHost` grew `tabs_changed` beside `activity_changed`. The older signal
+is about which tab is *current*, and `_announce` deliberately says nothing when that has not
+changed — so closing a tab in a pane the user is not on, which is the ordinary way a project
+being deleted takes its tab with it, changed the list and announced nothing. Not a bug in
+`_announce`: a second fact the host had no way to say.
+
+### What is deliberately not restored
+
+Pane splits and the preview tab. A split is an arrangement of the *window* around the work,
+not part of it, and everything comes back pinned in one pane — reopening a glance as a
+glance would mean the next glance silently replaced a tab the user thought they had. The
+tree's folders are restored, the tree's *selection* is not: a selection is what the user is
+doing right now, and the panels that follow it would be answering for a click nobody made.
+
+### One is the framework's, one is a module's
+
+The index panel keeps its own folders (`framework/index_panel.py`), the way `panels.py`
+keeps its own areas: it is the framework's own surface, its rows arrive one segment at a
+time as modules register, and each folder restores as it arrives rather than after some
+later pass. Tabs are `modules/reopen_tabs/`, because reopening one needs a preference and a
+question only the model can answer, and because it must run after every activity factory has
+registered — a position in `default_modules()` with a comment saying so.
+
+Only the tabs have a switch (*Settings ▸ Startup*). Folders are cheap to close and nobody
+has ever wanted them shut on purpose; a window that reopens six tabs is a real opinion about
+how someone starts their day. The list is kept even while the switch is off, so turning it
+back on returns the session they last had rather than one from whenever they turned it off.
 
 ## How a gesture becomes a change on screen
 

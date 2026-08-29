@@ -80,6 +80,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
+    from dplanner.modules.reopen_tabs.module import ReopenTabsDeps, ReopenTabsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
     from dplanner.modules.spec.module import SpecDeps, SpecModule
@@ -733,6 +734,20 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # The window writes exactly what `dplanner skill install` writes, from the
                 # same generator over the same registry.
                 skill_files=skill_files,
+            )
+        ),
+        # After every module that registers an activity factory: it reopens the tabs the
+        # last session had, and a kind whose factory has not arrived yet is one it would
+        # decide this build no longer has.
+        ReopenTabsModule(
+            ReopenTabsDeps(
+                tabs=services.tabs,
+                settings_sections=services.settings_sections,
+                # Which tabs were open is true of this library alone.
+                scope=services.source_scope,
+                # A remembered tab whose project has since been deleted is dropped; the
+                # module never learns what a project is.
+                exists=library.has,
             )
         ),
         # Last: its dialog is built during register() and must see every other module's
