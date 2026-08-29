@@ -74,7 +74,9 @@ def _set(context: CliContext, args: Namespace) -> int:
 def _clear(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step)
     if not read(step):
-        raise CliError(f"{step.title!r} is not a release")
+        # Already clear is success — state-clearing verbs must survive batches.
+        context.report({"step": step.id}, f"{step.title}: not a release")
+        return 0
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
     context.report({"step": step.id}, f"{step.title}: no longer a release")
     return 0

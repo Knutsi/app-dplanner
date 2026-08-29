@@ -63,19 +63,21 @@ def split_pages(layer: str) -> list[str]:
     return pages
 
 
-def find_quote(layer: str, quote: str) -> int | None:
-    """The 1-based page a quote appears on, or None.
+def find_quote_pages(layer: str, quote: str) -> list[int]:
+    """Every 1-based page a quote appears on — the same sentence can recur, and a
+    ``--page`` naming any occurrence is right, not a mismatch.
 
     Whitespace- and case-normalized, because PDF text extraction rewraps lines and loses
     ligatures — an anchor that failed on a line break would make validation noise.
     """
     needle = _normalized(quote)
     if not needle:
-        return None
-    for number, page in enumerate(split_pages(layer), start=1):
-        if needle in _normalized(page):
-            return number
-    return None
+        return []
+    return [
+        number
+        for number, page in enumerate(split_pages(layer), start=1)
+        if needle in _normalized(page)
+    ]
 
 
 def _normalized(text: str) -> str:

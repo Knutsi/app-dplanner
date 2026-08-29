@@ -258,8 +258,19 @@ def test_an_absent_quote_warns_but_still_marks(cli, project, tmp_path):
 def test_a_page_that_disagrees_with_the_quote_warns_but_is_kept(cli, project, tmp_path):
     cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("Nothing.", "The rule.")))
     out = cli("spec", "mark", project, "s", "--title", "Rule", "--quote", "The rule", "--page", "1")
-    assert "found on page 2" in out
+    assert "not found on page 1 — it anchors on 2" in out
     assert data(cli("spec", "requirements", project, "--json"))["requirements"][0]["page"] == 1
+
+
+def test_a_quote_on_several_pages_accepts_any_of_them_as_page(cli, project, tmp_path):
+    # The same sentence on pages 1 and 2: --page is disambiguation, not a mismatch.
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("The rule.", "The rule.")))
+    out = cli("spec", "mark", project, "s", "--title", "Rule", "--quote", "The rule", "--page", "2")
+    assert "warning" not in out
+    assert data(cli("spec", "requirements", project, "--json"))["requirements"][0]["page"] == 2
+    # Unnamed, the first occurrence is recorded.
+    out = cli("spec", "mark", project, "s", "--title", "Again", "--quote", "The rule")
+    assert data(cli("spec", "requirements", project, "--json"))["requirements"][1]["page"] == 1
 
 
 def test_strict_refuses_a_quote_that_does_not_anchor(cli, project, tmp_path):

@@ -140,7 +140,9 @@ def _clear(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step, context.current)
     current = read(step)
     if current is None:
-        raise CliError(f"{step.title!r} has no GitHub refs")
+        # Already clear is success — state-clearing verbs must survive batches.
+        context.report({"step": step.id}, f"{step.title}: no GitHub refs")
+        return 0
     both = args.branch == args.pr  # Neither flag or both: clear everything.
     refs = GithubRefs() if both else _cleared_half(current, branch=args.branch)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(refs)))
