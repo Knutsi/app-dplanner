@@ -358,9 +358,10 @@ QScrollBar::sub-page {
     border: none;
 }
 
-/* The strip of verbs over the canvas. It sits on the window colour rather than the canvas's,
-   so the drawing surface starts where the chrome stops, and one hairline says where that is. */
-#CanvasToolbar {
+/* The strip of verbs over a drawing or editing surface — the canvas, and the spec editor.
+   It sits on the window colour rather than the surface's, so the surface starts where the
+   chrome stops, and one hairline says where that is. */
+#CanvasToolbar, #EditorToolbar {
     background-color: $BG_ELEVATED;
     border-bottom: 1px solid $BORDER;
 }

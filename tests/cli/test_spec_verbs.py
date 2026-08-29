@@ -462,3 +462,120 @@ def test_a_failing_verb_writes_no_index(cli, project, tmp_path):
 def test_an_unknown_document_is_refused_with_guidance(cli, project):
     out = cli("spec", "show", project, "ghost", expect=1)
     assert "no spec document" in out
+
+
+# -- creating in place -------------------------------------------------------------------------
+
+
+def test_new_creates_a_seeded_markdown_document(cli, project, workspace):
+    out = cli("spec", "new", project, "Auth flow")
+    assert "auth-flow: created" in out
+    listed = data(cli("spec", "list", project, "--json"))
+    assert [doc["name"] for doc in listed["documents"]] == ["auth-flow"]
+    assert listed["documents"][0]["kind"] == "markdown"
+    assert cli("spec", "show", project, "auth-flow").strip() == "# Auth flow"
+    blobs = list(workspace.glob("*/modules/spec/documents/*.md"))
+    assert len(blobs) == 1
+
+
+def test_new_refuses_a_taken_name(cli, project):
+    cli("spec", "new", project, "Auth flow")
+    out = cli("spec", "new", project, "Auth flow", expect=1)
+    assert "already exists" in out
+
+
+def test_new_respects_an_explicit_name(cli, project):
+    payload = data(cli("spec", "new", project, "Auth flow", "--name", "auth", "--json"))
+    assert payload["document"] == "auth" and payload["outcome"] == "added"
+
+
+# -- an editing session is one replace ---------------------------------------------------------
+# `save_body` and `prune_blob` are the Specs tab's flush core; Qt-free like everything
+# in documents.py, so they are pinned here where no graphics stack exists.
+
+
+def session_area(tmp_path):
+    from dplanner.core.storage.local import LocalStorage
+    from dplanner.domain.store import ModuleFileArea
+
+    return ModuleFileArea(LocalStorage(tmp_path / "ws"), "modules/spec", lambda _path: None)
+
+
+def seeded(area):
+    from dplanner.modules.spec.documents import import_document
+
+    docs, document, _outcome = import_document(
+        area, [], "auth", b"# Auth\n", "auth.md", "2026-08-27"
+    )
+    return docs, document
+
+
+def test_save_body_pins_previous_to_the_session_base(tmp_path):
+    from dplanner.modules.spec.documents import save_body
+
+    area = session_area(tmp_path)
+    docs, base = seeded(area)
+    docs, first, outcome, superseded = save_body(area, docs, base, b"# Auth\nOne", "2026-08-28")
+    assert outcome == "saved" and superseded is None and first.previous == base.file
+    docs, second, outcome, superseded = save_body(area, docs, base, b"# Auth\nTwo", "2026-08-28")
+    # A later flush still diffs against the session base; the intermediate is handed back.
+    assert outcome == "saved" and second.previous == base.file and superseded == first.file
+    assert area.read_bytes(second.file) == b"# Auth\nTwo"
+
+
+def test_save_body_with_unchanged_bytes_writes_nothing(tmp_path):
+    from dplanner.modules.spec.documents import save_body
+
+    area = session_area(tmp_path)
+    docs, base = seeded(area)
+    docs, document, outcome, superseded = save_body(area, docs, base, b"# Auth\n", "2026-08-28")
+    assert outcome == "unchanged" and superseded is None and document == base
+
+
+def test_save_body_typed_back_to_base_restores_the_record(tmp_path):
+    from dplanner.modules.spec.documents import save_body
+
+    area = session_area(tmp_path)
+    docs, base = seeded(area)
+    docs, first, _outcome, _superseded = save_body(area, docs, base, b"changed", "2026-08-28")
+    docs, restored, outcome, superseded = save_body(area, docs, base, b"# Auth\n", "2026-08-28")
+    assert outcome == "saved" and restored == base and superseded == first.file
+
+
+def test_save_body_refuses_a_document_no_longer_indexed(tmp_path):
+    import pytest as _pytest
+
+    from dplanner.cli.command import CliError
+    from dplanner.modules.spec.documents import save_body
+
+    area = session_area(tmp_path)
+    _docs, base = seeded(area)
+    with _pytest.raises(CliError, match="no longer in the spec index"):
+        save_body(area, [], base, b"changed", "2026-08-28")
+
+
+def test_prune_blob_removes_only_what_nothing_references(tmp_path):
+    from dplanner.modules.spec.documents import prune_blob, save_body
+
+    area = session_area(tmp_path)
+    docs, base = seeded(area)
+    docs, first, _outcome, _superseded = save_body(area, docs, base, b"one", "2026-08-28")
+    docs, _second, _outcome, superseded = save_body(area, docs, base, b"two", "2026-08-28")
+    assert superseded == first.file
+    prune_blob(area, docs, superseded)
+    assert area.read_bytes(superseded) is None
+    # A referenced blob is refused — `file` and `previous` alike, across every document.
+    prune_blob(area, docs, base.file)
+    assert area.read_bytes(base.file) is not None
+
+
+def test_referenced_assets_records_only_the_unrecorded(tmp_path):
+    from dplanner.modules.spec.documents import SpecAsset, referenced_assets
+
+    existing = [SpecAsset(id="a1", file="assets/aa.png", imported="2026-08-27")]
+    body = "![image](assets/aa.png)\n![image](assets/bb.png)\ntext (assets/bb.png) again"
+    updated = referenced_assets(existing, body, "2026-08-28")
+    assert [asset.file for asset in updated] == ["assets/aa.png", "assets/bb.png"]
+    assert updated[1].id == "a2"
+    # Recording is idempotent: a second pass changes nothing.
+    assert referenced_assets(updated, body, "2026-08-28") == updated

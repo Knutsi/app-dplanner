@@ -43,6 +43,7 @@ from dplanner.modules.spec.documents import (
     linked_ids,
     linked_steps,
     matching_documents,
+    new_document,
     next_id,
     quote_anchors,
     read_index,
@@ -191,6 +192,17 @@ def lint_checks() -> list[LintCheck]:
 def commands() -> list[CliCommand]:
     return [
         CliCommand(
+            path=("spec", "new"),
+            summary="Create an empty markdown spec document beside a project — the "
+            "in-app editor and `spec import` (same name replaces) both edit it.",
+            configure=_configure_new,
+            run=_new,
+            examples=(
+                "dplanner spec new 'Search rewrite' 'Auth flow'",
+                "dplanner spec new 'Search rewrite' 'Auth flow' --name auth-spec",
+            ),
+        ),
+        CliCommand(
             path=("spec", "import"),
             summary="Import a spec document (PDF, markdown, text) beside a project, "
             "or replace it — the previous version is kept for diffing.",
@@ -328,6 +340,12 @@ def _configure_show(parser: ArgumentParser) -> None:
     parser.add_argument("--page", type=int, help="one page of a PDF's text (1-based)")
 
 
+def _configure_new(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument("title", help="the document's title; the body starts as '# <title>'")
+    parser.add_argument("--name", help="the document's name (default: a slug of the title)")
+
+
 def _configure_import(parser: ArgumentParser) -> None:
     project_arg(parser)
     parser.add_argument("file", help="the document to copy in beside the project")
@@ -426,6 +444,26 @@ def _absolute(context: CliContext, project: Project, blob: str) -> str:
 
 
 # -- verbs -------------------------------------------------------------------------------------
+
+
+def _new(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.library, args.project)
+    index = read_index(project)
+    today = datetime.now(UTC).date().isoformat()
+    area = context.store.files(project.id, MODULE_ID)
+    docs, document = new_document(
+        area, index.documents, args.title, today, name=args.name or ""
+    )
+    context.apply(
+        SetModuleDataCommand(
+            project.id, MODULE_ID, write_index(replace(index, documents=docs))
+        )
+    )
+    context.report(
+        {"project": project.id, "document": document.name, "outcome": "added"},
+        f"{document.name}: created — `dplanner spec import` with the same name replaces it",
+    )
+    return 0
 
 
 def _import(context: CliContext, args: Namespace) -> int:

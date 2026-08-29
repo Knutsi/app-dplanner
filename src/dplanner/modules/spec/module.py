@@ -12,8 +12,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
+from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox, QWidget
 
+from dplanner.cli.command import CliError
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId
 from dplanner.domain.store import ModuleFileArea
@@ -30,13 +31,21 @@ from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
-from dplanner.modules.spec.activity import DOCUMENT_ENTITY, SPECS_KIND, SpecsActivity
+from dplanner.modules.spec.activity import (
+    DOCUMENT_ENTITY,
+    EDITING_EDGE,
+    SPECS_KIND,
+    SpecsActivity,
+)
 from dplanner.modules.spec.aspect import DATA_FORMAT, MODULE_ID
 from dplanner.modules.spec.documents import (
+    KIND_MARKDOWN,
+    KIND_PDF,
     SpecDocument,
     binary_refusal,
     default_name,
     import_document,
+    new_document,
     read_index,
     remove_document,
     write_index,
@@ -75,20 +84,50 @@ class SpecModule:
         def factory(target: str | None) -> SpecsActivity:
             assert target is not None
             return SpecsActivity(
-                deps.library, deps.context, deps.actions, deps.files, deps.theme, target
+                deps.library,
+                deps.context,
+                deps.actions,
+                deps.files,
+                deps.theme,
+                deps.undo,
+                target,
             )
 
         deps.tabs.register_factory(SPECS_KIND, factory)
         deps.actions.register(
             ActionSpec(
-                id="spec.add",
-                label="&Add Spec Document…",
+                id="spec.new",
+                label="&New Spec Document…",
                 menu="Project",
                 group="documents",
                 order=10,
+                tip="Create a markdown document beside this project and edit it in place",
+                state=self._on_a_project,
+                run=self._new,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="spec.add",
+                label="&Import Spec Document…",
+                menu="Project",
+                group="documents",
+                order=20,
                 tip="Import a PDF, markdown or text document beside this project",
                 state=self._on_a_project,
                 run=self._add,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="spec.edit",
+                label="&Edit Spec Document",
+                menu="Project",
+                group="documents",
+                order=30,
+                tip="Edit the selected markdown document in place; run again to finish",
+                state=self._edit_state,
+                run=self._edit,
             )
         )
         deps.actions.register(
@@ -97,7 +136,7 @@ class SpecModule:
                 label="&Remove Spec Document",
                 menu="Project",
                 group="documents",
-                order=20,
+                order=40,
                 tip="Remove the selected document and its requirements; the file stays on disk",
                 state=self._on_a_document,
                 run=self._remove,
@@ -109,7 +148,7 @@ class SpecModule:
                 label="Open Document E&xternally",
                 menu="Project",
                 group="documents",
-                order=30,
+                order=50,
                 tip="Open the selected spec document in the system viewer",
                 state=self._on_a_document,
                 run=self._open_external,
@@ -158,10 +197,67 @@ class SpecModule:
         document = next((doc for doc in documents if doc.name == name), None)
         return None if document is None else (project_id, document)
 
+    def _edit_state(self, context: Context) -> ActionState:
+        found = self._selected_document(context)
+        if found is None:
+            return DISABLED
+        _project_id, document = found
+        if document.kind == KIND_PDF:
+            return ActionState(enabled=False, label="Cannot Edit — PDFs are view-only")
+        if document.kind != KIND_MARKDOWN:
+            # Plain text through a rich-text round-trip would come back as markdown.
+            return ActionState(enabled=False, label="Cannot Edit — only markdown edits in-app")
+        return ActionState(checked=context.edge(EDITING_EDGE) is not None)
+
     def _open(self, context: Context) -> None:
         project_id = context.focus_entity("project")
         if project_id is not None:
             self.open(project_id)
+
+    def _new(self, context: Context) -> None:
+        project_id = context.focus_entity("project")
+        if project_id is None or not self._deps.library.has(project_id):
+            return
+        title, accepted = QInputDialog.getText(
+            self._deps.parent, "New Spec Document", "Title:"
+        )
+        if not accepted or not title.strip():
+            return
+        project = self._deps.library.project(project_id)
+        index = read_index(project)
+        today = datetime.now(UTC).date().isoformat()
+        try:
+            documents, document = new_document(
+                self._deps.files(project_id), index.documents, title.strip(), today
+            )
+        except CliError as error:
+            QMessageBox.warning(self._deps.parent, "Spec Documents", str(error))
+            return
+        self._deps.undo.push(
+            SetModuleDataCommand(
+                project_id,
+                MODULE_ID,
+                write_index(replace(index, documents=documents)),
+                label="New Spec Document",
+            )
+        )
+        activity = self._deps.tabs.open(SPECS_KIND, project_id)
+        assert isinstance(activity, SpecsActivity)
+        activity.select_document(document.name)
+        activity.begin_edit()
+
+    def _edit(self, context: Context) -> None:
+        found = self._selected_document(context)
+        if found is None:
+            return  # The state gate already prevents this; stay honest anyway.
+        project_id, document = found
+        activity = self._deps.tabs.open(SPECS_KIND, project_id)
+        assert isinstance(activity, SpecsActivity)
+        activity.select_document(document.name)
+        if activity.is_editing:
+            activity.end_edit()
+        else:
+            activity.begin_edit()
 
     def _add(self, context: Context) -> None:
         project_id = context.focus_entity("project")

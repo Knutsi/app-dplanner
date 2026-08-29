@@ -294,6 +294,12 @@ root, stop and look for the registry or capability you have not found yet.
   reloaded float writes as `5.0`, making a file's bytes depend on whether the project had
   been reopened. `module_data` is opaque to the model, so the coercion belongs in the
   aspect's `write()` — see `modules/estimation/aspect.py`.
+- **Editing a spec in-app is a replace.** The Specs tab's markdown editor flushes a session
+  as one `spec import`-style replace: blob written straight to the file area, the index
+  through one merged command, `previous` pinned to the session's base so `spec diff` shows
+  the session. Markdown only — PDFs and plain text stay view-only — and the editor prunes
+  only blobs its own session superseded. `ARCHITECTURE.md`'s *Editing a spec in-app is a
+  replace* has the reasoning.
 - **Running an agent launches a peer, never a task.** *Run Agent* spawns a detached terminal
   the user owns — not a `TaskRunner` body, which would promise cancel and progress nobody
   can honestly deliver. The terminal opens at the project's **git repository root** (via

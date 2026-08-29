@@ -6,13 +6,16 @@ images. That split is what makes a replace safe to undo: the index edit goes thr
 command on the undo stack, and both the new and the previous blob stay on disk, so a
 restored index always finds its file. The cost is that an orphaned blob is never pruned —
 acceptable, because an orphan is recoverable where a dangling pointer is not, and the
-workspace's own VCS is the real history.
+workspace's own VCS is the real history. The one carve-out is the in-app editor's idle
+flushes: an intermediate blob that a single editing session wrote and then superseded is
+churn, not history, and :func:`prune_blob` removes it once nothing in the index names it.
 
 Everything here is Qt-free and shared verbatim by ``cli.py`` and the Specs tab, so the two
 surfaces cannot disagree about what a document or a requirement is.
 """
 
 import hashlib
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
@@ -275,6 +278,76 @@ def _write_text_layer(area: ModuleFileArea, blob: str, data: bytes) -> None:
     area.write_bytes(text_blob_name(blob), layer.encode("utf-8"))
 
 
+def new_document(
+    area: ModuleFileArea,
+    documents: Sequence[SpecDocument],
+    title: str,
+    today: str,
+    *,
+    name: str = "",
+) -> tuple[list[SpecDocument], SpecDocument]:
+    """A fresh markdown document seeded with ``# <title>`` — refuses a taken name.
+
+    Shared by ``spec new`` and the Specs tab's New Spec Document, so both surfaces mint
+    the same seed and refuse the same duplicates.
+    """
+    chosen = name or slugify(title, fallback="document")
+    if any(doc.name == chosen for doc in documents):
+        raise CliError(
+            f"a spec document named {chosen!r} already exists — pick another title"
+        )
+    docs, document, _outcome = import_document(
+        area, documents, chosen, f"# {title}\n".encode(), f"{chosen}.md", today
+    )
+    return docs, document
+
+
+def save_body(
+    area: ModuleFileArea,
+    documents: Sequence[SpecDocument],
+    session_base: SpecDocument,
+    data: bytes,
+    today: str,
+) -> tuple[list[SpecDocument], SpecDocument, str, str | None]:
+    """Replace ``session_base``'s body mid-editing-session — one session, one replace.
+
+    However many idle flushes a session makes, ``previous`` stays pinned to the blob that
+    was current when editing began, so `spec diff` answers "what did this session change",
+    not "what did the last keystroke burst change". A body typed back to its starting
+    bytes restores the base record exactly, un-doing the replace.
+
+    Returns the updated list, the document, ``"saved"`` or ``"unchanged"``, and the
+    superseded blob this session itself wrote (the caller may prune it) — None when the
+    superseded blob predates the session.
+    """
+    existing = next((doc for doc in documents if doc.name == session_base.name), None)
+    if existing is None:
+        raise CliError(f"{session_base.name!r} is no longer in the spec index")
+    blob = blob_name(data, session_base.filename)
+    if blob == existing.file:
+        return list(documents), existing, "unchanged", None
+    superseded = existing.file if existing.file != session_base.file else None
+    if blob == session_base.file:
+        document = session_base  # The session's net change is nothing; restore the record.
+    else:
+        area.write_bytes(blob, data)
+        document = replace(existing, file=blob, previous=session_base.file, imported=today)
+    updated = [document if doc.name == document.name else doc for doc in documents]
+    return updated, document, "saved", superseded
+
+
+def prune_blob(area: ModuleFileArea, documents: Sequence[SpecDocument], blob: str) -> None:
+    """Remove ``blob`` unless any document's file or previous still names it.
+
+    Content-addressed names mean two documents can share a blob, so both fields of every
+    document are checked. Only an editing session's own intermediates belong here — the
+    module docstring's orphan rule stands for everything else.
+    """
+    if any(blob in (doc.file, doc.previous) for doc in documents):
+        return
+    area.remove(blob)
+
+
 def remove_document(
     documents: Sequence[SpecDocument],
     requirements: Sequence[Requirement],
@@ -340,6 +413,24 @@ def record_asset(
         imported=today,
     )
     return [*assets, asset], asset, "added"
+
+
+def referenced_assets(
+    assets: Sequence[SpecAsset], body: str, today: str
+) -> list[SpecAsset]:
+    """The asset list with an entry for every ``assets/…`` file ``body`` links to.
+
+    An image pasted into the in-app editor lands in the file area without passing through
+    ``spec attach``; recording it at save time is what keeps `spec assets` and
+    `attach-to-step` able to see it. Matching is by file alone — a blob already indexed,
+    however it got there, is never re-minted.
+    """
+    known = {asset.file for asset in assets}
+    updated = list(assets)
+    for file in dict.fromkeys(re.findall(r"\]\((assets/[^)\s]+)\)", body)):
+        if file not in known:
+            updated, _asset, _outcome = record_asset(updated, file, "", None, today)
+    return updated
 
 
 def linked_steps(project: Project, requirement_id: str) -> list[Step]:
