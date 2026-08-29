@@ -174,7 +174,7 @@ def test_a_chip_click_writes_an_undoable_estimate(services, project):
     run_estimate_open(services)
     tab = estimate_tab(services)
 
-    tab._editors[a.id].chips.button(1).click()  # ½ a day.
+    tab._editors[a.id].chips.button(2).click()  # ½ a day — ids count quarter-days.
     assert read_estimate(services.document.step(a.id)) == 0.5
 
     services.undo.undo()
@@ -216,7 +216,7 @@ def test_the_unestimated_filter_hides_what_is_sized(services, project):
     tab = estimate_tab(services)
     tab._filters.button(1).click()  # Unestimated.
 
-    tab._editors[project.steps[0].id].chips.button(2).click()  # 1 day, from the row itself.
+    tab._editors[project.steps[0].id].chips.button(4).click()  # 1 day, from the row itself.
     assert titles_on_screen(tab) == ["B", "C", "D"]
     assert tab.table.isRowHidden(0)
 

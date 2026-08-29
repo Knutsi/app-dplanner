@@ -53,9 +53,11 @@ it in two parts:
 - **Open with the human part.** Two or three sentences anyone can skim: what the step is,
   why it exists, what done means.
 - **On an agent step, follow with a clearly delimited section** — a `## Approach` heading
-  works well — of precise, numbered instructions for the executing agent: what to read
-  first, what to build, what to verify. Anything the agent must not miss belongs there,
-  not in prose a reviewer skims.
+  works well — of numbered **tasks to accomplish**, each stated as an outcome: what to
+  read first, what to build, what to verify. Name the tasks, not the route: the executing
+  agent makes its own plan (usually in plan mode), so a how-to sequence only belongs there
+  when the order genuinely is the point. Anything the agent must not miss belongs in that
+  section, not in prose a reviewer skims.
 - **Name every attached figure and what to take from it.** An image attached with
   `describe attach` or `--attach` reaches the agent as a bare file path; the text is what
   says why it matters. Reference each one from the markdown and say what it shows.
@@ -79,6 +81,14 @@ EOF
 
 `agent prompt <step>` shows the result the way its consumer will see it — read it and ask
 whether it is enough to work from.
+
+## Estimating agent work
+
+With a human in the loop — reviewing the plan, answering questions, checking the result —
+an agent step runs at roughly **90 minutes per task** in its `## Approach` list. So count
+the tasks: one task is a quarter day (`--days 0.25`, the ¼ chip in the window), three are
+about half a day, five or six fill one. A step whose list runs past six tasks is usually
+two steps — split it rather than inflating the estimate.
 
 ## Linking honestly
 

@@ -68,8 +68,16 @@ def test_the_skill_teaches_two_part_descriptions(files):
     skill = files[SKILL_FILE]
     assert "## Writing descriptions" in skill
     assert "## Approach" in skill
+    assert "tasks to accomplish" in skill  # Outcomes, not a how-to sequence.
     assert "Name every attached figure" in skill
     assert "agent set <step> --clear" in skill
+
+
+def test_the_skill_prices_an_agent_task_at_ninety_minutes(files):
+    skill = files[SKILL_FILE]
+    assert "## Estimating agent work" in skill
+    assert "90 minutes per task" in skill
+    assert "--days 0.25" in skill
 
 
 def test_the_skill_states_the_argument_shape_and_idempotency_rules(files):

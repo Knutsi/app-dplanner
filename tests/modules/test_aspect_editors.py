@@ -99,11 +99,14 @@ def test_a_change_made_elsewhere_reaches_the_estimate(services, project, panel):
 def test_a_quick_pick_chip_sets_the_estimate_in_one_gesture(services, project, panel):
     """Most steps are one of a handful of sizes; typing a half day is three gestures."""
     editor = section(panel, "Estimate")
-    editor.chips.button(1).click()  # ½ a day.
+    editor.chips.button(2).click()  # ½ a day — ids count quarter-days.
 
     assert read_estimate(services.document.step(project.steps[0].id)) == 0.5
     services.undo.undo()
     assert read_estimate(services.document.step(project.steps[0].id)) is None
+
+    editor.chips.button(1).click()  # ¼ — one agent task, about 90 minutes.
+    assert read_estimate(services.document.step(project.steps[0].id)) == 0.25
 
 
 def test_the_chip_matching_the_value_is_the_checked_one(services, project, panel):
