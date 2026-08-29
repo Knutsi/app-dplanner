@@ -21,10 +21,14 @@ can never fight over it.
 a menu name is application vocabulary and has no business in a framework spec. A segment has
 its own ``Deps`` and builds its menu with :func:`~dplanner.framework.action_menu.build_menu`.
 
-**Expansion survives a rebuild.** Rebuilding a subtree when the model changes is the normal
-case, and remembering what was open is the bookkeeping every segment would otherwise copy.
-:func:`expansion_of` and :func:`restore_expansion` do it once — plain functions over the
-items, so a segment needs no reference to the panel that hosts it.
+**Expansion survives a rebuild — and a restart.** Rebuilding a subtree when the model
+changes is the normal case, and remembering what was open is the bookkeeping every segment
+would otherwise copy. :func:`expansion_of` and :func:`restore_expansion` do it once — plain
+functions over the items, so a segment needs no reference to the panel that hosts it. The
+panel then writes the same answer to the per-user store under the open library's scope, so
+reopening a project's folders is not a chore the user repeats every morning. Nothing is
+keyed by position: a remembered key that names no row is simply not there any more, which
+is what makes a library that changed underneath restore to *less* rather than to wrong.
 """
 
 from collections.abc import Callable, Sequence
@@ -37,10 +41,15 @@ from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem, QVBoxLayout, 
 
 from dplanner.core.signals import Signal
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, ContextService
+from dplanner.framework.user_config import get_scoped, set_scoped
 
 # Set on every item so the panel can find the segment that owns it without walking the
 # tree's shape, and so a segment can recognise its own rows in a signal.
 SEGMENT_ROLE = int(Qt.ItemDataRole.UserRole) + 1000
+
+# Where the tree's open folders are kept between runs, under the library's own scope.
+_OWNER = "index"
+_EXPANDED_KEY = "expanded"
 
 
 @runtime_checkable
@@ -112,6 +121,8 @@ class IndexPanel(QWidget):
         segments: IndexSegmentRegistry,
         context: ContextService,
         parent: QWidget | None = None,
+        *,
+        scope: str = "",
     ) -> None:
         super().__init__(parent)
         self.setObjectName("IndexPanel")
@@ -120,6 +131,12 @@ class IndexPanel(QWidget):
         self._roots: dict[str, QTreeWidgetItem] = {}
         self._specs: list[IndexSegment] = []
         self._icon_color = ""
+        # The library's slice of the per-user store; empty means this panel remembers
+        # nothing between runs, which is what a test that builds one bare wants.
+        self._scope = scope
+        self._expanded = _remembered(scope)
+        # Restoring a folder expands rows, and expanding a row is what triggers a save.
+        self._restoring = False
 
         self._tree = QTreeWidget()
         self._tree.setObjectName("IndexTree")
@@ -135,6 +152,8 @@ class IndexPanel(QWidget):
 
         self._tree.itemActivated.connect(self._on_activated)
         self._tree.itemClicked.connect(self._on_clicked)
+        self._tree.itemExpanded.connect(self._remember)
+        self._tree.itemCollapsed.connect(self._remember)
         self._tree.itemSelectionChanged.connect(self._on_selection)
         self._tree.customContextMenuRequested.connect(self._on_context_menu)
         # itemClicked fires for every button and says nothing about modifiers, so the press
@@ -171,14 +190,44 @@ class IndexPanel(QWidget):
         index = len([s for s in self._specs if (s.order, s.id) <= key])
         root = QTreeWidgetItem([segment.label])
         root.setData(0, SEGMENT_ROLE, segment.id)
+        # The folder is its own expansion key, so a collapsed folder is remembered by the
+        # same walk as the rows under it and needs no second mechanism.
+        root.setData(0, Qt.ItemDataRole.UserRole, segment.id)
         root.setFlags(root.flags() & ~Qt.ItemFlag.ItemIsSelectable)
         self._tree.insertTopLevelItem(index, root)
         self._specs.insert(index, segment)
         self._roots[segment.id] = root
         if segment.icon is not None and self._icon_color:
             root.setIcon(0, segment.icon(self._icon_color))
-        self._views[segment.id] = segment.factory(root)
-        root.setExpanded(True)
+        self._restoring = True
+        try:
+            self._views[segment.id] = segment.factory(root)
+            remembered = self._expanded.get(segment.id)
+            if remembered is None:
+                root.setExpanded(True)  # Never seen before: a folder opens.
+            else:
+                restore_expansion(root, remembered)
+        finally:
+            self._restoring = False
+
+    def _remember(self, _item: QTreeWidgetItem | None = None) -> None:
+        """Write down which rows are open, for the next time this library is opened.
+
+        Merged into what was already remembered rather than replacing it: a segment that
+        has not registered yet — or one this build does not have at all — keeps its folders
+        instead of having them erased by whoever expanded a row first.
+        """
+        if self._restoring or not self._scope:
+            return
+        self._expanded.update(
+            {segment: expansion_of(root) for segment, root in self._roots.items()}
+        )
+        set_scoped(
+            self._scope,
+            _OWNER,
+            _EXPANDED_KEY,
+            {segment: sorted(keys) for segment, keys in self._expanded.items()},
+        )
 
     def _owner_of(self, item: QTreeWidgetItem | None) -> str | None:
         while item is not None:
@@ -234,6 +283,18 @@ class IndexPanel(QWidget):
         menu = self._views[owner].context_menu(item)
         if menu is not None:
             menu.exec(self._tree.viewport().mapToGlobal(position))
+
+
+def _remembered(scope: str) -> dict[str, set[str]]:
+    """What was open last time, per segment. Anything unreadable reads as nothing."""
+    stored = get_scoped(scope, _OWNER, _EXPANDED_KEY, {})
+    if not isinstance(stored, dict):
+        return {}
+    return {
+        str(segment): {key for key in keys if isinstance(key, str)}
+        for segment, keys in stored.items()
+        if isinstance(keys, list)
+    }
 
 
 def expansion_of(item: QTreeWidgetItem) -> set[str]:

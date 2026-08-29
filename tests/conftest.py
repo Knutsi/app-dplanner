@@ -148,13 +148,14 @@ def _collect_qt_garbage():
 def _fresh_session_settings():
     """Per-user state must not leak between tests.
 
-    The ``modules`` group holds per-module global preferences; the rest are the framework's.
+    The ``modules`` group holds per-module global preferences and ``libraries`` what each
+    library's window remembered; the rest are the framework's.
     """
     yield
     from PySide6.QtCore import QSettings
 
     settings = QSettings()
-    for group in ("appearance", "modules", "layout"):
+    for group in ("appearance", "modules", "layout", "libraries"):
         settings.beginGroup(group)
         settings.remove("")
         settings.endGroup()

@@ -811,6 +811,44 @@ home for the text and a Cancel that discards work. Belongs upstream beside `text
 the corner-button affordance is the part to review (it assumes the editor is a
 `QPlainTextEdit` with a vertical scrollbar).
 
+### The window remembers where the user left it: `user_config` grew a second scope
+
+**What.** Three changes, one feature.
+
+- `framework/user_config.py` now has two scopes rather than one. `get_global`/`set_global`
+  are unchanged (a preference, the same in whichever document is open); `get_scoped`/
+  `set_scoped` take a scope string from `library_scope(path)` — a truncated SHA-256 of the
+  resolved source path — for what is only true of *one* document. The two `QSettings`
+  accessors collapsed into a shared `_read`/`_write` pair, and the first parameter is now
+  called `owner` rather than `module_id`, because framework surfaces store things here too.
+- `framework/index_panel.py` takes a keyword-only `scope` and persists which rows are open,
+  merged per segment. The folder root carries its own id as its expansion key, so a
+  collapsed folder is remembered by the same walk as the rows under it. An empty scope
+  (the default) remembers nothing, which is what a bare panel in a test wants.
+- `framework/tabs.py` grew `tabs_changed: Signal[()]` and `can_open(kind) -> bool`.
+- `AppServices` grew `source_scope: str`, derived once in the builder from the source it was
+  handed, so the panel and the composition root cannot disagree about which slice is which.
+
+**Why.** `activity_changed` is about which tab is *current*, and a listener that wants the
+tab *list* — anything that persists it, anything that counts tabs — never hears about a
+tab closing in a pane the user is not in, because `_announce` guards on the (group,
+activity) pair and neither changed. That is not a bug in `_announce`; it is a second fact
+the host had no way to say. `can_open` is the same shape of gap one level up: `open` is
+right to raise for a kind the caller registered itself, and wrong as the way to ask about
+a kind read back from disk, where the feature may simply be gone from this build.
+
+**The one that generalises.** Restoring by *key* rather than by position is what makes
+both halves safe against a document that changed underneath: a remembered key naming no
+row restores nothing, so a library that lost a project comes back with *fewer* folders and
+fewer tabs rather than wrong ones. No validation pass, no version stamp, no migration —
+the check is the lookup. Worth saying in the template, because the alternative (indexes,
+or a saved tree shape) is the obvious first design and it is the one that breaks.
+
+**Belongs upstream?** All of it. The scoped store and the tab-list signal are template-level
+gaps; the index panel's persistence is ten lines on top of helpers that were already there.
+DPlanner's own half — the preference, and asking the model whether a target still exists —
+stayed in `modules/reopen_tabs/`, which is the line we would draw upstream too.
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class

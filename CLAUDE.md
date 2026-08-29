@@ -206,6 +206,17 @@ root, stop and look for the registry or capability you have not found yet.
   estimates; a table runs it against a context naming exactly the row's step. Reveal-in-graph
   is the `steps.reveal` verb in the Step menu, not a double-click. `ARCHITECTURE.md`'s *The
   same panel, briefly modal* has the reasoning.
+- **Where the user left off is remembered by key, per library.** Which index folders are
+  open and which tabs the window had are written to the per-user store under
+  `library_scope(library path)` — `framework/user_config.py`'s `get_scoped`, never the
+  project directory, which is one person's window and not the plan. Both restore by **node
+  id**: a remembered id that names nothing restores nothing, so a library that changed
+  underneath comes back with *fewer* folders and tabs rather than wrong ones — no version
+  stamp, no migration, the check is the lookup. The tree's folders are the index panel's own
+  bookkeeping; tabs are `modules/reopen_tabs/`, which must be listed after every module that
+  registers an activity factory and carries the *Settings ▸ Startup* switch.
+  `ARCHITECTURE.md`'s *Where the user left off is remembered by key* has the reasoning,
+  including why the write happens on every change rather than at close.
 - **A single click in the index opens a preview tab** (`tabs.open(..., preview=True)`): at
   most one preview exists, the next preview replaces it, and a deliberate act — activation,
   or moving the tab — pins it. A preview-open of anything already open is a plain focus.

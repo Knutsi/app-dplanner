@@ -50,6 +50,10 @@ class AppServices:
     # purpose — the framework never touches it, and the composition root re-types it the
     # moment it puts it on a module's Deps.
     document: Any
+    # A key naming this build's source, under which the per-user store keeps what is true
+    # of *this* document alone — which folders are open, which tabs were — as opposed to
+    # the user's preferences, which follow them everywhere. See ``framework/user_config``.
+    source_scope: str
 
     # -- what the user is doing ----------------------------------------------------------------
     context: ContextService

@@ -19,17 +19,24 @@ written by different builds, and each gets exactly the migrations it needs.
 
 ## Where a value goes
 
-Three places, and the choice is not stylistic:
+Four places, and the choice is not stylistic:
 
 | Where | What | Mechanism | Travels with the project? |
 |---|---|---|---|
 | The project directory | content, and anything a collaborator should see | your model, or `module_data` / `module_text` / a module file area | yes — it is in the files, and in the commits |
 | Per user, per machine (Qt-free) | what the CLI must also read: the project library | `core/config_dir.py` + `domain/library_file.py` | no — it is a list of *this machine's* paths |
-| Per user, per machine (GUI only) | preferences: panel layout, model choices, agent command | `framework/user_config.py` (QSettings) | no |
+| Per user, per machine (GUI only) | preferences: panel layout, model choices, agent command | `framework/user_config.py`'s `get_global` (QSettings) | no |
+| Per user, per machine, per library | where the user left off: open index folders, open tabs | `framework/user_config.py`'s `get_scoped`, under `library_scope(path)` | no |
 | The OS keychain | credentials, API keys | `framework/secrets_store.py` | no, and never on disk |
 
 If you are unsure, ask who the value belongs to. A colleague opening the project should
 see its conventions and none of your preferences.
+
+The last two rows differ over *whose truth it is*. "Reopen my tabs" is the person's and
+follows them into every library; "these tabs were open" is one library's, and restoring it
+into another would be nonsense. Anything in the scoped row is written **keyed by node id**,
+so a value naming something that has since been deleted restores nothing — which is why
+neither needs a version stamp or a migration.
 
 An earlier format stored per-machine checkout paths *in* the shared workspace as the least
 bad way to let the Qt-free CLI resolve them. That trade is resolved: where a project's code
