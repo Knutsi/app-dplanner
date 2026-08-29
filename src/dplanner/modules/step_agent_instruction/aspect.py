@@ -1,25 +1,26 @@
-"""The agent-instruction aspect: prose written for whoever implements the step, not for a
-person deciding whether to.
+"""The agent aspect: marks a step for agent execution, and carries how to carry it out.
 
-A sibling of the description rather than a replacement for it, and the distinction is the
-point. A description says what the step *is* — it is read by anyone planning the work. An
-instruction says how to carry it out in this codebase: which files, which convention, what
-"done" has to satisfy. Keeping them apart means a plan stays readable to people while still
-carrying everything an agent needs, instead of one field trying to be both.
+**The description is the instructions.** A step marked for an agent is briefed with its
+own description — one text, written once, read by people and machines alike. This aspect
+adds the mark itself (``module_data``: the step is an agent step) and, only where
+how-to-execute genuinely differs from what-it-is, a *separate* instruction (prose in
+``module_text``). Writing a separate instruction implies the mark, which is also what
+keeps plans from before the mark existed working unchanged.
 
-Prose, so it lives in ``module_text`` and diffs line by line. An instruction may carry
-images in its file area — a mockup, an annotated screenshot — handed to the agent beside
-the prompt at launch.
+Prose, so the separate instruction lives in ``module_text`` and diffs line by line. It may
+carry images in its file area — a mockup, an annotated screenshot — handed to the agent
+beside the prompt at launch.
 
 The namespace spans node kinds (FORMAT.md's rule, like ``estimation``): beside a step it is
-that step's instruction; beside the *project* it is the project's standing instruction,
-prepended to every step's briefing. The id keeps its historical ``step_`` prefix — renaming
-a module is a Takeover that churns every workspace, and the prefix only names where the
-aspect began.
+that step's separate instruction; beside the *project* it is the project's standing
+instruction, prepended to every step's briefing. The id keeps its historical ``step_``
+prefix — renaming a module is a Takeover that churns every workspace, and the prefix only
+names where the aspect began.
 """
 
+from typing import Any
 
-from dplanner.core.module_data import ModuleDataFormat
+from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.assets import assets
 from dplanner.domain.model import NodeId, Project, Step
@@ -29,7 +30,36 @@ MODULE_ID = "step_agent_instruction"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
 def read(step: Step) -> str:
+    """The step's *separate* instruction — empty for most agent steps, whose briefing
+    carries the description instead."""
     return step.module_text.get(MODULE_ID, "")
+
+
+def enabled(step: Step) -> bool:
+    """Whether this is an agent step. The stored mark says so; a separate instruction
+    implies it, so a plan written before the mark existed still reads as agent work."""
+    return bool(step.module_data.get(MODULE_ID)) or bool(read(step))
+
+
+def separate_instruction(step: Step) -> bool:
+    """Whether the step opted into an instruction distinct from its description.
+
+    Stored rather than derived, because "opted in but not yet typed" is a real state that
+    must survive a selection change. Text-presence still implies it — the two encodings
+    cannot disagree because turning the aspect off clears both.
+    """
+    entry = step.module_data.get(MODULE_ID) or {}
+    return bool(entry.get("separate")) or bool(read(step))
+
+
+def write_state(on: bool, separate: bool = False) -> dict[str, Any]:
+    """The aspect's entry: ``{}`` when off (the file disappears), the mark otherwise."""
+    if not on:
+        return {}
+    entry: dict[str, Any] = {"on": True}
+    if separate:
+        entry["separate"] = True
+    return stamped(entry, DATA_FORMAT.version)
 
 
 def read_project(project: Project) -> str:
@@ -57,22 +87,21 @@ def asset_paths(
 
 
 def summary(step: Step) -> str:
-    """One short phrase for a step's row — how much direction there is, not what it says.
-
-    The text itself is instructions to a machine and rarely reads well out of context, so a
-    row says that it exists and how much of it there is.
-    """
+    """One short phrase for a step's row — that an agent will do it, and how much extra
+    direction there is. The text itself is instructions to a machine and rarely reads well
+    out of context."""
     body = read(step)
-    if not body:
-        return ""
-    return "instructed" if len(body) < 200 else f"instructed ({len(body)} chars)"
+    if body:
+        return "instructed" if len(body) < 200 else f"instructed ({len(body)} chars)"
+    return "agent" if enabled(step) else ""
 
 
 # Last, because it names the pieces above: the one declaration everything reads.
 SPEC = AspectSpec(
     id=MODULE_ID,
     label="Agent",
-    summary="How a coding agent should carry this step out, in markdown.",
+    summary="Marks a step for agent execution. The description is the briefing's"
+    " instructions unless a separate instruction is written.",
     data_format=DATA_FORMAT,
     phrase=summary,
 )

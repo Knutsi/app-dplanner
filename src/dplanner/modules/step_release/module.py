@@ -58,6 +58,11 @@ class StepReleaseModule:
                 label=SPEC.label,
                 order=50,
                 factory=lambda: ReleaseSection(deps.library, deps.undo),
+                # The tab follows the aspect: toggling on generates a label and the tab
+                # appears with it, so there is always somewhere to edit one that exists.
+                shown_for=lambda step_id: step_id is not None
+                and deps.library.has(step_id)
+                and bool(read(deps.library.step(step_id))),
             )
         )
         deps.actions.register(

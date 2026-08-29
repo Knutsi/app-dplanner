@@ -275,12 +275,37 @@ def select(services, step):
     )
 
 
-def test_without_an_instruction_the_action_is_greyed_with_the_reason(services, step):
+def test_without_the_aspect_the_action_is_greyed_with_the_reason(services, step):
     """Present, not hidden: a greyed entry that says what to do beats a missing one."""
     select(services, step)
     state = services.actions.spec("agent.run").state(services.context.current())
     assert state.visible and not state.enabled
-    assert state.label is not None and "instruction" in state.label
+    assert state.label is not None and "agent step" in state.label
+
+
+def test_an_agent_step_with_nothing_to_brief_it_is_greyed_with_the_reason(services, step):
+    """The aspect alone is not a briefing: no description, no instruction, no standing
+    instruction means nothing to launch with, and the label says which to write."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, write_state
+
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write_state(True)))
+    select(services, step)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.visible and not state.enabled
+    assert state.label is not None and "describe" in state.label
+
+
+def test_a_described_agent_step_is_runnable_without_a_separate_instruction(services, step):
+    """The description is the instructions: mark plus prose is a complete briefing."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, write_state
+
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write_state(True)))
+    services.document.set_text(step.id, "step_description", "What this step is.")
+    select(services, step)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.enabled
 
 
 def test_without_a_repository_the_reason_says_so(services, step, library_repo):
@@ -337,7 +362,7 @@ def test_the_agent_tab_has_the_trigger_following_the_action_state(services, step
     section = _agent_section(services)
     section.show_target(step.id)
     assert not section.run_button.isEnabled()
-    assert "instruction" in section.run_button.toolTip()
+    assert "agent step" in section.run_button.toolTip()
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     section.show_target(step.id)  # A reselect re-evaluates, as the panel does.
@@ -475,6 +500,81 @@ def test_a_run_stages_attached_images_beside_the_prompt(services, step, monkeypa
     )
     for path in staged:
         assert str(path) in prompt  # Absolute, inside the run dir — reachable from anywhere.
+
+
+# -- the Type toggles --------------------------------------------------------------------------
+
+
+def test_the_agent_toggle_marks_and_unmarks_the_step(services, step):
+    from dplanner.modules.step_agent_instruction.aspect import enabled
+
+    select(services, step)
+    context = services.context.current()
+    spec = services.actions.spec("agent.toggle")
+    assert spec.menu == "Step" and spec.submenu == "Type"
+    assert spec.state(context).checked is False
+
+    services.actions.run("agent.toggle", context)
+    assert enabled(step) and spec.state(context).checked is True
+    services.actions.run("agent.toggle", context)  # No text: no confirm needed.
+    assert not enabled(step)
+    services.undo.undo()
+    assert enabled(step)
+
+
+def test_toggling_agent_off_confirms_and_drops_the_text_as_one_undo_step(
+    services, step, monkeypatch
+):
+    import dplanner.modules.step_agent_instruction.module as agent_module
+    from dplanner.modules.step_agent_instruction.aspect import enabled
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    asked = []
+
+    def yes(*args: object) -> bool:
+        asked.append(args)
+        return True
+
+    monkeypatch.setattr(agent_module, "confirm", yes)
+    select(services, step)
+    services.actions.run("agent.toggle", services.context.current())
+    assert asked and not enabled(step)
+    assert step.module_text.get("step_agent_instruction", "") == ""
+    services.undo.undo()
+    assert enabled(step)
+    assert step.module_text["step_agent_instruction"] == "Ship it."
+
+
+def test_the_ticket_toggle_adds_the_empty_aspect_and_clears_it(services, step, monkeypatch):
+    import dplanner.modules.step_ticket.module as ticket_module
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.step_ticket.aspect import MODULE_ID, Ticket, enabled, write
+
+    select(services, step)
+    context = services.context.current()
+    spec = services.actions.spec("ticket.toggle")
+    assert spec.state(context).checked is False
+
+    services.actions.run("ticket.toggle", context)
+    assert enabled(step) and spec.state(context).checked is True
+
+    # Off with no reference filled in: no confirm, entry gone.
+    asked = []
+
+    def yes(*args: object) -> bool:
+        asked.append(args)
+        return True
+
+    monkeypatch.setattr(ticket_module, "confirm", yes)
+    services.actions.run("ticket.toggle", context)
+    assert not asked and not enabled(step)
+
+    # Off with a reference: asks first, and undo restores it.
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write(Ticket(key="WID-14"))))
+    services.actions.run("ticket.toggle", context)
+    assert asked and not enabled(step)
+    services.undo.undo()
+    assert step.module_data[MODULE_ID]["key"] == "WID-14"
 
 
 # -- the CLI -----------------------------------------------------------------------------------

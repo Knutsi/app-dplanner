@@ -180,6 +180,14 @@ root, stop and look for the registry or capability you have not found yet.
   step editor appear twice in a split window, and the fix deleted code rather than adding a
   visibility check — because "only the active pane publishes" already says which selection a
   panel should be showing. `ARCHITECTURE.md`'s *Where a panel goes* has the rest.
+- **A toggleable aspect's tab follows the aspect.** Release, Agent and Ticket are Step ▸
+  Type toggles (independent, never a radio group), and each registers its
+  `InspectorSection` with a `shown_for` predicate so its tab exists only on a step that
+  carries the aspect. **The description is an agent step's instructions** — the briefing's
+  `## Instructions` block, decided by the composition root's `_briefing_instruction`; a
+  *separate* instruction (the checkbox in the Description tab, `dplanner agent set`) is
+  the opt-out for a step whose how-to-execute differs from what-it-is. `ARCHITECTURE.md`'s
+  *The description is the instructions* has the reasoning.
 - **Double-clicking a step anywhere runs `steps.details`** — a modal dialog hosting a second
   `StepPanel`, disposed on close. It is the one gesture across canvas, order, progression and
   estimates; a table runs it against a context naming exactly the row's step. Reveal-in-graph

@@ -5,7 +5,7 @@ from argparse import ArgumentParser, Namespace
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_step, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.modules.step_ticket.aspect import FIELDS, MODULE_ID, Ticket, read, write
+from dplanner.modules.step_ticket.aspect import FIELDS, MODULE_ID, Ticket, enabled, write
 
 
 def commands() -> list[CliCommand]:
@@ -47,7 +47,7 @@ def _set(context: CliContext, args: Namespace) -> int:
 
 def _clear(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step)
-    if read(step) is None:
+    if not enabled(step):
         raise CliError(f"{step.title!r} has no ticket")
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
     context.report({"step": step.id}, f"{step.title}: ticket cleared")

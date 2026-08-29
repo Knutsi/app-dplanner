@@ -4,7 +4,8 @@
 :class:`~dplanner.framework.inspector.InspectorExtension`'s whole contract is
 ``show_target(step_id | None)`` — one target vocabulary — so making the project form a peer of
 Estimate and Ticket would force every aspect editor to answer "what if this is a project?" and
-hide itself, which is precisely the conditional the section registry exists to delete. As a
+hide itself — a second target vocabulary smuggled into every editor. (A section can hide per
+*step*, via ``shown_for`` — that is one vocabulary answering "nothing to say here".) As a
 panel it is a peer of the *step panel* instead: two surfaces in one area, each deciding from
 the context whether it has anything to show, and neither aware of the other's contents.
 

@@ -43,6 +43,11 @@ class InspectorSection:
     # Tab glyph, colour-parameterized like everything in dplanner.theme.icons; the panel
     # paints it in the theme's secondary text colour and repaints on theme change.
     icon: Callable[[str], QIcon] | None = None
+    # Whether this section's tab is shown for a target; None means always. The host still
+    # builds every extension once — this governs visibility only, re-asked on every target
+    # change and on model changes to the shown target, so a toggled-off aspect's tab
+    # disappears rather than sitting empty.
+    shown_for: Callable[[str | None], bool] | None = None
 
 
 class InspectorSectionRegistry:

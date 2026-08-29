@@ -15,9 +15,15 @@ from dplanner.framework.inspector import InspectorSection, InspectorSectionRegis
 from dplanner.framework.text_binding import TextField
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_description.aspect import DATA_FORMAT, MODULE_ID, SPEC
-from dplanner.modules.step_description.section import DescriptionSection
+from dplanner.modules.step_description.section import (
+    DescriptionSection,
+    SeparateInstructionLink,
+)
 
-PLACEHOLDER = "What this step is. Markdown; images go in with `dplanner describe attach`."
+PLACEHOLDER = (
+    "What this step is — and, on an agent step, what the agent is briefed with."
+    " Markdown; images go in with `dplanner describe attach`."
+)
 
 
 @dataclass(frozen=True)
@@ -28,6 +34,9 @@ class StepDescriptionDeps:
     # The store's file areas — how the tab shows the images `describe attach` wrote.
     # None is a build without file storage.
     files: FilesFor | None = None
+    # The agent aspect through this module's own vocabulary, wired by the composition
+    # root — the "Separate agent instruction" checkbox. None is a build without agents.
+    agent_link: SeparateInstructionLink | None = None
 
 
 class StepDescriptionModule:
@@ -57,7 +66,12 @@ class StepDescriptionModule:
                 label=SPEC.label,
                 order=30,
                 factory=lambda: DescriptionSection(
-                    field_for, deps.undo, PLACEHOLDER, area_for_target
+                    field_for,
+                    deps.undo,
+                    PLACEHOLDER,
+                    area_for_target,
+                    agent_link=deps.agent_link,
+                    library=deps.library,
                 ),
             )
         )

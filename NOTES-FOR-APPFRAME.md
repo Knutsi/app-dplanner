@@ -748,6 +748,23 @@ unchanged — but the switch-shaped half of it was scaffolding for a flow that n
 exists. Upstream: the rebuild reasoning holds either way; whether a template keeps
 `switch_to` depends on whether its documents are cheap enough to share a process.
 
+### `InspectorSection` grew an optional `shown_for` visibility predicate
+
+**What.** `framework/inspector.py`'s `InspectorSection` gained
+`shown_for: Callable[[str | None], bool] | None = None`. `None` (the default) is the old
+behaviour — the tab is always there. The host still builds every extension once; the
+predicate governs only tab visibility, re-asked by DPlanner's step panel on every target
+change and on model writes to the shown target (`QTabBar.setTabVisible`, indices stable).
+
+**Why.** DPlanner made three aspects per-step toggleable (Release, Agent, Ticket), and a
+tab for an aspect the step does not carry taught nothing while burying the ones it does.
+The alternative — an extension reporting "nothing to say" through its own contract — would
+have forced every section to answer a question only toggleable ones have. Belongs
+upstream, in my view: it is one optional field and a small host loop, and it is the
+difference between "a section registry" and "a section registry every conditional surface
+has to work around". The trap worth documenting with it: the host must re-ask on *model*
+changes, not just selection changes, or a toggle only takes effect on reselect.
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class

@@ -11,7 +11,15 @@ from PySide6.QtWidgets import QFormLayout, QLineEdit
 from dplanner.domain.model import Library, Step
 from dplanner.framework.module_data_section import FORM_SPACING, PANEL_MARGIN, ModuleDataSection
 from dplanner.framework.undo import UndoService
-from dplanner.modules.step_ticket.aspect import FIELDS, MODULE_ID, Ticket, read, write
+from dplanner.modules.step_ticket.aspect import (
+    FIELDS,
+    MODULE_ID,
+    Ticket,
+    enabled,
+    enabled_entry,
+    read,
+    write,
+)
 
 PLACEHOLDERS = {
     "system": "jira, github, linear…",
@@ -41,4 +49,9 @@ class TicketSection(ModuleDataSection):
             edit.setText(getattr(ticket, field) if ticket else "")
 
     def entry(self, step: Step) -> dict[str, Any]:
-        return write(Ticket(**{f: self.edits[f].text().strip() for f in FIELDS}))
+        filled = write(Ticket(**{f: self.edits[f].text().strip() for f in FIELDS}))
+        if filled:
+            return filled
+        # Emptying every field must not toggle the aspect off under the user — the tab
+        # would vanish mid-edit. Only the Type toggle and `ticket clear` remove the entry.
+        return enabled_entry() if enabled(step) else {}

@@ -369,8 +369,9 @@ way, which is the evidence that the shape survives a second host and a third.)
 **What the panel is not.** The project's name and summary are not a section. An
 `InspectorExtension`'s whole contract is `show_target(step_id | None)` — one target vocabulary —
 and making the project form a peer of the aspects would force every aspect editor to answer
-"what if this is a project?" and hide itself, which is precisely the conditional the registry
-exists to delete. It is a peer of the *panel* instead: a second panel in the same area, with its
+"what if this is a project?" and hide itself — a second target vocabulary smuggled into every
+editor. (`shown_for` is not that: it hides a section per *step*, inside the one vocabulary.)
+It is a peer of the *panel* instead: a second panel in the same area, with its
 own answer to `show_context`. Both ask `Context.selected_entity("step")`, so "there is exactly
 one step in front of the user" has one definition rather than two that can drift apart.
 
@@ -809,12 +810,58 @@ never learned the vocabulary either — it renders a neutral `NodeAccent(muted, 
 the composition root translates "done" into muted and a release label into the badge.
 
 The *Type* submenu is the same idea one step further: one checkable toggle per type-ish
-aspect (Release today), each independent, because a Type radio group would reintroduce the
-exclusive type field this section rules out. Toggling Release on generates the next label
-from the project's existing ones (`next_release_label` in `step_release/aspect.py`, shared
-with `dplanner release set`); toggling off asks first, since the label is not kept — and
-the Release tab stays visible on every step precisely so a generated label has somewhere
-to be edited.
+aspect (Release, Agent, Ticket), each independent, because a Type radio group would
+reintroduce the exclusive type field this section rules out. Toggling Release on generates
+the next label from the project's existing ones (`next_release_label` in
+`step_release/aspect.py`, shared with `dplanner release set`); toggling any of them off
+asks first when data would be dropped, since it is not kept.
+
+**A tab follows its aspect.** An `InspectorSection` may carry a `shown_for(step_id)`
+predicate; the step panel re-asks it on every target change and on model writes to the
+shown step, and hides the tab (`QTabBar.setTabVisible` — indices stay stable, so the
+tab-to-page mapping never re-shuffles) when the answer is no. Release, Agent and Ticket
+answer with "does this step carry the aspect", so toggling one off removes its tab and
+toggling it on brings the tab back *with* whatever the toggle generated — which is the
+answer to the earlier worry that a generated release label needs somewhere to be edited:
+it has one from the moment it exists. This deliberately reverses an older decision that
+every tab is always visible; seven tabs on a step that is neither a release, an agent
+step nor tracked anywhere taught nothing and buried the four that mattered. Sections
+without a predicate (Estimate, Description, Handoff, GitHub) behave exactly as before,
+and the project panel's cards are exempt — the only card is the project's standing
+instruction, a project-level fact no step toggle should touch.
+
+## The description is the instructions
+
+A step used to carry two prose fields — a description and an agent instruction — and the
+distinction ("what it is" versus "how to do it") read well in a docstring and nowhere
+else. In practice the two said the same thing twice, or an agent driving the CLI set one
+when it meant the other, and a step with a rich description and no instruction could not
+be briefed at all. The fix deleted the duplication instead of documenting it harder:
+**an agent step is briefed with its own description.** Marking a step for agent execution
+is the `step_agent_instruction` aspect's `module_data` entry (Step ▸ Type ▸ Agent,
+`dplanner agent on`, `step add --agent`); the briefing's `## Instructions` block is the
+description body and its images, and the separate `## Description` context section is
+omitted so the text appears exactly once.
+
+The *separate instruction* survives as the opt-out, not the default: the "Separate agent
+instruction" checkbox in the Description tab (a `SeparateInstructionLink` of typed
+callbacks — the description module never learns the agent module's name), `dplanner agent
+set`, or `step add --agent-file`. Writing separate text implies both the mark and the
+opt-out, which is what keeps plans authored before the mark existed working with no
+migration. The opt-out itself is *stored* (`{"separate": true}`) rather than derived from
+text-presence, because "opted in but not yet typed" is a real state that must survive a
+selection change; the encodings cannot disagree because turning the aspect off clears
+both. With a separate instruction present, the description returns to its own
+`## Description` section and the separate text takes `## Instructions`.
+
+The seam lives where the other cross-module prompt decisions do: `Briefing` carries an
+`instruction(library, step, files) → PromptPart` member, defaulted module-locally to the
+step's own text, overridden by the composition root's `_briefing_instruction` — the one
+file allowed to read the description on the agent module's behalf. Run Agent, the Agent
+tab's Prompt page and `dplanner agent prompt` all assemble through it, so no surface can
+brief a step differently. One consequence worth naming for existing plans: a described,
+uninstructed step that used to render `## Description` now renders that text as
+`## Instructions` — the same words, under the heading the executing agent actually obeys.
 
 ## Pass-forward is derived at read time
 
@@ -843,13 +890,15 @@ CLI instead (`status set`, `handoff set`), which the two-writers machinery alrea
 
 The briefing opens with the **project's standing instruction** — the same module's prose on
 the project node, edited in the project panel's Agent card and in the Agent tab's Project
-part (two bindings over one field, one undo stack) — ahead of the step's own instruction and
-the inherited context.
+part (two bindings over one field, one undo stack) — ahead of the step's `## Instructions`
+(its description, unless a separate instruction exists — see *The description is the
+instructions*) and the inherited context.
 
 The briefing is deliberately **self-contained**: between the standing instruction and the
-step's own sit the step's facts — its description (with attached figures), the requirements
-it implements (titles *and* quotes, so the agent reads the obligation rather than chasing an
-id), and the branch or PR the work lands on. The agent module renders these as opaque
+step's own sit the step's facts — its description as a section of its own only when a
+separate instruction displaced it, the requirements it implements (titles *and* quotes, so
+the agent reads the obligation rather than chasing an id), and the branch or PR the work
+lands on. The agent module renders these as opaque
 blocks; the composition root words them, exactly as it words the preamble and epilogue,
 because each names another module's vocabulary. Two block kinds, two framings: *parts* are
 context handed forward from earlier steps (`### From "…"`), *sections* are facts about this

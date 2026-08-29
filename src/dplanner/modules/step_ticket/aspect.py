@@ -28,11 +28,22 @@ class Ticket:
 
 
 def read(step: Step) -> Ticket | None:
+    """The ticket itself, or ``None`` — which an enabled-but-unfilled aspect also answers."""
     entry = step.module_data.get(MODULE_ID)
     if not entry:
         return None
     ticket = Ticket(**{field: str(entry.get(field, "")) for field in FIELDS})
     return None if ticket.is_empty() else ticket
+
+
+def enabled(step: Step) -> bool:
+    """Whether the step carries the aspect at all — presence of the entry, filled or not."""
+    return bool(step.module_data.get(MODULE_ID))
+
+
+def enabled_entry() -> dict[str, Any]:
+    """The marker for "tracked, ticket not yet filled in" — what the Type toggle writes."""
+    return stamped({"on": True}, DATA_FORMAT.version)
 
 
 def write(ticket: Ticket | None) -> dict[str, Any]:

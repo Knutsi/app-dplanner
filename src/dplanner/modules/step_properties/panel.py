@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.domain.commands import SetFieldCommand
-from dplanner.domain.model import Library, NodeId, StepId
+from dplanner.domain.model import Library, NodeId, StepId, TextEdit
 from dplanner.framework.context import Context
 from dplanner.framework.inspector import InspectorExtension, InspectorSection
 from dplanner.framework.theme_service import ThemeService
@@ -62,6 +62,7 @@ class StepPanel(QWidget):
         self._product = library
         self._undo = undo
         self._step_id: StepId | None = None
+        self._sections = list(sections)
 
         self.title_edit = QLineEdit(self)
         self.title_edit.setObjectName("InspectorTitle")
@@ -109,6 +110,10 @@ class StepPanel(QWidget):
             library.field_changed.connect(self._on_field),
             library.edges_changed.connect(self._on_edges),
             library.structure_changed.connect(self._on_structure),
+            # A tab follows its aspect: toggles arrive as module data, and the agent
+            # aspect is also implied by its prose, so both writes re-ask shown_for.
+            library.module_data_changed.connect(self._on_module_data),
+            library.text_edited.connect(self._on_text),
         ]
         if theme is not None:
             # A panel is shorter-lived than the theme service; detach in dispose().
@@ -141,6 +146,7 @@ class StepPanel(QWidget):
         self._step_id = step_id
         self.title_edit.setText(self._product.step(step_id).title)
         self._refresh_links()
+        self._refresh_tab_visibility()
         self._show_in_extensions(step_id)
 
     def current_step_id(self) -> StepId | None:
@@ -180,6 +186,32 @@ class StepPanel(QWidget):
     def _on_edges(self, step_id: StepId, _origin: object) -> None:
         if self._step_id is not None:
             self._refresh_links()
+
+    def _on_module_data(self, node_id: NodeId, _module_id: str, _origin: object) -> None:
+        if node_id == self._step_id:
+            self._refresh_tab_visibility()
+
+    def _on_text(self, edit: TextEdit, _origin: object) -> None:
+        if edit.node_id == self._step_id:
+            self._refresh_tab_visibility()
+
+    def _refresh_tab_visibility(self) -> None:
+        """Show each tab only where its section has something to say about this step.
+
+        ``setTabVisible`` keeps indices stable, so the 1:1 tab-to-page mapping survives;
+        when the current tab goes off screen the first visible one takes over rather than
+        leaving the bar pointing at nothing.
+        """
+        if self._step_id is None:
+            return
+        for index, section in enumerate(self._sections):
+            shown = section.shown_for is None or section.shown_for(self._step_id)
+            self.tab_bar.setTabVisible(index, shown)
+        if not self.tab_bar.isTabVisible(self.tab_bar.currentIndex()):
+            for index in range(self.tab_bar.count()):
+                if self.tab_bar.isTabVisible(index):
+                    self.tab_bar.setCurrentIndex(index)
+                    break
 
     def _on_structure(self, _parent_id: NodeId, _origin: object = None) -> None:
         if self._step_id is None:

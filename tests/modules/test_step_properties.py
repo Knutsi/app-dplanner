@@ -46,11 +46,57 @@ def test_one_step_selected_is_something_to_edit(services, project, panel):
     assert panel.current_step_id() is None
 
 
+def visible_labels(panel):
+    return [
+        panel.tab_bar.tabText(i)
+        for i in range(panel.tab_bar.count())
+        if panel.tab_bar.isTabVisible(i)
+    ]
+
+
 def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
+    """A tab follows its aspect: a plain step shows only the always-on sections, and the
+    toggleable ones (Ticket, Agent, Release) stay off screen until the step carries them."""
     select(services, project.steps[0].id)
-    labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
+    all_labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
     expected = ["Estimate", "Ticket", "Description", "Agent", "Release", "Handoff", "GitHub"]
-    assert labels == expected
+    assert all_labels == expected
+    assert visible_labels(panel) == ["Estimate", "Description", "Handoff", "GitHub"]
+
+
+def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
+    """Toggling an aspect on brings its tab in without reselecting; toggling off removes
+    it and the current tab falls back to the first visible one."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.step_agent_instruction.aspect import (
+        MODULE_ID as AGENT_ID,
+    )
+    from dplanner.modules.step_agent_instruction.aspect import (
+        write_state,
+    )
+    from dplanner.modules.step_release.aspect import MODULE_ID as RELEASE_ID
+    from dplanner.modules.step_release.aspect import write as release_write
+    from dplanner.modules.step_ticket.aspect import MODULE_ID as TICKET_ID
+    from dplanner.modules.step_ticket.aspect import enabled_entry
+
+    step = project.steps[0]
+    select(services, step.id)
+    services.undo.push(SetModuleDataCommand(step.id, RELEASE_ID, release_write("v1")))
+    services.undo.push(SetModuleDataCommand(step.id, AGENT_ID, write_state(True)))
+    services.undo.push(SetModuleDataCommand(step.id, TICKET_ID, enabled_entry()))
+    assert visible_labels(panel) == [
+        "Estimate", "Ticket", "Description", "Agent", "Release", "Handoff", "GitHub",
+    ]
+
+    # Land on the Release tab, then clear the aspect: the tab leaves and the current
+    # tab is a visible one again.
+    release_index = next(
+        i for i in range(panel.tab_bar.count()) if panel.tab_bar.tabText(i) == "Release"
+    )
+    panel.tab_bar.setCurrentIndex(release_index)
+    services.undo.push(SetModuleDataCommand(step.id, RELEASE_ID, {}))
+    assert "Release" not in visible_labels(panel)
+    assert panel.tab_bar.isTabVisible(panel.tab_bar.currentIndex())
 
 
 def test_the_title_is_shown_and_edited_undoably(services, project, panel):

@@ -29,15 +29,28 @@ def test_a_bare_step_is_reported_on_every_authoring_axis(cli):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "Deploy")
     report = data(cli("project", "lint", "Discovery", "--json", expect=1))
-    assert checks_in(report) == ["agent.missing", "description.missing", "estimate.missing"]
-    assert report["count"] == 3
+    assert checks_in(report) == ["description.missing", "estimate.missing"]
+    assert report["count"] == 2
     # Every finding says what to type next.
     assert all("dplanner " in row["message"] for row in report["findings"])
 
 
+def test_an_agent_step_with_nothing_to_brief_it_is_reported(cli, cli_stdin):
+    """A plain step owes no briefing; an agent step with no description, no separate
+    instruction and no standing one cannot be launched, and lint says so."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy", "--agent")
+    report = data(cli("project", "lint", "Discovery", "--json", expect=1))
+    assert "agent.missing" in checks_in(report)
+
+    cli_stdin("describe", "set", "Deploy", "--file", "-", stdin="The release step.")
+    report = data(cli("project", "lint", "Discovery", "--json", expect=1))
+    assert "agent.missing" not in checks_in(report)
+
+
 def test_a_standing_instruction_silences_the_agent_check(cli, cli_stdin):
     cli("project", "create", "Discovery")
-    cli("step", "add", "Discovery", "Deploy")
+    cli("step", "add", "Discovery", "Deploy", "--agent")
     cli_stdin("agent", "set", "--for-project", "Discovery", "--file", "-", stdin="House rules.")
     report = data(cli("project", "lint", "Discovery", "--json", expect=1))
     assert "agent.missing" not in checks_in(report)
@@ -136,4 +149,4 @@ def test_lint_without_a_project_covers_them_all(cli):
     report = data(cli("project", "lint", "--json", expect=1))
     projects = {row["project"] for row in report["findings"]}
     assert len(projects) == 1  # only Two has steps to complain about
-    assert report["count"] == 3
+    assert report["count"] == 2

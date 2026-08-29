@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 from dplanner.domain.model import Library, Step
 from dplanner.domain.store import FilesFor
+from dplanner.modules.step_agent_instruction.aspect import asset_paths, read
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,13 @@ def _no_parts(_product: Library, _step: Step, _files: FilesFor) -> Sequence[Prom
     return ()
 
 
+def _own_instruction(_product: Library, step: Step, files: FilesFor) -> PromptPart:
+    """The module's own answer: the step's separate instruction and its images. The
+    composition root swaps in the description when there is no separate one — a decision
+    that crosses modules and so cannot be made here."""
+    return PromptPart(heading="Instructions", body=read(step), files=asset_paths(files, step.id))
+
+
 @dataclass(frozen=True)
 class Briefing:
     """The cross-module half of the prompt, assembled once by the composition root.
@@ -42,15 +50,18 @@ class Briefing:
     callable shapes, with two adapter closures in the root bridging them.
 
     ``parts`` is handed-forward context (a handoff, a global note); ``sections`` the
-    step's own facts (description, requirements, the PR); ``epilogue`` closes the prompt
-    with the report-back protocol and ``preamble`` opens it. The default is the honest
-    empty briefing of a build where no other module contributes.
+    step's own facts (description, requirements, the PR); ``instruction`` the block the
+    ``## Instructions`` heading carries — the step's separate instruction when one exists,
+    the description otherwise, decided by the root; ``epilogue`` closes the prompt with
+    the report-back protocol and ``preamble`` opens it. The default is the honest empty
+    briefing of a build where no other module contributes.
     """
 
     parts: PartsFor = _no_parts
     sections: PartsFor = _no_parts
     epilogue: Callable[[Step], str] = field(default=lambda _step: "")
     preamble: str = ""
+    instruction: Callable[[Library, Step, FilesFor], PromptPart] = _own_instruction
 
 
 EMPTY_BRIEFING = Briefing()
