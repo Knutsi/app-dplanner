@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dplanner.framework.markdown_highlight import MarkdownHighlighter
 from dplanner.framework.text_binding import TextBinding, TextField
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import centered_column, make_text_well, space_lines
@@ -52,6 +53,7 @@ class ExpandedTextDialog(QDialog):
         self.setWindowTitle(title)
 
         self.edit = QPlainTextEdit(self)
+        self._highlighter = MarkdownHighlighter(self.edit.document(), self.edit)
         self.edit.setObjectName("InspectorNotes")
         self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
         self.edit.setPlaceholderText(placeholder)

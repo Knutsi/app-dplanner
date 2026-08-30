@@ -147,3 +147,91 @@ class TestRowDelegate(QStyledItemDelegate):
             elided = metrics.elidedText(text, Qt.TextElideMode.ElideRight, rect.width())
             painter.drawText(rect, Qt.AlignmentFlag.AlignLeft, elided)
         painter.restore()
+
+
+# What a test list row carries: which test it is, how it last did, whether it is retired.
+TEST_ID_ROLE = int(Qt.ItemDataRole.UserRole) + 92
+STATUS_ROLE = int(Qt.ItemDataRole.UserRole) + 93
+ARCHIVED_ROLE = int(Qt.ItemDataRole.UserRole) + 94
+
+LIST_ROW_HEIGHT = 26
+ID_COLUMN_WIDTH = 44  # "T100" at the panel's font, plus its gap.
+
+
+class TestListDelegate(QStyledItemDelegate):
+    """One line per test in the step panel: its id, its name, how it last did.
+
+    Three parts on one line rather than the table's two stacked ones, because this list is
+    a picker sitting above the editor — the body is right there, so a preview of it here
+    would only repeat what the pane below already shows.
+    """
+
+    def sizeHint(  # noqa: N802 - Qt override
+        self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
+    ) -> QSize:
+        hint = super().sizeHint(option, index)
+        return QSize(hint.width(), max(hint.height(), LIST_ROW_HEIGHT))
+
+    def initStyleOption(  # noqa: N802 - Qt override
+        self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
+    ) -> None:
+        super().initStyleOption(option, index)
+        option.text = ""  # Every part of this row is painted below.
+
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> None:
+        super().paint(painter, option, index)  # Background, selection, focus ring.
+
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        role = QPalette.ColorRole.HighlightedText if selected else QPalette.ColorRole.Text
+        ink = option.palette.color(role)
+        faded = QColor(ink)
+        faded.setAlpha(SECONDARY_ALPHA)
+
+        status = str(index.data(STATUS_ROLE) or "pending")
+        colour = tint(status)
+        label = word(status)
+        metrics = option.fontMetrics
+        body = option.rect.adjusted(ROW_PADDING_X, 0, -ROW_PADDING_X, 0)
+        status_width = metrics.horizontalAdvance(label) + ROW_PADDING_X
+
+        painter.save()
+        painter.setPen(faded)
+        painter.drawText(
+            QRect(body.left(), body.top(), ID_COLUMN_WIDTH, body.height()),
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+            str(index.data(TEST_ID_ROLE) or ""),
+        )
+
+        title = QRect(
+            body.left() + ID_COLUMN_WIDTH,
+            body.top(),
+            body.width() - ID_COLUMN_WIDTH - status_width,
+            body.height(),
+        )
+        # An archived test stays legible but reads as retired, the way a done step is muted.
+        painter.setPen(faded if index.data(ARCHIVED_ROLE) else ink)
+        painter.drawText(
+            title,
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+            metrics.elidedText(
+                str(index.data(Qt.ItemDataRole.DisplayRole) or ""),
+                Qt.TextElideMode.ElideRight,
+                title.width(),
+            ),
+        )
+
+        # The status keeps its own colour even on the selected row: it is the one thing
+        # here that *means* something rather than naming something, and the selection is a
+        # quiet ground rather than an accent fill, so red still reads on it.
+        painter.setPen(colour if colour is not None else faded)
+        painter.drawText(
+            QRect(title.right(), body.top(), status_width, body.height()),
+            int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
+            label,
+        )
+        painter.restore()

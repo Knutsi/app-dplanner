@@ -80,7 +80,7 @@ dplanner test add "Draft the model" "Rejects an empty query" --text "1. POST /q 
 2. 400, and no row is written."
 dplanner check set "Ship the beta"       # gathers every test behind it
 dplanner test-run start --scope "Ship the beta" --label "Pre-release 3"
-dplanner test-run mark t1 failed --note "still 500s"
+dplanner test-run mark T100 failed --note "still 500s"
 dplanner order show search               # every step, numbered, in dependency order
 dplanner order show search --ready       # just what can be started right now
 dplanner schedule start search --date 2026-09-01

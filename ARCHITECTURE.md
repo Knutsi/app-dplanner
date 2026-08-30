@@ -1173,17 +1173,26 @@ the diff — and if that ever stops being true, storing the body as an array of 
 format-2 migration away. Images are the exception and go where a description's images go:
 the step's file area, referenced as `![](assets/…)`.
 
-**Ids are minted per project, not per step.** `t1, t2, …` across the whole project — `spec`'s
-`next_id` is the precedent. That is what lets a run's results be a flat map, lets a person
-say "t7 failed" out loud, and lets `dplanner test-run mark t7 failed` name a test without
-naming its step. Renaming a test therefore never detaches its history, which keying on the
-title would have done.
+**Ids are minted per project, not per step, and are meant to be read.** `T100, T101, …`
+across the whole project (runs are `R100, R101, …`, so the two never look like one
+vocabulary spelled two ways). Three digits from the start, so every id in a project is the
+same width and nobody mistakes one for a count. That is what lets a run's results be a flat
+map, lets a person say "T107 failed" out loud, and lets `dplanner test-run mark T107 failed`
+name a test without naming its step. Renaming a test therefore never detaches its history,
+which keying on the title would have done.
 
-**The editor is a card per test on a lane, and the body grows with its content.** No inner
-scroller: `DESIGN.md` forbids one in a card, and a body that grows to a cap and then offers
-the expand button is also the right answer on a narrow panel. The expand is the sanctioned
-one — a second `TextBinding` over a `TextField` implemented against the record
-(`testing/section.py`'s `TestBodyField`), never text copied into a dialog and back.
+**The editor is master-detail, and the split follows the width.** A stack of equal cards
+was the first attempt and it stops working at the third test: every body is cramped and
+none is properly readable. So the tab is a line per test (id, name, how it last did) and an
+editor for the one selected — side by side where there is room (the step dialog, a wide
+panel), stacked in the 360 px dock, switching automatically on resize. Two columns is what
+makes a step with a dozen tests usable: a tall list beside a tall editor, instead of either
+starving the other. The list sizes itself to its rows until the user drags the splitter,
+and a drag is respected until the orientation changes under it. The body editor is a plain
+expanding text well with the framework's markdown highlighter over it — structure visible,
+bytes untouched — and its expand is the sanctioned one: a second `TextBinding` over a
+`TextField` implemented against the record (`testing/section.py`'s `TestBodyField`), never
+text copied into a dialog and back.
 
 ## A check is a scope over the graph, and so is a release
 

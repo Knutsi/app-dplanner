@@ -33,7 +33,11 @@ from dplanner.domain.ordering import upstream
 MODULE_ID = "testing"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
-TEST_ID_PREFIX = "t"
+# Ids people say out loud and write in a bug report: T100, T101, … Three digits from
+# the start so every id in a project is the same width, and high enough that nobody
+# mistakes one for a count of anything.
+TEST_ID_PREFIX = "T"
+FIRST_TEST_NUMBER = 100
 
 
 @dataclass(frozen=True)
@@ -123,25 +127,28 @@ def project_tests(project: Project, *, archived: bool = False) -> list[tuple[Ste
     ]
 
 
-def next_numbered(existing: Iterable[str], prefix: str) -> str:
-    """The next free ``<prefix>N`` — ids a person can say out loud and an agent can guess.
+def next_numbered(existing: Iterable[str], prefix: str, start: int) -> str:
+    """The next free ``<prefix>N``, counting from ``start`` when there is nothing yet.
 
-    Tests and runs both mint ids this way, and so does ``spec`` for its requirements; that
-    third copy lives in a module this one may not import, and is left alone rather than
-    dragged into a feature change.
+    Ids a person can say out loud and an agent can guess the shape of. Tests and runs both
+    mint ids this way, and so does ``spec`` for its requirements; that third copy lives in a
+    module this one may not import, and is left alone rather than dragged into a feature
+    change.
     """
     numbers = [
         int(entry[len(prefix) :])
         for entry in existing
         if entry.startswith(prefix) and entry[len(prefix) :].isdigit()
     ]
-    return f"{prefix}{max(numbers, default=0) + 1}"
+    return f"{prefix}{max(numbers) + 1 if numbers else start}"
 
 
 def next_test_id(project: Project) -> str:
     """The next free ``tN`` across the whole project, archived tests included."""
     return next_numbered(
-        (test.id for _step, test in project_tests(project, archived=True)), TEST_ID_PREFIX
+        (test.id for _step, test in project_tests(project, archived=True)),
+        TEST_ID_PREFIX,
+        FIRST_TEST_NUMBER,
     )
 
 

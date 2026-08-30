@@ -188,8 +188,8 @@ Two behaviours follow, and both matter once a project is shared:
 step and `{"start": "2026-09-01"}` beside the project those steps belong to — one module id,
 one `ModuleDataFormat`, two shapes. `testing` is the third instance and the reason to
 mention it twice: a step's tests beside the step, and the project's **test runs** beside the
-project — `{"runs": [{"id": "r1", "label": "…", "opened": …, "tests": [ids], "results":
-{"t1": {"status": "failed"}}}]}`. A run stores the ids it was opened over, so a closed run
+project — `{"runs": [{"id": "R100", "label": "…", "opened": …, "tests": [ids], "results":
+{"T100": {"status": "failed"}}}]}`. A run stores the ids it was opened over, so a closed run
 cannot change meaning when the graph does, and a **missing result reads as pending** — the
 absence rule again, so a run over two hundred tests writes two hundred ids and no statuses.
 `project_editor` is another instance: a position
@@ -202,15 +202,16 @@ over ids, so nothing in the model has to know. The cost is on whoever writes the
 migration for that format: it sees both shapes and owes both a thought.
 
 **A record list is the shape for a fact a step has several of.** `testing` writes
-`{"tests": [{"id": "t1", "title": "…", "body": "…"}]}` beside a step: a *test* belongs to
+`{"tests": [{"id": "T100", "title": "…", "body": "…"}]}` beside a step: a *test* belongs to
 exactly one step, a step carries several, and each has its own result in a run. The body is
 markdown **inside the record** rather than in `modules/testing.md`, because a node holds
 exactly one prose document and this is N of them — `spec`'s requirement records are the same
 shape for the same reason. The trade is explicit: a body edit diffs as one changed line
 rather than line by line, which is bearable while test bodies are a few lines each. Images
 are the exception and go where a description's do, in the step's file area. Ids are minted
-per *project* (`t1, t2, …`, `spec`'s `next_id`), so a run's results are a flat map and
-renaming a test never detaches its history.
+per *project* and meant to be read — `T100, T101, …`, and `R100, R101, …` for runs — so a
+run's results are a flat map, an id is quotable in a bug report, and renaming a test never
+detaches its history.
 
 **An aspect toggled on with nothing to say yet is a marker entry.** A step's "on/off" for
 a toggleable aspect is the presence of its `module_data` entry, and two aspects need a

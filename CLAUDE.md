@@ -361,8 +361,11 @@ root, stop and look for the registry or capability you have not found yet.
   node** — it is a record in the step's `testing` aspect with its own id, title, markdown
   body and per-run result, so forty steps with three tests each do not become a hundred and
   sixty nodes. The body is a **string in the record**, not a `.md`: a node holds one prose
-  document and a step holds N tests. Ids are minted **per project** (`t1, t2, …`), which is
-  what lets a run's results be flat and a rename never detach a test's history.
+  document and a step holds N tests. Ids are minted **per project** and meant to be read
+  (`T100, T101, …`; runs are `R100, …`), which is what lets a run's results be flat, an id be
+  quotable, and a rename never detach a test's history. The tab is **master-detail** — a list of tests
+  and an editor for the selected one, side by side where the width allows and stacked in the
+  narrow dock — because a stack of equal cards stops working at the third test.
   `ARCHITECTURE.md`'s *A test belongs to a step, and a step carries several* has the
   reasoning, including the diff trade the string body accepts.
 - **A check is a scope over the graph, and so is a release.** What a check covers is

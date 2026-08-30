@@ -40,7 +40,7 @@ _STATUS_GLYPH = {"ok": "✓", "failed": "✗", "skipped": "-", "pending": " "}
 
 def test_arg(parser: ArgumentParser) -> None:
     """The positional a test verb takes, resolved by :func:`find_test`."""
-    parser.add_argument("test", help="test id (t3), or part of its title")
+    parser.add_argument("test", help="test id (T100), or part of its title")
 
 
 def find_test(
@@ -61,7 +61,7 @@ def find_test(
 def _matches_a_test(project: Project, needle: str) -> bool:
     lowered = needle.lower()
     return any(
-        test.id == needle or lowered in test.title.lower()
+        test.id.lower() == lowered or lowered in test.title.lower()
         for _step, test in project_tests(project, archived=True)
     )
 
@@ -72,7 +72,7 @@ def _find_test_in(projects: Sequence[Project], needle: str) -> tuple[Project, St
         for project in projects
         for step, test in project_tests(project, archived=True)
     ]
-    exact = [found for found in pairs if found[2].id == needle]
+    exact = [found for found in pairs if found[2].id.lower() == needle.lower()]
     if exact:
         return exact[0]
     lowered = needle.lower()
@@ -120,8 +120,8 @@ def commands() -> list[CliCommand]:
             configure=_configure_set,
             run=_set,
             examples=(
-                "dplanner test set t3 --file rewritten.md",
-                "dplanner test set t3 --title 'No flicker on data update'",
+                "dplanner test set T100 --file rewritten.md",
+                "dplanner test set T100 --title 'No flicker on data update'",
             ),
         ),
         CliCommand(
@@ -129,7 +129,7 @@ def commands() -> list[CliCommand]:
             summary="Print a test, and how it last did.",
             configure=test_arg,
             run=_show,
-            examples=("dplanner test show t3", "dplanner test show t3 --json"),
+            examples=("dplanner test show T100", "dplanner test show T100 --json"),
         ),
         CliCommand(
             path=("test", "list"),
@@ -147,21 +147,21 @@ def commands() -> list[CliCommand]:
             summary="Take a test off the roster; it stays on the step and keeps its history.",
             configure=test_arg,
             run=_archive,
-            examples=("dplanner test archive t3",),
+            examples=("dplanner test archive T100",),
         ),
         CliCommand(
             path=("test", "unarchive"),
             summary="Put an archived test back on the roster.",
             configure=test_arg,
             run=_unarchive,
-            examples=("dplanner test unarchive t3",),
+            examples=("dplanner test unarchive T100",),
         ),
         CliCommand(
             path=("test", "remove"),
             summary="Delete a test from its step. Its results stay in the runs that recorded them.",
             configure=test_arg,
             run=_remove,
-            examples=("dplanner test remove t3",),
+            examples=("dplanner test remove T100",),
         ),
         *step_asset_commands(
             "test",
@@ -188,8 +188,8 @@ def commands() -> list[CliCommand]:
             configure=_configure_mark,
             run=_mark,
             examples=(
-                "dplanner test-run mark t3 ok",
-                "dplanner test-run mark t3 failed --note 'still flickers on data update'",
+                "dplanner test-run mark T100 ok",
+                "dplanner test-run mark T100 failed --note 'still flickers on data update'",
             ),
         ),
         CliCommand(
@@ -197,7 +197,7 @@ def commands() -> list[CliCommand]:
             summary="A run and every test in it. Defaults to the open one.",
             configure=_configure_run_arg,
             run=_run_show,
-            examples=("dplanner test-run show", "dplanner test-run show --run r2 --json"),
+            examples=("dplanner test-run show", "dplanner test-run show --run R101 --json"),
         ),
         CliCommand(
             path=("test-run", "list"),

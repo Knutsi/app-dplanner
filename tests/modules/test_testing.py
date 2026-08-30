@@ -36,8 +36,8 @@ def test_adding_a_test_mints_a_project_unique_id(cli):
         cli("test", "add", "Fix list flicker", "No flicker", "--text", "1. Look", "--json")
     )
     second = data(cli("test", "add", "Pre-release check", "Rotation", "--json"))
-    assert first["id"] == "t1"
-    assert second["id"] == "t2"  # Across steps, not per step: a run's results are flat.
+    assert first["id"] == "T100"
+    assert second["id"] == "T101"  # Across steps, not per step: a run's results are flat.
 
 
 def test_a_test_lands_in_the_steps_own_file(cli, workspace):
@@ -47,12 +47,12 @@ def test_a_test_lands_in_the_steps_own_file(cli, workspace):
             workspace / "widget" / "steps" / "fix-list-flicker" / "modules" / "testing.json"
         ).read_text()
     )
-    assert entry["tests"] == [{"id": "t1", "title": "No flicker", "body": "1. Look\n2. Still"}]
+    assert entry["tests"] == [{"id": "T100", "title": "No flicker", "body": "1. Look\n2. Still"}]
 
 
 def test_removing_the_last_test_leaves_no_file(cli, workspace):
     cli("test", "add", "Fix list flicker", "No flicker")
-    cli("test", "remove", "t1")
+    cli("test", "remove", "T100")
     assert not (
         workspace / "widget" / "steps" / "fix-list-flicker" / "modules" / "testing.json"
     ).exists()
@@ -60,7 +60,7 @@ def test_removing_the_last_test_leaves_no_file(cli, workspace):
 
 def test_a_test_is_found_by_id_or_by_part_of_its_title(cli):
     cli("test", "add", "Fix list flicker", "No flicker on render")
-    assert "No flicker" in cli("test", "show", "t1")
+    assert "No flicker" in cli("test", "show", "T100")
     assert "No flicker" in cli("test", "show", "flicker on")
 
 
@@ -73,13 +73,13 @@ def test_an_ambiguous_name_is_refused_rather_than_guessed(cli):
 
 def test_archiving_is_idempotent_so_a_batch_survives(cli):
     cli("test", "add", "Fix list flicker", "No flicker")
-    assert "archived" in cli("test", "archive", "t1")
-    assert "already archived" in cli("test", "archive", "t1")
+    assert "archived" in cli("test", "archive", "T100")
+    assert "already archived" in cli("test", "archive", "T100")
 
 
 def test_an_archived_test_is_out_of_the_roster_until_asked_for(cli):
     cli("test", "add", "Fix list flicker", "No flicker")
-    cli("test", "archive", "t1")
+    cli("test", "archive", "T100")
     assert data(cli("test", "list", "widget", "--json"))["tests"] == []
     assert len(data(cli("test", "list", "widget", "--archived", "--json"))["tests"]) == 1
 
@@ -89,7 +89,7 @@ def test_a_check_gathers_the_tests_behind_it(cli):
     cli("test", "add", "Pre-release check", "Its own test")
     cli("check", "set", "Pre-release check")
     found = data(cli("check", "show", "Pre-release check", "--json"))
-    assert [row["id"] for row in found["tests"]] == ["t1", "t2"]
+    assert [row["id"] for row in found["tests"]] == ["T100", "T101"]
 
 
 def test_a_check_is_a_marker_and_clearing_leaves_no_file(cli, workspace):
@@ -109,7 +109,7 @@ def test_a_run_freezes_its_scope_and_starts_everything_unrecorded(cli):
             "test-run", "start", "widget", "--scope", "Pre-release check", "--label", "P3", "--json"
         )
     )
-    assert started["tests"] == ["t1", "t2"]
+    assert started["tests"] == ["T100", "T101"]
     shown = data(cli("test-run", "show", "widget", "--json"))
     assert shown["counts"] == {"pending": 2, "ok": 0, "failed": 0, "skipped": 0}
 
@@ -117,16 +117,16 @@ def test_a_run_freezes_its_scope_and_starts_everything_unrecorded(cli):
 def test_marking_records_a_result_and_a_note(cli, workspace):
     cli("test", "add", "Fix list flicker", "No flicker")
     cli("test-run", "start", "widget", "--label", "P3")
-    cli("test-run", "mark", "t1", "failed", "--note", "still flickers")
+    cli("test-run", "mark", "T100", "failed", "--note", "still flickers")
     entry = json.loads((workspace / "widget" / "modules" / "testing.json").read_text())
-    assert entry["runs"][0]["results"] == {"t1": {"status": "failed", "note": "still flickers"}}
+    assert entry["runs"][0]["results"] == {"T100": {"status": "failed", "note": "still flickers"}}
 
 
 def test_marking_pending_leaves_no_entry_behind(cli, workspace):
     cli("test", "add", "Fix list flicker", "No flicker")
     cli("test-run", "start", "widget")
-    cli("test-run", "mark", "t1", "ok")
-    cli("test-run", "mark", "t1", "pending")
+    cli("test-run", "mark", "T100", "ok")
+    cli("test-run", "mark", "T100", "pending")
     entry = json.loads((workspace / "widget" / "modules" / "testing.json").read_text())
     assert "results" not in entry["runs"][0]
 
@@ -134,7 +134,7 @@ def test_marking_pending_leaves_no_entry_behind(cli, workspace):
 def test_marking_needs_an_open_run_and_says_so(cli):
     cli("test", "add", "Fix list flicker", "No flicker")
     with pytest.raises(AssertionError, match="no test run is open"):
-        cli("test-run", "mark", "t1", "ok")
+        cli("test-run", "mark", "T100", "ok")
 
 
 def test_a_test_outside_the_open_run_is_refused(cli):
@@ -142,7 +142,7 @@ def test_a_test_outside_the_open_run_is_refused(cli):
     cli("test-run", "start", "widget")
     cli("test", "add", "Pre-release check", "Added afterwards")
     with pytest.raises(AssertionError, match="not in run"):
-        cli("test-run", "mark", "t2", "ok")
+        cli("test-run", "mark", "T101", "ok")
 
 
 def test_starting_a_run_closes_the_one_before_it(cli):
@@ -157,7 +157,7 @@ def test_closing_an_already_closed_run_succeeds(cli):
     cli("test", "add", "Fix list flicker", "No flicker")
     cli("test-run", "start", "widget")
     cli("test-run", "close", "widget")
-    assert "already closed" in cli("test-run", "close", "widget", "--run", "r1")
+    assert "already closed" in cli("test-run", "close", "widget", "--run", "R100")
 
 
 def test_a_run_over_an_empty_scope_is_refused(cli):
@@ -168,19 +168,19 @@ def test_a_run_over_an_empty_scope_is_refused(cli):
 def test_show_reports_the_latest_result_and_where_it_came_from(cli):
     cli("test", "add", "Fix list flicker", "No flicker")
     cli("test-run", "start", "widget", "--label", "P3")
-    cli("test-run", "mark", "t1", "failed", "--note", "still flickers")
-    shown = data(cli("test", "show", "t1", "--json"))
+    cli("test-run", "mark", "T100", "failed", "--note", "still flickers")
+    shown = data(cli("test", "show", "T100", "--json"))
     assert shown["latest"] == {
         "status": "failed",
         "note": "still flickers",
-        "run": "r1",
+        "run": "R100",
         "run_label": "P3",
     }
 
 
 def test_step_add_can_author_the_first_test(cli):
     added = cli("step", "add", "widget", "Empty state", "--test", "Says nothing here yet")
-    assert "test: t1" in added
+    assert "test: T100" in added
 
 
 def test_lint_names_the_verb_that_closes_each_finding(cli):
@@ -190,7 +190,7 @@ def test_lint_names_the_verb_that_closes_each_finding(cli):
     cli("check", "set", "Lonely check")
     findings = data(cli("project", "lint", "--json", expect=1))["findings"]
     by_check = {row["check"]: row["message"] for row in findings}
-    assert "dplanner test set t1" in by_check["test.empty"]
+    assert "dplanner test set T100" in by_check["test.empty"]
     assert "dplanner check clear 'Lonely check'" in by_check["check.covers-nothing"]
 
 
@@ -233,7 +233,7 @@ def test_the_type_toggles_sit_beside_release_and_agent(services):
 def test_toggling_test_on_gives_the_step_its_first_test(services, step):
     select(services, step)
     services.actions.run("test.toggle", services.context.current())
-    assert [test.id for test in read(step)] == ["t1"]
+    assert [test.id for test in read(step)] == ["T100"]
     assert services.actions.spec("test.toggle").state(services.context.current()).checked
     services.undo.undo()
     assert read(step) == []
@@ -251,12 +251,12 @@ def test_add_test_appends_rather_than_replacing(services, step):
     select(services, step)
     services.actions.run("test.add", services.context.current())
     services.actions.run("test.add", services.context.current())
-    assert [test.id for test in read(step)] == ["t1", "t2"]
+    assert [test.id for test in read(step)] == ["T100", "T101"]
 
 
 def test_a_result_verb_with_no_run_open_is_greyed_and_says_why(services, step):
-    step.module_data[MODULE_ID] = write([Test("t1", "No flicker")])
-    select(services, step, tests=("t1",))
+    step.module_data[MODULE_ID] = write([Test("T100", "No flicker")])
+    select(services, step, tests=("T100",))
     state = services.actions.spec("test.result_ok").state(services.context.current())
     assert state.enabled is False
     assert state.visible is True  # Disabled teaches the precondition; hidden would not.
@@ -264,15 +264,15 @@ def test_a_result_verb_with_no_run_open_is_greyed_and_says_why(services, step):
 
 
 def test_marking_a_selection_records_every_one_as_a_single_undo_step(services, project, step):
-    step.module_data[MODULE_ID] = write([Test("t1", "One"), Test("t2", "Two")])
-    started = runs.started([], ["t1", "t2"], label="P3")
+    step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
+    started = runs.started([], ["T100", "T101"], label="P3")
     SetModuleDataCommand(project.id, MODULE_ID, runs.write(started)).redo(services.document)
 
-    select(services, step, tests=("t1", "t2"))
+    select(services, step, tests=("T100", "T101"))
     services.actions.run("test.result_ok", services.context.current())
     assert {t: r.status for t, r in open_run(services, project).results.items()} == {
-        "t1": "ok",
-        "t2": "ok",
+        "T100": "ok",
+        "T101": "ok",
     }
     services.undo.undo()
     assert open_run(services, project).results == {}
@@ -281,10 +281,10 @@ def test_marking_a_selection_records_every_one_as_a_single_undo_step(services, p
 def test_archiving_spans_the_steps_the_selection_touched_in_one_undo_step(services, project, step):
     other = Step(title="Empty state")
     AddNodeCommand(project.id, other).redo(services.document)
-    step.module_data[MODULE_ID] = write([Test("t1", "One")])
-    other.module_data[MODULE_ID] = write([Test("t2", "Two")])
+    step.module_data[MODULE_ID] = write([Test("T100", "One")])
+    other.module_data[MODULE_ID] = write([Test("T101", "Two")])
 
-    select(services, step, other, tests=("t1", "t2"))
+    select(services, step, other, tests=("T100", "T101"))
     services.actions.run("test.archive", services.context.current())
     assert read(step)[0].archived and read(other)[0].archived
     services.undo.undo()
@@ -301,53 +301,90 @@ def test_new_run_is_greyed_until_the_project_has_a_test(services, project, step)
     select(services, step)
     state = services.actions.spec("tests.new_run").state(services.context.current())
     assert state.enabled is False and "no tests yet" in state.label
-    step.module_data[MODULE_ID] = write([Test("t1", "One")])
+    step.module_data[MODULE_ID] = write([Test("T100", "One")])
     assert services.actions.spec("tests.new_run").state(services.context.current()).enabled
 
 
 # -- the tabs ------------------------------------------------------------------------------
 
 
-def test_the_tests_tab_shows_a_card_per_test_with_its_latest_result(services, project, step):
-    from dplanner.modules.testing.section import TestsSection
+def rows(section):
+    """The list's rows as (id, title) — what the picker above the editor is showing."""
+    from dplanner.modules.testing.view import TEST_ID_ROLE
 
-    step.module_data[MODULE_ID] = write([Test("t1", "One", "1. Look"), Test("t2", "Two")])
-    started = runs.started([], ["t1", "t2"], label="P3")
-    started[-1] = runs.marked(started[-1], "t1", "failed", "still flickers")
-    SetModuleDataCommand(project.id, MODULE_ID, runs.write(started)).redo(services.document)
+    return [
+        (section.list.item(i).data(TEST_ID_ROLE), section.list.item(i).text())
+        for i in range(section.list.count())
+    ]
+
+
+@pytest.fixture
+def section(services, step):
+    from dplanner.modules.testing.section import TestsSection
 
     section = TestsSection(services.document, services.undo)
     section.show_target(step.id)
-    assert [card.test_id for card in section._cards] == ["t1", "t2"]
-    assert "Failed" in section._cards[0].chip.text()
-    assert "P3" in section._cards[0].note.text()
-    assert "still flickers" in section._cards[0].note.text()
+    yield section
     section.dispose()
 
 
-def test_editing_a_body_writes_through_the_undo_stack(services, project, step):
-    from dplanner.modules.testing.section import TestsSection
-
-    step.module_data[MODULE_ID] = write([Test("t1", "One")])
-    section = TestsSection(services.document, services.undo)
+def test_the_tab_lists_every_test_and_details_the_first(services, project, step, section):
+    step.module_data[MODULE_ID] = write([Test("T100", "One", "1. Look"), Test("T101", "Two")])
     section.show_target(step.id)
-    section._cards[0].body.edit.setPlainText("1. Open the list")
+    started = runs.started([], ["T100", "T101"], label="P3")
+    started[-1] = runs.marked(started[-1], "T100", "failed", "still flickers")
+    SetModuleDataCommand(project.id, MODULE_ID, runs.write(started)).redo(services.document)
+    section.show_target(step.id)
+
+    assert rows(section) == [("T100", "One"), ("T101", "Two")]
+    assert section.detail.identity.text() == "T100"
+    assert "Failed" in section.detail.chip.text()
+    assert "P3" in section.detail.result.text()
+    assert "still flickers" in section.detail.result.text()
+
+
+def test_picking_a_test_swaps_the_editor_under_it(services, step, section):
+    step.module_data[MODULE_ID] = write(
+        [Test("T100", "One", "first"), Test("T101", "Two", "second")]
+    )
+    section.show_target(step.id)
+    assert section.detail.body.edit.toPlainText() == "first"
+    section.list.setCurrentRow(1)
+    assert section.detail.identity.text() == "T101"
+    assert section.detail.body.edit.toPlainText() == "second"
+
+
+def test_a_step_with_no_tests_says_so_instead_of_showing_an_editor(services, step, section):
+    assert rows(section) == []
+    # isHidden rather than isVisible: nothing here is on a shown window in the suite.
+    assert not section.detail.empty.isHidden()
+    assert section.detail.title.isHidden()
+
+
+def test_editing_a_body_writes_through_the_undo_stack(services, step, section):
+    step.module_data[MODULE_ID] = write([Test("T100", "One")])
+    section.show_target(step.id)
+    section.detail.body.edit.setPlainText("1. Open the list")
     assert read(step)[0].body == "1. Open the list"
     services.undo.undo()
     assert read(step)[0].body == ""
-    section.dispose()
 
 
-def test_renaming_a_test_keeps_its_id_and_its_results(services, project, step):
-    from dplanner.modules.testing.section import TestsSection
-
-    step.module_data[MODULE_ID] = write([Test("t1", "One")])
-    section = TestsSection(services.document, services.undo)
+def test_renaming_a_test_keeps_its_id_and_its_results(services, step, section):
+    step.module_data[MODULE_ID] = write([Test("T100", "One")])
     section.show_target(step.id)
-    section._cards[0].title.setText("Renamed")
-    section._cards[0].title.editingFinished.emit()
-    assert read(step) == [Test("t1", "Renamed")]
-    section.dispose()
+    section.detail.title.setText("Renamed")
+    section.detail.title.editingFinished.emit()
+    assert read(step) == [Test("T100", "Renamed")]
+
+
+def test_adding_a_test_selects_it_so_the_editor_is_ready(services, step, section):
+    section._add()
+    assert [test_id for test_id, _title in rows(section)] == ["T100"]
+    assert section.detail.identity.text() == "T100"
+    section._add()
+    assert [test_id for test_id, _title in rows(section)] == ["T100", "T101"]
+    assert section.detail.identity.text() == "T101"
 
 
 def test_the_covers_tab_lists_what_a_check_waits_on(services, project, step):
@@ -356,7 +393,7 @@ def test_the_covers_tab_lists_what_a_check_waits_on(services, project, step):
     check = Step(title="Pre-release check")
     AddNodeCommand(project.id, check).redo(services.document)
     SetEdgesCommand(check.id, "requires", [step.id]).redo(services.document)
-    step.module_data[MODULE_ID] = write([Test("t1", "One"), Test("t2", "Two")])
+    step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
 
     section = CoversSection(services.document, lambda _step_id: None)
     section.show_target(check.id)
@@ -369,7 +406,7 @@ def test_the_tests_tab_follows_the_aspect(services, step):
         found for found in services.inspector_sections.sections() if found.id == "testing.tab"
     )
     assert section.shown_for(step.id) is False
-    step.module_data[MODULE_ID] = write([Test("t1", "One")])
+    step.module_data[MODULE_ID] = write([Test("T100", "One")])
     assert section.shown_for(step.id) is True
 
 
@@ -434,7 +471,7 @@ def test_double_clicking_a_test_anywhere_opens_its_step(services, make_project, 
     project = make_project("Widget")
     step = Step(title="Fix list flicker")
     AddNodeCommand(project.id, step).redo(services.document)
-    step.module_data[MODULE_ID] = write([Test("t1", "One")])
+    step.module_data[MODULE_ID] = write([Test("T100", "One")])
 
     opened: list[str] = []
     monkeypatch.setattr(
@@ -445,3 +482,12 @@ def test_double_clicking_a_test_anywhere_opens_its_step(services, make_project, 
     activity = services.tabs.open(ALL_TESTS_KIND)
     activity.page.table.cellActivated.emit(0, 0)
     assert opened == [f"steps.details:{step.id}"]
+
+
+def test_the_tables_preview_line_reads_as_prose_not_markdown_source():
+    from dplanner.modules.testing.table import _preview
+
+    assert _preview("## Setup\n1. Open the list") == "Setup"
+    assert _preview("- First bullet\n- Second") == "First bullet"
+    assert _preview("1. Open the list") == "1. Open the list"
+    assert _preview("") == ""

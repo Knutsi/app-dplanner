@@ -32,7 +32,10 @@ from dplanner.modules.testing.aspect import DATA_FORMAT, next_numbered
 STATUSES: Final = ("pending", "ok", "failed", "skipped")
 PENDING: Final = "pending"
 
-RUN_ID_PREFIX = "r"
+# R100, R101, … — the same shape as a test id, so the two never read as one vocabulary
+# with two spellings. A run's *name* is its label; this is what a verb takes.
+RUN_ID_PREFIX = "R"
+FIRST_RUN_NUMBER = 100
 
 
 @dataclass(frozen=True)
@@ -141,8 +144,8 @@ def find(runs: Sequence[Run], run_id: str) -> Run | None:
 
 
 def next_run_id(runs: Sequence[Run]) -> str:
-    """The next free ``rN``, minted the same way a test id is."""
-    return next_numbered((run.id for run in runs), RUN_ID_PREFIX)
+    """The next free ``RN``, minted the same way a test id is."""
+    return next_numbered((run.id for run in runs), RUN_ID_PREFIX, FIRST_RUN_NUMBER)
 
 
 def started(

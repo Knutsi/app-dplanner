@@ -5,7 +5,15 @@ and the tests a check stands for. Neither is where a result is *recorded* — th
 a run, which is the Tests activity's world. Here you write tests and see how they last did,
 which is the honest split: the step panel is for authoring.
 
-**Why a card's buttons push commands directly.** Archive and Remove act on one test, and a
+**A list beside one test, when there is room.** A stack of equal cards stops working at
+the third test, so the tab is master-detail: a compact line per test (id, name, how it last
+did) and an editor for the one selected. The split follows the width — side by side in the
+step dialog and a wide panel, stacked in the 360 px dock — because a step under test easily
+carries a dozen tests, and a tall list beside a tall editor is what makes that count usable.
+The switch is automatic and resets the split; a user's own drag is respected until the
+orientation changes under it.
+
+**Why the controls push commands directly.** Add, Archive and Remove act on one test, and a
 panel must not publish a selection — it follows the context, and writing to it would fight
 the canvas for what the window is showing. So these are the panel's own controls, pushed
 onto the undo stack the way the time report's focus spinbox is. The registry verbs live in
@@ -14,16 +22,19 @@ the Tests activity, where a row *is* a test and selecting one is the natural ges
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMenu,
-    QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSplitter,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -47,13 +58,24 @@ from dplanner.modules.testing.aspect import (
     replace,
     write,
 )
-from dplanner.modules.testing.view import StatusChip, outcome_line, word
+from dplanner.modules.testing.view import (
+    ARCHIVED_ROLE,
+    LIST_ROW_HEIGHT,
+    STATUS_ROLE,
+    TEST_ID_ROLE,
+    StatusChip,
+    TestListDelegate,
+    outcome_line,
+    word,
+)
 
 BLOCK_GAP = 12
 LANE_PADDING = 12
-BODY_MIN_HEIGHT = 44
-BODY_MAX_HEIGHT = 220
-BODY_SLACK = 4  # So a full last line never sits against the frame.
+LIST_MIN_HEIGHT = 56  # Two rows, so a step with one test still shows there is a list.
+LIST_MAX_HEIGHT = 220  # Stacked: past this the list scrolls rather than crowding the editor.
+LIST_PANE_WIDTH = 250  # Side by side: room for an id, a name and a result on one line.
+WIDE_THRESHOLD = 540  # Narrower than this and two columns would starve each other.
+DETAIL_MIN_HEIGHT = 140
 
 TAB_NOTE = "How you would know this step works — kept after the work is done."
 BODY_PLACEHOLDER = "1. Do this.\n2. This must be true."
@@ -116,171 +138,6 @@ class TestBodyField:
         return self._library.module_data_changed.connect(on_data)
 
 
-class _AutoHeight(QObject):
-    """Grows a body editor with its content instead of letting it scroll inside its card.
-
-    ``DESIGN.md`` forbids an inner scroller in a card: wheel events stop at it and the tab
-    stops scrolling under the cursor. Past the cap the expand button is the way on, which is
-    also the right answer on a narrow window.
-
-    Both triggers are needed. The document changes height when the text does — and *also*
-    when the card is resized, because a narrower editor rewraps the same words onto more
-    lines, and nothing about the document itself changed to say so.
-    """
-
-    def __init__(self, edit: QPlainTextEdit) -> None:
-        super().__init__(edit)
-        self._edit = edit
-        edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        edit.document().documentLayout().documentSizeChanged.connect(lambda _size: self.fit())
-        edit.installEventFilter(self)
-        self.fit()
-
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt override
-        if watched is self._edit and event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
-            self.fit()
-        return super().eventFilter(watched, event)
-
-    def fit(self) -> None:
-        document = self._edit.document()
-        # QPlainTextEdit's layout reports its height in *lines*, wrapping included.
-        lines = document.documentLayout().documentSize().height()
-        content = lines * self._edit.fontMetrics().lineSpacing() + document.documentMargin() * 2
-        wanted = int(content) + self._edit.frameWidth() * 2 + BODY_SLACK
-        self._edit.setFixedHeight(min(max(wanted, BODY_MIN_HEIGHT), BODY_MAX_HEIGHT))
-
-
-class TestCard(QFrame):
-    """One test: its name, how to verify it, and how it last did."""
-
-    def __init__(
-        self,
-        library: Library,
-        undo: UndoService[Library],
-        step_id: StepId,
-        test: Test,
-    ) -> None:
-        super().__init__()
-        self.setObjectName("ToolCard")
-        self.setFrameShape(QFrame.Shape.NoFrame)
-        self._library = library
-        self._undo = undo
-        self._step_id = step_id
-        self.test_id = test.id
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(CARD_PADDING, CARD_PADDING, CARD_PADDING, CARD_PADDING)
-        layout.setSpacing(FIELD_GAP)
-
-        header = QHBoxLayout()
-        header.setSpacing(FIELD_GAP)
-        self.title = QLineEdit(test.title, self)
-        self.title.setPlaceholderText("What the test is called")
-        self.title.editingFinished.connect(self._commit_title)
-        header.addWidget(self.title, 1)
-        self.chip = StatusChip(self)
-        header.addWidget(self.chip)
-        self.more = QToolButton(self)
-        self.more.setText("⋯")
-        self.more.setAutoRaise(True)
-        self.more.setToolTip("What to do with this test")
-        self.more.clicked.connect(self._open_menu)
-        header.addWidget(self.more)
-        layout.addLayout(header)
-
-        self.body = ProseSection(
-            lambda target: TestBodyField(library, step_id, target),
-            undo,
-            placeholder=BODY_PLACEHOLDER,
-            margin=0,
-            expand_title=f"Test — {test.title}" if test.title else "Test",
-        )
-        self.body.show_target(test.id)
-        _AutoHeight(self.body.edit)
-        layout.addWidget(self.body)
-
-        self.note = QLabel(self)
-        self.note.setObjectName("InspectorNote")
-        self.note.setWordWrap(True)
-        layout.addWidget(self.note)
-
-        self.refresh(test, None)
-
-    def refresh(self, test: Test, outcome: runs.Outcome | None) -> None:
-        """Re-read everything but the body, which its own binding keeps current."""
-        if not self.title.hasFocus():
-            self.title.setText(test.title)
-        self.chip.show_status(outcome.result.status if outcome else "pending")
-        parts = [
-            part
-            for part in (
-                "Archived — out of new runs" if test.archived else "",
-                outcome_line(outcome),
-            )
-            if part
-        ]
-        self.note.setText(" · ".join(parts))
-        self.note.setVisible(bool(parts))
-
-    def dispose(self) -> None:
-        self.body.dispose()
-
-    # -- the card's own controls ---------------------------------------------------------
-
-    def _current(self) -> Test | None:
-        if not self._library.has(self._step_id):
-            return None
-        return find(read(self._library.step(self._step_id)), self.test_id)
-
-    def _commit_title(self) -> None:
-        test = self._current()
-        if test is None or test.title == self.title.text():
-            return
-        self._push(
-            replace(
-                read(self._library.step(self._step_id)),
-                Test(test.id, self.title.text(), test.body, test.archived),
-            ),
-            "Rename Test",
-        )
-
-    def _open_menu(self) -> None:
-        test = self._current()
-        if test is None:
-            return
-        menu = QMenu(self)
-        back = "Put Back on the Roster" if test.archived else "Archive"
-        menu.addAction(back, self._toggle_archived)
-        menu.addSeparator()
-        menu.addAction("Remove Test…", self._remove)
-        menu.exec(self.more.mapToGlobal(self.more.rect().bottomLeft()))
-
-    def _toggle_archived(self) -> None:
-        test = self._current()
-        if test is None:
-            return
-        tests = read(self._library.step(self._step_id))
-        changed = Test(test.id, test.title, test.body, not test.archived)
-        self._push(replace(tests, changed), "Archive Test" if changed.archived else "Restore Test")
-
-    def _remove(self) -> None:
-        test = self._current()
-        if test is None:
-            return
-        question = (
-            f"Remove the test {test.title or test.id!r}? Its results stay in the runs that "
-            "recorded them, but the test itself is gone. Archive keeps it and its history."
-        )
-        if not confirm(self.window(), "Remove Test", question):
-            return
-        tests = [kept for kept in read(self._library.step(self._step_id)) if kept.id != test.id]
-        self._push(tests, "Remove Test")
-
-    def _push(self, tests: list[Test], label: str) -> None:
-        self._undo.push(SetModuleDataCommand(self._step_id, MODULE_ID, write(tests), label=label))
-
-
 class _TestListSection(QWidget):
     """The shared body of both tabs: a caption, a note, and a lane of test cards."""
 
@@ -331,34 +188,99 @@ class _TestListSection(QWidget):
             item = self.lane_layout.takeAt(0)
             widget = item.widget() if item is not None else None
             if widget is not None:
-                if isinstance(widget, TestCard):
-                    widget.dispose()
                 widget.setParent(None)
 
     def add_card(self, card: QWidget) -> None:
         self.lane_layout.insertWidget(self.lane_layout.count() - 1, card)
 
 
-class TestsSection(_TestListSection):
-    """The step's own tests, editable — the InspectorExtension the Tests tab renders."""
+class TestsSection(QWidget):
+    """The step's own tests: a list of them, and an editor for the one selected."""
 
     def __init__(self, library: Library, undo: UndoService[Library]) -> None:
-        super().__init__(library, TAB_NOTE)
+        super().__init__()
+        self._library = library
         self._undo = undo
-        self._cards: list[TestCard] = []
+        self._step_id: str | None = None
+        self._selected: str = ""
 
-        self.add_button = QPushButton("+ Add test", self)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
+        layout.setSpacing(FIELD_GAP)
+
+        self.note = QLabel(TAB_NOTE, self)
+        self.note.setObjectName("InspectorNote")
+        self.note.setWordWrap(True)
+        layout.addWidget(self.note)
+        layout.addSpacing(FIELD_GAP)
+
+        self.split = QSplitter(Qt.Orientation.Vertical, self)
+        self.split.setChildrenCollapsible(False)
+        self.split.setHandleWidth(BLOCK_GAP)
+        self._dragged = False
+        self.split.splitterMoved.connect(self._on_dragged)
+
+        # The roster pane: the list with its Add button underneath, so the pair travels
+        # together whichever side of the splitter they end up on.
+        roster = QWidget(self.split)
+        roster_layout = QVBoxLayout(roster)
+        roster_layout.setContentsMargins(0, 0, 0, 0)
+        roster_layout.setSpacing(FIELD_GAP)
+        self.list = QListWidget(roster)
+        self.list.setObjectName("OrderTable")  # The one list-of-rows look.
+        self.list.setFrameShape(QFrame.Shape.NoFrame)
+        self.list.setItemDelegate(TestListDelegate(self.list))
+        self.list.setMinimumHeight(LIST_MIN_HEIGHT)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list.currentItemChanged.connect(lambda *_a: self._on_pick())
+        roster_layout.addWidget(self.list, 1)
+        self.add_button = QPushButton("+ Add test", roster)
         self.add_button.clicked.connect(self._add)
-        row = QHBoxLayout()
-        row.addStretch(1)
-        row.addWidget(self.add_button)
-        row.addStretch(1)
-        self.outer.addLayout(row)
+        roster_layout.addWidget(self.add_button, 0, Qt.AlignmentFlag.AlignLeft)
+        self.split.addWidget(roster)
+
+        # The selected test's own verbs sit in the detail's header, beside what they act on.
+        self.more = QToolButton(self)
+        self.more.setText("⋯")
+        self.more.setAutoRaise(True)
+        self.more.setToolTip("What to do with this test")
+        self.more.clicked.connect(self._open_menu)
+        self.detail = _TestDetail(library, undo, self.split, corner=self.more)
+        self.detail.setMinimumHeight(DETAIL_MIN_HEIGHT)
+        self.split.addWidget(self.detail)
+        self.split.setStretchFactor(0, 0)
+        self.split.setStretchFactor(1, 1)
+        layout.addWidget(self.split, 1)
 
         self._unsubscribes = [
             library.module_data_changed.connect(self._on_module_data),
             library.structure_changed.connect(lambda *_a: self._refresh()),
         ]
+
+    def _on_dragged(self, _pos: int, _index: int) -> None:
+        self._dragged = True  # The user has said how they want it split; stop guessing.
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        wanted = (
+            Qt.Orientation.Horizontal if self.width() >= WIDE_THRESHOLD else Qt.Orientation.Vertical
+        )
+        if wanted != self.split.orientation():
+            self.split.setOrientation(wanted)
+            self._dragged = False  # A new shape voids the old drag; guess afresh.
+            self._apply_split()
+
+    def _apply_split(self) -> None:
+        if self._dragged:
+            return
+        if self.split.orientation() == Qt.Orientation.Horizontal:
+            self.split.setSizes([LIST_PANE_WIDTH, max(self.width() - LIST_PANE_WIDTH, 1)])
+        else:
+            rows = self.list.count()
+            wanted = min(max(rows, 1) * LIST_ROW_HEIGHT + LANE_PADDING, LIST_MAX_HEIGHT)
+            # The Add button rides under the list, so the pane needs its height too.
+            wanted += self.add_button.sizeHint().height() + FIELD_GAP
+            self.split.setSizes([wanted, max(self.split.height() - wanted, DETAIL_MIN_HEIGHT)])
 
     # -- the InspectorExtension contract -------------------------------------------------
 
@@ -367,75 +289,235 @@ class TestsSection(_TestListSection):
         return self
 
     def show_target(self, target_id: str | None) -> None:
-        # Always start from nothing: test ids are unique per project, so two projects can
-        # both have a "t1" and a surviving card would be bound to the wrong step.
-        self._drop_cards()
-        self._target_id = target_id
+        self._step_id = target_id
+        self._selected = ""  # Ids are unique per project, never across two of them.
         self._refresh()
 
     def dispose(self) -> None:
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes = []
-        self._drop_cards()
-
-    def _drop_cards(self) -> None:
-        self.clear_cards()
-        self._cards = []
+        self.detail.dispose()
 
     # -- keeping up with the model -------------------------------------------------------
 
     def _step(self) -> Step | None:
-        if self._target_id is None or not self._library.has(self._target_id):
+        if self._step_id is None or not self._library.has(self._step_id):
             return None
-        node = self._library.step(self._target_id)
-        return node
+        return self._library.step(self._step_id)
+
+    def _tests(self) -> list[Test]:
+        step = self._step()
+        return [] if step is None else read(step)
 
     def _on_module_data(self, node_id: NodeId, module_id: str, _origin: object) -> None:
-        if node_id == self._target_id and module_id == MODULE_ID:
+        if node_id == self._step_id and module_id == MODULE_ID:
             self._refresh()
 
     def _refresh(self) -> None:
         step = self._step()
-        if step is None:
-            self._drop_cards()
-            self.add_button.setEnabled(False)
-            self.say("No step selected.")
-            return
-        self.add_button.setEnabled(True)
-        tests = read(step)
-        self.say("" if tests else "No tests yet. Add one, or run `dplanner test add`.")
+        tests = self._tests()
+        self.add_button.setEnabled(step is not None)
+        if self._selected not in {test.id for test in tests}:
+            self._selected = tests[0].id if tests else ""
         outcomes = self._outcomes()
-        # Compared against the cards themselves, never a second list kept alongside them:
-        # the two could disagree, and the pairing below assumes they cannot.
-        if [test.id for test in tests] != [card.test_id for card in self._cards]:
-            # Only the *set* of tests rebuilds; a body edit must never destroy the editor
-            # the keystroke came from, and a title edit is written back in place.
-            self._drop_cards()
-            self._cards = [TestCard(self._library, self._undo, step.id, test) for test in tests]
-            for card in self._cards:
-                self.add_card(card)
-        for card, test in zip(self._cards, tests, strict=True):
-            card.refresh(test, outcomes.get(test.id))
+        self._fill(tests, outcomes)
+        self._apply_split()
+        self.more.setEnabled(bool(self._selected))
+        current = find(tests, self._selected) if self._selected else None
+        self.detail.show_test(
+            None if step is None or current is None else step.id,
+            current,
+            outcomes.get(current.id) if current else None,
+        )
+
+    def _fill(self, tests: list[Test], outcomes: dict[str, runs.Outcome]) -> None:
+        # Rebuilt wholesale under blocked signals: a list of a step's tests is never long,
+        # and a diff is where list bugs live. Selection is restored by id, not by row.
+        self.list.blockSignals(True)
+        self.list.clear()
+        for test in tests:
+            item = QListWidgetItem(test.title or "Untitled test")
+            item.setData(TEST_ID_ROLE, test.id)
+            outcome = outcomes.get(test.id)
+            item.setData(STATUS_ROLE, outcome.result.status if outcome else "pending")
+            item.setData(ARCHIVED_ROLE, test.archived)
+            self.list.addItem(item)
+            if test.id == self._selected:
+                self.list.setCurrentItem(item)
+        self.list.blockSignals(False)
 
     def _outcomes(self) -> dict[str, runs.Outcome]:
         step = self._step()
         if step is None:
             return {}
-        project = self._library.project_of(step.id)
-        return runs.latest_results(runs.read(project))
+        return runs.latest_results(runs.read(self._library.project_of(step.id)))
+
+    def _on_pick(self) -> None:
+        item = self.list.currentItem()
+        self._selected = "" if item is None else str(item.data(TEST_ID_ROLE))
+        self._refresh()
+
+    # -- the tab's own controls ----------------------------------------------------------
 
     def _add(self) -> None:
         step = self._step()
         if step is None:
             return
-        project = self._library.project_of(step.id)
-        added = Test(id=next_test_id(project), title="")
+        added = Test(id=next_test_id(self._library.project_of(step.id)), title="")
+        self._selected = added.id
         self._undo.push(
             SetModuleDataCommand(step.id, MODULE_ID, write([*read(step), added]), label="Add Test")
         )
-        if self._cards:
-            self._cards[-1].title.setFocus()
+        self.detail.title.setFocus()
+
+    def _open_menu(self) -> None:
+        test = find(self._tests(), self._selected)
+        if test is None:
+            return
+        menu = QMenu(self)
+        menu.addAction(
+            "Put Back on the Roster" if test.archived else "Archive", self._toggle_archived
+        )
+        menu.addSeparator()
+        menu.addAction("Remove Test…", self._remove)
+        menu.exec(self.more.mapToGlobal(self.more.rect().bottomLeft()))
+
+    def _toggle_archived(self) -> None:
+        step, test = self._step(), find(self._tests(), self._selected)
+        if step is None or test is None:
+            return
+        changed = Test(test.id, test.title, test.body, not test.archived)
+        self._push(
+            step,
+            replace(read(step), changed),
+            "Archive Test" if changed.archived else "Restore Test",
+        )
+
+    def _remove(self) -> None:
+        step, test = self._step(), find(self._tests(), self._selected)
+        if step is None or test is None:
+            return
+        question = (
+            f"Remove {test.id} ({test.title or 'untitled'})? Its results stay in the runs "
+            "that recorded them, but the test itself is gone. Archiving keeps both."
+        )
+        if not confirm(self.window(), "Remove Test", question):
+            return
+        self._push(step, [kept for kept in read(step) if kept.id != test.id], "Remove Test")
+
+    def _push(self, step: Step, tests: list[Test], label: str) -> None:
+        self._undo.push(SetModuleDataCommand(step.id, MODULE_ID, write(tests), label=label))
+
+
+class _TestDetail(QWidget):
+    """The selected test: what it is called, how to verify it, how it last did."""
+
+    def __init__(
+        self,
+        library: Library,
+        undo: UndoService[Library],
+        parent: QWidget | None = None,
+        corner: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._library = library
+        self._undo = undo
+        self._step_id: str | None = None
+        self._test_id: str = ""
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(FIELD_GAP)
+
+        header = QHBoxLayout()
+        header.setSpacing(FIELD_GAP)
+        self.identity = QLabel(self)
+        self.identity.setObjectName("InspectorCaption")
+        header.addWidget(self.identity)
+        self.title = QLineEdit(self)
+        self.title.setPlaceholderText("What the test is called")
+        self.title.editingFinished.connect(self._commit_title)
+        header.addWidget(self.title, 1)
+        self.chip = StatusChip(self)
+        header.addWidget(self.chip)
+        if corner is not None:
+            header.addWidget(corner)
+        layout.addLayout(header)
+
+        # A plain expanding text well: the detail pane is not a card in a scrolling stack,
+        # so the editor may simply take the room and scroll like any other document.
+        self.body = ProseSection(
+            self._field_for, undo, placeholder=BODY_PLACEHOLDER, margin=0, expand_title="Test"
+        )
+        layout.addWidget(self.body, 1)
+        # Enter in the title lands in the body, so naming and writing a test is one flow.
+        self.title.returnPressed.connect(self.body.edit.setFocus)
+
+        self.result = QLabel(self)
+        self.result.setObjectName("InspectorNote")
+        self.result.setWordWrap(True)
+        layout.addWidget(self.result)
+
+        self.empty = QLabel("No test selected. Add one, or pick one above.", self)
+        self.empty.setObjectName("InspectorNote")
+        self.empty.setWordWrap(True)
+        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.empty, 1)
+
+    def _field_for(self, target_id: str) -> TestBodyField | None:
+        if self._step_id is None:
+            return None
+        return TestBodyField(self._library, self._step_id, target_id)
+
+    def show_test(
+        self, step_id: str | None, test: Test | None, outcome: runs.Outcome | None
+    ) -> None:
+        self._step_id = step_id
+        showing = step_id is not None and test is not None
+        for widget in (self.identity, self.title, self.chip, self.body, self.result):
+            widget.setVisible(showing)
+        self.empty.setVisible(not showing)
+        if not showing or test is None:
+            self._test_id = ""
+            self.body.show_target(None)
+            return
+        if test.id != self._test_id:
+            # Re-bind only on a different test: rebinding under the user's own keystroke
+            # would drop the cursor to the top of the document on every character.
+            self._test_id = test.id
+            self.body.show_target(test.id)
+        self.identity.setText(test.id)
+        if not self.title.hasFocus():
+            self.title.setText(test.title)
+        self.chip.show_status(outcome.result.status if outcome else "pending")
+        self.result.setText(
+            " · ".join(
+                part
+                for part in (
+                    "Archived — out of new runs" if test.archived else "",
+                    outcome_line(outcome),
+                )
+                if part
+            )
+        )
+
+    def dispose(self) -> None:
+        self.body.dispose()
+
+    def _commit_title(self) -> None:
+        if self._step_id is None or not self._library.has(self._step_id):
+            return
+        step = self._library.step(self._step_id)
+        test = find(read(step), self._test_id)
+        if test is None or test.title == self.title.text():
+            return
+        changed = Test(test.id, self.title.text(), test.body, test.archived)
+        self._undo.push(
+            SetModuleDataCommand(
+                step.id, MODULE_ID, write(replace(read(step), changed)), label="Rename Test"
+            )
+        )
 
 
 class CoversSection(_TestListSection):

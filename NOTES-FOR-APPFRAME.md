@@ -849,6 +849,23 @@ gaps; the index panel's persistence is ten lines on top of helpers that were alr
 DPlanner's own half — the preference, and asking the model whether a target still exists —
 stayed in `modules/reopen_tabs/`, which is the line we would draw upstream too.
 
+### Prose editors show markdown structure without leaving plain text
+
+**What.** New `framework/markdown_highlight.py`: a `QSyntaxHighlighter` that bolds
+headings, fades structure markers (`#`, `-`, `1.`, `>`) to the secondary ink, bolds
+`**spans**` and sets inline code in monospace — colours read from the widget's palette on
+every pass, re-inked by `rehighlight()` on `PaletteChange` (the hook `ProseSection` now
+provides). Installed in `ProseSection` and `ExpandedTextDialog`, so every prose document —
+description, handoff, agent instruction, test body — shows its structure for free.
+
+**Why not a rich-text editor.** `setMarkdown`/`toMarkdown` edits a document tree and writes
+back a normalised serialisation, which breaks `TextBinding`'s positional splices and can
+reformat a file the user never touched (the spec editor pays that cost knowingly, with a
+session-replace model). A highlighter keeps the text byte-identical to disk.
+
+**Upstream?** Yes, if the template keeps the premise that module prose is markdown — the
+highlighter has no DPlanner in it. The `PaletteChange` → `rehighlight` hook belongs with it.
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class

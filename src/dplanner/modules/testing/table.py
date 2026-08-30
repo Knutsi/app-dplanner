@@ -111,7 +111,7 @@ class TestsTable(QTableWidget):
             self._sized = bool(rows)
 
     def _fill(self, index: int, row: Row) -> None:
-        first_line = row.test.body.strip().splitlines()[0] if row.test.body.strip() else ""
+        first_line = _preview(row.test.body)
         cells = (
             row.test.title or "Untitled test",
             row.project,
@@ -178,6 +178,15 @@ class TestsTable(QTableWidget):
         for row in range(self.rowCount()):
             if self.test_at(row) in wanted:
                 model.select(self.model().index(row, TEST_COLUMN), flags)
+
+
+def _preview(body: str) -> str:
+    """The first content line, read as prose: markdown markers are source, not preview."""
+    for line in body.splitlines():
+        text = line.strip().lstrip("#>*- ").strip()
+        if text:
+            return text
+    return ""
 
 
 def _when(row: Row) -> str:

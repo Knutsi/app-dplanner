@@ -112,8 +112,8 @@ Two shapes are worth knowing:
 
 ```
 dplanner test-run start --scope 'Pre-release check' --label 'Pre-release 3'
-dplanner test-run mark t3 failed --note 'still flickers when rows arrive late'
-dplanner test-run mark t4 ok
+dplanner test-run mark T100 failed --note 'still flickers when rows arrive late'
+dplanner test-run mark T101 ok
 dplanner test-run show          # what is left, and what failed
 ```
 
