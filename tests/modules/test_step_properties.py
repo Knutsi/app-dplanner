@@ -56,10 +56,20 @@ def visible_labels(panel):
 
 def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
     """A tab follows its aspect: a plain step shows only the always-on sections, and the
-    toggleable ones (Ticket, Agent, Release) stay off screen until the step carries them."""
+    toggleable ones (Ticket, Tests, Covers, Agent, Release) stay off screen until the step
+    carries them."""
     select(services, project.steps[0].id)
     all_labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
-    expected = ["Details", "Ticket", "Agent", "Release", "Handoff", "GitHub"]
+    expected = [
+        "Details",
+        "Ticket",
+        "Tests",
+        "Covers",
+        "Agent",
+        "Release",
+        "Handoff",
+        "GitHub",
+    ]
     assert all_labels == expected
     assert visible_labels(panel) == ["Details", "Handoff", "GitHub"]
 
@@ -74,18 +84,34 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
     from dplanner.modules.step_agent_instruction.aspect import (
         write_state,
     )
+    from dplanner.modules.step_check.aspect import MODULE_ID as CHECK_ID
+    from dplanner.modules.step_check.aspect import write as check_write
     from dplanner.modules.step_release.aspect import MODULE_ID as RELEASE_ID
     from dplanner.modules.step_release.aspect import write as release_write
     from dplanner.modules.step_ticket.aspect import MODULE_ID as TICKET_ID
     from dplanner.modules.step_ticket.aspect import enabled_entry
+    from dplanner.modules.testing.aspect import MODULE_ID as TESTING_ID
+    from dplanner.modules.testing.aspect import Test
+    from dplanner.modules.testing.aspect import write as tests_write
 
     step = project.steps[0]
     select(services, step.id)
     services.undo.push(SetModuleDataCommand(step.id, RELEASE_ID, release_write("v1")))
     services.undo.push(SetModuleDataCommand(step.id, AGENT_ID, write_state(True)))
     services.undo.push(SetModuleDataCommand(step.id, TICKET_ID, enabled_entry()))
+    services.undo.push(
+        SetModuleDataCommand(step.id, TESTING_ID, tests_write([Test("t1", "A test")]))
+    )
+    services.undo.push(SetModuleDataCommand(step.id, CHECK_ID, check_write(True)))
     assert visible_labels(panel) == [
-        "Details", "Ticket", "Agent", "Release", "Handoff", "GitHub",
+        "Details",
+        "Ticket",
+        "Tests",
+        "Covers",
+        "Agent",
+        "Release",
+        "Handoff",
+        "GitHub",
     ]
 
     # Land on the Release tab, then clear the aspect: the tab leaves and the current
@@ -169,9 +195,7 @@ def test_details_needs_exactly_one_selected_step(services, project):
     assert spec.state(services.context.current()).enabled
 
 
-def test_details_opens_a_dialog_that_is_the_panel_and_disposes_it(
-    services, project, monkeypatch
-):
+def test_details_opens_a_dialog_that_is_the_panel_and_disposes_it(services, project, monkeypatch):
     """The dialog hosts a second StepPanel over the same sections — 1:1 with the anchored
     one by construction — and stops hearing the model once closed."""
     from dplanner.modules.step_properties.dialog import StepDetailsDialog

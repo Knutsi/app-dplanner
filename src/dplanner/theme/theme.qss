@@ -692,6 +692,22 @@ QScrollBar::sub-page {
     color: $TEXT_DISABLED;
 }
 
+/* A strip of controls on a tab page, not application chrome: no frame, no ground of its
+   own. It is a QToolBar purely for the » overflow button, which is the only widget in Qt
+   that degrades a full control row gracefully instead of squeezing it. */
+#TestsToolBar {
+    background: transparent;
+    border: none;
+    padding: 0px;
+    spacing: 8px;
+}
+
+#TestsToolBar::separator {
+    background-color: $BORDER;
+    width: 1px;
+    margin: 2px 4px;
+}
+
 #ToolbarButton {
     /* Glyphs and icons carry different metrics; one fixed height keeps the row even. */
     min-height: 16px;

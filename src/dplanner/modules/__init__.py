@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
     from dplanner.cli import CliCommand
     from dplanner.domain.aspects import AspectSpec
-    from dplanner.domain.model import Library, Step
+    from dplanner.domain.model import Library, Project, Step
     from dplanner.domain.ordering import Placed
     from dplanner.domain.schedule import Scheduled
     from dplanner.domain.store import ModuleFileArea
@@ -99,6 +99,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_agent_run.aspect import record_launch as agent_run_launch
     from dplanner.modules.step_agent_run.module import StepAgentRunModule
+    from dplanner.modules.step_check.aspect import read as check_read
+    from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_description.aspect import summary as description_summary
     from dplanner.modules.step_description.module import (
@@ -121,6 +123,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
+    from dplanner.modules.testing.aspect import enabled as test_enabled
+    from dplanner.modules.testing.module import TestsDeps, TestsModule
     from dplanner.modules.time_estimates.module import TimeEstimatesDeps, TimeEstimatesModule
     from dplanner.theme.icons import clock_icon, gauge_icon, graph_icon, list_icon, spec_icon
 
@@ -193,11 +197,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
 
     def step_type_icons(step: "Step") -> tuple[str, ...]:
         """What kind of thing a step is, in the medallion vocabulary the canvas painted
-        first: "tag" a release, "spark" an agent step. The order table's title column
-        reads the same answer, so a step is the same kind everywhere."""
+        first: "tag" a release, "spark" an agent step, "beaker" one carrying tests,
+        "shield" a check. The order table's title column reads the same answer, so a step
+        is the same kind everywhere."""
         return (
             *(("tag",) if release_read(step) else ()),
             *(("spark",) if agent_enabled(step) else ()),
+            *(("beaker",) if test_enabled(step) else ()),
+            *(("shield",) if check_read(step) else ()),
         )
 
     def set_separate_instruction(step_id: str, separate: bool) -> None:
@@ -709,6 +716,30 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepStatusModule(
             StepStatusDeps(library=library, undo=services.undo, actions=services.actions)
         ),
+        # No tab either: a check carries nothing, and the Covers tab that shows what it
+        # gathers is the tests module's — it renders a list of tests, which is that
+        # module's business, not this one's.
+        StepCheckModule(
+            StepCheckDeps(library=library, undo=services.undo, actions=services.actions)
+        ),
+        TestsModule(
+            TestsDeps(
+                library=library,
+                undo=services.undo,
+                actions=services.actions,
+                context=services.context,
+                tabs=services.tabs,
+                sections=services.inspector_sections,
+                segments=services.index_segments,
+                theme=services.theme,
+                parent=services.window,
+                # A check declares a scope; a release already was one, and both are the
+                # same walk. Named here so neither aspect module learns the other exists.
+                scope_label=lambda step: (
+                    "Check" if check_read(step) else ("Release" if release_read(step) else "")
+                ),
+            )
+        ),
         GithubModule(
             GithubDeps(
                 library=library,
@@ -948,6 +979,21 @@ def _agent_epilogue(step_title: str) -> str:
     )
 
 
+def _covered_tests(
+    library: "Library", project: "Project", step_id: str
+) -> list[tuple[str, str, str]]:
+    """What a check, or a release, stands for: (test id, test title, owning step's title).
+
+    The one place the check aspect and the tests aspect meet. Neither imports the other; the
+    walk is the domain's and the filtering is testing's, and this hands the pair over as the
+    tuple a report can print. Derived on every read — a stored coverage list could disagree
+    with the graph the moment ``dplanner step link`` runs with no window open to notice.
+    """
+    from dplanner.modules.testing.aspect import covered
+
+    return [(test.id, test.title, step.title) for step, test in covered(library, project, step_id)]
+
+
 def default_cli_commands() -> list["CliCommand"]:
     """Every ``dplanner <noun> <verb>``, from the same modules the window is built from.
 
@@ -971,6 +1017,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_marked
     from dplanner.modules.step_agent_run import cli as agent_state_cli
+    from dplanner.modules.step_check import cli as check_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_handoff import cli as handoff_cli
@@ -979,6 +1026,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_ticket import cli as ticket_cli
+    from dplanner.modules.testing import cli as testing_cli
     from dplanner.modules.time_estimates import cli as time_cli
 
     specs = aspect_specs()
@@ -992,6 +1040,7 @@ def default_cli_commands() -> list["CliCommand"]:
                 agent_cli.step_author(),
                 estimation_cli.step_author(),
                 spec_cli.step_author(),
+                testing_cli.step_author(),
             ]
         ),
         *spec_cli.commands(),
@@ -1003,6 +1052,10 @@ def default_cli_commands() -> list["CliCommand"]:
         *status_cli.commands(),
         *release_cli.commands(),
         *handoff_cli.commands(),
+        *testing_cli.commands(),
+        # A check gathers tests, which are another module's shape; the coverage walk
+        # arrives here as a function so neither cli.py imports the other.
+        *check_cli.commands(covered_by=_covered_tests),
         *order_cli.commands(),
         # Progression reads statuses and estimates through the aspects' Qt-free readers —
         # handed over here so no cli.py imports another module's.
@@ -1026,6 +1079,8 @@ def default_cli_commands() -> list["CliCommand"]:
                 *agent_cli.lint_checks(described=lambda step: bool(description_read(step))),
                 *estimation_cli.lint_checks(),
                 *spec_cli.lint_checks(),
+                *testing_cli.lint_checks(),
+                *check_cli.lint_checks(covered_by=_covered_tests),
             ]
         ),
     ]
@@ -1050,15 +1105,18 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_agent_run import aspect as agent_run
+    from dplanner.modules.step_check import aspect as check
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_handoff import aspect as handoff
     from dplanner.modules.step_release import aspect as release
     from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
+    from dplanner.modules.testing import aspect as testing
 
     return [
         agent.SPEC,
         agent_run.SPEC,
+        check.SPEC,
         description.SPEC,
         estimation.SPEC,
         github.SPEC,
@@ -1066,6 +1124,7 @@ def aspect_specs() -> list["AspectSpec"]:
         release.SPEC,
         spec.SPEC,
         status.SPEC,
+        testing.SPEC,
         ticket.SPEC,
     ]
 

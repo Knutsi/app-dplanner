@@ -26,7 +26,12 @@ from PySide6.QtGui import (
 )
 
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
-from dplanner.theme.icons import paint_spark_glyph, paint_tag_glyph
+from dplanner.theme.icons import (
+    paint_beaker_glyph,
+    paint_shield_glyph,
+    paint_spark_glyph,
+    paint_tag_glyph,
+)
 
 RADIUS = 8.0  # = theme.tokens.RADIUS_MD, matched by eye rather than import: this is a painter.
 PADDING = 12.0
@@ -122,7 +127,8 @@ class NodeAccent:
     chip_tone: str = ""  # "" neutral | "info" | "attention".
     body_tone: str = ""  # "" plain | "highlight" | "good": the node itself is a kind.
     # Icon medallions on the top edge, left end, in order: "tag" (a milestone the graph
-    # aims at), "spark" (there is machine guidance here).
+    # aims at), "spark" (there is machine guidance here), "beaker" (this step keeps
+    # tests), "shield" (a check: it stands for everything behind it passing).
     icons: tuple[str, ...] = ()
     stat_text: str = ""  # The one number a step answers with — full ink, never faded.
     stat_strong: bool = False  # Bold the stat: this node's number is the point of it.
@@ -411,6 +417,10 @@ def paint_icon_medallions(painter: QPainter, palette: QPalette, icons: tuple[str
             paint_tag_glyph(painter, glyph, ink)
         elif kind == "spark":
             paint_spark_glyph(painter, glyph, faded)
+        elif kind == "beaker":
+            paint_beaker_glyph(painter, glyph, faded)
+        elif kind == "shield":
+            paint_shield_glyph(painter, glyph, faded)
         x += ICON_D + ICON_GAP
 
 

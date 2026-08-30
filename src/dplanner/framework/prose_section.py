@@ -16,8 +16,10 @@ It knows nothing about any model: the caller supplies a factory that turns a tar
 from collections.abc import Callable
 from typing import Any
 
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QPlainTextEdit, QVBoxLayout, QWidget
 
+from dplanner.framework.markdown_highlight import MarkdownHighlighter
 from dplanner.framework.text_binding import TextBinding, TextField
 from dplanner.framework.text_dialog import ExpandedTextDialog, attach_expand
 from dplanner.framework.undo import UndoService
@@ -49,6 +51,9 @@ class ProseSection(QWidget):
         self.edit.setObjectName("InspectorNotes")
         self.edit.setPlaceholderText(placeholder)
         self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        # Every document this section edits is markdown; show its structure while the
+        # text stays exactly what is on disk. Re-inked on theme change below.
+        self._highlighter = MarkdownHighlighter(self.edit.document(), self.edit)
         self.expand_button = attach_expand(self.edit)
         self.expand_button.clicked.connect(self._open_expanded)
         self.expand_button.setEnabled(False)
@@ -57,6 +62,12 @@ class ProseSection(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(margin, margin, margin, margin)
         layout.addWidget(self.edit)
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        if event.type() == QEvent.Type.PaletteChange:
+            # The highlighter's inks come from the palette; a theme change owes a repaint.
+            self._highlighter.rehighlight()
+        super().changeEvent(event)
 
     # -- the InspectorExtension contract -------------------------------------------------------
 

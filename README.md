@@ -28,13 +28,15 @@ learning anything about it. `dplanner aspect list` says which exist in a build.
 ## Status
 
 Early, and honest about it. The model, the storage layer, the index tree, the whole CLI, the
-graph editor and the order view are in place and tested. Ten aspects ship — estimate,
-ticket, description, agent instruction, agent run, status, release, handoff, GitHub refs
-and spec links — each with verbs in the CLI and most with an editor in the step panel
+graph editor and the order view are in place and tested. Twelve aspects ship — estimate,
+ticket, description, agent instruction, agent run, status, release, handoff, GitHub refs,
+spec links, tests and checks — each with verbs in the CLI and most with an editor in the step panel
 (`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: a project start date and
 the estimates give every step a running total and a date, in the order table and in
 `dplanner schedule show`. Progression reads the same graph with the statuses in hand:
 the execution board and `dplanner progression show` say what can be launched right now.
+Tests are what a step must keep passing once it is done: a step carries several, a *check*
+step gathers every test it waits on, and a *test run* records what each one did.
 
 ## Running
 
@@ -74,6 +76,11 @@ dplanner step add search "Draft the model" --after "Read the spec"
 dplanner estimate set "Draft the model" --days 5
 dplanner describe set "Read the spec" --file notes.md
 dplanner agent set "Draft the model" --file how-to.md   # what an agent should know first
+dplanner test add "Draft the model" "Rejects an empty query" --text "1. POST /q with ''
+2. 400, and no row is written."
+dplanner check set "Ship the beta"       # gathers every test behind it
+dplanner test-run start --scope "Ship the beta" --label "Pre-release 3"
+dplanner test-run mark T100 failed --note "still 500s"
 dplanner order show search               # every step, numbered, in dependency order
 dplanner order show search --ready       # just what can be started right now
 dplanner schedule start search --date 2026-09-01
@@ -97,6 +104,7 @@ seen. See `FORMAT.md`.
             ├── step.json      id, title, edges: {"requires": [ids]}
             └── modules/
                 ├── estimation.json         a module's data
+                ├── testing.json            the tests this step keeps
                 ├── step_description.md     a module's prose
                 └── step_description/       a module's files
 ```
@@ -183,7 +191,7 @@ src/dplanner/
 │   │                        (its first tab, details.py, stacks whatever registered a Details
 │   │                        block; and `steps.details`: the same panel as the double-click's modal)
 │   │
-│   │   ── the ten aspect modules (`dplanner aspect list`); the `step_` prefix is not the
+│   │   ── the twelve aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /
 │   │      `step_properties` are views of steps, not aspects:
 │   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule
@@ -194,6 +202,9 @@ src/dplanner/
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by `dplanner agent-state`
 │   ├── step_status/         where a step stands — a Status submenu, no tab
 │   ├── step_release/        the steps that mark a release point — the Release tab and the Type ▸ Release toggle
+│   ├── step_check/          a step that gathers every test it waits on — the Type ▸ Check toggle
+│   ├── testing/             what a step must keep passing: the tests it carries, the runs over
+│   │                        them, the project's Tests tab and the library-wide roll call
 │   ├── step_handoff/        what a step passes forward, and who inherits it
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, the missing-gh notice
 │   │
