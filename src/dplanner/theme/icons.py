@@ -108,7 +108,6 @@ def read_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
-
 def external_icon(color: str) -> QIcon:
     """An arrow leaving a box through its open corner: open outside the application."""
     pixmap, painter = _canvas()
@@ -191,8 +190,6 @@ def spec_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
-
-
 def folder_icon(color: str) -> QIcon:
     """A folder: the workspace directory."""
     pixmap, painter = _canvas()
@@ -220,8 +217,6 @@ def branch_icon(color: str) -> QIcon:
     painter.drawPath(fork)
     painter.end()
     return QIcon(pixmap)
-
-
 
 
 # -- canvas toolbar --------------------------------------------------------------------------
@@ -428,5 +423,66 @@ def spark_icon(color: str | QColor) -> QIcon:
     """The agent-instruction spark as a row icon: machine guidance travels with this step."""
     pixmap, painter = _canvas()
     paint_spark_glyph(painter, QRectF(3.0, 3.0, 10.0, 10.0), QColor(color))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def paint_beaker_glyph(painter: QPainter, rect: QRectF, colour: QColor) -> None:
+    """A beaker: this step carries tests — things that must keep being true."""
+    neck = rect.width() * 0.22
+    top = rect.top() + rect.height() * 0.06
+    path = QPainterPath(QPointF(rect.center().x() - neck, top))
+    path.lineTo(QPointF(rect.center().x() - neck, rect.center().y() - rect.height() * 0.1))
+    path.lineTo(QPointF(rect.left(), rect.bottom()))
+    path.lineTo(QPointF(rect.right(), rect.bottom()))
+    path.lineTo(QPointF(rect.center().x() + neck, rect.center().y() - rect.height() * 0.1))
+    path.lineTo(QPointF(rect.center().x() + neck, top))
+    painter.setPen(_pen(colour, 1.3))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawPath(path)
+    # The lip, so the shape reads as a vessel rather than an arrow at 16 px.
+    painter.drawLine(
+        QPointF(rect.center().x() - neck * 1.7, top), QPointF(rect.center().x() + neck * 1.7, top)
+    )
+
+
+def paint_shield_glyph(painter: QPainter, rect: QRectF, colour: QColor) -> None:
+    """A shield with a tick: a check — everything behind this point has been verified."""
+    path = QPainterPath(QPointF(rect.center().x(), rect.top()))
+    path.lineTo(QPointF(rect.right(), rect.top() + rect.height() * 0.22))
+    path.quadTo(
+        QPointF(rect.right(), rect.center().y() + rect.height() * 0.2),
+        QPointF(rect.center().x(), rect.bottom()),
+    )
+    path.quadTo(
+        QPointF(rect.left(), rect.center().y() + rect.height() * 0.2),
+        QPointF(rect.left(), rect.top() + rect.height() * 0.22),
+    )
+    path.closeSubpath()
+    painter.setPen(_pen(colour, 1.3))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawPath(path)
+    tick = QPainterPath(QPointF(rect.left() + rect.width() * 0.3, rect.center().y()))
+    tick.lineTo(
+        QPointF(rect.center().x() - rect.width() * 0.02, rect.center().y() + rect.height() * 0.18)
+    )
+    tick.lineTo(
+        QPointF(rect.right() - rect.width() * 0.26, rect.center().y() - rect.height() * 0.16)
+    )
+    painter.drawPath(tick)
+
+
+def beaker_icon(color: str | QColor) -> QIcon:
+    """The beaker as a row icon: this step keeps tests."""
+    pixmap, painter = _canvas()
+    paint_beaker_glyph(painter, QRectF(3.0, 2.5, 10.0, 11.0), QColor(color))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def shield_icon(color: str | QColor) -> QIcon:
+    """The check shield as a row icon: this step stands for what it waits on passing."""
+    pixmap, painter = _canvas()
+    paint_shield_glyph(painter, QRectF(3.0, 2.5, 10.0, 11.0), QColor(color))
     painter.end()
     return QIcon(pixmap)

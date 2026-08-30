@@ -22,8 +22,8 @@ you work. So:
   Say what you found and what you propose before you change it.
 - **Make small, named changes — and author them whole.** One `step add` per step, carrying
   everything the step needs in the same call: `--describe-file F`, `--agent` if an agent
-  will execute it, `--days N`, `--link r1 r2`, `--attach a1`, `--after` for its
-  dependencies. One authored step is one line in the diff and one thing the user can
+  will execute it, `--days N`, `--link r1 r2`, `--attach a1`, `--test 'what must keep
+  being true'`, `--after` for its dependencies. One authored step is one line in the diff and one thing the user can
   disagree with; five half-steps are noise.
 - **The description is the briefing.** Write one good description per step — what it is,
   what done means (see *Writing descriptions*) — and mark agent-executed steps with
@@ -81,6 +81,45 @@ EOF
 
 `agent prompt <step>` shows the result the way its consumer will see it — read it and ask
 whether it is enough to work from.
+
+## Writing tests
+
+A **test** is what the step must keep passing *after* it is done. That is the whole
+difference from a description, and it is the one thing to get right:
+
+- The **description** says what the step *is*, and on an agent step it is the briefing.
+- A **test** says how somebody would *prove* it works — a year from now, with no memory of
+  building it. It outlives the step, and it is run again and again.
+
+A step carries **several tests**, each its own record with its own result in a run. Write
+one test per thing that can independently break, not one lumpy test per step. Each is
+markdown; keep it to numbered steps somebody can follow without asking you anything:
+
+```
+dplanner test add 'Fix list flicker' 'No flicker on render' --text '1. Open the list in
+the bench view with 200+ rows.
+2. It must not flicker when it first renders, nor when data updates underneath.'
+```
+
+Two shapes are worth knowing:
+
+- **A check** is a step that gathers every test it waits on — `dplanner check set 'Pre-release
+  check'` — so a run can be scoped to it. It stores nothing; what it covers is read off the
+  graph, so linking more work behind it widens it automatically. A *release* step already
+  works the same way, so `--scope` takes either.
+- **A run** is one occasion of executing a scope. A project has at most one open at a time,
+  and starting a new one closes the last:
+
+```
+dplanner test-run start --scope 'Pre-release check' --label 'Pre-release 3'
+dplanner test-run mark t3 failed --note 'still flickers when rows arrive late'
+dplanner test-run mark t4 ok
+dplanner test-run show          # what is left, and what failed
+```
+
+When you execute a test, **record what actually happened** — including `skipped`, and
+including a note on a failure. A run whose results were guessed is worse than no run.
+Marking a test the status it already has succeeds, so a batch is safe to re-run.
 
 ## Estimating agent work
 

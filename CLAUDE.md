@@ -180,8 +180,8 @@ root, stop and look for the registry or capability you have not found yet.
   step editor appear twice in a split window, and the fix deleted code rather than adding a
   visibility check — because "only the active pane publishes" already says which selection a
   panel should be showing. `ARCHITECTURE.md`'s *Where a panel goes* has the rest.
-- **A toggleable aspect's tab follows the aspect.** Release, Agent and Ticket are Step ▸
-  Type toggles (independent, never a radio group), and each registers its
+- **A toggleable aspect's tab follows the aspect.** Release, Agent, Ticket, Test and Check
+  are Step ▸ Type toggles (independent, never a radio group), and each registers its
   `InspectorSection` with a `shown_for` predicate so its tab exists only on a step that
   carries the aspect. **The description is an agent step's instructions** — the briefing's
   `## Instructions` block, decided by the composition root's `_briefing_instruction`; a
@@ -356,6 +356,36 @@ root, stop and look for the registry or capability you have not found yet.
   is the one stored value — project-node module data, written by the tab's spinbox and
   `dplanner schedule focus` alike. `ARCHITECTURE.md`'s *Time estimates: two worker pools,
   one greedy simulation* has the reasoning.
+- **A test belongs to a step, and a step carries several.** A description says what a step
+  *is*; a test says how you would prove it, and it outlives the step. A test is **not a
+  node** — it is a record in the step's `testing` aspect with its own id, title, markdown
+  body and per-run result, so forty steps with three tests each do not become a hundred and
+  sixty nodes. The body is a **string in the record**, not a `.md`: a node holds one prose
+  document and a step holds N tests. Ids are minted **per project** (`t1, t2, …`), which is
+  what lets a run's results be flat and a rename never detach a test's history.
+  `ARCHITECTURE.md`'s *A test belongs to a step, and a step carries several* has the
+  reasoning, including the diff trade the string body accepts.
+- **A check is a scope over the graph, and so is a release.** What a check covers is
+  `ordering.upstream()` filtered by which of those steps carry tests — derived on every
+  read, never stored, or `dplanner step link` could leave it claiming coverage it lost. The
+  same function answers for a *release* step, so the Tests tab's scopes, the Covers tab,
+  `dplanner check show` and `test-run start --scope` are four readers of one walk. The check
+  aspect is a bare marker in `modules/step_check/`; the Covers tab that renders its contents
+  belongs to `modules/testing/`, because a list of tests is testing's business — which keeps
+  the wiring one-directional. `ARCHITECTURE.md`'s *A check is a scope over the graph* has
+  the rest.
+- **A test result is not a step status, and it gates nothing.** `pending/in-progress/done/
+  blocked` is where the *work* stands; `ok/failed/skipped`/absent is what happened when
+  somebody *ran* a test. No word is shared, on purpose. A failing test does not block a
+  release and does not reach `progression()` — folding it in would make `dplanner
+  progression show` answer a different question. `ARCHITECTURE.md`'s *A test result is not a
+  step status* has the why.
+- **A project has at most one open test run, and a run freezes its membership.** Starting one
+  closes the last, which is what makes "mark these twelve ok" a pure function of the context
+  — no hidden "which run", and a greyed verb that says *"start a test run first"*. A run
+  stores the ids it was opened over, so a closed run cannot change meaning when the graph
+  does; a missing result reads as pending, and the latest result is the newest run that
+  actually recorded one. `ARCHITECTURE.md`'s *One open run per project* has the reasoning.
 - **A module's project-level editor is a card, registered into `services.detail_cards`.**
   Same `InspectorSection` contract as a step tab, with a project id in `show_target`; the
   project panel renders the stack. Register before `project_editor` in `default_modules()` —

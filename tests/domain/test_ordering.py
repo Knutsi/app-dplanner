@@ -6,7 +6,7 @@ it lives in the domain rather than in the canvas that first needed it.
 
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.ordering import depths, ready, topological_order, waves
+from dplanner.domain.ordering import depths, ready, topological_order, upstream, waves
 
 
 def build(*titles):
@@ -128,3 +128,30 @@ def test_the_index_matches_the_flat_order():
     from dplanner.domain.ordering import placed
 
     assert [p.step for p in placed(library, project)] == topological_order(library, project)
+
+
+# -- upstream: the whole cone behind a step -----------------------------------------
+
+
+def test_upstream_gathers_the_whole_chain_in_project_order():
+    library, project = build("A", "B", "C", "D")
+    link(library, project, "B", "A")
+    link(library, project, "C", "B")
+    assert titles(upstream(library, project, by_title(project, "C").id)) == ["A", "B"]
+    assert titles(upstream(library, project, by_title(project, "A").id)) == []
+
+
+def test_upstream_merges_two_branches_and_never_repeats_one():
+    """A diamond: D waits on B and C, both of which wait on A."""
+    library, project = build("A", "B", "C", "D")
+    link(library, project, "B", "A")
+    link(library, project, "C", "A")
+    link(library, project, "D", "B")
+    link(library, project, "D", "C")
+    assert titles(upstream(library, project, by_title(project, "D").id)) == ["A", "B", "C"]
+
+
+def test_upstream_excludes_the_step_itself():
+    library, project = build("A", "B")
+    link(library, project, "B", "A")
+    assert by_title(project, "B") not in upstream(library, project, by_title(project, "B").id)

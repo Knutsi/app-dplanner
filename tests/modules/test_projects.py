@@ -35,8 +35,12 @@ def state(services, action_id, context):
 # -- the index folder --------------------------------------------------------------------------
 
 
-def test_the_module_contributes_one_index_folder(services):
-    assert [segment.id for segment in services.index_segments.segments()] == ["projects"]
+def test_the_module_contributes_the_first_index_folder(services):
+    """Projects is the top folder; Tests registers below it. Order is (order, id)."""
+    assert [segment.id for segment in services.index_segments.segments()] == [
+        "projects",
+        "tests",
+    ]
 
 
 def test_the_folder_shows_projects_and_not_their_steps(services, project):

@@ -1149,6 +1149,95 @@ decisions worth writing down:
   question the report exists to answer; the two units are a lens toggle over one grid,
   never two tables.
 
+## A test belongs to a step, and a step carries several
+
+A description says what a step *is*. An acceptance criterion says what would make it
+finished — and is then consumed, because the step closes. A **test** is the third thing: it
+says how you would prove the step works, and it *outlives* the step. That is the whole
+reason it is an aspect of its own rather than a paragraph in the description, and the reason
+the tab's note is the first thing a reader sees: *"How you would know this step works — kept
+after the work is done."*
+
+**A test is not a node.** It belongs to exactly one step, never appears on the canvas, and
+the graph knows nothing about it. A step carries several, each with its own id, title,
+markdown body and — the point of the whole feature — its own result in a run. Making tests
+nodes would have been cheaper in code and wrong in the model: forty work steps with three
+tests each is a hundred and sixty nodes in a graph that is meant to show *the plan*.
+
+**The body is a markdown string inside the record, not a `.md` file.** `FORMAT.md` gives a
+node exactly one prose document, and a step carries N tests, so the one-document rule does
+not stretch to them; the nearest existing shape is `spec`'s requirement records, and this
+follows it. The trade is real and worth stating: a body edit diffs as one changed JSON line
+rather than line by line. Test bodies are a few lines, so the whole new body is legible in
+the diff — and if that ever stops being true, storing the body as an array of lines is a
+format-2 migration away. Images are the exception and go where a description's images go:
+the step's file area, referenced as `![](assets/…)`.
+
+**Ids are minted per project, not per step.** `t1, t2, …` across the whole project — `spec`'s
+`next_id` is the precedent. That is what lets a run's results be a flat map, lets a person
+say "t7 failed" out loud, and lets `dplanner test-run mark t7 failed` name a test without
+naming its step. Renaming a test therefore never detaches its history, which keying on the
+title would have done.
+
+**The editor is a card per test on a lane, and the body grows with its content.** No inner
+scroller: `DESIGN.md` forbids one in a card, and a body that grows to a cap and then offers
+the expand button is also the right answer on a narrow panel. The expand is the sanctioned
+one — a second `TextBinding` over a `TextField` implemented against the record
+(`testing/section.py`'s `TestBodyField`), never text copied into a dialog and back.
+
+## A check is a scope over the graph, and so is a release
+
+A **check** is a step type that stands for everything behind it having been verified. What it
+covers is not stored: it is `ordering.upstream()` — the `requires` cone — filtered by which
+of those steps carry tests. Storing that list would let `dplanner step link` leave a check
+claiming coverage it no longer has, with no window running to notice; it is the same rule as
+the topological order and progression, for the same reason.
+
+The part worth noticing is that **a release is already the same scope**. `covered()` takes a
+step id and answers for any step at all, so the Tests tab's scope selector, the *Covers* tab,
+`dplanner check show` and `test-run start --scope` are four readers of one walk — and a run
+can be scoped to a release without a line of code that knows what a release is. A check is a
+scope you *declare*; a release is one you already had.
+
+The check aspect itself is a bare marker in its own package, and the *Covers* tab that shows
+what it gathers is registered by the tests module — because that tab is a list of tests,
+which is testing's business. That keeps the wiring one-directional: `TestsDeps` takes an
+`is_scope` predicate, and `step_check` needs nothing from anybody.
+
+## A test result is not a step status
+
+Two vocabularies, deliberately sharing no words. A step's status is `pending`,
+`in-progress`, `done`, `blocked` — where the *work* stands. A test's result is `ok`,
+`failed`, `skipped`, or absent — what happened when somebody *ran* it. A test on a done step
+is not "done"; it is a thing that passed last Tuesday and might not today.
+
+**A failing test gates nothing.** It does not block a release, and it does not touch
+`progression()`. Progression answers "what can be launched right now, given the graph and
+the stored statuses"; folding results into it would quietly make `dplanner progression show`
+answer a different question. A person deciding whether to ship reads both.
+
+## One open run per project, and a run freezes its membership
+
+A **test run** is one occasion of executing a scope: which tests were in it, and what each
+one did. Two rules do most of the work.
+
+**At most one run is open per project.** Starting a run closes whatever was open. That is
+what makes "mark these twelve ok" a pure function of the context — there is no hidden
+"which run" the user must have selected first, no verb carrying one, and the action state
+can say *"Mark Ok — start a test run first"* rather than being mysteriously inert. The Tests
+tab's Run selector can still *show* a closed run; it is read-only, because a record of an
+occasion is not an editable list.
+
+**A run freezes the tests it was opened over.** `tests` is a stored list of ids, not a live
+query, so adding a test or relinking the graph afterwards cannot change what a closed run
+means. The cost is that a test added mid-run does not join it — which is correct: it was not
+there. A missing result reads as pending, so opening a run over two hundred tests writes two
+hundred ids and no statuses, and the file grows as the work is actually done.
+
+**The latest result is the newest run that recorded one**, not simply the newest run. A test
+absent from yesterday's run has no answer from it, and reporting "not run" there would erase
+what last week established.
+
 ## Pressure points, named before they hurt
 
 A whole-codebase review (2026-08) found the architecture holding; these are the places
@@ -1166,6 +1255,11 @@ recognises the moment. None needs action today.
   `tests/modules/test_aspect_editors.py` pins the resulting sequence; the tenth aspect
   author will have to read seven files to pick a number, and that is the moment the order
   belongs in one place (the composition root already knows it).
+- **The index tree now has two segment views that both list projects.** `projects/index.py`
+  nests contributed entry rows under each project; `testing/index.py` is a flat cousin with
+  an *All Projects* row on top. Two is a coincidence, not a pattern — deliberately not
+  abstracted. A third is the moment to extract the shared rebuild-and-restore-expansion
+  machinery, which is the half that is actually the same.
 - **`project_editor` accretes by construction.** *Modules never import each other* means a
   feature that lives *on* the canvas — regions, named layouts, sorts, the minimap — cannot
   become its own package, so the surface-owning module grows instead (a quarter of all
