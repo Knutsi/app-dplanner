@@ -866,6 +866,59 @@ session-replace model). A highlighter keeps the text byte-identical to disk.
 **Upstream?** Yes, if the template keeps the premise that module prose is markdown — the
 highlighter has no DPlanner in it. The `PaletteChange` → `rehighlight` hook belongs with it.
 
+### A prose editor attaches what you paste into it
+
+**What.** New `framework/prose_edit.py` (`ProseEdit`) and `framework/mime_files.py`. A file
+arriving by paste, drop, or the editor's own *Insert Image…* is content-addressed into the
+node's module file area and referenced from the caret as `![alt](assets/…)` — or
+`[name](assets/…)` when it is not an image. `ProseSection` and `ExpandedTextDialog` now build
+a `ProseEdit`; `ProseSection` also builds the `AssetGallery` when given an `attach_title`,
+which deleted the hand-wired gallery from two hosts that had each grown their own.
+`AssetGallery` gained a public `attach_bytes(data, filename) -> str | None` (was
+`_attach_bytes`, returning nothing) and a `hide_when_empty` flag.
+
+**Why the editor does not write the file.** It is handed an `Attach` callable — the gallery's
+`attach_bytes` — because attaching is three steps: resolve the area, write, redraw the
+thumbnails. An editor doing only the middle one puts a pasted image on disk with no thumbnail
+beside it, and needs a second answer for a node the store has never flushed. It was written
+the other way first; the missing refresh is what found it.
+
+**Why `set_area` is a call and not another `…_for` callable.** The node a document is *keyed
+by* is not always the node its *files* live beside — a test's body is keyed by the test, its
+images by the step. A `Callable[[str], AreaFor | None]` hands the callee an id it must
+discard, which reads correct and is wrong. The host makes the call from its own
+`show_target`, where the right id is in scope.
+
+**Why the undo step is sealed on both sides of the insert.** `EditTextCommand` coalesces an
+append at exactly the caret — which every paste is — so without
+`UndoService.break_coalescing()` before and after, one Ctrl+Z takes the sentence being typed
+along with the link. Worth knowing for any template feature that inserts text
+programmatically into a bound editor: coalescing is tuned for keystrokes and will happily
+swallow something that was not one.
+
+**Qt facts worth writing down** (measured on PySide6 6.9+, offscreen):
+
+- `QPlainTextEdit` routes **drops** through `insertFromMimeData`, the same override paste
+  uses. No `setAcceptDrops`, no `dragEnterEvent`/`dropEvent` — `acceptDrops()` is already
+  true on the widget and its viewport.
+- Overriding `canInsertFromMimeData` is **not** cosmetic: Qt's own answer is `False` for
+  image-only clipboard data, which greys **Paste** in the standard context menu. `paste()`
+  itself does not consult it, so Ctrl+V works either way — only the menu entry depends on it.
+- Qt asks `canInsertFromMimeData` on **every drag-move**, so it must not read a byte. Hence
+  the split into `carries_files()` (a `stat` at worst) and `payloads()` (reads, once).
+- A URL-only `QMimeData` auto-synthesises `hasText()` as the path string, which is why local
+  files must be checked before falling through to Qt's paste — and why "falling through" for
+  an editor with no area usefully inserts the path.
+- A child widget of a never-shown parent reports `isVisible() == False` whatever it was told;
+  `isHidden()` is the property that reflects the widget's own state.
+
+**Upstream?** Yes. "A prose editor attaches what you paste" has no DPlanner in it, and
+`mime_files.py` is pure Qt. The one judgement to carry with it: a plain-text markdown editor
+inserts a *link* rather than embedding, because embedding means a rich-text widget and that
+costs the positional binding (see the highlighter note above, which is the same trade seen
+from the other side).
+
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class

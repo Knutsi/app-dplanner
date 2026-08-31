@@ -330,3 +330,48 @@ def test_preview_shows_the_exact_assembled_prompt(services, step, monkeypatch):
     services.actions.run("agent.preview", services.context.current())
     assert "House rules." in shown["text"] and "Ship it." in shown["text"]
     assert shown["title"] == "Prompt Preview"
+
+
+# -- pasting an image into either instruction ----------------------------------------------------
+
+
+def paste_image(edit):
+    from PySide6.QtCore import QMimeData
+    from PySide6.QtGui import QImage
+
+    from dplanner.core.png import encode_rgb
+
+    mime = QMimeData()
+    mime.setImageData(QImage.fromData(encode_rgb(2, 2, 6, b"\x00" * 12)))
+    edit.insertFromMimeData(mime)
+
+
+def test_each_editor_pastes_into_its_own_level(services, step, section):
+    """One module id, two areas — the step's instruction and the project's standing one.
+    An editor aimed at the wrong one is a mistake that only shows up in somebody's diff."""
+    from dplanner.domain.assets import assets
+
+    project_id = services.document.project_of(step.id).id
+    section.show_target(step.id)
+    paste_image(section.edit)
+    paste_image(section.project_edit)
+
+    # Both areas hold one file. Content addressing means the same bytes get the same
+    # *name* in either, so this is the assertion that separates them: had both editors
+    # written to the step, the project's area would be empty.
+    module = "step_agent_instruction"
+    assert len(assets(services.repo.files(step.id, module))) == 1
+    assert len(assets(services.repo.files(project_id, module))) == 1
+    assert len(section.step_assets._names) == 1
+    assert len(section.project_assets._names) == 1
+
+
+def test_the_project_card_pastes_into_the_project(services, step, card):
+    from dplanner.domain.assets import assets
+
+    project_id = services.document.project_of(step.id).id
+    card.show_target(project_id)
+    paste_image(card.edit)
+    names = assets(services.repo.files(project_id, "step_agent_instruction"))
+    assert len(names) == 1
+    assert card.gallery is not None and card.gallery._names == names

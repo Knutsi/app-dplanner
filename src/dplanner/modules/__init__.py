@@ -786,6 +786,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 segments=services.index_segments,
                 theme=services.theme,
                 parent=services.window,
+                files=store.files,
                 # A check declares a scope; a feature and a milestone already were ones, and
                 # all three are the same walk with a different stopping rule. Named here,
                 # the one place that may know every aspect, so none learns the others.

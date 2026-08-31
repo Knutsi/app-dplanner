@@ -22,6 +22,7 @@ from PySide6.QtWidgets import QInputDialog, QTreeWidgetItem, QWidget
 from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.scope import ScopeKind, kind_of
+from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
@@ -86,6 +87,10 @@ class TestsDeps:
     # gathers without learning that any of those aspects exist. Named by the composition
     # root, the one place allowed to know all three.
     scopes: tuple[ScopeKind, ...]
+    # The store's file areas — how a test body's images are attached and shown. They are
+    # the *step's* files, the same ones `dplanner test attach` writes; None is a build
+    # without file storage.
+    files: FilesFor | None = None
 
 
 class TestsModule:
@@ -132,7 +137,7 @@ class TestsModule:
                 id=f"{MODULE_ID}.tab",
                 label="Tests",
                 order=30,  # Between Ticket (20) and Agent (40).
-                factory=lambda: TestsSection(deps.library, deps.undo),
+                factory=lambda: TestsSection(deps.library, deps.undo, deps.files),
                 shown_for=lambda step_id: (
                     self._step(step_id) is not None and enabled(deps.library.step(step_id or ""))
                 ),

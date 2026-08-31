@@ -225,6 +225,22 @@ root, stop and look for the registry or capability you have not found yet.
   path, opened from the corner button `attach_expand` pins onto the editor.
   `ARCHITECTURE.md`'s *Expanding an editor is a second binding, not a copy* has the
   reasoning; never copy text out into a dialog and back.
+- **A file pasted or dropped into a prose editor is attached, then linked.** `ProseEdit`
+  (`framework/prose_edit.py`) content-addresses it into the module's file area — the same
+  place `describe attach`, `handoff attach` and `test attach` write — and types
+  `![alt](assets/…)` at the caret, or `[name](assets/…)` when it is not an image. A plain-text
+  markdown editor cannot embed a picture without breaking `TextBinding`, so it does not
+  pretend to; the gallery under it shows the thumbnail. The link is undoable and the blob is
+  not (`FORMAT.md`), and the insert **seals the undo step on both sides** or it would merge
+  into the sentence being typed. The editor never resolves the area itself: it is handed
+  `AssetGallery.attach_bytes`, and `ProseSection.set_area` aims both — called by the host,
+  because a test's body is keyed by the test while its images belong to the step. What counts
+  as an arriving file is `framework/mime_files.py`, shared with the spec module's rich-text
+  editor so the two cannot disagree about a drop. The Description, test bodies and both agent
+  instructions have it; **`modules/step_handoff/section.py` does not** — it predates
+  `ProseSection` and still hand-rolls its own Attach button and file list, so it is the one
+  prose editor that takes no paste. That is a gap, not a rule. `ARCHITECTURE.md`'s *A pasted
+  image is an attachment and a link, not an embed* has the reasoning.
 - **Double-clicking a step anywhere runs `steps.details`** — a modal dialog hosting a second
   `StepPanel`, disposed on close. It is the one gesture across canvas, order, progression and
   estimates; a table runs it against a context naming exactly the row's step. Reveal-in-graph
@@ -324,6 +340,9 @@ root, stop and look for the registry or capability you have not found yet.
   `Step`, the index tree has `Project`, the tab bar renders View's Tabs submenu (via
   `build_menu`'s `submenu` filter). Make the thing under the cursor
   current *first*, then build; the menu then reads the same context every other presenter does.
+  **A text widget's own standard menu is the exception**: `ProseEdit` appends *Insert
+  Image…* to `createStandardContextMenu()`, because a verb acting on one widget's caret
+  belongs in no menu bar and would be greyed everywhere else.
 - **Derived facts are computed, never stored** — the topological order in
   `domain/ordering.py` is the reference, and `domain/schedule.py` is the same walk carrying
   estimates. Storing one means it can disagree with what it came from, and the CLI is what

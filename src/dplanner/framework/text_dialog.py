@@ -9,6 +9,9 @@ loses nothing, because nothing ever lived only there.
 
 :func:`attach_expand` is the one affordance that opens it — a small corner button on the
 editor itself, so every host offers the same gesture without growing a header row.
+
+It inherits the inline editor's powers too: handed the same ``attach`` callable, a paste in
+the big window lands in the same file area and refreshes the same gallery behind it.
 """
 
 from typing import Any
@@ -25,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.framework.markdown_highlight import MarkdownHighlighter
+from dplanner.framework.prose_edit import Attach, ProseEdit
 from dplanner.framework.text_binding import TextBinding, TextField
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import centered_column, make_text_well, space_lines
@@ -47,12 +51,14 @@ class ExpandedTextDialog(QDialog):
         *,
         title: str,
         placeholder: str = "",
+        attach: Attach | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
 
-        self.edit = QPlainTextEdit(self)
+        self.edit = ProseEdit(self, undo=undo)
+        self.edit.set_attach(attach)
         self._highlighter = MarkdownHighlighter(self.edit.document(), self.edit)
         self.edit.setObjectName("InspectorNotes")
         self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)

@@ -269,3 +269,26 @@ def test_an_edit_in_the_dialog_lands_on_the_undo_stack(services, project, monkey
     assert step.title == "Read the whole spec"
     services.undo.undo()
     assert step.title == "Read the spec"
+
+
+def test_the_details_dialog_never_outgrows_the_screen(services, project, monkeypatch):
+    """It asks for 900x850 — room for the Tests tab's list beside its editor — but a laptop
+    must still get a dialog it can show whole. Asserted against the clamp, not the constant:
+    the offscreen platform reports an 800x800 screen, so the constant never survives here."""
+    from dplanner.modules.step_properties.dialog import (
+        DIALOG_HEIGHT,
+        DIALOG_WIDTH,
+        SCREEN_CLEARANCE,
+        StepDetailsDialog,
+    )
+
+    step = project.steps[0]
+    opened = []
+    monkeypatch.setattr(StepDetailsDialog, "exec", lambda self: opened.append(self))
+    select(services, step.id)
+    services.actions.run("steps.details", services.context.current())
+
+    (dialog,) = opened
+    available = dialog.screen().availableGeometry()
+    assert dialog.width() == min(DIALOG_WIDTH, available.width() - SCREEN_CLEARANCE)
+    assert dialog.height() == min(DIALOG_HEIGHT, available.height() - SCREEN_CLEARANCE)

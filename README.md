@@ -179,6 +179,8 @@ src/dplanner/
 │   ├── inspector.py         what a module registers to appear in a detail panel
 │   ├── action_dialog.py     one submenu's toggles as checkboxes — the fifth action presenter
 │   ├── prose_section.py     a panel section over one document, bound to the undo stack
+│   ├── prose_edit.py        that section's editor: a pasted file becomes a markdown link
+│   ├── mime_files.py        the files a paste or a drop carries — both editors' one answer
 │   ├── text_dialog.py       the same document in a big modal editor — a second binding
 │   ├── asset_gallery.py     a module's attached files as thumbnails; click to view
 │   ├── image_preview.py     the modal lightbox the gallery (and anyone) opens

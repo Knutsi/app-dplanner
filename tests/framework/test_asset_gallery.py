@@ -60,7 +60,7 @@ def test_files_mode_is_read_only(app, services, step):
 def test_an_unflushed_node_answers_in_words(app):
     gallery = AssetGallery(editable=True)
     gallery.set_area(lambda: (_ for _ in ()).throw(KeyError("unflushed")))
-    gallery._attach_bytes(b"", "x.png")  # as if a file was chosen in the dialog
+    gallery.attach_bytes(b"", "x.png")  # as if a file was chosen in the dialog
     assert "Not saved yet" in gallery.note.text()
 
 
@@ -96,3 +96,25 @@ def test_thumbnails_stay_thumbnail_sized(app, services, step):
     _ratio, pixmap = gallery._thumbs[name]
     assert pixmap is not None
     assert pixmap.deviceIndependentSize().width() <= asset_gallery.THUMBNAIL_SIZE
+
+
+def test_a_hide_when_empty_gallery_takes_no_room_until_it_has_one(app, services, step):
+    """The test detail pane's setting: an editable gallery still costs a button row, and
+    that pane has none to spare. Paste, drop and Insert Image… still reach an empty area."""
+    gallery = AssetGallery(editable=True, hide_when_empty=True)
+    gallery.set_area(lambda: services.repo.files(step.id, MODULE_ID))
+    assert gallery.isHidden()
+    gallery.attach_bytes(png_bytes(), "figure.png")
+    assert not gallery.isHidden()
+    gallery.deleteLater()
+
+
+def test_a_hidden_gallery_still_appears_to_say_it_cannot_attach(app):
+    """Hidden-when-empty must not swallow the one message the surface owes the user."""
+    gallery = AssetGallery(editable=True, hide_when_empty=True)
+    gallery.set_area(lambda: (_ for _ in ()).throw(KeyError("unflushed")))
+    assert gallery.isHidden()
+    gallery.attach_bytes(png_bytes(), "figure.png")
+    assert not gallery.isHidden()
+    assert "Not saved yet" in gallery.note.text()
+    gallery.deleteLater()

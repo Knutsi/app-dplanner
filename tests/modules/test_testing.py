@@ -324,7 +324,7 @@ def rows(section):
 def section(services, step):
     from dplanner.modules.testing.section import TestsSection
 
-    section = TestsSection(services.document, services.undo)
+    section = TestsSection(services.document, services.undo, services.repo.files)
     section.show_target(step.id)
     yield section
     section.dispose()
@@ -679,3 +679,45 @@ def test_the_tables_preview_line_reads_as_prose_not_markdown_source():
     assert _preview("- First bullet\n- Second") == "First bullet"
     assert _preview("1. Open the list") == "1. Open the list"
     assert _preview("") == ""
+
+
+# -- images in a test body ----------------------------------------------------------------------
+
+
+def test_a_pasted_image_lands_beside_the_step_and_the_body_references_it(services, step, section):
+    """A test's images are the *step's*: `dplanner test attach` has written them to the
+    step's testing area all along, and the tab now writes to the same place. The id the
+    body editor is bound to is the test's, which names no file area at all — this is the
+    assertion that catches keying the attachment on it."""
+    from PySide6.QtCore import QMimeData
+    from PySide6.QtGui import QImage, QTextCursor
+
+    from dplanner.core.png import encode_rgb
+    from dplanner.domain.assets import assets
+
+    step.module_data[MODULE_ID] = write([Test("T100", "One", "Given ")])
+    section.show_target(step.id)
+    # Binding a document leaves the caret at the top, as setPlainText always does; a person
+    # clicks where they want the picture first.
+    section.detail.body.edit.moveCursor(QTextCursor.MoveOperation.End)
+    mime = QMimeData()
+    mime.setImageData(QImage.fromData(encode_rgb(2, 2, 6, b"\x00" * 12)))
+    section.detail.body.edit.insertFromMimeData(mime)
+
+    names = assets(services.repo.files(step.id, MODULE_ID))
+    assert len(names) == 1
+    body = read(services.document.step(step.id))[0].body
+    assert body == f"Given ![image]({names[0]})"
+
+
+def test_the_gallery_is_out_of_the_way_until_the_step_has_a_file(services, step, section):
+    """The pane is the tightest surface in the application; an empty gallery costs nothing."""
+    from dplanner.domain.assets import attach
+
+    step.module_data[MODULE_ID] = write([Test("T100", "One", "body")])
+    section.show_target(step.id)
+    gallery = section.detail.body.gallery
+    assert gallery is not None and gallery.isHidden()
+    attach(services.repo.files(step.id, MODULE_ID), b"png bytes", "figure.png")
+    section.show_target(step.id)
+    assert not gallery.isHidden()

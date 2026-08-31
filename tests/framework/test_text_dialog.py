@@ -87,3 +87,40 @@ def test_the_dialog_parents_to_the_editor_window(app, services, step, section):
     dialog = dialog_for(services, step, parent=section.window())
     assert dialog.parent() is section.window()
     dialog.dispose()
+
+
+def test_the_expanded_editor_attaches_a_paste_where_the_inline_one_does(services, step):
+    """The dialog is handed the same attach callable, so a picture pasted in the big window
+    lands in the same area and refreshes the gallery still sitting behind it."""
+    from PySide6.QtCore import QMimeData
+    from PySide6.QtGui import QImage
+
+    from dplanner.core.png import encode_rgb
+    from dplanner.domain.assets import assets
+
+    def field_for(target_id):
+        return ModuleTextField(services.document, target_id, MODULE_ID)
+
+    section = ProseSection(
+        field_for, services.undo, "What this step is.", attach_title="Attach to Description"
+    )
+    section.show_target(step.id)
+    section.set_area(lambda: services.repo.files(step.id, MODULE_ID))
+
+    dialog = ExpandedTextDialog(
+        ModuleTextField(services.document, step.id, MODULE_ID),
+        services.undo,
+        title="Description",
+        attach=section.gallery.attach_bytes if section.gallery else None,
+    )
+    mime = QMimeData()
+    mime.setImageData(QImage.fromData(encode_rgb(2, 2, 6, b"\x00" * 12)))
+    dialog.edit.insertFromMimeData(mime)
+
+    names = assets(services.repo.files(step.id, MODULE_ID))
+    assert len(names) == 1
+    # The inline editor tracks it through the foreign-change path, and so does the gallery.
+    assert section.edit.toPlainText() == f"![image]({names[0]})"
+    assert section.gallery is not None and section.gallery._names == names
+    dialog.dispose()
+    section.dispose()

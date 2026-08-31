@@ -10,7 +10,9 @@ Images follow the viewer's rule: a relative ``![](assets/…)`` resolves through
 file area, never the local filesystem. An image arriving by paste, drop or the Insert
 Image… button is content-addressed into the same ``assets/`` directory the CLI's
 ``spec attach`` uses, then embedded at the cursor — so ``toMarkdown`` emits a plain
-relative link and the document renders identically in the read-only viewer.
+relative link and the document renders identically in the read-only viewer. What counts as
+an arriving image is :mod:`dplanner.framework.mime_files`'s answer, shared with the prose
+stack's editor so the two surfaces cannot disagree about a drop.
 
 Typing is undone by the widget's own stack (Ctrl+Z inside the editor); the application
 stack holds the session-level index replaces — see the activity.
@@ -18,7 +20,7 @@ stack holds the session-level index replaces — see the activity.
 
 from pathlib import Path
 
-from PySide6.QtCore import QBuffer, QMimeData, Qt, QUrl
+from PySide6.QtCore import QMimeData, Qt, QUrl
 from PySide6.QtGui import (
     QFont,
     QImage,
@@ -34,13 +36,11 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QFileDialog, QTextEdit, QWidget
 
 from dplanner.domain.store import ModuleFileArea
+from dplanner.framework.mime_files import IMAGE_FILTER, carries_files, payloads
 from dplanner.modules.spec.documents import attach_asset
 from dplanner.modules.spec.viewer import area_image, style_document
 
 MARKDOWN_DIALECT = QTextDocument.MarkdownFeature.MarkdownDialectGitHub
-
-IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
-IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp);;All files (*)"
 
 
 class SpecMarkdownEditor(QTextEdit):
@@ -80,22 +80,17 @@ class SpecMarkdownEditor(QTextEdit):
     # -- images in -------------------------------------------------------------------------
 
     def canInsertFromMimeData(self, source: QMimeData) -> bool:  # noqa: N802 - Qt override
-        if source.hasImage() or self._image_paths(source):
+        if carries_files(source, images_only=True):
             return True
         return bool(super().canInsertFromMimeData(source))
 
     def insertFromMimeData(self, source: QMimeData) -> None:  # noqa: N802 - Qt override
         if self._area is not None:
-            paths = self._image_paths(source)
-            if paths:
-                for path in paths:
-                    self._embed(path.read_bytes(), path.name)
+            items = payloads(source, images_only=True)
+            if items:
+                for item in items:
+                    self._embed(item.data, item.filename)
                 return
-            if source.hasImage():
-                image = QImage(source.imageData())
-                if not image.isNull():
-                    self._embed(_png_bytes(image), "pasted.png")
-                    return
         super().insertFromMimeData(source)
 
     def insert_image_from_file(self) -> None:
@@ -112,14 +107,6 @@ class SpecMarkdownEditor(QTextEdit):
             QTextDocument.ResourceType.ImageResource.value, QUrl(name), image
         )
         self.textCursor().insertImage(name)
-
-    @staticmethod
-    def _image_paths(source: QMimeData) -> list[Path]:
-        """Local image files in the mime data — pasted or dropped paths, not pixels."""
-        if not source.hasUrls():
-            return []
-        paths = [Path(url.toLocalFile()) for url in source.urls() if url.isLocalFile()]
-        return [p for p in paths if p.suffix.lower() in IMAGE_SUFFIXES and p.is_file()]
 
     # -- formatting ------------------------------------------------------------------------
     # Widget-local verbs: they change the caret's formats, not the model, so they are
@@ -163,12 +150,3 @@ class SpecMarkdownEditor(QTextEdit):
 
     def numbered_list(self) -> None:
         self.textCursor().createList(QTextListFormat.Style.ListDecimal)
-
-
-def _png_bytes(image: QImage) -> bytes:
-    buffer = QBuffer()
-    buffer.open(QBuffer.OpenModeFlag.WriteOnly)
-    # The stubs want bytes here; the runtime only accepts str. The runtime wins.
-    image.save(buffer, "PNG")  # type: ignore[call-overload]
-    buffer.close()
-    return bytes(buffer.data().data())
