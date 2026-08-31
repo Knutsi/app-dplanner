@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.commands import Command, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Step, StepId
+from dplanner.domain.store import FilesFor
 from dplanner.framework.cards import CARD_PADDING, STACK_SPACING
 from dplanner.framework.module_data_section import FIELD_GAP, PANEL_MARGIN
 from dplanner.framework.prose_section import ProseSection
@@ -197,7 +198,9 @@ class _TestListSection(QWidget):
 class TestsSection(QWidget):
     """The step's own tests: a list of them, and an editor for the one selected."""
 
-    def __init__(self, library: Library, undo: UndoService[Library]) -> None:
+    def __init__(
+        self, library: Library, undo: UndoService[Library], files: FilesFor | None = None
+    ) -> None:
         super().__init__()
         self._library = library
         self._undo = undo
@@ -245,7 +248,7 @@ class TestsSection(QWidget):
         self.more.setAutoRaise(True)
         self.more.setToolTip("What to do with this test")
         self.more.clicked.connect(self._open_menu)
-        self.detail = _TestDetail(library, undo, self.split, corner=self.more)
+        self.detail = _TestDetail(library, undo, self.split, corner=self.more, files=files)
         self.detail.setMinimumHeight(DETAIL_MIN_HEIGHT)
         self.split.addWidget(self.detail)
         self.split.setStretchFactor(0, 0)
@@ -419,10 +422,12 @@ class _TestDetail(QWidget):
         undo: UndoService[Library],
         parent: QWidget | None = None,
         corner: QWidget | None = None,
+        files: FilesFor | None = None,
     ) -> None:
         super().__init__(parent)
         self._library = library
         self._undo = undo
+        self._files = files
         self._step_id: str | None = None
         self._test_id: str = ""
 
@@ -447,8 +452,18 @@ class _TestDetail(QWidget):
 
         # A plain expanding text well: the detail pane is not a card in a scrolling stack,
         # so the editor may simply take the room and scroll like any other document.
+        # A test's images are the *step's*, not the test's: `dplanner test attach` has
+        # always written them to the step's testing area, and one picture often proves two
+        # tests. Hidden while empty — this pane is the tightest surface in the application,
+        # and a paste, a drop or the editor's Insert Image… all reach an empty area anyway.
         self.body = ProseSection(
-            self._field_for, undo, placeholder=BODY_PLACEHOLDER, margin=0, expand_title="Test"
+            self._field_for,
+            undo,
+            placeholder=BODY_PLACEHOLDER,
+            margin=0,
+            expand_title="Test",
+            attach_title="Attach to Tests",
+            hide_gallery_when_empty=True,
         )
         layout.addWidget(self.body, 1)
         # Enter in the title lands in the body, so naming and writing a test is one flow.
@@ -470,6 +485,13 @@ class _TestDetail(QWidget):
             return None
         return TestBodyField(self._library, self._step_id, target_id)
 
+    def _retarget_assets(self, step_id: str | None) -> None:
+        """Keyed by the step, every time — ``show_target`` cleared the area, and it is only
+        told the test's id, which names no file area at all."""
+        files = self._files
+        if files is not None and step_id is not None:
+            self.body.set_area(lambda: files(step_id, MODULE_ID))
+
     def show_test(
         self, step_id: str | None, test: Test | None, outcome: runs.Outcome | None
     ) -> None:
@@ -487,6 +509,7 @@ class _TestDetail(QWidget):
             # would drop the cursor to the top of the document on every character.
             self._test_id = test.id
             self.body.show_target(test.id)
+        self._retarget_assets(step_id)
         self.identity.setText(test.id)
         if not self.title.hasFocus():
             self.title.setText(test.title)

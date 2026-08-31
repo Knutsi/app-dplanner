@@ -1,14 +1,16 @@
 """The Description block on the Details tab: the prose, the images the prose references,
 and the one switch that decides whether an agent step gets instructions of its own.
 
-`dplanner describe attach` has always written images beside the step; this is the first
-surface that shows them. The editor half is the framework's :class:`ProseSection`
-unchanged — this subclass hangs an editable :class:`AssetGallery` under it, retargets the
-gallery whenever the section is shown a different step, and offers the "Separate agent
-instruction" checkbox on agent steps. The description *is* an agent step's instructions;
-the checkbox is the opt-out, reached through :class:`SeparateInstructionLink` — typed
-callbacks wired by the composition root, so this module never learns the agent module's
-name.
+`dplanner describe attach` has always written images beside the step; this is the surface
+that shows them, and — since the editor takes a paste or a drop — the one most people will
+use to put one there. Text, thumbnails and Ctrl+V all come from the framework's
+:class:`ProseSection`, which grows a gallery when given an ``attach_title``, so this subclass
+has only two jobs of its own: aim that gallery at the step being shown, and offer the
+"Separate agent instruction" checkbox on agent steps.
+
+The description *is* an agent step's instructions; the checkbox is the opt-out, reached
+through :class:`SeparateInstructionLink` — typed callbacks wired by the composition root, so
+this module never learns the agent module's name.
 """
 
 from collections.abc import Callable
@@ -18,13 +20,11 @@ from typing import Any
 from PySide6.QtWidgets import QCheckBox
 
 from dplanner.domain.model import Library
-from dplanner.framework.asset_gallery import AreaFor, AssetGallery
+from dplanner.framework.asset_gallery import AreaFor
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.text_binding import TextField
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
-
-FIELD_GAP = 6
 
 
 @dataclass(frozen=True)
@@ -50,12 +50,18 @@ class DescriptionSection(ProseSection):
         library: Library | None = None,
     ) -> None:
         # margin 0: the Details tab hosts this as a block and owns the outer spacing.
-        super().__init__(field_for, undo, placeholder, margin=0, expand_title="Description")
+        super().__init__(
+            field_for,
+            undo,
+            placeholder,
+            margin=0,
+            expand_title="Description",
+            attach_title="Attach to Description",
+        )
         self._area_for_target = area_for_target
         self._agent_link = agent_link
         self._target_id: str | None = None
         self._loading = False
-        self.gallery = AssetGallery(self, editable=True, attach_title="Attach to Description")
         self.separate_check = QCheckBox("Separate agent instruction", self)
         self.separate_check.setToolTip(
             "By default this description is what the agent is briefed with. Tick to write"
@@ -65,8 +71,6 @@ class DescriptionSection(ProseSection):
         self.separate_check.hide()
         layout = self.layout()
         if layout is not None:
-            layout.setSpacing(FIELD_GAP)
-            layout.addWidget(self.gallery)
             layout.addWidget(self.separate_check)
 
         # The checkbox mirrors another module's aspect, so it follows the model, not the
@@ -83,12 +87,12 @@ class DescriptionSection(ProseSection):
             ]
 
     def show_target(self, target_id: str | None) -> None:
+        # The base clears the area first, so a step with no files never inherits the last
+        # step's; this only has to point it somewhere when there is somewhere to point.
         super().show_target(target_id)
         self._target_id = target_id
-        provider = None
         if target_id is not None and self._area_for_target is not None:
-            provider = self._area_for_target(target_id)
-        self.gallery.set_area(provider)
+            self.set_area(self._area_for_target(target_id))
         self._reload_separate()
 
     def dispose(self) -> None:

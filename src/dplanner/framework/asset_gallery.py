@@ -110,10 +110,15 @@ class AssetGallery(QWidget):
         *,
         editable: bool = False,
         attach_title: str = "Attach File",
+        hide_when_empty: bool = False,
     ) -> None:
         super().__init__(parent)
         self._editable = editable
         self._attach_title = attach_title
+        # For a surface with no room to spare — an editable gallery still costs a button
+        # row with nothing to show. Nothing becomes unreachable: a paste, a drop and the
+        # editor's Insert Image… all reach an empty area.
+        self._hide_when_empty = hide_when_empty
         self._area_for: AreaFor | None = None
         self._files: list[str] = []
         self._read: ReadBytes | None = None
@@ -225,18 +230,26 @@ class AssetGallery(QWidget):
         chosen, _filter = QFileDialog.getOpenFileName(self, self._attach_title)
         if not chosen:
             return
-        self._attach_bytes(Path(chosen).read_bytes(), Path(chosen).name)
+        self.attach_bytes(Path(chosen).read_bytes(), Path(chosen).name)
 
-    def _attach_bytes(self, data: bytes, filename: str) -> None:
+    def attach_bytes(self, data: bytes, filename: str) -> str | None:
+        """Attach bytes and show them; returns the path to link to, or None if it could not.
+
+        Public because a paste into the editor above needs the same three steps this button
+        does — resolve, write, redraw — and a second implementation of them is how a pasted
+        image ends up on disk with no thumbnail beside it.
+        """
         area = self._resolve()
         if area is None:
             # A node created moments ago has no directory until autosave flushes it.
             self.note.setText("Not saved yet — try again in a moment.")
             self.note.show()
-            return
+            self._apply_visibility()  # Hidden-when-empty must still be able to say this.
+            return None
         self.note.hide()
-        attach(area, data, filename)
+        name = attach(area, data, filename)
         self.refresh()
+        return name
 
     def _remove(self, name: str) -> None:
         area = self._resolve()
@@ -262,6 +275,16 @@ class AssetGallery(QWidget):
             self._grid.setColumnStretch(column, 0)
         self._grid.setColumnStretch(self._columns, 1)
         self._grid_host.setVisible(bool(self._names))
+        self._apply_visibility()
+
+    def _apply_visibility(self) -> None:
+        """A hide-when-empty gallery takes no room until it has a file — or a word to say.
+
+        ``isHidden`` rather than ``isVisible``: the note's visibility is being read to decide
+        this widget's, and a child of a hidden parent is never *visible* whatever it was told.
+        """
+        if self._hide_when_empty:
+            self.setVisible(bool(self._names) or not self.note.isHidden())
 
     def _column_count(self) -> int:
         # Panels can be 200 px wide; the grid reflows instead of clipping.

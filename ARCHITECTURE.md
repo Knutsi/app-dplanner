@@ -504,6 +504,55 @@ onto the editor itself, so every host — the Description block, the Agent tab's
 instruction editors, the project card — offers the same gesture without growing a header
 row.
 
+## A pasted image is an attachment and a link, not an embed
+
+Every prose document in the application is markdown kept as **plain text**, and
+`framework/markdown_highlight.py` says why: a rich-text widget (`setMarkdown`/`toMarkdown`)
+edits a document *tree* and writes back a normalised serialisation, so a keystroke stops
+being the one small splice `TextBinding` needs. That decision has a consequence nobody had
+paid until somebody pressed Ctrl+V: a `QPlainTextEdit` cannot show a picture. So the editor
+does the half it honestly can — the file is content-addressed into the module's file area
+and `![alt](assets/…)` is typed at the caret — and the gallery under the editor renders the
+thumbnail. The spec module's editor is a `QTextEdit` and embeds instead; that is the *only*
+difference between them, and it follows from the binding, not from taste.
+
+**Typing the link is the whole implementation.** Going in through `textCursor().insertText`
+makes it an ordinary edit — `contentsChange` → the field's command → the undo stack → every
+other view bound to the same document — so the expanded ⤢ editor tracks it keystroke for
+keystroke and Ctrl+Z removes it. Nothing new was plumbed for any of that. What *did* need
+plumbing is the opposite: the link must not merge into the sentence being typed.
+`EditTextCommand` coalesces an append at exactly the caret, which a paste always is, so one
+Ctrl+Z would have taken the prose with the picture. `ProseEdit` seals the step on both sides
+of the insert — `UndoService.break_coalescing`, the same call a focus change already makes.
+
+**The write itself stays off the stack**, as `FORMAT.md` requires: undoing a paste must never
+leave prose pointing at a file that had gone. An orphaned blob is recoverable; a dangling
+link is not.
+
+**The editor does not write the file; it is handed an `Attach` callable.** Attaching is three
+steps — resolve the area, write, redraw the thumbnails — and `AssetGallery.attach_bytes`
+already does all three, including answering in words for a node autosave has not flushed yet.
+An editor that only did the middle step would put a pasted image on disk with no thumbnail
+beside it and would need a second answer for the unflushed case. One callable buys both.
+
+**The area is aimed by a call, not by another `…_for` callable.** `ProseSection.set_area` is
+made by the host from its own `show_target`, because the node a document is *keyed by* is not
+always the node its *files* live beside: a test's body is keyed by the test, and a test's
+images belong to the step — which is where `dplanner test attach` has always written them.
+A `Callable[[str], AreaFor | None]` would have handed the testing pane a test id it must
+discard, and that is the kind of seam that reads correct and is wrong.
+
+**A text widget's standard menu is not a `build_menu` menu.** `CLAUDE.md`'s rule that a
+right-click renders a menu named in `MENU_STRUCTURE` is about menus of *application verbs*.
+`Insert Image…` acts on one widget's caret, means nothing without one, and would be a
+permanently disabled entry in the palette and the menu bar — the state *Hidden means absent;
+disabled means not now* above reserves for a verb whose precondition the user can still meet,
+which this one never could. So it is appended to Qt's own `createStandardContextMenu()`,
+exactly as the spec editor's formatting verbs are methods rather than `ActionSpec`s.
+Overriding `canInsertFromMimeData` is not decoration either: Qt's own answer for image-only
+clipboard data is False, which greys **Paste** in that same standard menu — on the one thing
+here that most wants pasting.
+
 ## The graph, and what it stores
 
 A project is a graph, so the tab is a canvas: `QGraphicsView` gives selection, dragging,
