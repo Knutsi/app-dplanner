@@ -28,6 +28,7 @@ from PySide6.QtGui import (
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.theme.icons import (
     paint_beaker_glyph,
+    paint_layers_glyph,
     paint_shield_glyph,
     paint_spark_glyph,
     paint_tag_glyph,
@@ -55,13 +56,26 @@ BUSY_TINT = QColor(110, 160, 220, 180)
 BADGE_TINT = QColor(150, 130, 220, 70)
 BADGE_BORDER = QColor(150, 130, 220, 160)
 # A toned body colours the whole node, so its kind reads at any zoom. "highlight" is the
-# badge's purple family — a milestone node, its badge and the order table's release row
+# badge's purple family — a milestone node, its badge and the order table's milestone row
 # are one identity; "good" is the green family — finished work recedes into a calm green
-# column the eye can skip. Fill low-alpha, border full-strength.
+# column the eye can skip; "feature" is teal — the other collector, one rank down.
+#
+# Teal because of where the hues already are: it sits 76° from the milestone's violet, so
+# the two collectors never read as one, and 42° from the done green — which additionally
+# *mutes* its node, so the pair is told apart by weight as well as by hue, and a feature
+# still wears its layer medallion. The nearest claimed hue is the agent-run chip's teal,
+# and that is a labelled pill on the bottom edge of a running step, never a body.
+# Fill low-alpha, border full-strength.
 HIGHLIGHT_FILL = QColor(150, 130, 220, 36)
 GOOD_FILL = QColor(120, 200, 140, 36)
 GOOD_BORDER = QColor(120, 200, 140, 160)
-BODY_TONES = {"highlight": (HIGHLIGHT_FILL, BADGE_BORDER), "good": (GOOD_FILL, GOOD_BORDER)}
+FEATURE_FILL = QColor(80, 180, 175, 36)
+FEATURE_BORDER = QColor(80, 180, 175, 160)
+BODY_TONES = {
+    "highlight": (HIGHLIGHT_FILL, BADGE_BORDER),
+    "good": (GOOD_FILL, GOOD_BORDER),
+    "feature": (FEATURE_FILL, FEATURE_BORDER),
+}
 CHIP_INFO_TINT = QColor(90, 170, 200, 70)
 CHIP_INFO_BORDER = QColor(90, 170, 200, 160)
 CHIP_ATTENTION_TINT = QColor(220, 170, 90, 70)
@@ -111,7 +125,7 @@ class NodeAccent:
     The canvas never learns which aspect means "muted", what a badge says, or which
     aspect a pill stands for — the composition root translates aspects into this, the
     same seam ``step_aspects`` uses for the subtitle. A ``badge`` sits on the top edge
-    (a release label); a ``chip`` sits on the bottom edge (a live agent run); a ``pill``
+    (a milestone label); a ``chip`` sits on the bottom edge (a live agent run); a ``pill``
     sits on the second line with a tone that is "good" or "bad", never "merged";
     ``branch`` and ``spark`` ask for the small glyphs beside it; ``bar_tone`` is the slim
     strip inside the left edge.
@@ -125,10 +139,11 @@ class NodeAccent:
     bar_tone: str = ""  # "" none | "good" | "busy" | "bad".
     chip_text: str = ""  # "" → no chip.
     chip_tone: str = ""  # "" neutral | "info" | "attention".
-    body_tone: str = ""  # "" plain | "highlight" | "good": the node itself is a kind.
+    body_tone: str = ""  # "" plain | "highlight" | "good" | "feature": the node is a kind.
     # Icon medallions on the top edge, left end, in order: "tag" (a milestone the graph
-    # aims at), "spark" (there is machine guidance here), "beaker" (this step keeps
-    # tests), "shield" (a check: it stands for everything behind it passing).
+    # aims at), "layers" (a feature: it collects the work behind it), "spark" (there is
+    # machine guidance here), "beaker" (this step keeps tests), "shield" (a check: it
+    # stands for everything behind it passing).
     icons: tuple[str, ...] = ()
     stat_text: str = ""  # The one number a step answers with — full ink, never faded.
     stat_strong: bool = False  # Bold the stat: this node's number is the point of it.
@@ -351,7 +366,7 @@ def paint_detail_line(
 
 
 def paint_badge(painter: QPainter, palette: QPalette, text: str) -> None:
-    """A pill on the top edge, right end: the release label, sitting on the border.
+    """A pill on the top edge, right end: the milestone label, sitting on the border.
 
     It rises half its height above the node, which is why it must stay inside the item's
     ``boundingRect`` margin — ``BADGE_H / 2 + 1 <= HANDLE_R + 4`` keeps that true, and the
@@ -417,6 +432,8 @@ def paint_icon_medallions(painter: QPainter, palette: QPalette, icons: tuple[str
             paint_tag_glyph(painter, glyph, ink)
         elif kind == "spark":
             paint_spark_glyph(painter, glyph, faded)
+        elif kind == "layers":
+            paint_layers_glyph(painter, glyph, faded)
         elif kind == "beaker":
             paint_beaker_glyph(painter, glyph, faded)
         elif kind == "shield":

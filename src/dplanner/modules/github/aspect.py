@@ -50,6 +50,25 @@ def read(step: Step) -> GithubRefs | None:
     return None if refs.is_empty() else refs
 
 
+def enabled(step: Step) -> bool:
+    """Whether this step is tracked on GitHub — the Type toggle's answer.
+
+    Presence of the entry, so refs recorded by ``dplanner github set`` or by the background
+    refresh turn the tab on without anybody toggling anything. Marked-but-empty is the
+    marker entry; ``read`` still answers ``None`` for it, because a marker is not a ref.
+    """
+    return bool(step.module_data.get(MODULE_ID))
+
+
+def write_state(on: bool) -> dict[str, Any]:
+    """The marker entry, for a step marked as tracked before any ref is known.
+
+    Off gives ``{}``, which removes the file — and with it any refs, which is why the
+    toggle asks first.
+    """
+    return stamped({"on": True}, DATA_FORMAT.version) if on else {}
+
+
 def write(refs: GithubRefs | None) -> dict[str, Any]:
     """The entry to store. Empty refs give ``{}``, which removes the file.
 

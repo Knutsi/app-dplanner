@@ -180,8 +180,8 @@ root, stop and look for the registry or capability you have not found yet.
   step editor appear twice in a split window, and the fix deleted code rather than adding a
   visibility check — because "only the active pane publishes" already says which selection a
   panel should be showing. `ARCHITECTURE.md`'s *Where a panel goes* has the rest.
-- **A toggleable aspect's tab follows the aspect.** Release, Agent, Ticket, Test and Check
-  are Step ▸ Type toggles (independent, never a radio group), and each registers its
+- **A toggleable aspect's tab follows the aspect.** Milestone, Feature, Agent, Ticket, Test
+  and Check are Step ▸ Type toggles (independent, never a radio group), and each registers its
   `InspectorSection` with a `shown_for` predicate so its tab exists only on a step that
   carries the aspect. **The description is an agent step's instructions** — the briefing's
   `## Instructions` block, decided by the composition root's `_briefing_instruction`; a
@@ -189,6 +189,30 @@ root, stop and look for the registry or capability you have not found yet.
   `dplanner agent set`; dropped atomically with `agent set --clear`) is the opt-out for a
   step whose how-to-execute differs from what-it-is. `ARCHITECTURE.md`'s *The description
   is the instructions* has the reasoning.
+- **Every step tab follows a toggle, and absence encodes the default — in both directions.**
+  Estimate, Description, Handoff and GitHub are toggles too now. For most aspects absence
+  means *off* and the stored `{"on": true}` marker records the claim; for **Estimate and
+  Description absence means *on*** and the marker (`{"off": true}`) records the opt-out,
+  because most steps are work and work has a size and a name. That is one `FORMAT.md` rule
+  applied honestly, and it is what makes the change cost existing projects nothing. The
+  Details tab is its blocks: it asks its own `step_details` registry whether any would show.
+  The CLI half of the two opt-outs is `dplanner estimate clear` and `describe clear`, which
+  therefore mean **off**, not "empty" — for an aspect whose default is on there is nothing
+  else clearing could sensibly mean, and lint skips a step that has opted out.
+- **The "+" beside the tabs renders the Type submenu, never a copy of it.**
+  `framework/action_dialog.py`'s `TogglesDialog` lists the specs in one `(menu, submenu)` as
+  checkboxes and runs each through `ActionRegistry.run`, so a toggle keeps its own undo
+  command and its own confirmation. It takes the context as a **function**, so the panel
+  inside the details dialog can name its own step. **"This type can never carry that aspect"
+  needs no new mechanism** — a toggle returning `ActionState(enabled=False, label=…)` is the
+  existing *disabled, never hidden* rule; do not build one until it is asked for.
+- **Tests can be read grouped by what collects them.** The Tests tab's third selector groups
+  rows by feature, milestone or check, filled by `scope.gatherers()` in the one place rows
+  are ordered (`TestsActivity._rows`); `TestsTable` draws a spanned heading wherever the key
+  changes, and a step nothing gathers lands under *Not in any feature* — the same steps
+  `dplanner project lint` reports as `scope.ungathered`. A step two features both wait on
+  gets one **joint** heading rather than two rows: a test listed twice is a test marked
+  twice.
 - **The step panel's first tab is Details, composed from blocks.** A module that wants its
   editor there instead of behind a tab of its own registers into `services.step_details` —
   the `InspectorSectionRegistry`'s third instantiation; estimate, description and the spec
@@ -368,19 +392,47 @@ root, stop and look for the registry or capability you have not found yet.
   narrow dock — because a stack of equal cards stops working at the third test.
   `ARCHITECTURE.md`'s *A test belongs to a step, and a step carries several* has the
   reasoning, including the diff trade the string body accepts.
-- **A check is a scope over the graph, and so is a release.** What a check covers is
-  `ordering.upstream()` filtered by which of those steps carry tests — derived on every
-  read, never stored, or `dplanner step link` could leave it claiming coverage it lost. The
-  same function answers for a *release* step, so the Tests tab's scopes, the Covers tab,
-  `dplanner check show` and `test-run start --scope` are four readers of one walk. The check
-  aspect is a bare marker in `modules/step_check/`; the Covers tab that renders its contents
-  belongs to `modules/testing/`, because a list of tests is testing's business — which keeps
-  the wiring one-directional. `ARCHITECTURE.md`'s *A check is a scope over the graph* has
-  the rest.
+- **A collector is a cone truncated at the next collector.** `domain/scope.py`'s `cone()`
+  walks `requires` backwards and refuses to pass through a step the `stops_at` predicate
+  claims — so a **check** stops at nothing and stands for everything behind it, a
+  **milestone** stops at milestones and holds what is new since the last one, and a
+  **feature** stops at features and milestones and holds its own work. One walk, six
+  readers: the Covers tab, the Tests tab's scope selector and its Group by, `dplanner scope
+  show`, `test-run start --scope`, and three lint checks. `ordering.upstream()` is the same
+  function with nothing to stop it. Never store what a collector holds — `dplanner step
+  link` relinks a graph with no window running to notice.
+- **A `ScopeKind` is wired, never inferred.** `modules/__init__.py::_scope_kinds()` writes
+  the three predicates literally: what carries a kind, where its cone stops, and — a
+  separate question — which kind it is *read as a list of* (`gathers`). A milestone is read
+  as its features; a feature is the finest grain and reads flat. `step_feature` and
+  `step_check` are bare markers with no tab of their own, and `modules/testing/` renders
+  what any of them gathers, because a list of tests is testing's business. That keeps the
+  wiring one-directional. `ARCHITECTURE.md`'s *A check is a scope over the graph* has the
+  reasoning, including why exclusivity is a predicate rather than a stored list.
+- **A kind is what a node *is*; a facet is what it carries.** Milestone, Feature, Check and
+  Agent Step are kinds — a node exists in order to be one, and wears a body colour for it:
+  purple a milestone, **teal a feature**, green a done step (`BODY_TONES` in
+  `project_editor/renderers.py`; done outranks milestone outranks feature, and the medallion
+  still says what else the node is). An estimate or a description is a facet. Only kinds
+  appear in **Step ▸ New**, which is why that list is named in the composition root
+  (`project_editor/kinds.py`'s `StepKind`) rather than derived from the Type submenu —
+  *New ▸ Description* would be nonsense.
+- **A step placed by pointing at a spot earns a stored position.** `StepVerbs.create()` is
+  the one place a step is born on the canvas — the New verbs and the double-click on empty
+  space both come through it — and it writes the mark and the position **in the same
+  command**, because a gesture is one undo. Where it lands is `GraphView.last_click`, which
+  every button press records *before* the mode stack sees it, and which a right-click
+  refreshes so the menu's own New lands where the menu was raised. No click yet means no
+  stored position, which is the ambient layout doing what it always did.
+- **What a collector gathers is one verb: `dplanner scope show`.** In `cli/scopes.py`, the
+  cross-feature home — a check, a feature and a milestone are one derivation asked three
+  ways, so three near-copies of the report is exactly what that file prevents. It also owns
+  `scope.gathers-nothing`, `scope.shared` and `scope.ungathered`. The marker modules keep
+  only `set`/`clear`.
 - **A test result is not a step status, and it gates nothing.** `pending/in-progress/done/
   blocked` is where the *work* stands; `ok/failed/skipped`/absent is what happened when
   somebody *ran* a test. No word is shared, on purpose. A failing test does not block a
-  release and does not reach `progression()` — folding it in would make `dplanner
+  milestone and does not reach `progression()` — folding it in would make `dplanner
   progression show` answer a different question. `ARCHITECTURE.md`'s *A test result is not a
   step status* has the why.
 - **A project has at most one open test run, and a run freezes its membership.** Starting one

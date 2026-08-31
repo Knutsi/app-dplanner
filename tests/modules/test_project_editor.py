@@ -23,7 +23,7 @@ from dplanner.domain.model import Project, Step
 from dplanner.framework.context import SCOPE_SELECTION
 from dplanner.modules.project_editor.modes import CONNECT, IDLE, PAN
 from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
-from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+from dplanner.modules.project_editor.positions import NODE_H, NODE_W, snapped
 from dplanner.modules.project_editor.renderers import FILL_ALPHA
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef
 from dplanner.modules.step_properties.module import PANEL_ID as STEP_PANEL_ID
@@ -337,12 +337,116 @@ def test_the_selection_keeps_the_order_it_was_made_in(services, project, tab):
 
 
 def test_creating_on_the_canvas_is_one_undo_step(services, project, tab):
+    """A double-click runs the same creation the New verbs do, so it wears the same name."""
     scene(tab).create_requested.emit(240.0, 80.0)
     assert len(project.steps) == 3
     assert project.steps[-1].module_data["project_editor"]["x"] == 240.0
-    assert services.undo.undo_text() == "Add Step"
+    assert services.undo.undo_text() == "New Step"
     services.undo.undo()
     assert len(project.steps) == 2
+
+
+# -- New, and where a new node lands -------------------------------------------------------
+
+
+def answer_new_dialog(monkeypatch, title):
+    """The New verbs ask for a name; hand one over rather than opening a modal.
+
+    Patched by name rather than through the module's re-exported ``QInputDialog``, which is
+    the form the region verbs' test already uses and the only one strict typing accepts.
+    """
+    monkeypatch.setattr(
+        "dplanner.modules.project_editor.verbs.QInputDialog.getText",
+        staticmethod(lambda *_a, **_k: (title, True)),
+    )
+
+
+def new_specs(services):
+    return [
+        spec
+        for spec in services.actions.all_specs()
+        if spec.menu == "Step" and spec.submenu == "New"
+    ]
+
+
+def named(services, title):
+    """The New action for a kind, by the name a person reads."""
+    return next(spec for spec in new_specs(services) if title in spec.label)
+
+
+def test_new_is_a_submenu_of_the_kinds_a_step_can_be(services, project, tab):
+    assert [spec.label for spec in new_specs(services)] == [
+        "&Step…",
+        "&Feature…",
+        "&Milestone…",
+        "&Agent Step…",
+        "&Check…",
+    ]
+    # The plain verb keeps its id: it is bound to N and wears the toolbar's plus.
+    assert new_specs(services)[0].id == "steps.new"
+
+
+def test_a_facet_is_not_offered_as_a_kind(services, project, tab):
+    """New offers what a node *is*, never what it carries — "New Description" is nonsense."""
+    labels = " ".join(spec.label for spec in new_specs(services))
+    assert "Description" not in labels and "Estimate" not in labels
+
+
+def test_creating_a_kind_marks_it_in_the_same_undo_step(services, project, tab, monkeypatch):
+    from dplanner.modules.step_feature.aspect import read as is_feature
+
+    answer_new_dialog(monkeypatch, "Bulk import")
+    services.actions.run(named(services, "Feature").id, services.context.current())
+    created = project.steps[-1]
+    assert created.title == "Bulk import" and is_feature(created) is True
+    assert services.undo.undo_text() == "New Feature"
+    services.undo.undo()
+    assert len(project.steps) == 2
+
+
+def test_a_new_milestone_arrives_with_a_generated_label(services, project, tab, monkeypatch):
+    from dplanner.modules.step_milestone.aspect import read as milestone_label
+
+    answer_new_dialog(monkeypatch, "Ship it")
+    services.actions.run(named(services, "Milestone").id, services.context.current())
+    assert milestone_label(project.steps[-1]) == "v1"
+
+
+def test_a_new_step_lands_where_the_canvas_was_last_clicked(services, project, tab, monkeypatch):
+    tab._view.note_click(QPointF(400.0, 200.0))
+    answer_new_dialog(monkeypatch, "Placed")
+    services.actions.run("steps.new", services.context.current())
+    entry = project.steps[-1].module_data["project_editor"]
+    # Centred on the click, then snapped to the grid every stored position lands on: the
+    # node appears under the cursor rather than with its corner there.
+    assert (entry["x"], entry["y"]) == (snapped(400.0 - NODE_W / 2), snapped(200.0 - NODE_H / 2))
+
+
+def test_a_right_click_counts_as_the_click_new_places_at(services, project, tab, monkeypatch):
+    """The menu's own New lands where the menu was raised, not where the mouse last was."""
+    from dplanner.modules.project_editor import module as editor
+
+    class _Unshown:
+        """The handler ends in a modal exec(); the test wants everything up to it."""
+
+        def exec(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(editor, "build_menu", lambda *a, **k: _Unshown())
+    tab._view.note_click(QPointF(0.0, 0.0))
+    tab._on_context_menu(tab._view.mapFromScene(QPointF(560.0, 320.0)))
+    answer_new_dialog(monkeypatch, "From the menu")
+    services.actions.run("steps.new", services.context.current())
+    entry = project.steps[-1].module_data["project_editor"]
+    assert (entry["x"], entry["y"]) == (snapped(560.0 - NODE_W / 2), snapped(320.0 - NODE_H / 2))
+
+
+def test_a_canvas_nobody_clicked_leaves_the_node_to_the_ambient_layout(
+    services, project, tab, monkeypatch
+):
+    answer_new_dialog(monkeypatch, "Unplaced")
+    services.actions.run("steps.new", services.context.current())
+    assert "project_editor" not in project.steps[-1].module_data
 
 
 def test_deleting_the_shown_step_leaves_the_panel_empty(app, services, project, tab, monkeypatch):

@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QInputDialog, QTreeWidgetItem, QWidget
 
 from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
+from dplanner.domain.scope import ScopeKind, kind_of
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
@@ -80,10 +81,11 @@ class TestsDeps:
     segments: IndexSegmentRegistry
     theme: ThemeService
     parent: QWidget  # confirm()'s and the run dialog's parent, as the delete verb's is.
-    # What kind of scope a step is, or "" for none — "Check" or "Release" today. A label
-    # rather than a predicate so the scope selector can say which kind it is offering, and
-    # decided by the composition root so neither aspect module learns the other exists.
-    scope_label: Callable[[Step], str]
+    # Every kind of collector this build knows: a check, a feature, a milestone. Each says
+    # what carries it and where its cone stops, so this module renders what any of them
+    # gathers without learning that any of those aspects exist. Named by the composition
+    # root, the one place allowed to know all three.
+    scopes: tuple[ScopeKind, ...]
 
 
 class TestsModule:
@@ -141,10 +143,10 @@ class TestsModule:
                 id=f"{MODULE_ID}.covers",
                 label="Covers",
                 order=35,  # Beside the Tests tab; a step can carry both.
-                factory=lambda: CoversSection(deps.library, self._open_scope),
+                factory=lambda: CoversSection(deps.library, deps.scopes, self._open_scope),
                 shown_for=lambda step_id: (
                     self._step(step_id) is not None
-                    and bool(deps.scope_label(deps.library.step(step_id or "")))
+                    and kind_of(deps.scopes, deps.library.step(step_id or "")) is not None
                 ),
             )
         )
@@ -181,7 +183,7 @@ class TestsModule:
                 menu="Step",
                 group="type",
                 submenu="Type",
-                order=40,
+                order=50,
                 tip="Give this step tests: what must keep passing once the work is done",
                 state=self._toggle_state,
                 run=self._toggle,

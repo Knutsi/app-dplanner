@@ -16,15 +16,20 @@ visible or not, so a block that reappears is already current.
 
 from collections.abc import Sequence
 
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, TextEdit
 from dplanner.framework.inspector import InspectorExtension, InspectorSection
+from dplanner.theme.icons import ICON_SIZE, info_icon
 
 # DESIGN.md: 16 px outer margins; more space between blocks than within one.
 PANEL_MARGIN = 16
 BLOCK_GAP = 12
 CAPTION_GAP = 6
+# DESIGN.md's opacity-derived secondary ink: theme-independent by construction, which is
+# what lets one painted glyph serve both themes without a repaint hook here.
+SECONDARY_ALPHA = 160
 
 
 class _Block(QWidget):
@@ -36,10 +41,26 @@ class _Block(QWidget):
         self.extension = extension
         caption = QLabel(section.label, self)
         caption.setObjectName("InspectorCaption")
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(CAPTION_GAP)
+        header.addWidget(caption)
+        if section.hint:
+            # DESIGN.md's *Words* rule: a standing convention goes behind a glyph, never
+            # on a line of its own under the field. Repainted on theme change like every
+            # other colour-parameterised glyph.
+            self.hint = QLabel(self)
+            self.hint.setFixedSize(ICON_SIZE, ICON_SIZE)
+            self.hint.setToolTip(section.hint)
+            ink = QColor(self.palette().text().color())
+            ink.setAlpha(SECONDARY_ALPHA)
+            self.hint.setPixmap(info_icon(ink).pixmap(ICON_SIZE, ICON_SIZE))
+            header.addWidget(self.hint)
+        header.addStretch(1)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(CAPTION_GAP)
-        layout.addWidget(caption)
+        layout.addLayout(header)
         layout.addWidget(extension.widget, stretch=1)
 
 

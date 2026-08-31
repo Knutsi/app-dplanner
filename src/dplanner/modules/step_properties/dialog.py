@@ -12,7 +12,7 @@ returns — the panel subscribes to model and theme signals, and a closed dialog
 keep hearing them.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QWidget
 
@@ -47,6 +47,7 @@ class StepDetailsDialog(QDialog):
         theme: ThemeService | None,
         step_id: StepId,
         parent: QWidget | None = None,
+        on_add_aspect: Callable[[StepPanel], None] | None = None,
     ) -> None:
         super().__init__(parent)
         title = library.step(step_id).title if library.has(step_id) else ""
@@ -54,6 +55,10 @@ class StepDetailsDialog(QDialog):
 
         self.panel = StepPanel(library, undo, sections=sections, theme=theme, parent=self)
         self.panel.show_step(step_id)
+        if on_add_aspect is not None:
+            # The panel names itself, so the chooser reads *this* panel's step rather than
+            # the window's selection — the dialog never publishes one.
+            self.panel.add_aspect.clicked.connect(lambda: on_add_aspect(self.panel))
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
         buttons.rejected.connect(self.reject)

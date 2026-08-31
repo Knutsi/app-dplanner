@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
+from dplanner.domain.scope import gatherers, kind_of
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.activity import ActivityBase, EntityActivity
 from dplanner.framework.context import (
@@ -67,6 +68,10 @@ ALL_NOTE = "Every test in every project in this library, and how it last did."
 
 ROSTER = "Latest results"
 ALL_TESTS = "All tests"
+NO_GROUPING = "Flat list"
+# A test on a step nothing collects: work that reaches no release. `dplanner project lint`
+# reports the same steps as `scope.ungathered`, so the two surfaces say one thing.
+UNGATHERED = "Not in any feature"
 
 
 def headline(statuses: Sequence[str], *, run: runs.Run | None = None) -> tuple[str, str]:
@@ -187,6 +192,7 @@ class TestsActivity(EntityActivity):
         self.project_id = project_id
         self._scope: StepId = ""
         self._run_id: str = ""
+        self._group: str = ""
 
         self.page = _TestsPage("Tests", TAB_NOTE)
         self.scope_box = QComboBox(self.page)
@@ -197,6 +203,10 @@ class TestsActivity(EntityActivity):
         self.run_box.setToolTip("The latest result per test, or one run's")
         self.run_box.setMinimumWidth(SELECTOR_WIDTH)
         self.run_box.currentIndexChanged.connect(self._on_run)
+        self.group_box = QComboBox(self.page)
+        self.group_box.setToolTip("Read the list flat, or filed under what collects each test")
+        self.group_box.setMinimumWidth(SELECTOR_WIDTH)
+        self.group_box.currentIndexChanged.connect(self._on_group)
         self.archived = QCheckBox("Show archived", self.page)
         self.archived.toggled.connect(lambda _on: self._refresh())
 
@@ -224,6 +234,9 @@ class TestsActivity(EntityActivity):
         self._marking_separator = controls.addSeparator()
         controls.addWidget(self.scope_box)
         controls.addWidget(self.run_box)
+        # Held, because a toolbar wraps a widget in an action and it is the *action* that
+        # carries visibility — setting it on the combo alone leaves an empty slot behind.
+        self.group_action = controls.addWidget(self.group_box)
         controls.addWidget(self.archived)
         self.page.actions_bar.addWidget(self.new_run)
 
@@ -277,6 +290,10 @@ class TestsActivity(EntityActivity):
         self._run_id = str(self.run_box.currentData() or "")
         self._refresh()
 
+    def _on_group(self, _index: int) -> None:
+        self._group = str(self.group_box.currentData() or "")
+        self._refresh()
+
     # -- internals -----------------------------------------------------------------------
 
     def _project(self) -> Project:
@@ -301,7 +318,8 @@ class TestsActivity(EntityActivity):
         scopes = self._scope_titles(project, records)
         if run is not None:
             pairs = [pair for pair in pairs if pair[1].id in run.tests]
-        return [
+        groups = self._groups(project)
+        rows = [
             Row(
                 test=test,
                 step=step,
@@ -312,9 +330,46 @@ class TestsActivity(EntityActivity):
                     if run is not None
                     else (outcomes[test.id].result.status if test.id in outcomes else "pending")
                 ),
+                group=groups[step.id][1] if groups else "",
             )
             for step, test in pairs
         ]
+        if not groups:
+            return rows
+        # Stable, so within a group the rows keep the project order they arrived in. The
+        # sort key is where the collector sits in that same order, which is why an
+        # ungathered row sorts last rather than alphabetically among the named ones.
+        return sorted(rows, key=lambda row: groups[row.step.id][0])
+
+    def _groups(self, project: Project) -> dict[StepId, tuple[int, str]]:
+        """Each step's heading, and where it sorts — empty when nothing is being grouped.
+
+        A step two features both wait on is filed under *both at once*, as one joint
+        heading, rather than duplicated into each: a test listed twice would be marked
+        twice and counted twice. ``dplanner project lint`` reports the same steps as
+        ``scope.shared`` so the ambiguity is nameable rather than merely visible.
+        """
+        kind = next((found for found in self._deps.scopes if found.id == self._group), None)
+        if kind is None:
+            return {}
+        owners = gatherers(
+            self._library, project, carried_by=kind.carried_by, stops_at=kind.stops_at
+        )
+        places = {step.id: index for index, step in enumerate(project.steps)}
+        last = len(places)
+        found: dict[StepId, tuple[int, str]] = {}
+        for step in project.steps:
+            held = [project.step(owner) for owner in owners.get(step.id, ())]
+            named = [owner for owner in held if owner is not None]
+            if not named:
+                found[step.id] = (last, UNGATHERED)
+                continue
+            # The kind is named once, however many owners there are: "Feature: Import and
+            # Search", not the label twice.
+            names = " and ".join(owner.title or "Untitled step" for owner in named)
+            title = f"{kind.label}: {names}"
+            found[step.id] = (places[named[0].id], title)
+        return found
 
     def _scope_titles(
         self, project: Project, _records: Sequence[runs.Run]
@@ -327,7 +382,7 @@ class TestsActivity(EntityActivity):
         return {test_id: tuple(titles) for test_id, titles in found.items()}
 
     def _scope_steps(self, project: Project) -> list[Step]:
-        return [step for step in project.steps if self._deps.scope_label(step)]
+        return [step for step in project.steps if kind_of(self._deps.scopes, step) is not None]
 
     def _refresh(self) -> None:
         if not self._library.has(self.project_id):
@@ -335,6 +390,7 @@ class TestsActivity(EntityActivity):
         project = self._project()
         self._sync_scopes(project)
         self._sync_runs()
+        self._sync_grouping(project)
         rows = self._rows()
         self.page.table.show_rows(rows)
         run = self._current_run()
@@ -356,11 +412,28 @@ class TestsActivity(EntityActivity):
 
     def _sync_scopes(self, project: Project) -> None:
         entries = [(ALL_TESTS, "")] + [
-            (f"{self._deps.scope_label(step)}: {step.title or 'Untitled step'}", step.id)
+            (f"{self._scope_kind_label(step)}: {step.title or 'Untitled step'}", step.id)
             for step in self._scope_steps(project)
         ]
         self._reload(self.scope_box, entries, self._scope)
         self._scope = str(self.scope_box.currentData() or "")
+
+    def _scope_kind_label(self, step: Step) -> str:
+        kind = kind_of(self._deps.scopes, step)
+        return kind.label if kind is not None else ""
+
+    def _sync_grouping(self, project: Project) -> None:
+        """Only kinds this project actually has: a selector offering nothing teaches nothing."""
+        entries = [(NO_GROUPING, "")] + [
+            (f"By {kind.label.lower()}", kind.id)
+            for kind in self._deps.scopes
+            if any(kind.carried_by(step) for step in project.steps)
+        ]
+        self._reload(self.group_box, entries, self._group)
+        self._group = str(self.group_box.currentData() or "")
+        # A project with nothing to group by shows no control at all, rather than one with
+        # a single entry — DESIGN.md's rule that an empty box is worse than no box.
+        self.group_action.setVisible(len(entries) > 1)
 
     def _sync_runs(self) -> None:
         records = self._records()

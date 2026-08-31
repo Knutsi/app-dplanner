@@ -39,11 +39,13 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "tests" is the test run's two verbs — a run belongs to a project, spans its
     # steps, and there is at most one open at a time.
     "Project": ("edit", "canvas", "documents", "tests", "open"),
+    # "edit" holds the New submenu — one entry per *kind* a step can be born as, named by
+    # the composition root (project_editor/kinds.py), beside Rename and Delete.
     # "open" is a surface about the selection — the Step-side mirror of Project's
     # "Show Order". "navigate" is where the canvas's movement verbs live: they select
     # rather than change, so they belong beside the step verbs but not among them.
     # "type" is the Type submenu: one independent checkable toggle per type-ish aspect
-    # (Release, Agent, Ticket, Test and Check today) — never a radio group, a step can
+    # (Milestone, Feature, Agent, Ticket, Test and Check today) — never a radio group, a step can
     # be several things at once, and each aspect's tab follows its toggle. "test" and
     # "test_result" both feed the Test submenu, so the separator between what a test
     # *is* and what it *did* is drawn rather than spelled. "status" is the step_status

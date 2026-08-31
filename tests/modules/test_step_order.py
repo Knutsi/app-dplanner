@@ -15,12 +15,12 @@ from dplanner.modules.step_order.view import (
     ASPECTS_COLUMN,
     DATE_COLUMN,
     ESTIMATE_COLUMN,
-    RELEASE_ROLE,
-    RELEASE_ROW_EXTRA,
+    MILESTONE_ROLE,
+    MILESTONE_ROW_EXTRA,
     ROW_HEIGHT,
-    SINCE_RELEASE_COLUMN,
+    SINCE_MILESTONE_COLUMN,
     TITLE_COLUMN,
-    _ReleaseRowDelegate,
+    _MilestoneRowDelegate,
 )
 
 
@@ -97,15 +97,15 @@ def test_the_estimate_has_a_column_and_is_not_repeated_in_the_summary(services, 
 
 def test_a_release_row_is_marked_and_keeps_its_name(services, project, tab):
     """Every cell flags the row for the delegate; the name still reads in the summary."""
-    from dplanner.modules.step_release.aspect import write
+    from dplanner.modules.step_milestone.aspect import write
 
     d = project.steps[3]  # The last of its block — the rule under it closes the work above.
-    services.undo.push(SetModuleDataCommand(d.id, "step_release", write("MVP")))
+    services.undo.push(SetModuleDataCommand(d.id, "step_milestone", write("MVP")))
 
     table = tab.table
     release_row = 3
     assert all(
-        table.item(release_row, column).data(RELEASE_ROLE) == "MVP"
+        table.item(release_row, column).data(MILESTONE_ROLE) == "MVP"
         for column in range(table.columnCount())
     )
     # Emphasis by size, not weight — DESIGN.md's Tables: bold shouts in a quiet table.
@@ -114,15 +114,15 @@ def test_a_release_row_is_marked_and_keeps_its_name(services, project, tab):
     assert not title.bold()
     assert title.pointSizeF() > plain.pointSizeF()
     assert "MVP" in table.item(release_row, ASPECTS_COLUMN).text()
-    assert isinstance(table.itemDelegate(), _ReleaseRowDelegate)
+    assert isinstance(table.itemDelegate(), _MilestoneRowDelegate)
 
 
 def test_a_release_date_is_highlighted(services, project, tab):
-    from dplanner.modules.step_release.aspect import write
+    from dplanner.modules.step_milestone.aspect import write
 
     d = project.steps[3]
     services.undo.push(SetModuleDataCommand(d.id, "estimation", {"days": 2.0, "format": 1}))
-    services.undo.push(SetModuleDataCommand(d.id, "step_release", write("MVP")))
+    services.undo.push(SetModuleDataCommand(d.id, "step_milestone", write("MVP")))
 
     from PySide6.QtCore import Qt
 
@@ -134,14 +134,14 @@ def test_a_release_date_is_highlighted(services, project, tab):
 
 
 def test_a_release_row_gets_air_and_a_plain_row_does_not(services, project, tab):
-    from dplanner.modules.step_release.aspect import write
+    from dplanner.modules.step_milestone.aspect import write
 
     d = project.steps[3]
-    services.undo.push(SetModuleDataCommand(d.id, "step_release", write("MVP")))
+    services.undo.push(SetModuleDataCommand(d.id, "step_milestone", write("MVP")))
 
-    assert tab.table.rowHeight(3) == ROW_HEIGHT + RELEASE_ROW_EXTRA
+    assert tab.table.rowHeight(3) == ROW_HEIGHT + MILESTONE_ROW_EXTRA
     assert tab.table.rowHeight(0) == ROW_HEIGHT
-    assert not tab.table.item(0, TITLE_COLUMN).data(RELEASE_ROLE)
+    assert not tab.table.item(0, TITLE_COLUMN).data(MILESTONE_ROLE)
 
 
 def test_the_days_accumulate_down_the_order(services, project, tab):
@@ -160,39 +160,39 @@ def test_column_headers_read_from_the_left(services, project, tab):
 
 
 def test_a_release_row_says_how_long_since_the_one_before(services, project, tab):
-    """The span a release closes: its accumulated total minus the previous release's. The
-    first release measures from the start of the plan."""
-    from dplanner.modules.step_release.aspect import write
+    """The span a milestone closes: its accumulated total minus the previous milestone's. The
+    first milestone measures from the start of the plan."""
+    from dplanner.modules.step_milestone.aspect import write
 
     for step, days in zip(project.steps, (1.0, 2.0, 3.0, 4.0), strict=True):
         services.undo.push(SetModuleDataCommand(step.id, "estimation", {"days": days}))
-    services.undo.push(SetModuleDataCommand(project.steps[2].id, "step_release", write("v1")))
-    services.undo.push(SetModuleDataCommand(project.steps[3].id, "step_release", write("v2")))
+    services.undo.push(SetModuleDataCommand(project.steps[2].id, "step_milestone", write("v1")))
+    services.undo.push(SetModuleDataCommand(project.steps[3].id, "step_milestone", write("v2")))
 
-    column = [tab.table.item(row, SINCE_RELEASE_COLUMN).text() for row in range(4)]
+    column = [tab.table.item(row, SINCE_MILESTONE_COLUMN).text() for row in range(4)]
     assert column == ["", "", "6d", "4d"]
-    assert not tab.table.isColumnHidden(SINCE_RELEASE_COLUMN)
+    assert not tab.table.isColumnHidden(SINCE_MILESTONE_COLUMN)
 
 
-def test_the_since_release_column_waits_for_a_release_and_an_estimate(services, project, tab):
+def test_the_since_milestone_column_waits_for_a_release_and_an_estimate(services, project, tab):
     """A column of blanks says less than an absent one — same rule as the Date column."""
-    from dplanner.modules.step_release.aspect import write
+    from dplanner.modules.step_milestone.aspect import write
 
-    assert tab.table.isColumnHidden(SINCE_RELEASE_COLUMN)
+    assert tab.table.isColumnHidden(SINCE_MILESTONE_COLUMN)
     services.undo.push(SetModuleDataCommand(project.steps[0].id, "estimation", {"days": 3.0}))
-    assert tab.table.isColumnHidden(SINCE_RELEASE_COLUMN)  # Nothing yet to measure to.
-    services.undo.push(SetModuleDataCommand(project.steps[3].id, "step_release", write("MVP")))
-    assert not tab.table.isColumnHidden(SINCE_RELEASE_COLUMN)
+    assert tab.table.isColumnHidden(SINCE_MILESTONE_COLUMN)  # Nothing yet to measure to.
+    services.undo.push(SetModuleDataCommand(project.steps[3].id, "step_milestone", write("MVP")))
+    assert not tab.table.isColumnHidden(SINCE_MILESTONE_COLUMN)
 
 
 def test_the_title_column_wears_the_step_kind_icons(services, project, tab):
-    """The canvas medallions' vocabulary, read off the same wiring: a release wears the tag,
+    """The canvas medallions' vocabulary, read off the same wiring: a milestone wears the tag,
     a step with an agent instruction the spark, a plain step nothing."""
     from dplanner.domain.commands import EditTextCommand
     from dplanner.domain.model import TextEdit
-    from dplanner.modules.step_release.aspect import write
+    from dplanner.modules.step_milestone.aspect import write
 
-    services.undo.push(SetModuleDataCommand(project.steps[3].id, "step_release", write("MVP")))
+    services.undo.push(SetModuleDataCommand(project.steps[3].id, "step_milestone", write("MVP")))
     services.undo.push(
         EditTextCommand(TextEdit(project.steps[0].id, "step_agent_instruction", 0, "", "Do it."))
     )
@@ -320,14 +320,14 @@ def test_the_export_rows_carry_numbers_a_spreadsheet_can_compute_with(services, 
     order = placed(services.document, project)
     days = {"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0}
     scheduled = schedule(order, lambda step: days[step.title], date(2026, 9, 7))
-    release = project.steps[3].id
+    milestone = project.steps[3].id
     rows = order_rows(
-        scheduled, lambda _s: [], lambda step_id: "MVP" if step_id == release else ""
+        scheduled, lambda _s: [], lambda step_id: "MVP" if step_id == milestone else ""
     )
 
     assert rows[0][:3] == ["#", "Step", "Wave"]
     assert rows[1][:5] == ["1", "A", "Ready to start", "1", "1"]
-    # The release row: 10 accumulated days, all of them since the start (no release before),
+    # The milestone row: 10 accumulated days, all of them since the start (no milestone before),
     # landing on the tenth working day after the Monday start.
     assert rows[4][3:8] == ["4", "10", "10", "2026-09-18", "MVP"]
     assert rows[1][5] == ""  # A plain row does not repeat the accumulated column.

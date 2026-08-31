@@ -1,9 +1,9 @@
-"""The check aspect, in the running application: a Type toggle, and nothing else.
+"""The feature aspect, in the running application: a Type toggle, and nothing else.
 
-The *Covers* tab belongs to the module that owns tests — it is a list of tests, and a tab
-that renders one is testing's business, not this package's. That keeps the wiring
-one-directional: ``testing`` is handed a predicate that reads this aspect, and nothing here
-has to know that module exists.
+The tab that shows what a feature gathers belongs to the module that owns tests — it is a
+list of tests, and a tab that renders one is testing's business, not this package's. That is
+the same wiring the check aspect uses: ``testing`` is handed predicates that read this
+aspect, and nothing here has to know that module exists.
 """
 
 from dataclasses import dataclass
@@ -18,33 +18,33 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.context import Context
 from dplanner.framework.undo import UndoService
-from dplanner.modules.step_check.aspect import DATA_FORMAT, MODULE_ID, SPEC, read, write
+from dplanner.modules.step_feature.aspect import DATA_FORMAT, MODULE_ID, SPEC, read, write
 
 
 @dataclass(frozen=True)
-class StepCheckDeps:
+class StepFeatureDeps:
     library: Library
     undo: UndoService[Library]
     actions: ActionRegistry
 
 
-class StepCheckModule:
+class StepFeatureModule:
     id = MODULE_ID
     data_format = DATA_FORMAT
 
-    def __init__(self, deps: StepCheckDeps) -> None:
+    def __init__(self, deps: StepFeatureDeps) -> None:
         self._deps = deps
 
     def register(self) -> None:
         self._deps.actions.register(
             ActionSpec(
-                id="check.toggle",
+                id="feature.toggle",
                 label=SPEC.label,
                 menu="Step",
                 group="type",
                 submenu="Type",
-                order=60,
-                tip="Gather every test this step waits on, so a run can be scoped to it",
+                order=20,
+                tip="Collect the work and tests behind this step, up to the previous feature",
                 state=self._current,
                 run=self._toggle,
             )
@@ -60,14 +60,14 @@ class StepCheckModule:
         step = self._focused(context)
         if step is None:
             return
-        # No confirmation on the way out: a check stores nothing, so clearing loses nothing.
+        # No confirmation on the way out: a feature stores nothing, so clearing loses nothing.
         on = not read(step)
         self._deps.undo.push(
             SetModuleDataCommand(
                 step.id,
                 MODULE_ID,
                 write(on),
-                label="Mark as Check" if on else "Clear Check",
+                label="Mark as Feature" if on else "Clear Feature",
             )
         )
 

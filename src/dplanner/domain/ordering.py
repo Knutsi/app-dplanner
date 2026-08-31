@@ -23,6 +23,7 @@ from exposing this function everywhere instead: the activity, ``dplanner order s
 from dataclasses import dataclass
 
 from dplanner.domain.model import Library, Project, Step, StepId
+from dplanner.domain.scope import cone
 
 
 def depths(library: Library, project: Project) -> dict[StepId, int]:
@@ -111,22 +112,9 @@ def ready(library: Library, project: Project) -> list[Step]:
 def upstream(library: Library, project: Project, step_id: StepId) -> list[Step]:
     """Every step this one waits on, directly or through others, in project order.
 
-    ``Library.requires()`` answers one edge out; this answers the whole cone behind a step,
-    which is what a scope means — everything a release or a check stands after. Project order
-    rather than discovery order, for the reason every walk here is ordered that way: an answer
-    that reshuffled between two reads would be useless in a diff.
-
-    The visited set is also the cycle guard, the same defensive stance ``depths()`` and
-    ``progression._unlocks()`` take against a hand-edited file.
+    ``Library.requires()`` answers one edge out; this answers the whole cone behind a step.
+    It is :func:`dplanner.domain.scope.cone` with nothing to stop it — the untruncated case,
+    named for the question most callers are asking. What a *collector* gathers, which stops
+    at the next collector, lives in ``scope.py`` beside it.
     """
-    seen: set[StepId] = set()
-
-    def visit(current: StepId) -> None:
-        for target in library.requires(current):
-            if target.id in seen or project.step(target.id) is None:
-                continue
-            seen.add(target.id)
-            visit(target.id)
-
-    visit(step_id)
-    return [step for step in project.steps if step.id in seen]
+    return list(cone(library, project, step_id).steps)

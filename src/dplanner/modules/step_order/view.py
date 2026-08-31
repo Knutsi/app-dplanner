@@ -27,41 +27,41 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.model import StepId
 from dplanner.domain.schedule import Scheduled, format_date, format_days
-from dplanner.modules.step_order.export import since_release
+from dplanner.modules.step_order.export import since_milestone
 from dplanner.theme.icons import spark_icon, tag_icon
 
-COLUMNS = ("#", "Step", "Wave", "Estimate", "Accumulated", "Since release", "Date", "")
+COLUMNS = ("#", "Step", "Wave", "Estimate", "Accumulated", "Since milestone", "Date", "")
 TITLE_COLUMN = 1
 ESTIMATE_COLUMN = 3
 ACCUMULATED_COLUMN = 4
-SINCE_RELEASE_COLUMN = 5
+SINCE_MILESTONE_COLUMN = 5
 DATE_COLUMN = 6
 ASPECTS_COLUMN = 7
 
 # Numbers line up on the right; everything else — headers included (DESIGN.md's *Tables*) —
 # reads from the left.
-NUMERIC_COLUMNS = (ESTIMATE_COLUMN, ACCUMULATED_COLUMN, SINCE_RELEASE_COLUMN)
+NUMERIC_COLUMNS = (ESTIMATE_COLUMN, ACCUMULATED_COLUMN, SINCE_MILESTONE_COLUMN)
 
 # The step id on a row, so a click can say which step it means.
 STEP_ROLE = int(Qt.ItemDataRole.UserRole) + 1
-# The release label on every cell of a release row, so the delegate can mark it from any
+# The milestone label on every cell of a milestone row, so the delegate can mark it from any
 # column's index. Falsy on ordinary rows.
-RELEASE_ROLE = int(Qt.ItemDataRole.UserRole) + 2
+MILESTONE_ROLE = int(Qt.ItemDataRole.UserRole) + 2
 
-# DESIGN.md's row metrics for a list of rich items; a release row gets air under its rule.
+# DESIGN.md's row metrics for a list of rich items; a milestone row gets air under its rule.
 ROW_HEIGHT = 28
-RELEASE_ROW_EXTRA = 8
+MILESTONE_ROW_EXTRA = 8
 
-# A release's own answers grow a point instead of going bold: emphasis without the weight
+# A milestone's own answers grow a point instead of going bold: emphasis without the weight
 # a bold row puts on a table of mostly-quiet lines.
-RELEASE_POINT_INCREMENT = 1.0
+MILESTONE_POINT_INCREMENT = 1.0
 
-# The release row's marks: the canvas badge's purple family, low-alpha so it reads on every
+# The milestone row's marks: the canvas badge's purple family, low-alpha so it reads on every
 # theme (DESIGN.md exception #2). The rule closes the block of work that lands in it.
-RELEASE_ROW_TINT = QColor(150, 130, 220, 22)
-RELEASE_RULE = QColor(150, 130, 220, 160)
+MILESTONE_ROW_TINT = QColor(150, 130, 220, 22)
+MILESTONE_RULE = QColor(150, 130, 220, 160)
 # The tag icon at full strength — a glyph this small needs its whole ink to read.
-RELEASE_ICON_INK = QColor(150, 130, 220)
+MILESTONE_ICON_INK = QColor(150, 130, 220)
 
 # Secondary text as opacity rather than a theme colour: an item has only the palette, and an
 # alpha-derived secondary is theme-independent by construction (DESIGN.md exception #1).
@@ -70,12 +70,12 @@ SECONDARY_ALPHA = 160
 _RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
 
 
-class _ReleaseRowDelegate(QStyledItemDelegate):
-    """Marks a release row: a low-alpha tint under it and a rule along its bottom.
+class _MilestoneRowDelegate(QStyledItemDelegate):
+    """Marks a milestone row: a low-alpha tint under it and a rule along its bottom.
 
     The grid is off, so each cell's bottom segment joins into the one horizontal line in
-    the table — "everything above this lands in the release". The flag is read off the
-    index (``RELEASE_ROLE``), never asked of a callback, so painting stays a pure function
+    the table — "everything above this lands in the milestone". The flag is read off the
+    index (``MILESTONE_ROLE``), never asked of a callback, so painting stays a pure function
     of the model.
     """
 
@@ -85,13 +85,13 @@ class _ReleaseRowDelegate(QStyledItemDelegate):
         option: QStyleOptionViewItem,
         index: QModelIndex | QPersistentModelIndex,
     ) -> None:
-        if not index.data(RELEASE_ROLE):
+        if not index.data(MILESTONE_ROLE):
             super().paint(painter, option, index)
             return
-        painter.fillRect(option.rect, RELEASE_ROW_TINT)
+        painter.fillRect(option.rect, MILESTONE_ROW_TINT)
         super().paint(painter, option, index)  # Text and selection paint over the tint.
         painter.save()
-        painter.setPen(QPen(RELEASE_RULE, 1.0))
+        painter.setPen(QPen(MILESTONE_RULE, 1.0))
         painter.drawLine(option.rect.bottomLeft(), option.rect.bottomRight())
         painter.restore()
 
@@ -103,7 +103,7 @@ class OrderTable(QTableWidget):
         self,
         wave_label: Callable[[int], str],
         step_aspects: Callable[[StepId], list[str]],
-        release_label: Callable[[StepId], str] = lambda _step_id: "",
+        milestone_label: Callable[[StepId], str] = lambda _step_id: "",
         step_icons: Callable[[StepId], tuple[str, ...]] = lambda _step_id: (),
         parent: QWidget | None = None,
     ) -> None:
@@ -111,9 +111,9 @@ class OrderTable(QTableWidget):
         self.setObjectName("OrderTable")
         self._wave_label = wave_label
         self._step_aspects = step_aspects
-        self._release_label = release_label
+        self._milestone_label = milestone_label
         self._step_icons = step_icons
-        self.setItemDelegate(_ReleaseRowDelegate(self))
+        self.setItemDelegate(_MilestoneRowDelegate(self))
 
         self.setHorizontalHeaderLabels(list(COLUMNS))
         self.verticalHeader().setVisible(False)
@@ -139,7 +139,7 @@ class OrderTable(QTableWidget):
 
     def show_order(self, order: Sequence[Scheduled]) -> None:
         selected = self.selected_step()
-        spans = since_release(order, self._release_label)
+        spans = since_milestone(order, self._milestone_label)
         self.setRowCount(len(order))
         for row, scheduled in enumerate(order):
             place = scheduled.place
@@ -154,17 +154,17 @@ class OrderTable(QTableWidget):
                 format_date(scheduled.finish) if scheduled.finish else "",
                 " · ".join(self._step_aspects(place.step.id)),
             )
-            release = self._release_label(place.step.id)
+            milestone = self._milestone_label(place.step.id)
             for column, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 item.setData(STEP_ROLE, place.step.id)
-                item.setData(RELEASE_ROLE, release)
-                # A release's own answers — its name, the span it closes, its date — read a
+                item.setData(MILESTONE_ROLE, milestone)
+                # A milestone's own answers — its name, the span it closes, its date — read a
                 # point larger at full strength; the foreground is deliberately not set, so
                 # it stays the palette's and live.
-                highlighted = bool(release) and column in (
+                highlighted = bool(milestone) and column in (
                     TITLE_COLUMN,
-                    SINCE_RELEASE_COLUMN,
+                    SINCE_MILESTONE_COLUMN,
                     DATE_COLUMN,
                 )
                 if column != TITLE_COLUMN and not highlighted:
@@ -174,7 +174,7 @@ class OrderTable(QTableWidget):
                 if highlighted:
                     font = item.font()
                     if font.pointSizeF() > 0:
-                        font.setPointSizeF(font.pointSizeF() + RELEASE_POINT_INCREMENT)
+                        font.setPointSizeF(font.pointSizeF() + MILESTONE_POINT_INCREMENT)
                     item.setFont(font)
                 if column == TITLE_COLUMN:
                     icon = self._title_icon(self._step_icons(place.step.id))
@@ -183,12 +183,12 @@ class OrderTable(QTableWidget):
                 if column in NUMERIC_COLUMNS:
                     item.setTextAlignment(_RIGHT)
                 self.setItem(row, column, item)
-            self.setRowHeight(row, ROW_HEIGHT + (RELEASE_ROW_EXTRA if release else 0))
+            self.setRowHeight(row, ROW_HEIGHT + (MILESTONE_ROW_EXTRA if milestone else 0))
         # A column of blanks says less than an absent one: nothing estimated, no Date column;
-        # no release to measure to (or no days to measure with), no Since-release column.
+        # no milestone to measure to (or no days to measure with), no Since-milestone column.
         undated = all(s.finish is None for s in order)
         self.setColumnHidden(DATE_COLUMN, undated)
-        self.setColumnHidden(SINCE_RELEASE_COLUMN, undated or not spans)
+        self.setColumnHidden(SINCE_MILESTONE_COLUMN, undated or not spans)
         self.resizeColumnToContents(TITLE_COLUMN)
         if selected is not None:
             self.select_step(selected)
@@ -201,7 +201,7 @@ class OrderTable(QTableWidget):
         """
         for kind in kinds:
             if kind == "tag":
-                return tag_icon(RELEASE_ICON_INK)
+                return tag_icon(MILESTONE_ICON_INK)
             if kind == "spark":
                 faded = QColor(self.palette().text().color())
                 faded.setAlpha(SECONDARY_ALPHA)

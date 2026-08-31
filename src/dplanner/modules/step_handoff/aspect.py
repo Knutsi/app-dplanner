@@ -32,6 +32,25 @@ def read_note(step: Step) -> str:
     return step.module_text.get(MODULE_ID, "")
 
 
+def enabled(step: Step) -> bool:
+    """Whether this step passes something forward — the Type toggle's answer.
+
+    A marker entry, **or** a note already written, so a step that carried a handoff before
+    the aspect became toggleable keeps its tab with no data change. A step with a stored
+    scope is on too: it has said something about the handoff, whatever the note holds.
+    """
+    return bool(step.module_data.get(MODULE_ID)) or bool(read_note(step))
+
+
+def write_state(on: bool) -> dict[str, Any]:
+    """The marker entry, keeping whatever scope is already stored.
+
+    Off gives ``{}``; the note in ``module_text`` is cleared alongside it in one command,
+    so one Ctrl+Z restores both.
+    """
+    return stamped({"on": True}, DATA_FORMAT.version) if on else {}
+
+
 def read_scope(step: Step) -> str:
     """Who the handoff reaches. Absent or unreadable data reads as ``downstream``."""
     entry = step.module_data.get(MODULE_ID)

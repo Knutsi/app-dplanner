@@ -13,14 +13,15 @@ The title sits above the tab bar rather than inside a tab of its own: a step's n
 to the step, not to any aspect, and it should stay readable while you move between them.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
-    QLabel,
+    QHBoxLayout,
     QLineEdit,
     QStackedLayout,
     QTabBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -31,6 +32,7 @@ from dplanner.framework.context import Context
 from dplanner.framework.inspector import InspectorExtension, InspectorSection
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.theme.icons import ICON_SIZE, plus_icon
 from dplanner.theme.themes import Theme
 
 # DESIGN.md: side panels get 16 px outer margins, and more space between blocks than within
@@ -54,6 +56,7 @@ class StepPanel(QWidget):
         sections: Sequence[InspectorSection] = (),
         theme: ThemeService | None = None,
         parent: QWidget | None = None,
+        on_add_aspect: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("InspectorPanel")
@@ -69,10 +72,6 @@ class StepPanel(QWidget):
         self.title_edit.setPlaceholderText("What this step is")
         self.title_edit.editingFinished.connect(self._commit_title)
 
-        self.links = QLabel(self)
-        self.links.setObjectName("InspectorNote")
-        self.links.setWordWrap(True)
-
         # One extension per section, built once for this panel. The factory takes no
         # arguments: a contributing module closed over whatever it needs at registration.
         self._extensions: list[InspectorExtension] = [section.factory() for section in sections]
@@ -86,6 +85,28 @@ class StepPanel(QWidget):
         self.tab_bar.setUsesScrollButtons(True)
         self.tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
 
+        # Right of the last tab, so "there could be more here" reads as part of the bar.
+        # A bare QTabBar has no corner widget, so the row is the panel's own.
+        self.add_aspect = QToolButton(self)
+        self.add_aspect.setObjectName("ToolbarButton")
+        self.add_aspect.setToolTip("Add or remove aspects")
+        self.add_aspect.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.add_aspect.setAutoRaise(True)
+        self.add_aspect.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        # Painted from the palette now and re-painted from the theme below, so a host that
+        # passes no ThemeService still gets a glyph rather than an empty square.
+        self.add_aspect.setIcon(plus_icon(self.palette().text().color()))
+        self.add_aspect.setVisible(False)  # Nothing to add until a step is shown.
+        if on_add_aspect is not None:
+            self.add_aspect.clicked.connect(on_add_aspect)
+
+        tab_row = QHBoxLayout()
+        tab_row.setContentsMargins(0, 0, 0, 0)
+        tab_row.setSpacing(CAPTION_GAP)
+        tab_row.addWidget(self.tab_bar)
+        tab_row.addStretch(1)
+        tab_row.addWidget(self.add_aspect, 0, Qt.AlignmentFlag.AlignVCenter)
+
         self._pages = QStackedLayout()
         for section, extension in zip(sections, self._extensions, strict=True):
             self.tab_bar.addTab(section.label)
@@ -96,19 +117,20 @@ class StepPanel(QWidget):
         layout.setContentsMargins(PANEL_MARGIN, 0, PANEL_MARGIN, 0)
         layout.setSpacing(CAPTION_GAP)
         layout.addWidget(self.title_edit)
-        layout.addWidget(self.links)
         layout.addSpacing(BLOCK_GAP)
-        layout.addWidget(self.tab_bar)
+        layout.addLayout(tab_row)
         layout.addLayout(self._pages, stretch=1)
 
         def paint_tab_icons(current: Theme) -> None:
             for index, section in enumerate(sections):
                 if section.icon is not None:
                     self.tab_bar.setTabIcon(index, section.icon(current.text_secondary))
+            # A colour copied out of the palette goes stale; the glyph is repainted with
+            # the tabs it sits beside.
+            self.add_aspect.setIcon(plus_icon(current.text_secondary))
 
         self._unsubscribes = [
             library.field_changed.connect(self._on_field),
-            library.edges_changed.connect(self._on_edges),
             library.structure_changed.connect(self._on_structure),
             # A tab follows its aspect: toggles arrive as module data, and the agent
             # aspect is also implied by its prose, so both writes re-ask shown_for.
@@ -139,13 +161,14 @@ class StepPanel(QWidget):
         """
         if step_id is None or not self._product.has(step_id):
             self._step_id = None
+            self.add_aspect.setVisible(False)
             self._show_in_extensions(None)
             return
+        self.add_aspect.setVisible(True)
         if step_id == self._step_id:
             return
         self._step_id = step_id
         self.title_edit.setText(self._product.step(step_id).title)
-        self._refresh_links()
         self._refresh_tab_visibility()
         self._show_in_extensions(step_id)
 
@@ -183,10 +206,6 @@ class StepPanel(QWidget):
         if not (origin is self and self.title_edit.hasFocus()):
             self.title_edit.setText(self._product.step(node_id).title)
 
-    def _on_edges(self, step_id: StepId, _origin: object) -> None:
-        if self._step_id is not None:
-            self._refresh_links()
-
     def _on_module_data(self, node_id: NodeId, _module_id: str, _origin: object) -> None:
         if node_id == self._step_id:
             self._refresh_tab_visibility()
@@ -220,18 +239,3 @@ class StepPanel(QWidget):
             # The shown step was removed. This also nulls _step_id, so re-showing the same
             # id later is not swallowed by the unchanged-id early return.
             self.show_step(None)
-        else:
-            self._refresh_links()
-
-    def _refresh_links(self) -> None:
-        if self._step_id is None:
-            return
-        waits = [step.title or "untitled" for step in self._product.requires(self._step_id)]
-        blocks = [step.title or "untitled" for step in self._product.dependents(self._step_id)]
-        lines = []
-        if waits:
-            lines.append("Waits on " + ", ".join(waits))
-        if blocks:
-            lines.append("Blocks " + ", ".join(blocks))
-        self.links.setText(" · ".join(lines))
-        self.links.setVisible(bool(lines))

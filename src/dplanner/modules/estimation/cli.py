@@ -24,7 +24,7 @@ from dplanner.domain.schedule import (
     format_days,
 )
 from dplanner.domain.store import FilesFor
-from dplanner.modules.estimation.aspect import MODULE_ID, read, write
+from dplanner.modules.estimation.aspect import MODULE_ID, enabled, read, write
 from dplanner.modules.estimation.schedule import (
     critical_finish,
     finish_date,
@@ -70,7 +70,9 @@ def lint_checks() -> list[LintCheck]:
                 message=f"no estimate — `dplanner estimate set '{step.title}' --days N`",
             )
             for step in project.steps
-            if read(step) is None
+            # A step that has turned the aspect off is not missing an estimate; it has
+            # said it has no work of its own. Lint reports gaps, not decisions.
+            if enabled(step) and read(step) is None
         ]
         # A start date only matters once somebody has started sizing the work; flagging it
         # on every unestimated project would be noise.
@@ -100,7 +102,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("estimate", "clear"),
-            summary="Remove a step's estimate, leaving no file behind.",
+            summary="This step has no size of its own — a milestone, say. Stops lint asking.",
             configure=step_arg,
             run=_clear,
             examples=("dplanner estimate clear 'Read the spec'",),
@@ -159,9 +161,21 @@ def _set(context: CliContext, args: Namespace) -> int:
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
+    """The opt-out, and the CLI half of the GUI's Type ▸ Estimate toggle.
+
+    An estimate defaults to *on*, so removing the entry would only mean "not sized yet" and
+    lint would keep asking. What a person means by clearing it on a milestone is that the
+    step has no work of its own, and that is what gets written.
+    """
     step = find_step(context.library, args.step)
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
-    context.report({"step": step.id}, f"{step.title}: estimate cleared")
+    message = f"{step.title}: no estimate — this step has no work"
+    if not enabled(step):
+        # Already clear is success, and writes nothing: a state-clearing verb must survive
+        # a batch without dirtying a project it had no change to make to.
+        context.report({"step": step.id}, message)
+        return 0
+    context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(None, on=False)))
+    context.report({"step": step.id}, message)
     return 0
 
 

@@ -1,4 +1,4 @@
-"""The Release tab: one label, committed as one undoable command."""
+"""The Milestone tab: one label, committed as one undoable command."""
 
 from typing import Any
 
@@ -7,19 +7,19 @@ from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout
 from dplanner.domain.model import Library, Step
 from dplanner.framework.module_data_section import FIELD_GAP, PANEL_MARGIN, ModuleDataSection
 from dplanner.framework.undo import UndoService
-from dplanner.modules.step_release.aspect import MODULE_ID, read, write
+from dplanner.modules.step_milestone.aspect import MODULE_ID, read, write
 
 
-class ReleaseSection(ModuleDataSection):
+class MilestoneSection(ModuleDataSection):
     def __init__(self, library: Library, undo: UndoService[Library]) -> None:
-        super().__init__(library, undo, module_id=MODULE_ID, undo_label="Set Release")
+        super().__init__(library, undo, module_id=MODULE_ID, undo_label="Set Milestone")
 
         self.label = QLineEdit(self)
         self.label.setPlaceholderText("MVP, v1.0, v2…")
         self.label.editingFinished.connect(self.commit)
 
         note = QLabel(
-            "Marks this step as a release point. When it lands is the schedule's answer;"
+            "Marks this step as a milestone point. When it lands is the schedule's answer;"
             " clearing the label makes it an ordinary step again.",
             self,
         )

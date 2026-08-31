@@ -56,7 +56,7 @@ def test_every_registered_aspect_became_a_tab_or_a_details_block(services, panel
         "Tests",
         "Covers",
         "Agent",
-        "Release",
+        "Milestone",
         "Handoff",
         "GitHub",
     ]

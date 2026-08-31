@@ -97,6 +97,23 @@ matters explicitly:
 - A two-line list row states the *what* on line one (primary) and the *why* on line two
   (secondary). Never run them together in one undifferentiated blob.
 
+## Words
+
+**No explainers.** A line under a field restating a convention the reader already knows
+("Working days. A week is five.") is chrome that never stops being read, and it costs a
+line of vertical space on every visit for a sentence that was only ever needed once. Put
+the unit *in* the field — a suffix, a placeholder, a chip — and where a convention genuinely
+needs stating, put an `info_icon()` glyph in `$TEXT_SECONDARY` beside the caption with the
+sentence as its tooltip (`InspectorSection.hint` does this for a Details block).
+
+`#InspectorNote` is for a remark that **changes with the data**: what a run recorded, why a
+verb is unavailable, what this scope turned out to hold. Never for a standing definition.
+
+The same rule decides a control's fate. A selector with one entry, a switch whose two
+positions give the same answer, a caption over a single obvious field — each is a thing to
+read that teaches nothing. Compute whether it would say anything and leave it out when it
+would not; the Covers tab's New/Cumulative switch is the worked example.
+
 ## Buttons
 
 - One **primary** action per surface: `#PrimaryButton` (accent fill, `$ON_ACCENT`

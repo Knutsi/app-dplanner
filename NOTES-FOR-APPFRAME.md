@@ -1089,3 +1089,35 @@ Recording these so a future backport does not over-reach:
 - **Lookup by "an id, a folder name, or part of a title" lives in `cli/`**, not in the model.
   It is a command-line affordance — resolving what a person typed — and the model should not
   have opinions about fuzzy matching.
+
+---
+
+## 7. From the aspect-toggling pass
+
+- **`framework/action_dialog.py` — actions as a dialog of checkboxes.** The fifth presenter
+  beside the menu bar, palette, toolbar and `action_menu`'s pop-ups, and it follows the same
+  one policy: render the registry, never a copy of it. `TogglesDialog(actions, context, menu=,
+  submenu=)` lists every spec in one submenu as a checkbox with its `tip` as a second line,
+  runs each through `ActionRegistry.run`, and rebuilds after every click because one toggle
+  can change another's state. **This belongs upstream.** It is entirely generic — nothing in
+  it names an aspect, a step or DPlanner — and any application with a submenu of independent
+  toggles wants the same dialog. One deliberate choice worth carrying with it: the context
+  arrives as a `Callable[[], Context]` rather than a `ContextService`, so a caller whose
+  target is not the window's selection (a panel hosted in a modal) can hand over one naming
+  its own.
+- **`InspectorSection.hint`.** A standing convention — the unit a number is in — rendered by
+  a captioned host as an info glyph beside the caption, with the sentence as its tooltip.
+  **Belongs upstream**, though the glyph does not: `info_icon()` is ours, and upstream would
+  need its own. The field is three lines and the alternative is what we deleted, a
+  `#InspectorNote` line under every such field that is re-read on every visit and earns none
+  of them. `DESIGN.md`'s *Words* section is the rule; only the block host renders it today,
+  and `ToolCard` is the obvious second.
+- **A `QTabBar` has no corner widget.** `QTabWidget.setCornerWidget` does not exist on the
+  bare bar, so a button that should sit beside the last tab needs the host to build the row
+  (`QHBoxLayout`: bar, stretch, button). Worth knowing before somebody reaches for the
+  method that is not there — and an argument for the framework growing a small tab-row
+  widget if a second host ever wants one.
+- **A widget added to a `QToolBar` does not carry its own visibility.** `addWidget` wraps it
+  in a `QWidgetAction`, and hiding the widget leaves the action's slot behind; it is the
+  action you must hide. The template's own toolbar code sidesteps this by never hiding one.
+  The tests tab's Group-by selector holds the returned action for exactly this reason.

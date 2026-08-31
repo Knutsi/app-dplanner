@@ -68,7 +68,7 @@ class StepTicketModule:
                 menu="Step",
                 group="type",
                 submenu="Type",
-                order=30,
+                order=40,
                 tip="Track this step against a ticket elsewhere; fill it in on the tab",
                 state=self._current,
                 run=self._toggle,

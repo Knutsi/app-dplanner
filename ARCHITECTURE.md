@@ -397,7 +397,7 @@ and neither has heard of the other.
 ## How a panel gets editors it has never heard of
 
 The step detail panel shows a Details tab first — estimate, description, figures — and a tab
-per remaining aspect — Ticket, Agent, Release — and nothing in it knows any of them exist.
+per remaining aspect — Ticket, Agent, Milestone — and nothing in it knows any of them exist.
 Two seams do that, and they are worth naming because they answer every "feature A needs
 feature B" question this application will have.
 
@@ -894,8 +894,8 @@ has no way to.
 
 ## Status is an aspect, and step types are emergent
 
-There is no `type` field on a step, and none is coming. A *release* is a step carrying the
-`step_release` aspect; an *agent task* is one carrying `step_agent_instruction`; a step can
+There is no `type` field on a step, and none is coming. A *milestone* is a step carrying the
+`step_milestone` aspect; an *agent task* is one carrying `step_agent_instruction`; a step can
 be both at once, which no exclusive type field could say. What a step "is" emerges from
 which aspects have something to say about it — the same way its subtitle on the canvas
 already does.
@@ -913,28 +913,130 @@ The one enum also shows where an aspect's GUI does not have to be a tab: status 
 *Status* submenu of checkable Step verbs instead, and the canvas right-click, the order
 table, the menu bar and the palette all grew it from that single registration. The canvas
 never learned the vocabulary either — it renders a neutral `NodeAccent(muted, badge)`, and
-the composition root translates "done" into muted and a release label into the badge.
+the composition root translates "done" into muted and a milestone label into the badge.
 
 The *Type* submenu is the same idea one step further: one checkable toggle per type-ish
-aspect (Release, Agent, Ticket), each independent, because a Type radio group would
-reintroduce the exclusive type field this section rules out. Toggling Release on generates
-the next label from the project's existing ones (`next_release_label` in
-`step_release/aspect.py`, shared with `dplanner release set`); toggling any of them off
+aspect (Milestone, Feature, Agent, Ticket), each independent, because a Type radio group
+would reintroduce the exclusive type field this section rules out. Toggling Milestone on
+generates the next label from the project's existing ones (`next_milestone_label` in
+`step_milestone/aspect.py`, shared with `dplanner milestone set`); toggling any of them off
 asks first when data would be dropped, since it is not kept.
 
 **A tab follows its aspect.** An `InspectorSection` may carry a `shown_for(step_id)`
 predicate; the step panel re-asks it on every target change and on model writes to the
 shown step, and hides the tab (`QTabBar.setTabVisible` — indices stay stable, so the
-tab-to-page mapping never re-shuffles) when the answer is no. Release, Agent and Ticket
+tab-to-page mapping never re-shuffles) when the answer is no. Milestone, Agent and Ticket
 answer with "does this step carry the aspect", so toggling one off removes its tab and
 toggling it on brings the tab back *with* whatever the toggle generated — which is the
-answer to the earlier worry that a generated release label needs somewhere to be edited:
+answer to the earlier worry that a generated milestone label needs somewhere to be edited:
 it has one from the moment it exists. This deliberately reverses an older decision that
-every tab is always visible; seven tabs on a step that is neither a release, an agent
+every tab is always visible; seven tabs on a step that is neither a milestone, an agent
 step nor tracked anywhere taught nothing and buried the four that mattered. Sections
 without a predicate (Estimate, Description, Handoff, GitHub) behave exactly as before,
 and the project panel's cards are exempt — the only card is the project's standing
 instruction, a project-level fact no step toggle should touch.
+
+### Every tab follows a toggle, and absence encodes the default
+
+The rule above started with five aspects and three exceptions: Estimate and Description were
+unconditional blocks, Handoff and GitHub unconditional tabs. A milestone therefore came with
+an estimate field for work it does not do, a description editor and a GitHub tab it will
+never use — and "seven tabs that taught nothing" was the same complaint, one layer in.
+
+So all four became toggles, and the mechanism was already written down: `FORMAT.md`'s
+**marker entry**, the `{"on": true}` shape `step_ticket` and `step_check` use. No new store,
+no format bump, and a fifth injection style avoided.
+
+The part worth arguing about is which way absence points, and the answer is not the same for
+all four:
+
+| Aspect | Absence means | Because |
+|---|---|---|
+| Ticket, Check, Feature, Milestone, Agent, Tests, Handoff, GitHub | **off** | most steps are none of these; the marker records the claim |
+| Estimate, Description | **on** | most steps are work, and work has a size and a name; the marker records the *opt-out* |
+
+That is not two rules, it is `FORMAT.md`'s one rule — *absence encodes the default* —
+applied honestly in both directions. The alternative was writing a marker at every step
+creation site, of which there are four (two CLI, two GUI), and a module reaching into four
+files outside its own package is exactly what the layering forbids. The inverted default
+needs none of them: **existing projects change not at all**, every step keeps its Details
+tab, and a milestone loses its estimate the moment somebody says so.
+
+The Details tab then had to follow its own contents. It *is* its blocks, so it asks the
+registry it already holds whether any of them would show — nothing new is wired, and a tab
+that opens onto blank space stopped being possible.
+
+### The chooser renders the registry, never a copy of it
+
+The toggles live in Step ▸ Type, which is a menu, and a menu is not somewhere a person looks
+when the question is *what does this step carry*. So the step panel grew a **"+" beside the
+last tab**, opening a dialog of checkboxes — and the dialog lists no aspects of its own. It
+reads the same specs the *Type* submenu renders (`framework/action_dialog.py`), through the
+same context, and every row runs the owning module's toggle through `ActionRegistry.run`. So
+each stays one undoable command with its own confirmation, an aspect a build does not ship
+has no row, and adding an aspect is still one registration in one package.
+
+It is the same rule as *a right-click renders a menu, never a copy of one*, one presenter
+along — and it settles a question that looked like it needed a feature. **"Some step types
+can never carry this aspect" needs no mechanism at all**: a toggle whose `state()` returns
+`ActionState(enabled=False, label="Estimate — a milestone has no work of its own")` renders
+as a greyed row carrying its reason, because *hidden means absent; disabled means not now*
+already says so. Nothing was built for it; it is one predicate away when it is wanted.
+
+The context arrives as a function rather than a `ContextService`, which is what lets the
+panel inside the details *dialog* — showing a step nobody selected — hand over one naming
+its own step. The specs cannot tell the difference, and neither can they be made to care.
+
+One deletion came with it: the panel's `Waits on … · Blocks …` line is gone. The canvas, the
+Order tab and the progression board all show the graph; the panel is for what a step
+*carries*. That is a line of vertical space back on every visit, and less code.
+
+### A kind is what a node is; a facet is what it carries
+
+The Type submenu grew to ten entries once Estimate, Description, Handoff and GitHub joined
+it, and that made a distinction visible that had been implicit all along. A **milestone** is
+a kind: a node exists in order to be one, the graph reads differently for it, and it wears a
+body colour. An **estimate** is a facet: a fact a step of any kind may hold. Both are
+aspects, both are toggles — but only kinds answer the question *New* asks.
+
+So `Step ▸ New` is a named list (`project_editor/kinds.py`'s `StepKind`), handed to the
+canvas by the composition root exactly as `ScopeKind` is handed to the tests module. A kind
+is a label and a function returning the module data a fresh step of that kind carries; the
+canvas learns nothing about features. Deriving the list from the Type submenu instead would
+have put *New ▸ Description* in the menu, and the entry that would have to be filtered out
+is the proof the two lists are answering different questions.
+
+The body colours follow the same ranking the model uses. Done outranks a kind — a shipped
+milestone reads finished — and a milestone outranks a feature, because that is the coarser
+claim, the same order `kind_of()` reads the markers in. What the body cannot say, the
+medallion does: a node that is both keeps both glyphs.
+
+Teal was chosen for the feature by where the hues already were, not by taste: 76° from the
+milestone's violet so the two collectors never read as one, and 42° from the done green —
+which additionally *mutes* its node, so that pair is separated by weight as well as by hue.
+The nearest claimed hue is the agent-run chip's teal, and that is a labelled pill on the
+bottom edge of a running step, never a body.
+
+### A step placed by pointing at a spot earns a stored position
+
+The ambient layout is never persisted (*An explicit sort persists; the ambient layout never
+does*), and placing a node by pointing at the canvas is the same kind of act as dragging
+one: somebody chose where it goes. So it is stored, and the choice arrives on the same
+command as the node itself — a gesture is one undo, so New ▸ Feature at a point is one
+`CompositeCommand` of add, mark and place rather than three entries on the stack.
+
+That pushed the creation into one function. `StepVerbs.create()` is now the only place a
+step is born on the canvas, and the double-click on empty space — which already placed a
+node at a point — calls it too. The consolidation deleted a second implementation rather
+than adding a first.
+
+Where "the point" comes from is `GraphView.last_click`, recorded on **every** button press
+*before* the mode stack is offered the event: "where I last clicked" is true whether or not
+a mode claimed the press, and a mode-aware version would have to be right in five places
+instead of one. A right-click records too, so the menu's own New lands where the menu was
+raised — and the context handler records again for the keyboard menu key, which sends no
+press at all and would otherwise reuse a stale point. A canvas nobody has clicked answers
+`None`, and New falls back to the ambient layout, which is what it always did.
 
 ## The description is the instructions
 
@@ -1194,24 +1296,88 @@ bytes untouched — and its expand is the sanctioned one: a second `TextBinding`
 `TextField` implemented against the record (`testing/section.py`'s `TestBodyField`), never
 text copied into a dialog and back.
 
-## A check is a scope over the graph, and so is a release
+## A check is a scope over the graph, and so is a milestone
 
 A **check** is a step type that stands for everything behind it having been verified. What it
-covers is not stored: it is `ordering.upstream()` — the `requires` cone — filtered by which
-of those steps carry tests. Storing that list would let `dplanner step link` leave a check
-claiming coverage it no longer has, with no window running to notice; it is the same rule as
-the topological order and progression, for the same reason.
+covers is not stored: it is the `requires` cone, filtered by which of those steps carry tests.
+Storing that list would let `dplanner step link` leave a check claiming coverage it no longer
+has, with no window running to notice; it is the same rule as the topological order and
+progression, for the same reason.
 
-The part worth noticing is that **a release is already the same scope**. `covered()` takes a
-step id and answers for any step at all, so the Tests tab's scope selector, the *Covers* tab,
-`dplanner check show` and `test-run start --scope` are four readers of one walk — and a run
-can be scoped to a release without a line of code that knows what a release is. A check is a
-scope you *declare*; a release is one you already had.
+The part worth noticing is that **a milestone is already the same scope**, and so is a
+**feature**. The walk takes a step id and answers for any step at all, so the Tests tab's
+scope selector, the *Covers* tab, `dplanner scope show` and `test-run start --scope` are four
+readers of one function — and a run can be scoped to a milestone without a line of code that
+knows what a milestone is. A check is a scope you *declare*; a milestone is one you already
+had; a feature is the one people actually name and demo.
 
-The check aspect itself is a bare marker in its own package, and the *Covers* tab that shows
-what it gathers is registered by the tests module — because that tab is a list of tests,
-which is testing's business. That keeps the wiring one-directional: `TestsDeps` takes an
-`is_scope` predicate, and `step_check` needs nothing from anybody.
+### The cone stops at the next collector
+
+What separates the three is a single predicate. `domain/scope.py`'s `cone(origin, stops_at)`
+walks `requires` backwards and refuses to pass **through** a step `stops_at` claims — it
+records it as a *boundary* and stops there:
+
+| Asked of | `stops_at` | Because |
+|---|---|---|
+| a check | nothing | it stands for everything behind it having passed |
+| a milestone | milestones | it holds what is new since the last one |
+| a feature | features and milestones | it holds its own work, up to the previous feature |
+
+`ordering.upstream()` is that same function with nothing to stop it, which is why there is one
+walk here and not two.
+
+The alternative was a stored membership — a `feature` field, or a `belongs_to` edge kind. Both
+were rejected for the reason the whole *Deriving rather than storing* section gives, and one
+more specific to this shape: a `belongs_to` edge would draw the same relationship a second
+time, beside `requires`, and the two would eventually disagree. The semantics wanted here —
+everything upstream, minus what an earlier collector already took — *is* the `requires` cone.
+There was nothing to add.
+
+### `stops_at` and `gathers` are different questions
+
+A milestone stops at milestones, and is *read* as a list of features. Those are not the same
+fact and conflating them was the first attempt's bug: the boundaries are what the walk
+deliberately excluded (an earlier milestone already accounts for them), while the group
+headings are the finer collectors found **inside** the contents. So `ScopeKind` says both, and
+`gathers` is empty for a feature — the finest grain, read flat.
+
+Both are written literally in `modules/__init__.py::_scope_kinds()`, the one file allowed to
+name every aspect at once. A rank integer was considered and dropped: three lines a reader can
+check by eye beat an ordering abstraction over exactly three things, and the ordering would
+have to be explained anyway.
+
+### A step two features both wait on belongs to both
+
+Neither is behind the other, so neither has a better claim, and any tie-break would be
+arbitrary. `gatherers()` therefore returns *both* owners, the Tests tab files the step under
+one joint heading rather than listing its tests twice — a test in two rows is a test marked
+twice — and `dplanner project lint` reports it as `scope.shared` so the ambiguity is nameable
+rather than merely visible. Two siblings came free from the same inversion:
+`scope.ungathered` (a step carrying tests that no feature waits on — work that reaches no
+milestone) and `scope.gathers-nothing`, which generalised the old `check.covers-nothing`.
+
+### Both readings, and when the switch is worth showing
+
+A milestone honestly wants two answers: *what does it add* (the truncated walk) and *what must
+pass for it to ship* (the whole cone, regressions included). The Covers tab offers both — and
+shows the switch **exactly when the truncated walk found a boundary**. That is a pure function
+of the data rather than a property of the kind, which makes it right in two places at once: a
+check never has a boundary, and neither does the first milestone in a project, and in both
+cases the two readings are the same answer. A control with one outcome is noise.
+
+### Who owns which half
+
+The marker aspects — `step_check` and `step_feature` — are bare `{"on": true}` entries in their
+own packages with a Type toggle and nothing else. The *Covers* tab that shows what any of them
+gathers is registered by the **tests** module, because that tab is a list of tests, which is
+testing's business. That keeps the wiring one-directional: `TestsDeps` takes the wired
+`ScopeKind`s, and neither marker module needs anything from anybody.
+
+The CLI made the same call one level up. `check show` would have become three near-identical
+verbs the moment features arrived, so it became **`dplanner scope show`** in `cli/scopes.py` —
+the cross-feature home `cli/lint.py` and `cli/authoring.py` already established, where the verb
+owns the report and the composition root hands it the kinds and the coverage walk. `cli/` still
+imports no module, and no module imports `cli/scopes.py`.
 
 ## A test result is not a step status
 
@@ -1220,7 +1386,7 @@ Two vocabularies, deliberately sharing no words. A step's status is `pending`,
 `failed`, `skipped`, or absent — what happened when somebody *ran* it. A test on a done step
 is not "done"; it is a thing that passed last Tuesday and might not today.
 
-**A failing test gates nothing.** It does not block a release, and it does not touch
+**A failing test gates nothing.** It does not block a milestone, and it does not touch
 `progression()`. Progression answers "what can be launched right now, given the graph and
 the stored statuses"; folding results into it would quietly make `dplanner progression show`
 answer a different question. A person deciding whether to ship reads both.

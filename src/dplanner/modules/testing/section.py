@@ -25,6 +25,7 @@ from collections.abc import Callable
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -41,7 +42,8 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.domain.commands import Command, SetModuleDataCommand
-from dplanner.domain.model import Library, NodeId, Step, StepId
+from dplanner.domain.model import Library, NodeId, Project, Step, StepId
+from dplanner.domain.scope import ScopeKind, cone, kind_of, leaders, stops_for
 from dplanner.framework.cards import CARD_PADDING, STACK_SPACING
 from dplanner.framework.module_data_section import FIELD_GAP, PANEL_MARGIN
 from dplanner.framework.prose_section import ProseSection
@@ -70,6 +72,7 @@ from dplanner.modules.testing.view import (
 )
 
 BLOCK_GAP = 12
+BUTTON_GAP = 8
 LANE_PADDING = 12
 LIST_MIN_HEIGHT = 56  # Two rows, so a step with one test still shows there is a list.
 LIST_MAX_HEIGHT = 220  # Stacked: past this the list scrolls rather than crowding the editor.
@@ -79,9 +82,13 @@ DETAIL_MIN_HEIGHT = 140
 
 TAB_NOTE = "How you would know this step works — kept after the work is done."
 BODY_PLACEHOLDER = "1. Do this.\n2. This must be true."
-# Neutral about *what* the step is: a release is a scope in exactly the same way a
-# check is, and this tab appears on both.
-COVERS_NOTE = "Every test this step waits on, directly or through other steps."
+# Neutral about *what* the step is: a check, a feature and a milestone are scopes in
+# exactly the same way, and this tab appears on all three. Neutral about the *reading*
+# too — the mode switch says whether this is what the step adds or everything behind it,
+# so the note must not claim either.
+COVERS_NOTE = "What this step stands for: the tests on the work behind it."
+# The last group: tests on steps this collector owns that no sub-collector claimed.
+DIRECT_GROUP = "Directly"
 
 
 class TestBodyField:
@@ -521,11 +528,53 @@ class _TestDetail(QWidget):
 
 
 class CoversSection(_TestListSection):
-    """What a check stands for: every test behind it, read-only, with its last result."""
+    """What a collector stands for: the tests behind it, read-only, with their last results.
 
-    def __init__(self, library: Library, open_in_tests: Callable[[StepId], None]) -> None:
+    A check, a feature and a milestone are one derivation asked with a different stopping
+    rule, so this is one tab for all three. What differs is where its cone stops: a
+    milestone gathers the features behind it and not the ones an earlier milestone already
+    took, and each of those features becomes a group heading here.
+
+    The **mode** matters only when there is something to stop at, so the switch appears
+    exactly when the truncated walk found a boundary — which is never for a check, and not
+    for the first milestone in a project either. A control with one outcome is noise.
+    """
+
+    ADDS = "What it adds"
+    EVERYTHING = "Everything behind it"
+
+    def __init__(
+        self,
+        library: Library,
+        scopes: tuple[ScopeKind, ...],
+        open_in_tests: Callable[[StepId], None],
+    ) -> None:
         super().__init__(library, COVERS_NOTE)
+        self._scopes = scopes
         self._open_in_tests = open_in_tests
+
+        self.mode_bar = QWidget(self)
+        mode_row = QHBoxLayout(self.mode_bar)
+        mode_row.setContentsMargins(0, 0, 0, 0)
+        mode_row.setSpacing(BUTTON_GAP)
+        self.mode = QButtonGroup(self)
+        self.mode.setExclusive(True)
+        for index, label in enumerate((self.ADDS, self.EVERYTHING)):
+            button = QToolButton(self.mode_bar)
+            button.setObjectName("ToolbarButton")
+            button.setText(label)
+            button.setCheckable(True)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.mode.addButton(button, index)
+            mode_row.addWidget(button)
+        mode_row.addStretch(1)
+        self.mode.button(0).setChecked(True)
+        self.mode.idClicked.connect(lambda _id: self._refresh())
+        self.mode_bar.hide()
+        # Above the lane, under the note: it says which reading is on screen, so it has to
+        # be read before the list rather than found under it. The base class has already
+        # laid out note, lane, empty-message, so this goes in at the note's heel.
+        self.outer.insertWidget(1, self.mode_bar)
 
         self.summary = QLabel(self)
         self.summary.setObjectName("InspectorNote")
@@ -560,24 +609,72 @@ class CoversSection(_TestListSection):
     def _refresh(self) -> None:
         if self._target_id is None or not self._library.has(self._target_id):
             self.clear_cards()
+            self.mode_bar.hide()
             self.say("No step selected.")
             self.summary.setText("")
             self.open_button.setEnabled(False)
             return
         project = self._library.project_of(self._target_id)
-        pairs = covered(self._library, project, self._target_id)
+        kind = kind_of(self._scopes, self._library.step(self._target_id))
+        stops_at = kind.stops_at if kind is not None else None
+
+        # The truncated walk is computed whichever mode is showing: its boundaries are what
+        # say whether there is a second reading to offer at all, and the cumulative walk has
+        # none by construction.
+        own = cone(self._library, project, self._target_id, stops_at=stops_at)
+        self.mode_bar.setVisible(bool(own.boundaries))
+        cumulative = bool(own.boundaries) and self.mode.checkedId() == 1
+        walked = own if not cumulative else cone(self._library, project, self._target_id)
+
         outcomes = runs.latest_results(runs.read(project))
+        groups = [
+            (self._group_title(leader), self._gathered(project, leader))
+            for leader in (leaders(self._scopes, kind, walked.steps) if kind else [])
+        ]
+        claimed = {test.id for _title, held in groups for _step, test in held}
+        direct = [
+            (step, test)
+            for step, test in covered(
+                self._library,
+                project,
+                self._target_id,
+                stops_at=None if cumulative else stops_at,
+            )
+            if test.id not in claimed
+        ]
+
         self.clear_cards()
-        for step, test in pairs:
+        for title, held in groups:
+            self.add_card(_GroupHeader(title, self._tally(held, outcomes)))
+            for step, test in held:
+                self.add_card(_CoveredRow(step.title, test.title, outcomes.get(test.id)))
+        if groups and direct:
+            self.add_card(_GroupHeader(DIRECT_GROUP, self._tally(direct, outcomes)))
+        for step, test in direct:
             self.add_card(_CoveredRow(step.title, test.title, outcomes.get(test.id)))
+
+        everything = [pair for _title, held in groups for pair in held] + direct
         self.say(
             ""
-            if pairs
+            if everything
             else "Nothing yet. This step covers the tests on the steps it waits on — "
             "link it to work that carries tests."
         )
-        self.open_button.setEnabled(bool(pairs))
-        self.summary.setText(self._headline(pairs, outcomes))
+        self.open_button.setEnabled(bool(everything))
+        self.summary.setText(self._headline(everything, outcomes))
+
+    def _gathered(self, project: Project, leader: Step) -> list[tuple[Step, Test]]:
+        """One group's contents, by that collector's own stopping rule — one level deep."""
+        return covered(self._library, project, leader.id, stops_at=stops_for(self._scopes, leader))
+
+    def _group_title(self, leader: Step) -> str:
+        kind = kind_of(self._scopes, leader)
+        name = leader.title or "Untitled step"
+        return f"{kind.label}: {name}" if kind is not None else name
+
+    def _tally(self, pairs: list[tuple[Step, Test]], outcomes: dict[str, runs.Outcome]) -> str:
+        total = f"{len(pairs)} test{'' if len(pairs) == 1 else 's'}"
+        return self._headline(pairs, outcomes) or total
 
     def _headline(self, pairs: list[tuple[Step, Test]], outcomes: dict[str, runs.Outcome]) -> str:
         if not pairs:
@@ -594,6 +691,27 @@ class CoversSection(_TestListSection):
     def _open(self) -> None:
         if self._target_id is not None:
             self._open_in_tests(self._target_id)
+
+
+class _GroupHeader(QWidget):
+    """What the cards under it belong to: a collector's name, and how its tests last did.
+
+    Drawn only when the walk found a boundary — a check, or a milestone with nothing
+    before it, renders the flat list this tab has always shown.
+    """
+
+    def __init__(self, title: str, tally: str) -> None:
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, FIELD_GAP, 0, 0)
+        layout.setSpacing(FIELD_GAP)
+        caption = QLabel(title, self)
+        caption.setObjectName("InspectorCaption")
+        caption.setWordWrap(True)
+        layout.addWidget(caption, 1)
+        count = QLabel(tally, self)
+        count.setObjectName("InspectorNote")
+        layout.addWidget(count, 0, Qt.AlignmentFlag.AlignTop)
 
 
 class _CoveredRow(QFrame):

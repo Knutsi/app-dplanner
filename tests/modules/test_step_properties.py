@@ -56,7 +56,7 @@ def visible_labels(panel):
 
 def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
     """A tab follows its aspect: a plain step shows only the always-on sections, and the
-    toggleable ones (Ticket, Tests, Covers, Agent, Release) stay off screen until the step
+    toggleable ones (Ticket, Tests, Covers, Agent, Milestone) stay off screen until the step
     carries them."""
     select(services, project.steps[0].id)
     all_labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
@@ -66,18 +66,23 @@ def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
         "Tests",
         "Covers",
         "Agent",
-        "Release",
+        "Milestone",
         "Handoff",
         "GitHub",
     ]
     assert all_labels == expected
-    assert visible_labels(panel) == ["Details", "Handoff", "GitHub"]
+    # Every tab follows an aspect now, the Details tab included — it is its blocks. A
+    # plain step keeps Details, because a description and an estimate default to on;
+    # Handoff and GitHub are the exception and stay off until somebody asks.
+    assert visible_labels(panel) == ["Details"]
 
 
 def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
     """Toggling an aspect on brings its tab in without reselecting; toggling off removes
     it and the current tab falls back to the first visible one."""
     from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
+    from dplanner.modules.github.aspect import write_state as github_write
     from dplanner.modules.step_agent_instruction.aspect import (
         MODULE_ID as AGENT_ID,
     )
@@ -86,8 +91,10 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
     )
     from dplanner.modules.step_check.aspect import MODULE_ID as CHECK_ID
     from dplanner.modules.step_check.aspect import write as check_write
-    from dplanner.modules.step_release.aspect import MODULE_ID as RELEASE_ID
-    from dplanner.modules.step_release.aspect import write as release_write
+    from dplanner.modules.step_handoff.aspect import MODULE_ID as HANDOFF_ID
+    from dplanner.modules.step_handoff.aspect import write_state as handoff_write
+    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
+    from dplanner.modules.step_milestone.aspect import write as milestone_write
     from dplanner.modules.step_ticket.aspect import MODULE_ID as TICKET_ID
     from dplanner.modules.step_ticket.aspect import enabled_entry
     from dplanner.modules.testing.aspect import MODULE_ID as TESTING_ID
@@ -96,32 +103,34 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
 
     step = project.steps[0]
     select(services, step.id)
-    services.undo.push(SetModuleDataCommand(step.id, RELEASE_ID, release_write("v1")))
+    services.undo.push(SetModuleDataCommand(step.id, MILESTONE_ID, milestone_write("v1")))
     services.undo.push(SetModuleDataCommand(step.id, AGENT_ID, write_state(True)))
     services.undo.push(SetModuleDataCommand(step.id, TICKET_ID, enabled_entry()))
     services.undo.push(
         SetModuleDataCommand(step.id, TESTING_ID, tests_write([Test("t1", "A test")]))
     )
     services.undo.push(SetModuleDataCommand(step.id, CHECK_ID, check_write(True)))
+    services.undo.push(SetModuleDataCommand(step.id, HANDOFF_ID, handoff_write(True)))
+    services.undo.push(SetModuleDataCommand(step.id, GITHUB_ID, github_write(True)))
     assert visible_labels(panel) == [
         "Details",
         "Ticket",
         "Tests",
         "Covers",
         "Agent",
-        "Release",
+        "Milestone",
         "Handoff",
         "GitHub",
     ]
 
-    # Land on the Release tab, then clear the aspect: the tab leaves and the current
+    # Land on the Milestone tab, then clear the aspect: the tab leaves and the current
     # tab is a visible one again.
     release_index = next(
-        i for i in range(panel.tab_bar.count()) if panel.tab_bar.tabText(i) == "Release"
+        i for i in range(panel.tab_bar.count()) if panel.tab_bar.tabText(i) == "Milestone"
     )
     panel.tab_bar.setCurrentIndex(release_index)
-    services.undo.push(SetModuleDataCommand(step.id, RELEASE_ID, {}))
-    assert "Release" not in visible_labels(panel)
+    services.undo.push(SetModuleDataCommand(step.id, MILESTONE_ID, {}))
+    assert "Milestone" not in visible_labels(panel)
     assert panel.tab_bar.isTabVisible(panel.tab_bar.currentIndex())
 
 
@@ -137,15 +146,45 @@ def test_the_title_is_shown_and_edited_undoably(services, project, panel):
     assert step.title == "Read the spec"
 
 
-def test_the_links_line_says_what_a_step_waits_on(services, project, panel):
-    from dplanner.domain.commands import SetEdgesCommand
+def test_the_plus_button_opens_the_type_toggles_over_this_panels_step(services, project, panel):
+    """The chooser renders the Step ▸ Type submenu; it never keeps a list of its own.
 
-    first, second = project.steps
-    SetEdgesCommand(second.id, "requires", [first.id]).redo(services.document)
-    select(services, second.id)
-    assert "Waits on Read the spec" in panel.links.text()
-    select(services, first.id)
-    assert "Blocks Draft the model" in panel.links.text()
+    And it reads the *panel's* step, not the window's selection — a panel inside the
+    details dialog is showing a step nobody selected.
+    """
+    from dplanner.framework.action_dialog import TogglesDialog
+    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+    from dplanner.modules.step_check.aspect import read as check_read
+
+    step = project.steps[0]
+    select(services, step.id)
+    assert panel.add_aspect.isVisibleTo(panel) is True
+
+    node = ContextNode(selection_uri("step", step.id))
+    dialog = TogglesDialog(
+        services.actions,
+        lambda: Context({SCOPE_SELECTION: (node,)}),
+        menu="Step",
+        submenu="Type",
+        title="Aspects",
+    )
+    assert list(dialog.rows) == [
+        spec.id
+        for spec in services.actions.all_specs()
+        if spec.menu == "Step" and spec.submenu == "Type"
+    ]
+    # Every row runs the owning module's own toggle: one undoable command, not a copy.
+    dialog.rows["check.toggle"].box.click()
+    assert check_read(step) is True
+    services.undo.undo()
+    assert check_read(step) is False
+    dialog.deleteLater()
+
+
+def test_the_plus_button_is_hidden_when_no_step_is_shown(services, project, panel):
+    select(services, project.steps[0].id)
+    panel.show_step(None)
+    assert panel.add_aspect.isVisibleTo(panel) is False
 
 
 def test_deselecting_gets_through_the_unchanged_id_gate(services, project, panel):

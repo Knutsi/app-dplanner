@@ -29,7 +29,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMenu, QVBoxLayout, QWidget
 
 from dplanner.domain.commands import (
-    AddNodeCommand,
     Command,
     CompositeCommand,
     SetModuleDataCommand,
@@ -57,6 +56,7 @@ from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import StepNodeItem
+from dplanner.modules.project_editor.kinds import StepKind
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
 from dplanner.modules.project_editor.modes import (
@@ -68,7 +68,7 @@ from dplanner.modules.project_editor.modes import (
 )
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
 from dplanner.modules.project_editor.placement import positions
-from dplanner.modules.project_editor.positions import DATA_FORMAT, write_position
+from dplanner.modules.project_editor.positions import DATA_FORMAT, centred_on, write_position
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.project_panel import ProjectPanel
 from dplanner.modules.project_editor.region_verbs import RegionVerbs
@@ -127,6 +127,9 @@ class ProjectEditorDeps:
     # The project panel renders every section registered here as a card — the registry the
     # composition root exposes as services.detail_cards. This module never learns whose.
     cards: InspectorSectionRegistry = field(default_factory=InspectorSectionRegistry)
+    # What the New submenu offers besides a plain step. Named by the composition root, so
+    # this module never learns what a feature or a milestone is — see kinds.py.
+    step_kinds: tuple[StepKind, ...] = ()
 
 
 class ProjectActivity(EntityActivity):
@@ -395,17 +398,18 @@ class ProjectActivity(EntityActivity):
             self._deps.status.show_status(state.label or "Those steps cannot be linked", 4000)
 
     def _on_create(self, x: float, y: float) -> None:
-        step = Step(title="New step")
-        self._deps.undo.push(
-            CompositeCommand(
-                "Add Step",
-                [
-                    AddNodeCommand(self.project_id, step),
-                    self._move_command(step.id, x, y),
-                ],
-            )
-        )
+        """Double-click on empty space: the same creation the New verbs run, unprompted."""
+        step = self._verbs.create(self.project_id, "New step", at=(x, y))
         self._scene.select_step(step.id)
+
+    def new_step_position(self) -> tuple[float, float] | None:
+        """The top-left a new node should take: centred on wherever the user last pointed.
+
+        None until this canvas has been clicked at all, which is what keeps New from a
+        freshly opened tab placing a node under the ambient layout's first slot.
+        """
+        point = self._view.last_click
+        return None if point is None else centred_on(point.x(), point.y())
 
     def _on_region_create(self, x: float, y: float, w: float, h: float) -> None:
         project = self._project()
@@ -471,6 +475,10 @@ class ProjectActivity(EntityActivity):
                 self._deps.actions, self._deps.context, "Project", self._view, submenu="Region"
             )
         else:
+            # New places a node where the menu was raised, so the right-click counts as a
+            # click — the keyboard menu key sends no press, and would otherwise reuse a
+            # stale point.
+            self._view.note_click(scene_pos)
             self._select_for_menu(node)
             menu = build_menu(self._deps.actions, self._deps.context, "Step", self._view)
         menu.exec(self._view.viewport().mapToGlobal(position))
@@ -487,6 +495,8 @@ class ProjectEditorModule:
             undo=deps.undo,
             parent=deps.parent,
             current_project=self._current_project,
+            step_kinds=deps.step_kinds,
+            new_position=self._new_step_position,
         )
         self._layout_verbs = LayoutVerbs(
             library=deps.library,
@@ -575,6 +585,10 @@ class ProjectEditorModule:
     def _current_project(self) -> NodeId | None:
         current = self._current_activity()
         return current.project_id if current is not None else None
+
+    def _new_step_position(self) -> tuple[float, float] | None:
+        current = self._current_activity()
+        return current.new_step_position() if current is not None else None
 
     def _set_connect_mode(self, on: bool) -> None:
         current = self._current_activity()

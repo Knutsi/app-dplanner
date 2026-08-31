@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from PySide6.QtWidgets import QWidget
 
 from dplanner.domain.model import Library
+from dplanner.framework.action_dialog import TogglesDialog
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -27,7 +28,12 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.context import Context
+from dplanner.framework.context import (
+    SCOPE_SELECTION,
+    Context,
+    ContextNode,
+    selection_uri,
+)
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.theme_service import ThemeService
@@ -73,6 +79,10 @@ class StepPropertiesModule:
                 factory=lambda: DetailsSection(
                     self._deps.library, self._deps.details.sections()
                 ),
+                # The tab *is* its blocks: once every one has hidden itself there is
+                # nothing behind it, and a tab opening onto blank space teaches nothing.
+                # Asked of the registry this module already holds, so nothing new is wired.
+                shown_for=self._has_details,
             )
         )
         # Order 20: below the project form, which is about the thing the step is part of.
@@ -100,6 +110,12 @@ class StepPropertiesModule:
             )
         )
 
+    def _has_details(self, step_id: str | None) -> bool:
+        return any(
+            section.shown_for is None or section.shown_for(step_id)
+            for section in self._deps.details.sections()
+        )
+
     def _one_step(self, context: Context) -> ActionState:
         step_id = context.selected_entity("step")
         if step_id is None or not self._deps.library.has(step_id):
@@ -119,14 +135,44 @@ class StepPropertiesModule:
             theme=self._deps.theme,
             step_id=step_id,
             parent=self._deps.parent,
+            on_add_aspect=self._choose_aspects,
         )
         dialog.exec()
         dialog.dispose()
 
+    def _choose_aspects(self, panel: StepPanel) -> None:
+        """The "+" beside the tabs: which aspects this step carries.
+
+        A dialog that **renders** the Step ▸ Type submenu rather than listing aspects of its
+        own — the same rule as a right-click menu, one level along. Each row runs the owning
+        module's toggle, so it stays one undoable command with its own confirmation, and an
+        aspect a build does not ship simply has no row.
+
+        The context names the panel's own step rather than the window's selection: a panel
+        inside the details dialog is showing a step nobody selected, and the toggles must
+        act on what the user is looking at.
+        """
+        step_id = panel.current_step_id()
+        if step_id is None or not self._deps.library.has(step_id):
+            return
+        node = ContextNode(selection_uri("step", step_id))
+        dialog = TogglesDialog(
+            self._deps.actions,
+            lambda: Context({SCOPE_SELECTION: (node,)}),
+            menu="Step",
+            submenu="Type",
+            title="Aspects",
+            note="What this step carries. Turning one off drops what it held.",
+            parent=panel,
+        )
+        dialog.exec()
+
     def _create_panel(self) -> StepPanel:
-        return StepPanel(
+        panel = StepPanel(
             self._deps.library,
             self._deps.undo,
             sections=self._deps.sections.sections(),
             theme=self._deps.theme,
         )
+        panel.add_aspect.clicked.connect(lambda: self._choose_aspects(panel))
+        return panel

@@ -10,7 +10,7 @@ with the bulk Estimates tab; this section owns the binding to one step and the c
 
 from typing import Any
 
-from PySide6.QtWidgets import QLabel, QVBoxLayout
+from PySide6.QtWidgets import QVBoxLayout
 
 from dplanner.domain.model import Library, Step
 from dplanner.framework.module_data_section import FIELD_GAP, ModuleDataSection
@@ -31,17 +31,12 @@ class EstimateSection(ModuleDataSection):
         self.days = self._input.days
         self.chips = self._input.chips
 
-        note = QLabel("Working days. A week is five.", self)
-        note.setObjectName("InspectorNote")
-        note.setWordWrap(True)
-
         # A compact row: the hosting Details tab owns the margins and gives the leftover
         # height to the description editor, so no stretch and no margins of its own.
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(FIELD_GAP)
         layout.addWidget(self._input)
-        layout.addWidget(note)
 
     def load_step(self, step: Step | None) -> None:
         self._input.show_days(read(step) if step is not None else None)
