@@ -124,6 +124,10 @@ uv run ruff check                            # lint
 uv run mypy                                  # strict type checking, whole tree
 ```
 
+The suite runs on every core, so all 1,278 tests take about two minutes; run the whole thing.
+`-n0` gives a single-threaded run when a failure needs readable output or a debugger, and
+`pytest tests/core tests/domain tests/cli` is the Qt-free layers on their own in ~15 seconds.
+
 Layering rules are enforced by `tests/test_architecture.py`; the module recipe and the rules
 live in `CLAUDE.md`. `ARCHITECTURE.md` explains the shape and why. `DESIGN.md` is the UI
 standard, `FORMAT.md` the on-disk one.

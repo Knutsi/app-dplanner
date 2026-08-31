@@ -51,25 +51,6 @@ def app(qapp, tmp_path_factory):
 
 
 @pytest.fixture
-def close_quietly():
-    """Tear a built application down without asking the user anything.
-
-    Close guards exist to interrupt a real person ("Record changes before quitting?"); in a
-    headless suite a modal dialog is a hang with no one to answer it. Dropping the guards is
-    the honest way to say "this window is being discarded, not quit".
-    """
-
-    def close(session):
-        if session.window is not None:
-            session.window.close_guards.clear()
-            session.window.close()
-        if session.services is not None:
-            session.services.autosave.stop()
-
-    return close
-
-
-@pytest.fixture
 def library_repo(tmp_path):
     """A git repository ready to hold this test's project directories."""
     from dplanner.core.storage.locations import init_repo
@@ -88,17 +69,21 @@ def library_file(tmp_path):
 
 
 @pytest.fixture
-def session(app, library_file, close_quietly):
+def session(app, library_file):
     """A whole application, built over a fresh, empty library in a temp directory.
 
     Built through ``AppSession`` — the same path ``dplanner.app.main`` takes — so a test can
     never drift from production wiring. Yields the session; ``session.services`` reaches
     every part of the running application.
+
+    ``close()`` at the end is not politeness: a build that is only closed stays alive and
+    every later ``gc.collect()`` pays for it. Calling it twice is a no-op, so a test that
+    closes early may still rely on this.
     """
     session = new_session()
     assert session.open_initial(library_file)
     yield session
-    close_quietly(session)
+    session.close()
 
 
 @pytest.fixture
@@ -137,6 +122,10 @@ def _collect_qt_garbage():
     a later test — ``QObject::property`` on a half-destroyed object, a flaky SIGSEGV whose
     location shifts with any allocation change anywhere in the suite. Collecting between
     tests, while no Qt code is on the stack, keeps destruction deterministic.
+
+    A collection costs what the live object graph costs, so this line is only cheap while
+    every test actually releases what it built — which is ``AppSession.close``'s job, and
+    why the ``session`` fixture calls it.
     """
     yield
     import gc

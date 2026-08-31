@@ -24,12 +24,22 @@ build-backend = "hatchling.build"
 packages = ["src/dplanner"]
 
 [dependency-groups]
-dev = ["mypy>=1.16", "pytest>=8.4", "pytest-qt>=4.5", "ruff>=0.16"]
+dev = [
+    "mypy>=1.16",
+    "pytest>=8.4",
+    "pytest-qt>=4.5",
+    "pytest-xdist>=3.6",
+    "ruff>=0.16",
+]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
-addopts = "-ra --strict-markers --strict-config"
+# -n auto: one worker per core. Nearly every test builds a whole application, so the suite is
+# CPU-bound and scales almost linearly — and each worker is its own process, which is what a
+# QApplication needs anyway (only one may exist per process, and it cannot be recreated).
+# Add `-n0` for a single-threaded run when a failure needs readable output or a debugger.
+addopts = "-ra --strict-markers --strict-config -n auto"
 qt_api = "pyside6"
 qt_default_raising = true
 

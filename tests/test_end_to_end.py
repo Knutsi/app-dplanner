@@ -58,7 +58,7 @@ def test_the_index_lists_what_the_library_holds(session, make_project):
 
 
 def test_a_mixed_edit_chain_undoes_back_to_an_identical_workspace(
-    session, make_project, library_file, library_repo, close_quietly
+    session, make_project, library_file, library_repo
 ):
     services = session.services
     library = services.document
@@ -103,7 +103,7 @@ def test_a_mixed_edit_chain_undoes_back_to_an_identical_workspace(
     assert fingerprint(library_repo) == before
 
     # And it survives a full reload: what is on disk is what comes back.
-    close_quietly(session)
+    session.close()
     reopened = new_session()
     assert reopened.open_initial(library_file)
     assert reopened.services is not None
@@ -112,16 +112,14 @@ def test_a_mixed_edit_chain_undoes_back_to_an_identical_workspace(
         assert reopened_titles == [getattr(n, "title", n.kind) for n in library.nodes()]
         assert fingerprint(library_repo) == before
     finally:
-        close_quietly(reopened)
+        reopened.close()
 
 
-def test_reopening_restores_the_same_workspace(
-    session, make_project, library_file, close_quietly
-):
+def test_reopening_restores_the_same_workspace(session, make_project, library_file):
     seed_steps(session.services, make_project("Discovery"))
     session.services.autosave.flush_now()
     original_ids = [node.id for node in session.services.document.nodes()]
-    close_quietly(session)
+    session.close()
 
     reopened = new_session()
     assert reopened.open_initial(library_file)
@@ -129,4 +127,4 @@ def test_reopening_restores_the_same_workspace(
     try:
         assert [node.id for node in reopened.services.document.nodes()] == original_ids
     finally:
-        close_quietly(reopened)
+        reopened.close()
