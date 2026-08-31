@@ -39,6 +39,7 @@ from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionState
 from dplanner.framework.asset_gallery import AssetGallery
+from dplanner.framework.prose_edit import ProseEdit
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.text_binding import TextBinding
 from dplanner.framework.text_dialog import ExpandedTextDialog, attach_expand
@@ -177,7 +178,7 @@ class AgentSection(QWidget):
         self._project_binding: TextBinding[Library] | None = None
 
         # -- Project: the standing instruction, editable here and in the project panel.
-        self.project_edit = QPlainTextEdit(self)
+        self.project_edit = ProseEdit(self, undo=undo)
         self.project_edit.setObjectName("InspectorNotes")
         self.project_edit.setPlaceholderText(PROJECT_PLACEHOLDER)
         self.project_edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
@@ -223,7 +224,7 @@ class AgentSection(QWidget):
         self.inherited_part = PartRow("Inherited", graph_icon, self.inherited_view)
 
         # -- This step: the instruction itself, expanded by default — it is why you came.
-        self.edit = QPlainTextEdit(self)
+        self.edit = ProseEdit(self, undo=undo)
         self.edit.setObjectName("InspectorNotes")
         self.edit.setPlaceholderText(placeholder)
         self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
@@ -381,11 +382,15 @@ class AgentSection(QWidget):
         field, so the inline editor tracks every keystroke."""
         if node_id is None or not self._product.has(node_id):
             return
+        # Whichever editor opened it, with the same powers: a build without file storage
+        # gives the dialog none, exactly as _retarget_assets gives the inline editors none.
+        gallery = self.step_assets if node_id == self._step_id else self.project_assets
         dialog = ExpandedTextDialog(
             ModuleTextField(self._product, node_id, MODULE_ID),
             self._undo,
             title=title,
             placeholder=placeholder,
+            attach=gallery.attach_bytes if self._files is not None else None,
             parent=self.window(),
         )
         dialog.exec()
@@ -394,14 +399,21 @@ class AgentSection(QWidget):
     # -- reading -------------------------------------------------------------------------------
 
     def _retarget_assets(self) -> None:
+        """Both galleries and both editors' paste, aimed in one place — a step's files and
+        the project's are different areas of the same module, and an editor pointed at the
+        wrong one is the kind of mistake that only shows up in somebody else's diff."""
         files = self._files
         step_id, project_id = self._step_id, self._project_id
         if files is None or step_id is None or project_id is None:
             self.step_assets.set_area(None)
             self.project_assets.set_area(None)
+            self.edit.set_attach(None)
+            self.project_edit.set_attach(None)
             return
         self.step_assets.set_area(lambda: files(step_id, MODULE_ID))
         self.project_assets.set_area(lambda: files(project_id, MODULE_ID))
+        self.edit.set_attach(self.step_assets.attach_bytes)
+        self.project_edit.set_attach(self.project_assets.attach_bytes)
 
     def _refresh_derived(self) -> None:
         """Everything this tab computes rather than edits: inherited context and the
@@ -595,10 +607,10 @@ class ProjectInstructionCard(ProseSection):
     """The project panel's Agent card: the standing instruction, the tab's same field.
 
     Two editors over one ``ModuleTextField`` — the binding's per-view origin keeps them
-    from echoing each other, and one undo stack serves both. The editor half is the
-    framework's :class:`ProseSection` unchanged, the ``DescriptionSection`` shape: this
-    subclass hangs the gallery under it and pins the card's height — a card grows down
-    the stack, not with its content, and the inner scroller is DESIGN.md's accepted trade.
+    from echoing each other, and one undo stack serves both. The editor, its gallery and
+    its paste all come from :class:`ProseSection`; this subclass only aims them at the
+    project and pins the card's height — a card grows down the stack, not with its
+    content, and the inner scroller is DESIGN.md's accepted trade.
     """
 
     def __init__(
@@ -613,24 +625,23 @@ class ProjectInstructionCard(ProseSection):
             return ModuleTextField(library, target_id, MODULE_ID)
 
         super().__init__(
-            field_for, undo, PROJECT_PLACEHOLDER, expand_title="Project Agent Instruction"
+            field_for,
+            undo,
+            PROJECT_PLACEHOLDER,
+            expand_title="Project Agent Instruction",
+            attach_title="Attach to Instruction",
         )
         self._files = files
         self.edit.setFixedHeight(self.edit.fontMetrics().lineSpacing() * 6 + 16)
-        self.assets = AssetGallery(self, editable=True, attach_title="Attach to Instruction")
         layout = self.layout()
         if layout is not None:
             layout.setContentsMargins(0, 0, 0, 0)  # The hosting card carries the margins.
-            layout.setSpacing(FIELD_GAP)
-            layout.addWidget(self.assets)
 
     def show_target(self, target_id: str | None) -> None:
         super().show_target(target_id)
         files = self._files
-        if target_id is None or files is None or not self.isEnabled():
-            self.assets.set_area(None)
-        else:
-            self.assets.set_area(lambda: files(target_id, MODULE_ID))
+        if target_id is not None and files is not None and self.isEnabled():
+            self.set_area(lambda: files(target_id, MODULE_ID))
 
 
 def _body(edit: QPlainTextEdit, assets: AssetGallery) -> QWidget:

@@ -23,7 +23,7 @@ from dplanner.modules.step_description.section import (
 
 PLACEHOLDER = (
     "What this step is — and, on an agent step, what the agent is briefed with."
-    " Markdown; images go in with `dplanner describe attach`."
+    " Markdown; paste or drop an image straight in."
 )
 
 

@@ -733,6 +733,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 segments=services.index_segments,
                 theme=services.theme,
                 parent=services.window,
+                files=store.files,
                 # A check declares a scope; a release already was one, and both are the
                 # same walk. Named here so neither aspect module learns the other exists.
                 scope_label=lambda step: (

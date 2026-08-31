@@ -31,8 +31,10 @@ SIDE_MARGIN = DIALOG_MARGIN - PANEL_MARGIN
 # Roomier than the 360 px side panel it mirrors — prose and tables breathe here — but
 # clamped to the screen so a laptop never gets a dialog it cannot show whole. Sized for
 # the Details tab: estimate row, a description worth reading, and a figure row below it.
-DIALOG_WIDTH = 720
-DIALOG_HEIGHT = 680
+# The Tests tab is what set the width: its list-beside-editor split needs 540 px of
+# section, and a step with a dozen tests wants more than the minimum that clears it.
+DIALOG_WIDTH = 900
+DIALOG_HEIGHT = 850
 SCREEN_CLEARANCE = 80  # Left around the dialog when the screen is the constraint.
 
 
