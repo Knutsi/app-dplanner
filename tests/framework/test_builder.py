@@ -35,3 +35,22 @@ def test_module_data_is_migrated_before_any_module_reads_it(session, make_projec
     changed = migrate_module_data(repo, [fmt])
     assert changed == [project.id]
     assert project.module_data["m"] == stamped({"new": 1}, 2)
+
+
+def test_a_closed_session_leaves_nothing_of_its_build_behind(app, library_file):
+    """The property the suite's own running time depends on.
+
+    ``close()`` merely closing the window is not enough: Qt keeps a closed ``QWidget`` in
+    ``topLevelWidgets()``, that keeps the whole build reachable, and every later
+    ``gc.collect()`` then walks it — which is what turned a suite that builds an application
+    per test into a quadratic one. Counting top-level widgets asserts the release directly
+    rather than trusting that ``discard_build`` still says ``deleteLater``.
+    """
+    from dplanner.app import new_session
+
+    before = len(app.topLevelWidgets())
+    for _ in range(2):
+        session = new_session()
+        assert session.open_initial(library_file)
+        session.close()
+    assert len(app.topLevelWidgets()) == before

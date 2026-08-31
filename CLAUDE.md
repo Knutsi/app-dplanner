@@ -63,6 +63,20 @@ On a machine whose shell already presets `QT_QPA_PLATFORM` (Arch with a tiling W
 instance), the `setdefault` in `tests/conftest.py` does not kick in and a bare `pytest`
 opens real windows all over the workspace. Always prefix it.
 
+The suite runs on every core (`-n auto` in `pyproject.toml`) — about **two minutes** for the
+whole thing, so run the whole thing; there is nothing to be saved by not. Two flags are worth
+knowing while working:
+
+```bash
+QT_QPA_PLATFORM=offscreen uv run pytest -q -n0            # single-threaded: readable failures, debuggers
+QT_QPA_PLATFORM=offscreen uv run pytest -q tests/core tests/domain tests/cli   # ~18s: the Qt-free layers
+```
+
+The second is the inner loop for work below `framework/`, and it is a *path* selection rather
+than a marker because the layers already say which is which: `core/`, `domain/` and `cli/` are
+the Qt-free ones. It is not a substitute for the full run before you finish — most of what
+this application does lives in `modules/`, and only the full suite covers it.
+
 The layering rules below are enforced by `tests/test_architecture.py`, which runs with the
 normal suite. **If it fails, fix the dependency direction — don't loosen the test.** Every
 rule has a supported way to get what the shortcut wanted: a capability protocol, a typed
@@ -310,6 +324,15 @@ root, stop and look for the registry or capability you have not found yet.
   ids, which is what makes that the only implementable answer — and the correct one.
   Opening a *different* library is not even a reload: File ▸ New/Open Project Library
   spawns a detached instance (`modules/library/module.py::spawn_instance`).
+- **Discarding a build is `discard_build()`, and closing the window is not enough.** Qt keeps
+  a closed `QWidget` in `topLevelWidgets()`, so without `deleteLater()` the whole build —
+  services, model, every module — stays reachable forever. Nobody notices in the application;
+  the test suite builds one per test, and the omission made it quadratic and cost it 80% of
+  its running time. Never hand-roll the close sequence: a reload and a test both call that
+  one function. Anything that discards Qt objects with **no event loop to follow** must
+  dispatch the deferred deletes itself (`sendPostedEvents(None, DeferredDelete)` — never
+  `processEvents`, which skips them); `AppSession.close()` is the only place that does.
+  `ARCHITECTURE.md`'s *Closing a window is not discarding it* has the measurements.
 - **Project membership changes bypass the undo stack.** New/Open Project may `git init` and
   always writes outside any store; Remove from Library only forgets. Neither is honestly
   reversible, so they apply directly with `LIBRARY_ORIGIN` and the library file is

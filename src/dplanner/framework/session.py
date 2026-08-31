@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtWidgets import QMessageBox, QWidget
 
 from dplanner.core.formats import UnsupportedFormatError
@@ -71,6 +71,34 @@ def _failure_box(failure: OpenFailure, parent: QWidget | None) -> QMessageBox:
     box.setInformativeText(failure.informative)
     box.setDetailedText(failure.detail)
     return box
+
+
+def discard_build(window: AppWindow | None, services: AppServices | None) -> None:
+    """Close one build and let go of it: the window, its widgets, its modules, all of it.
+
+    Both callers — a reload replacing a build, and a test finishing with one — need exactly
+    this, and it is one function because the copy that left out ``deleteLater`` cost the test
+    suite most of its running time. **A closed ``QWidget`` is still alive.** Qt keeps it in
+    ``topLevelWidgets()``, that keeps its entire build reachable, and every later
+    ``gc.collect()`` then has to walk it — so a suite that builds an application per test got
+    steadily slower at nothing. ``ARCHITECTURE.md``'s *Closing a window is not discarding it*
+    has the measurements.
+
+    ``deleteLater`` rather than dropping the reference: the window's close hooks are still
+    unwinding on the stack here, and deleting it under them is a crash. The deletion happens
+    when the event loop next runs — which is why a caller with no event loop has to dispatch
+    the deferred deletes itself. :meth:`AppSession.close` is the one that does.
+    """
+    if window is not None:
+        # The build is being discarded, not quit: its changes are on disk and (on a reload)
+        # the new window shows the same dirty state, so the quit-time guards must not run —
+        # a reload asked for by the watcher would otherwise block on a modal nobody is
+        # quitting through.
+        window.close_guards.clear()
+        window.close()  # Runs close hooks — the final autosave flush.
+        window.deleteLater()
+    if services is not None:
+        services.autosave.stop()
 
 
 def show_startup_failure(failure: OpenFailure) -> None:
@@ -154,20 +182,32 @@ class AppSession:
         self.window, self.services, self.library_path = window, services, library_path
         window.show()
 
-        # Shown first, then the old one closed: the screen never goes empty, and the old
-        # build takes any unbalanced autosave pause with it when it is discarded.
-        if old_window is not None:
-            # The old build is being replaced, not quit: its changes are on disk and the
-            # new window shows the same dirty state, so the quit-time guards must not run
-            # — a reload asked for by the watcher would otherwise block on a modal nobody
-            # is quitting through.
-            old_window.close_guards.clear()
-            old_window.close()  # Runs close hooks — the final autosave flush.
-            old_window.deleteLater()
+        # Shown first, then the old one discarded: the screen never goes empty, and the old
+        # build takes any unbalanced autosave pause with it when it goes.
+        discard_build(old_window, old_services)
         if old_services is not None:
-            old_services.autosave.stop()
+            # Only on a replacement: the new build's store owns these directories now, and
+            # the old one answering for them would be a stale write waiting to happen.
             old_services.repo.close()
         return True
+
+    def close(self) -> None:
+        """Discard this session's build and have it gone by the time this returns.
+
+        Nothing in the application calls this — a window that closes is the program ending,
+        and a reload replaces a build rather than dropping one. The test suite builds
+        hundreds of applications in one process, and this is how it gets each one actually
+        released rather than merely closed.
+
+        The deferred deletes are dispatched *here* rather than inside ``discard_build``
+        because only this caller can promise it is safe: on a reload the discarded window's
+        close hooks are still unwinding, and deleting it under them is a crash, so there the
+        deletion has to wait for the event loop. ``close`` is called from no Qt stack at all
+        — and in a suite with no event loop, nothing else would ever run them.
+        """
+        discard_build(self.window, self.services)
+        self.window = self.services = None
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
     # -- errors --------------------------------------------------------------------------------
 

@@ -735,6 +735,48 @@ uncommitted opened a modal nobody was there to answer. Found as a test hang; a r
 reload would have blocked the same way. Upstream candidate: yes — any application with
 both a close guard and a rebuild path has this bug latent.
 
+### `discard_build()`, and the `deleteLater` that a template will lose
+
+**What.** The teardown in `AppSession._open` became a module-level `discard_build(window,
+services)` — clear close guards, `close()`, **`deleteLater()`**, stop autosave — and
+`AppSession.close()` is a new public method that calls it and then dispatches the deferred
+deletes (`QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)`). The store
+close stayed in `_open`, where a new store is genuinely replacing the old one.
+
+**Why.** Our test suite builds a whole application per test, and its teardown was a
+hand-written copy of `_open`'s that had dropped the `deleteLater`. A closed `QWidget` is
+still alive — Qt keeps it in `topLevelWidgets()` — so every application the suite ever built
+stayed reachable: 28 top-level widgets and ~2,700 objects each, forever. Nothing about that
+is slow on its own, but the suite also collects cyclic garbage after every test (it must:
+otherwise Python frees PySide wrappers mid event dispatch and the run SIGSEGVs somewhere
+else each time), and a full collection costs what the live graph costs. Linear leak times
+per-test collection is a quadratic suite: `tests/modules` took 25m20s, and 4m36s once the
+line was back.
+
+Two things are worth carrying up beyond the fix itself:
+
+- **The duplication was the bug.** Two callers needed the same five steps and only one of
+  them was written by somebody thinking about Qt ownership. A framework that lets an
+  application hand-roll "discard this build" will get a subtly different copy every time.
+- **`processEvents()` does not run deferred deletes.** Qt skips `DeferredDelete` in it by
+  design, so the obvious way to flush them silently does nothing. Anything that discards Qt
+  objects without an event loop to follow needs `sendPostedEvents(None, DeferredDelete)`.
+  The dispatch belongs at the caller and not inside `discard_build`, because only a caller
+  on no Qt stack can promise it is safe: `_open` runs with the discarded window's close
+  hooks still unwinding, and deleting it under them is a crash.
+
+The running application was never affected — we measured it rather than assuming: nine
+reloads driven from inside `app.exec()` and the top-level widget count settles and stays
+flat, because a real event loop dispatches the deferred deletes. This is a bug that only a
+test suite, or a headless script, can have.
+
+**Upstream?** Yes, all of it. The template ships `AppSession` with the reload path and no
+`close()`, so *every* application generated from it will write this teardown by hand in its
+`conftest.py`, and any that forgets the line gets a quadratic suite that looks like "Qt tests
+are just slow". A `close()` on the session and a line in the template's own conftest closes
+it for everyone. `tests/framework/test_builder.py` has the regression test — counting
+top-level widgets across two build-and-close cycles — and it is worth copying up with it.
+
 ### The session lost switching; a different document is a different process
 
 **What.** `AppSession.switch_to`, the switch guards, and the `workspaces/last|recent|roots`

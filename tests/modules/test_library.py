@@ -152,9 +152,7 @@ def test_the_window_title_is_the_library_file_stem(services, library_file):
     assert services.window.windowTitle() == f"{library_file.stem} — {APP_NAME}"
 
 
-def test_the_default_library_titles_the_window_plain(
-    app, library_file, close_quietly, monkeypatch
-):
+def test_the_default_library_titles_the_window_plain(app, library_file, monkeypatch):
     """"DPlanner" *is* the user's planner; only an alternative library needs pointing out."""
     from dplanner.app import new_session
 
@@ -165,4 +163,4 @@ def test_the_default_library_titles_the_window_plain(
         assert session.window is not None
         assert session.window.windowTitle() == APP_NAME
     finally:
-        close_quietly(session)
+        session.close()

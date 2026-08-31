@@ -761,6 +761,46 @@ The boundary to keep: an operation whose completion the *running* application mu
 before doing anything else at all may be synchronous; anything the user merely waits on goes
 through the runner. A new storage verb defaults to the runner.
 
+## Closing a window is not discarding it
+
+A build is a window, its services and one instance of every module. Two places let one go: a
+reload, which replaces it, and a test, which is finished with it. Both go through
+`discard_build()` in `framework/session.py`, and the reason that is one function rather than
+two similar blocks is that the second copy of it left out one line.
+
+The line is `deleteLater()`. **A closed `QWidget` is still alive** — `close()` hides it and
+runs its close hooks, and Qt goes on holding it in `topLevelWidgets()`. Everything hangs off
+the window, so the entire build stays reachable: services, model, every module. In
+the application that costs nothing worth noticing; a person reloads a library a handful of
+times. In the test suite, which builds a whole application per test, each discarded build left
+28 top-level widgets and about 2,700 objects behind, permanently.
+
+That would be merely untidy if nothing walked the result. `tests/conftest.py` collects cyclic
+garbage after every test — it has to, or Python's GC frees PySide wrappers mid Qt event
+dispatch in some later test and the suite gets a SIGSEGV that moves whenever anything else
+changes. A full collection costs what the live object graph costs. So the leak made every test
+pay for every test before it, and a suite that should be linear was quadratic: early tests ran
+in about 0.45 s, tests two thirds of the way through took over ten seconds each, and
+`tests/modules` alone took 25 minutes. With the one line restored it takes 4m36s.
+
+**`deleteLater` and not simply dropping the reference**, because `discard_build` is called with
+the window's close hooks still unwinding on the stack; deleting it under them is a crash. The
+deletion happens the next time the event loop runs — which is the second half of the rule:
+
+> Anything that discards Qt objects without an event loop to follow must dispatch the deferred
+> deletes itself.
+
+A running DPlanner always has one, so the reload path is already correct — measured, not
+assumed: reload a library nine times and the top-level widget count settles and stays flat.
+A test suite has none, which is why `AppSession.close()` ends with
+`sendPostedEvents(None, DeferredDelete)` and why that call is *there* rather than inside
+`discard_build`: only a caller that is on no Qt stack at all can promise it is safe.
+`processEvents()` will not do — Qt deliberately skips DeferredDelete in it, and that is exactly
+the trap this closes.
+
+`tests/framework/test_builder.py` asserts the property by counting top-level widgets across two
+build-and-close cycles, rather than trusting that the line is still there.
+
 ## Syncing an external fact
 
 The GitHub aspect stores each PR's *last-seen* state so a merged PR stays green offline —
