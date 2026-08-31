@@ -217,11 +217,21 @@ detaches its history.
 a toggleable aspect is the presence of its `module_data` entry, and two aspects need a
 shape for "on, but empty": `step_ticket` writes `{"on": true}` when the Type toggle
 enables it before any field is filled (a filled ticket's entry replaces the marker),
-`step_check` writes `{"on": true}` and never anything else — what a check *covers* is the
-graph's answer, not a stored list — and `step_agent_instruction` writes `{"on": true}` — plus `"separate": true` when the step
+`step_check` and `step_feature` write `{"on": true}` and never anything else — what either
+one *gathers* is the graph's answer, not a stored list — and `step_agent_instruction` writes `{"on": true}` — plus `"separate": true` when the step
 opts into an instruction distinct from its description — beside the step whose prose file
 may not exist at all. Both are format 1 of their existing `ModuleDataFormat`s; a step
 carrying only the old prose file still reads as agent-on, so no migration ships with them.
+
+**Absence encodes the default, and the default is not always "off".** Every aspect above is
+one most steps do not have, so the marker records the *claim*. Two go the other way:
+`estimation` and `step_description` are things most steps do have, so absence means **on**
+and the stored entry is the **opt-out** — `{"off": true}`, written when somebody says a
+milestone has no work of its own. Same rule, read in the direction the fact actually points.
+The payoff is that making them toggleable cost no migration and changed no existing project:
+every step keeps its estimate and its description until a person says otherwise. An
+opted-out `estimation` entry carries no `days` and so reads as unestimated, which every
+total already skips.
 
 **Not every module entry is an aspect.** The graph editor stores each node's position as
 `modules/project_editor.json` beside the step, and it is deliberately *not* an `AspectSpec`:
@@ -267,7 +277,9 @@ inherited it. Modules never import each other, and this is why they do not have 
 
 `modules/estimation/aspect.py` is the worked example: `step_estimation` became `estimation`
 when it grew a project's start date, and the rename cost no project-format migration and no
-import. Three rules it makes concrete:
+import. `modules/step_milestone/aspect.py` is the second: `step_release` became
+`step_milestone` when *release* turned out to be the wrong word for a thing that collects
+features. Three rules they make concrete:
 
 - **The retired format's version is frozen forever.** `RETIRED_STEP_ESTIMATION` is format 1
   because that is what that module last wrote, whatever the successor does next.

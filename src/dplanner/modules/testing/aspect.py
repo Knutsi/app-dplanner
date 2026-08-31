@@ -28,7 +28,7 @@ from typing import Any
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.ordering import upstream
+from dplanner.domain.scope import StepPredicate, cone
 
 MODULE_ID = "testing"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
@@ -164,15 +164,19 @@ def covered(
     step_id: StepId,
     *,
     archived: bool = False,
+    stops_at: StepPredicate | None = None,
 ) -> list[tuple[Step, Test]]:
-    """The tests at and behind ``step_id`` — what a check, or a release, stands for.
+    """The tests at and behind ``step_id`` — what a collector stands for.
 
-    One walk, four readers: the check's *Covers* tab, the Tests tab's scope selector,
-    ``dplanner check show`` and ``test-run start --check/--release``. A check and a release
-    are the same computation; a check is a scope you declare, a release is one you had.
+    One walk, many readers: the *Covers* tab, the Tests tab's scope selector,
+    ``dplanner scope show`` and ``test-run start --scope``. A check, a feature and a
+    milestone are the same computation asked with a different ``stops_at`` — a check stops
+    at nothing and stands for the whole cone behind it, a feature stops at the previous
+    feature and owns only what is new. ``None`` is the untruncated case.
     """
     scope = project.step(step_id)
-    reach = [*upstream(library, project, step_id), *([scope] if scope is not None else [])]
+    found = cone(library, project, step_id, stops_at=stops_at)
+    reach = [*found.steps, *([scope] if scope is not None else [])]
     ordered = {step.id: step for step in reach}
     return [
         (step, test)

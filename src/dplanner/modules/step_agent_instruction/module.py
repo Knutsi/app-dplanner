@@ -188,7 +188,7 @@ class StepAgentInstructionModule:
                 menu="Step",
                 group="type",
                 submenu="Type",
-                order=20,
+                order=30,
                 tip="Mark this step for agent execution; its description is the briefing",
                 state=self._aspect_state,
                 run=self._toggle_aspect,

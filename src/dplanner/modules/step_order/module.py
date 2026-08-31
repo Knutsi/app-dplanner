@@ -85,7 +85,7 @@ def _step_context(step_id: StepId) -> Context:
     return Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)})
 
 
-def _no_release(_step_id: StepId) -> str:
+def _no_milestone(_step_id: StepId) -> str:
     return ""
 
 
@@ -118,9 +118,9 @@ class StepOrderDeps:
     )
     # The widget that sets the date the schedule counts from. None is a legitimate build.
     start_bar: Callable[[ProjectId, QWidget], StartBar] | None = None
-    # The label of the release a step is, "" otherwise. Wired by the composition root;
-    # this module never learns who owns releases.
-    release_label: Callable[[StepId], str] = field(default=_no_release)
+    # The label of the milestone a step is, "" otherwise. Wired by the composition root;
+    # this module never learns who owns milestones.
+    milestone_label: Callable[[StepId], str] = field(default=_no_milestone)
     # What kind of thing a step is, in the canvas medallions' vocabulary ("tag", "spark"),
     # so the title column wears the same marks the graph does. Wired by the composition
     # root; this module never learns which aspects the kinds stand for.
@@ -163,7 +163,7 @@ class OrderActivity(EntityActivity):
             layout.addSpacing(BLOCK_GAP)
 
         self.table = OrderTable(
-            wave_label, deps.step_aspects, deps.release_label, deps.step_icons, page
+            wave_label, deps.step_aspects, deps.milestone_label, deps.step_icons, page
         )
         self.table.itemSelectionChanged.connect(self._on_selection)
         self.table.cellActivated.connect(self._on_activated)
@@ -317,7 +317,7 @@ class StepOrderModule:
         project = deps.library.project(project_id)
         order = placed(deps.library, project)
         rows = order_rows(
-            deps.step_schedule(project_id, order), deps.step_aspects, deps.release_label
+            deps.step_schedule(project_id, order), deps.step_aspects, deps.milestone_label
         )
         suggested = f"{project.title or 'Untitled project'} order.csv"
         chosen, _filter = QFileDialog.getSaveFileName(

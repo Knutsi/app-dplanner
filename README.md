@@ -29,7 +29,8 @@ learning anything about it. `dplanner aspect list` says which exist in a build.
 
 Early, and honest about it. The model, the storage layer, the index tree, the whole CLI, the
 graph editor and the order view are in place and tested. Twelve aspects ship — estimate,
-ticket, description, agent instruction, agent run, status, release, handoff, GitHub refs,
+ticket, description, agent instruction, agent run, status, milestone, feature, handoff,
+GitHub refs,
 spec links, tests and checks — each with verbs in the CLI and most with an editor in the step panel
 (`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: a project start date and
 the estimates give every step a running total and a date, in the order table and in
@@ -79,7 +80,7 @@ dplanner agent set "Draft the model" --file how-to.md   # what an agent should k
 dplanner test add "Draft the model" "Rejects an empty query" --text "1. POST /q with ''
 2. 400, and no row is written."
 dplanner check set "Ship the beta"       # gathers every test behind it
-dplanner test-run start --scope "Ship the beta" --label "Pre-release 3"
+dplanner test-run start --scope "Ship the beta" --label "Pre-ship 3"
 dplanner test-run mark T100 failed --note "still 500s"
 dplanner order show search               # every step, numbered, in dependency order
 dplanner order show search --ready       # just what can be started right now
@@ -155,6 +156,7 @@ src/dplanner/
 │   ├── library_file.py      the per-user library file: which projects exist
 │   ├── aspects.py           what an aspect is: id, label, summary, data format
 │   ├── ordering.py          what order a project can be done in, and what can start now
+│   ├── scope.py             what a collector gathers: the cone, truncated at the next one
 │   ├── schedule.py          the same walk carrying estimates: running totals and dates
 │   ├── progression.py       the status-aware frontier: what can be launched right now
 │   ├── commands.py          undoable changes — the vocabulary the GUI and CLI share
@@ -171,6 +173,7 @@ src/dplanner/
 │   ├── aspects.py           `aspect list`
 │   ├── assets.py            `<noun> attach`/`assets` — the verb pair any file-carrying aspect offers
 │   ├── lint.py              `lint` — every module's checks over the library, one report
+│   ├── scopes.py            `scope show` — what a check, feature or milestone gathers
 │   ├── authoring.py         `step add` — one verb, each module contributing its flags
 │   └── skill.py             the agent skill, generated from the registry
 │
@@ -178,7 +181,10 @@ src/dplanner/
 │   ├── panels.py            the window's left/right/bottom areas, and what modules anchor there
 │   ├── index_panel.py       the index tree: folders from whoever registered them
 │   ├── inspector.py         what a module registers to appear in a detail panel
+│   ├── action_dialog.py     one submenu's toggles as checkboxes — the fifth action presenter
 │   ├── prose_section.py     a panel section over one document, bound to the undo stack
+│   ├── prose_edit.py        that section's editor: a pasted file becomes a markdown link
+│   ├── mime_files.py        the files a paste or a drop carries — both editors' one answer
 │   ├── text_dialog.py       the same document in a big modal editor — a second binding
 │   ├── asset_gallery.py     a module's attached files as thumbnails; click to view
 │   ├── image_preview.py     the modal lightbox the gallery (and anyone) opens
@@ -190,12 +196,13 @@ src/dplanner/
 │   ├── library/             membership: File ▸ New/Open Project and New/Open Project Library
 │   ├── projects/            the Projects folder in the index, and the project verbs
 │   ├── project_editor/      a project in a tab: the canvas, its modes and renderers, sorts, named layouts and regions
+│   │                        (kinds.py is what Step ▸ New offers; the list itself is the composition root's)
 │   │                        (its panel also hosts the modules' project-level cards)
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
 │   │                        (its first tab, details.py, stacks whatever registered a Details
 │   │                        block; and `steps.details`: the same panel as the double-click's modal)
 │   │
-│   │   ── the twelve aspect modules (`dplanner aspect list`); the `step_` prefix is not the
+│   │   ── the thirteen aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /
 │   │      `step_properties` are views of steps, not aspects:
 │   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule
@@ -205,7 +212,8 @@ src/dplanner/
 │   │                             and assembles and launches Run Agent
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by `dplanner agent-state`
 │   ├── step_status/         where a step stands — a Status submenu, no tab
-│   ├── step_release/        the steps that mark a release point — the Release tab and the Type ▸ Release toggle
+│   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
+│   ├── step_feature/        the steps that collect the work behind them — a marker and a Type toggle
 │   ├── step_check/          a step that gathers every test it waits on — the Type ▸ Check toggle
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, the project's Tests tab and the library-wide roll call

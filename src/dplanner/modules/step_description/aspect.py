@@ -15,16 +15,40 @@ reasoning for why an asset add is not undoable.
 """
 
 import re
+from typing import Any
 
-from dplanner.core.module_data import ModuleDataFormat
+from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.model import Step
 
 MODULE_ID = "step_description"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
+
 def read(step: Step) -> str:
     return step.module_text.get(MODULE_ID, "")
+
+
+def enabled(step: Step) -> bool:
+    """Whether this step carries a description — the Type toggle's answer.
+
+    **Absence means on**, the opposite of a ticket or a check, because a description is
+    what a step ordinarily *is*: every step wants one, and the ones that do not — a
+    milestone, which is a marker in the graph rather than work — are the exception worth
+    recording. So the stored entry is the opt-out, existing projects change not at all, and
+    ``FORMAT.md``'s "absence encodes the default" holds with the default being yes.
+    """
+    entry = step.module_data.get(MODULE_ID)
+    return not (entry and entry.get("off"))
+
+
+def write_state(on: bool) -> dict[str, Any]:
+    """The opt-out entry. On gives ``{}``, which removes the file and restores the default.
+
+    The prose lives in ``module_text`` and is cleared alongside this, in one command — the
+    shape ``step_agent_instruction`` established, so one Ctrl+Z restores both.
+    """
+    return {} if on else stamped({"off": True}, DATA_FORMAT.version)
 
 
 _IMAGE_REFERENCE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)")

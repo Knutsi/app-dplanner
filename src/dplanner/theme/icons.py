@@ -226,8 +226,9 @@ def branch_icon(color: str) -> QIcon:
 # repaints them.
 
 
-def plus_icon(color: str) -> QIcon:
-    """A plus: add a step."""
+def plus_icon(color: str | QColor) -> QIcon:
+    """A plus: add a step, or an aspect. ``_pen`` takes either, so callers with a palette
+    colour in hand need not stringify it."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 1.6))
     painter.drawLine(QPointF(8.0, 3.5), QPointF(8.0, 12.5))
@@ -484,5 +485,56 @@ def shield_icon(color: str | QColor) -> QIcon:
     """The check shield as a row icon: this step stands for what it waits on passing."""
     pixmap, painter = _canvas()
     paint_shield_glyph(painter, QRectF(3.0, 2.5, 10.0, 11.0), QColor(color))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def paint_layers_glyph(painter: QPainter, rect: QRectF, colour: QColor) -> None:
+    """Three stacked plates: a feature — a gathered set of work, read as one thing."""
+    painter.setPen(_pen(colour, 1.3))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    # The top plate is drawn whole; the two beneath show only their leading edges, which is
+    # what makes a stack read as depth rather than as three separate bars at 16 px.
+    top = QPainterPath(QPointF(rect.center().x(), rect.top()))
+    top.lineTo(QPointF(rect.right(), rect.top() + rect.height() * 0.22))
+    top.lineTo(QPointF(rect.center().x(), rect.top() + rect.height() * 0.44))
+    top.lineTo(QPointF(rect.left(), rect.top() + rect.height() * 0.22))
+    top.closeSubpath()
+    painter.drawPath(top)
+    for offset in (0.62, 0.84):
+        edge = rect.top() + rect.height() * offset
+        painter.drawPolyline(
+            QPolygonF(
+                [
+                    QPointF(rect.left(), edge - rect.height() * 0.11),
+                    QPointF(rect.center().x(), edge),
+                    QPointF(rect.right(), edge - rect.height() * 0.11),
+                ]
+            )
+        )
+
+
+def layers_icon(color: str | QColor) -> QIcon:
+    """The layer stack as a row icon: this step collects the work behind it."""
+    pixmap, painter = _canvas()
+    paint_layers_glyph(painter, QRectF(2.5, 2.5, 11.0, 11.0), QColor(color))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def info_icon(color: str | QColor) -> QIcon:
+    """A circled *i*: the tooltip beside a caption that carries a standing convention.
+
+    ``DESIGN.md``'s *Words* rule — a definition belongs behind this glyph, never on a line
+    of its own under a field where it is re-read on every visit.
+    """
+    pixmap, painter = _canvas()
+    circle = QColor(color)
+    painter.setPen(_pen(circle, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(QRectF(2.5, 2.5, 11.0, 11.0))
+    painter.setPen(_pen(circle, 1.4))
+    painter.drawPoint(QPointF(8.0, 5.6))
+    painter.drawLine(QPointF(8.0, 7.6), QPointF(8.0, 11.0))
     painter.end()
     return QIcon(pixmap)

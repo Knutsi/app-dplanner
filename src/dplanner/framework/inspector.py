@@ -54,6 +54,11 @@ class InspectorSection:
     # widget; tab and card hosts ignore it. One editor per host claims the room (1), the
     # compact rows keep their size hint (0).
     stretch: int = 0
+    # A standing convention the reader may not know — the unit a number is in, what a
+    # default means. A captioned host puts it behind an info glyph beside the caption
+    # rather than on a line of its own under the field, which is DESIGN.md's *Words* rule:
+    # a sentence that never changes is re-read on every visit and earns none of them.
+    hint: str = ""
 
 
 class InspectorSectionRegistry:

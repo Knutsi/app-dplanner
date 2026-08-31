@@ -36,6 +36,16 @@ def snapped(value: float) -> float:
     return float(round(value / GRID) * GRID)
 
 
+def centred_on(x: float, y: float) -> tuple[float, float]:
+    """A node's top-left, given the point it should sit centred on.
+
+    One implementation because two gestures place a node by pointing at a spot — a
+    double-click on empty canvas, and New from a menu opened there — and a node that
+    appeared half a width off in one of them would read as a bug.
+    """
+    return x - NODE_W / 2, y - NODE_H / 2
+
+
 def read_position(step: Step) -> tuple[float, float] | None:
     """Where this step was left, or None if nobody has moved it."""
     entry = step.module_data.get(MODULE_ID)

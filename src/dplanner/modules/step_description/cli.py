@@ -8,10 +8,21 @@ from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_step, step_arg
 from dplanner.domain.assets import assets
-from dplanner.domain.commands import EditTextCommand
+from dplanner.domain.commands import (
+    Command,
+    CompositeCommand,
+    EditTextCommand,
+    SetModuleDataCommand,
+)
 from dplanner.domain.model import Library, Project, Step, TextEdit
 from dplanner.domain.store import FilesFor
-from dplanner.modules.step_description.aspect import MODULE_ID, image_references, read
+from dplanner.modules.step_description.aspect import (
+    MODULE_ID,
+    enabled,
+    image_references,
+    read,
+    write_state,
+)
 
 
 def lint_checks() -> list[LintCheck]:
@@ -26,7 +37,9 @@ def lint_checks() -> list[LintCheck]:
                 message=f"no description — `dplanner describe set '{step.title}' --file -`",
             )
             for step in project.steps
-            if not read(step)
+            # A step that has turned the aspect off is not missing a description; it has
+            # said it does not want one. Lint reports gaps, not decisions.
+            if enabled(step) and not read(step)
         ]
 
     def missing_images(
@@ -71,6 +84,13 @@ def commands() -> list[CliCommand]:
                 "dplanner describe set 'Read the spec' --file notes.md",
                 "echo '# Notes' | dplanner describe set 'Read the spec' --file -",
             ),
+        ),
+        CliCommand(
+            path=("describe", "clear"),
+            summary="This step needs no description — a milestone, say. Stops lint asking.",
+            configure=step_arg,
+            run=_clear,
+            examples=("dplanner describe clear v1",),
         ),
         CliCommand(
             path=("describe", "show"),
@@ -133,6 +153,38 @@ def _set(context: CliContext, args: Namespace) -> int:
         {"step": step.id, "characters": len(body)},
         f"{step.title}: {len(body)} characters",
     )
+    return 0
+
+
+def _clear(context: CliContext, args: Namespace) -> int:
+    """The opt-out, and the CLI half of the GUI's Type ▸ Description toggle.
+
+    A description defaults to *on*, so deleting the prose would only mean "not written yet"
+    and lint would keep asking. This says the step wants none — a milestone is a marker in
+    the graph, not work to describe. Prose and mark go in one command, so one undo restores
+    both, exactly as the GUI toggle does it.
+    """
+    step = _step(context, args.step)
+    message = f"{step.title}: no description — this step wants none"
+    if not enabled(step):
+        # Already clear is success, and writes nothing.
+        context.report({"step": step.id}, message)
+        return 0
+    prose = read(step)
+    commands: list[Command] = [
+        SetModuleDataCommand(step.id, MODULE_ID, write_state(False), label="Clear Description")
+    ]
+    if prose:
+        commands.insert(
+            0,
+            EditTextCommand(
+                TextEdit(step.id, MODULE_ID, 0, prose, ""), label="Clear Description"
+            ),
+        )
+    context.apply(
+        commands[0] if len(commands) == 1 else CompositeCommand("Clear Description", commands)
+    )
+    context.report({"step": step.id}, message)
     return 0
 
 

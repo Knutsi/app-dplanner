@@ -57,6 +57,11 @@ class Row:
     covered_by: tuple[str, ...] = ()
     outcome: Outcome | None = None
     status: str = "pending"  # This run's result in run mode; the latest one otherwise.
+    # What this test is filed under when the reader asked for grouping — a feature's title,
+    # or the fallback for one nothing gathers. Empty on every row means no grouping, and
+    # the table draws no headings at all. Whoever orders the rows also fills this in:
+    # rows of one group must arrive together, and there is one place that orders them.
+    group: str = ""
 
 
 class TestsTable(QTableWidget):
@@ -95,9 +100,14 @@ class TestsTable(QTableWidget):
 
     def show_rows(self, rows: Sequence[Row], *, show_project: bool = False) -> None:
         keep = self.selected_tests()
-        self.setRowCount(len(rows))
-        for index, row in enumerate(rows):
-            self._fill(index, row)
+        laid = _with_headings(rows)
+        self.clearSpans()
+        self.setRowCount(len(laid))
+        for index, entry in enumerate(laid):
+            if isinstance(entry, str):
+                self._fill_heading(index, entry)
+            else:
+                self._fill(index, entry)
         # A column of blanks is noise: hide what this scope has nothing to say about.
         self.setColumnHidden(PROJECT_COLUMN, not show_project)
         self.setColumnHidden(COVERED_COLUMN, not any(row.covered_by for row in rows))
@@ -109,6 +119,27 @@ class TestsTable(QTableWidget):
             self.resizeColumnToContents(TEST_COLUMN)
             self.setColumnWidth(TEST_COLUMN, min(self.columnWidth(TEST_COLUMN), TEST_MAX_WIDTH))
             self._sized = bool(rows)
+
+    def _fill_heading(self, index: int, title: str) -> None:
+        """A group's name, spanning the table: not a row, and never selectable.
+
+        Left out of the delegate's two-line treatment on purpose — a heading is one line,
+        and a second line under it would read as a test that cannot be marked.
+        """
+        item = QTableWidgetItem(title)
+        item.setFlags(Qt.ItemFlag.NoItemFlags)
+        font = item.font()
+        font.setBold(True)
+        item.setFont(font)
+        faded = self.palette().text().color()
+        faded.setAlpha(SECONDARY_ALPHA)
+        item.setForeground(faded)
+        self.setItem(index, TEST_COLUMN, item)
+        for column in range(1, len(COLUMNS)):
+            blank = QTableWidgetItem("")
+            blank.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.setItem(index, column, blank)
+        self.setSpan(index, TEST_COLUMN, 1, len(COLUMNS))
 
     def _fill(self, index: int, row: Row) -> None:
         first_line = _preview(row.test.body)
@@ -142,12 +173,12 @@ class TestsTable(QTableWidget):
             self.setItem(index, column, item)
 
     def test_at(self, row: int) -> str | None:
-        item = self.item(row, TEST_COLUMN)
-        return None if item is None else str(item.data(TEST_ROLE))
+        # A group heading is a real row carrying no test, so an unset role has to answer
+        # None rather than the string "None" — which is what a bare str() would hand back.
+        return _role_at(self.item(row, TEST_COLUMN), TEST_ROLE)
 
     def step_at(self, row: int) -> StepId | None:
-        item = self.item(row, TEST_COLUMN)
-        return None if item is None else str(item.data(STEP_ROLE))
+        return _role_at(self.item(row, TEST_COLUMN), STEP_ROLE)
 
     def selected_tests(self) -> list[str]:
         return [
@@ -178,6 +209,27 @@ class TestsTable(QTableWidget):
         for row in range(self.rowCount()):
             if self.test_at(row) in wanted:
                 model.select(self.model().index(row, TEST_COLUMN), flags)
+
+
+def _role_at(item: QTableWidgetItem | None, role: int) -> str | None:
+    if item is None:
+        return None
+    found = item.data(role)
+    return str(found) if found is not None else None
+
+
+def _with_headings(rows: Sequence[Row]) -> list[Row | str]:
+    """The rows with a heading wherever the group changes; unchanged when nothing groups."""
+    if not any(row.group for row in rows):
+        return list(rows)
+    laid: list[Row | str] = []
+    current = None
+    for row in rows:
+        if row.group != current:
+            current = row.group
+            laid.append(current)
+        laid.append(row)
+    return laid
 
 
 def _preview(body: str) -> str:

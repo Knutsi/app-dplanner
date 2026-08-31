@@ -454,9 +454,15 @@ def test_agent_set_clear_for_project_empties_the_standing_instruction(cli, cli_s
 def test_state_clearing_verbs_treat_already_clear_as_success(cli):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "Deploy")
-    assert "not a release" in cli("release", "clear", "Deploy")
+    assert "not a milestone" in cli("milestone", "clear", "Deploy")
     assert "no ticket" in cli("ticket", "clear", "Deploy")
     assert "no GitHub refs" in cli("github", "clear", "Deploy")
+    # The two aspects whose default is *on* clear to an opt-out rather than to absence, so
+    # "already clear" means "already opted out" — still success, and still idempotent.
+    assert "no estimate" in cli("estimate", "clear", "Deploy")
+    assert "no estimate" in cli("estimate", "clear", "Deploy")
+    assert "no description" in cli("describe", "clear", "Deploy")
+    assert "no description" in cli("describe", "clear", "Deploy")
 
 
 # -- authoring a step at birth -----------------------------------------------------------------

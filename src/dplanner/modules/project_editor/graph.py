@@ -415,6 +415,11 @@ class GraphView(QGraphicsView):
         # Space is released after the drag it started often enough that popping immediately
         # would strand the hand cursor mid-pan; the pop waits for the button.
         self._pan_release_pending = False
+        # Where the user last pointed at the plane, in scene coordinates — what New places
+        # a node at. Recorded for every button, before the mode stack gets a say: "where I
+        # last clicked" is true whether or not a mode claimed the press, and a right-click
+        # has to count or the menu's own New would land somewhere else.
+        self.last_click: QPointF | None = None
 
     # -- input -------------------------------------------------------------------------------
 
@@ -426,7 +431,13 @@ class GraphView(QGraphicsView):
             modifiers=event.modifiers(),
         )
 
+    def note_click(self, scene_pos: QPointF) -> None:
+        """Remember a point as the last one pointed at — also called for a context menu
+        raised by the keyboard, which sends no press."""
+        self.last_click = scene_pos
+
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
+        self.note_click(self.mapToScene(event.position().toPoint()))
         if self.modes.current().mouse_press(self._event_of(event)):
             event.accept()
             return

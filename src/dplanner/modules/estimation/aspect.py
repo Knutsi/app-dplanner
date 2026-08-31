@@ -32,7 +32,11 @@ RETIRED_STEP_ESTIMATION = ModuleDataFormat("step_estimation")
 
 
 def _days_in(entry: dict[str, Any]) -> float | None:
-    """The readable ``days`` of an entry, or None. Shared by ``read`` and the takeover."""
+    """The readable ``days`` of an entry, or None. Shared by ``read`` and the takeover.
+
+    An opted-out entry carries no ``days`` and so reads as unestimated, which is what every
+    total already knows how to skip.
+    """
     days = entry.get("days")
     if isinstance(days, bool) or not isinstance(days, int | float):
         return None
@@ -69,8 +73,27 @@ def read(step: Step) -> float | None:
     return None if not entry else _days_in(entry)
 
 
-def write(days: float | None) -> dict[str, Any]:
-    """The entry to store. ``None`` gives ``{}``, which removes the file."""
+def enabled(step: Step) -> bool:
+    """Whether this step is sized at all — the Type toggle's answer.
+
+    **Absence means on**, which is the opposite of a ticket or a check and is the honest
+    default: most steps are work, and work has a size. So the stored marker records the
+    *exception* — a milestone, which has no work of its own — and every step written before
+    this aspect became toggleable keeps its block with no data change and no migration.
+    ``FORMAT.md``'s rule is that absence encodes the default; here the default is yes.
+    """
+    entry = step.module_data.get(MODULE_ID)
+    return not (entry and entry.get("off"))
+
+
+def write(days: float | None, *, on: bool = True) -> dict[str, Any]:
+    """The entry to store.
+
+    Three cases: sized writes the number; on but unsized gives ``{}``, which removes the
+    file and leaves the aspect on by absence; off writes the opt-out marker.
+    """
+    if not on:
+        return stamped({"off": True}, DATA_FORMAT.version)
     if days is None:
         return {}
     return stamped({"days": float(days)}, DATA_FORMAT.version)

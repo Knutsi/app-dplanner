@@ -36,7 +36,7 @@ from PySide6.QtWidgets import QGraphicsView
 from dplanner.core.signals import Signal
 from dplanner.domain.model import StepId
 from dplanner.modules.project_editor.items import StepNodeItem
-from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+from dplanner.modules.project_editor.positions import centred_on
 from dplanner.modules.project_editor.region_items import RegionItem
 from dplanner.modules.project_editor.regions import MIN_REGION
 from dplanner.modules.project_editor.renderers import RenderHints
@@ -618,5 +618,5 @@ class IdleMode(ModeBase):
             self.deps.run_action("regions.rename")
             return True
         point = event.scene_pos
-        self.deps.canvas.create_requested.emit(point.x() - NODE_W / 2, point.y() - NODE_H / 2)
+        self.deps.canvas.create_requested.emit(*centred_on(point.x(), point.y()))
         return True

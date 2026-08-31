@@ -117,7 +117,7 @@ class BulkEstimateActivity(EntityActivity):
         layout.addWidget(caption)
 
         note = QLabel(
-            "Run down the list and size each step. Working days; a week is five.", page
+            "Run down the list and size each step.", page
         )
         note.setObjectName("InspectorNote")
         note.setWordWrap(True)

@@ -101,12 +101,17 @@ the bench view with 200+ rows.
 2. It must not flicker when it first renders, nor when data updates underneath.'
 ```
 
-Two shapes are worth knowing:
+Three shapes are worth knowing:
 
-- **A check** is a step that gathers every test it waits on — `dplanner check set 'Pre-release
-  check'` — so a run can be scoped to it. It stores nothing; what it covers is read off the
-  graph, so linking more work behind it widens it automatically. A *release* step already
-  works the same way, so `--scope` takes either.
+- **A collector** is a step that stands for the work behind it. Three kinds, one derivation:
+  a **check** (`dplanner check set`) gathers *everything* it waits on; a **feature**
+  (`dplanner feature set`) gathers its own work up to the previous feature; a **milestone**
+  (`dplanner milestone set`) gathers the features it adds since the previous milestone.
+  None of them stores what it holds — it is read off the graph, so linking more work behind
+  one widens it automatically, and `--scope` takes any of the three.
+- **`dplanner scope show <step>`** prints what one gathers: its features as headings, their
+  tests under them. `--cumulative` gives everything behind it instead of only what it adds —
+  what must pass to ship, rather than what is new.
 - **A run** is one occasion of executing a scope. A project has at most one open at a time,
   and starting a new one closes the last:
 
@@ -145,11 +150,13 @@ rather than leaving the steps wherever they landed:
 
 - **Sort it.** `dplanner layout sort <project> flow` arranges by dependency depth, left to
   right; `spine` lays the main chain on a central line with feeder work branching off it —
-  the right shape when a project drives toward releases; `timeline` spaces steps by their
+  the right shape when a project drives toward milestones; `timeline` spaces steps by their
   estimates so the graph reads as a schedule. A sort is one undo step in an open window.
-- **Mark the milestones.** `dplanner release set 'Ship the beta' --label MVP` makes a
-  step a release point (`--label` omitted, one is generated); the spine sort drives
-  toward them, and `release list` reads as a roadmap.
+- **Mark the features and the milestones.** `dplanner feature set 'Bulk import'` makes a
+  step the thing people name and demo — it collects the work behind it up to the previous
+  feature. `dplanner milestone set 'Ship the beta' --label MVP` makes a step a milestone
+  (`--label` omitted, one is generated); the spine sort drives toward them, `milestone list`
+  reads as a roadmap, and `scope show` says what each one adds.
 - **Name the areas with regions — coarsely.** A region is a titled rectangle painted
   behind the steps — "Database setup", "Finalize release" — pure annotation, with no
   effect on the plan. `dplanner region add <project> "Database setup" --steps schema
@@ -243,12 +250,12 @@ then authored `step add`s.
   or a unique part of its title. An ambiguous name is refused and the message lists the ids —
   use one of those rather than guessing.
 - **The positional names the thing the verb acts on.** A step verb (`describe set`,
-  `agent on`, `release set`, `estimate set`) takes the *step*; a project verb (`step add`,
+  `agent on`, `milestone set`, `estimate set`) takes the *step*; a project verb (`step add`,
   `spec …`, `order show`, `region …`, `layout …`) takes the *project*. A step verb finds
   its project itself — from the working directory or `--project` — never as a second
   positional.
 - **Already clear is success.** State-clearing verbs (`status clear`, `estimate clear`,
-  `release clear`, `ticket clear`, `handoff clear`, `github clear`, `agent off`,
+  `milestone clear`, `ticket clear`, `handoff clear`, `github clear`, `agent off`,
   `agent set --clear`) exit 0 when there is nothing to clear — safe to batch.
 - **Exit 1 with one line on stderr** means something you can fix. A traceback means a bug in
   DPlanner; report it rather than working around it.

@@ -908,6 +908,59 @@ session-replace model). A highlighter keeps the text byte-identical to disk.
 **Upstream?** Yes, if the template keeps the premise that module prose is markdown — the
 highlighter has no DPlanner in it. The `PaletteChange` → `rehighlight` hook belongs with it.
 
+### A prose editor attaches what you paste into it
+
+**What.** New `framework/prose_edit.py` (`ProseEdit`) and `framework/mime_files.py`. A file
+arriving by paste, drop, or the editor's own *Insert Image…* is content-addressed into the
+node's module file area and referenced from the caret as `![alt](assets/…)` — or
+`[name](assets/…)` when it is not an image. `ProseSection` and `ExpandedTextDialog` now build
+a `ProseEdit`; `ProseSection` also builds the `AssetGallery` when given an `attach_title`,
+which deleted the hand-wired gallery from two hosts that had each grown their own.
+`AssetGallery` gained a public `attach_bytes(data, filename) -> str | None` (was
+`_attach_bytes`, returning nothing) and a `hide_when_empty` flag.
+
+**Why the editor does not write the file.** It is handed an `Attach` callable — the gallery's
+`attach_bytes` — because attaching is three steps: resolve the area, write, redraw the
+thumbnails. An editor doing only the middle one puts a pasted image on disk with no thumbnail
+beside it, and needs a second answer for a node the store has never flushed. It was written
+the other way first; the missing refresh is what found it.
+
+**Why `set_area` is a call and not another `…_for` callable.** The node a document is *keyed
+by* is not always the node its *files* live beside — a test's body is keyed by the test, its
+images by the step. A `Callable[[str], AreaFor | None]` hands the callee an id it must
+discard, which reads correct and is wrong. The host makes the call from its own
+`show_target`, where the right id is in scope.
+
+**Why the undo step is sealed on both sides of the insert.** `EditTextCommand` coalesces an
+append at exactly the caret — which every paste is — so without
+`UndoService.break_coalescing()` before and after, one Ctrl+Z takes the sentence being typed
+along with the link. Worth knowing for any template feature that inserts text
+programmatically into a bound editor: coalescing is tuned for keystrokes and will happily
+swallow something that was not one.
+
+**Qt facts worth writing down** (measured on PySide6 6.9+, offscreen):
+
+- `QPlainTextEdit` routes **drops** through `insertFromMimeData`, the same override paste
+  uses. No `setAcceptDrops`, no `dragEnterEvent`/`dropEvent` — `acceptDrops()` is already
+  true on the widget and its viewport.
+- Overriding `canInsertFromMimeData` is **not** cosmetic: Qt's own answer is `False` for
+  image-only clipboard data, which greys **Paste** in the standard context menu. `paste()`
+  itself does not consult it, so Ctrl+V works either way — only the menu entry depends on it.
+- Qt asks `canInsertFromMimeData` on **every drag-move**, so it must not read a byte. Hence
+  the split into `carries_files()` (a `stat` at worst) and `payloads()` (reads, once).
+- A URL-only `QMimeData` auto-synthesises `hasText()` as the path string, which is why local
+  files must be checked before falling through to Qt's paste — and why "falling through" for
+  an editor with no area usefully inserts the path.
+- A child widget of a never-shown parent reports `isVisible() == False` whatever it was told;
+  `isHidden()` is the property that reflects the widget's own state.
+
+**Upstream?** Yes. "A prose editor attaches what you paste" has no DPlanner in it, and
+`mime_files.py` is pure Qt. The one judgement to carry with it: a plain-text markdown editor
+inserts a *link* rather than embedding, because embedding means a rich-text widget and that
+costs the positional binding (see the highlighter note above, which is the same trade seen
+from the other side).
+
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class
@@ -1131,3 +1184,35 @@ Recording these so a future backport does not over-reach:
 - **Lookup by "an id, a folder name, or part of a title" lives in `cli/`**, not in the model.
   It is a command-line affordance — resolving what a person typed — and the model should not
   have opinions about fuzzy matching.
+
+---
+
+## 7. From the aspect-toggling pass
+
+- **`framework/action_dialog.py` — actions as a dialog of checkboxes.** The fifth presenter
+  beside the menu bar, palette, toolbar and `action_menu`'s pop-ups, and it follows the same
+  one policy: render the registry, never a copy of it. `TogglesDialog(actions, context, menu=,
+  submenu=)` lists every spec in one submenu as a checkbox with its `tip` as a second line,
+  runs each through `ActionRegistry.run`, and rebuilds after every click because one toggle
+  can change another's state. **This belongs upstream.** It is entirely generic — nothing in
+  it names an aspect, a step or DPlanner — and any application with a submenu of independent
+  toggles wants the same dialog. One deliberate choice worth carrying with it: the context
+  arrives as a `Callable[[], Context]` rather than a `ContextService`, so a caller whose
+  target is not the window's selection (a panel hosted in a modal) can hand over one naming
+  its own.
+- **`InspectorSection.hint`.** A standing convention — the unit a number is in — rendered by
+  a captioned host as an info glyph beside the caption, with the sentence as its tooltip.
+  **Belongs upstream**, though the glyph does not: `info_icon()` is ours, and upstream would
+  need its own. The field is three lines and the alternative is what we deleted, a
+  `#InspectorNote` line under every such field that is re-read on every visit and earns none
+  of them. `DESIGN.md`'s *Words* section is the rule; only the block host renders it today,
+  and `ToolCard` is the obvious second.
+- **A `QTabBar` has no corner widget.** `QTabWidget.setCornerWidget` does not exist on the
+  bare bar, so a button that should sit beside the last tab needs the host to build the row
+  (`QHBoxLayout`: bar, stretch, button). Worth knowing before somebody reaches for the
+  method that is not there — and an argument for the framework growing a small tab-row
+  widget if a second host ever wants one.
+- **A widget added to a `QToolBar` does not carry its own visibility.** `addWidget` wraps it
+  in a `QWidgetAction`, and hiding the widget leaves the action's slot behind; it is the
+  action you must hide. The template's own toolbar code sidesteps this by never hiding one.
+  The tests tab's Group-by selector holds the returned action for exactly this reason.

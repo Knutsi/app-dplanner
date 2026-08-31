@@ -7,6 +7,7 @@ The Qt-free halves — the record shapes, the coverage walk, the run bookkeeping
 import json
 
 import pytest
+from PySide6.QtWidgets import QLabel
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
@@ -85,11 +86,12 @@ def test_an_archived_test_is_out_of_the_roster_until_asked_for(cli):
 
 
 def test_a_check_gathers_the_tests_behind_it(cli):
+    """Reported by `scope show`, the one verb over every kind of collector."""
     cli("test", "add", "Fix list flicker", "No flicker")
     cli("test", "add", "Pre-release check", "Its own test")
     cli("check", "set", "Pre-release check")
-    found = data(cli("check", "show", "Pre-release check", "--json"))
-    assert [row["id"] for row in found["tests"]] == ["T100", "T101"]
+    found = data(cli("scope", "show", "Pre-release check", "--json"))
+    assert [row["id"] for row in found["direct"]] == ["T100", "T101"]
 
 
 def test_a_check_is_a_marker_and_clearing_leaves_no_file(cli, workspace):
@@ -191,7 +193,7 @@ def test_lint_names_the_verb_that_closes_each_finding(cli):
     findings = data(cli("project", "lint", "--json", expect=1))["findings"]
     by_check = {row["check"]: row["message"] for row in findings}
     assert "dplanner test set T100" in by_check["test.empty"]
-    assert "dplanner check clear 'Lonely check'" in by_check["check.covers-nothing"]
+    assert "dplanner check clear 'Lonely check'" in by_check["scope.gathers-nothing"]
 
 
 # -- the window --------------------------------------------------------------------------
@@ -225,7 +227,7 @@ def step(services, project):
 
 
 def test_the_type_toggles_sit_beside_release_and_agent(services):
-    for action_id, order in (("test.toggle", 40), ("check.toggle", 50)):
+    for action_id, order in (("test.toggle", 50), ("check.toggle", 60)):
         spec = services.actions.spec(action_id)
         assert (spec.menu, spec.group, spec.submenu, spec.order) == ("Step", "type", "Type", order)
 
@@ -322,7 +324,7 @@ def rows(section):
 def section(services, step):
     from dplanner.modules.testing.section import TestsSection
 
-    section = TestsSection(services.document, services.undo)
+    section = TestsSection(services.document, services.undo, services.repo.files)
     section.show_target(step.id)
     yield section
     section.dispose()
@@ -387,17 +389,145 @@ def test_adding_a_test_selects_it_so_the_editor_is_ready(services, step, section
     assert section.detail.identity.text() == "T101"
 
 
-def test_the_covers_tab_lists_what_a_check_waits_on(services, project, step):
+def scopes():
+    """The collectors, wired the way the composition root wires them."""
+    from dplanner.modules import _scope_kinds
+    from dplanner.modules.step_check.aspect import read as check_read
+    from dplanner.modules.step_feature.aspect import read as feature_read
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+
+    return _scope_kinds(check_read, feature_read, milestone_read)
+
+
+def covers(services, target):
     from dplanner.modules.testing.section import CoversSection
 
+    section = CoversSection(services.document, scopes(), lambda _step_id: None)
+    section.show_target(target)
+    return section
+
+
+def cards(section):
+    """The lane's contents, top to bottom: headings as text, tests as their titles."""
+    from dplanner.modules.testing.section import _CoveredRow, _GroupHeader
+
+    found = []
+    for index in range(section.lane_layout.count() - 1):  # The trailing stretch.
+        widget = section.lane_layout.itemAt(index).widget()
+        labels = widget.findChildren(QLabel)
+        if isinstance(widget, _GroupHeader):
+            found.append(("heading", labels[0].text()))
+        elif isinstance(widget, _CoveredRow):
+            found.append(("test", labels[0].text()))
+    return found
+
+
+def chain(services, project, *titles):
+    """Steps in a line, each waiting on the one before it."""
+    made: list[Step] = []
+    for title in titles:
+        step = Step(title=title)
+        AddNodeCommand(project.id, step).redo(services.document)
+        if made:
+            SetEdgesCommand(step.id, "requires", [made[-1].id]).redo(services.document)
+        made.append(step)
+    return made
+
+
+def give(services, step, *test_ids):
+    services.document.set_module_data(
+        step.id, MODULE_ID, write([Test(test_id, test_id) for test_id in test_ids])
+    )
+
+
+def test_the_covers_tab_lists_what_a_check_waits_on(services, project, step):
     check = Step(title="Pre-release check")
     AddNodeCommand(project.id, check).redo(services.document)
     SetEdgesCommand(check.id, "requires", [step.id]).redo(services.document)
     step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
 
-    section = CoversSection(services.document, lambda _step_id: None)
-    section.show_target(check.id)
+    section = covers(services, check.id)
     assert "2 tests" in section.summary.text()
+    # A check stops at nothing, so there is never a second reading to offer.
+    assert section.mode_bar.isVisibleTo(section) is False
+    assert [kind for kind, _text in cards(section)] == ["test", "test"]
+    section.dispose()
+
+
+def test_a_feature_gathers_only_what_is_new_since_the_previous_one(services, project):
+    from dplanner.modules.step_feature.aspect import MODULE_ID as FEATURE_ID
+    from dplanner.modules.step_feature.aspect import write as feature_write
+
+    login, importer, reporting, export = chain(
+        services, project, "Login", "Import", "Reporting", "Export"
+    )
+    for step in (login, importer, reporting, export):
+        give(services, step, f"T{step.title[:2]}")
+    for step in (importer, export):
+        services.document.set_module_data(step.id, FEATURE_ID, feature_write(True))
+
+    section = covers(services, export.id)
+    # Login and Import went to the Import feature; Export owns Reporting and itself, and
+    # reads flat — a feature is the finest grain, so it has no sub-collectors to group by.
+    assert cards(section) == [("test", "TRe"), ("test", "TEx")]
+    assert "2 tests" in section.summary.text()
+    section.dispose()
+
+
+def test_the_cumulative_reading_is_the_whole_cone(services, project):
+    from dplanner.modules.step_feature.aspect import MODULE_ID as FEATURE_ID
+    from dplanner.modules.step_feature.aspect import write as feature_write
+
+    login, importer, export = chain(services, project, "Login", "Import", "Export")
+    for step in (login, importer, export):
+        give(services, step, f"T{step.title[:2]}")
+    for step in (importer, export):
+        services.document.set_module_data(step.id, FEATURE_ID, feature_write(True))
+
+    section = covers(services, export.id)
+    assert section.mode_bar.isVisibleTo(section) is True
+    assert cards(section) == [("test", "TEx")]
+    section.mode.button(1).setChecked(True)
+    section.mode.idClicked.emit(1)
+    # Everything behind it, still flat: a feature has no finer collector to group by, and
+    # the grouping rule is a property of the kind rather than of the mode.
+    assert cards(section) == [("test", "TLo"), ("test", "TIm"), ("test", "TEx")]
+    assert "3 tests" in section.summary.text()
+    section.dispose()
+
+
+def test_the_first_feature_in_a_project_is_offered_no_switch(services, project):
+    from dplanner.modules.step_feature.aspect import MODULE_ID as FEATURE_ID
+    from dplanner.modules.step_feature.aspect import write as feature_write
+
+    login, importer = chain(services, project, "Login", "Import")
+    give(services, login, "T100")
+    services.document.set_module_data(importer.id, FEATURE_ID, feature_write(True))
+
+    section = covers(services, importer.id)
+    # Nothing behind it to hand off to, so both readings are the same answer.
+    assert section.mode_bar.isVisibleTo(section) is False
+    assert cards(section) == [("test", "T100")]
+    section.dispose()
+
+
+def test_a_release_gathers_the_features_behind_it(services, project):
+    from dplanner.modules.step_feature.aspect import MODULE_ID as FEATURE_ID
+    from dplanner.modules.step_feature.aspect import write as feature_write
+    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
+    from dplanner.modules.step_milestone.aspect import write as milestone_write
+
+    importer, first, export, second = chain(services, project, "Import", "v1", "Export", "v2")
+    give(services, importer, "TIm")
+    give(services, export, "TEx")
+    for step in (importer, export):
+        services.document.set_module_data(step.id, FEATURE_ID, feature_write(True))
+    for step, label in ((first, "v1"), (second, "v2")):
+        services.document.set_module_data(step.id, MILESTONE_ID, milestone_write(label))
+
+    section = covers(services, second.id)
+    # v1 took Import; v2 is read as the one feature it adds, and nothing before it.
+    assert cards(section) == [("heading", "Feature: Export"), ("test", "TEx")]
     section.dispose()
 
 
@@ -422,14 +552,14 @@ def test_the_covers_tab_follows_the_check_aspect(services, step):
 
 
 def test_a_release_scopes_a_run_exactly_as_a_check_does(services, project, step):
-    """One walk, two names: a check is a scope you declare, a release is one you had."""
-    from dplanner.modules.step_release.aspect import MODULE_ID as RELEASE_ID
-    from dplanner.modules.step_release.aspect import write as release_write
+    """One walk, two names: a check is a scope you declare, a milestone is one you had."""
+    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
+    from dplanner.modules.step_milestone.aspect import write as milestone_write
 
     section = next(
         found for found in services.inspector_sections.sections() if found.id == "testing.covers"
     )
-    step.module_data[RELEASE_ID] = release_write("v1")
+    step.module_data[MILESTONE_ID] = milestone_write("v1")
     assert section.shown_for(step.id) is True
 
 
@@ -464,6 +594,64 @@ def test_the_library_wide_tab_lists_every_project_s_tests(services, make_project
     assert "0 of 2 passing" in activity.page.answer.text()
 
 
+def test_the_tests_tab_can_be_read_by_feature(services, make_project):
+    from dplanner.modules.step_feature.aspect import MODULE_ID as FEATURE_ID
+    from dplanner.modules.step_feature.aspect import write as feature_write
+    from dplanner.modules.testing.activity import TESTS_KIND, UNGATHERED
+
+    project = make_project("Widget")
+    login, importer, export = chain(services, project, "Login", "Import", "Export")
+    orphan = Step(title="Orphan")
+    AddNodeCommand(project.id, orphan).redo(services.document)
+    for step in (login, importer, export, orphan):
+        give(services, step, f"T{step.title[:2]}")
+    for step in (importer, export):
+        services.document.set_module_data(step.id, FEATURE_ID, feature_write(True))
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    table = activity.page.table
+    assert activity.group_action.isVisible() is True
+    assert table.rowCount() == 4  # Flat by default: four tests, no headings.
+
+    activity.group_box.setCurrentIndex(activity.group_box.findData(FEATURE_ID))
+    laid = [table.item(row, 0).text() for row in range(table.rowCount())]
+    assert laid == [
+        "Feature: Import",
+        "TLo",
+        "TIm",
+        "Feature: Export",
+        "TEx",
+        UNGATHERED,
+        "TOr",
+    ]
+    # A heading is not a row anybody can mark.
+    assert table.test_at(0) is None and table.test_at(1) == "TLo"
+
+
+def test_a_step_two_features_both_wait_on_is_filed_under_both(services, make_project):
+    from dplanner.modules.step_feature.aspect import MODULE_ID as FEATURE_ID
+    from dplanner.modules.step_feature.aspect import write as feature_write
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    project = make_project("Widget")
+    shared = Step(title="Shared")
+    AddNodeCommand(project.id, shared).redo(services.document)
+    give(services, shared, "TSh")
+    for title in ("One", "Two"):
+        feature = Step(title=title)
+        AddNodeCommand(project.id, feature).redo(services.document)
+        SetEdgesCommand(feature.id, "requires", [shared.id]).redo(services.document)
+        services.document.set_module_data(feature.id, FEATURE_ID, feature_write(True))
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    activity.group_box.setCurrentIndex(activity.group_box.findData(FEATURE_ID))
+    table = activity.page.table
+    laid = [table.item(row, 0).text() for row in range(table.rowCount())]
+    # Listed once, under a joint heading: a test in two places is marked twice.
+    assert laid.count("TSh") == 1
+    assert "Feature: One and Two" in laid
+
+
 def test_double_clicking_a_test_anywhere_opens_its_step(services, make_project, monkeypatch):
     """The one gesture across every table: a row opens `steps.details` on its own step."""
     from dplanner.modules.testing.activity import ALL_TESTS_KIND
@@ -491,3 +679,45 @@ def test_the_tables_preview_line_reads_as_prose_not_markdown_source():
     assert _preview("- First bullet\n- Second") == "First bullet"
     assert _preview("1. Open the list") == "1. Open the list"
     assert _preview("") == ""
+
+
+# -- images in a test body ----------------------------------------------------------------------
+
+
+def test_a_pasted_image_lands_beside_the_step_and_the_body_references_it(services, step, section):
+    """A test's images are the *step's*: `dplanner test attach` has written them to the
+    step's testing area all along, and the tab now writes to the same place. The id the
+    body editor is bound to is the test's, which names no file area at all — this is the
+    assertion that catches keying the attachment on it."""
+    from PySide6.QtCore import QMimeData
+    from PySide6.QtGui import QImage, QTextCursor
+
+    from dplanner.core.png import encode_rgb
+    from dplanner.domain.assets import assets
+
+    step.module_data[MODULE_ID] = write([Test("T100", "One", "Given ")])
+    section.show_target(step.id)
+    # Binding a document leaves the caret at the top, as setPlainText always does; a person
+    # clicks where they want the picture first.
+    section.detail.body.edit.moveCursor(QTextCursor.MoveOperation.End)
+    mime = QMimeData()
+    mime.setImageData(QImage.fromData(encode_rgb(2, 2, 6, b"\x00" * 12)))
+    section.detail.body.edit.insertFromMimeData(mime)
+
+    names = assets(services.repo.files(step.id, MODULE_ID))
+    assert len(names) == 1
+    body = read(services.document.step(step.id))[0].body
+    assert body == f"Given ![image]({names[0]})"
+
+
+def test_the_gallery_is_out_of_the_way_until_the_step_has_a_file(services, step, section):
+    """The pane is the tightest surface in the application; an empty gallery costs nothing."""
+    from dplanner.domain.assets import attach
+
+    step.module_data[MODULE_ID] = write([Test("T100", "One", "body")])
+    section.show_target(step.id)
+    gallery = section.detail.body.gallery
+    assert gallery is not None and gallery.isHidden()
+    attach(services.repo.files(step.id, MODULE_ID), b"png bytes", "figure.png")
+    section.show_target(step.id)
+    assert not gallery.isHidden()

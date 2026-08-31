@@ -12,7 +12,7 @@ returns — the panel subscribes to model and theme signals, and a closed dialog
 keep hearing them.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QWidget
 
@@ -31,8 +31,10 @@ SIDE_MARGIN = DIALOG_MARGIN - PANEL_MARGIN
 # Roomier than the 360 px side panel it mirrors — prose and tables breathe here — but
 # clamped to the screen so a laptop never gets a dialog it cannot show whole. Sized for
 # the Details tab: estimate row, a description worth reading, and a figure row below it.
-DIALOG_WIDTH = 720
-DIALOG_HEIGHT = 680
+# The Tests tab is what set the width: its list-beside-editor split needs 540 px of
+# section, and a step with a dozen tests wants more than the minimum that clears it.
+DIALOG_WIDTH = 900
+DIALOG_HEIGHT = 850
 SCREEN_CLEARANCE = 80  # Left around the dialog when the screen is the constraint.
 
 
@@ -47,6 +49,7 @@ class StepDetailsDialog(QDialog):
         theme: ThemeService | None,
         step_id: StepId,
         parent: QWidget | None = None,
+        on_add_aspect: Callable[[StepPanel], None] | None = None,
     ) -> None:
         super().__init__(parent)
         title = library.step(step_id).title if library.has(step_id) else ""
@@ -54,6 +57,10 @@ class StepDetailsDialog(QDialog):
 
         self.panel = StepPanel(library, undo, sections=sections, theme=theme, parent=self)
         self.panel.show_step(step_id)
+        if on_add_aspect is not None:
+            # The panel names itself, so the chooser reads *this* panel's step rather than
+            # the window's selection — the dialog never publishes one.
+            self.panel.add_aspect.clicked.connect(lambda: on_add_aspect(self.panel))
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
         buttons.rejected.connect(self.reject)

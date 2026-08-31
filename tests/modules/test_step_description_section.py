@@ -2,7 +2,7 @@
 
 import pytest
 
-from dplanner.domain.assets import attach
+from dplanner.domain.assets import assets, attach
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
 from dplanner.modules.step_description.aspect import MODULE_ID
@@ -32,7 +32,7 @@ def test_the_tab_shows_attached_images_with_a_working_attach(services, step, sec
     assert section.gallery._names  # the attached file is listed
     assert section.gallery.attach_button.isVisibleTo(section.gallery)
     # Attaching through the gallery writes the step's own description area.
-    section.gallery._attach_bytes(b"more bytes", "second.png")
+    section.gallery.attach_bytes(b"more bytes", "second.png")
     assert len(section.gallery._names) == 2
     assert section.gallery._grid.count() == 2
 
@@ -126,3 +126,52 @@ def test_a_declined_confirm_keeps_the_separate_instruction(
     section.separate_check.setChecked(False)
     assert section.separate_check.isChecked()  # Reverted, nothing written.
     assert services.document.step(step.id).module_text[AGENT_ID] == "Ship it."
+
+
+# -- pasting an image --------------------------------------------------------------------------
+
+
+def paste_image(section):
+    from PySide6.QtCore import QMimeData
+    from PySide6.QtGui import QImage
+
+    from dplanner.core.png import encode_rgb
+
+    mime = QMimeData()
+    mime.setImageData(QImage.fromData(encode_rgb(2, 2, 6, b"\x00" * 12)))
+    section.edit.insertFromMimeData(mime)
+
+
+def test_pasting_an_image_attaches_it_links_it_and_shows_it(services, step, section):
+    """The whole gesture in one assertion set: the file is beside the step, the prose
+    references it, and the thumbnail is there without waiting for a reselect."""
+    section.show_target(step.id)
+    paste_image(section)
+    names = assets(services.repo.files(step.id, MODULE_ID))
+    assert len(names) == 1
+    assert services.document.step(step.id).module_text[MODULE_ID] == f"![image]({names[0]})"
+    assert section.gallery._names == names
+
+
+def test_undoing_a_paste_takes_the_link_and_leaves_the_sentence(services, step, section):
+    """A link is not a keystroke. Without sealing the undo step, EditTextCommand merges the
+    paste into the burst being typed — it is an append at exactly the caret — and one Ctrl+Z
+    takes the sentence with it. The typing has to go in a character at a time for this to
+    mean anything: a whole-value setPlainText does not produce a mergeable command."""
+    section.show_target(step.id)
+    cursor = section.edit.textCursor()
+    for character in "Looks like this: ":
+        cursor.insertText(character)
+    paste_image(section)
+    services.undo.undo()
+    assert services.document.step(step.id).module_text[MODULE_ID] == "Looks like this: "
+    # The blob stays on purpose — an orphan is recoverable, a dangling link is not.
+    assert len(assets(services.repo.files(step.id, MODULE_ID))) == 1
+
+
+def test_a_paste_before_the_step_is_flushed_says_so_rather_than_failing(services, step, section):
+    section.show_target(step.id)
+    section.set_area(lambda: (_ for _ in ()).throw(KeyError("unflushed")))
+    paste_image(section)
+    assert not services.document.step(step.id).module_text.get(MODULE_ID)
+    assert "Not saved yet" in section.gallery.note.text()

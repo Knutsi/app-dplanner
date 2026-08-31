@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from dplanner.domain.model import Library, Project, Step
     from dplanner.domain.ordering import Placed
     from dplanner.domain.schedule import Scheduled
+    from dplanner.domain.scope import ScopeKind
     from dplanner.domain.store import ModuleFileArea
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
@@ -77,6 +78,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.progression.module import ProgressionDeps, ProgressionModule
+    from dplanner.modules.project_editor.kinds import StepKind
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
@@ -100,6 +102,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.step_agent_run.aspect import record_launch as agent_run_launch
     from dplanner.modules.step_agent_run.module import StepAgentRunModule
     from dplanner.modules.step_check.aspect import read as check_read
+    from dplanner.modules.step_check.aspect import write as check_write
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_description.aspect import summary as description_summary
@@ -108,15 +111,21 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepDescriptionModule,
     )
     from dplanner.modules.step_description.section import SeparateInstructionLink
+    from dplanner.modules.step_feature.aspect import read as feature_read
+    from dplanner.modules.step_feature.aspect import write as feature_write
+    from dplanner.modules.step_feature.module import StepFeatureDeps, StepFeatureModule
     from dplanner.modules.step_handoff.module import StepHandoffDeps, StepHandoffModule
+    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
+    from dplanner.modules.step_milestone.aspect import next_milestone_label
+    from dplanner.modules.step_milestone.aspect import project_labels as milestone_labels
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_milestone.aspect import write as milestone_write
+    from dplanner.modules.step_milestone.module import StepMilestoneDeps, StepMilestoneModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
     from dplanner.modules.step_properties.module import (
         StepPropertiesDeps,
         StepPropertiesModule,
     )
-    from dplanner.modules.step_release.aspect import MODULE_ID as RELEASE_ID
-    from dplanner.modules.step_release.aspect import read as release_read
-    from dplanner.modules.step_release.module import StepReleaseDeps, StepReleaseModule
     from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
@@ -177,11 +186,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
         summaries = aspect_summaries(skip)
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
 
-    def release_stat(step: "Step") -> str:
-        """What a release answers with: the schedule's accumulated days and landing date.
+    def milestone_stat(step: "Step") -> str:
+        """What a milestone answers with: the schedule's accumulated days and landing date.
 
-        A release closes the block of work above it, so its number is the walk's total at
-        that row — the same pair the order table's release row highlights. Falls back to
+        A milestone closes the block of work above it, so its number is the walk's total at
+        that row — the same pair the order table's milestone row highlights. Falls back to
         nothing when the project carries no estimates at all.
         """
         project = library.project_of(step.id)
@@ -197,11 +206,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
 
     def step_type_icons(step: "Step") -> tuple[str, ...]:
         """What kind of thing a step is, in the medallion vocabulary the canvas painted
-        first: "tag" a release, "spark" an agent step, "beaker" one carrying tests,
-        "shield" a check. The order table's title column reads the same answer, so a step
-        is the same kind everywhere."""
+        first: "tag" a milestone, "layers" a feature, "spark" an agent step, "beaker" one
+        carrying tests, "shield" a check. The order table's title column reads the same
+        answer, so a step is the same kind everywhere."""
         return (
-            *(("tag",) if release_read(step) else ()),
+            *(("tag",) if milestone_read(step) else ()),
+            *(("layers",) if feature_read(step) else ()),
             *(("spark",) if agent_enabled(step) else ()),
             *(("beaker",) if test_enabled(step) else ()),
             *(("shield",) if check_read(step) else ()),
@@ -250,10 +260,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
         A done step is muted with a green body — finished work recedes into a colour the
-        eye can skip; in-progress and blocked wear busy and bad bars; a release is a
+        eye can skip; in-progress and blocked wear busy and bad bars; a milestone is a
         purple-highlighted node wearing its label as a badge, a tag medallion and the
         schedule's accumulated days and date as its stat (done outranks it on the body —
-        a shipped release reads finished, and the tag still says what it was); an agent
+        a shipped milestone reads finished, and the tag still says what it was); an agent
         instruction is the spark medallion; a PR is a pill with its state as a tone and a
         branch the fork glyph; a live agent run is the chip on the bottom edge; a plain
         step's stat is its own estimate. Everything worn here is skipped from the canvas
@@ -271,15 +281,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
             "pending-approval": ("needs approval", "attention"),
         }.get(agent_run_state(step), ("", ""))
         status = step_status(step)
-        release = release_read(step)
-        if release:
-            stat = release_stat(step)
+        milestone = milestone_read(step)
+        if milestone:
+            stat = milestone_stat(step)
         else:
             days = estimated_days(step)
             stat = format_days(days) if days is not None else ""
         return NodeAccent(
             muted=status == "done",
-            badge=release,
+            badge=milestone,
             pill_text=pill,
             pill_tone={"merged": "good", "closed": "bad"}.get(refs.pr_state, "") if refs else "",
             branch=bool(refs is not None and refs.branch),
@@ -287,10 +297,20 @@ def default_modules(services: "AppServices") -> list["Module"]:
             bar_tone={"in-progress": "busy", "blocked": "bad"}.get(status, ""),
             chip_text=chip_text,
             chip_tone=chip_tone,
-            body_tone="good" if status == "done" else ("highlight" if release else ""),
+            # Done outranks a kind, and a milestone outranks a feature: the coarser claim
+            # wins the body, and the medallion still says what the node also is.
+            body_tone=(
+                "good"
+                if status == "done"
+                else "highlight"
+                if milestone
+                else "feature"
+                if feature_read(step)
+                else ""
+            ),
             icons=step_type_icons(step),
             stat_text=stat,
-            stat_strong=bool(release),
+            stat_strong=bool(milestone),
         )
 
     def step_schedule(project_id: str, order: "Sequence[Placed]") -> "list[Scheduled]":
@@ -343,13 +363,13 @@ def default_modules(services: "AppServices") -> list["Module"]:
             panels=services.panels,
             theme=services.theme,
             # A node's second line: whatever the aspects have to say about that step. The
-            # release and GitHub phrases are skipped because the accent already wears them
+            # milestone and GitHub phrases are skipped because the accent already wears them
             # — the badge the label, the pill and glyph the PR and branch.
             # The accent wears all of these, so the subtitle must not say them again.
             step_aspects=lambda step_id: step_aspects(
                 step_id,
                 skip={
-                    RELEASE_ID,
+                    MILESTONE_ID,
                     GITHUB_ID,
                     STATUS_ID,
                     AGENT_INSTRUCTION_ID,
@@ -363,6 +383,29 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # The project panel renders whatever registered a card here — the project-level
             # counterpart of the step panel's inspector_sections.
             cards=services.detail_cards,
+            # What Step ▸ New offers. A *kind* is what a node is — it wears a body colour
+            # and the graph reads differently for it; a *facet* is what a step carries, and
+            # "New ▸ Description" would be nonsense, which is why this is a named list
+            # rather than the Type submenu. Ticket and Test are one line away if they ever
+            # earn a place. The tuple order is the order the menu shows.
+            step_kinds=(
+                StepKind("step_feature", "Feature", lambda _project: feature_write(True)),
+                StepKind(
+                    "step_milestone",
+                    "Milestone",
+                    # A fresh milestone generates its label from the ones already there,
+                    # exactly as the Type toggle does — one function, two ways in.
+                    lambda project: milestone_write(
+                        next_milestone_label(milestone_labels(project))
+                    ),
+                ),
+                StepKind(
+                    "step_agent_instruction",
+                    "Agent Step",
+                    lambda _project: agent_write_state(True),
+                ),
+                StepKind("step_check", "Check", lambda _project: check_write(True)),
+            ),
         )
     )
     # Constructed before the list because the projects index opens Specs through it — the
@@ -399,6 +442,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
     estimation = EstimationModule(
         EstimationDeps(
+            parent=services.window,
             library=library,
             undo=services.undo,
             details=services.step_details,
@@ -449,9 +493,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # stores. Neither module knows the other's name.
             step_schedule=step_schedule,
             start_bar=estimation.create_start_bar,
-            # A release row wears a rule and a tint; the name itself stays in the
-            # trailing aspects column, which is why RELEASE_ID is not skipped here.
-            release_label=lambda step_id: release_read(library.step(step_id)),
+            # A milestone row wears a rule and a tint; the name itself stays in the
+            # trailing aspects column, which is why MILESTONE_ID is not skipped here.
+            milestone_label=lambda step_id: milestone_read(library.step(step_id)),
             # The same kind vocabulary the canvas medallions wear, one translation.
             step_icons=lambda step_id: step_type_icons(library.step(step_id)),
         )
@@ -654,6 +698,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         StepDescriptionModule(
             StepDescriptionDeps(
+                actions=services.actions,
+                parent=services.window,
                 library=library,
                 undo=services.undo,
                 details=services.step_details,
@@ -697,14 +743,16 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepAgentRunModule(),
         StepHandoffModule(
             StepHandoffDeps(
+                actions=services.actions,
+                parent=services.window,
                 library=library,
                 undo=services.undo,
                 sections=services.inspector_sections,
                 files=store.files,
             )
         ),
-        StepReleaseModule(
-            StepReleaseDeps(
+        StepMilestoneModule(
+            StepMilestoneDeps(
                 library=library,
                 undo=services.undo,
                 sections=services.inspector_sections,
@@ -722,6 +770,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepCheckModule(
             StepCheckDeps(library=library, undo=services.undo, actions=services.actions)
         ),
+        # A feature is the same shape one rank down: it gathers the work behind it, stopping
+        # at the previous feature. Also no tab of its own, for the same reason.
+        StepFeatureModule(
+            StepFeatureDeps(library=library, undo=services.undo, actions=services.actions)
+        ),
         TestsModule(
             TestsDeps(
                 library=library,
@@ -733,15 +786,16 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 segments=services.index_segments,
                 theme=services.theme,
                 parent=services.window,
-                # A check declares a scope; a release already was one, and both are the
-                # same walk. Named here so neither aspect module learns the other exists.
-                scope_label=lambda step: (
-                    "Check" if check_read(step) else ("Release" if release_read(step) else "")
-                ),
+                files=store.files,
+                # A check declares a scope; a feature and a milestone already were ones, and
+                # all three are the same walk with a different stopping rule. Named here,
+                # the one place that may know every aspect, so none learns the others.
+                scopes=_scope_kinds(check_read, feature_read, milestone_read),
             )
         ),
         GithubModule(
             GithubDeps(
+                actions=services.actions,
                 library=library,
                 undo=services.undo,
                 sections=services.inspector_sections,
@@ -979,19 +1033,71 @@ def _agent_epilogue(step_title: str) -> str:
     )
 
 
-def _covered_tests(
-    library: "Library", project: "Project", step_id: str
-) -> list[tuple[str, str, str]]:
-    """What a check, or a release, stands for: (test id, test title, owning step's title).
+def _scope_kinds(
+    is_check: Callable[["Step"], bool],
+    is_feature: Callable[["Step"], bool],
+    milestone_label: Callable[["Step"], str],
+) -> tuple["ScopeKind", ...]:
+    """The collectors this build knows, and where each one's cone stops.
 
-    The one place the check aspect and the tests aspect meet. Neither imports the other; the
+    Read most specific first: a step marked as both a milestone and a feature is a milestone,
+    because that is the coarser claim and the one a person is looking for.
+
+    The stopping rules are the whole design. A **check** stands for everything behind it
+    having been verified, so it stops at nothing. A **milestone** collects what is new since
+    the previous milestone, so it stops at milestones. A **feature** collects its own work up
+    to the previous feature — and at a milestone too, since a milestone is a boundary anything
+    below it also respects.
+
+    A milestone and a check are then *read* as lists of features; a feature is the finest
+    grain and is read flat. That is a different question from where the walk stops, and
+    saying both here is what keeps a surface from having to guess either.
+
+    Written literally rather than derived from a rank, because three lines a reader can
+    check by eye beat an ordering abstraction over exactly three things.
+    """
+    from dplanner.domain.scope import ScopeKind
+
+    # A milestone declares itself by carrying a label, so the aspect's reader is a string
+    # one; the walk wants a predicate, and this is the one place that has to know both.
+    def is_milestone(step: "Step") -> bool:
+        return bool(milestone_label(step))
+
+    return (
+        ScopeKind(
+            "step_milestone", "Milestone", is_milestone, is_milestone, gathers="step_feature"
+        ),
+        ScopeKind(
+            "step_feature",
+            "Feature",
+            is_feature,
+            lambda step: is_feature(step) or is_milestone(step),
+        ),
+        ScopeKind("step_check", "Check", is_check, lambda _step: False, gathers="step_feature"),
+    )
+
+
+def _covered_tests(
+    library: "Library",
+    project: "Project",
+    step_id: str,
+    stops_at: "Callable[[Step], bool] | None" = None,
+) -> list[tuple[str, str, str]]:
+    """What a collector stands for: (test id, test title, owning step's title).
+
+    The one place the collector aspects and the tests aspect meet. None imports another; the
     walk is the domain's and the filtering is testing's, and this hands the pair over as the
-    tuple a report can print. Derived on every read — a stored coverage list could disagree
-    with the graph the moment ``dplanner step link`` runs with no window open to notice.
+    tuple a report can print. ``stops_at`` is where that walk gives way to the next collector
+    — passed through rather than interpreted here. Derived on every read: a stored coverage
+    list could disagree with the graph the moment ``dplanner step link`` runs with no window
+    open to notice.
     """
     from dplanner.modules.testing.aspect import covered
 
-    return [(test.id, test.title, step.title) for step, test in covered(library, project, step_id)]
+    return [
+        (test.id, test.title, step.title)
+        for step, test in covered(library, project, step_id, stops_at=stops_at)
+    ]
 
 
 def default_cli_commands() -> list["CliCommand"]:
@@ -1004,6 +1110,8 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.cli.aspects import commands as aspect_commands
     from dplanner.cli.command import CliRegistry
     from dplanner.cli.lint import commands as lint_commands
+    from dplanner.cli.scopes import commands as scope_commands
+    from dplanner.cli.scopes import lint_checks as scope_lint
     from dplanner.cli.skill import commands as skill_commands
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
@@ -1018,18 +1126,24 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_marked
     from dplanner.modules.step_agent_run import cli as agent_state_cli
     from dplanner.modules.step_check import cli as check_cli
+    from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_description.aspect import read as description_read
+    from dplanner.modules.step_feature import cli as feature_cli
+    from dplanner.modules.step_feature.aspect import read as feature_read
     from dplanner.modules.step_handoff import cli as handoff_cli
+    from dplanner.modules.step_milestone import cli as milestone_cli
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_order import cli as order_cli
-    from dplanner.modules.step_release import cli as release_cli
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_ticket import cli as ticket_cli
     from dplanner.modules.testing import cli as testing_cli
+    from dplanner.modules.testing.aspect import enabled as test_enabled
     from dplanner.modules.time_estimates import cli as time_cli
 
     specs = aspect_specs()
+    scopes = _scope_kinds(check_read, feature_read, milestone_read)
     commands = [
         *library_cli.commands(),
         # The step authors let `step add` author the step in the same call; the list
@@ -1050,12 +1164,15 @@ def default_cli_commands() -> list["CliCommand"]:
         *agent_cli.commands(briefing=_default_briefing()),
         *agent_state_cli.commands(),
         *status_cli.commands(),
-        *release_cli.commands(),
+        *milestone_cli.commands(),
+        *feature_cli.commands(),
         *handoff_cli.commands(),
         *testing_cli.commands(),
-        # A check gathers tests, which are another module's shape; the coverage walk
-        # arrives here as a function so neither cli.py imports the other.
-        *check_cli.commands(covered_by=_covered_tests),
+        *check_cli.commands(),
+        # What any collector gathers is one derivation asked three ways, so it is one verb
+        # rather than one per aspect. The kinds and the coverage walk arrive as arguments,
+        # so cli/scopes.py imports no module and no module imports it.
+        *scope_commands(kinds=scopes, covered_by=_covered_tests),
         *order_cli.commands(),
         # Progression reads statuses and estimates through the aspects' Qt-free readers —
         # handed over here so no cli.py imports another module's.
@@ -1080,7 +1197,9 @@ def default_cli_commands() -> list["CliCommand"]:
                 *estimation_cli.lint_checks(),
                 *spec_cli.lint_checks(),
                 *testing_cli.lint_checks(),
-                *check_cli.lint_checks(covered_by=_covered_tests),
+                # A step's *own* tests are a different question from what it gathers;
+                # testing's Qt-free reader answers it, handed over rather than imported.
+                *scope_lint(kinds=scopes, covered_by=_covered_tests, carries_tests=test_enabled),
             ]
         ),
     ]
@@ -1107,8 +1226,9 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.step_agent_run import aspect as agent_run
     from dplanner.modules.step_check import aspect as check
     from dplanner.modules.step_description import aspect as description
+    from dplanner.modules.step_feature import aspect as feature
     from dplanner.modules.step_handoff import aspect as handoff
-    from dplanner.modules.step_release import aspect as release
+    from dplanner.modules.step_milestone import aspect as milestone
     from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
     from dplanner.modules.testing import aspect as testing
@@ -1119,9 +1239,10 @@ def aspect_specs() -> list["AspectSpec"]:
         check.SPEC,
         description.SPEC,
         estimation.SPEC,
+        feature.SPEC,
         github.SPEC,
         handoff.SPEC,
-        release.SPEC,
+        milestone.SPEC,
         spec.SPEC,
         status.SPEC,
         testing.SPEC,
@@ -1129,13 +1250,14 @@ def aspect_specs() -> list["AspectSpec"]:
     ]
 
 
-# Row phrases lead with where a step *stands* (status, agent run, release) before what it
+# Row phrases lead with where a step *stands* (status, agent run, milestone) before what it
 # *carries*. Only a preference: an aspect not named here still appears, after these, in
 # aspect_specs() order — so a new aspect reaches every step row without editing this list.
 _PHRASE_ORDER = (
     "step_status",
     "step_agent_run",
-    "step_release",
+    "step_milestone",
+    "step_feature",
     "estimation",
     "step_ticket",
     "github",

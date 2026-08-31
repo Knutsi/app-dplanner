@@ -43,7 +43,7 @@ class StepCheckModule:
                 menu="Step",
                 group="type",
                 submenu="Type",
-                order=50,
+                order=60,
                 tip="Gather every test this step waits on, so a run can be scoped to it",
                 state=self._current,
                 run=self._toggle,

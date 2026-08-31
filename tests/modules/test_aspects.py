@@ -49,9 +49,10 @@ def test_aspect_list_names_every_aspect(cli):
         "step_agent_instruction",
         "step_agent_run",
         "step_status",
-        "step_release",
+        "step_milestone",
         "step_handoff",
         "step_check",
+        "step_feature",
         "testing",
     }
 
@@ -92,12 +93,35 @@ def test_unestimated_is_not_zero(cli, reload):
     assert "1 unestimated" in cli("estimate", "rollup", "Discovery")
 
 
-def test_clearing_an_estimate_leaves_no_file(cli, workspace):
+def test_clearing_an_estimate_records_that_the_step_has_no_work(cli, workspace):
+    """An estimate defaults to *on*, so an absent entry means "not sized yet".
+
+    Removing the entry would leave lint asking; what a person means by clearing it on a
+    milestone is that there is no work to size, and that is what gets written.
+    """
+    import json
+
     modules = workspace / "discovery/steps/read-the-spec/modules"
     cli("estimate", "set", "Read the spec", "--days", "3")
-    assert (modules / "estimation.json").is_file()
+    assert json.loads((modules / "estimation.json").read_text())["days"] == 3.0
     cli("estimate", "clear", "Read the spec")
-    assert not modules.exists()
+    assert json.loads((modules / "estimation.json").read_text())["off"] is True
+    findings = json.loads(cli("project", "lint", "--json", expect=1))["findings"]
+    assert not [row for row in findings if row["check"] == "estimate.missing"]
+
+
+def test_clearing_a_description_records_that_the_step_wants_none(cli, workspace):
+    import json
+
+    modules = workspace / "discovery/steps/read-the-spec/modules"
+    prose = workspace / "prose.md"
+    prose.write_text("Prose.")
+    cli("describe", "set", "Read the spec", "--file", str(prose))
+    cli("describe", "clear", "Read the spec")
+    assert json.loads((modules / "step_description.json").read_text())["off"] is True
+    assert not (modules / "step_description.md").exists()
+    findings = json.loads(cli("project", "lint", "--json", expect=1))["findings"]
+    assert not [row for row in findings if row["check"] == "description.missing"]
 
 
 def test_a_negative_estimate_is_refused(cli):

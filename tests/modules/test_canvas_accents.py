@@ -1,6 +1,6 @@
 """Canvas accents: status bars, badges, glyphs and chips — through the neutral seam.
 
-The canvas never learns what "done", a release or an agent run is; the composition root
+The canvas never learns what "done", a milestone or an agent run is; the composition root
 translates the aspects into a :class:`NodeAccent`, and these tests drive the real wiring
 end to end.
 """
@@ -11,7 +11,8 @@ from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.modules.project_editor.renderers import NodeAccent
 from dplanner.modules.step_agent_run import aspect as agent_run
-from dplanner.modules.step_release import aspect as release
+from dplanner.modules.step_feature import aspect as feature
+from dplanner.modules.step_milestone import aspect as milestone
 from dplanner.modules.step_status import aspect as status
 
 
@@ -46,10 +47,10 @@ def test_a_done_step_is_muted_with_a_green_body(services, project, tab):
     assert accent.bar_tone == ""  # The body wears the green; a bar would say it twice.
 
 
-def test_a_shipped_release_reads_finished(services, project, tab):
-    """Done outranks the release purple on the body; the tag still says what it was."""
+def test_a_shipped_milestone_reads_finished(services, project, tab):
+    """Done outranks the milestone purple on the body; the tag still says what it was."""
     step = project.steps[1]
-    services.undo.push(SetModuleDataCommand(step.id, release.MODULE_ID, release.write("MVP")))
+    services.undo.push(SetModuleDataCommand(step.id, milestone.MODULE_ID, milestone.write("MVP")))
     services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("done")))
     accent = node(tab, step)._accent
     assert accent.body_tone == "good"
@@ -58,13 +59,39 @@ def test_a_shipped_release_reads_finished(services, project, tab):
 
 def test_a_release_is_a_highlighted_node_with_a_tag(services, project, tab):
     step = project.steps[1]
-    services.undo.push(SetModuleDataCommand(step.id, release.MODULE_ID, release.write("MVP")))
+    services.undo.push(SetModuleDataCommand(step.id, milestone.MODULE_ID, milestone.write("MVP")))
     accent = node(tab, step)._accent
     assert accent.badge == "MVP"
     assert accent.body_tone == "highlight"
     assert "tag" in accent.icons
     # The badge already wears the label, so the subtitle must not repeat it.
-    assert "release" not in node(tab, step)._subtitle
+    assert "milestone" not in node(tab, step)._subtitle
+
+
+def test_a_feature_is_a_teal_node_with_a_layer_medallion(services, project, tab):
+    step = project.steps[0]
+    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write(True)))
+    accent = node(tab, step)._accent
+    assert accent.body_tone == "feature"
+    assert "layers" in accent.icons
+
+
+def test_a_milestone_outranks_a_feature_on_the_body(services, project, tab):
+    """The coarser claim wins the colour; the finer one keeps its medallion."""
+    step = project.steps[1]
+    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write(True)))
+    services.undo.push(SetModuleDataCommand(step.id, milestone.MODULE_ID, milestone.write("MVP")))
+    accent = node(tab, step)._accent
+    assert accent.body_tone == "highlight"
+    assert accent.icons == ("tag", "layers")
+
+
+def test_a_done_feature_reads_finished(services, project, tab):
+    step = project.steps[0]
+    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write(True)))
+    services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("done")))
+    accent = node(tab, step)._accent
+    assert accent.body_tone == "good" and accent.muted is True
 
 
 def test_an_estimate_is_the_steps_stat_not_subtitle_text(services, project, tab):
@@ -79,11 +106,11 @@ def test_an_estimate_is_the_steps_stat_not_subtitle_text(services, project, tab)
 
 
 def test_a_release_stat_is_the_accumulated_days_and_date(services, project, tab):
-    """The release's number is the schedule's answer at its row — days and landing date."""
+    """The milestone's number is the schedule's answer at its row — days and landing date."""
     first, second = project.steps
     for step, days in ((first, 2.0), (second, 3.0)):
         services.undo.push(SetModuleDataCommand(step.id, "estimation", {"days": days}))
-    services.undo.push(SetModuleDataCommand(second.id, release.MODULE_ID, release.write("MVP")))
+    services.undo.push(SetModuleDataCommand(second.id, milestone.MODULE_ID, milestone.write("MVP")))
     accent = node(tab, second)._accent
     assert accent.stat_strong is True
     assert accent.stat_text.startswith("5d · ")

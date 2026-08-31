@@ -5,7 +5,7 @@ is opened to sort, sum and chart, and "2.4w" defeats all three. So this file wri
 underlying values — day counts as plain numbers, dates as ISO — which is the derived data
 itself, not a second rendering of it. The columns still mirror the table one for one.
 
-``since_release`` lives here rather than in the view because the table and the export both
+``since_milestone`` lives here rather than in the view because the table and the export both
 show it, and two copies of the loop is how the two would one day disagree.
 
 Qt-free by design, so the rows could feed a CLI verb without touching a window.
@@ -25,26 +25,26 @@ HEADERS = (
     "Wave",
     "Estimate (days)",
     "Accumulated (days)",
-    "Since release (days)",
+    "Since milestone (days)",
     "Date",
-    "Release",
+    "Milestone",
     "Aspects",
 )
 
 
-def since_release(
-    order: Sequence[Scheduled], release_label: Callable[[StepId], str]
+def since_milestone(
+    order: Sequence[Scheduled], milestone_label: Callable[[StepId], str]
 ) -> dict[StepId, float]:
-    """The working days each release closes: its accumulated total minus the previous release's.
+    """The working days each milestone closes: its accumulated total minus the previous milestone's.
 
-    Keyed by the release step's id; a step that is not a release has no entry. The first
-    release measures from the start of the plan, which is what "since last release" means
+    Keyed by the milestone step's id; a step that is not a milestone has no entry. The first
+    milestone measures from the start of the plan, which is what "since last milestone" means
     when there has not been one yet.
     """
     spans: dict[StepId, float] = {}
     last = 0.0
     for scheduled in order:
-        if release_label(scheduled.place.step.id):
+        if milestone_label(scheduled.place.step.id):
             spans[scheduled.place.step.id] = scheduled.accumulated - last
             last = scheduled.accumulated
     return spans
@@ -57,10 +57,10 @@ def _days(value: float | None) -> str:
 def order_rows(
     order: Sequence[Scheduled],
     step_aspects: Callable[[StepId], list[str]],
-    release_label: Callable[[StepId], str],
+    milestone_label: Callable[[StepId], str],
 ) -> list[list[str]]:
     """The header row and one row per step, in the order the work can be done."""
-    spans = since_release(order, release_label)
+    spans = since_milestone(order, milestone_label)
     rows = [list(HEADERS)]
     for scheduled in order:
         place = scheduled.place
@@ -74,7 +74,7 @@ def order_rows(
                 _days(scheduled.accumulated),
                 _days(spans.get(step_id)),
                 scheduled.finish.isoformat() if scheduled.finish else "",
-                release_label(step_id),
+                milestone_label(step_id),
                 "; ".join(step_aspects(step_id)),
             ]
         )

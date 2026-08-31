@@ -1,6 +1,6 @@
-"""``dplanner release …`` — mark the steps that are release points.
+"""``dplanner milestone …`` — mark the steps that are milestone points.
 
-``release list`` prints the labels in the order the work can be done: a one-glance roadmap,
+``milestone list`` prints the labels in the order the work can be done: a one-glance roadmap,
 derived from the same walk every other order comes from.
 """
 
@@ -10,9 +10,9 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.ordering import placed
-from dplanner.modules.step_release.aspect import (
+from dplanner.modules.step_milestone.aspect import (
     MODULE_ID,
-    next_release_label,
+    next_milestone_label,
     project_labels,
     read,
     write,
@@ -22,28 +22,28 @@ from dplanner.modules.step_release.aspect import (
 def commands() -> list[CliCommand]:
     return [
         CliCommand(
-            path=("release", "set"),
-            summary="Mark a step as a release point, with a label.",
+            path=("milestone", "set"),
+            summary="Mark a step as a milestone point, with a label.",
             configure=_configure_set,
             run=_set,
             examples=(
-                "dplanner release set 'Ship the beta' --label MVP",
-                "dplanner release set 'Ship the beta'",
+                "dplanner milestone set 'Ship the beta' --label MVP",
+                "dplanner milestone set 'Ship the beta'",
             ),
         ),
         CliCommand(
-            path=("release", "clear"),
-            summary="A step is no longer a release point; leaves no file behind.",
+            path=("milestone", "clear"),
+            summary="A step is no longer a milestone point; leaves no file behind.",
             configure=step_arg,
             run=_clear,
-            examples=("dplanner release clear 'Ship the beta'",),
+            examples=("dplanner milestone clear 'Ship the beta'",),
         ),
         CliCommand(
-            path=("release", "list"),
-            summary="A project's release points, in the order the work lands.",
+            path=("milestone", "list"),
+            summary="A project's milestone points, in the order the work lands.",
             configure=project_arg,
             run=_list,
-            examples=("dplanner release list discovery",),
+            examples=("dplanner milestone list discovery",),
         ),
     ]
 
@@ -60,14 +60,14 @@ def _set(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step)
     if args.label is None:
         project = context.library.project_of(step.id)
-        label = next_release_label(project_labels(project, skip=step.id))
+        label = next_milestone_label(project_labels(project, skip=step.id))
     else:
         label = args.label
     entry = write(label)
     if not entry:
-        raise CliError("a release needs a label")
+        raise CliError("a milestone needs a label")
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
-    context.report({"step": step.id} | entry, f"{step.title}: release {label.strip()}")
+    context.report({"step": step.id} | entry, f"{step.title}: milestone {label.strip()}")
     return 0
 
 
@@ -75,28 +75,28 @@ def _clear(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step)
     if not read(step):
         # Already clear is success — state-clearing verbs must survive batches.
-        context.report({"step": step.id}, f"{step.title}: not a release")
+        context.report({"step": step.id}, f"{step.title}: not a milestone")
         return 0
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
-    context.report({"step": step.id}, f"{step.title}: no longer a release")
+    context.report({"step": step.id}, f"{step.title}: no longer a milestone")
     return 0
 
 
 def _list(context: CliContext, args: Namespace) -> int:
     project = find_project(context.library, args.project)
-    releases = [
+    milestones = [
         (place, read(place.step)) for place in placed(context.library, project) if read(place.step)
     ]
     data = {
         "project": project.id,
-        "releases": [
+        "milestones": [
             {"index": place.index, "id": place.step.id, "title": place.step.title, "label": label}
-            for place, label in releases
+            for place, label in milestones
         ],
     }
     lines = [
         f"{place.index:>3}  {label:<8}  {place.step.title or 'Untitled step'}"
-        for place, label in releases
+        for place, label in milestones
     ]
-    context.report(data, "\n".join(lines) if lines else "No releases marked yet.")
+    context.report(data, "\n".join(lines) if lines else "No milestones marked yet.")
     return 0
