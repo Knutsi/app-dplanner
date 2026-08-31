@@ -63,13 +63,13 @@ On a machine whose shell already presets `QT_QPA_PLATFORM` (Arch with a tiling W
 instance), the `setdefault` in `tests/conftest.py` does not kick in and a bare `pytest`
 opens real windows all over the workspace. Always prefix it.
 
-The suite runs on every core (`-n auto` in `pyproject.toml`) — about **two minutes** for all
-1,278 tests, so *run the whole thing*; there is nothing to be saved by not. Two flags are
-worth knowing while working:
+The suite runs on every core (`-n auto` in `pyproject.toml`) — about **two minutes** for the
+whole thing, so run the whole thing; there is nothing to be saved by not. Two flags are worth
+knowing while working:
 
 ```bash
 QT_QPA_PLATFORM=offscreen uv run pytest -q -n0            # single-threaded: readable failures, debuggers
-QT_QPA_PLATFORM=offscreen uv run pytest -q tests/core tests/domain tests/cli   # ~15s: the Qt-free layers
+QT_QPA_PLATFORM=offscreen uv run pytest -q tests/core tests/domain tests/cli   # ~18s: the Qt-free layers
 ```
 
 The second is the inner loop for work below `framework/`, and it is a *path* selection rather

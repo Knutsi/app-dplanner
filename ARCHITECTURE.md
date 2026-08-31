@@ -770,7 +770,7 @@ two similar blocks is that the second copy of it left out one line.
 
 The line is `deleteLater()`. **A closed `QWidget` is still alive** — `close()` hides it and
 runs its close hooks, and Qt goes on holding it in `topLevelWidgets()`. Everything hangs off
-the window, so the entire build stays reachable: services, model, all thirty-one modules. In
+the window, so the entire build stays reachable: services, model, every module. In
 the application that costs nothing worth noticing; a person reloads a library a handful of
 times. In the test suite, which builds a whole application per test, each discarded build left
 28 top-level widgets and about 2,700 objects behind, permanently.
