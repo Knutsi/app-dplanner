@@ -321,3 +321,16 @@ def test_the_menu_actually_moves_the_panel(app, dock, registry):
     menu = dock._panel_menu("index")
     next(a for a in menu.actions() if a.text() == "Move to &Bottom").trigger()
     assert dock.area_of("index") is PanelArea.BOTTOM
+
+
+def test_every_area_keeps_the_name_its_seam_is_styled_by(dock):
+    """``theme.qss`` reaches an area's ground and its handles by object name.
+
+    A rename here would leave a panel area painting as the window and its seams as slabs —
+    and a stylesheet says nothing when a selector stops matching, so it is said here.
+    """
+    assert {dock._areas[area].objectName() for area in PanelArea} == {
+        "PanelAreaLeft",
+        "PanelAreaRight",
+        "PanelAreaBottom",
+    }

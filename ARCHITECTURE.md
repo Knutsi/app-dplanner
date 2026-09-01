@@ -437,6 +437,56 @@ blank column, which is what lets two panels share one area and be mutually exclu
 panel shows while exactly one step is selected, the project form shows the rest of the time,
 and neither has heard of the other.
 
+## A seam belongs to the splitter, and only a split window marks a pane
+
+Two surfaces that meet at a splitter meet at a hairline. That line used to be drawn by the
+*surface*: `#PanelAreaLeft` carried a `border-right` and `#PanelAreaRight` a `border-left`,
+each area knowing which of its sides faced the tabs. It worked for the three areas and for
+nothing else, which is why splitting the window produced two tab groups with no boundary at
+all between them, and two panels stacked in one area separated by a caption and a dead band.
+
+**The seam is the handle's, so there is one of them.** One `QSplitter::handle` rule reaches
+every splitter the application builds — the tab host's, the dock's, each area's, the Specs and
+Tests master-detail splitters — and every splitter written after it. The areas' borders came
+off in the same change: a surface that draws its own edge where a seam already falls gets two
+lines a pixel apart, and the second one is the one nobody meant.
+
+**No splitter names a ground of its own, either.** A handle is 7 px so it can be grabbed, and
+1 px of that is the line; the other 6 have to be *something*. A vertical handle can leave them
+transparent and let the splitter's own ground through, so a panel area's elevated ground
+arrives for free. A horizontal one cannot, so `$BG_BASE` is written into the rule — and beside
+an elevated panel that leaves 3 px of the window's ground either side of the line, which reads
+as a groove rather than as a mismatch. An exception for the one splitter it is visible on was
+written and then deleted: one rule with no exceptions is worth more than three pixels, and the
+exception would have had to restate the hover and drag states too or quietly lose them.
+
+**The two orientations are built differently because Qt paints them differently**, and that is
+worth knowing before touching the rule. A horizontal handle honours the box model: the line is
+the content box and the ground either side is its borders, centred and exact. A vertical handle
+fills its entire rect with the background and draws its borders *outside* it, so the same rule
+turned on its side renders a seven-pixel slab. Nothing warns you; a stylesheet is silent about a
+rule that renders wrong as it is about one that never matched. `tests/test_theme.py` therefore
+**renders** a splitter in both orientations and asserts exactly one row of `$BORDER` across the
+handle, which is the property, rather than reading the rule, which is not.
+
+**A pane is marked only while there is another pane.** The group you are in wears a 2 px accent
+edge along its top; one pane is the whole window and needs no mark, and the condition is the
+same one that installs `_ActiveGroupWatcher` — because it is the same fact. Two cues now say
+the same thing (the edge, and the dimmed titles on everyone else's tabs) and both are set in
+`TabHost._paint_active`, so they cannot disagree.
+
+The edge could not go on the group itself. `setDocumentMode(True)` means `QTabWidget` paints no
+pane frame, so there is no `::pane` for a stylesheet to reach; and anything a widget paints for
+itself is covered by its own children. Styling the `QTabBar` was never an option — QSS replaces
+its whole native rendering, which is what the dimming relies on not happening. So each group
+sits in a one-widget `_Pane` frame that carries an `active` property, and `group.parentWidget()`
+is how the host finds it: a wrapper rather than a second map to keep in step.
+
+One thing that is easy to get wrong, and has a test of its own: `_announce` short-circuits when
+the active group and activity are both unchanged, and closing the *other* pane's last tab is
+exactly that. So `_drop_group` clears the mark itself rather than trusting the announcement,
+or an unsplit window would keep an accent edge on the pane that survived.
+
 ## How a panel gets editors it has never heard of
 
 The step detail panel shows a Details tab first — estimate, description, figures — and a tab
@@ -775,12 +825,17 @@ The shadow is **clipped to the ground around the card**, not painted under it. A
 is translucent by design (`FILL_ALPHA` ink over the canvas), so rings left underneath darken
 the fill itself, and a selected step reads as a hole rather than as a card off the table.
 That was a real bug in the first cut of this: on a light theme the selected node came out a
-flat dark grey and nothing about the code looked wrong. It is caught now by the same test
+flat dark grey and nothing about the code looked wrong. Its weight is deliberately slight for
+the same reason — the rings composite, so the first alpha that looked right in isolation
+landed twice as dark under the card, and on a light theme's paper that reads as a hole again
+even when it is correctly clipped. The border and the gained fill are what say "this one";
+the shadow only has to lift the card off the table. It is caught now by the same test
 that checks the fill gain — a body can only come out at exactly the gained alpha over the
 ground if nothing at all is painted underneath it.
 
 One number ties it together: `PAINT_MARGIN` in `renderers.py` is the furthest any decoration
-reaches out of the body — handle, badge, chip, lift, shadow — and `StepNodeItem.boundingRect`
+reaches out of the body — handle, badge, medallion, chip, lift, shadow — and
+`StepNodeItem.boundingRect`
 is exactly that, *constant whether or not the node is selected*. A rect that grew on selection
 would invalidate the wrong region, and the shadow would be left on the canvas when the
 selection moved on.

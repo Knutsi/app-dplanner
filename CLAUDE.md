@@ -77,6 +77,14 @@ than a marker because the layers already say which is which: `core/`, `domain/` 
 the Qt-free ones. It is not a substitute for the full run before you finish — most of what
 this application does lives in `modules/`, and only the full suite covers it.
 
+**Running on every core means a test may never write into `src/`, and must quiet what the
+application it built has already started.** Both rules were learned from a flake. A test that
+wrote a deliberately-bad file into the source tree and tidied up afterwards raced another
+worker walking that tree; and a fixture that patched a module global raced the *live*
+`PrRefresher` the application it built had running, which reads the same global. A `finally`
+does not help with the first and a careful assertion does not help with the second: build over
+a throwaway tree, and stop what is running before you patch under it.
+
 The layering rules below are enforced by `tests/test_architecture.py`, which runs with the
 normal suite. **If it fails, fix the dependency direction — don't loosen the test.** Every
 rule has a supported way to get what the shortcut wanted: a capability protocol, a typed
@@ -194,6 +202,22 @@ root, stop and look for the registry or capability you have not found yet.
   step editor appear twice in a split window, and the fix deleted code rather than adding a
   visibility check — because "only the active pane publishes" already says which selection a
   panel should be showing. `ARCHITECTURE.md`'s *Where a panel goes* has the rest.
+- **Two surfaces meet at a seam, and the seam belongs to the splitter.** A 1 px `$BORDER`
+  hairline inside a 7 px handle, from one `QSplitter::handle` rule that reaches every splitter
+  the application builds — between two tab groups, between a panel area and the tabs, between
+  two panels stacked in one area. A panel area therefore draws no border of its own: a surface
+  that draws its own edge where a seam already falls gets two lines a pixel apart. **The two
+  orientations are built differently on purpose** — Qt gives a horizontal handle the box model
+  and fills a vertical one's whole rect, so the rule that centres a line in the first renders a
+  7 px slab in the second, and nothing says so. `tests/test_theme.py` renders both rather than
+  reading them. `ARCHITECTURE.md`'s *A seam belongs to the splitter* has the reasoning.
+- **A pane is marked only while there is another pane.** The accent edge on the group you are
+  in appears when the window splits and goes when it stops being split — the same condition
+  that installs `_ActiveGroupWatcher`, because it is the same fact. It lives on a one-widget
+  `_Pane` frame, never on the `QTabWidget`: `documentMode` paints no pane frame for QSS to
+  reach, a widget's children paint over anything it draws itself, and QSS on the `QTabBar`
+  would replace the native rendering the dimmed titles rely on. `_drop_group` clears the mark
+  itself — `_announce` short-circuits on exactly the case that needs it.
 - **A toggleable aspect's tab follows the aspect.** Milestone, Feature, Agent, Ticket, Test
   and Check are Step ▸ Type toggles (independent, never a radio group), and each registers its
   `InspectorSection` with a `shown_for` predicate so its tab exists only on a step that
@@ -383,11 +407,12 @@ root, stop and look for the registry or capability you have not found yet.
   declaration puts the same glyph on the menu entry, the toolbar dropdown and the node.
 - **A picked node is lifted, not recoloured.** Selection thickens the border to the accent,
   *gains* whatever fill the node already had (so a picked milestone is still purple), lifts
-  the card two pixels over a soft shadow clipped to the ground around it — never under it,
-  the fill is translucent — and claims a Z of its own. `PAINT_MARGIN` is the one number every
-  decoration is measured against and `boundingRect` is exactly it, **constant whether or not
-  the node is selected**. `ARCHITECTURE.md`'s *A picked node is lifted, not recoloured* has
-  the reasoning.
+  the card two pixels over a soft shadow — faint, and clipped to the ground around it rather
+  than under it, since the fill is translucent — and claims a Z of its own. The rings
+  composite, so the shadow's alpha buys twice what it looks like. `PAINT_MARGIN` is the one
+  number every decoration is measured against and `boundingRect` is exactly it, **constant
+  whether or not the node is selected**. `ARCHITECTURE.md`'s *A picked node is lifted, not
+  recoloured* has the reasoning.
 - **Derived facts are computed, never stored** — the topological order in
   `domain/ordering.py` is the reference, and `domain/schedule.py` is the same walk carrying
   estimates. Storing one means it can disagree with what it came from, and the CLI is what

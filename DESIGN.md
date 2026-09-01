@@ -31,14 +31,34 @@ When a surface feels "heavy", the fix is almost always more space, not more chro
 
 A panel anchored in one of the window's areas (`framework/panels.py`) gets a **header strip**
 from its frame: the panel's name in `#InspectorCaption`, 16 px from the sides, 12 above and 6
-below. It is what separates two panels stacked in one area, and it is the right-click target
-for moving the panel — the panel's own widget keeps its own context menu, so there would be
-nowhere else to put it. **A panel's content therefore never prints its own caption**; the
-header already says what it is, and two captions is the one thing `#InspectorCaption` forbids.
+below. It names the panel — the seam below separates it from whatever is stacked beside it —
+and it is the right-click target for moving the panel; the panel's own widget keeps its own
+context menu, so there would be nowhere else to put it. **A panel's content therefore never
+prints its own caption**; the header already says what it is, and two captions is the one thing
+`#InspectorCaption` forbids.
 
 A panel with nothing to show goes off screen rather than showing a placeholder, and an area
 with nothing in it takes no width at all. The reasoning is the card rule one level up: an empty
 box is worse than no box.
+
+## Seams
+
+Two surfaces that meet at a splitter meet at a **seam**: a 1 px `$BORDER` hairline inside a
+7 px handle — thin enough to read as a rule, wide enough to grab. Under the cursor the line
+thickens to 2 px and goes `$BORDER_STRONG`; while it is being dragged it is `$ACCENT`. The
+handle stays 7 px through all of it, so nothing either side moves as the pointer crosses.
+
+It is the same seam wherever two surfaces meet: between two tab groups, between a panel area
+and the tabs, between two panels stacked in one area. **A surface never draws its own edge
+where a seam already falls** — one line, not two, which is why a panel area has a ground and
+no border. One `QSplitter::handle` rule covers every splitter in the application, present and
+future, and no surface names a ground of its own: the 3 px of window ground a seam leaves
+beside an elevated panel reads as a groove, which is cheaper than an exception.
+
+**The pane you are in wears a 2 px `$ACCENT` edge along its top, and only while the window is
+split.** One pane is the whole window and there is nothing to tell it apart from; two or three
+need saying, because every menu, every panel and every toolbar is answering for exactly one of
+them. Its neighbours' tab titles dim at the same moment, and for the same reason.
 
 ## Overlays on a canvas
 

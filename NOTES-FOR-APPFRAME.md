@@ -1041,6 +1041,50 @@ goes and leave room for it:
 `MenuButtonPopup` does not need it — that mode gives the arrow its own section — so it is
 specifically `InstantPopup` plus a stylesheet that bites.
 
+### A split window had no seams, and no way to tell which pane spoke
+
+**What.** Two changes, one in `framework/tabs.py` and one in `theme.qss` (which the template
+also ships):
+
+- One `QSplitter::handle` rule, application-wide: a 1 px `$BORDER` line inside a 7 px handle.
+  It reaches the tab host's splitter, the dock's, each panel area's, and every splitter written
+  after it. The three `#PanelArea*` rules **lost** their `border-right`/`border-left`/
+  `border-top` in the same change and kept only their ground.
+- `TabHost` seats each group in a new `_Pane(QFrame)` — object name `ActivityPane`, one
+  zero-margin layout — and `_paint_active` marks the active one with a 2 px accent edge
+  whenever `len(self._groups) > 1`. `_new_group` and `_drop_group` gained the plumbing.
+
+**Why it matters upstream.** The template ships split panes and the same gap: `move_tab_left`
+produced two `QTabWidget`s in a `QSplitter` with nothing between them, on a `documentMode` bar
+whose only cue was the dimmed titles `_paint_active` already wrote. Neither half of the fix has
+any DPlanner in it.
+
+**Why the mark is a wrapper and not the group.** `setDocumentMode(True)` makes
+`QTabWidget::paintEvent` skip the pane frame entirely, so a `#ActivityTabs::pane` rule renders
+nothing; and a widget's children paint over anything it draws for itself, so a `paintEvent`
+override is covered by the page. Styling the `QTabBar` is out for the reason already in
+`_paint_active`'s docstring — QSS replaces its native rendering, and `setTabTextColor` stops
+being the thing that shows. A frame around the group has none of those problems and costs one
+`group.parentWidget()` instead of a second map.
+
+**A Qt trap worth the whole entry: a splitter handle's two orientations paint differently.**
+Measured on PySide6 6.9, offscreen, on a 7 px handle:
+
+- `QSplitter::handle:horizontal` honours the box model. `width: 1px` with
+  `border-left/right: 3px solid <ground>` renders exactly `[3 ground][1 line][3 ground]`.
+- `QSplitter::handle:vertical` does **not**. It fills its whole rect with `background-color`
+  and paints its borders *outside* that rect. The same rule turned on its side renders a
+  7 px slab of the line colour, with the ground drawn over the neighbours. `margin` is
+  ignored the same way; a `qlineargradient` works but interpolates, so the line comes out soft.
+  What does work is `height: 6px; background-color: transparent; border-bottom: 1px solid …`
+  — the line is the border and the transparent 6 px shows the splitter's own ground, which is
+  why no panel area has to name a colour for a vertical seam.
+
+Nothing warns about any of this: a stylesheet is as silent about a rule that renders wrong as
+about one that never matched. `tests/test_theme.py::test_a_splitter_seam_is_exactly_one_hairline`
+therefore renders a splitter in each orientation and counts the `$BORDER` pixels across the
+handle — it caught the slab, and it is the shape any handle rule should be checked in.
+
 
 ## 2. Conventions the template documents that we had to change
 

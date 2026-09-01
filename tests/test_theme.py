@@ -7,7 +7,9 @@ turn light the moment the window loses focus.
 """
 
 import pytest
-from PySide6.QtWidgets import QStyle
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QSplitter, QStyle, QWidget
 
 from dplanner.theme import load_stylesheet
 from dplanner.theme.palette import build_palette
@@ -75,3 +77,36 @@ def test_the_tab_close_glyph_is_painted_per_theme(app):
 
     assert not dark.isNull()
     assert dark.pixmap(16, 16).toImage() != light.pixmap(16, 16).toImage()
+
+
+@pytest.mark.parametrize(
+    "orientation",
+    [Qt.Orientation.Horizontal, Qt.Orientation.Vertical],
+    ids=["horizontal", "vertical"],
+)
+def test_a_splitter_seam_is_exactly_one_hairline(app, orientation):
+    """Both orientations of a handle draw one line, whatever it takes to get there.
+
+    Asserted by rendering rather than by reading the rule, because Qt paints the two
+    differently: a horizontal handle honours the box model and a vertical one fills its whole
+    rect with the background and puts its borders outside it. The rule that centres a line in
+    the first renders a seven-pixel slab in the second, and nothing in the stylesheet says so.
+    """
+    splitter = QSplitter(orientation)
+    for _ in range(2):
+        page = QWidget()
+        page.setMinimumSize(40, 40)
+        splitter.addWidget(page)
+    splitter.setStyleSheet(load_stylesheet(DARK))
+    splitter.resize(120, 120)
+    splitter.show()
+    app.processEvents()
+
+    image = splitter.grab().toImage()
+    across = (
+        [image.pixel(60, y) for y in range(40, 80)]
+        if orientation is Qt.Orientation.Vertical
+        else [image.pixel(x, 60) for x in range(40, 80)]
+    )
+    border = QColor(DARK.border).rgb()
+    assert sum(pixel == border for pixel in across) == 1
