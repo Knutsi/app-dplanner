@@ -66,6 +66,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
+    from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
@@ -849,6 +850,34 @@ def default_modules(services: "AppServices") -> list["Module"]:
         # Declares the agent-run format only; Run Agent and the CLI write it, the canvas
         # reads it through step_accent above.
         StepAgentRunModule(),
+        DocsModule(
+            DocsDeps(
+                library=library,
+                undo=services.undo,
+                actions=services.actions,
+                sections=services.inspector_sections,
+                context=services.context,
+                tabs=services.tabs,
+                segments=services.index_segments,
+                theme=services.theme,
+                llm=services.llm,
+                tasks=services.tasks,
+                # Read, never added to: grouping the Docs view by feature or milestone is
+                # the same walk the Tests tab makes. A fourth ScopeKind of its own would
+                # teach four tests surfaces about documentation to serve none of it.
+                scopes=_scope_kinds(check_read, feature_read, milestone_read),
+                files=store.files,
+                # Its project-level card: the standing style every composed document follows.
+                cards=services.detail_cards,
+                # The description *is* the instructions (ARCHITECTURE.md), and which prose
+                # briefs a compile is a cross-module fact, so it is decided here.
+                instructions=description_read,
+                parent=services.window,
+                pick_assets=pick_assets,
+            )
+        ),
+        # Declares the compiled-document format only; DocsModule and the CLI write it.
+        DocsCompiledModule(),
         StepHandoffModule(
             StepHandoffDeps(
                 actions=services.actions,
@@ -1218,6 +1247,7 @@ def _asset_sources() -> tuple["AssetSource", ...]:
     person writes first, then what rides along to agents, then the spec's figures, then
     the pool.
     """
+    from dplanner.modules.docs.aspect import asset_source as documentation
     from dplanner.modules.project_assets.cli import asset_source as pool
     from dplanner.modules.spec.documents import asset_source as spec_figures
     from dplanner.modules.step_agent_instruction.aspect import asset_source as instructions
@@ -1228,6 +1258,7 @@ def _asset_sources() -> tuple["AssetSource", ...]:
     return (
         descriptions(),
         tests(),
+        documentation(),
         instructions(),
         handoffs(),
         spec_figures(),
@@ -1249,6 +1280,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.cli.scopes import commands as scope_commands
     from dplanner.cli.scopes import lint_checks as scope_lint
     from dplanner.cli.skill import commands as skill_commands
+    from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.schedule import start_of
@@ -1300,6 +1332,7 @@ def default_cli_commands() -> list["CliCommand"]:
         *estimation_cli.commands(),
         *ticket_cli.commands(),
         *description_cli.commands(),
+        *docs_cli.commands(kinds=scopes),
         *agent_cli.commands(briefing=_default_briefing()),
         *agent_state_cli.commands(),
         *status_cli.commands(),
@@ -1335,6 +1368,7 @@ def default_cli_commands() -> list["CliCommand"]:
             checks=[
                 *projects_cli.lint_checks(),
                 *description_cli.lint_checks(),
+                *docs_cli.lint_checks(kinds=scopes),
                 # An agent step is briefed by its description unless it carries a separate
                 # instruction; the description's reader arrives here, not by import.
                 *agent_cli.lint_checks(described=lambda step: bool(description_read(step))),
@@ -1363,6 +1397,7 @@ def aspect_specs() -> list["AspectSpec"]:
     an agent uses to find out what a step can carry. Each package declares its own ``SPEC``;
     this is only the list of packages, in the order a person would read them.
     """
+    from dplanner.modules.docs import aspect as docs
     from dplanner.modules.estimation import aspect as estimation
     from dplanner.modules.github import aspect as github
     from dplanner.modules.spec import aspect as spec
@@ -1382,6 +1417,8 @@ def aspect_specs() -> list["AspectSpec"]:
         agent_run.SPEC,
         check.SPEC,
         description.SPEC,
+        docs.SPEC,
+        docs.COMPILED_SPEC,
         estimation.SPEC,
         feature.SPEC,
         github.SPEC,

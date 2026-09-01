@@ -40,6 +40,7 @@ def test_the_module_contributes_the_first_index_folder(services):
     assert [segment.id for segment in services.index_segments.segments()] == [
         "projects",
         "tests",
+        "docs",
     ]
 
 

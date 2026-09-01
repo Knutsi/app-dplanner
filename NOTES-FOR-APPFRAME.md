@@ -1342,7 +1342,45 @@ Recording these so a future backport does not over-reach:
   action you must hide. The template's own toolbar code sidesteps this by never hiding one.
   The tests tab's Group-by selector holds the returned action for exactly this reason.
 
-## 8. From the asset-library pass
+## 8. From the documentation pass
+
+- **`framework/markdown_view.py` — a read-only markdown well whose images come from the
+  store.** Extracted from `modules/spec/viewer.py`, which had it first and had the only copy.
+  The rule it exists for is worth carrying: a relative `![](assets/…)` must resolve through
+  a `ModuleFileArea`, never `QUrl.fromLocalFile`, or the well works against a folder provider
+  and silently shows nothing against a git or GitHub one. It takes a *sequence* of areas
+  rather than one, because a document assembled from several nodes carries images from each
+  of theirs — and since assets are content-addressed, "ask each in turn, first hit wins" is
+  exact rather than a heuristic. **Belongs upstream** once the template has any markdown
+  surface; it also deleted a duplicate of `DOCUMENT_MARGIN`/`LINE_HEIGHT_PERCENT` that had
+  grown beside `framework/widgets.py`'s.
+- **`framework/project_list_segment.py` — the flat index folder, extracted at its third
+  user.** `modules/testing/index.py` wrote the shape and its docstring asked for exactly
+  this: *"If a third segment ever wants this shape, that is the moment to extract it — not
+  before."* The Docs folder was the third. What it holds is the half that is genuinely the
+  same — rebuilding on the model's and the theme's signals, restoring which rows were open,
+  and answering the panel's five hooks. **The menu name is an argument**, not a constant:
+  `"Project"` is application vocabulary and has no business in a framework file, the same
+  reason `IndexSegment` names a factory rather than a menu. The richer `projects/index.py`
+  (nested entries, greyed unavailable rows, selection restored across a rebuild) is
+  deliberately *not* folded in — it is a different problem that happens to draw rows too.
+  **Belongs upstream** only if the template grows a second list-of-entities segment; on its
+  own it is thin.
+- **`LLMService` had no tests at all, and now has some.** It shipped complete and dormant —
+  the first consumer found the API entirely sound, which is the good news — but nothing
+  pinned the three refusal sentences an AI-gated control shows, the ring buffer, or the fact
+  that a timeout is a distinct outcome. `tests/framework/test_llm_service.py` does, with a
+  duck-typed fake provider and no `qapp`, which also proves the service needs no graphics
+  stack beyond its settings accessors. **Belongs upstream with the service.**
+- **A parentless `QObject` that connects a signal to its own method is a segfault waiting
+  for the garbage collector.** The cycle keeps it alive past the build that made it, and
+  Python frees it whenever the collector next runs — possibly inside another window's event
+  dispatch, where Qt has already destroyed a parent. Park a worker's marshalling signal on a
+  small QObject **parented to the window** instead, so `discard_build()` reaches it. The
+  same applies to a plain Python signal holding a *widget's* bound method: use a Qt signal,
+  which Qt disconnects when the widget dies.
+
+## 9. From the asset-library pass
 
 ### `framework/asset_picker.py` — a modal picker over named files (new)
 

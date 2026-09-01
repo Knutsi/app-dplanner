@@ -14,7 +14,6 @@ content-addressed helpers in :mod:`dplanner.domain.assets` — which also carrie
 reasoning for why an asset add is not undoable.
 """
 
-import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -58,20 +57,6 @@ def write_state(on: bool) -> dict[str, Any]:
     shape ``step_agent_instruction`` established, so one Ctrl+Z restores both.
     """
     return {} if on else stamped({"off": True}, DATA_FORMAT.version)
-
-
-_IMAGE_REFERENCE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)")
-
-
-def image_references(markdown: str) -> list[str]:
-    """The area-relative image paths the markdown embeds — ``![](assets/…)``.
-
-    External URLs and absolute paths are not the module's files and are skipped. The
-    shape is written down here, beside the store it points into, so a lint check and a
-    future renderer cannot disagree about what a reference is.
-    """
-    found = _IMAGE_REFERENCE.findall(markdown)
-    return [ref for ref in found if "://" not in ref and not ref.startswith("/")]
 
 
 def asset_source() -> AssetSource:

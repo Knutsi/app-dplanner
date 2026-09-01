@@ -497,6 +497,26 @@ root, stop and look for the registry or capability you have not found yet.
   narrow dock — because a stack of equal cards stops working at the third test.
   `ARCHITECTURE.md`'s *A test belongs to a step, and a step carries several* has the
   reasoning, including the diff trade the string body accepts.
+- **Documentation is a fragment per step and a document per collector.** The `docs` aspect
+  is what one step adds to the product's documentation; `docs_compiled` is what a feature or
+  a milestone makes of everything it gathers. Two aspect ids in one package, because a node
+  holds one prose document per module and a feature legitimately has both. **There is no
+  step kind for compiling** — a feature and a milestone already *are* the collectors, so
+  Compile is a verb on them. A milestone reads its features' *compiled* documents, not their
+  notes again (`ScopeKind.gathers` says so), which is also what makes recompiling a feature
+  mark its milestone out of date. **Staleness is a digest, never a timestamp**: a compile
+  stores the digest of what it read, and "out of date" is a comparison — so a relink that
+  changes what a collector gathers says so by itself. The CLI is where an agent compiles:
+  `docs status`, `docs collect`, then `compiled set`, which re-stamps. `ARCHITECTURE.md`'s
+  *Documentation is fragments, and a collector compiles them* has the reasoning.
+- **An LLM call is a task, and the service is GUI-bound.** `framework/llm_service.py`'s
+  `complete()` is blocking network I/O, so it runs in a `TaskRunner` body and the answer
+  comes back on the owner's own Qt signal — the runner has no result seam. Every call is
+  already in its ring buffer, so nothing logs one. An AI-gated control is **disabled, never
+  hidden**, carrying `status().message`, and re-asks on `config_changed`. The service reads
+  its provider through QSettings and its key through the keychain, so **`cli/` cannot call
+  it** — the agent loop above is the headless answer. `ARCHITECTURE.md`'s *An LLM call is a
+  task* has the rest.
 - **A collector is a cone truncated at the next collector.** `domain/scope.py`'s `cone()`
   walks `requires` backwards and refuses to pass through a step the `stops_at` predicate
   claims — so a **check** stops at nothing and stands for everything behind it, a

@@ -7,7 +7,7 @@ from dplanner.cli.assets import step_asset_commands
 from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_step, step_arg
-from dplanner.domain.assets import assets
+from dplanner.domain.assets import assets, image_references
 from dplanner.domain.commands import (
     Command,
     CompositeCommand,
@@ -19,7 +19,6 @@ from dplanner.domain.store import FilesFor
 from dplanner.modules.step_description.aspect import (
     MODULE_ID,
     enabled,
-    image_references,
     read,
     write_state,
 )

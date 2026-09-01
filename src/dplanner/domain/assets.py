@@ -71,10 +71,25 @@ def asset_references(markdown: str) -> list[str]:
     Both link forms, because :meth:`ProseEdit._link` writes ``![alt](assets/…)`` for an
     image and ``[name](assets/…)`` for anything else. The one definition of what a
     reference is, shared by the spec index and the asset catalog, so no two scanners can
-    disagree. (``step_description.image_references`` answers a different question — any
-    relative *image* embed, for the dangling-link lint — and deliberately stays there.)
+    disagree. (:func:`image_references` answers a different question — any relative
+    *image* embed, whatever it points at — for the dangling-link lints.)
     """
     return list(dict.fromkeys(_ASSET_REFERENCE.findall(markdown)))
+
+
+_IMAGE_REFERENCE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)")
+
+
+def image_references(markdown: str) -> list[str]:
+    """The area-relative image paths the markdown embeds — ``![](assets/…)``.
+
+    External URLs and absolute paths are not a module's files and are skipped. Written
+    here, beside the store the paths point into, so the lint checks and any renderer
+    cannot disagree about what an embed is — two aspects had already grown identical
+    copies of it before it moved.
+    """
+    found = _IMAGE_REFERENCE.findall(markdown)
+    return [ref for ref in found if "://" not in ref and not ref.startswith("/")]
 
 
 @dataclass(frozen=True)

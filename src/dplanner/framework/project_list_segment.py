@@ -1,18 +1,27 @@
-"""The "Tests" folder in the index tree, below Projects.
+"""A flat index folder: one row per project, opening that project's surface.
 
-Two kinds of row and nothing else: **All Projects**, which opens the library-wide roll
-call, and one row per project, which opens that project's Tests tab. Tests get a folder of
-their own rather than an entry under each project because they are the one surface that is
-also *cross*-project — the roll call has no project to sit under.
+The shape ``modules/testing/index.py`` wrote first and asked to have extracted at the third
+user — *"If a third segment ever wants this shape, that is the moment to extract it, not
+before"* — which the Docs folder is. What it holds is the half that is genuinely the same:
+rebuilding on the model's and the theme's signals, restoring which rows were open, and
+answering the panel's five hooks so a project row stands for its project and every Project
+verb works from the folder.
 
-It is a deliberately simpler cousin of ``projects/index.py``: a flat list, no nesting, no
-unavailable rows (a project that will not open has no tests to show either). If a third
-segment ever wants this shape, that is the moment to extract it — not before.
+**The menu name arrives as an argument.** ``"Project"`` is application vocabulary and has no
+business in a framework file — the same reason ``IndexSegment`` names a factory rather than a
+menu (see ``ARCHITECTURE.md``'s *The index tree*). The framework builds the menu; the module
+says which one.
+
+The richer ``projects/index.py`` — nested contributed entries, greyed unavailable rows,
+selection restored across a rebuild — is deliberately not folded in. It is a different
+problem that happens to draw rows too.
 """
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem
 
 from dplanner.domain.model import Library, NodeId
@@ -21,17 +30,28 @@ from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextNode, ContextService, selection_uri
 from dplanner.framework.index_panel import expansion_of, restore_expansion
 from dplanner.framework.theme_service import ThemeService
-from dplanner.theme.icons import list_icon, project_icon
 
 KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 1
-_PROJECT_ROLE = int(Qt.ItemDataRole.UserRole) + 2
+PROJECT_ROLE = int(Qt.ItemDataRole.UserRole) + 2
 
-ALL_KEY = "tests:all"
-ALL_LABEL = "All Projects"
+IconFor = Callable[[str], QIcon]
 
 
-class TestsSegment:
-    """A row for every project's tests, and one for all of them at once."""
+@dataclass(frozen=True)
+class LeadingRow:
+    """A row above the projects, for a surface that spans them all.
+
+    The Tests folder has one — the library-wide roll call has no project to sit under — and
+    the Docs folder has none, which is the only way the two segments differ.
+    """
+
+    label: str
+    icon: IconFor
+    open: Callable[[bool], None]  # The flag is `preview`.
+
+
+class ProjectListSegment:
+    """One row per project in the library, plus an optional row above them."""
 
     def __init__(
         self,
@@ -40,19 +60,27 @@ class TestsSegment:
         context: ContextService,
         actions: ActionRegistry,
         theme: ThemeService,
+        *,
+        key_prefix: str,
+        menu: str,
+        project_icon: IconFor,
         open_project: Callable[[NodeId, bool], None],
-        open_all: Callable[[bool], None],
+        leading: LeadingRow | None = None,
     ) -> None:
         self._root = root
         self._library = library
         self._context = context
         self._actions = actions
         self._theme = theme
+        self._key_prefix = key_prefix
+        self._menu = menu
+        self._project_icon = project_icon
         self._open_project = open_project
-        self._open_all = open_all
+        self._leading = leading
         self._unsubscribe = [
             library.structure_changed.connect(lambda *_args: self.rebuild()),
             library.field_changed.connect(lambda *_args: self.rebuild()),
+            # The rows carry ink-coloured icons, which a copied colour would leave stale.
             theme.changed.connect(lambda *_args: self.rebuild()),
         ]
         self.rebuild()
@@ -83,7 +111,7 @@ class TestsSegment:
         parent = self._tree()
         if kind != "project" or parent is None:
             return None
-        return build_menu(self._actions, self._context, "Project", parent)
+        return build_menu(self._actions, self._context, self._menu, parent)
 
     def dispose(self) -> None:
         for unsubscribe in self._unsubscribe:
@@ -100,18 +128,19 @@ class TestsSegment:
         open_keys = expansion_of(self._root)
         self._root.takeChildren()
 
-        everything = QTreeWidgetItem([ALL_LABEL])
-        everything.setData(0, Qt.ItemDataRole.UserRole, ALL_KEY)
-        everything.setData(0, KIND_ROLE, "all")
-        everything.setIcon(0, list_icon(ink))
-        self._root.addChild(everything)
+        if self._leading is not None:
+            row = QTreeWidgetItem([self._leading.label])
+            row.setData(0, Qt.ItemDataRole.UserRole, f"{self._key_prefix}:all")
+            row.setData(0, KIND_ROLE, "all")
+            row.setIcon(0, self._leading.icon(ink))
+            self._root.addChild(row)
 
         for project in self._library.projects:
             row = QTreeWidgetItem([project.title or "Untitled project"])
-            row.setData(0, Qt.ItemDataRole.UserRole, f"tests:{project.id}")
+            row.setData(0, Qt.ItemDataRole.UserRole, f"{self._key_prefix}:{project.id}")
             row.setData(0, KIND_ROLE, "project")
-            row.setData(0, _PROJECT_ROLE, project.id)
-            row.setIcon(0, project_icon(ink))
+            row.setData(0, PROJECT_ROLE, project.id)
+            row.setIcon(0, self._project_icon(ink))
             self._root.addChild(row)
 
         restore_expansion(self._root, open_keys)
@@ -120,16 +149,16 @@ class TestsSegment:
 
     def _open(self, item: QTreeWidgetItem, *, preview: bool) -> None:
         kind, _node_id = self._identity(item)
-        if kind == "all":
-            self._open_all(preview)
+        if kind == "all" and self._leading is not None:
+            self._leading.open(preview)
             return
-        project_id = item.data(0, _PROJECT_ROLE)
+        project_id = item.data(0, PROJECT_ROLE)
         if kind == "project" and isinstance(project_id, str):
             self._open_project(project_id, preview)
 
     def _identity(self, item: QTreeWidgetItem) -> tuple[str, str]:
         kind = item.data(0, KIND_ROLE)
-        node_id = item.data(0, _PROJECT_ROLE)
+        node_id = item.data(0, PROJECT_ROLE)
         return (kind if isinstance(kind, str) else ""), (
             node_id if isinstance(node_id, str) else ""
         )

@@ -13,6 +13,9 @@ from dplanner.domain.library_file import write_library_file
 from dplanner.domain.model import Step
 from dplanner.domain.seed import seed_project
 from dplanner.domain.store import LibraryStore
+from dplanner.modules.docs.aspect import COMPILED_ID
+from dplanner.modules.docs.aspect import MODULE_ID as DOCS_ID
+from dplanner.modules.docs.aspect import asset_source as docs_source
 from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
 from dplanner.modules.spec.documents import (
     SpecIndex,
@@ -122,6 +125,27 @@ def test_an_instruction_file_is_used_without_a_link_because_briefings_carry_it(
 
     assert [use.where for use in entry.uses] == ["standing instruction", "agent instruction"]
     assert prunable([entry]) == []
+
+
+def test_a_docs_image_is_used_project_wide_because_compiled_documents_carry_it(
+    store, library, project, step
+):
+    """A compiled document renders images from its *source* steps' areas, so a copy beside
+    one step may be needed by a reference on another — "used" is answered by name."""
+    name = attach(store.files(step.id, DOCS_ID), PNG, "figure.png")
+    collector = Step(title="Ship the beta")
+    library.add_child(project.id, collector)
+    collector.module_text[COMPILED_ID] = f"![figure]({name})"
+
+    (entry,) = catalog(library, project, store.files, [docs_source()])
+
+    assert [use.where for use in entry.uses] == ["compiled docs"]
+    assert [use.subject for use in entry.uses] == ["Ship the beta"]
+    assert prunable([entry]) == []
+
+    collector.module_text[COMPILED_ID] = ""
+    (entry,) = catalog(library, project, store.files, [docs_source()])
+    assert entry.unused  # Nothing anywhere names it now; the sweep may have it.
 
 
 def test_a_spec_figure_is_used_by_its_index_row_or_a_markdown_body(store, library, project):

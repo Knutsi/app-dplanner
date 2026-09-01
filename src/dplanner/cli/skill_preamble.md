@@ -134,6 +134,37 @@ When you execute a test, **record what actually happened** — including `skippe
 including a note on a failure. A run whose results were guessed is worse than no run.
 Marking a test the status it already has succeeds, so a batch is safe to re-run.
 
+## Writing the documentation
+
+A step's **fragment** is what it adds to the product's documentation — written while the work
+is fresh, in the words a user would read, not the words the plan used. A feature or a
+milestone then **compiles** its fragments into one document.
+
+```
+dplanner docs set 'Parse the query string' --file - <<'EOF'
+Search accepts `field:value` pairs and bare words. Quote a phrase to keep it together.
+EOF
+```
+
+**You are the model that compiles them.** The window has a Compile button; the CLI has the
+loop, which is three verbs:
+
+```
+dplanner docs status --json          # every collector: never / current / out of date
+dplanner docs collect Auth           # everything it would read, as one document
+#  …write the document yourself…
+dplanner compiled set Auth --file signing-in.md
+```
+
+`compiled set` stamps what it read, so the document reads as up to date until somebody edits
+a fragment behind it. Two things worth knowing:
+
+- **A milestone reads its features' compiled documents**, not their fragments again. Compile
+  the features first, then the milestone, or the release notes will say everything twice.
+- **Out of date is derived, never guessed.** Editing a fragment, or linking more work behind
+  a feature, marks that feature's document out of date — and recompiling a feature marks its
+  milestone's. `dplanner project lint` reports them as `docs.compiled-stale`.
+
 ## Estimating agent work
 
 With a human in the loop — reviewing the plan, answering questions, checking the result —
