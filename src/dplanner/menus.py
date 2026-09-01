@@ -54,7 +54,10 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "test_result" feeds that same Test submenu with what a run *recorded*, so the rule
     # between what a test is and what it did is drawn inside the child menu — and, holding
     # no top-level entry of its own, the group adds no rule to the menu itself.
-    "Step": ("edit", "link", "classify", "test_result", "agent", "open", "navigate"),
+    # "docs" is Compile Docs: an LLM writing a feature's or a milestone's document from
+    # the documentation it gathers. Its own group rather than "agent"'s, because launching
+    # a coding agent in a terminal and filling one field are not two of a kind.
+    "Step": ("edit", "link", "classify", "test_result", "agent", "docs", "open", "navigate"),
     "Tools": ("agent",),
     "Debug": ("llm",),
     "Help": ("about",),

@@ -28,10 +28,10 @@ learning anything about it. `dplanner aspect list` says which exist in a build.
 ## Status
 
 Early, and honest about it. The model, the storage layer, the index tree, the whole CLI, the
-graph editor and the order view are in place and tested. Twelve aspects ship — estimate,
+graph editor and the order view are in place and tested. Fifteen aspects ship — estimate,
 ticket, description, agent instruction, agent run, status, milestone, feature, handoff,
 GitHub refs,
-spec links, tests and checks — each with verbs in the CLI and most with an editor in the step panel
+spec links, tests, checks and the two documentation ones — each with verbs in the CLI and most with an editor in the step panel
 (`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: a project start date and
 the estimates give every step a running total and a date, in the order table and in
 `dplanner schedule show`. Progression reads the same graph with the statuses in hand:
@@ -82,6 +82,9 @@ dplanner test add "Draft the model" "Rejects an empty query" --text "1. POST /q 
 dplanner check set "Ship the beta"       # gathers every test behind it
 dplanner test-run start --scope "Ship the beta" --label "Pre-ship 3"
 dplanner test-run mark T100 failed --note "still 500s"
+dplanner docs set "Draft the model" --file notes.md   # what this step documents
+dplanner docs status                     # which features and releases need writing up
+dplanner docs collect "Ship the beta"    # everything it documents, as one document
 dplanner order show search               # every step, numbered, in dependency order
 dplanner order show search --ready       # just what can be started right now
 dplanner schedule start search --date 2026-09-01
@@ -107,6 +110,7 @@ seen. See `FORMAT.md`.
                 ├── estimation.json         a module's data
                 ├── testing.json            the tests this step keeps
                 ├── step_description.md     a module's prose
+                ├── docs.md                 what this step documents
                 └── step_description/       a module's files
 ```
 

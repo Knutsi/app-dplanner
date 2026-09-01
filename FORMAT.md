@@ -201,6 +201,18 @@ file area at either level. `module_data` is on every node and `set_module_data` 
 over ids, so nothing in the model has to know. The cost is on whoever writes the next
 migration for that format: it sees both shapes and owes both a thought.
 
+**Two ids are how one package gives a node two documents.** `modules/docs/` writes a
+step's documentation fragment as `docs.md` and a *collector's* compiled document as
+`docs_compiled.md`, because a node holds exactly one prose document per module id and a
+feature legitimately has both — its own note, and what was made of the four steps behind it.
+The alternative, a markdown string inside `docs.json`, is the trade the prose row above
+already refuses. `docs_compiled.json` carries what the compile recorded, and the key that
+matters is `"digest"`: the fingerprint of the sources it read. Whether a document is out of
+date is then a comparison rather than a stored flag, so relinking the graph cannot leave one
+claiming to be current. `docs` also spans node kinds — beside the *project* it is the
+standing documentation style, prepended to every compile, which is `step_agent_instruction`'s
+shape for the same reason.
+
 **A record list is the shape for a fact a step has several of.** `testing` writes
 `{"tests": [{"id": "T100", "title": "…", "body": "…"}]}` beside a step: a *test* belongs to
 exactly one step, a step carries several, and each has its own result in a run. The body is

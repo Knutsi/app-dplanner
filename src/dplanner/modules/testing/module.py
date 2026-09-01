@@ -39,6 +39,7 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
+from dplanner.framework.project_list_segment import LeadingRow, ProjectListSegment
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
@@ -62,10 +63,9 @@ from dplanner.modules.testing.aspect import (
     read,
     write,
 )
-from dplanner.modules.testing.index import TestsSegment
 from dplanner.modules.testing.section import CoversSection, TestsSection
 from dplanner.modules.testing.view import word
-from dplanner.theme.icons import list_icon
+from dplanner.theme.icons import list_icon, project_icon
 
 RESULT_ORDER = ("ok", "failed", "skipped", "pending")
 NO_RUN = "start a test run first (Project ▸ New Test Run)"
@@ -168,16 +168,23 @@ class TestsModule:
     def _all_factory(self, _target: str | None) -> AllTestsActivity:
         return AllTestsActivity(self._deps.library, self._deps.context, self._open_details)
 
-    def _segment(self, root: QTreeWidgetItem) -> TestsSegment:
+    def _segment(self, root: QTreeWidgetItem) -> ProjectListSegment:
+        """A row per project, under an *All Projects* row: tests are the one surface that is
+        also cross-project, and the roll call has no project to sit under."""
         deps = self._deps
-        return TestsSegment(
+        return ProjectListSegment(
             root,
             deps.library,
             deps.context,
             deps.actions,
             deps.theme,
+            key_prefix="tests",
+            menu="Project",
+            project_icon=project_icon,
             open_project=lambda project_id, preview: self.open(project_id, preview=preview),
-            open_all=lambda preview: self.open_all(preview=preview),
+            leading=LeadingRow(
+                "All Projects", list_icon, lambda preview: self.open_all(preview=preview)
+            ),
         )
 
     def _action_specs(self) -> list[ActionSpec]:

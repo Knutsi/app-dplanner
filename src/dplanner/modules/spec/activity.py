@@ -44,6 +44,7 @@ from dplanner.framework.context import (
     entity_uri,
     selection_uri,
 )
+from dplanner.framework.markdown_view import MarkdownView
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.toolbar import ActionToolbar
 from dplanner.framework.undo import UndoService
@@ -59,7 +60,7 @@ from dplanner.modules.spec.documents import (
     write_index,
 )
 from dplanner.modules.spec.editor import SpecMarkdownEditor
-from dplanner.modules.spec.viewer import PdfPageView, SpecTextBrowser
+from dplanner.modules.spec.viewer import PdfPageView
 from dplanner.theme.icons import edit_icon, external_icon, folder_icon, plus_icon, trash_icon
 
 SPECS_KIND = "specs"
@@ -214,7 +215,7 @@ class SpecsActivity(EntityActivity):
         self._notice.setWordWrap(True)
         self._notice.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         self._notice.setContentsMargins(BLOCK_GAP, BLOCK_GAP, BLOCK_GAP, BLOCK_GAP)
-        self._text = SpecTextBrowser(self._views)
+        self._text = MarkdownView(self._views)
         self._pdf = PdfPageView(self._views)
         self._editor = SpecMarkdownEditor()
         self._editor.textChanged.connect(self._on_typed)
@@ -554,7 +555,7 @@ class SpecsActivity(EntityActivity):
             self._say(f"{document.filename} is not UTF-8 text.")
             return
         if document.kind == KIND_MARKDOWN:
-            self._text.show_markdown(area, body)
+            self._text.show_markdown(body, (area,))
         else:
             self._text.show_text(body)
         self._views.setCurrentWidget(self._text)
