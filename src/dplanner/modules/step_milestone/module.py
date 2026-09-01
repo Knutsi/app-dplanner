@@ -72,7 +72,7 @@ class StepMilestoneModule:
                 id="milestone.toggle",
                 label="Milestone",
                 menu="Step",
-                group="type",
+                group="classify",
                 submenu="Type",
                 order=10,
                 tip="Mark this step as a milestone point; the label is generated",

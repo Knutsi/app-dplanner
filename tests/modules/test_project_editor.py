@@ -449,6 +449,42 @@ def test_a_canvas_nobody_clicked_leaves_the_node_to_the_ambient_layout(
     assert "project_editor" not in project.steps[-1].module_data
 
 
+def test_a_new_step_is_selected_the_moment_it_exists(services, project, tab, monkeypatch):
+    """New leaves you on what you just made: the panel beside the canvas is already showing
+    it, so naming a step and describing it are one gesture rather than two."""
+    answer_new_dialog(monkeypatch, "Placed")
+    services.actions.run("steps.new", services.context.current())
+    created = project.steps[-1]
+    assert list(scene(tab).selection().steps) == [created.id]
+    assert step_panel(services).current_step_id() == created.id
+
+
+def test_two_new_steps_in_a_row_do_not_land_on_one_another(services, project, tab, monkeypatch):
+    """The remembered point steps one row on after it is used, so pressing New twice leaves
+    two nodes where a stale point would have hidden one under the other."""
+    from dplanner.modules.project_editor.sorts import V_GAP
+
+    tab._view.note_click(QPointF(400.0, 200.0))
+    answer_new_dialog(monkeypatch, "First")
+    services.actions.run("steps.new", services.context.current())
+    answer_new_dialog(monkeypatch, "Second")
+    services.actions.run("steps.new", services.context.current())
+
+    first, second = (step.module_data["project_editor"] for step in project.steps[-2:])
+    assert (second["x"], second["y"]) == (first["x"], snapped(first["y"] + NODE_H + V_GAP))
+
+
+def test_a_double_click_moves_the_point_on_too(app, services, project, tab, monkeypatch):
+    """It pointed at a spot in the same sense a right-click did, so New after it lands
+    below what the double-click made rather than on top of it."""
+    tab._view.note_click(QPointF(400.0, 200.0))  # The press a double-click begins with.
+    scene(tab).create_requested.emit(400.0, 200.0)
+    answer_new_dialog(monkeypatch, "After the double-click")
+    services.actions.run("steps.new", services.context.current())
+    made, after = (step.module_data["project_editor"] for step in project.steps[-2:])
+    assert after["y"] > made["y"]
+
+
 def test_deleting_the_shown_step_leaves_the_panel_empty(app, services, project, tab, monkeypatch):
     from dplanner.modules.project_editor import verbs
 
@@ -818,6 +854,86 @@ def test_a_node_is_painted_in_the_theme_that_is_current(themed, services, projec
     assert abs(body.blue() - wanted.blue()) <= 2
 
 
+# -- a selected node is a card off the table -----------------------------------------------
+
+
+def painted_under(tab, step_id, background: str) -> QColor:
+    """The ground just below a node's seat: empty canvas, or the shadow of a lifted node."""
+    node = scene(tab)._nodes[step_id]
+    margin = 12
+    width, height = int(NODE_W + 2 * margin), int(NODE_H + 2 * margin)
+    image = QImage(width, height, QImage.Format.Format_ARGB32)
+    image.fill(QColor(background))
+    painter = QPainter(image)
+    scene(tab).render(
+        painter,
+        QRectF(image.rect()),
+        QRectF(node.scenePos() - QPointF(margin, margin), QSizeF(width, height)),
+    )
+    painter.end()
+    return image.pixelColor(int(margin + NODE_W / 2), int(margin + NODE_H + 3))
+
+
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=lambda t: t.name)
+def test_selecting_a_node_deepens_the_fill_it_already_had(themed, services, project, tab, theme):
+    """The shading is a *gain* on the node's own fill rather than a colour of its own, which
+    is what lets a picked milestone stay purple while it is picked.
+
+    The exactness is the second assertion in disguise: the body can only come out at the
+    gained alpha over the ground if **nothing else is painted under it**. A node's fill is
+    translucent, so shadow rings left beneath would darken it and a picked step would read
+    as a hole rather than as a card off the table — which is what the first cut did.
+    """
+    from dplanner.modules.project_editor.renderers import SELECTED_FILL_GAIN
+
+    apply_theme(themed, theme)
+    step = project.steps[0]
+    scene(tab).select_step(step.id)
+    body = painted_node(tab, step.id, theme.bg_base)
+    wanted = ink_over(theme.bg_base, theme.text_primary, round(FILL_ALPHA * SELECTED_FILL_GAIN))
+
+    assert abs(body.red() - wanted.red()) <= 2
+    assert abs(body.green() - wanted.green()) <= 2
+    assert abs(body.blue() - wanted.blue()) <= 2
+
+
+def test_a_selected_node_casts_a_shadow_on_the_ground_it_left(services, project, tab):
+    """The lift reads because the seat darkens under it. Rendered over white, where a
+    low-alpha black actually says something."""
+    step = project.steps[0]
+    assert painted_under(tab, step.id, "white") == QColor("white")
+    scene(tab).select_step(step.id)
+    assert painted_under(tab, step.id, "white").lightness() < QColor("white").lightness()
+
+
+def test_a_lifted_node_sits_over_its_neighbours(services, project, tab):
+    """Nodes share one Z, where the stacking order is whichever sync added last — so the
+    selected one has to claim the top or its shadow would fall behind the node next to it."""
+    first, second = (scene(tab)._nodes[step.id] for step in project.steps[:2])
+    assert first.zValue() == second.zValue()
+    scene(tab).select_step(project.steps[0].id)
+    assert first.zValue() > second.zValue()
+    scene(tab).select_step(project.steps[1].id)
+    assert second.zValue() > first.zValue()
+
+
+def test_the_bounding_rect_covers_everything_a_node_paints(services, project, tab):
+    """Constant, selected or not: a rect that grew on selection would invalidate the wrong
+    region and leave the shadow behind when the selection moved on."""
+    from dplanner.modules.project_editor.renderers import (
+        LIFT,
+        SHADOW_DROP,
+        SHADOW_SPREAD,
+    )
+
+    node = scene(tab)._nodes[project.steps[0].id]
+    plain = node.boundingRect()
+    node.setSelected(True)
+    assert node.boundingRect() == plain
+    assert plain.bottom() >= NODE_H + SHADOW_DROP + SHADOW_SPREAD
+    assert plain.top() <= -LIFT
+
+
 # -- the minimap -----------------------------------------------------------------------------------
 
 
@@ -1043,6 +1159,38 @@ def test_the_toolbar_carries_verbs_from_other_modules(services, project, tab):
 
     services.actions.run("order.open", services.context.current())
     assert any(a.uri.startswith("app://activity/order") for a in services.tabs.activities())
+
+
+def test_the_new_button_drops_the_kinds_down(services, project, tab):
+    """The arrow renders Step \u25b8 New itself — not a copy of it — so the kinds are declared
+    once, in the composition root, and the toolbar cannot come to offer a different list."""
+    menu = tab._toolbar.dropdown("steps.new")
+    assert menu is not None
+    assert [action.text() for action in menu.actions()] == [
+        "&Step\u2026",
+        "&Feature\u2026",
+        "&Milestone\u2026",
+        "&Agent Step\u2026",
+        "&Check\u2026",
+    ]
+    # Each wears the medallion its node will wear, so the list reads at a glance.
+    assert all(not action.icon().isNull() for action in menu.actions())
+
+
+def test_an_entry_in_that_dropdown_runs_the_verb(services, project, tab, monkeypatch):
+    from dplanner.modules.step_feature.aspect import read as is_feature
+
+    answer_new_dialog(monkeypatch, "Bulk import")
+    menu = tab._toolbar.dropdown("steps.new")
+    assert menu is not None
+    menu.actions()[1].trigger()
+    assert is_feature(project.steps[-1]) is True
+
+
+def test_only_the_new_button_carries_an_arrow(services, project, tab):
+    """A dropdown is for a verb that has kinds behind it; the rest of the row is one click."""
+    assert toolbar_button(tab, "steps.new").menu() is not None
+    assert toolbar_button(tab, "steps.delete").menu() is None
 
 
 def test_closing_the_tab_lets_its_toolbars_go(services, project, tab):

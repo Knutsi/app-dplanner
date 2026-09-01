@@ -16,7 +16,8 @@ created through the CLI would grow a position file the next time a window happen
 """
 
 from dplanner.domain.model import Library, Project, StepId
-from dplanner.modules.project_editor.sorts import layered_flow
+from dplanner.modules.project_editor.positions import NODE_H
+from dplanner.modules.project_editor.sorts import V_GAP, layered_flow
 
 
 def auto_positions(library: Library, project: Project) -> dict[StepId, tuple[float, float]]:
@@ -33,3 +34,12 @@ def positions(library: Library, project: Project) -> dict[StepId, tuple[float, f
 
     automatic = auto_positions(library, project)
     return {step.id: (read_position(step) or automatic[step.id]) for step in project.steps}
+
+
+def below(x: float, y: float) -> tuple[float, float]:
+    """One row down from a point: where a second node dropped at the same spot goes.
+
+    The automatic layout's own row pitch, so steps stacked by pressing New twice line up
+    with steps the layout would have arranged — and two of them never land on one another.
+    """
+    return (x, y + NODE_H + V_GAP)

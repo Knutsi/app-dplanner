@@ -25,7 +25,7 @@ mechanism behind the toolbar's mode switch, and why there is no other one.
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPointF, Qt
 from PySide6.QtWidgets import QMenu, QVBoxLayout, QWidget
 
 from dplanner.domain.commands import (
@@ -67,7 +67,7 @@ from dplanner.modules.project_editor.modes import (
     RegionCreateMode,
 )
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
-from dplanner.modules.project_editor.placement import positions
+from dplanner.modules.project_editor.placement import below, positions
 from dplanner.modules.project_editor.positions import DATA_FORMAT, centred_on, write_position
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.project_panel import ProjectPanel
@@ -399,8 +399,21 @@ class ProjectActivity(EntityActivity):
 
     def _on_create(self, x: float, y: float) -> None:
         """Double-click on empty space: the same creation the New verbs run, unprompted."""
-        step = self._verbs.create(self.project_id, "New step", at=(x, y))
-        self._scene.select_step(step.id)
+        self._verbs.create(self.project_id, "New step", at=(x, y))
+
+    def note_created(self, step_id: StepId) -> None:
+        """A step was just born on this canvas.
+
+        Two things follow from that and neither belongs to the verb: it becomes the
+        selection, so the panel beside the canvas is already showing what was made; and the
+        remembered point steps one row down, so pressing New twice leaves two nodes rather
+        than one hiding another. The double-click lands here too — it pointed at a spot in
+        exactly the same sense.
+        """
+        self._scene.select_step(step_id)
+        point = self._view.last_click
+        if point is not None:
+            self._view.note_click(QPointF(*below(point.x(), point.y())))
 
     def new_step_position(self) -> tuple[float, float] | None:
         """The top-left a new node should take: centred on wherever the user last pointed.
@@ -497,6 +510,7 @@ class ProjectEditorModule:
             current_project=self._current_project,
             step_kinds=deps.step_kinds,
             new_position=self._new_step_position,
+            created=self._on_created,
         )
         self._layout_verbs = LayoutVerbs(
             library=deps.library,
@@ -589,6 +603,11 @@ class ProjectEditorModule:
     def _new_step_position(self) -> tuple[float, float] | None:
         current = self._current_activity()
         return current.new_step_position() if current is not None else None
+
+    def _on_created(self, step_id: StepId) -> None:
+        current = self._current_activity()
+        if current is not None:
+            current.note_created(step_id)
 
     def _set_connect_mode(self, on: bool) -> None:
         current = self._current_activity()

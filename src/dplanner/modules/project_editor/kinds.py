@@ -29,11 +29,16 @@ class StepKind:
     generates its label from the labels already there. It may return ``{}`` — a kind that
     marks nothing is simply a plain step under another name, and the creation skips the
     write rather than storing an empty entry.
+
+    ``icon`` is a **name** in the canvas's medallion vocabulary rather than a painter, so
+    this file stays Qt-free and a kind still says only what it is: the New menu and the
+    toolbar's dropdown then wear the very glyph the node will wear.
     """
 
     id: str  # The module id whose data marks the step — where ``entry`` is written.
     name: str  # What a person calls it: "Feature", "Milestone", "Agent Step".
     entry: Callable[[Project], dict[str, Any]]
+    icon: str = ""  # "tag" | "layers" | "spark" | "shield" | … ; "" draws none.
 
     @property
     def action_id(self) -> str:

@@ -49,9 +49,14 @@ from dplanner.modules.project_editor.kinds import StepKind
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.positions import write_position
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef, parse_edge_id
+from dplanner.theme.icons import glyph_painter, plus_icon
 
 
 def _nowhere() -> tuple[float, float] | None:
+    return None
+
+
+def _unnoticed(_step_id: StepId) -> None:
     return None
 
 
@@ -69,6 +74,11 @@ class StepVerbs:
     # the gesture came from somewhere with no canvas under it (the menu bar over a table).
     # None falls back to the ambient layout, which is what New has always done.
     new_position: Callable[[], tuple[float, float] | None] = _nowhere
+    # A step has just been born. The canvas selects it — so the panel beside it is already
+    # showing what was made, ready to be described — and steps its remembered point on, so
+    # pressing New twice stacks two nodes rather than hiding one under the other. Both
+    # belong to whoever placed it; a verb bench in a test has no canvas and needs neither.
+    created: Callable[[StepId], None] = _unnoticed
 
     def register_into(self, actions: ActionRegistry) -> None:
         for spec in self._specs():
@@ -79,6 +89,9 @@ class StepVerbs:
 
         ``steps.new`` keeps its id through the change — it is bound to ``N`` in the keymap
         and wears the toolbar's plus — and simply moves into the submenu beside the kinds.
+
+        Each entry carries the glyph its node will wear, so the submenu (rendered as the
+        toolbar's New dropdown and inside the Step menu alike) can be read at a glance.
         """
         plain = ActionSpec(
             id="steps.new",
@@ -87,6 +100,7 @@ class StepVerbs:
             group="edit",
             submenu="New",
             order=10,
+            icon=plus_icon,
             tip="Add a step to the project in this tab",
             state=self._in_a_project,
             run=self._new,
@@ -99,6 +113,7 @@ class StepVerbs:
                 group="edit",
                 submenu="New",
                 order=20 + 10 * index,
+                icon=glyph_painter(kind.icon),
                 tip=f"Add a step that is a {kind.name.lower()} from the moment it exists",
                 state=self._in_a_project,
                 run=self._runner(kind),
@@ -317,6 +332,7 @@ class StepVerbs:
             commands.append(SetModuleDataCommand(step.id, POSITION_KEY, write_position(*at)))
         label = f"New {kind.name if kind is not None else 'Step'}"
         self.undo.push(commands[0] if len(commands) == 1 else CompositeCommand(label, commands))
+        self.created(step.id)
         return step
 
     def _rename(self, context: Context) -> None:

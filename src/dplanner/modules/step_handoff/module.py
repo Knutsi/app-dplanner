@@ -70,7 +70,7 @@ class StepHandoffModule:
                 id="handoff.toggle",
                 label=SPEC.label,
                 menu="Step",
-                group="type",
+                group="classify",
                 submenu="Type",
                 order=90,
                 tip="Pass a note and files forward to whoever picks up the work after this",

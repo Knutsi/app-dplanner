@@ -44,13 +44,17 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "open" is a surface about the selection — the Step-side mirror of Project's
     # "Show Order". "navigate" is where the canvas's movement verbs live: they select
     # rather than change, so they belong beside the step verbs but not among them.
-    # "type" is the Type submenu: one independent checkable toggle per type-ish aspect
-    # (Milestone, Feature, Agent, Ticket, Test and Check today) — never a radio group, a step can
-    # be several things at once, and each aspect's tab follows its toggle. "test" and
-    # "test_result" both feed the Test submenu, so the separator between what a test
-    # *is* and what it *did* is drawn rather than spelled. "status" is the step_status
-    # module's submenu of states; "agent" is Run Agent.
-    "Step": ("edit", "link", "type", "test", "test_result", "status", "agent", "open", "navigate"),
+    # "classify" is the band of child menus that say what a step *is* and how it is doing:
+    # Type (one independent checkable toggle per type-ish aspect — never a radio group, a
+    # step can be several things at once, and each aspect's tab follows its toggle), then
+    # Status, then Test. They are one group because a rule between two adjacent child menus
+    # separates nothing: the names already do. A child menu sits at its first entry's order,
+    # which is why the three claim bands of it — Type the 10s, Status the 200s, Test the
+    # 300s — and ``order`` still only ranks inside this one group.
+    # "test_result" feeds that same Test submenu with what a run *recorded*, so the rule
+    # between what a test is and what it did is drawn inside the child menu — and, holding
+    # no top-level entry of its own, the group adds no rule to the menu itself.
+    "Step": ("edit", "link", "classify", "test_result", "agent", "open", "navigate"),
     "Tools": ("agent",),
     "Debug": ("llm",),
     "Help": ("about",),

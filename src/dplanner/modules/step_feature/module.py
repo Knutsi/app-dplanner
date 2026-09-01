@@ -41,7 +41,7 @@ class StepFeatureModule:
                 id="feature.toggle",
                 label=SPEC.label,
                 menu="Step",
-                group="type",
+                group="classify",
                 submenu="Type",
                 order=20,
                 tip="Collect the work and tests behind this step, up to the previous feature",

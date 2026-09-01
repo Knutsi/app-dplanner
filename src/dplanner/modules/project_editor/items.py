@@ -26,8 +26,8 @@ from PySide6.QtWidgets import (
 from dplanner.domain.model import StepId
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W
 from dplanner.modules.project_editor.renderers import (
-    HANDLE_R,
     INVALID_TINT,
+    PAINT_MARGIN,
     VALID_TINT,
     NodeAccent,
     NodeState,
@@ -109,12 +109,16 @@ class StepNodeItem(QGraphicsItem):
         return self.mapToScene(QPointF(NODE_W if other.x() >= centre.x() else 0.0, NODE_H / 2))
 
     def boundingRect(self) -> QRectF:  # noqa: N802 - Qt override
-        # Constant, whatever the accent: room for the handle (even grown by connect
-        # mode's emphasis), a badge's rise above the top edge and a chip's fall below it
-        # (each half its height plus a stroke — BADGE_H / 2 + 1 and CHIP_H / 2 + 1 must
-        # both stay <= this margin), so paint never leaves the rect.
-        margin = HANDLE_R + 4
-        return QRectF(-margin, -margin, NODE_W + 2 * margin, NODE_H + 2 * margin)
+        # Constant, whatever the accent or the selection: PAINT_MARGIN is the furthest any
+        # decoration reaches out of the body, worked out where they are drawn. Constant
+        # matters — a rect that grew on selection would invalidate the wrong region and
+        # leave the shadow behind when the selection moved on.
+        return QRectF(
+            -PAINT_MARGIN,
+            -PAINT_MARGIN,
+            NODE_W + 2 * PAINT_MARGIN,
+            NODE_H + 2 * PAINT_MARGIN,
+        )
 
     def itemChange(self, change: object, value: object) -> object:  # noqa: N802 - Qt override
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and isinstance(
@@ -122,6 +126,10 @@ class StepNodeItem(QGraphicsItem):
         ):
             # Snap while dragging, so what the user sees is what gets stored.
             return QPointF(round(value.x() / GRID) * GRID, round(value.y() / GRID) * GRID)
+        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            # A lifted node sits over its neighbours, shadow and all. Nodes are all at 0
+            # otherwise, where the stacking order is whichever sync happened to add last.
+            self.setZValue(1.0 if value else 0.0)
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             scene = self.scene()
             if scene is not None and hasattr(scene, "reflow_edges"):

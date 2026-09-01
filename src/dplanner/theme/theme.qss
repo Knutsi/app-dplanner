@@ -675,7 +675,7 @@ QScrollBar::sub-page {
 /* Reader: toolbar buttons and the table of contents (styled like the binder) — the
  * browser is prose and stays unboxed below. The quiet bordered button look is shared
  * with the task browser's in-row Cancel. */
-#ReaderToolButton, #ToolbarButton, #TaskRowCancel {
+#ReaderToolButton, #ToolbarButton, #LayoutButton, #TaskRowCancel {
     background-color: $BG_OVERLAY;
     color: $TEXT_SECONDARY;
     border: 1px solid $BORDER;
@@ -683,7 +683,7 @@ QScrollBar::sub-page {
     padding: 5px 10px;
 }
 
-#ReaderToolButton:hover, #ToolbarButton:hover, #TaskRowCancel:hover {
+#ReaderToolButton:hover, #ToolbarButton:hover, #LayoutButton:hover, #TaskRowCancel:hover {
     color: $TEXT_PRIMARY;
     border-color: $BORDER_STRONG;
 }
@@ -718,6 +718,19 @@ QScrollBar::sub-page {
     background-color: $ACCENT;
     color: $ON_ACCENT;
     border-color: $ACCENT;
+}
+
+/* A styled QToolButton loses Qt's own room for the drop-down arrow: the box model knows
+   the text and the padding and nothing about the subcontrol, so the arrow lands on the
+   last letter. Both buttons that carry a menu say where it goes and leave room for it. */
+#ToolbarButton::menu-indicator, #LayoutButton::menu-indicator {
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    width: 10px;
+}
+
+#LayoutButton {
+    padding-right: 20px;
 }
 
 #ToolbarLabel {

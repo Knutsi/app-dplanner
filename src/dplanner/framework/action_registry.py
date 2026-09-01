@@ -19,7 +19,7 @@ application vocabulary. It is passed in at construction and validated at registr
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from PySide6.QtGui import QKeySequence
+from PySide6.QtGui import QColor, QIcon, QKeySequence
 
 from dplanner.core.signals import Signal
 from dplanner.framework.context import Context
@@ -65,9 +65,6 @@ class MenuStructure:
     def groups(self, menu: str) -> tuple[str, ...]:
         return self._structure[menu]
 
-    def items(self) -> list[tuple[str, tuple[str, ...]]]:
-        return list(self._structure.items())
-
     def validate(self, spec: "ActionSpec") -> None:
         """Raise if a spec names a menu or group that does not exist.
 
@@ -100,8 +97,9 @@ class ActionSpec:
     menu: str  # Top-level menu name without mnemonic: "File", "Edit", …
     group: str  # Named group within the menu, from dplanner.menus.MENU_STRUCTURE.
     order: int = 50  # Sort key inside the group; gaps of 10 leave room to interleave.
-    # Actions sharing a (menu, group, submenu) title collapse into one child menu placed
-    # at the first such action's sort position. None (the norm) stays a flat entry.
+    # Actions sharing a (menu, submenu) title collapse into one child menu placed at the
+    # first such action's sort position — whatever groups they come from, with a rule drawn
+    # inside it where the group changes. None (the norm) stays a flat entry.
     submenu: str | None = None
     # False keeps a spec out of the command palette: for a verb's second menu placement,
     # whose original already appears there under the same label.
@@ -109,6 +107,11 @@ class ActionSpec:
     # A tuple binds several equivalent keys (e.g. Ctrl++ and Ctrl+=, whichever the
     # keyboard layout can reach); the first one is what the palette displays.
     shortcut: QKeySequence.StandardKey | str | tuple[str, ...] | None = None
+    # A glyph for the verb, painted in the ink the presenter hands over. The pop-up
+    # presenters render it and the menu bar does not, on purpose: a pop-up is built fresh
+    # every time it opens, while a menu bar's QActions outlive every theme change and a
+    # colour copied onto one goes stale.
+    icon: Callable[[QColor], QIcon] | None = None
     tip: str = ""
     state: Callable[[Context], ActionState] = field(default=always_enabled)
     run: Callable[[Context], None] = field(default=lambda _context: None)

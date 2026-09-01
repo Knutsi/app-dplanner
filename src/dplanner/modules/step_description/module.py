@@ -111,7 +111,7 @@ class StepDescriptionModule:
                 id="description.toggle",
                 label=SPEC.label,
                 menu="Step",
-                group="type",
+                group="classify",
                 submenu="Type",
                 order=80,
                 tip="Give this step prose saying what it is — and what an agent is briefed with",
