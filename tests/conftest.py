@@ -127,17 +127,25 @@ def _collect_qt_garbage():
     every test actually releases what it built — which is ``AppSession.close``'s job, and
     why the ``session`` fixture calls it.
 
-    **That precondition is currently broken, and this fixture is no longer enough.** About
-    one full run in three kills a worker with the exact SIGSEGV described above —
-    ``gc_collect -> subtype_dealloc -> ~QWidget -> deleteChildren -> QWidget::window()`` —
-    and the test it is reported against is only whichever one that worker was running.
-    ``--dist loadfile`` is green, which is the workaround; ``CLAUDE.md``'s *Checks* section
-    has how to prove a new change is not the cause. Finding the test that holds a build past
-    its teardown is the open work.
+    The deferred deletes are dispatched first, for the same reason ``AppSession.close``
+    dispatches its own: this fixture discards Qt objects with no event loop to follow, so
+    it owes them (CLAUDE.md's rule). Without it, a widget a test ``deleteLater``'d — a
+    gallery cell, a replaced tab page — stays a live C++ child until some *later* test's
+    ``session.close()`` dispatches every pending delete globally, which is exactly the
+    cross-test object lifetime this fixture exists to prevent.
+
+    When a worker still dies with SIGSEGV in ``gc_collect -> subtype_dealloc -> ~QWidget``,
+    the test it is reported against is only whichever one that worker was running —
+    ``CLAUDE.md``'s *Checks* section has the diagnosis recipe. One such crash (2026-09-01,
+    roughly one full run in three) turned out to ride on working-tree module code that was
+    rewritten before it ever shipped; on the committed tree it has not reproduced since.
     """
     yield
     import gc
 
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     gc.collect()
 
 
