@@ -26,6 +26,17 @@ def step(services, make_project):
 
 @pytest.fixture
 def refresher(services, monkeypatch):
+    """A refresher of this test's own — and the application's silenced first.
+
+    ``services`` is a whole running application, and the github module builds and *starts* a
+    ``PrRefresher`` in it. The patches below are module globals, which that one reads too: with
+    ``parse_repo`` answering for any URL and ``gh_refusal`` answering None, its pending first
+    tick becomes a second call to this test's fake ``view_pr``, landing whenever ``wait_for``
+    next pumps the event loop. That is what made ``test_a_terminal_state_is_not_rechecked``
+    fail with ``[12, 12] == [12]``, on timing rather than on anything it was testing.
+    """
+    for running in services.window.findChildren(PrRefresher):
+        running.stop()
     monkeypatch.setattr(refresh_mod, "parse_repo", lambda _url: "acme/widget")
     monkeypatch.setattr(refresh_mod, "gh_refusal", lambda **_kw: None)
     return PrRefresher(

@@ -57,13 +57,24 @@ class PrRefresher(QObject):
         self._timer = QTimer(self)
         self._timer.setInterval(REFRESH_INTERVAL_MS)
         self._timer.timeout.connect(self._tick)
+        # The first tick is a timer of its own rather than a bare ``QTimer.singleShot``, so
+        # that :meth:`stop` can reach it. An untracked one is already queued by the time
+        # anybody could ask to stop, and it fires into whatever the world looks like then.
+        self._first = QTimer(self)
+        self._first.setSingleShot(True)
+        self._first.timeout.connect(self._tick)
         self._fetched.connect(self._apply)
         self._refused.connect(self._stop)
 
     def start(self) -> None:
         # Once now — the work leaves the GUI thread immediately — then on the interval.
-        QTimer.singleShot(0, self._tick)
+        self._first.start(0)
         self._timer.start()
+
+    def stop(self) -> None:
+        """Ask no more, including the first time. Both timers, because ``start`` set both."""
+        self._first.stop()
+        self._timer.stop()
 
     def _tick(self) -> None:
         # Snapshot on the GUI thread: the model has no thread affinity and may only be
@@ -121,5 +132,5 @@ class PrRefresher(QObject):
 
     def _stop(self, refusal: str) -> None:
         """gh cannot be used: stop asking for this session rather than fail every tick."""
-        self._timer.stop()
+        self.stop()
         logger.info("PR refresh stopped: %s", refusal)

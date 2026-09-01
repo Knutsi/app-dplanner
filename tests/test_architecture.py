@@ -72,14 +72,14 @@ CONCRETE_STORAGE = (
 )
 
 
-def imported_names(path: Path) -> list[tuple[int, str]]:
+def imported_names(path: Path, root: Path = SRC) -> list[tuple[int, str]]:
     """Absolute names imported by ``path``: (line, dotted-name) pairs.
 
     Relative imports are resolved against the file's own package, so ``from . import x``
     inside ``dplanner/modules/projects/`` reads as ``dplanner.modules.projects``.
     """
     tree = ast.parse(path.read_text(), filename=str(path))
-    relative_to = path.relative_to(SRC.parent)
+    relative_to = path.relative_to(root.parent)
     package_parts = list(relative_to.parts[:-1])
     names: list[tuple[int, str]] = []
     for node in ast.walk(tree):
@@ -95,28 +95,30 @@ def imported_names(path: Path) -> list[tuple[int, str]]:
     return names
 
 
-def module_dir_of(path: Path) -> str | None:
+def module_dir_of(path: Path, root: Path = SRC) -> str | None:
     """The module package name for files under ``modules/<name>/``, else None."""
-    parts = path.relative_to(SRC).parts
+    parts = path.relative_to(root).parts
     if len(parts) >= 2 and parts[0] == "modules":
         return parts[1] if len(parts) >= 3 or parts[1] != "__init__.py" else None
     return None
 
 
-def collect_violations() -> list[str]:
+def collect_violations(root: Path = SRC) -> list[str]:
+    """Every rule broken under ``root``, which is the real ``src/dplanner`` unless a test
+    hands over a throwaway tree — see :func:`test_the_rules_can_catch_a_violation`."""
     violations: list[str] = []
 
     def forbid(path: Path, line: int, name: str, rule: str) -> None:
-        relative = path.relative_to(SRC.parent)
+        relative = path.relative_to(root.parent)
         violations.append(f"{relative}:{line}: imports {name!r} — {rule}")
 
-    for path in sorted(SRC.rglob("*.py")):
-        parts = path.relative_to(SRC).parts
+    for path in sorted(root.rglob("*.py")):
+        parts = path.relative_to(root).parts
         top = parts[0]
         is_composition_root = parts == ("modules", "__init__.py")
         in_storage = parts[:2] == ("core", "storage")
 
-        for line, name in imported_names(path):
+        for line, name in imported_names(path, root):
             # -- rule 7, checked for every file -------------------------------------------
             # app.py chooses a library path, never a provider class. `locations` is the
             # public front door and stays open to everyone.
@@ -174,7 +176,7 @@ def collect_violations() -> list[str]:
             elif top == "modules":
                 if is_composition_root:
                     continue  # The one place allowed to import everything.
-                own = module_dir_of(path)
+                own = module_dir_of(path, root)
                 # The headless half of a module. The composition root reaches these through
                 # `dplanner.modules`, so one Qt import here would put a graphics stack in
                 # every CLI invocation.
@@ -218,13 +220,21 @@ def test_the_rules_can_see_real_imports() -> None:
 
 
 def test_the_rules_can_catch_a_violation(tmp_path) -> None:
-    """Self-check: a known-bad import is actually reported."""
-    offender = SRC / "core" / "_architecture_probe.py"
-    offender.write_text(f"from {PACKAGE}.framework.tabs import TabHost\n")
-    try:
-        violations = collect_violations()
-    finally:
-        offender.unlink()
+    """Self-check: a known-bad import is actually reported.
+
+    Over a throwaway tree, never the real one. Writing the offender into ``src/`` and
+    removing it in a ``finally`` was fine until the suite went parallel — after that it was a
+    file appearing under another worker's feet while :func:`test_layering_rules_hold` walked
+    ``src/``, failing perhaps one run in six and naming a file nobody could find afterwards,
+    because the cleanup had already run. A test that mutates what another test reads is
+    wrong however carefully it tidies up; the scanner takes a root so this one need not.
+    """
+    root = tmp_path / PACKAGE
+    (root / "core").mkdir(parents=True)
+    (root / "core" / "_architecture_probe.py").write_text(
+        f"from {PACKAGE}.framework.tabs import TabHost\n"
+    )
+    violations = collect_violations(root)
     assert any("_architecture_probe" in violation for violation in violations)
 
 

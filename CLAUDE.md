@@ -77,6 +77,14 @@ than a marker because the layers already say which is which: `core/`, `domain/` 
 the Qt-free ones. It is not a substitute for the full run before you finish — most of what
 this application does lives in `modules/`, and only the full suite covers it.
 
+**Running on every core means a test may never write into `src/`, and must quiet what the
+application it built has already started.** Both rules were learned from a flake. A test that
+wrote a deliberately-bad file into the source tree and tidied up afterwards raced another
+worker walking that tree; and a fixture that patched a module global raced the *live*
+`PrRefresher` the application it built had running, which reads the same global. A `finally`
+does not help with the first and a careful assertion does not help with the second: build over
+a throwaway tree, and stop what is running before you patch under it.
+
 The layering rules below are enforced by `tests/test_architecture.py`, which runs with the
 normal suite. **If it fails, fix the dependency direction — don't loosen the test.** Every
 rule has a supported way to get what the shortcut wanted: a capability protocol, a typed
