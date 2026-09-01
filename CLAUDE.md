@@ -85,6 +85,28 @@ worker walking that tree; and a fixture that patched a module global raced the *
 does not help with the first and a careful assertion does not help with the second: build over
 a throwaway tree, and stop what is running before you patch under it.
 
+**A pytest worker dying with SIGSEGV is a known flake, and it is almost certainly not the
+test it names.** The suite currently crashes a worker in roughly one full run in three; the
+test reported is whichever one that worker happened to be running, and it moves when
+anything changes the total test count. Before spending an hour on it:
+
+```bash
+QT_QPA_PLATFORM=offscreen uv run pytest -q --dist loadfile   # green — the workaround
+```
+
+**To prove it is not your change**, replace your new test files with the same number of
+`def test_x(): assert True` stubs and run the full suite again. If it still crashes, it is
+this. (That is how it was pinned: 46 trivial stubs crashed 3 runs out of 3, while dropping
+an *unrelated* file instead made it vanish with every real test still running.)
+
+The cause is understood and the fix is not written. `coredumpctl` gives
+`gc_collect → subtype_dealloc → ~QWidget → deleteChildren → QWidget::window()`: Python's
+collector freeing a widget cycle whose C++ side Qt had already destroyed.
+`tests/conftest.py::_collect_qt_garbage` exists to prevent exactly this and works only while
+every test releases what it built — so **some test no longer does**, and finding which is the
+open work. Two shapes to suspect when you go looking: a parentless `QObject` connected to its
+own method, and a long-lived plain-Python signal holding a widget's bound method.
+
 The layering rules below are enforced by `tests/test_architecture.py`, which runs with the
 normal suite. **If it fails, fix the dependency direction — don't loosen the test.** Every
 rule has a supported way to get what the shortcut wanted: a capability protocol, a typed
