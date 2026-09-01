@@ -280,21 +280,74 @@ QScrollBar::sub-page {
     border-radius: ${RADIUS_SM}px;
 }
 
-/* A panel area (framework/panels.py): the border belongs here rather than to any panel,
-   because a panel moves between areas and only the area knows which side faces the tabs. */
-#PanelAreaLeft {
-    background-color: $BG_ELEVATED;
-    border-right: 1px solid $BORDER;
-}
-
-#PanelAreaRight {
-    background-color: $BG_ELEVATED;
-    border-left: 1px solid $BORDER;
-}
-
+/* A panel area (framework/panels.py): its ground. It draws no edge of its own — the seam
+   below already falls there, and two lines a pixel apart is what you get when both draw one. */
+#PanelAreaLeft,
+#PanelAreaRight,
 #PanelAreaBottom {
     background-color: $BG_ELEVATED;
-    border-top: 1px solid $BORDER;
+}
+
+/* ---- Seams --------------------------------------------------------------------------- */
+/* Two surfaces that meet at a splitter meet at a hairline: a 1 px $BORDER line inside a 7 px
+   handle — thin enough to read as a rule, wide enough to grab. One rule for every splitter
+   the application builds, present and future.
+
+   The two orientations are built differently because Qt paints them differently. A
+   *horizontal* handle honours the box model, so its line is the content box with the ground
+   either side as borders. A *vertical* one fills its whole rect with the background and draws
+   its borders outside it, so there the line is one border and the rest is left transparent —
+   which shows the splitter's own ground. Anything centred in a vertical handle the way the
+   horizontal one is comes out a 7 px slab; tests/test_theme.py renders both rather than
+   reading them.
+
+   No splitter names a ground of its own. A horizontal seam's 3 px of $BG_BASE beside an
+   elevated panel reads as a groove rather than as a mismatch, and one rule with no exceptions
+   is worth more than the three pixels. */
+QSplitter::handle:horizontal {
+    width: 1px;
+    background-color: $BORDER;
+    border-left: 3px solid $BG_BASE;
+    border-right: 3px solid $BG_BASE;
+}
+
+QSplitter::handle:vertical {
+    height: 6px;
+    background-color: transparent;
+    border-bottom: 1px solid $BORDER;
+}
+
+/* Under the cursor the line thickens and strengthens; while it is dragged it is the accent.
+   The handle stays 7 px through all of it, so nothing either side moves as the pointer
+   crosses it. Pressed comes last: a handle being dragged is hovered too. */
+QSplitter::handle:horizontal:hover {
+    width: 3px;
+    background-color: $BORDER_STRONG;
+    border-left-width: 2px;
+    border-right-width: 2px;
+}
+
+QSplitter::handle:vertical:hover {
+    height: 5px;
+    border-bottom: 2px solid $BORDER_STRONG;
+}
+
+QSplitter::handle:horizontal:pressed {
+    background-color: $ACCENT;
+}
+
+QSplitter::handle:vertical:pressed {
+    border-bottom-color: $ACCENT;
+}
+
+/* The pane you are in, and only while the window is split (framework/tabs.py). Transparent
+   otherwise, so the mark costs no layout shift and an unsplit window shows nothing. */
+#ActivityPane {
+    border-top: 2px solid transparent;
+}
+
+#ActivityPane[active="true"] {
+    border-top-color: $ACCENT;
 }
 
 /* The index tree, whose folders come from whoever registered them. */

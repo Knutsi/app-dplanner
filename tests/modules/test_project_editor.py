@@ -24,7 +24,15 @@ from dplanner.framework.context import SCOPE_SELECTION
 from dplanner.modules.project_editor.modes import CONNECT, IDLE, PAN
 from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W, snapped
-from dplanner.modules.project_editor.renderers import FILL_ALPHA
+from dplanner.modules.project_editor.renderers import (
+    BADGE_INSET,
+    FILL_ALPHA,
+    ICON_D,
+    ICON_GAP,
+    LIFT,
+    PAINT_MARGIN,
+    medallion_end,
+)
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef
 from dplanner.modules.step_properties.module import PANEL_ID as STEP_PANEL_ID
 from dplanner.theme import apply_theme
@@ -1444,3 +1452,32 @@ def test_a_node_over_a_region_still_drags_as_a_node(app, services, project, tab)
         0.0,
         0.0,
     )
+
+
+# -- the node's top edge, which two decorations share -------------------------------------------
+
+
+def test_the_medallion_row_leaves_the_badge_less_room_the_more_it_holds():
+    """The row and the badge start from opposite ends of the same 220 px edge.
+
+    A step wearing every aspect and carrying a milestone label used to paint one over the
+    other; the badge asks how far the row reached instead of assuming it may claim a fixed
+    share. The row's advance already includes the trailing gap, which is why one term covers
+    both the medallions and the space after them.
+    """
+    assert medallion_end(()) == BADGE_INSET
+    assert medallion_end(("tag",)) == BADGE_INSET + ICON_D + ICON_GAP
+    assert medallion_end(("tag", "layers")) > medallion_end(("tag",))
+
+
+def test_a_bare_node_still_gives_its_badge_the_share_it_always_had():
+    """With no medallions the row leaves more room than a badge may claim, so the elide
+    budget is the fraction it always was — this change costs an undecorated node nothing."""
+    assert NODE_W - BADGE_INSET - medallion_end(()) > NODE_W * 0.6
+
+
+def test_a_medallion_stays_inside_the_item_that_paints_it():
+    """Medallions straddle the top edge and rise with a selected node's lift. ``PAINT_MARGIN``
+    is what ``boundingRect`` is made of, so growing ``ICON_D`` without measuring it here is
+    how a selected step loses the top half of its icons."""
+    assert ICON_D / 2 + 1.0 + LIFT <= PAINT_MARGIN

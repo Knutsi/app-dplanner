@@ -20,6 +20,11 @@ right-click menus, undo coalescing and autosave learn anything at all.
 touching a pane. A ``currentChanged`` from a background group never does: closing a tab in a
 pane the user is not in (which happens whenever a project is deleted) must not steal their
 place.
+
+**And a split window says which pane that is.** :meth:`TabHost._paint_active` dims everyone
+else's tab titles and puts an accent edge on the pane you are in — only while there is more
+than one, since one pane is the whole window. Both cues are set in that one place so they
+cannot disagree; the edge is drawn by :class:`_Pane`, which exists for that and nothing else.
 """
 
 from collections.abc import Callable
@@ -28,6 +33,7 @@ from PySide6.QtCore import QEvent, QObject, QPoint, Qt
 from PySide6.QtGui import QFont, QPaintEvent
 from PySide6.QtWidgets import (
     QApplication,
+    QFrame,
     QSplitter,
     QStyle,
     QStyleOptionTab,
@@ -92,6 +98,36 @@ class _TabGroup(QTabWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setTabBar(_PreviewTabBar(self))
+
+
+class _Pane(QFrame):
+    """One group's seat in the splitter, and where the "you are here" mark is drawn.
+
+    The mark cannot go on the group itself. ``setDocumentMode(True)`` means ``QTabWidget``
+    paints no pane frame, so there is no ``::pane`` for a stylesheet to reach; and anything a
+    widget paints for itself is covered by its own children. A frame around it has neither
+    problem, and it costs the host nothing — ``group.parentWidget()`` is the pane, so there is
+    no second map to keep in step.
+
+    The edge is transparent until :meth:`TabHost._paint_active` says otherwise, so marking a
+    pane never moves what is inside it.
+    """
+
+    def __init__(self, group: QTabWidget, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("ActivityPane")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(group)
+
+    def set_active(self, active: bool) -> None:
+        """Wear the accent edge, or stop. A repolish is what makes the property take."""
+        if self.property("active") == active:
+            return
+        self.setProperty("active", active)
+        self.style().unpolish(self)
+        self.style().polish(self)
 
 
 class TabHost(QWidget):
@@ -345,9 +381,13 @@ class TabHost(QWidget):
         )
         group.tabBar().tabMoved.connect(lambda _frm, to, g=group: self._on_tab_moved(g, to))
         self._groups.insert(position, group)
-        self._splitter.insertWidget(position, group)
+        self._splitter.insertWidget(position, _Pane(group, self))
         self._even_sizes()
         self._watcher.set_watching(len(self._groups) > 1)
+        if len(self._groups) > 1:
+            # The very first group is made before ``_active`` exists — and there is nothing to
+            # mark until a second pane arrives to be confused with it, which is the same thing.
+            self._paint_active()
         return group
 
     def _drop_group(self, group: QTabWidget) -> None:
@@ -359,11 +399,18 @@ class TabHost(QWidget):
         self._groups.remove(group)
         if self._active is group:
             self._active = self._groups[0]
-        # QSplitter has no removeWidget; reparenting is what takes it out, synchronously.
-        group.setParent(None)
-        group.deleteLater()
+        # QSplitter has no removeWidget; reparenting is what takes it out, synchronously. It
+        # is the pane that sits in the splitter, and it takes its group down with it.
+        pane = group.parentWidget()
+        if pane is not None:
+            pane.setParent(None)
+            pane.deleteLater()
         self._even_sizes()
         self._watcher.set_watching(len(self._groups) > 1)
+        # ``_announce`` short-circuits when the active group and activity are both unchanged,
+        # which is exactly what closing the *other* pane's last tab looks like — so the mark
+        # is cleared from here rather than left standing on a window that is no longer split.
+        self._paint_active()
 
     def _even_sizes(self) -> None:
         if self._groups:
@@ -528,16 +575,26 @@ class TabHost(QWidget):
             self._paint_active()
 
     def _paint_active(self) -> None:
-        """Dim the inactive groups' tabs, so the pane whose menus you are seeing is obvious.
+        """Say which pane speaks for the user: an accent edge on it, its neighbours' tabs dim.
 
-        Done with the palette rather than a stylesheet: styling a QTabBar through QSS
-        replaces its whole native rendering, and these tabs are deliberately unstyled.
+        The dimming is done with the palette rather than a stylesheet: styling a QTabBar
+        through QSS replaces its whole native rendering, and these tabs are deliberately
+        unstyled. The edge is a stylesheet property on the pane around the group, which has
+        no such objection — see :class:`_Pane`.
+
+        **The edge appears only while the window is split.** One pane is the whole window and
+        there is nothing to tell it apart from; that is the same condition
+        :class:`_ActiveGroupWatcher` is installed under, because it is the same fact.
         """
+        split = len(self._groups) > 1
         primary = self.palette().text().color()
         faded = self.palette().text().color()
         faded.setAlpha(110)
         for group in self._groups:
             colour = primary if group is self._active else faded
+            pane = group.parentWidget()
+            if isinstance(pane, _Pane):
+                pane.set_active(split and group is self._active)
             bar = group.tabBar()
             for index in range(group.count()):
                 bar.setTabTextColor(index, colour)

@@ -117,9 +117,13 @@ SELECTED_FILL_GAIN = 1.6
 CHIP_H = 14.0
 
 # The icon medallions on the top edge, left end: one small circle per aspect kind a step
-# carries. Sized like the badge, and bound by the same boundingRect inequality.
-ICON_D = 14.0
+# carries, bound by the same boundingRect inequality the badge is.
+ICON_D = 16.8
 ICON_GAP = 4.0
+# The glyph inside one, as the share of it these shapes were drawn at (8 in 14). Derived, so
+# sizing a medallion sizes its glyph — every shape in theme/icons.py scales off the rect it is
+# handed, and it was a literal 8.0 here that kept them from following.
+ICON_GLYPH = ICON_D * 4 / 7
 
 # The pill on the second line: a small status label (a PR, say) beside the subtitle.
 PILL_H = 14.0
@@ -131,11 +135,15 @@ GLYPH_SIZE = 9.0
 GLYPH_GAP = 5.0
 
 # How far paint reaches outside the body, in every direction: the link handle (grown by
-# connect mode's emphasis), a badge's rise or a chip's fall, the lift, and the shadow. It is
-# what ``StepNodeItem.boundingRect`` is made of, so a new decoration is measured here or it
-# is clipped there.
+# connect mode's emphasis), a badge's or a medallion's rise, a chip's fall, the lift, and the
+# shadow. It is what ``StepNodeItem.boundingRect`` is made of, so a new decoration is measured
+# here or it is clipped there.
 PAINT_MARGIN = max(
-    HANDLE_R + 4.0, BADGE_H / 2 + 1.0 + LIFT, CHIP_H / 2 + 1.0, SHADOW_DROP + SHADOW_SPREAD + 1.0
+    HANDLE_R + 4.0,
+    BADGE_H / 2 + 1.0 + LIFT,
+    ICON_D / 2 + 1.0 + LIFT,
+    CHIP_H / 2 + 1.0,
+    SHADOW_DROP + SHADOW_SPREAD + 1.0,
 )
 
 BAR_TONES = {"good": VALID_TINT, "busy": BUSY_TINT, "bad": INVALID_TINT}
@@ -232,7 +240,9 @@ def paint_node(
     paint_detail_line(painter, inner, subtitle, accent, text_colour, faded)
     paint_icon_medallions(painter, palette, accent.icons)
     if accent.badge:
-        paint_badge(painter, palette, accent.badge)
+        paint_badge(
+            painter, palette, accent.badge, NODE_W - BADGE_INSET - medallion_end(accent.icons)
+        )
     if accent.chip_text:
         paint_chip(painter, palette, accent.chip_text, accent.chip_tone)
     paint_handle(painter, palette, state)
@@ -443,19 +453,23 @@ def paint_detail_line(
         )
 
 
-def paint_badge(painter: QPainter, palette: QPalette, text: str) -> None:
+def paint_badge(painter: QPainter, palette: QPalette, text: str, room: float) -> None:
     """A pill on the top edge, right end: the milestone label, sitting on the border.
 
     It rises half its height above the node, which is why it must stay inside the item's
-    ``boundingRect`` margin — ``BADGE_H / 2 + 1 <= HANDLE_R + 4`` keeps that true, and the
-    chip on the bottom edge owes the same inequality.
+    ``PAINT_MARGIN`` — and the chip on the bottom edge owes the same inequality.
+
+    ``room`` is what the medallion row on the other end of the edge leaves it. The label is
+    elided to whichever is less, that or the fraction of the node a badge may claim: a step
+    wearing every aspect and a long milestone name has to give way somewhere, and it is the
+    name that can be read from the panel.
     """
     font = painter.font()
     small = painter.font()
     small.setPointSizeF(max(6.0, font.pointSizeF() - 2.0))
     painter.setFont(small)
     metrics = painter.fontMetrics()
-    shown = metrics.elidedText(text, Qt.TextElideMode.ElideRight, int(NODE_W * 0.6))
+    shown = metrics.elidedText(text, Qt.TextElideMode.ElideRight, int(min(NODE_W * 0.6, room)))
     width = metrics.horizontalAdvance(shown) + 2 * BADGE_PAD
     pill = QRectF(NODE_W - BADGE_INSET - width, -BADGE_H / 2, width, BADGE_H)
     painter.setBrush(BADGE_TINT)
@@ -488,6 +502,11 @@ def paint_chip(painter: QPainter, palette: QPalette, text: str, tone: str) -> No
     painter.setFont(font)
 
 
+def medallion_end(icons: tuple[str, ...]) -> float:
+    """Where the medallion row leaves off — the first x another top-edge decoration may use."""
+    return BADGE_INSET + sum(ICON_D + ICON_GAP for _ in icons)
+
+
 def paint_icon_medallions(painter: QPainter, palette: QPalette, icons: tuple[str, ...]) -> None:
     """One small circle per aspect kind, on the top edge's left end — the badge's opposite.
 
@@ -505,7 +524,9 @@ def paint_icon_medallions(painter: QPainter, palette: QPalette, icons: tuple[str
         painter.setBrush(fill)
         painter.setPen(QPen(border, 1.0))
         painter.drawEllipse(centre, ICON_D / 2, ICON_D / 2)
-        glyph = QRectF(centre.x() - 4.0, centre.y() - 4.0, 8.0, 8.0)
+        glyph = QRectF(
+            centre.x() - ICON_GLYPH / 2, centre.y() - ICON_GLYPH / 2, ICON_GLYPH, ICON_GLYPH
+        )
         if kind == "tag":
             paint_tag_glyph(painter, glyph, ink)
         elif kind == "spark":

@@ -509,3 +509,45 @@ def test_the_tab_bar_wears_the_preview_mark(host):
 
     host.open("thing", "b")
     assert tab_bar(host)._preview_index == -1
+
+
+# -- which pane speaks for the user -------------------------------------------------------------
+
+
+def panes(host):
+    """Each group's seat, in splitter order, with whether it wears the mark."""
+    return [
+        (group.parentWidget(), bool(group.parentWidget().property("active")))
+        for group in host._groups
+    ]
+
+
+def test_one_pane_is_never_marked(host):
+    """A window that is not split has nothing to tell its pane apart from."""
+    host.open("thing", "a")
+    assert [marked for _, marked in panes(host)] == [False]
+
+
+def test_a_split_window_marks_the_pane_you_are_in(host):
+    host.open("thing", "a")
+    host.open("thing", "b")
+    host.move_current_right()
+    assert [marked for _, marked in panes(host)] == [False, True]
+
+    host.focus(host.activities()[0])
+    assert [marked for _, marked in panes(host)] == [True, False]
+
+
+def test_the_mark_goes_when_the_split_does(host):
+    """Closing the *other* pane's last tab leaves the active group and activity both
+    unchanged, so ``_announce`` short-circuits — and the mark would stand on an unsplit
+    window if ``_drop_group`` did not clear it itself."""
+    first = host.open("thing", "a")
+    host.open("thing", "b")
+    host.move_current_right()
+    host.focus(first)
+    assert [marked for _, marked in panes(host)] == [True, False]
+
+    host.close_activity(host.activities()[1])
+    assert host.group_count() == 1
+    assert [marked for _, marked in panes(host)] == [False]
