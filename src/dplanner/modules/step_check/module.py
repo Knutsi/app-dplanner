@@ -41,7 +41,7 @@ class StepCheckModule:
                 id="check.toggle",
                 label=SPEC.label,
                 menu="Step",
-                group="type",
+                group="classify",
                 submenu="Type",
                 order=60,
                 tip="Gather every test this step waits on, so a run can be scoped to it",

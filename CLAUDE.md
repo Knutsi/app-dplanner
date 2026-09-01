@@ -361,11 +361,33 @@ root, stop and look for the registry or capability you have not found yet.
 - **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
   `MENU_STRUCTURE`, so anything with a context menu owns a menu in that table — the canvas has
   `Step`, the index tree has `Project`, the tab bar renders View's Tabs submenu (via
-  `build_menu`'s `submenu` filter). Make the thing under the cursor
+  `build_menu`'s `submenu` filter), and the canvas toolbar's New button drops Step ▸ New down
+  the same way (`ActionToolbar`'s `menus`). Make the thing under the cursor
   current *first*, then build; the menu then reads the same context every other presenter does.
   **A text widget's own standard menu is the exception**: `ProseEdit` appends *Insert
   Image…* to `createStandardContextMenu()`, because a verb acting on one widget's caret
   belongs in no menu bar and would be greyed everywhere else.
+- **A submenu is one child menu per title, and a group change draws the rule *inside* it.**
+  Both presenters agree (`framework/menubar.py`, `framework/action_menu.py`), so two groups
+  can feed one submenu — what a test *is* and what it *did* — and a group that only feeds an
+  existing child menu costs the menu itself no line. Several submenus therefore sit in one
+  group as a band (Step's `classify` holds Type, Status and Test), and since a child menu
+  sits at its first entry's `order`, siblings in one group claim bands of it — the one place
+  `order` says more than "rank inside this group", written down in `menus.py`.
+  `ARCHITECTURE.md`'s *A submenu is one child menu per title* has the reasoning.
+- **An `ActionSpec` may carry a glyph, and only the pop-ups paint it.** `icon` is a
+  `(QColor) -> QIcon` painter, rendered by `build_menu`, `append_action` and a toolbar
+  dropdown — all built fresh on every open. The menu bar's QActions outlive every theme
+  change, so a colour baked into one goes stale; that is the same trap as `option.palette`.
+  A `StepKind` names its **medallion glyph** as a string, so `kinds.py` stays Qt-free and one
+  declaration puts the same glyph on the menu entry, the toolbar dropdown and the node.
+- **A picked node is lifted, not recoloured.** Selection thickens the border to the accent,
+  *gains* whatever fill the node already had (so a picked milestone is still purple), lifts
+  the card two pixels over a soft shadow clipped to the ground around it — never under it,
+  the fill is translucent — and claims a Z of its own. `PAINT_MARGIN` is the one number every
+  decoration is measured against and `boundingRect` is exactly it, **constant whether or not
+  the node is selected**. `ARCHITECTURE.md`'s *A picked node is lifted, not recoloured* has
+  the reasoning.
 - **Derived facts are computed, never stored** — the topological order in
   `domain/ordering.py` is the reference, and `domain/schedule.py` is the same walk carrying
   estimates. Storing one means it can disagree with what it came from, and the CLI is what
@@ -465,7 +487,10 @@ root, stop and look for the registry or capability you have not found yet.
   command**, because a gesture is one undo. Where it lands is `GraphView.last_click`, which
   every button press records *before* the mode stack sees it, and which a right-click
   refreshes so the menu's own New lands where the menu was raised. No click yet means no
-  stored position, which is the ambient layout doing what it always did.
+  stored position, which is the ambient layout doing what it always did. The step then
+  becomes the **selection** and the remembered point steps one row down (`placement.below()`),
+  both through the `created` seam — they belong to the canvas, not to the verb — so New twice
+  in a row leaves two nodes rather than one hiding another.
 - **What a collector gathers is one verb: `dplanner scope show`.** In `cli/scopes.py`, the
   cross-feature home — a check, a feature and a milestone are one derivation asked three
   ways, so three near-copies of the report is exactly what that file prevents. It also owns

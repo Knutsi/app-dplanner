@@ -109,7 +109,7 @@ class EstimationModule:
                 id="estimate.toggle",
                 label=SPEC.label,
                 menu="Step",
-                group="type",
+                group="classify",
                 submenu="Type",
                 order=70,
                 tip="Size this step in working days; a milestone has no work of its own",
@@ -129,7 +129,8 @@ class EstimationModule:
                 label="&Estimate Steps",
                 menu="Step",
                 group="open",
-                order=10,
+                # After the Show verbs: the step's own panel leads the group it shares.
+                order=60,
                 tip="Size the selected steps — or the whole project — in one list",
                 state=self._can_estimate,
                 run=self._open_for_context,

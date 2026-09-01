@@ -5,6 +5,8 @@ resource pipeline, and taking the colour as a parameter lets the same glyph read
 dark binder and the light corkboard cards alike.
 """
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 
@@ -538,3 +540,21 @@ def info_icon(color: str | QColor) -> QIcon:
     painter.drawLine(QPointF(8.0, 7.6), QPointF(8.0, 11.0))
     painter.end()
     return QIcon(pixmap)
+
+
+# The medallion vocabulary the canvas painted first, as row and menu icons: one painter per
+# kind name a step can wear ("tag" a milestone, "layers" a feature, "spark" an agent step,
+# "beaker" one carrying tests, "shield" a check). It lives here, beside the glyphs, so a
+# surface that shows what kind a step is looks it up rather than keeping its own table.
+GLYPH_ICONS: dict[str, Callable[[str | QColor], QIcon]] = {
+    "tag": tag_icon,
+    "layers": layers_icon,
+    "spark": spark_icon,
+    "beaker": beaker_icon,
+    "shield": shield_icon,
+}
+
+
+def glyph_painter(kind: str) -> Callable[[QColor], QIcon] | None:
+    """The painter for one kind name, or None for a name this build has no glyph for."""
+    return GLYPH_ICONS.get(kind)

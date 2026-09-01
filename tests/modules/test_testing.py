@@ -229,7 +229,12 @@ def step(services, project):
 def test_the_type_toggles_sit_beside_release_and_agent(services):
     for action_id, order in (("test.toggle", 50), ("check.toggle", 60)):
         spec = services.actions.spec(action_id)
-        assert (spec.menu, spec.group, spec.submenu, spec.order) == ("Step", "type", "Type", order)
+        assert (spec.menu, spec.group, spec.submenu, spec.order) == (
+            "Step",
+            "classify",
+            "Type",
+            order,
+        )
 
 
 def test_toggling_test_on_gives_the_step_its_first_test(services, step):

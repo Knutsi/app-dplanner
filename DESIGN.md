@@ -129,6 +129,12 @@ would not; the Covers tab's New/Cumulative switch is the worked example.
   `QColor`s that read on every theme (deliberate exception #2 — see the diff highlighter
   in `modules/sync/view.py`); never opaque theme-specific backgrounds.
 - Every other colour comes from a `Theme` field, through `theme.qss` or the palette.
+- **A selected item is lifted, not recoloured.** The accent goes on the border; the item's
+  own fill *gains* rather than being replaced, so whatever the colour was saying — a
+  milestone is purple, finished work is green — it still says while the item is picked. Where
+  a surface can afford it (a canvas), a couple of pixels of rise over a soft shadow is what
+  makes the difference unmistakable without a second colour. `renderers.paint_node` is the
+  worked example.
 
 ## Lists of rich items
 

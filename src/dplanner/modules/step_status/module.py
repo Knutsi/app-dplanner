@@ -49,9 +49,11 @@ class StepStatusModule:
                     id=f"status.{status}",
                     label=status.replace("-", " ").title(),
                     menu="Step",
-                    group="status",
+                    group="classify",
                     submenu="Status",
-                    order=order * 10,
+                    # The 200s: Status is the second child menu of the classify band, and a
+                    # child menu sits at its first entry's order. See dplanner/menus.py.
+                    order=200 + order * 10,
                     tip=f"Mark this step {status.replace('-', ' ')}",
                     state=self._current(status),
                     run=self._setter(status),

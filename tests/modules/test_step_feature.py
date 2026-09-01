@@ -91,7 +91,7 @@ def step(services, make_project):
 
 def test_the_feature_toggle_sits_in_the_type_submenu(services):
     spec = services.actions.spec("feature.toggle")
-    assert spec.menu == "Step" and spec.group == "type" and spec.submenu == "Type"
+    assert spec.menu == "Step" and spec.group == "classify" and spec.submenu == "Type"
 
 
 def test_a_feature_shows_checked_and_a_plain_step_not(services, step):

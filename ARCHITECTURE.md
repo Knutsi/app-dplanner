@@ -357,6 +357,49 @@ The presenters split accordingly: the menu bar, toolbars and `build_menu`'s righ
 popups all render a disabled action greyed; only the command palette filters to what is
 runnable, because a fuzzy search over verbs that cannot run helps nobody.
 
+### A submenu is one child menu per title, and groups separate inside it
+
+A spec names a `menu`, a `group` and optionally a `submenu`, and for a long time the child
+menu was keyed by *(group, title)*. The Step menu paid for it in the open: `test` (Add,
+Archive, Put Back) and `test_result` (Mark Ok, Failed, Skipped, Clear) both named the submenu
+`Test`, so the menu rendered **two child menus with the same name**, one under the other,
+with a rule between them. `CLAUDE.md` described the behaviour the keying prevented.
+
+The fix is to say what was meant: a submenu is one child menu per title within a menu, and a
+**child menu is a container of the same kind the menu is** — it holds the menu's groups, and
+a rule is drawn where its entries change group, under the same never-leading, never-dangling
+rule the menu bar has always applied to itself. Both presenters do it (`framework/menubar.py`
+pre-creates a hidden separator per group boundary in every container; `action_menu.fill_menu`
+draws one as it goes), and `tests/framework/test_menubar.py` asserts they render the same
+shape, because a menu bar that disagreed with a right-click is the one thing four presenters
+of one registry exist to prevent.
+
+Two things fall out of it that the Step menu needed. A group that only feeds an existing
+child menu adds **no rule to the menu itself** — only the child's menuAction carries a group
+there — so "what a test did" can be its own group without costing the menu a line. And
+several submenus can sit in one group as a band: the Step menu's `classify` holds Type,
+Status and Test with no rules between them, because a rule between two adjacent child menus
+separates nothing that their names do not already separate. That is what took the canvas's
+right-click menu from eight rules to five. The cost is small and worth naming: a child menu
+sits at its first entry's `order`, so sibling child menus in one group have to claim bands of
+it (Type the 10s, Status the 200s, Test the 300s — written down in `dplanner/menus.py`).
+`order` still only ranks inside one group; it is now also how two child menus in that group
+know which comes first.
+
+### An action may carry a glyph, and only the pop-ups paint it
+
+`ActionSpec.icon` is a painter — `(QColor) -> QIcon` — not a QIcon, and the presenters that
+render it are the ones built fresh on every open: `build_menu`, `append_action`, a toolbar
+button's dropdown. The menu bar deliberately does not, and the reason is the same trap as
+*The palette a painter is handed is a snapshot*: its QActions are created once and live for
+the application, so a colour baked into one at startup would still be there three themes
+later. A pop-up has no such problem — it is thrown away when it closes.
+
+It earns its place on the New submenu, where each kind wears the very medallion its node will
+wear, and it is what lets the canvas toolbar's New button drop that submenu down (through
+`fill_menu`, so it is the menu and not a copy) instead of the module hand-building a list of
+kinds it is not allowed to know.
+
 ## Where a panel goes
 
 The window has a centre — the tab groups — and three areas around it: **left, right and
@@ -706,6 +749,41 @@ opening a tab dirtied the project, autosave flushed it 1.5 seconds later, and ev
 agent created through the CLI grew a position file the next time a window happened to open. A
 test asserts the project is unchanged after a tab is opened, because that is the kind of rule
 that decays silently.
+
+### A picked node is lifted, not recoloured
+
+Selection used to be a one-pixel-wider border in the accent, and on a graph of twenty nodes
+it was genuinely hard to see which one you had. The replacement is four things that each say
+"this one" in a different register, and one thing it deliberately is **not**.
+
+The border thickens and takes the accent (2.5 px). The fill **gains**: whatever alpha the
+node's own fill had, half again. The node draws two pixels **up**, over a soft shadow left at
+its seat — four rounded rings, each wider and fainter, because a `QPainter` has no blur. And
+the item claims a Z of its own while selected, since nodes otherwise share one and the
+stacking order is whichever `sync` happened to add last, which would let a neighbour crop the
+shadow.
+
+What it is not is a colour of its own. A wash of the accent over the body was the first
+attempt and it was wrong for a reason worth keeping: a selected milestone stopped being
+purple, a selected feature stopped being teal, and a selected done step stopped looking done.
+The kinds' body colours are identity, and identity should not be something the pointer can
+take away. A gain on the node's own fill preserves every one of them, and reads on light and
+dark alike — the fill is ink over the canvas, so *more* of it means more contrast in either
+direction.
+
+The shadow is **clipped to the ground around the card**, not painted under it. A node's fill
+is translucent by design (`FILL_ALPHA` ink over the canvas), so rings left underneath darken
+the fill itself, and a selected step reads as a hole rather than as a card off the table.
+That was a real bug in the first cut of this: on a light theme the selected node came out a
+flat dark grey and nothing about the code looked wrong. It is caught now by the same test
+that checks the fill gain — a body can only come out at exactly the gained alpha over the
+ground if nothing at all is painted underneath it.
+
+One number ties it together: `PAINT_MARGIN` in `renderers.py` is the furthest any decoration
+reaches out of the body — handle, badge, chip, lift, shadow — and `StepNodeItem.boundingRect`
+is exactly that, *constant whether or not the node is selected*. A rect that grew on selection
+would invalidate the wrong region, and the shadow would be left on the canvas when the
+selection moved on.
 
 ## Two writers, one folder
 
@@ -1106,6 +1184,11 @@ which additionally *mutes* its node, so that pair is separated by weight as well
 The nearest claimed hue is the agent-run chip's teal, and that is a labelled pill on the
 bottom edge of a running step, never a body.
 
+A kind also names its **medallion glyph** — a name in the canvas's vocabulary ("layers",
+"tag", "spark", "shield"), never a painter, so `kinds.py` stays Qt-free. That one string is
+what puts the same glyph on the Step ▸ New entry, on the toolbar's New dropdown and on the
+node itself, from one declaration in the composition root.
+
 ### A step placed by pointing at a spot earns a stored position
 
 The ambient layout is never persisted (*An explicit sort persists; the ambient layout never
@@ -1126,6 +1209,14 @@ instead of one. A right-click records too, so the menu's own New lands where the
 raised — and the context handler records again for the keyboard menu key, which sends no
 press at all and would otherwise reuse a stale point. A canvas nobody has clicked answers
 `None`, and New falls back to the ambient layout, which is what it always did.
+
+Two smaller things ride on the same seam, and both belong to the canvas rather than to the
+verb, which is why `StepVerbs` takes a `created` callback rather than doing them itself. The
+new step becomes the **selection**, so the step panel is already showing what was just made
+and naming it and describing it are one gesture. And the remembered point **steps one row
+down** — `placement.below()`, the automatic layout's own row pitch — so pressing New twice
+leaves two nodes where a stale point would have hidden one exactly under the other. A
+double-click gets both too: it pointed at a spot in the same sense.
 
 ## The description is the instructions
 

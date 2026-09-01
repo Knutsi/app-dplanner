@@ -211,7 +211,7 @@ def second_step(services, panel_step):
 
 def test_the_release_toggle_action_exists(services):
     spec = services.actions.spec("milestone.toggle")
-    assert spec.menu == "Step" and spec.group == "type" and spec.submenu == "Type"
+    assert spec.menu == "Step" and spec.group == "classify" and spec.submenu == "Type"
 
 
 def test_a_release_step_shows_checked_and_a_plain_one_not(services, panel_step):

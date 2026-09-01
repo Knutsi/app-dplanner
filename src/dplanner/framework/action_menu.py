@@ -5,11 +5,31 @@ hand-maintained copy of it. One builder, reading the same registry through the s
 context, is what keeps four presentations of the same verbs from drifting apart.
 """
 
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import QMenu, QWidget
 
-from dplanner.framework.action_registry import ActionRegistry, ActionState
+from dplanner.framework.action_registry import ActionRegistry, ActionSpec, ActionState
 from dplanner.framework.context import ContextService
+
+
+def _ink(target: QMenu) -> QColor:
+    """The colour a glyph is painted in: this menu's own text colour, read now.
+
+    A pop-up is built fresh every time it opens, so the colour cannot go stale — which is
+    why an action's glyph is a pop-up presenter's business and not the menu bar's, whose
+    QActions outlive every theme change.
+    """
+    return QColor(target.palette().text().color())
+
+
+def _decorate(entry: QAction, spec: ActionSpec, state: ActionState, target: QMenu) -> None:
+    """The one presenter policy applied to a built entry: enablement, check, glyph."""
+    entry.setEnabled(state.enabled)
+    if state.checked is not None:
+        entry.setCheckable(True)
+        entry.setChecked(state.checked)
+    if spec.icon is not None:
+        entry.setIcon(spec.icon(_ink(target)))
 
 
 def append_action(
@@ -30,24 +50,22 @@ def append_action(
     if not state.visible:
         return None
     entry = target.addAction(state.label if state.label is not None else spec.label)
-    entry.setEnabled(state.enabled)
-    if state.checked is not None:
-        entry.setCheckable(True)
-        entry.setChecked(state.checked)
+    _decorate(entry, spec, state, target)
     entry.triggered.connect(
         lambda _checked=False, sid=spec.id: actions.run(sid, context_service.current())
     )
     return entry
 
 
-def build_menu(
+def fill_menu(
+    target: QMenu,
     actions: ActionRegistry,
     context_service: ContextService,
     menu: str,
-    parent: QWidget,
     submenu: str | None = None,
 ) -> QMenu:
-    """One menu's visible actions as a context menu; a disabled one is greyed, not omitted.
+    """One menu's visible actions into an existing pop-up; a disabled one is greyed, not
+    omitted.
 
     Same policy as the menu bar — hidden means the capability is absent, disabled means "not
     right now", and the greyed entry's label carries the reason (`steps.link`'s refusals are
@@ -57,24 +75,24 @@ def build_menu(
     had when it opened.
 
     ``submenu=None`` (the norm) renders the whole menu, nesting child menus exactly as the
-    menu bar does: a child menu sits at its first visible spec's sort position, and one
-    whose entries are all hidden is never created. Naming a submenu renders just that child
-    menu's entries, flat — for a popup on a thing whose verbs live in a submenu, like the
-    tab bar's right-click.
+    menu bar does: **one child menu per title**, sitting at its first visible spec's sort
+    position, with a separator inside it wherever its entries change group. So two groups
+    can feed one submenu — what a test *is* and what it *did*, say — and get the rule
+    between them rather than two child menus with the same name. A child menu whose entries
+    are all hidden is never created. Naming a submenu renders just that child menu's
+    entries, flat — for a popup on a thing whose verbs live in a submenu, like the tab bar's
+    right-click, or a toolbar button that drops its verb's submenu down.
     """
     context = context_service.current()
-    popup = QMenu(parent)
     previous_group: str | None = None
-    submenus: dict[tuple[str, str], QMenu] = {}
+    submenus: dict[str, QMenu] = {}
+    submenu_group: dict[str, str] = {}  # Child title → the group its last entry came from.
 
-    def add_entry(target: QMenu, spec_id: str, label: str, state: ActionState) -> None:
-        action = target.addAction(label)
-        action.setEnabled(state.enabled)
-        if state.checked is not None:
-            action.setCheckable(True)
-            action.setChecked(state.checked)
+    def add_entry(child: QMenu, spec: ActionSpec, label: str, state: ActionState) -> None:
+        action = child.addAction(label)
+        _decorate(action, spec, state, child)
         action.triggered.connect(
-            lambda _checked=False, sid=spec_id: actions.run(sid, context_service.current())
+            lambda _checked=False, sid=spec.id: actions.run(sid, context_service.current())
         )
 
     for spec in actions.all_specs():
@@ -83,20 +101,36 @@ def build_menu(
         state = spec.state(context)
         if not state.visible:
             continue
+        label = state.label if state.label is not None else spec.label
         if submenu is None and spec.submenu is not None:
-            key = (spec.group, spec.submenu)
-            child = submenus.get(key)
+            child = submenus.get(spec.submenu)
             if child is None:
                 # The child menu lands here, at its first visible spec's sort position —
-                # so the group bookkeeping below must run for it exactly once.
+                # so the group bookkeeping below must run for it exactly once. A later
+                # group feeding the same child is not a top-level entry and must not move
+                # ``previous_group``, or the group after it would lose its rule.
                 if previous_group is not None and spec.group != previous_group:
-                    popup.addSeparator()
+                    target.addSeparator()
                 previous_group = spec.group
-                child = submenus[key] = popup.addMenu(spec.submenu)
-            add_entry(child, spec.id, state.label if state.label is not None else spec.label, state)
+                child = submenus[spec.submenu] = target.addMenu(spec.submenu)
+            elif submenu_group[spec.submenu] != spec.group:
+                child.addSeparator()
+            submenu_group[spec.submenu] = spec.group
+            add_entry(child, spec, label, state)
             continue
         if previous_group is not None and spec.group != previous_group:
-            popup.addSeparator()
+            target.addSeparator()
         previous_group = spec.group
-        add_entry(popup, spec.id, state.label if state.label is not None else spec.label, state)
-    return popup
+        add_entry(target, spec, label, state)
+    return target
+
+
+def build_menu(
+    actions: ActionRegistry,
+    context_service: ContextService,
+    menu: str,
+    parent: QWidget,
+    submenu: str | None = None,
+) -> QMenu:
+    """A fresh pop-up holding one menu's visible actions — see :func:`fill_menu`."""
+    return fill_menu(QMenu(parent), actions, context_service, menu, submenu)

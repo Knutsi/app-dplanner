@@ -100,7 +100,7 @@ class GithubModule:
                 id="github.toggle",
                 label=SPEC.label,
                 menu="Step",
-                group="type",
+                group="classify",
                 submenu="Type",
                 order=100,
                 tip="Track this step's branch and pull request; fill them in on the tab",

@@ -11,14 +11,21 @@ tab — or in a tab group the user is not in — shows what the *active* surface
 there is one ``ContextService``. Invisible while only one tab is on screen; visible once the
 window is split. If that ever matters, the fix is a ``set_active(bool)`` that greys the row
 when its group is not the active one, not a context per group.
+
+**A button may drop its verb's submenu down.** ``menus`` names, per action id, the
+``(menu, submenu)`` whose entries belong under that button's arrow: the button runs its own
+verb on a click and renders that child menu on the arrow — through ``fill_menu``, so it is
+the menu, never a copy of it, and it is refilled on every open against the context and the
+palette of that moment.
 """
 
 from collections.abc import Mapping, Sequence
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QToolButton, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QMenu, QSizePolicy, QToolButton, QWidget
 
+from dplanner.framework.action_menu import fill_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import Context, ContextService
 
@@ -31,6 +38,7 @@ class ActionToolbar(QWidget):
         action_ids: Sequence[str],
         button_text: Mapping[str, str] | None = None,
         parent: QWidget | None = None,
+        menus: Mapping[str, tuple[str, str]] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("ActionToolbar")
@@ -39,6 +47,8 @@ class ActionToolbar(QWidget):
         # Per-action face override (glyphs, short forms); the spec label becomes the
         # tooltip fallback so no meaning is lost on a compact button.
         self._button_text = dict(button_text or {})
+        # Action id → the (menu, submenu) that button drops down.
+        self._menus = dict(menus or {})
         self._buttons: dict[str, QToolButton] = {}
 
         layout = QHBoxLayout(self)
@@ -57,11 +67,39 @@ class ActionToolbar(QWidget):
             button.clicked.connect(
                 lambda _checked=False, a=action_id: registry.run(a, context.current())
             )
+            if action_id in self._menus:
+                self._attach_menu(button, *self._menus[action_id])
             layout.addWidget(button)
             self._buttons[action_id] = button
 
         self._unsubscribe = context.changed.connect(self._refresh)
         self._refresh(context.current())
+
+    def _attach_menu(self, button: QToolButton, menu: str, submenu: str) -> None:
+        """The arrow beside a button, rendering one child menu of the action table.
+
+        ``MenuButtonPopup``, not ``InstantPopup``: the button half still runs the verb, so
+        New makes a plain step in one click and the arrow is only for the other kinds. The
+        popup is refilled on every open — a verb's state, its label and the theme's ink can
+        all have changed since the last one.
+        """
+        popup = QMenu(button)
+        popup.aboutToShow.connect(lambda: self._refill(popup, menu, submenu))
+        button.setMenu(popup)
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+
+    def _refill(self, popup: QMenu, menu: str, submenu: str) -> None:
+        popup.clear()
+        fill_menu(popup, self._registry, self._context, menu, submenu)
+
+    def menu_for(self, action_id: str) -> QMenu | None:
+        """The dropdown a button carries, filled as it would open — a test's way in."""
+        button = self._buttons.get(action_id)
+        popup = button.menu() if button is not None else None
+        if popup is None or action_id not in self._menus:
+            return None
+        self._refill(popup, *self._menus[action_id])
+        return popup
 
     def set_button_icons(self, icons: Mapping[str, QIcon]) -> None:
         """Painted icons per action id; with an empty text override the button renders

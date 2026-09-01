@@ -186,7 +186,7 @@ class StepAgentInstructionModule:
                 id="agent.toggle",
                 label="Agent",
                 menu="Step",
-                group="type",
+                group="classify",
                 submenu="Type",
                 order=30,
                 tip="Mark this step for agent execution; its description is the briefing",

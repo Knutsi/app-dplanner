@@ -38,6 +38,19 @@ RADIUS = 8.0  # = theme.tokens.RADIUS_MD, matched by eye rather than import: thi
 PADDING = 12.0
 LINE_GAP = 4.0
 
+# A selected node is *lifted*: it draws this far up from where it sits, over a soft shadow
+# left behind at the seat. Two pixels is the whole effect — enough that the eye reads a card
+# picked up off the table, small enough that nothing appears to have moved. The edges still
+# meet the seat, which is what keeps the graph from twitching as the selection travels.
+LIFT = 2.0
+# The shadow under it: concentric rounded rects, each fainter and wider than the last, since
+# a QPainter has no blur. Constant black at low alpha, like every other semantic tint here
+# (DESIGN.md exception #2) — it darkens the ground under the card on any theme.
+SHADOW_LAYERS = 4
+SHADOW_SPREAD = 5.0  # How far the softest ring reaches past the body.
+SHADOW_DROP = 4.0  # How far below the seat the shadow falls.
+SHADOW_ALPHA = 30  # The innermost ring's; the outer ones fade from it.
+
 # The link handle: a dot on the node's right edge. Dragging from it means "then", so an
 # edge always runs left to right and its direction cannot be read the wrong way round.
 HANDLE_R = 5.0
@@ -94,6 +107,12 @@ BADGE_H = 14.0
 BADGE_PAD = 6.0
 BADGE_INSET = 10.0  # From the node's right edge, clear of the link handle's corner.
 
+# Selection: a thicker outline in the accent, and half again the fill the node already had.
+# A *gain* rather than a colour of its own is what lets a picked milestone stay purple and a
+# picked done step stay green — the accent is already saying "this one" at the border.
+SELECTED_BORDER_W = 2.5
+SELECTED_FILL_GAIN = 1.6
+
 # The chip on the bottom edge, left end — the badge's mirror, worn by a live agent run.
 CHIP_H = 14.0
 
@@ -110,6 +129,14 @@ PILL_MARGIN = 6.0
 PILL_FILL_ALPHA = 46
 GLYPH_SIZE = 9.0
 GLYPH_GAP = 5.0
+
+# How far paint reaches outside the body, in every direction: the link handle (grown by
+# connect mode's emphasis), a badge's rise or a chip's fall, the lift, and the shadow. It is
+# what ``StepNodeItem.boundingRect`` is made of, so a new decoration is measured here or it
+# is clipped there.
+PAINT_MARGIN = max(
+    HANDLE_R + 4.0, BADGE_H / 2 + 1.0 + LIFT, CHIP_H / 2 + 1.0, SHADOW_DROP + SHADOW_SPREAD + 1.0
+)
 
 BAR_TONES = {"good": VALID_TINT, "busy": BUSY_TINT, "bad": INVALID_TINT}
 CHIP_TONES = {
@@ -181,13 +208,23 @@ def paint_node(
     accent: NodeAccent,
     state: NodeState,
 ) -> None:
-    """The default node: body, two text lines, edge decorations, and the link handle."""
+    """The default node: body, two text lines, edge decorations, and the link handle.
+
+    A selected node is drawn :data:`LIFT` above its seat with a shadow left at it, so the
+    whole composition — badge, chip, medallions, handle — travels together. The shadow is
+    painted first and *unlifted*: it is the ground, not part of the card.
+    """
     body = QRectF(0, 0, NODE_W, NODE_H)
     text_colour = QColor(palette.text().color())
     if accent.muted:
         text_colour.setAlpha(MUTED_TEXT_ALPHA)
     faded = QColor(palette.text().color())
     faded.setAlpha(MUTED_SECONDARY_ALPHA if accent.muted else SECONDARY_ALPHA)
+
+    if state.selected:
+        paint_shadow(painter, body)
+        painter.save()
+        painter.translate(0.0, -LIFT)
 
     paint_body(painter, palette, body, accent, state)
     inner = body.adjusted(PADDING, PADDING, -PADDING, -PADDING)
@@ -199,6 +236,40 @@ def paint_node(
     if accent.chip_text:
         paint_chip(painter, palette, accent.chip_text, accent.chip_tone)
     paint_handle(painter, palette, state)
+    if state.selected:
+        painter.restore()
+
+
+def paint_shadow(painter: QPainter, body: QRectF) -> None:
+    """The soft dark ground a lifted node casts: rings of black, each wider and fainter.
+
+    Widest first so the tight, darkest ring lands on top; a QPainter has no blur, and four
+    rings at these alphas are indistinguishable from one at the sizes a node is drawn.
+
+    **Clipped to the ground around the card**, because a node's fill is translucent: rings
+    left under it would darken the fill itself and a selected step would read as a hole
+    rather than as a card off the table.
+    """
+    card = QPainterPath()
+    card.addRoundedRect(body.translated(0.0, -LIFT), RADIUS, RADIUS)
+    ground = QPainterPath()
+    ground.addRect(
+        body.adjusted(
+            -SHADOW_SPREAD, -SHADOW_SPREAD - LIFT, SHADOW_SPREAD, SHADOW_SPREAD + SHADOW_DROP
+        )
+    )
+    painter.save()
+    painter.setClipPath(ground.subtracted(card))
+    painter.setPen(Qt.PenStyle.NoPen)
+    for layer in range(SHADOW_LAYERS, 0, -1):
+        spread = SHADOW_SPREAD * layer / SHADOW_LAYERS
+        painter.setBrush(QColor(0, 0, 0, round(SHADOW_ALPHA / layer)))
+        painter.drawRoundedRect(
+            body.adjusted(-spread, -spread + SHADOW_DROP, spread, spread + SHADOW_DROP),
+            RADIUS + spread,
+            RADIUS + spread,
+        )
+    painter.restore()
 
 
 def paint_body(
@@ -208,7 +279,9 @@ def paint_body(
 
     A body tone tints the whole node and strengthens its border — this node is a
     different kind of thing, legible at any zoom — but selection and a link drag's
-    verdict still outrank it.
+    verdict still outrank it. Selection *deepens* whatever fill the node had rather than
+    painting one of its own, so a picked milestone is still purple and a picked done step
+    still green — and still recognisably fainter than the work around it.
     """
     muted = accent.muted
     toned = BODY_TONES.get(accent.body_tone)
@@ -218,7 +291,7 @@ def paint_body(
         fill = QColor(palette.text().color())
         fill.setAlpha(MUTED_FILL_ALPHA if muted else FILL_ALPHA)
     border = QColor(palette.highlight().color())
-    width = 2.0 if state.selected or state.link_state else 1.0
+    width = SELECTED_BORDER_W if state.selected else (2.0 if state.link_state else 1.0)
     if state.link_state == "valid":
         border = VALID_TINT
     elif state.link_state == "invalid":
@@ -230,7 +303,12 @@ def paint_body(
         else:
             border = QColor(palette.text().color())
             border.setAlpha(MUTED_BORDER_ALPHA if muted else 90)
+    if state.selected:
+        fill.setAlpha(min(255, round(fill.alpha() * SELECTED_FILL_GAIN)))
+    painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(fill)
+    painter.drawRoundedRect(body, RADIUS, RADIUS)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
     painter.setPen(QPen(border, width))
     painter.drawRoundedRect(body, RADIUS, RADIUS)
     if accent.bar_tone in BAR_TONES:

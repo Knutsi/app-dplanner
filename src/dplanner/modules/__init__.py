@@ -388,8 +388,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # "New ▸ Description" would be nonsense, which is why this is a named list
             # rather than the Type submenu. Ticket and Test are one line away if they ever
             # earn a place. The tuple order is the order the menu shows.
+            # The glyph on each is the medallion its node will wear, from the same
+            # vocabulary ``step_type_icons`` answers in — named once, here.
             step_kinds=(
-                StepKind("step_feature", "Feature", lambda _project: feature_write(True)),
+                StepKind(
+                    "step_feature", "Feature", lambda _project: feature_write(True), icon="layers"
+                ),
                 StepKind(
                     "step_milestone",
                     "Milestone",
@@ -398,13 +402,17 @@ def default_modules(services: "AppServices") -> list["Module"]:
                     lambda project: milestone_write(
                         next_milestone_label(milestone_labels(project))
                     ),
+                    icon="tag",
                 ),
                 StepKind(
                     "step_agent_instruction",
                     "Agent Step",
                     lambda _project: agent_write_state(True),
+                    icon="spark",
                 ),
-                StepKind("step_check", "Check", lambda _project: check_write(True)),
+                StepKind(
+                    "step_check", "Check", lambda _project: check_write(True), icon="shield"
+                ),
             ),
         )
     )

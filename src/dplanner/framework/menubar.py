@@ -7,7 +7,10 @@ simply does not fire, which is exactly the wanted behaviour.
 
 Group separators are pre-created the same way: one hidden separator QAction per group
 boundary, shown only when the groups on both sides hold a visible action — so a fully
-hidden group never leaves a dangling line, and menus still auto-hide when empty.
+hidden group never leaves a dangling line, and menus still auto-hide when empty. A **child
+menu is a container of the same kind**: one per title, holding the same group boundaries, so
+two groups feeding one submenu get the rule between them instead of a second child menu
+wearing the same name.
 """
 
 from PySide6.QtGui import QAction
@@ -35,30 +38,25 @@ class DynamicMenuBar:
         self._context = context
         self._actions: dict[str, QAction] = {}  # spec id → QAction
         self._menus: dict[str, QMenu] = {}
-        # (menu, group, submenu title) → child QMenu, created on first matching spec.
-        self._submenus: dict[tuple[str, str, str], QMenu] = {}
+        # (menu, submenu title) → child QMenu, created on first matching spec. Keyed by
+        # title rather than by group: a submenu is one child menu whatever feeds it.
+        self._submenus: dict[tuple[str, str], QMenu] = {}
         self._keys: dict[QAction, SortKey] = {}  # Every action, separators included.
-        # Per menu: the separator PRECEDING each group (group index ≥ 1).
-        self._separators: dict[str, dict[int, QAction]] = {}
+        self._menu_index = {name: index for index, name in enumerate(registry.menus.menus())}
+        # Per container — a menu (title None) or one of its child menus — the separator
+        # PRECEDING each group (group index ≥ 1).
+        self._separators: dict[tuple[str, str | None], dict[int, QAction]] = {}
 
         bar = window.menuBar()
         # Belt and braces alongside AA_DontUseNativeMenuBar (set in dplanner.app before the
         # QApplication exists): the in-window menu bar is what the stylesheet can reach.
         bar.setNativeMenuBar(False)
         bar.setObjectName("MainMenuBar")
-        for menu_index, (name, groups) in enumerate(registry.menus.items()):
+        for name in registry.menus.menus():
             menu = bar.addMenu(f"&{name}")
             menu.menuAction().setVisible(False)  # Hidden until something visible lands in it.
             self._menus[name] = menu
-            self._separators[name] = {}
-            for group_index in range(1, len(groups)):
-                separator = QAction(self._window)
-                separator.setSeparator(True)
-                separator.setVisible(False)
-                menu.addAction(separator)
-                # order -1 puts the separator ahead of every action in its group.
-                self._keys[separator] = (menu_index, group_index, -1, "")
-                self._separators[name][group_index] = separator
+            self._add_separators((name, None), menu)
 
         for spec in registry.all_specs():
             self._add_spec(spec)
@@ -95,9 +93,14 @@ class DynamicMenuBar:
         self._refresh_decorations()
 
     def _submenu(self, spec: ActionSpec, key: SortKey) -> QMenu:
-        """The child menu for a submenu spec, created at the first spec's sort position."""
+        """The child menu for a submenu spec, created at the first spec's sort position.
+
+        Its position is that first spec's, and a later group feeding the same title lands
+        inside it rather than beside it — which is what the parent's group bookkeeping
+        reads, since only the menuAction it holds carries a group.
+        """
         assert spec.submenu is not None
-        lookup = (spec.menu, spec.group, spec.submenu)
+        lookup = (spec.menu, spec.submenu)
         child = self._submenus.get(lookup)
         if child is None:
             parent = self._menus[spec.menu]
@@ -109,7 +112,31 @@ class DynamicMenuBar:
             else:
                 parent.insertMenu(before, child)
             self._submenus[lookup] = child
+            self._add_separators(lookup, child)
         return child
+
+    def _add_separators(self, container: tuple[str, str | None], menu: QMenu) -> None:
+        """One hidden separator per group boundary, inserted in sort order.
+
+        The same treatment for a menu and for a child menu of it: both hold entries from
+        the menu's groups, and both want the rule where the group changes.
+        """
+        menu_index = self._menu_index[container[0]]
+        slots: dict[int, QAction] = {}
+        for group_index in range(1, len(self._registry.menus.groups(container[0]))):
+            separator = QAction(self._window)
+            separator.setSeparator(True)
+            separator.setVisible(False)
+            # order -1 puts the separator ahead of every action in its group.
+            key: SortKey = (menu_index, group_index, -1, "")
+            self._keys[separator] = key
+            before = next((a for a in menu.actions() if self._keys[a] > key), None)
+            if before is None:
+                menu.addAction(separator)
+            else:
+                menu.insertAction(before, separator)
+            slots[group_index] = separator
+        self._separators[container] = slots
 
     def refresh(self, context: Context) -> None:
         for spec_id, action in self._actions.items():
@@ -130,8 +157,11 @@ class DynamicMenuBar:
         """Separator and menu visibility, derived from the actions' visibility."""
         # Child menus first: their menuAction's visibility feeds the group bookkeeping.
         for child in self._submenus.values():
-            child.menuAction().setVisible(any(a.isVisible() for a in child.actions()))
-        for name, menu in self._menus.items():
+            child.menuAction().setVisible(
+                any(a.isVisible() and not a.isSeparator() for a in child.actions())
+            )
+        for (name, title), separators in self._separators.items():
+            menu = self._menus[name] if title is None else self._submenus[(name, title)]
             group_visible = [False] * len(self._registry.menus.groups(name))
             for action in menu.actions():
                 if not action.isSeparator() and action.isVisible():
@@ -139,7 +169,8 @@ class DynamicMenuBar:
             # A separator shows only between visible groups: its own group must be
             # visible AND some earlier group too — never leading, never dangling.
             earlier = group_visible[0]
-            for group_index, separator in self._separators[name].items():
+            for group_index, separator in separators.items():
                 separator.setVisible(earlier and group_visible[group_index])
                 earlier = earlier or group_visible[group_index]
-            menu.menuAction().setVisible(any(group_visible))
+            if title is None:
+                menu.menuAction().setVisible(any(group_visible))

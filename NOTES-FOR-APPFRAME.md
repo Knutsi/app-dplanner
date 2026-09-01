@@ -961,6 +961,87 @@ costs the positional binding (see the highlighter note above, which is the same 
 from the other side).
 
 
+### A submenu was keyed by group, so one name could render twice
+
+**What.** `framework/menubar.py` and `framework/action_menu.py` both keyed a child menu by
+*(menu, group, title)*. Two groups naming the same submenu therefore produced **two child
+menus with the same name**, one after the other, with a group rule between them — which is
+exactly what DPlanner's Step ▸ Test looked like (what a test *is*, and what a run *recorded*,
+are two groups of verbs and one menu to a person).
+
+Now a child menu is keyed by *(menu, title)* and is a **container of the same kind the menu
+is**: it holds the menu's groups and draws a rule where its entries change group, under the
+same never-leading, never-dangling rule the menu bar already applied to top-level groups.
+`menubar.py` pre-creates one hidden separator per group boundary per container (the
+bookkeeping generalised from "per menu" to "per menu *or* child menu"); `action_menu.py` does
+the same as it builds. Two consequences the application wanted immediately: a group that only
+feeds an existing child menu adds no rule to the menu itself, and several child menus can
+therefore sit in one group as a band.
+
+**The cost, stated honestly.** A child menu still sits at its first entry's `order`, so two
+child menus in one group have to claim bands of it. `order` was documented as ranking only
+inside a group; it now also decides which of that group's child menus comes first. The
+alternative — a table naming each group's submenus in order — is more vocabulary for one
+menu's benefit, and we did not build it.
+
+`MenuStructure.items()` went with it — the construction loop it existed for now walks
+`menus()` and asks `groups()` per container, and nothing else ever called it.
+
+**Upstream?** Yes, the keying certainly: rendering two menus with one name is a bug in any
+application, and no template user would choose it. The internal rules come with it for free
+since they are the same code path. `tests/framework/test_menubar.py` (new here — the template
+has no menu-bar test at all) asserts the menu bar and `build_menu` render the same shape,
+which is the property four presenters of one registry exist to have.
+
+### `ActionSpec.icon`, and why the menu bar deliberately ignores it
+
+**What.** `ActionSpec` gained `icon: Callable[[QColor], QIcon] | None`. A **painter**, not a
+`QIcon`: the presenter hands over its own ink and gets a glyph back. `build_menu`,
+`append_action` and a toolbar button's dropdown render it; `DynamicMenuBar` does not.
+
+**Why the split.** A pop-up is built fresh every time it opens, so its glyph is painted in the
+theme that is current. The menu bar's QActions are created once and live for the application
+— a colour baked into one at startup is still there three themes later. That is the same trap
+as `QStyleOptionGraphicsItem.palette` (§5), one layer up, and the honest answer for now is
+that the presenter which cannot refresh does not render. If upstream wants menu-bar icons it
+needs a palette-change hook there first.
+
+**Upstream?** Yes, with that caveat written next to it.
+
+### `ActionToolbar`: a button may drop its verb's submenu down
+
+**What.** `ActionToolbar` takes `menus: Mapping[str, tuple[str, str]]` — action id →
+`(menu, submenu)`. Such a button gets `MenuButtonPopup`: the face still runs its own verb,
+the arrow renders that child menu through `fill_menu` on every open. `build_menu` was split
+into `fill_menu(target, …)` + a one-line `build_menu` wrapper so a menu owned by a button can
+be refilled rather than replaced.
+
+**Why it is not a widget.** DPlanner's first instinct was a `NewStepButton` in the module,
+which would have meant the module hand-building a list of the kinds a step can be — the one
+thing the composition root exists to keep it from knowing. Rendering the registry's own
+submenu keeps *a right-click renders a menu, never a copy of one* true for a toolbar too.
+
+**Upstream?** Yes. It is six lines and it is the only way a toolbar can offer a verb's
+variants without duplicating them.
+
+### A styled `QToolButton` loses the room for its own menu arrow
+
+Not a framework change — a Qt fact that cost us a clipped button in the canvas toolbar's
+layout picker, and any template application that styles `QToolButton` will meet it. Once a
+QSS rule sets the button's box model, Qt's size hint stops accounting for the drop-down
+indicator, and the arrow lands on the last letter of the label. The fix is to say where it
+goes and leave room for it:
+
+```css
+#Button::menu-indicator { subcontrol-origin: padding; subcontrol-position: right center;
+                          width: 10px; }
+#Button { padding-right: 20px; }
+```
+
+`MenuButtonPopup` does not need it — that mode gives the arrow its own section — so it is
+specifically `InstantPopup` plus a stylesheet that bites.
+
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class

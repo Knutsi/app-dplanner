@@ -66,7 +66,7 @@ class StepTicketModule:
                 id="ticket.toggle",
                 label="Ticket",
                 menu="Step",
-                group="type",
+                group="classify",
                 submenu="Type",
                 order=40,
                 tip="Track this step against a ticket elsewhere; fill it in on the tab",
