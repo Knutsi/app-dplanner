@@ -63,6 +63,7 @@ def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
     expected = [
         "Details",
         "Ticket",
+        "Docs",
         "Tests",
         "Covers",
         "Agent",
@@ -81,6 +82,8 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
     """Toggling an aspect on brings its tab in without reselecting; toggling off removes
     it and the current tab falls back to the first visible one."""
     from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.docs.aspect import MODULE_ID as DOCS_ID
+    from dplanner.modules.docs.aspect import write_state as docs_write
     from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
     from dplanner.modules.github.aspect import write_state as github_write
     from dplanner.modules.step_agent_instruction.aspect import (
@@ -112,9 +115,11 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
     services.undo.push(SetModuleDataCommand(step.id, CHECK_ID, check_write(True)))
     services.undo.push(SetModuleDataCommand(step.id, HANDOFF_ID, handoff_write(True)))
     services.undo.push(SetModuleDataCommand(step.id, GITHUB_ID, github_write(True)))
+    services.undo.push(SetModuleDataCommand(step.id, DOCS_ID, docs_write(True)))
     assert visible_labels(panel) == [
         "Details",
         "Ticket",
+        "Docs",
         "Tests",
         "Covers",
         "Agent",

@@ -1614,6 +1614,107 @@ the cross-feature home `cli/lint.py` and `cli/authoring.py` already established,
 owns the report and the composition root hands it the kinds and the coverage walk. `cli/` still
 imports no module, and no module imports `cli/scopes.py`.
 
+## Documentation is fragments, and a collector compiles them
+
+A plan says what work will be done. It said nothing about what that work *produces for a
+reader*, so release notes and user guides were written at the end by reading back over the
+graph by hand. Two aspects close that, and the shape of them is the whole decision.
+
+A **fragment** is what one step adds to the product's documentation — `docs`, prose beside
+the step, written while the work is fresh. A **compiled document** is what a feature or a
+milestone makes of everything it gathers — `docs_compiled`, prose beside the collector.
+
+**Two aspect ids in one package, not one.** A node holds exactly one prose document per
+module (`FORMAT.md`), and a feature legitimately has both: its own note, and the document
+compiled from the four steps behind it. Putting the second in `module_data` as a string
+would cost it the text stack — positional splicing, undo coalescing, a line-by-line diff —
+which is the trade that section already refuses for prose.
+
+### There is no step kind for compiling
+
+The first attempt had one: a *Compose Docs* step you created, linked into the graph, and
+ran. It worked, and it was wrong. A feature and a milestone **already are** the collectors
+the graph defines — `domain/scope.py` has answered "what is behind this, up to the next one"
+since checks arrived — so a second kind of collector, existing only to collect, was a node
+somebody had to remember to create for a question the graph could already answer. Deleting
+it removed a `StepKind`, a Type toggle, a medallion glyph, a mnemonic table the collision
+had forced, and two CLI verbs. Every project that already has features and milestones now
+gets documentation without adding anything.
+
+Compile is therefore a verb on a collector, and the vocabulary is one predicate the
+composition root already wires: *is this step a collector?* is `kind_of(scopes, step)`.
+
+### A milestone reads its features' documents, not their notes again
+
+`ScopeKind.gathers` says a milestone is read as a list of features. `collect.sources_for`
+takes that literally: for each feature inside a milestone's cone it reads that feature's
+**compiled** document — falling back to the feature's own fragments where it has none, so a
+half-compiled project still produces something honest — plus the fragments of everything in
+the cone no feature took. A feature has `gathers=""` and so reads flat.
+
+Two things follow, and they are the reason for the shape. A milestone folds polished prose
+rather than saying everything twice. And **recompiling a feature marks its milestone out of
+date by itself**, because the milestone's sources are that feature's text — the cascade the
+feature needed, with no notification plumbing at all.
+
+### Staleness is a digest, not a timestamp
+
+Nothing in the model records when a fragment was last edited, and adding that to support one
+check would be storing a derivation. So a compile stores the **digest of what it read**
+(sha256, sixteen hex, the convention `domain/assets.py` content-addresses blobs with) and
+"is this out of date" is a comparison against the same walk run now.
+
+That is exact where a timestamp is a heuristic, and it is right in a case a timestamp would
+get wrong: `dplanner step link` changing what a feature gathers changes the digest, and the
+document says it is out of date — which it is. It also gets the other direction right.
+**Hand-editing a compiled document does not make it stale**, because the digest is over the
+sources, not over the output; a person tidying the model's prose is finishing the job, not
+invalidating it.
+
+Three states fall out, and they are a pure function: no entry is *never compiled*, a
+matching digest is *current*, anything else is *out of date*. The Docs view draws them as a
+hollow ring, nothing at all, and a filled accent dot — nothing being the quiet common case.
+
+### Who owns which half
+
+`modules/docs/` owns both aspects, the fragment editor, the Docs folder and the Docs view;
+`collect.py` is the one derivation, Qt-free, with four readers (the view, `docs collect`,
+`docs status`, the compile prompt). The collector kinds arrive as an argument, exactly as
+`TestsDeps` takes them — **nothing is added to `_scope_kinds()`**. A fourth kind there would
+have put documentation in the Tests tab's scope selector and its Group by, and given every
+collector a Covers tab it never asked for: four surfaces learning about documentation to
+serve none of it.
+
+## An LLM call is a task, and the service is GUI-bound
+
+`framework/llm_service.py` shipped complete and dormant — no consumer, no tests, and no
+mention in this file. Compile is its first, and these are the rules it established.
+
+**`complete()` is blocking network I/O.** It runs inside a `TaskRunner` body, and because
+the runner's body returns nothing, the answer comes back on the owner's own queued Qt
+signal — the pattern `agent_skill/cli_install.py` and `github/section.py` already use. A
+timeout becomes `TaskTimeoutError` so the task centre shows a timed-out job rather than a
+generic failure, and a delivery whose step has stopped collecting is dropped, exactly as a
+stale PR refresh is.
+
+**Nothing logs the call.** The service appends every one to a ring buffer *before* the
+provider runs, which is what makes even a hung request visible in *Debug ▸ LLM Calls*.
+
+**An AI-gated control is disabled, never hidden**, and carries `status().message` — which
+already names *Settings ▸ LLM* — as the reason, on screen rather than only in a tooltip. The
+service re-reads its provider on every call, so a control re-asks on `config_changed` and
+configuring one ungreys the button where it stands.
+
+**The result lands on the undo stack**, unlike `github/refresh.py`'s background sync. The
+distinction is who asked: a person pressed a button, so undo must put back what was there.
+
+**And the CLI cannot call it.** The service reads its preferred provider through QSettings
+and its key through the OS keychain, so it is Qt-bound by construction while `cli.py` loads
+no Qt by rule. That is not a gap to route around: the agent driving the CLI *is* a model, so
+the headless loop is `docs status` → `docs collect` → the agent writes → `compiled set`,
+which re-stamps the digest so the document it just wrote reads as current. Same reasoning as
+*Running an agent launches a peer, not a task*.
+
 ## A test result is not a step status
 
 Two vocabularies, deliberately sharing no words. A step's status is `pending`,

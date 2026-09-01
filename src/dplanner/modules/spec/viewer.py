@@ -1,93 +1,25 @@
-"""Viewers for spec documents: markdown and text in a browser, PDFs via pdfium.
+"""The PDF viewer for spec documents: pages via pdfium, rasterised lazily.
 
-Two widgets, one rule each:
+**Pages render on the GUI thread, one page at a time.** pdfium rasterises a page in
+milliseconds and a page only renders when it scrolls into view, so the worst stall is one
+page — and :class:`~dplanner.framework.task_runner.TaskRunner` offers no result seam that
+would make marshalling a pixmap back worth the machinery. If enormous documents ever bite,
+off-thread rendering is the named follow-up. The page's white sheet is the document's own
+colour and is honest on both themes.
 
-**Text resolves its images through the file area.** ``SpecTextBrowser.loadResource`` asks
-the module's :class:`~dplanner.domain.store.ModuleFileArea` for a relative name, so
-``![](assets/<hash>.png)`` renders against a folder, a git checkout or any other provider —
-a viewer resolving ``QUrl.fromLocalFile`` would only work against one of them. Colours come
-from the palette alone, so a theme switch costs nothing.
-
-**PDF pages render lazily, on the GUI thread, one page at a time.** pdfium rasterises a
-page in milliseconds and a page only renders when it scrolls into view, so the worst stall
-is one page — and :class:`~dplanner.framework.task_runner.TaskRunner` offers no result
-seam that would make marshalling a pixmap back worth the machinery. If enormous documents
-ever bite, off-thread rendering is the named follow-up. The page's white sheet is the
-document's own colour and is honest on both themes.
+Markdown and plain text are :class:`~dplanner.framework.markdown_view.MarkdownView`, which
+is the framework's — a well resolving its images through the store is not a spec idea.
 """
 
 from typing import Any
 
 import pypdfium2 as pdfium
-from PySide6.QtCore import QUrl
-from PySide6.QtGui import (
-    QImage,
-    QPainter,
-    QPaintEvent,
-    QPixmap,
-    QResizeEvent,
-    QTextBlockFormat,
-    QTextCursor,
-    QTextDocument,
-)
-from PySide6.QtWidgets import QScrollArea, QTextBrowser, QVBoxLayout, QWidget
+from PySide6.QtGui import QImage, QPainter, QPaintEvent, QPixmap, QResizeEvent
+from PySide6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
 
-from dplanner.domain.store import ModuleFileArea
+from dplanner.framework.widgets import DOCUMENT_MARGIN
 
-DOCUMENT_MARGIN = 12  # DESIGN.md: text never touches the frame.
-LINE_HEIGHT_PERCENT = 130
 PAGE_GAP = 12
-
-
-def area_image(area: ModuleFileArea | None, name: QUrl | str) -> QImage | None:
-    """A relative resource resolved through the file area — the one rule both the viewer
-    and the editor answer ``loadResource`` with. None means "not ours; ask Qt"."""
-    url = QUrl(name) if isinstance(name, str) else name
-    if area is not None and url.isRelative():
-        data = area.read_bytes(url.toString())
-        if data is not None:
-            image = QImage.fromData(data)
-            if not image.isNull():
-                return image
-    return None
-
-
-def style_document(document: QTextDocument) -> None:
-    """Margin and line height for a spec's text — re-applied after ``setMarkdown``,
-    which resets the document. Shared by the viewer and the editor so a document
-    reads the same whichever one is showing it."""
-    document.setDocumentMargin(DOCUMENT_MARGIN)
-    block = QTextBlockFormat()
-    block.setLineHeight(
-        LINE_HEIGHT_PERCENT, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value
-    )
-    cursor = QTextCursor(document)
-    cursor.select(QTextCursor.SelectionType.Document)
-    cursor.mergeBlockFormat(block)
-
-
-class SpecTextBrowser(QTextBrowser):
-    """A read-only markdown/text well whose images come from the module file area."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._area: ModuleFileArea | None = None
-        self.setOpenExternalLinks(True)
-        self.document().setDocumentMargin(DOCUMENT_MARGIN)
-
-    def show_markdown(self, area: ModuleFileArea, body: str) -> None:
-        self._area = area
-        self.setMarkdown(body)
-        style_document(self.document())
-
-    def show_text(self, body: str) -> None:
-        self._area = None
-        self.setPlainText(body)
-        style_document(self.document())
-
-    def loadResource(self, type: int, name: QUrl | str) -> Any:  # noqa: N802, A002 - Qt override
-        image = area_image(self._area, name)
-        return image if image is not None else super().loadResource(type, name)
 
 
 class _PdfPage(QWidget):

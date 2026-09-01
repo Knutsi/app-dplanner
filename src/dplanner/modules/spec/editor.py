@@ -36,9 +36,9 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QFileDialog, QTextEdit, QWidget
 
 from dplanner.domain.store import ModuleFileArea
+from dplanner.framework.markdown_view import area_image, style_document
 from dplanner.framework.mime_files import IMAGE_FILTER, carries_files, payloads
 from dplanner.modules.spec.documents import attach_asset
-from dplanner.modules.spec.viewer import area_image, style_document
 
 MARKDOWN_DIALECT = QTextDocument.MarkdownFeature.MarkdownDialectGitHub
 
@@ -74,7 +74,7 @@ class SpecMarkdownEditor(QTextEdit):
         return self.document().toMarkdown(MARKDOWN_DIALECT)
 
     def loadResource(self, type: int, name: QUrl | str) -> object:  # noqa: N802, A002 - Qt override
-        image = area_image(self._area, name)
+        image = area_image((self._area,) if self._area is not None else (), name)
         return image if image is not None else super().loadResource(type, name)
 
     # -- images in -------------------------------------------------------------------------
