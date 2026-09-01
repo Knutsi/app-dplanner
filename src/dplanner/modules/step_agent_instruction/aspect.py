@@ -18,12 +18,19 @@ prefix — renaming a module is a Takeover that churns every workspace, and the 
 names where the aspect began.
 """
 
+from collections.abc import Sequence
 from typing import Any
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
-from dplanner.domain.assets import assets
-from dplanner.domain.model import NodeId, Project, Step
+from dplanner.domain.assets import (
+    AssetLocation,
+    AssetSource,
+    AssetUse,
+    area_assets,
+    assets,
+)
+from dplanner.domain.model import Library, NodeId, Project, Step
 from dplanner.domain.store import FilesFor
 
 MODULE_ID = "step_agent_instruction"
@@ -84,6 +91,38 @@ def asset_paths(
     except KeyError:
         return ()
     return tuple(str(area.absolute(name)) for name in assets(area))
+
+
+def asset_source() -> AssetSource:
+    """This aspect's slice of the project's asset catalog.
+
+    Every file here is used, whether or not the prose links it: the briefing hands the
+    whole area to the agent (``_briefing_instruction``: the files "always ride with the
+    block — they were attached to it"), so an unreferenced file is still payload, never
+    litter. Removing one from a briefing is the instruction editor's gesture, not a
+    sweep's.
+    """
+
+    def scan(
+        _library: Library, project: Project, files: FilesFor
+    ) -> Sequence[AssetLocation]:
+        def held(node_id: NodeId, subject: str, kind: str, where: str) -> list[AssetLocation]:
+            return [
+                AssetLocation(
+                    node_id=node_id,
+                    module_id=MODULE_ID,
+                    name=name,
+                    uses=(AssetUse(kind, node_id, subject, where),),
+                )
+                for name in area_assets(files, node_id, MODULE_ID)
+            ]
+
+        locations = held(project.id, project.title, "project", "standing instruction")
+        for step in project.steps:
+            locations += held(step.id, step.title, "step", "agent instruction")
+        return locations
+
+    return AssetSource(id=MODULE_ID, label="Agent instructions", scan=scan)
 
 
 def summary(step: Step) -> str:

@@ -5,6 +5,7 @@ The editor itself is :class:`~dplanner.framework.prose_section.ProseSection` —
 owns the binding mechanics, so all this module supplies is which document to edit.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,6 +29,8 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.asset_gallery import AreaFor
 from dplanner.framework.context import Context
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
+from dplanner.framework.mime_files import Payload
+from dplanner.framework.prose_edit import Pick
 from dplanner.framework.text_binding import TextField
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
@@ -64,6 +67,9 @@ class StepDescriptionDeps:
     # root — the "Separate agent instruction" checkbox. None is a build without agents.
     agent_link: SeparateInstructionLink | None = None
     parent: QWidget | None = None  # confirm()'s parent, as the other Type toggles have.
+    # Insert from Assets…: a modal picker over the step's project's catalog, composed by
+    # the root. Node id in, picked payloads out; None is a build without the browser.
+    pick_assets: Callable[[str], list[Payload]] | None = None
 
 
 class StepDescriptionModule:
@@ -87,6 +93,12 @@ class StepDescriptionModule:
                 return None
             return lambda: files(step_id, MODULE_ID)
 
+        def pick_for_target(step_id: str) -> Pick | None:
+            pick = deps.pick_assets
+            if pick is None or not deps.library.has(step_id):
+                return None
+            return lambda: pick(step_id)
+
         deps.details.register(
             InspectorSection(
                 id=f"{MODULE_ID}.details",
@@ -100,6 +112,7 @@ class StepDescriptionModule:
                     area_for_target,
                     agent_link=deps.agent_link,
                     library=deps.library,
+                    pick_for_target=pick_for_target,
                 ),
                 shown_for=lambda step_id: step_id is not None
                 and deps.library.has(step_id)

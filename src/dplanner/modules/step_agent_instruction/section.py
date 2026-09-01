@@ -39,6 +39,7 @@ from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionState
 from dplanner.framework.asset_gallery import AssetGallery
+from dplanner.framework.mime_files import Payload
 from dplanner.framework.prose_edit import ProseEdit
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.text_binding import TextBinding
@@ -159,10 +160,12 @@ class AgentSection(QWidget):
         prompt_sections: Callable[[StepId], Sequence[PromptPart]] = lambda _sid: (),
         read_asset: Callable[[str], bytes | None] | None = None,
         assembled: Callable[[StepId], AssembledPrompt] | None = None,
+        pick_assets: Callable[[str], list[Payload]] | None = None,
     ) -> None:
         super().__init__()
         self._product = library
         self._undo = undo
+        self._pick_assets = pick_assets
         self._prompt_parts = prompt_parts
         self._prompt_sections = prompt_sections
         self._read_asset = read_asset
@@ -385,12 +388,14 @@ class AgentSection(QWidget):
         # Whichever editor opened it, with the same powers: a build without file storage
         # gives the dialog none, exactly as _retarget_assets gives the inline editors none.
         gallery = self.step_assets if node_id == self._step_id else self.project_assets
+        pick = self._pick_assets
         dialog = ExpandedTextDialog(
             ModuleTextField(self._product, node_id, MODULE_ID),
             self._undo,
             title=title,
             placeholder=placeholder,
             attach=gallery.attach_bytes if self._files is not None else None,
+            pick=(lambda: pick(node_id)) if pick is not None else None,
             parent=self.window(),
         )
         dialog.exec()
@@ -409,11 +414,16 @@ class AgentSection(QWidget):
             self.project_assets.set_area(None)
             self.edit.set_attach(None)
             self.project_edit.set_attach(None)
+            self.edit.set_pick(None)
+            self.project_edit.set_pick(None)
             return
         self.step_assets.set_area(lambda: files(step_id, MODULE_ID))
         self.project_assets.set_area(lambda: files(project_id, MODULE_ID))
         self.edit.set_attach(self.step_assets.attach_bytes)
         self.project_edit.set_attach(self.project_assets.attach_bytes)
+        pick = self._pick_assets
+        self.edit.set_pick((lambda: pick(step_id)) if pick is not None else None)
+        self.project_edit.set_pick((lambda: pick(project_id)) if pick is not None else None)
 
     def _refresh_derived(self) -> None:
         """Everything this tab computes rather than edits: inherited context and the
@@ -618,6 +628,7 @@ class ProjectInstructionCard(ProseSection):
         library: Library,
         undo: UndoService[Library],
         files: FilesFor | None,
+        pick_assets: Callable[[str], list[Payload]] | None = None,
     ) -> None:
         def field_for(target_id: str) -> ModuleTextField | None:
             if not library.has(target_id):
@@ -632,6 +643,7 @@ class ProjectInstructionCard(ProseSection):
             attach_title="Attach to Instruction",
         )
         self._files = files
+        self._pick_assets = pick_assets
         self.edit.setFixedHeight(self.edit.fontMetrics().lineSpacing() * 6 + 16)
         layout = self.layout()
         if layout is not None:
@@ -640,8 +652,11 @@ class ProjectInstructionCard(ProseSection):
     def show_target(self, target_id: str | None) -> None:
         super().show_target(target_id)
         files = self._files
+        pick = self._pick_assets
         if target_id is not None and files is not None and self.isEnabled():
             self.set_area(lambda: files(target_id, MODULE_ID))
+            if pick is not None:
+                self.set_picker(lambda: pick(target_id))
 
 
 def _body(edit: QPlainTextEdit, assets: AssetGallery) -> QWidget:

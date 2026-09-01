@@ -46,6 +46,7 @@ from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.scope import ScopeKind, cone, kind_of, leaders, stops_for
 from dplanner.domain.store import FilesFor
 from dplanner.framework.cards import CARD_PADDING, STACK_SPACING
+from dplanner.framework.mime_files import Payload
 from dplanner.framework.module_data_section import FIELD_GAP, PANEL_MARGIN
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.undo import UndoService
@@ -206,7 +207,11 @@ class TestsSection(QWidget):
     """The step's own tests: a list of them, and an editor for the one selected."""
 
     def __init__(
-        self, library: Library, undo: UndoService[Library], files: FilesFor | None = None
+        self,
+        library: Library,
+        undo: UndoService[Library],
+        files: FilesFor | None = None,
+        pick_assets: Callable[[str], list[Payload]] | None = None,
     ) -> None:
         super().__init__()
         self._library = library
@@ -255,7 +260,9 @@ class TestsSection(QWidget):
         self.more.setAutoRaise(True)
         self.more.setToolTip("What to do with this test")
         self.more.clicked.connect(self._open_menu)
-        self.detail = _TestDetail(library, undo, self.split, corner=self.more, files=files)
+        self.detail = _TestDetail(
+            library, undo, self.split, corner=self.more, files=files, pick_assets=pick_assets
+        )
         self.detail.setMinimumHeight(DETAIL_MIN_HEIGHT)
         self.split.addWidget(self.detail)
         self.split.setStretchFactor(0, 0)
@@ -430,11 +437,13 @@ class _TestDetail(QWidget):
         parent: QWidget | None = None,
         corner: QWidget | None = None,
         files: FilesFor | None = None,
+        pick_assets: Callable[[str], list[Payload]] | None = None,
     ) -> None:
         super().__init__(parent)
         self._library = library
         self._undo = undo
         self._files = files
+        self._pick_assets = pick_assets
         self._step_id: str | None = None
         self._test_id: str = ""
 
@@ -494,10 +503,14 @@ class _TestDetail(QWidget):
 
     def _retarget_assets(self, step_id: str | None) -> None:
         """Keyed by the step, every time — ``show_target`` cleared the area, and it is only
-        told the test's id, which names no file area at all."""
+        told the test's id, which names no file area at all. The picker is aimed the same
+        way: a picked image is copied beside the *step*, where every test's images live."""
         files = self._files
         if files is not None and step_id is not None:
             self.body.set_area(lambda: files(step_id, MODULE_ID))
+        pick = self._pick_assets
+        if pick is not None and step_id is not None:
+            self.body.set_picker(lambda: pick(step_id))
 
     def show_test(
         self, step_id: str | None, test: Test | None, outcome: runs.Outcome | None

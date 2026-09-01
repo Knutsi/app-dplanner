@@ -646,6 +646,70 @@ Overriding `canInsertFromMimeData` is not decoration either: Qt's own answer for
 clipboard data is False, which greys **Paste** in that same standard menu — on the one thing
 here that most wants pasting.
 
+## An asset library is a view, not a store
+
+The Assets tab looks like a place where files live. It is not — it is a *derivation*, and
+that was the decision that shaped everything else about it. Every file stays where its
+aspect put it, in the per-(node, module) areas `store.files()` hands out; what the tab,
+`dplanner asset list` and `asset prune` share is `domain/assets.catalog()`, one walk over
+every contributed `AssetSource`, computed on each read and never written down.
+
+**Why no central blob directory, when one was the obvious design.** Three costs, each
+structural. Every prose surface resolves `assets/<sha>.png` against *its own module's
+area* — the paste path, the lint, the agent briefing, the spec viewer all share that one
+convention — so a central store means either rewriting links in every existing project's
+prose (undoable state, churned by a storage decision) or two link forms with two
+resolution rules forever. A node's directory would stop being self-contained: deleting a
+step currently takes its files with it and undo restores the graph exactly *because*
+nothing outside the step was touched — a shared store would need reference counting as
+core machinery, which is the exact complexity the blob/link split in `FORMAT.md` exists to
+avoid. And centralising would not even buy the feature: "what uses this file" is a
+question about *prose*, so the scanners are needed either way. The storage cost of copies
+is near zero — git's object store is itself content-addressed, so identical bytes at five
+paths are one blob in history.
+
+**Reuse is therefore a copy.** Picking an existing asset into an editor copies the bytes
+into the target's own area through the ordinary attach path — `spec attach-to-step`'s
+`copied_to_step` generalised. Content-addressing makes this cheap and makes it *legible*:
+identical bytes carry the same `assets/<sha16><suffix>` name in every area, so the catalog
+groups by name and one row honestly means one image, wherever it lives.
+
+**Rename-safety is structural, and a name is metadata.** A link can never break on rename
+because the name *is* the content; what a person calls the image is a display title in the
+browser module's own `module_data` beside the project, keyed by content name — one title
+covers every copy, written through a command, undoable, and never part of any link.
+
+**What "used" means is each source's own claim.** A description image is used while the
+markdown links it; a test image while any test body does (archived included — evidence
+outlives the roster); a spec figure while the index, an attachment record or a markdown
+body names it. Handoff files and instruction files are used *by existence*: both areas are
+handed to agents wholesale, so an unreferenced file there is payload, not litter. The pool
+is `prunable=False` — a staging shelf swept for being a staging shelf would punish the
+workflow it exists for. `asset prune` deletes per *location*, only what its own source
+called unused, dry-run first, and never enters a directory no source scanned — which is
+also why a retired module's leftover area is invisible to it on purpose: unknown data is
+carried, never cleaned (the same tolerance unknown edge kinds get).
+
+## Inserting an existing asset is a paste with a different source
+
+`Insert from Assets…` plumbs nothing new. The picker (`framework/asset_picker.py`) answers
+in `Payload`s — bytes and a filename, never a path — and `ProseEdit._embed` does to a
+picked payload exactly what it does to a dropped one: the host's `Attach` copies it into
+the editor's own area, the link is typed at the caret, the undo step is sealed on both
+sides. Payloads rather than paths is the load-bearing choice: a path handed across that
+line would become a link into somebody else's directory, and the copy-by-value rule above
+would quietly stop being true.
+
+The picker itself is framework, not module: three hosts wanted it on day one (description,
+test bodies, both agent instructions), and it knows nothing but titles, details and byte
+readers — the same test `asset_gallery` and `image_preview` passed. The *catalog* it shows
+cannot live there (the framework never imports modules), so the composition root composes
+the one `pick_assets(node_id)` closure — resolve the node's project, run `catalog()`, join
+the display titles, open the dialog — and hands it down each host's `Deps` as a typed
+callback. `ProseSection.set_picker` is `set_area`'s sibling, aimed from the same
+`show_target` for the same reason: the node a picker serves is the node the files land
+beside, and only the host knows which that is.
+
 ## The graph, and what it stores
 
 A project is a graph, so the tab is a canvas: `QGraphicsView` gives selection, dragging,

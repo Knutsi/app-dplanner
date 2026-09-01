@@ -30,11 +30,13 @@ if TYPE_CHECKING:
 
     from dplanner.cli import CliCommand
     from dplanner.domain.aspects import AspectSpec
+    from dplanner.domain.assets import AssetSource
     from dplanner.domain.model import Library, Project, Step
     from dplanner.domain.ordering import Placed
     from dplanner.domain.schedule import Scheduled
     from dplanner.domain.scope import ScopeKind
     from dplanner.domain.store import ModuleFileArea
+    from dplanner.framework.mime_files import Payload
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
@@ -78,6 +80,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.progression.module import ProgressionDeps, ProgressionModule
+    from dplanner.modules.project_assets.module import (
+        ProjectAssetsDeps,
+        ProjectAssetsModule,
+    )
     from dplanner.modules.project_editor.kinds import StepKind
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
@@ -135,7 +141,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.testing.aspect import enabled as test_enabled
     from dplanner.modules.testing.module import TestsDeps, TestsModule
     from dplanner.modules.time_estimates.module import TimeEstimatesDeps, TimeEstimatesModule
-    from dplanner.theme.icons import clock_icon, gauge_icon, graph_icon, list_icon, spec_icon
+    from dplanner.theme.icons import (
+        clock_icon,
+        gauge_icon,
+        graph_icon,
+        image_icon,
+        list_icon,
+        spec_icon,
+    )
 
     library: Library = services.document
     # The composition root knows the concrete store, exactly as it knows the concrete
@@ -486,6 +499,80 @@ def default_modules(services: "AppServices") -> list["Module"]:
             ),
         )
     )
+    # Constructed before the list for the same reason — its index row opens the tab. The
+    # sources tuple is the same one the CLI reports read (`_asset_sources`), so the tab,
+    # the picker and `dplanner asset list` can never disagree about what a project holds.
+    asset_sources = _asset_sources()
+    project_assets = ProjectAssetsModule(
+        ProjectAssetsDeps(
+            library=library,
+            actions=services.actions,
+            context=services.context,
+            tabs=services.tabs,
+            undo=services.undo,
+            parent=services.window,
+            files=store.files,
+            sources=asset_sources,
+        )
+    )
+
+    def pick_assets(node_id: str) -> "list[Payload]":
+        """Insert from Assets…: the picker over the node's project's whole catalog.
+
+        Composed here because it is cross-module three ways — the catalog is every
+        module's areas, the titles are the asset browser's data, and the host knows only
+        its own node. The picked bytes go back to the host, which attaches them into its
+        *own* area: reuse is a copy, so a link never points into another module's
+        directory.
+        """
+        from pathlib import PurePosixPath
+
+        from dplanner.domain.assets import AssetEntry, catalog
+        from dplanner.framework.asset_picker import AssetPickerDialog, PickerEntry
+        from dplanner.modules.project_assets.cli import read_titles
+
+        node = library.node(node_id)
+        project = (
+            library.project(node_id) if node.kind == "project" else library.project_of(node_id)
+        )
+        titles = read_titles(project)
+
+        def reader(entry: "AssetEntry") -> "Callable[[], bytes | None]":
+            def read() -> bytes | None:
+                for _source, location in entry.locations:
+                    try:
+                        area = store.files(location.node_id, location.module_id)
+                    except KeyError:
+                        continue
+                    data = area.read_bytes(location.name)
+                    if data is not None:
+                        return data
+                return None
+
+            return read
+
+        choices = []
+        for entry in catalog(library, project, store.files, asset_sources):
+            basename = PurePosixPath(entry.name).name
+            title = titles.get(entry.name, "")
+            choices.append(
+                PickerEntry(
+                    key=entry.name,
+                    title=title or basename,
+                    detail=", ".join(
+                        dict.fromkeys(source.label for source, _l in entry.locations)
+                    ),
+                    # The display name becomes the typed link's alt text; the suffix
+                    # stays the content's own.
+                    filename=f"{title}{PurePosixPath(entry.name).suffix}" if title else basename,
+                    read=reader(entry),
+                )
+            )
+        dialog = AssetPickerDialog(choices, services.window)
+        picked = dialog.chosen() if dialog.exec() == AssetPickerDialog.DialogCode.Accepted else []
+        dialog.deleteLater()
+        return picked
+
     # Constructed before the list for the same reason — its index row opens the table.
     step_order = StepOrderModule(
         StepOrderDeps(
@@ -668,6 +755,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
                         order=20,
                     ),
                     ProjectEntry(
+                        id="assets",
+                        label="Assets",
+                        open=project_assets.open,
+                        open_preview=lambda pid: project_assets.open(pid, preview=True),
+                        icon=image_icon,
+                        menu="Project",
+                        order=25,
+                    ),
+                    ProjectEntry(
                         id="progression",
                         label="Progression",
                         open=progression.open,
@@ -689,6 +785,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             )
         ),
         spec,
+        project_assets,
         # -- the step aspects --------------------------------------------------------------
         # Each registers one tab into the step detail panel — or, for the estimate and
         # description, a block into its Details tab (services.step_details). They must
@@ -720,6 +817,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
                     has_text=lambda sid: bool(agent_instruction_read(library.step(sid))),
                     set_separate=set_separate_instruction,
                 ),
+                # Insert from Assets…, composed above over every module's catalog slice.
+                pick_assets=pick_assets,
             )
         ),
         StepAgentInstructionModule(
@@ -744,6 +843,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # The launch stamp: written directly, off the undo stack — Ctrl+Z cannot
                 # un-launch a shell.
                 record_launch=lambda step_id: agent_run_launch(library, step_id),
+                pick_assets=pick_assets,
             )
         ),
         # Declares the agent-run format only; Run Agent and the CLI write it, the canvas
@@ -799,6 +899,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # all three are the same walk with a different stopping rule. Named here,
                 # the one place that may know every aspect, so none learns the others.
                 scopes=_scope_kinds(check_read, feature_read, milestone_read),
+                pick_assets=pick_assets,
             )
         ),
         GithubModule(
@@ -1108,6 +1209,32 @@ def _covered_tests(
     ]
 
 
+def _asset_sources() -> tuple["AssetSource", ...]:
+    """Every module's slice of the asset catalog, in reading order.
+
+    The tuple both surfaces read — ``asset list``/``uses``/``prune`` and the Assets tab —
+    assembled here because each ``asset_source()`` lives in its owner's Qt-free half and
+    no module may import another's. The order is the report order: the prose surfaces a
+    person writes first, then what rides along to agents, then the spec's figures, then
+    the pool.
+    """
+    from dplanner.modules.project_assets.cli import asset_source as pool
+    from dplanner.modules.spec.documents import asset_source as spec_figures
+    from dplanner.modules.step_agent_instruction.aspect import asset_source as instructions
+    from dplanner.modules.step_description.aspect import asset_source as descriptions
+    from dplanner.modules.step_handoff.aspect import asset_source as handoffs
+    from dplanner.modules.testing.aspect import asset_source as tests
+
+    return (
+        descriptions(),
+        tests(),
+        instructions(),
+        handoffs(),
+        spec_figures(),
+        pool(),
+    )
+
+
 def default_cli_commands() -> list["CliCommand"]:
     """Every ``dplanner <noun> <verb>``, from the same modules the window is built from.
 
@@ -1116,6 +1243,7 @@ def default_cli_commands() -> list["CliCommand"]:
     start in milliseconds and run where a graphics stack does not exist.
     """
     from dplanner.cli.aspects import commands as aspect_commands
+    from dplanner.cli.assets import catalog_commands
     from dplanner.cli.command import CliRegistry
     from dplanner.cli.lint import commands as lint_commands
     from dplanner.cli.scopes import commands as scope_commands
@@ -1127,6 +1255,8 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.github import cli as github_cli
     from dplanner.modules.library import cli as library_cli
     from dplanner.modules.progression import cli as progression_cli
+    from dplanner.modules.project_assets import cli as assets_cli
+    from dplanner.modules.project_assets.cli import read_titles
     from dplanner.modules.project_editor import cli as layout_cli
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
@@ -1152,6 +1282,7 @@ def default_cli_commands() -> list["CliCommand"]:
 
     specs = aspect_specs()
     scopes = _scope_kinds(check_read, feature_read, milestone_read)
+    sources = _asset_sources()
     commands = [
         *library_cli.commands(),
         # The step authors let `step add` author the step in the same call; the list
@@ -1181,6 +1312,11 @@ def default_cli_commands() -> list["CliCommand"]:
         # rather than one per aspect. The kinds and the coverage walk arrive as arguments,
         # so cli/scopes.py imports no module and no module imports it.
         *scope_commands(kinds=scopes, covered_by=_covered_tests),
+        # The asset catalog is the same shape one level down: every file-carrying module
+        # exports an asset_source(), the reports live in cli/assets.py, and the browser
+        # module's own writes (attach, name) stay in its cli.py — the `scope` split.
+        *catalog_commands(sources=sources, titles=read_titles),
+        *assets_cli.commands(sources=sources),
         *order_cli.commands(),
         # Progression reads statuses and estimates through the aspects' Qt-free readers —
         # handed over here so no cli.py imports another module's.
@@ -1298,15 +1434,17 @@ def default_module_formats() -> list[ModuleDataFormat]:
     the same list has to be reachable without them — and it must stay complete, because a
     format missing here is data the CLI silently declines to bring forward.
     """
+    from dplanner.modules.project_assets import cli as project_assets
     from dplanner.modules.project_editor import positions
     from dplanner.modules.time_estimates import schedule as time_schedule
 
-    # The aspects, plus the module data that is not an aspect: the graph's node positions
-    # and the time report's focus factor. Deriving this list from aspect_specs() alone
-    # would silently omit them. A project's start date needs no entry: it rides on the
-    # estimation aspect's format, which is the same module writing under the same id on
-    # another node.
+    # The aspects, plus the module data that is not an aspect: the graph's node positions,
+    # the time report's focus factor and the asset browser's display titles. Deriving this
+    # list from aspect_specs() alone would silently omit them. A project's start date
+    # needs no entry: it rides on the estimation aspect's format, which is the same module
+    # writing under the same id on another node.
     return [spec.data_format for spec in aspect_specs()] + [
         positions.DATA_FORMAT,
         time_schedule.DATA_FORMAT,
+        project_assets.DATA_FORMAT,
     ]

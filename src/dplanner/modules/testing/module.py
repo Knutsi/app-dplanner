@@ -39,6 +39,7 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
+from dplanner.framework.mime_files import Payload
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
@@ -91,6 +92,9 @@ class TestsDeps:
     # the *step's* files, the same ones `dplanner test attach` writes; None is a build
     # without file storage.
     files: FilesFor | None = None
+    # Insert from Assets…: a modal picker over the step's project's catalog, composed by
+    # the root. Node id in, picked payloads out; None is a build without the browser.
+    pick_assets: Callable[[str], "list[Payload]"] | None = None
 
 
 class TestsModule:
@@ -137,7 +141,9 @@ class TestsModule:
                 id=f"{MODULE_ID}.tab",
                 label="Tests",
                 order=30,  # Between Ticket (20) and Agent (40).
-                factory=lambda: TestsSection(deps.library, deps.undo, deps.files),
+                factory=lambda: TestsSection(
+                    deps.library, deps.undo, deps.files, deps.pick_assets
+                ),
                 shown_for=lambda step_id: (
                     self._step(step_id) is not None and enabled(deps.library.step(step_id or ""))
                 ),

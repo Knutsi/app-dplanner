@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.framework.markdown_highlight import MarkdownHighlighter
-from dplanner.framework.prose_edit import Attach, ProseEdit
+from dplanner.framework.prose_edit import Attach, Pick, ProseEdit
 from dplanner.framework.text_binding import TextBinding, TextField
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import centered_column, make_text_well, space_lines
@@ -52,6 +52,7 @@ class ExpandedTextDialog(QDialog):
         title: str,
         placeholder: str = "",
         attach: Attach | None = None,
+        pick: Pick | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -59,6 +60,7 @@ class ExpandedTextDialog(QDialog):
 
         self.edit = ProseEdit(self, undo=undo)
         self.edit.set_attach(attach)
+        self.edit.set_pick(pick)
         self._highlighter = MarkdownHighlighter(self.edit.document(), self.edit)
         self.edit.setObjectName("InspectorNotes")
         self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)

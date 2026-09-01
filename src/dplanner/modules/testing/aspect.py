@@ -27,8 +27,16 @@ from typing import Any
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
+from dplanner.domain.assets import (
+    AssetLocation,
+    AssetSource,
+    AssetUse,
+    area_assets,
+    asset_references,
+)
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.scope import StepPredicate, cone
+from dplanner.domain.store import FilesFor
 
 MODULE_ID = "testing"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
@@ -111,6 +119,43 @@ def summary(step: Step) -> str:
     if not live:
         return ""
     return "1 test" if len(live) == 1 else f"{len(live)} tests"
+
+
+def asset_source() -> AssetSource:
+    """This aspect's slice of the project's asset catalog.
+
+    Images live beside the *step* (the module docstring's rule) and are used while any of
+    the step's test bodies links to them — archived tests included, because a test taken
+    off the roster still owns its evidence.
+    """
+
+    def scan(
+        _library: Library, project: Project, files: FilesFor
+    ) -> Sequence[AssetLocation]:
+        locations: list[AssetLocation] = []
+        for step in project.steps:
+            names = area_assets(files, step.id, MODULE_ID)
+            if not names:
+                continue
+            referencing = [
+                (test, set(asset_references(test.body))) for test in read(step)
+            ]
+            locations += [
+                AssetLocation(
+                    node_id=step.id,
+                    module_id=MODULE_ID,
+                    name=name,
+                    uses=tuple(
+                        AssetUse("step", step.id, step.title, f"test {test.id} — {test.title}")
+                        for test, referenced in referencing
+                        if name in referenced
+                    ),
+                )
+                for name in names
+            ]
+        return locations
+
+    return AssetSource(id=MODULE_ID, label="Tests", scan=scan)
 
 
 def project_tests(project: Project, *, archived: bool = False) -> list[tuple[Step, Test]]:

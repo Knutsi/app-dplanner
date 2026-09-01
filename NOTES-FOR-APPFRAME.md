@@ -1341,3 +1341,54 @@ Recording these so a future backport does not over-reach:
   in a `QWidgetAction`, and hiding the widget leaves the action's slot behind; it is the
   action you must hide. The template's own toolbar code sidesteps this by never hiding one.
   The tests tab's Group-by selector holds the returned action for exactly this reason.
+
+## 8. From the asset-library pass
+
+### `framework/asset_picker.py` — a modal picker over named files (new)
+
+**What.** `AssetPickerDialog(entries, parent, title=)` over `PickerEntry(key, title,
+detail, filename, read)`: an IconMode grid of DPR-aware thumbnails, extended selection,
+double-click accepts, `chosen()` answers in `mime_files.Payload`s — bytes and a filename,
+never a path. An entry whose `read` answers None (the file is gone; the catalog can be a
+beat stale) is skipped, not fatal. Empty entries render a sentence, not an empty grid.
+
+**Why.** The reuse half of the asset story. Payloads-not-paths is the load-bearing
+choice: the dialog cannot know where a caller will put its choice, and a path handed
+across that line becomes a link into somebody else's directory — the caller attaches the
+bytes into its *own* area, which is the same copy-by-value rule `spec attach-to-step`
+established.
+
+**Belongs upstream?** Yes, with `asset_gallery` and `image_preview` — it knows nothing
+but titles, details and byte readers.
+
+### `framework/prose_edit.py` — `set_pick` beside `set_attach`
+
+**What.** A second injected callable, `Pick = Callable[[], list[Payload]]`, and an
+"Insert from Assets…" entry appended to the standard context menu beside "Insert Image…"
+(disabled, never hidden, until both pick *and* attach are set). A picked payload travels
+`_embed` exactly as a paste does — same copy, same link, same undo sealing.
+
+**Why.** Two seams rather than one because they answer different questions — where a file
+*goes* and where one can come *from* — and a host may have the first without the second.
+Nothing new became undoable; the whole feature is a paste with a different source.
+
+**Belongs upstream?** Yes, with the picker.
+
+### `framework/prose_section.py` — `set_picker`, `set_area`'s sibling
+
+**What.** Aims the editor's pick the way `set_area` aims its paste; cleared in
+`show_target` alongside it (a re-pointed section must not pick for the old node), and
+passed through to the expanded editor so the ⤢ dialog's menu matches the inline one.
+
+**Belongs upstream?** Yes, wherever the other two go. `text_dialog.py` grew the matching
+`pick=` pass-through in the same commit.
+
+### `framework/image_preview.py` — Open Externally beside Copy Path
+
+**What.** When a `path` is given, a second action button hands the file to
+`QDesktopServices.openUrl`. The existence check runs at click time, never earlier — the
+file can be gone by then, and a dead path handed to the OS fails silently on some
+desktops.
+
+**Belongs upstream?** Yes; it completes the lightbox's "let me actually see that" with
+"…in the tool I trust for it".
