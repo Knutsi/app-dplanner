@@ -49,7 +49,11 @@ LIFT = 2.0
 SHADOW_LAYERS = 4
 SHADOW_SPREAD = 5.0  # How far the softest ring reaches past the body.
 SHADOW_DROP = 4.0  # How far below the seat the shadow falls.
-SHADOW_ALPHA = 30  # The innermost ring's; the outer ones fade from it.
+# The innermost ring's alpha; the outer ones fade from it, and the rings composite, so what
+# lands under the card is roughly twice this. Kept faint on purpose: the border and the
+# deepened fill are what say "this one", and the shadow only has to lift the card off the
+# table. At 30 it read as a hole punched in a light theme's paper.
+SHADOW_ALPHA = 12
 
 # The link handle: a dot on the node's right edge. Dragging from it means "then", so an
 # edge always runs left to right and its direction cannot be read the wrong way round.
@@ -117,8 +121,9 @@ SELECTED_FILL_GAIN = 1.6
 CHIP_H = 14.0
 
 # The icon medallions on the top edge, left end: one small circle per aspect kind a step
-# carries, bound by the same boundingRect inequality the badge is.
-ICON_D = 16.8
+# carries, bound by the same boundingRect inequality the badge is. Twice grown by a fifth from
+# the 14 they were first drawn at, and rounded to the pixel at the end of it.
+ICON_D = 20.0
 ICON_GAP = 4.0
 # The glyph inside one, as the share of it these shapes were drawn at (8 in 14). Derived, so
 # sizing a medallion sizes its glyph — every shape in theme/icons.py scales off the rect it is

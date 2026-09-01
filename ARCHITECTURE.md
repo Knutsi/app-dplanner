@@ -825,12 +825,17 @@ The shadow is **clipped to the ground around the card**, not painted under it. A
 is translucent by design (`FILL_ALPHA` ink over the canvas), so rings left underneath darken
 the fill itself, and a selected step reads as a hole rather than as a card off the table.
 That was a real bug in the first cut of this: on a light theme the selected node came out a
-flat dark grey and nothing about the code looked wrong. It is caught now by the same test
+flat dark grey and nothing about the code looked wrong. Its weight is deliberately slight for
+the same reason — the rings composite, so the first alpha that looked right in isolation
+landed twice as dark under the card, and on a light theme's paper that reads as a hole again
+even when it is correctly clipped. The border and the gained fill are what say "this one";
+the shadow only has to lift the card off the table. It is caught now by the same test
 that checks the fill gain — a body can only come out at exactly the gained alpha over the
 ground if nothing at all is painted underneath it.
 
 One number ties it together: `PAINT_MARGIN` in `renderers.py` is the furthest any decoration
-reaches out of the body — handle, badge, chip, lift, shadow — and `StepNodeItem.boundingRect`
+reaches out of the body — handle, badge, medallion, chip, lift, shadow — and
+`StepNodeItem.boundingRect`
 is exactly that, *constant whether or not the node is selected*. A rect that grew on selection
 would invalidate the wrong region, and the shadow would be left on the canvas when the
 selection moved on.

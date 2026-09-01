@@ -399,11 +399,12 @@ root, stop and look for the registry or capability you have not found yet.
   declaration puts the same glyph on the menu entry, the toolbar dropdown and the node.
 - **A picked node is lifted, not recoloured.** Selection thickens the border to the accent,
   *gains* whatever fill the node already had (so a picked milestone is still purple), lifts
-  the card two pixels over a soft shadow clipped to the ground around it — never under it,
-  the fill is translucent — and claims a Z of its own. `PAINT_MARGIN` is the one number every
-  decoration is measured against and `boundingRect` is exactly it, **constant whether or not
-  the node is selected**. `ARCHITECTURE.md`'s *A picked node is lifted, not recoloured* has
-  the reasoning.
+  the card two pixels over a soft shadow — faint, and clipped to the ground around it rather
+  than under it, since the fill is translucent — and claims a Z of its own. The rings
+  composite, so the shadow's alpha buys twice what it looks like. `PAINT_MARGIN` is the one
+  number every decoration is measured against and `boundingRect` is exactly it, **constant
+  whether or not the node is selected**. `ARCHITECTURE.md`'s *A picked node is lifted, not
+  recoloured* has the reasoning.
 - **Derived facts are computed, never stored** — the topological order in
   `domain/ordering.py` is the reference, and `domain/schedule.py` is the same walk carrying
   estimates. Storing one means it can disagree with what it came from, and the CLI is what
