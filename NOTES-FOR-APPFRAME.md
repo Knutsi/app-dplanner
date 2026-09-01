@@ -1372,6 +1372,19 @@ Recording these so a future backport does not over-reach:
   that a timeout is a distinct outcome. `tests/framework/test_llm_service.py` does, with a
   duck-typed fake provider and no `qapp`, which also proves the service needs no graphics
   stack beyond its settings accessors. **Belongs upstream with the service.**
+- **A Qt suite on `-n auto` will eventually crash a worker, and the crash names an innocent
+  test.** Ours does, in about one full run in three. `coredumpctl` gives
+  `gc_collect -> subtype_dealloc -> ~QWidget -> deleteChildren -> QWidget::window()`: the
+  collector freeing a widget cycle whose C++ side Qt had already destroyed. The template's
+  `_collect_qt_garbage` fixture is the right guard and is not sufficient on its own — it
+  works only while *every* test releases what it built, and one that does not poisons a
+  worker for whatever runs next. Two things worth carrying upstream even before a fix: the
+  reported test is only whichever one the worker was executing, so **do not debug it**; and
+  `--dist loadfile` being green while `--dist load` is red is the signature that says the
+  problem is cross-test rather than in the test. The cheap way to clear a new change of
+  suspicion is to swap its new test files for the same number of `assert True` stubs — if
+  the crash survives that, the change is innocent and the total test count was all that
+  mattered.
 - **A parentless `QObject` that connects a signal to its own method is a segfault waiting
   for the garbage collector.** The cycle keeps it alive past the build that made it, and
   Python frees it whenever the collector next runs — possibly inside another window's event

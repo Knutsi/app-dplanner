@@ -126,6 +126,14 @@ def _collect_qt_garbage():
     A collection costs what the live object graph costs, so this line is only cheap while
     every test actually releases what it built — which is ``AppSession.close``'s job, and
     why the ``session`` fixture calls it.
+
+    **That precondition is currently broken, and this fixture is no longer enough.** About
+    one full run in three kills a worker with the exact SIGSEGV described above —
+    ``gc_collect -> subtype_dealloc -> ~QWidget -> deleteChildren -> QWidget::window()`` —
+    and the test it is reported against is only whichever one that worker was running.
+    ``--dist loadfile`` is green, which is the workaround; ``CLAUDE.md``'s *Checks* section
+    has how to prove a new change is not the cause. Finding the test that holds a build past
+    its teardown is the open work.
     """
     yield
     import gc
