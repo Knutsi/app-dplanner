@@ -95,6 +95,15 @@ dplanner schedule show search            # the same order, with running totals a
 dplanner project export search > plan.json   # and `import` reads the same shape back
 ```
 
+**Run Agent is the window's way in.** *Step ▸ Run Agent…* opens a terminal at the
+repository root with the step's briefing — the agent and the terminal are both a dropdown
+of known choices in *Settings ▸ Agent* (Claude Code, Codex, OpenCode; Ghostty, iTerm,
+Terminal, Windows Terminal, kitty and the rest, marked when not installed). The step wears
+a chip and a marching ring while the shell runs, the chip follows what the agent reports
+(`dplanner agent-state set … needs-input` when it has a question), and the ring goes when
+the shell ends — finished, failed or closed, which the status bar says. *View ▸ Agents…*
+lists every run this window launched; *Step ▸ Show Agent Terminal* brings its window back.
+
 **Both writers may be live.** An agent can work while a window is open on the same folder:
 the window reloads when it owes nothing, and neither side ever overwrites a file it has not
 seen. See `FORMAT.md`.
@@ -218,8 +227,12 @@ src/dplanner/
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
 │   ├── step_agent_instruction/   … this one also holds the project's standing instruction
-│   │                             and assembles and launches Run Agent
-│   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by `dplanner agent-state`
+│   │                             and assembles and launches Run Agent (`launcher.py`: the
+│   │                             agent and terminal preset tables, the reporting wrapper script)
+│   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
+│   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
+│   │                        reads the wrapper's report; `terminal.py` finds the window again;
+│   │                        the status-bar button and the Agents browser are `view.py`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
 │   ├── step_feature/        the steps that collect the work behind them — a marker and a Type toggle

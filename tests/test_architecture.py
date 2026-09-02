@@ -58,6 +58,7 @@ HEADLESS_FILES = (
     "schedule.py",
     "collect.py",
     "runs.py",
+    "terminal.py",
     "documents.py",
     "handoff.py",
     "prompt.py",

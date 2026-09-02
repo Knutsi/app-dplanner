@@ -2,9 +2,12 @@
 
 Where a *status* is a claim about the work, an agent-run state is a claim about the shell:
 Run Agent stamps ``launched`` the moment a terminal is spawned, and the agent inside it
-moves the state along from the CLI as it works. Absence is the default — no agent run —
-and there is deliberately no terminal state here: finishing is ``step_status``'s claim
-(``status set … done``), so a finishing agent clears this entry instead, restoring absence.
+moves the state along from the CLI as it works — ``needs-input`` is how it says it has a
+question for the developer. Absence is the default — no agent run — and there is
+deliberately no terminal state here: finishing is ``step_status``'s claim
+(``status set … done``), so a finishing agent clears this entry instead, restoring absence;
+and when the shell itself ends without clearing it, the window that launched it does
+(:func:`record_exit`), because a chip on a step nobody is working on is a lie.
 """
 
 from typing import Any, Final
@@ -17,7 +20,7 @@ from dplanner.domain.model import Library, Step, StepId, now_stamp
 MODULE_ID = "step_agent_run"
 
 # The lifecycle, in the order a run moves through it. Absence means no agent run.
-STATES: Final = ("launched", "working", "plan-for-review", "pending-approval")
+STATES: Final = ("launched", "working", "plan-for-review", "pending-approval", "needs-input")
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
@@ -79,11 +82,26 @@ def record_launch(library: Library, step_id: StepId) -> None:
     )
 
 
+def record_exit(library: Library, step_id: StepId) -> bool:
+    """The shell ended: clear whatever state it left — the same way the launch was stamped.
+
+    Nothing to do — and False — when the agent already cleared it from the CLI, which is
+    the protocol; the write is only for the run that ended without saying so.
+    """
+    if not library.has(step_id) or not read(library.step(step_id)):
+        return False
+    SetModuleDataCommand(step_id, MODULE_ID, {}, view_origin=LAUNCH_ORIGIN).redo(library)
+    return True
+
+
 # Last, because it names the pieces above: the one declaration everything reads.
 SPEC = AspectSpec(
     id=MODULE_ID,
     label="Agent run",
-    summary="Where a launched agent stands: launched, working, plan-for-review, pending-approval.",
+    summary=(
+        "Where a launched agent stands: launched, working, plan-for-review,"
+        " pending-approval, needs-input."
+    ),
     data_format=DATA_FORMAT,
     phrase=summary,
 )

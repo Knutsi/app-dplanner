@@ -940,6 +940,15 @@ through the ordinary flush, as a structure mark on the library root. Around that
 The same check is why **two CLI runs need no lock between them**: the second is refused for
 exactly the same reason and can be run again. One mechanism, three cases.
 
+What the check *looks at* is the plan, not the directory. A project directory is often
+the repository root itself — New Project's git-init flow makes exactly that — and then the
+directory holds the user's source tree, `.git/` and the worktrees Run Agent keeps under
+`.dplanner/worktrees/`. None of it is anything the store reads or writes, and a snapshot
+that walked all of it made every source edit, every Save and every file an agent touched
+read as "another writer" and reload the window. So `LibraryStore._snapshot` walks
+`PLAN_ENTRIES` — `project.dproj`, `modules/`, `steps/` — which is exactly the set a flush
+could overwrite, and therefore the only set the question is about.
+
 ### Storage operations that rewrite the working tree are synchronous
 
 CLAUDE.md's rule says blocking work runs through `TaskRunner`, and the sync module's own
@@ -1433,6 +1442,61 @@ The assembly is also where the CLI grew the composition root's other seam:
 `Deps` does, supplied by `default_cli_commands()`. A `cli.py` never imports another module;
 what crosses modules arrives as arguments — `skill_commands(specs, described)` made that
 shape first, and this is its second use.
+
+### The peer reports back through its run directory
+
+A detached terminal tells nobody when it is done, and the four platforms' terminals have
+no shared way to ask. What every one of them does have is the wrapper script: the one
+process that starts the agent and is still there when it exits. So the script reports,
+beside the prompt it was launched with — the shell's facts on start (`shell`: tty, pid,
+tmux pane, `$TERM_PROGRAM`, the window title it set) and the agent's exit status at the
+end (`exit`; the word `closed` from a HUP trap when the terminal was shut on it). Two
+plain files, no terminal-specific hook, so the report is the same for every row of the
+terminal table and for an agent CLI nobody has heard of yet.
+
+The other half is the window's, in `modules/step_agent_run/`. It remembers every run it
+launched in the **user's store** (`user_config`) — a temp directory and a pid are facts
+about this machine, and a per-user file is what a rebuilt window re-adopts from — and
+polls them every two seconds *while one is live*. `runs.settle` reads the two files:
+exit 0 is *finished*, anything else *failed*, the trap's word or a dead pid *closed*, a
+vanished directory *lost*. An ended run clears the step's state the way the launch stamped
+it — directly, off the undo stack, with the launch origin — because a chip on a step
+nobody is working on is a lie, and the CLI's own `agent-state clear` is the protocol only
+for the agent that remembered to send it.
+
+One race is designed around. An agent's last `dplanner status set … done` and its exit
+land within a tick of each other, and a window that wrote the exit over a plan it had not
+re-read would trip the store's own refusal and leave the user with a conflict notice for
+something no person did. So the tick asks the store first — `changed_underneath()`, the
+same narrowed answer the library watcher reads — and stands down when it is true: the
+reload that follows rebuilds the module, which re-adopts its runs and checks again on a
+plan it has seen. *Nothing writes over a file it has not seen* is the rule for background
+writers too.
+
+Finding the window again (*Show Agent Terminal*) is honestly best-effort, and the facts the
+script recorded are chosen so the effort mostly succeeds even after the agent has retitled
+the window: a tmux pane is selected wherever it is; Terminal and iTerm are asked, through
+AppleScript, for the tab on the shell's tty; a Linux terminal that owns its windows (kitty,
+Alacritty, xterm, Ghostty) is found by walking the shell's ancestors to the pid that owns
+one, with the title as the fallback, through xdotool or wmctrl; Windows activates the
+PowerShell pid, then the title. Where a desktop cannot — a Wayland session with neither
+tool — the verb is *disabled with the reason*, never hidden: the rule from *Hidden means
+absent*. Every provider answers a reason string, so one verb reads them all.
+
+### Which terminal opens is a table, not a chain
+
+The platform `if`-chain that used to resolve a terminal is one table now, `TERMINALS`:
+a row per known terminal per platform — Terminal, iTerm and Ghostty on macOS; Windows
+Terminal, the Command Prompt and Ghostty on Windows; Ghostty, kitty, Alacritty, foot,
+GNOME Terminal, Konsole and xterm on Linux, with tmux ahead of all of them while inside
+one — each with the command that opens it on the wrapper script and a probe (a binary on
+PATH, an application bundle, an environment variable) saying whether it is installed.
+*Automatic* is the first installed row, which is the platform's own default terminal, so
+an untouched setting behaves the way the machine does; the settings dropdown lists the
+same rows, marks the ones the probe cannot find, and pre-fills the editable template —
+the agent presets' pattern, applied to the second choice on the same page. One table with
+two readers is what keeps the dropdown from ever offering a terminal the launch would not
+find, and a new terminal is a row rather than a branch.
 
 ## Repository facts are derived from the project's directory
 

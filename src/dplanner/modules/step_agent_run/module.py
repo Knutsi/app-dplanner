@@ -1,17 +1,265 @@
-"""The agent-run aspect, in the running application: a format declaration, no surface.
+"""The agent-run aspect, in the running application: the shells this window launched.
 
-The aspect is written by Run Agent (through the composition root's ``record_launch``
-callback) and by the CLI from inside the agent's shell; the canvas reads it through the
-composition root's accent translation. Nothing registers here — the module exists so
-GUI-side migration sees the format.
+The aspect on the step is written by Run Agent (through the composition root's
+``track`` callback) and by the CLI from inside the agent's shell; the canvas reads it
+through the composition root's accent translation. What this module adds is the other
+half of a launch — **the shell is a peer this window keeps an eye on**:
+
+- A two-second timer, running only while a run is live, reads each run's exit file and
+  pid (``runs.settle``). When the shell has ended, the step's state is cleared the way the
+  launch was stamped — directly, off the undo stack, with the launch origin — and the
+  status bar says how it ended. The write is skipped while the workspace has changed
+  underneath: the reload that follows rebuilds this module, which re-adopts its runs from
+  the per-user store and checks again, so the exit is never written over an agent's own
+  last ``dplanner`` call.
+- A status-bar button ("Agent on “X”", "2 agents running") opens the Agents browser —
+  View ▸ Agents… does the same — where every run this machine launched is a row with its
+  state or outcome, *Show Terminal*, *Reveal* and a dismiss.
+- Two Step-menu verbs: *Show Agent Terminal* (the focus provider in ``terminal.py``, greyed
+  with the reason when the desktop cannot) and *Clear Agent Run*, the window's twin of
+  ``dplanner agent-state clear`` — an edit of the user's, so it goes through the undo stack.
+
+Runs live in the user's store (``user_config``), never the plan: a temp directory and a
+pid are facts about this machine.
 """
 
-from dplanner.modules.step_agent_run.aspect import DATA_FORMAT, MODULE_ID
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QWidget
+
+from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.model import Library, StepId
+from dplanner.framework.action_registry import (
+    DISABLED,
+    ENABLED,
+    ActionRegistry,
+    ActionSpec,
+    ActionState,
+)
+from dplanner.framework.context import Context
+from dplanner.framework.undo import UndoService
+from dplanner.framework.user_config import get_global, set_global
+from dplanner.framework.window import StatusHost
+from dplanner.framework.window_watch import WatchableRepository
+from dplanner.modules.step_agent_run import terminal
+from dplanner.modules.step_agent_run.aspect import (
+    DATA_FORMAT,
+    MODULE_ID,
+    read,
+    record_exit,
+    record_launch,
+)
+from dplanner.modules.step_agent_run.runs import AgentRun, describe, new_run, read_shell, settle
+from dplanner.modules.step_agent_run.view import AgentBrowserDialog, AgentStatusButton
+
+POLL_MS = 2000
+RUNS_KEY = "runs"
+
+
+@dataclass(frozen=True)
+class StepAgentRunDeps:
+    library: Library
+    undo: UndoService[Library]
+    actions: ActionRegistry
+    status: StatusHost
+    parent: QWidget
+    # Whether the plan changed underneath: an exit is never written over another writer.
+    repo: WatchableRepository
+    # Selects a step in its project — the ``steps.reveal`` verb, run against the row's step.
+    reveal: Callable[[StepId], None]
 
 
 class StepAgentRunModule:
     id = MODULE_ID
     data_format = DATA_FORMAT
 
+    def __init__(self, deps: StepAgentRunDeps) -> None:
+        self._deps = deps
+        self._runs: list[AgentRun] = []
+        self._timer: QTimer | None = None
+        self._button: AgentStatusButton | None = None
+        self._browser: AgentBrowserDialog | None = None
+
     def register(self) -> None:
-        """Nothing to install: see the module docstring."""
+        deps = self._deps
+        self._runs = [
+            run
+            for run in map(AgentRun.from_json, get_global(MODULE_ID, RUNS_KEY, []))
+            if run is not None
+        ]
+        self._button = AgentStatusButton()
+        self._button.clicked.connect(lambda: self._open_browser())
+        deps.status.add_status_widget(self._button)
+        self._browser = AgentBrowserDialog(
+            deps.parent,
+            title_of=self._title_of,
+            state_of=lambda step_id: (
+                read(deps.library.step(step_id)) if deps.library.has(step_id) else ""
+            ),
+            show_terminal=self._show_terminal,
+            reveal=lambda run: deps.reveal(run.step_id),
+            forget=self._forget,
+            clear_ended=self._clear_ended,
+        )
+        self._timer = QTimer(self._button)
+        self._timer.setInterval(POLL_MS)
+        self._timer.timeout.connect(self.check)
+        deps.library.module_data_changed.connect(lambda *_a: self._refresh())
+
+        deps.actions.register(
+            ActionSpec(
+                id="agent.show_terminal",
+                label="Show Agent &Terminal",
+                menu="Step",
+                group="agent",
+                order=30,
+                tip="Bring the terminal the agent runs in to the front",
+                state=self._can_show_terminal,
+                run=lambda context: self._show_terminal_for(context),
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="agent.clear_run",
+                label="Clear Agent &Run",
+                menu="Step",
+                group="agent",
+                order=40,
+                tip="The run is over: take the agent chip off this step",
+                state=self._can_clear,
+                run=self._clear,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="agent_run.show_agents",
+                label="A&gents…",
+                menu="View",
+                group="panels",
+                order=45,
+                tip="Show the agents launched from this window and how they ended",
+                run=lambda _context: self._open_browser(),
+            )
+        )
+        self.check()
+
+    # -- tracking ----------------------------------------------------------------------------
+
+    def runs(self) -> list[AgentRun]:
+        return list(self._runs)
+
+    def track(self, step_id: StepId, shell_file: str, exit_file: str) -> None:
+        """A shell was just spawned on the step: stamp it, remember it, start watching."""
+        record_launch(self._deps.library, step_id)
+        self._runs.append(new_run(step_id, shell_file, exit_file))
+        self._store()
+        self._refresh()
+
+    def check(self) -> None:
+        """One tick: settle every live run whose shell has ended, and say so."""
+        deps = self._deps
+        if any(run.live for run in self._runs) and deps.repo.changed_underneath():
+            return  # The reload that follows rebuilds this module; it checks again then.
+        changed = False
+        for index, run in enumerate(self._runs):
+            settled = settle(run)
+            if settled is run:
+                continue
+            self._runs[index] = settled
+            changed = True
+            record_exit(deps.library, run.step_id)
+            deps.status.show_status(
+                f"Agent on “{self._title_of(run.step_id)}” {describe(settled, '')}", 6000
+            )
+        if changed:
+            self._store()
+        self._refresh()
+
+    def _forget(self, run: AgentRun) -> None:
+        self._runs = [other for other in self._runs if other.key != run.key]
+        self._store()
+        self._refresh()
+
+    def _clear_ended(self) -> None:
+        self._runs = [run for run in self._runs if run.live]
+        self._store()
+        self._refresh()
+
+    def _store(self) -> None:
+        set_global(MODULE_ID, RUNS_KEY, [run.to_json() for run in self._runs])
+
+    def _refresh(self) -> None:
+        if self._button is None or self._browser is None or self._timer is None:
+            return
+        self._button.show_runs(self._runs, self._title_of)
+        if self._browser.isVisible():
+            self._browser.refresh(self._runs, terminal.support_reason())
+        live = any(run.live for run in self._runs)
+        if live and not self._timer.isActive():
+            self._timer.start()
+        elif not live:
+            self._timer.stop()
+
+    def _open_browser(self) -> None:
+        assert self._browser is not None
+        self._browser.refresh(self._runs, terminal.support_reason())
+        self._browser.show()  # Non-modal: the agents keep working underneath.
+        self._browser.raise_()
+
+    def _title_of(self, step_id: StepId) -> str:
+        library = self._deps.library
+        if library.has(step_id):
+            return library.step(step_id).title or "Untitled step"
+        return "a deleted step"
+
+    def _live_run(self, step_id: StepId) -> AgentRun | None:
+        return next((run for run in self._runs if run.live and run.step_id == step_id), None)
+
+    # -- the verbs -----------------------------------------------------------------------------
+
+    def _can_show_terminal(self, context: Context) -> ActionState:
+        step_id = self._focused(context)
+        if step_id is None:
+            return DISABLED
+        if self._live_run(step_id) is None:
+            return ActionState(
+                enabled=False,
+                label="Show Agent Terminal — no agent shell launched from here is running",
+            )
+        reason = terminal.support_reason()
+        if reason:
+            return ActionState(enabled=False, label=f"Show Agent Terminal — {reason}")
+        return ENABLED
+
+    def _show_terminal_for(self, context: Context) -> None:
+        step_id = self._focused(context)
+        run = self._live_run(step_id) if step_id is not None else None
+        if run is not None:
+            self._show_terminal(run)
+
+    def _show_terminal(self, run: AgentRun) -> None:
+        reason = terminal.focus(read_shell(run))
+        if reason:
+            self._deps.status.show_status(f"Could not show the agent's terminal — {reason}", 6000)
+
+    def _can_clear(self, context: Context) -> ActionState:
+        step_id = self._focused(context)
+        if step_id is None:
+            return DISABLED
+        if not read(self._deps.library.step(step_id)):
+            return ActionState(enabled=False, label="Clear Agent Run — no agent run on this step")
+        return ENABLED
+
+    def _clear(self, context: Context) -> None:
+        step_id = self._focused(context)
+        if step_id is None:
+            return
+        self._deps.undo.push(SetModuleDataCommand(step_id, MODULE_ID, {}, label="Clear Agent Run"))
+
+    def _focused(self, context: Context) -> StepId | None:
+        step_id = context.focus_entity("step")
+        if step_id is None or not self._deps.library.has(step_id):
+            return None
+        return step_id

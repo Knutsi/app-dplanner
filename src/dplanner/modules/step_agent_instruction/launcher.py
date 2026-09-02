@@ -13,6 +13,24 @@ a dropdown that pre-fills an editable command instead of a bare field the user w
 to research. ``{prompt}`` in the command becomes the briefing (quoted, from the prompt
 file); a command without the placeholder gets it appended.
 
+**Which terminal opens is the same shape.** ``TERMINALS`` is one table of the known
+terminals per platform — Ghostty, iTerm and Terminal on macOS; Ghostty, Windows Terminal
+and the Command Prompt on Windows; Ghostty, kitty, Alacritty, foot, GNOME Terminal, Konsole
+and xterm on Linux, with tmux first while inside one — each with the command that opens it
+on the wrapper script and a probe saying whether it is installed. The settings dropdown
+lists the table and pre-fills the editable template; *Automatic* is the first installed
+row, which is the platform's own default terminal. One table, two readers, so the
+dropdown can never offer a terminal the launch would not find.
+
+**The shell reports back through its run directory.** The wrapper script is the one
+process that knows when the agent ends, so it writes two files beside the prompt: the
+shell's facts on start (``shell``: tty, pid, tmux pane, terminal program, window title —
+what a later *Show Agent Terminal* needs to find the window again) and the agent's exit
+status when it ends (``exit``; ``closed`` when the terminal was shut on it). The agent-run
+module watches for the second and clears the step's chip; nothing here depends on the
+terminal, so the report works with every row of the table. On a non-zero exit the window
+stays open on a *Press Enter* line, so a crash can be read before it is gone.
+
 **The step gets a worktree when it can.** When the checkout is a git repository (and the
 setting is on), the wrapper script puts the agent in ``.dplanner/worktrees/<step>`` on an
 ``agent/<step>`` branch — created on the first run, reused on the next — so parallel agents
@@ -22,12 +40,13 @@ excluded via ``.git/info/exclude`` (local, never versioned).
 The prompt and the wrapper script go to a per-run temp directory, never the workspace — a
 prompt file inside the workspace would dirty it and end up in version control.
 
-Resolution order for the terminal: the user's command template from settings, else a
-platform table, else ``None`` — and ``None`` is an answer, not an error: the caller falls
-back to showing the assembled prompt.
+Resolution order for the terminal: the user's command template from settings, else the
+first installed preset, else ``None`` — and ``None`` is an answer, not an error: the caller
+falls back to showing the assembled prompt.
 """
 
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -38,6 +57,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 WORKTREES_DIR = ".dplanner/worktrees"
+
+# The names the wrapper script reports under, beside the prompt. The exit file holds the
+# agent's status, or the word ``closed`` when the terminal was shut on it (the POSIX
+# script's HUP trap) — the reader takes any non-number as that.
+SHELL_FILE = "shell"
+EXIT_FILE = "exit"
 
 
 @dataclass(frozen=True)
@@ -61,10 +86,88 @@ DEFAULT_AGENT_COMMAND = PRESETS[0].command
 
 
 @dataclass(frozen=True)
+class TerminalPreset:
+    id: str
+    label: str
+    platform: str  # "linux" | "darwin" | "win32", as ``sys.platform`` starts.
+    # How it opens on the wrapper: {script}, {workdir} and {title} are substituted per token.
+    command: str
+    # How to tell it is installed: a binary on PATH, ``app:<Name>`` for a macOS bundle,
+    # ``env:<VAR>`` for a session fact (inside tmux), "" for always.
+    probe: str = ""
+
+
+# Per platform, in the order Automatic tries them: the platform's own default terminal
+# first, so an untouched setting behaves the way the machine does. tmux comes before all
+# of them on the two platforms it runs on, but only while the application is inside one.
+TERMINALS: tuple[TerminalPreset, ...] = (
+    TerminalPreset(
+        "tmux", "tmux (new window)", "linux", "tmux new-window -c {workdir} {script}", "env:TMUX"
+    ),
+    TerminalPreset("ghostty", "Ghostty", "linux", "ghostty -e {script}", "ghostty"),
+    TerminalPreset("kitty", "kitty", "linux", "kitty {script}", "kitty"),
+    TerminalPreset("alacritty", "Alacritty", "linux", "alacritty -e {script}", "alacritty"),
+    TerminalPreset("foot", "foot", "linux", "foot {script}", "foot"),
+    TerminalPreset(
+        "gnome-terminal", "GNOME Terminal", "linux", "gnome-terminal -- {script}", "gnome-terminal"
+    ),
+    TerminalPreset("konsole", "Konsole", "linux", "konsole -e {script}", "konsole"),
+    TerminalPreset("xterm", "xterm", "linux", "xterm -e {script}", "xterm"),
+    TerminalPreset(
+        "tmux-mac",
+        "tmux (new window)",
+        "darwin",
+        "tmux new-window -c {workdir} {script}",
+        "env:TMUX",
+    ),
+    TerminalPreset("terminal", "Terminal", "darwin", "open -a Terminal {script}"),
+    TerminalPreset("iterm", "iTerm", "darwin", "open -a iTerm {script}", "app:iTerm"),
+    TerminalPreset(
+        "ghostty-mac", "Ghostty", "darwin", "open -na Ghostty --args -e {script}", "app:Ghostty"
+    ),
+    TerminalPreset("wt", "Windows Terminal", "win32", "wt -d {workdir} cmd /k {script}", "wt"),
+    TerminalPreset("cmd", "Command Prompt", "win32", 'cmd /c start "" cmd /k {script}'),
+    TerminalPreset("ghostty-win", "Ghostty", "win32", "ghostty -e {script}", "ghostty"),
+)
+
+# Where a macOS application bundle may be, in the order Finder would look.
+MAC_APP_DIRS = ("/Applications", "~/Applications", "/System/Applications/Utilities")
+
+
+def terminals_for(platform: str = sys.platform) -> tuple[TerminalPreset, ...]:
+    return tuple(preset for preset in TERMINALS if platform.startswith(preset.platform))
+
+
+def is_installed(
+    preset: TerminalPreset,
+    which: Callable[[str], str | None] = shutil.which,
+    env: Mapping[str, str] = os.environ,
+    app_exists: Callable[[str], bool] | None = None,
+) -> bool:
+    """Whether the preset's probe finds it on this machine."""
+    probe = preset.probe
+    if not probe:
+        return True
+    if probe.startswith("env:"):
+        return bool(env.get(probe[4:]))
+    if probe.startswith("app:"):
+        return (app_exists or _mac_app_exists)(probe[4:])
+    return which(probe) is not None
+
+
+def _mac_app_exists(name: str) -> bool:
+    return any((Path(d).expanduser() / f"{name}.app").is_dir() for d in MAC_APP_DIRS)
+
+
+@dataclass(frozen=True)
 class LaunchFiles:
     directory: Path
     prompt_file: Path
     script: Path
+    # What the wrapper reports: the shell's facts on start, the agent's status on exit.
+    shell_file: Path
+    exit_file: Path
+    title: str  # The terminal window's title, as the script sets it.
 
 
 def new_run_dir() -> Path:
@@ -106,6 +209,17 @@ def _agent_line(agent_command: str, prompt_expansion: str) -> str:
     return command.replace("{prompt}", prompt_expansion)
 
 
+def window_title(step_title: str) -> str:
+    """The terminal's title: plain enough to sit inside any shell's quoting.
+
+    Every character a shell, cmd or AppleScript could read as syntax is dropped, so the
+    title is written verbatim into three script dialects and searched for later by the
+    focus provider without an escaping rule for each.
+    """
+    plain = re.sub(r"[^\w .,:()\-]+", "", step_title, flags=re.UNICODE).strip()
+    return f"dplanner: {plain[:60] or 'agent'}"
+
+
 def prepare(
     prompt_text: str,
     workdir: Path,
@@ -113,6 +227,7 @@ def prepare(
     worktree: str = "",
     platform: str = sys.platform,
     directory: Path | None = None,
+    step_title: str = "",
 ) -> LaunchFiles:
     """Write the prompt and a wrapper script to ``directory``, or a fresh temp directory.
 
@@ -123,18 +238,35 @@ def prepare(
         directory = new_run_dir()
     prompt_file = directory / "prompt.md"
     prompt_file.write_text(prompt_text)
+    files = LaunchFiles(
+        directory=directory,
+        prompt_file=prompt_file,
+        script=directory / ("run.cmd" if platform.startswith("win") else "run.sh"),
+        shell_file=directory / SHELL_FILE,
+        exit_file=directory / EXIT_FILE,
+        title=window_title(step_title),
+    )
     if platform.startswith("win"):
-        script = directory / "run.cmd"
-        script.write_text(_windows_script(workdir, prompt_file, agent_command, worktree))
+        files.script.write_text(_windows_script(files, workdir, agent_command, worktree))
     else:
-        script = directory / "run.sh"
-        script.write_text(_posix_script(workdir, prompt_file, agent_command, worktree))
-        script.chmod(0o755)
-    return LaunchFiles(directory=directory, prompt_file=prompt_file, script=script)
+        files.script.write_text(_posix_script(files, workdir, agent_command, worktree))
+        files.script.chmod(0o755)
+    return files
 
 
-def _posix_script(workdir: Path, prompt_file: Path, agent_command: str, worktree: str) -> str:
-    lines = ["#!/bin/sh", f'cd "{workdir}"']
+def _posix_script(files: LaunchFiles, workdir: Path, agent_command: str, worktree: str) -> str:
+    title = shlex.quote(files.title)
+    shell, exit_file = shlex.quote(str(files.shell_file)), shlex.quote(str(files.exit_file))
+    lines = [
+        "#!/bin/sh",
+        # The title first, so the window is findable from its first frame; then the facts.
+        f"printf '\\033]0;%s\\007' {title}",
+        f"printf 'tty=%s\\npid=%s\\npane=%s\\nprogram=%s\\ntitle=%s\\n'"
+        f' "$(tty)" "$$" "$TMUX_PANE" "$TERM_PROGRAM" {title} > {shell}',
+        # The terminal closed on the agent: say so rather than reporting its signal.
+        f"trap 'echo closed > {exit_file}; exit 129' HUP",
+        f'cd "{workdir}"',
+    ]
     if worktree:
         tree = f"{workdir}/{WORKTREES_DIR}/{worktree}"
         lines += [
@@ -147,12 +279,21 @@ def _posix_script(workdir: Path, prompt_file: Path, agent_command: str, worktree
             f'  if [ -d "{tree}" ]; then cd "{tree}"; fi',
             "fi",
         ]
-    lines.append("exec " + _agent_line(agent_command, f'"$(cat \'{prompt_file}\')"'))
+    lines += [
+        _agent_line(agent_command, f"\"$(cat '{files.prompt_file}')\""),
+        "code=$?",
+        f'echo "$code" > {exit_file}',
+        'if [ "$code" -ne 0 ]; then',
+        "  printf '\\nThe agent exited with status %s. Press Enter to close.\\n' \"$code\"",
+        "  read -r _",
+        "fi",
+        'exit "$code"',
+    ]
     return "\n".join(lines) + "\n"
 
 
-def _windows_script(workdir: Path, prompt_file: Path, agent_command: str, worktree: str) -> str:
-    lines = ["@echo off", f'cd /d "{workdir}"']
+def _windows_script(files: LaunchFiles, workdir: Path, agent_command: str, worktree: str) -> str:
+    lines = ["@echo off", f"title {files.title}", f'cd /d "{workdir}"']
     if worktree:
         tree = str(workdir / ".dplanner" / "worktrees" / worktree)
         lines += [
@@ -161,8 +302,23 @@ def _windows_script(workdir: Path, prompt_file: Path, agent_command: str, worktr
             ")",
             f'if exist "{tree}" cd /d "{tree}"',
         ]
-    agent = _agent_line(agent_command, f"(Get-Content -Raw '{prompt_file}')")
-    lines.append(f'powershell -NoExit -Command "{agent}"')
+    agent = _agent_line(agent_command, f"(Get-Content -Raw '{files.prompt_file}')")
+    # PowerShell writes the facts (it is the process whose pid outlives the agent's start
+    # and dies with the window) and carries the agent's exit status back out to cmd.
+    facts = (
+        f"Set-Content -Path '{files.shell_file}'"
+        f" -Value ('pid=' + $PID + [Environment]::NewLine + 'title={files.title}')"
+    )
+    lines += [
+        f'powershell -Command "{facts}; {agent}; exit $LASTEXITCODE"',
+        "set code=%ERRORLEVEL%",
+        # Redirection first: `echo 0> file` would read as redirecting handle 0.
+        f'>"{files.exit_file}" echo %code%',
+        'if not "%code%"=="0" (',
+        "  echo The agent exited with status %code%.",
+        "  pause",
+        ")",
+    ]
     return "\r\n".join(lines) + "\r\n"
 
 
@@ -173,47 +329,38 @@ def resolve_command(
     platform: str = sys.platform,
     which: Callable[[str], str | None] = shutil.which,
     env: Mapping[str, str] = os.environ,
+    app_exists: Callable[[str], bool] | None = None,
 ) -> list[str] | None:
     """The command that opens a terminal running the script, or None when nothing can.
 
-    A non-empty ``template`` — from settings — wins outright: it is substituted with
-    ``{script}``, ``{prompt_file}`` and ``{workdir}`` and split like a shell would.
+    A non-empty ``template`` — from settings — wins outright. Otherwise the first installed
+    preset for the platform, then ``$TERMINAL`` on Linux, then None.
     """
+    values = {"script": str(files.script), "workdir": str(workdir), "title": files.title}
     if template.strip():
-        filled = template.format(
-            script=files.script, prompt_file=files.prompt_file, workdir=workdir
-        )
-        return shlex.split(filled)
-    script = str(files.script)
+        return _fill(template, values)
+    for preset in terminals_for(platform):
+        if is_installed(preset, which, env, app_exists):
+            return _fill(preset.command, values)
     if platform.startswith("linux"):
-        if env.get("TMUX"):
-            return ["tmux", "new-window", "-c", str(workdir), script]
-        for terminal, args in _LINUX_TERMINALS:
-            if which(terminal):
-                return [terminal, *args, script]
         preferred = env.get("TERMINAL", "")
         if preferred and which(preferred):
-            return [preferred, "-e", script]
-        return None
-    if platform == "darwin":
-        return ["open", "-a", "Terminal", script]
-    if platform.startswith("win"):
-        if which("wt"):
-            return ["wt", "-d", str(workdir), "cmd", "/k", script]
-        return ["cmd", "/c", "start", "", "cmd", "/k", script]
+            return [preferred, "-e", str(files.script)]
     return None
 
 
-# First found wins; the args are how each one is told what to run.
-_LINUX_TERMINALS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("ghostty", ("-e",)),
-    ("kitty", ()),
-    ("alacritty", ("-e",)),
-    ("foot", ()),
-    ("gnome-terminal", ("--",)),
-    ("konsole", ("-e",)),
-    ("xterm", ("-e",)),
-)
+def _fill(template: str, values: Mapping[str, str]) -> list[str] | None:
+    """Split like a shell, then substitute per token — a Windows path never meets shlex.
+
+    None for a template naming a placeholder that does not exist: an unusable template
+    is the same answer as no terminal, and the caller's fallback delivers the prompt.
+    """
+    try:
+        return [
+            token.format_map(values) if "{" in token else token for token in shlex.split(template)
+        ]
+    except (KeyError, ValueError, IndexError):
+        return None
 
 
 def spawn(command: list[str], workdir: Path) -> None:

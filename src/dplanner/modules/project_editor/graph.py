@@ -52,8 +52,12 @@ from dplanner.modules.project_editor.modes import (
 )
 from dplanner.modules.project_editor.region_items import RegionItem, RegionPreviewItem
 from dplanner.modules.project_editor.regions import Region
-from dplanner.modules.project_editor.renderers import NodeAccent, RenderHints
+from dplanner.modules.project_editor.renderers import RING_STEP, NodeAccent, RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef
+
+# How often a live ring's dashes move: quick enough to read as motion, slow enough that an
+# agent working for an hour costs the canvas nothing worth measuring.
+RING_TICK_MS = 80
 
 ZOOM_MIN = 0.4
 ZOOM_MAX = 2.5
@@ -128,6 +132,13 @@ class GraphScene(QGraphicsScene):
 
         self.selectionChanged.connect(self._on_selection)
 
+        # The live rings' clock: one timer for every node wearing one, running only while
+        # there is one — an idle canvas ticks nothing. Sync settles it; nothing else does.
+        self._ring_phase = 0.0
+        self._ring_timer = QTimer(self)
+        self._ring_timer.setInterval(RING_TICK_MS)
+        self._ring_timer.timeout.connect(self.advance_rings)
+
     # -- what the activity puts in ---------------------------------------------------------
 
     def sync(
@@ -148,6 +159,7 @@ class GraphScene(QGraphicsScene):
                 item.setPos(spec.x, spec.y)
         for gone_node in set(self._nodes) - wanted:
             self.removeItem(self._nodes.pop(gone_node))
+        self._settle_ring_timer()
 
         wanted_regions = {region.id for region in regions}
         for region in regions:
@@ -175,6 +187,19 @@ class GraphScene(QGraphicsScene):
                 self.addItem(edge)
             else:
                 edge.follow()  # A node may have moved under it since the last sync.
+
+    def advance_rings(self) -> None:
+        """One tick: every live ring's dashes move on together."""
+        self._ring_phase = (self._ring_phase + RING_STEP) % 1000.0
+        for item in self._nodes.values():
+            item.set_ring_phase(self._ring_phase)
+
+    def _settle_ring_timer(self) -> None:
+        live = any(item.wears_ring() for item in self._nodes.values())
+        if live and not self._ring_timer.isActive():
+            self._ring_timer.start()
+        elif not live and self._ring_timer.isActive():
+            self._ring_timer.stop()
 
     def reflow_edges(self, step_id: StepId) -> None:
         """Redraw the edges touching one node — called by the item while it is dragged."""
