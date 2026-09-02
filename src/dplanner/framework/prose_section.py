@@ -30,7 +30,7 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from dplanner.framework.asset_gallery import AreaFor, AssetGallery
 from dplanner.framework.markdown_highlight import MarkdownHighlighter
-from dplanner.framework.prose_edit import ProseEdit
+from dplanner.framework.prose_edit import Pick, ProseEdit
 from dplanner.framework.text_binding import TextBinding, TextField
 from dplanner.framework.text_dialog import ExpandedTextDialog, attach_expand
 from dplanner.framework.undo import UndoService
@@ -58,6 +58,7 @@ class ProseSection(QWidget):
         self._undo = undo
         self._binding: TextBinding[Any] | None = None
         self._field: TextField[Any] | None = None
+        self._pick: Pick | None = None
         self._placeholder = placeholder
         self._expand_title = expand_title
 
@@ -103,8 +104,10 @@ class ProseSection(QWidget):
     def show_target(self, target_id: str | None) -> None:
         self._close_binding()
         # Always clear first: a section re-pointed at another node must never keep writing
-        # files beside the last one, and a host that has no area simply never sets one.
+        # files beside the last one — nor picking for it — and a host that has neither
+        # simply never sets one.
         self.set_area(None)
+        self.set_picker(None)
         field = self._field_for(target_id) if target_id is not None else None
         self._field = field
         self.expand_button.setEnabled(field is not None)
@@ -122,6 +125,16 @@ class ProseSection(QWidget):
         self.gallery.set_area(area_for)
         self.edit.set_attach(self.gallery.attach_bytes if area_for is not None else None)
 
+    def set_picker(self, pick: Pick | None) -> None:
+        """Offer the project's existing assets in this editor, or stop doing so.
+
+        :meth:`set_area`'s sibling, made from the same ``show_target`` — picking without
+        an area to copy into would have nowhere to put the choice, so the editor greys
+        the entry until both have arrived.
+        """
+        self._pick = pick
+        self.edit.set_pick(pick)
+
     def dispose(self) -> None:
         self._field = None
         self._close_binding()
@@ -137,6 +150,7 @@ class ProseSection(QWidget):
             title=self._expand_title,
             placeholder=self._placeholder,
             attach=self.gallery.attach_bytes if self.gallery is not None else None,
+            pick=self._pick,
             parent=self.window(),
         )
         dialog.exec()

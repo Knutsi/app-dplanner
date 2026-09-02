@@ -14,11 +14,14 @@ Who *receives* a handoff is not stored anywhere — it is derived from the graph
 time, in :mod:`dplanner.modules.step_handoff.handoff`.
 """
 
+from collections.abc import Sequence
 from typing import Any, Final
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
-from dplanner.domain.model import Step
+from dplanner.domain.assets import AssetLocation, AssetSource, AssetUse, area_assets
+from dplanner.domain.model import Library, Project, Step
+from dplanner.domain.store import FilesFor
 
 MODULE_ID = "step_handoff"
 
@@ -65,6 +68,32 @@ def write_scope(scope: str) -> dict[str, Any]:
     if scope == "downstream":
         return {}
     return stamped({"scope": scope}, DATA_FORMAT.version)
+
+
+def asset_source() -> AssetSource:
+    """This aspect's slice of the project's asset catalog.
+
+    A handoff's files *are* the payload — "any files worth carrying forward" — and
+    :mod:`.handoff` lists the whole area into every inherited briefing, so each one is
+    used by construction. Taking a file out of a handoff is the Handoff tab's gesture,
+    not a sweep's.
+    """
+
+    def scan(
+        _library: Library, project: Project, files: FilesFor
+    ) -> Sequence[AssetLocation]:
+        return [
+            AssetLocation(
+                node_id=step.id,
+                module_id=MODULE_ID,
+                name=name,
+                uses=(AssetUse("step", step.id, step.title, "handoff"),),
+            )
+            for step in project.steps
+            for name in area_assets(files, step.id, MODULE_ID)
+        ]
+
+    return AssetSource(id=MODULE_ID, label="Handoffs", scan=scan)
 
 
 def summary(step: Step) -> str:

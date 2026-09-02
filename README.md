@@ -37,7 +37,10 @@ the estimates give every step a running total and a date, in the order table and
 `dplanner schedule show`. Progression reads the same graph with the statuses in hand:
 the execution board and `dplanner progression show` say what can be launched right now.
 Tests are what a step must keep passing once it is done: a step carries several, a *check*
-step gathers every test it waits on, and a *test run* records what each one did.
+step gathers every test it waits on, and a *test run* records what each one did. Every
+image and file a project carries is browsable in one place — the Assets tab and
+`dplanner asset` list what exists, who uses each, and what a sweep may safely remove —
+and any prose editor can reuse one with Insert from Assets….
 
 ## Running
 
@@ -176,7 +179,7 @@ src/dplanner/
 │   ├── main.py              the argparse tree, built from the registry
 │   ├── lookup.py            an id, a folder name, or part of a title
 │   ├── aspects.py           `aspect list`
-│   ├── assets.py            `<noun> attach`/`assets` — the verb pair any file-carrying aspect offers
+│   ├── assets.py            `<noun> attach`/`assets` — the per-aspect pair — and `asset list`/`uses`/`prune` over every module's areas
 │   ├── lint.py              `lint` — every module's checks over the library, one report
 │   ├── scopes.py            `scope show` — what a check, feature or milestone gathers
 │   ├── authoring.py         `step add` — one verb, each module contributing its flags
@@ -192,6 +195,7 @@ src/dplanner/
 │   ├── mime_files.py        the files a paste or a drop carries — both editors' one answer
 │   ├── text_dialog.py       the same document in a big modal editor — a second binding
 │   ├── asset_gallery.py     a module's attached files as thumbnails; click to view
+│   ├── asset_picker.py      a modal picker over named files — Insert from Assets…'s dialog
 │   ├── image_preview.py     the modal lightbox the gallery (and anyone) opens
 │   ├── window_watch.py      noticing that another writer changed the library
 │   └── …                    registries, actions, tabs, undo, autosave, tasks, LLM
@@ -229,6 +233,8 @@ src/dplanner/
 │   ├── progression/         the execution board — what can be launched now — and `dplanner progression show`
 │   ├── time_estimates/      the staffing matrix, the milestones in sequence and the calendar they date — `dplanner schedule matrix`, `schedule milestone`
 │   ├── spec/                spec documents beside a project, their requirements and figures, `dplanner spec` (pdf.py: text layers and page rendering; editor.py: the in-app markdown editor)
+│   ├── project_assets/      every asset a project carries and what uses each — the Assets
+│   │                        tab, the pool, display titles, and `dplanner asset`
 │   ├── library_watch/       reloading when something else writes to a project or the library file
 │   ├── agent_skill/         the skill dialog, and the install that puts dplanner on PATH
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it

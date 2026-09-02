@@ -158,3 +158,28 @@ def test_image_mime_can_be_inserted_which_is_what_enables_menu_paste(edit):
     """Qt's own answer for image-only clipboard data is False, which greys Paste in the
     standard context menu — on the one thing here that most wants pasting."""
     assert edit.canInsertFromMimeData(image_mime())
+
+
+# -- inserting what the project already holds ---------------------------------------------------
+
+
+def test_a_picked_asset_travels_the_paste_path(edit, area):
+    """Insert from Assets… is a paste with a different source: the payload is copied into
+    this editor's own area and linked at the caret, exactly as a drop would be."""
+    from dplanner.framework.mime_files import Payload
+
+    edit.set_pick(lambda: [Payload(data=png_bytes(), filename="Login mock.png", is_image=True)])
+    edit.insert_from_assets()
+    name = assets(area)[0]
+    assert edit.toPlainText() == f"![Login mock]({name})"
+
+
+def test_a_cancelled_pick_inserts_nothing(edit, area):
+    edit.set_pick(lambda: [])
+    edit.insert_from_assets()
+    assert edit.toPlainText() == "" and assets(area) == []
+
+
+def test_an_editor_without_a_picker_ignores_the_gesture(edit):
+    edit.insert_from_assets()  # No set_pick: the menu entry is greyed, the call a no-op.
+    assert edit.toPlainText() == ""

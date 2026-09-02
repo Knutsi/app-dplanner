@@ -255,9 +255,12 @@ project, `{"efficiency": 0.5}` — an assumption about the team, not a fact abou
 same module writes `{"start": "2026-10-05", "color": "#e0602c"}` beside a *milestone* step:
 the day its stretch of work begins instead of the day the previous one lands, and a colour
 chosen over the dealt one — assumptions again, and the landing date itself is never written. The
-distinction has one practical consequence worth knowing: the CLI's migration list is built
-from the aspects *plus* anything like this, and a format missing from it is data the CLI
-silently declines to bring forward.
+asset browser's display titles are the third: `modules/project_assets.json` beside the
+project, `{"titles": {"assets/<sha16>.png": "Login mock"}}` — presentation for
+content-addressed files, keyed by content name so one title covers every copy and no link
+ever carries it. The distinction has one practical consequence worth knowing: the CLI's
+migration list is built from the aspects *plus* anything like this, and a format missing
+from it is data the CLI silently declines to bring forward.
 
 **A module that writes a number owes it a `float`.** The old format enforced this at the
 model boundary, because an `int` writes as `5` where a reloaded float writes as `5.0`

@@ -27,12 +27,20 @@ standing documentation style, prepended to every compile. A project does no work
 no documentation-of-its-own for that to collide with.
 """
 
-import re
+from collections.abc import Sequence
 from typing import Any
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
-from dplanner.domain.model import Node, Step
+from dplanner.domain.assets import (
+    AssetLocation,
+    AssetSource,
+    AssetUse,
+    area_assets,
+    asset_references,
+)
+from dplanner.domain.model import Library, Node, NodeId, Project, Step
+from dplanner.domain.store import FilesFor
 
 MODULE_ID = "docs"
 COMPILED_ID = "docs_compiled"
@@ -64,13 +72,54 @@ def write_state(on: bool) -> dict[str, Any]:
     return stamped({"on": True}, DATA_FORMAT.version) if on else {}
 
 
-_IMAGE_REFERENCE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)")
+def asset_source() -> AssetSource:
+    """This module's slice of the project's asset catalog.
 
+    "Used" is answered project-wide by name, not per area: a *compiled* document renders
+    images from its source steps' areas (``framework/markdown_view.py`` asks each area in
+    turn, exact because names are content-addressed), so a fragment's image may be needed
+    by a collector's compiled text long after the fragment dropped it. Any docs-area copy
+    whose name a fragment, a compiled document or the standing style still references is
+    therefore used — and the use names the *referencing* node, which is what a "used by"
+    list should say.
+    """
 
-def image_references(markdown: str) -> list[str]:
-    """The area-relative image paths the markdown embeds — ``![](assets/…)``."""
-    found = _IMAGE_REFERENCE.findall(markdown)
-    return [ref for ref in found if "://" not in ref and not ref.startswith("/")]
+    def scan(
+        _library: Library, project: Project, files: FilesFor
+    ) -> Sequence[AssetLocation]:
+        referenced: dict[str, list[AssetUse]] = {}
+
+        def note(names: list[str], use: AssetUse) -> None:
+            for name in names:
+                referenced.setdefault(name, []).append(use)
+
+        note(
+            asset_references(read(project)),
+            AssetUse("project", project.id, project.title, "documentation style"),
+        )
+        for step in project.steps:
+            note(
+                asset_references(read(step)),
+                AssetUse("step", step.id, step.title, "documentation"),
+            )
+            note(
+                asset_references(read_compiled(step)),
+                AssetUse("step", step.id, step.title, "compiled docs"),
+            )
+
+        holders: list[NodeId] = [project.id, *(step.id for step in project.steps)]
+        return [
+            AssetLocation(
+                node_id=node_id,
+                module_id=MODULE_ID,
+                name=name,
+                uses=tuple(referenced.get(name, ())),
+            )
+            for node_id in holders
+            for name in area_assets(files, node_id, MODULE_ID)
+        ]
+
+    return AssetSource(id=MODULE_ID, label="Documentation", scan=scan)
 
 
 def summary(step: Step) -> str:

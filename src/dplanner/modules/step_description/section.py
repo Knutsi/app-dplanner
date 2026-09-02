@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QCheckBox
 
 from dplanner.domain.model import Library
 from dplanner.framework.asset_gallery import AreaFor
+from dplanner.framework.prose_edit import Pick
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.text_binding import TextField
 from dplanner.framework.undo import UndoService
@@ -48,6 +49,7 @@ class DescriptionSection(ProseSection):
         area_for_target: Callable[[str], AreaFor | None] | None = None,
         agent_link: SeparateInstructionLink | None = None,
         library: Library | None = None,
+        pick_for_target: Callable[[str], Pick | None] | None = None,
     ) -> None:
         # margin 0: the Details tab hosts this as a block and owns the outer spacing.
         super().__init__(
@@ -59,6 +61,7 @@ class DescriptionSection(ProseSection):
             attach_title="Attach to Description",
         )
         self._area_for_target = area_for_target
+        self._pick_for_target = pick_for_target
         self._agent_link = agent_link
         self._target_id: str | None = None
         self._loading = False
@@ -93,6 +96,8 @@ class DescriptionSection(ProseSection):
         self._target_id = target_id
         if target_id is not None and self._area_for_target is not None:
             self.set_area(self._area_for_target(target_id))
+        if target_id is not None and self._pick_for_target is not None:
+            self.set_picker(self._pick_for_target(target_id))
         self._reload_separate()
 
     def dispose(self) -> None:
