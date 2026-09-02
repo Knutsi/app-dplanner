@@ -227,7 +227,7 @@ src/dplanner/
 │   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── progression/         the execution board — what can be launched now — and `dplanner progression show`
-│   ├── time_estimates/      the staffing matrix — people × agents over the graph — and `dplanner schedule matrix`
+│   ├── time_estimates/      the staffing matrix, the milestones in sequence and the calendar they date — `dplanner schedule matrix`, `schedule milestone`
 │   ├── spec/                spec documents beside a project, their requirements and figures, `dplanner spec` (pdf.py: text layers and page rendering; editor.py: the in-app markdown editor)
 │   ├── library_watch/       reloading when something else writes to a project or the library file
 │   ├── agent_skill/         the skill dialog, and the install that puts dplanner on PATH

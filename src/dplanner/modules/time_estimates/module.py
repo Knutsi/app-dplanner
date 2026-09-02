@@ -1,16 +1,24 @@
 """How long the project takes with a stated team, as a tab beside the graph it prices.
 
-The page leads with the answer: a landing date for the selected team, then one heatmap of
-every staffing (clicking a tile re-asks the question), then a computed sentence saying
-what the grid means — which axis still buys time, and where the dependency floor is.
-Calendar days and project days are two lenses on one simulation, so they are a toggle
-over one grid rather than two tables side by side.
+The page is split down the middle. On the left, what you set: the focus factor, the
+staffing picker (one heatmap of every team, clicking a tile re-asks the question), and
+the milestones — each with its colour and, optionally, a date of its own to begin on. On
+the right, what that answers: a calendar with every milestone's stretch of work lit in its
+colour, and under it the milestones with the dates they land. Calendar days and project
+days are two lenses on one simulation, so they are a toggle over one grid rather than two
+tables side by side. Nothing on the page explains itself; the tooltips do.
 
-The simulation is the domain's (``parallel_finish``); this module renders it and stores
-exactly one thing — the focus factor (see ``schedule.py`` beside this file). The
-estimate, agent-step and start-date readers arrive as functions on the Deps, so this
-module never learns what an estimate is stored as or what marks a step for an agent —
-the same seams the progression board uses.
+The simulation is the domain's (``phases`` over ``parallel_finish``); this module renders
+it and stores only assumptions — the focus factor, and a milestone's date and colour (see
+``schedule.py`` beside this file). The estimate, agent-step, milestone and start-date
+readers arrive as functions on the Deps, so this module never learns what an estimate is
+stored as or what marks a step for an agent — the same seams the progression board uses.
+
+**Robust before pretty.** The model refuses to create a cycle, but a file edited by hand
+can carry one; then nothing can be dated, and the page says which steps wait on each
+other instead of drawing a calendar over a broken walk. Every graph change — an edge, an
+estimate, a milestone marked or dated — re-runs the report, so the calendar is never a
+picture of a plan that has since changed.
 """
 
 from collections.abc import Callable
@@ -18,20 +26,22 @@ from dataclasses import dataclass
 from datetime import date
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
     QHBoxLayout,
     QLabel,
     QScrollArea,
+    QSplitter,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from dplanner.domain.model import Library, NodeId, Project, ProjectId, Step
-from dplanner.domain.schedule import format_date, format_day_count, format_days
+from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.model import Library, NodeId, Project, ProjectId, Step, StepId
+from dplanner.domain.schedule import Phase, format_date, format_days
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -40,18 +50,36 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.activity import EntityActivity, follow_entity_tabs
-from dplanner.framework.context import Context, ContextService, Uri, activity_uri
+from dplanner.framework.context import (
+    SCOPE_SELECTION,
+    Context,
+    ContextNode,
+    ContextService,
+    Uri,
+    activity_uri,
+    selection_uri,
+)
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
-from dplanner.modules.time_estimates.months import MonthsView
+from dplanner.modules.time_estimates.milestones import (
+    Landing,
+    LandingList,
+    MilestoneEntry,
+    MilestoneList,
+)
+from dplanner.modules.time_estimates.months import Band, MonthsView
 from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
     Cell,
     TimeReport,
+    phase_colors,
+    read_color,
     read_efficiency,
+    read_start,
     time_report,
+    write_milestone,
 )
-from dplanner.modules.time_estimates.view import FLOOR_TOLERANCE, FocusBar, MatrixView
+from dplanner.modules.time_estimates.view import FocusBar, MatrixView
 
 TIME_KIND = "time"
 
@@ -60,8 +88,12 @@ CAPTION_GAP = 6
 BLOCK_GAP = 12
 BUTTON_GAP = 4
 
-# The headline is the one loud thing on the page: the answer, a few points up.
-HEADLINE_POINTS = 5
+# The seam falls at the middle to begin with; the splitter keeps the proportion after.
+HALF = 480
+
+# What the stretch with no milestone is called: after the last milestone, or all there is.
+REMAINDER_LABEL = "Remaining work"
+WHOLE_LABEL = "All work"
 
 
 @dataclass(frozen=True)
@@ -71,10 +103,11 @@ class TimeEstimatesDeps:
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
-    # Estimates and agent-ness through the aspects' Qt-free readers — the matrix never
-    # learns what either is stored as.
+    # Estimates, agent-ness and milestones through the aspects' Qt-free readers — the
+    # matrix never learns what any of them is stored as.
     days_for: Callable[[Step], float | None]
     is_agent: Callable[[Step], bool]
+    milestone_label: Callable[[Step], str]
     # When the project's work begins, and how a calendar click re-dates it — whoever
     # owns start dates answers both, one undoable command per click.
     start_of: Callable[[ProjectId], date]
@@ -86,8 +119,14 @@ def _team(humans: int, agents: int) -> str:
     return f"{people} + {agents} {'agent' if agents == 1 else 'agents'}"
 
 
+def _step_context(step_id: StepId) -> Context:
+    """A context naming exactly one step — what a row's double-click runs a verb against."""
+    return Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)})
+
+
 class TimeEstimatesActivity(EntityActivity):
-    """One project's staffing heatmap, led by the selected team's landing date."""
+    """One project's staffing picker and milestones on the left, the calendar they date
+    on the right."""
 
     def __init__(self, deps: TimeEstimatesDeps, project_id: NodeId) -> None:
         super().__init__(deps.context, "project", project_id)
@@ -96,26 +135,23 @@ class TimeEstimatesActivity(EntityActivity):
         self.project_id = project_id
         self._report: TimeReport | None = None
         self._calendar_lens = True
+        self._picked: StepId | None = None
 
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
-        layout.setSpacing(CAPTION_GAP)
+        # -- left: what you set --------------------------------------------------------------
+        settings = QWidget()
+        left = QVBoxLayout(settings)
+        left.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
+        left.setSpacing(CAPTION_GAP)
 
-        caption = QLabel("Time Estimates", page)
-        caption.setObjectName("InspectorCaption")
-        layout.addWidget(caption)
+        self.focus_bar = FocusBar(deps.library, deps.undo, project_id, settings)
+        left.addWidget(self.focus_bar)
 
-        layout.addSpacing(BLOCK_GAP)
-        self.focus_bar = FocusBar(deps.library, deps.undo, project_id, page)
-        layout.addWidget(self.focus_bar)
-
-        layout.addSpacing(BLOCK_GAP)
-        self.lens_bar = QWidget(page)
+        left.addSpacing(BLOCK_GAP)
+        self.lens_bar = QWidget(settings)
         lens_row = QHBoxLayout(self.lens_bar)
         lens_row.setContentsMargins(0, 0, 0, 0)
         lens_row.setSpacing(BUTTON_GAP)
-        self._lenses = QButtonGroup(page)
+        self._lenses = QButtonGroup(settings)
         self._lenses.setExclusive(True)
         self.calendar_button = self._lens_button("Calendar days")
         self.project_button = self._lens_button("Project days")
@@ -125,73 +161,69 @@ class TimeEstimatesActivity(EntityActivity):
         lens_row.addStretch(1)
         self.calendar_button.setChecked(True)
         self._lenses.idClicked.connect(self._on_lens)
-        layout.addWidget(self.lens_bar)
+        left.addWidget(self.lens_bar)
 
-        self.matrix = MatrixView(page)
+        self.matrix = MatrixView(settings)
         self.matrix.tooltip_for = self._tooltip
         self.matrix.scenario_changed.connect(self._render)
-        layout.addWidget(self.matrix, 0, Qt.AlignmentFlag.AlignLeft)
+        left.addWidget(self.matrix, 0, Qt.AlignmentFlag.AlignLeft)
 
-        # The result reads below the choice: pick a tile, the landing date answers under it,
-        # and the months show the same answer as a lit span on a real calendar.
-        layout.addSpacing(BLOCK_GAP)
-        self.headline = QLabel(page)
-        loud = QFont(self.headline.font())
-        loud.setPointSizeF(loud.pointSizeF() + HEADLINE_POINTS)
-        loud.setWeight(QFont.Weight.DemiBold)
-        self.headline.setFont(loud)
-        layout.addWidget(self.headline)
-        self.detail = QLabel(page)
-        self.detail.setObjectName("InspectorNote")
-        self.detail.setWordWrap(True)
-        layout.addWidget(self.detail)
+        left.addSpacing(BLOCK_GAP)
+        self.milestones_caption = QLabel("Milestones", settings)
+        self.milestones_caption.setObjectName("InspectorCaption")
+        left.addWidget(self.milestones_caption)
+        self.milestones = MilestoneList(settings)
+        self.milestones.picked.connect(self._on_picked)
+        self.milestones.activated.connect(self._on_activated)
+        self.milestones.start_changed.connect(self._on_start_changed)
+        self.milestones.color_changed.connect(self._on_color_changed)
+        left.addWidget(self.milestones)
+        left.addStretch(1)
 
-        layout.addSpacing(BLOCK_GAP)
-        pager = QWidget(page)
-        pager_row = QHBoxLayout(pager)
+        # -- right: what it answers ----------------------------------------------------------
+        answer = QWidget()
+        right = QVBoxLayout(answer)
+        right.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
+        right.setSpacing(CAPTION_GAP)
+
+        self.pager = QWidget(answer)
+        pager_row = QHBoxLayout(self.pager)
         pager_row.setContentsMargins(0, 0, 0, 0)
         pager_row.setSpacing(BUTTON_GAP)
-        self.earlier = self._pager_button(pager, Qt.ArrowType.LeftArrow, "Earlier months")
-        self.later = self._pager_button(pager, Qt.ArrowType.RightArrow, "Later months")
+        self.earlier = self._pager_button(self.pager, Qt.ArrowType.LeftArrow, "Earlier months")
+        self.later = self._pager_button(self.pager, Qt.ArrowType.RightArrow, "Later months")
         pager_row.addWidget(self.earlier)
         pager_row.addWidget(self.later)
         pager_row.addStretch(1)
-        layout.addWidget(pager)
-        self.pager = pager
+        right.addWidget(self.pager)
 
-        self.months = MonthsView(page)
+        self.months = MonthsView(answer)
         self.months.day_picked.connect(self._on_day_picked)
-        layout.addWidget(self.months, 0, Qt.AlignmentFlag.AlignLeft)
+        right.addWidget(self.months)
 
-        layout.addSpacing(BLOCK_GAP)
-        self.insight = QLabel(page)
-        self.insight.setObjectName("InspectorNote")
-        self.insight.setWordWrap(True)
-        layout.addWidget(self.insight)
+        right.addSpacing(BLOCK_GAP)
+        self.landings = LandingList(answer)
+        self.landings.picked.connect(self._on_picked)
+        self.landings.activated.connect(self._on_activated)
+        right.addWidget(self.landings)
 
-        self.unestimated_note = QLabel(page)
-        self.unestimated_note.setObjectName("InspectorNote")
-        self.unestimated_note.setWordWrap(True)
-        layout.addWidget(self.unestimated_note)
+        # What changes with the data: a plan that cannot be dated, steps counted as zero.
+        self.notice = QLabel(answer)
+        self.notice.setObjectName("InspectorNote")
+        self.notice.setWordWrap(True)
+        right.addWidget(self.notice)
+        right.addStretch(1)
 
-        self.agent_note = QLabel(
-            "No agent steps — agent capacity does not change these numbers. Mark steps for "
-            "agent execution under Step ▸ Type.",
-            page,
-        )
-        self.agent_note.setObjectName("InspectorNote")
-        self.agent_note.setWordWrap(True)
-        layout.addWidget(self.agent_note)
+        # -- the seam ------------------------------------------------------------------------
+        self.split = QSplitter(Qt.Orientation.Horizontal)
+        self.split.setChildrenCollapsible(False)
+        self.split.addWidget(self._scrolling(settings))
+        self.split.addWidget(self._scrolling(answer))
+        self.split.setStretchFactor(0, 1)
+        self.split.setStretchFactor(1, 1)
+        self.split.setSizes([HALF, HALF])
+        self._widget = self.split
 
-        layout.addStretch(1)
-
-        # The grid and the months are fixed-size drawings, so a small window scrolls the
-        # page rather than clipping them or squeezing the text below into them.
-        scroller = QScrollArea()
-        scroller.setWidget(page)
-        scroller.setWidgetResizable(True)
-        scroller.setFrameShape(QFrame.Shape.NoFrame)
-        self._widget = scroller
         self._unsubscribes = [
             self._product.structure_changed.connect(lambda *_a: self._refresh()),
             self._product.edges_changed.connect(lambda *_a: self._refresh()),
@@ -199,8 +231,22 @@ class TimeEstimatesActivity(EntityActivity):
             # A separate agent instruction is prose, and carrying one marks the step as
             # agent work — so a text edit can move a step between pools.
             self._product.text_edited.connect(lambda *_a: self._refresh()),
+            # A milestone's label and a step's title are what the lists print.
+            self._product.field_changed.connect(lambda *_a: self._refresh()),
         ]
         self._refresh()
+
+    @staticmethod
+    def _scrolling(page: QWidget) -> QScrollArea:
+        """Each half scrolls on its own when the window is short; neither ever scrolls
+        sideways — the calendar takes the width it is given."""
+        scroller = QScrollArea()
+        scroller.setWidget(page)
+        scroller.setWidgetResizable(True)
+        scroller.setFrameShape(QFrame.Shape.NoFrame)
+        scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroller.setMinimumWidth(page.minimumSizeHint().width())
+        return scroller
 
     def _lens_button(self, label: str) -> QToolButton:
         button = QToolButton(self.lens_bar)
@@ -241,19 +287,64 @@ class TimeEstimatesActivity(EntityActivity):
         self._unsubscribes.clear()
         self.focus_bar.dispose()
 
-    # -- internals -----------------------------------------------------------------------------
+    # -- what the tests read off the tab ------------------------------------------------------
 
-    def _project(self) -> Project:
-        return self._product.project(self.project_id)
+    @property
+    def picked(self) -> StepId | None:
+        return self._picked
+
+    @property
+    def landing(self) -> date | None:
+        """When the selected team lands the whole plan."""
+        return self._selected_cell().finish if self._report and self._report.calendar else None
+
+    # -- input ---------------------------------------------------------------------------------
 
     def _on_lens(self, chosen: int) -> None:
         self._calendar_lens = chosen == 0
         self._render()
 
     def _on_day_picked(self, when: date) -> None:
-        if self._report is None or when == self._report.start:
+        if self._report is None or when == self._deps.start_of(self.project_id):
             return
         self._deps.set_start(self.project_id, when)  # the model change refreshes the tab
+
+    def _on_picked(self, key: str) -> None:
+        """A row picked twice is let go; a picked remainder row only lets go."""
+        self._picked = None if key == self._picked or not key else key
+        self._render()
+
+    def _on_activated(self, step_id: str) -> None:
+        if self._product.has(step_id):
+            self._deps.actions.run("steps.details", _step_context(step_id))
+
+    def _on_start_changed(self, step_id: str, when: date | None) -> None:
+        if not self._product.has(step_id):
+            return
+        step = self._product.step(step_id)
+        self._write_milestone(step, when, read_color(step), "Date Milestone")
+
+    def _on_color_changed(self, step_id: str, color: str | None) -> None:
+        if not self._product.has(step_id):
+            return
+        step = self._product.step(step_id)
+        self._write_milestone(step, read_start(step), color, "Colour Milestone")
+
+    def _write_milestone(
+        self, step: Step, when: date | None, color: str | None, label: str
+    ) -> None:
+        entry = write_milestone(when, color)
+        if entry == step.module_data.get(MODULE_ID, {}):
+            return
+        self._deps.undo.push(SetModuleDataCommand(step.id, MODULE_ID, entry, label=label))
+
+    # -- internals -----------------------------------------------------------------------------
+
+    def _project(self) -> Project:
+        return self._product.project(self.project_id)
+
+    def _is_milestone(self, step: Step) -> bool:
+        return bool(self._deps.milestone_label(step))
 
     def _refresh(self) -> None:
         if not self._product.has(self.project_id):
@@ -267,41 +358,115 @@ class TimeEstimatesActivity(EntityActivity):
             deps.is_agent,
             start=deps.start_of(self.project_id),
             efficiency=read_efficiency(project),
+            is_milestone=self._is_milestone,
+            start_for=read_start,
         )
         self._render()
 
+    def _selected_cell(self) -> Cell:
+        assert self._report is not None
+        return self._cell(self._report.calendar, self.matrix.selection)
+
     def _render(self) -> None:
         report = self._report
-        has_report = report is not None
-        for widget in (self.lens_bar, self.matrix, self.pager, self.months, self.insight):
-            widget.setVisible(has_report)
+        datable = report is not None and not report.cycle
+        for widget in (
+            self.lens_bar,
+            self.matrix,
+            self.milestones_caption,
+            self.milestones,
+            self.pager,
+            self.months,
+            self.landings,
+        ):
+            widget.setVisible(datable)
         if report is None:
-            self.headline.setText("No steps yet")
-            self.detail.setText("The matrix appears with the first one.")
-            self.unestimated_note.setVisible(False)
-            self.agent_note.setVisible(False)
+            self.notice.setText("No steps yet")
+            self.notice.setVisible(True)
+            return
+        if report.cycle:
+            names = ", ".join(step.title or "an untitled step" for step in report.cycle)
+            self.notice.setText(
+                f"These steps wait on each other, so nothing can be dated: {names}. "
+                "Unlink one to time the plan."
+            )
+            self.notice.setVisible(True)
             return
         cells = report.calendar if self._calendar_lens else report.parallel
-        floor = report.calendar_floor if self._calendar_lens else report.floor
         collapse = not report.has_agent_steps
-        self.matrix.show_cells(cells, floor, collapse)
+        self.matrix.show_cells(cells, collapse)
 
-        selected = self.matrix.selection
-        calendar = self._cell(report.calendar, selected)
-        if calendar.finish is not None:
-            self.headline.setText(f"Lands {format_date(calendar.finish)}")
-        else:
-            self.headline.setText("Nothing estimated yet")
-        self.detail.setText(f"{_team(*selected)} · {format_days(calendar.days)} of calendar time")
-        self.months.show_span(report.start, calendar.finish)
+        calendar = self._selected_cell()
+        colors = [
+            QColor(hex_color) for hex_color in phase_colors(calendar.phases, read_color)
+        ]
+        stretches = list(zip(calendar.phases, colors, strict=True))
+        if self._picked is not None and not any(
+            phase.milestone is not None and phase.milestone.id == self._picked
+            for phase in calendar.phases
+        ):
+            self._picked = None  # The picked milestone is gone, or no longer one.
 
-        self.insight.setText(self._insight(report, cells, floor))
-        self.unestimated_note.setVisible(report.unestimated > 0)
-        self.unestimated_note.setText(
-            f"{report.unestimated} step{'s' if report.unestimated != 1 else ''} "
-            "unestimated — they run as zero days here."
+        self.months.show_bands(report.start, self._bands(stretches))
+        self.months.emphasise(self._picked)
+        self.milestones.show_entries(self._entries(stretches), self._picked)
+        self.landings.show_landings(
+            self._landings(stretches), self._picked, finish=calendar.finish, days=calendar.days
         )
-        self.agent_note.setVisible(collapse)
+        self.notice.setVisible(report.unestimated > 0)
+        self.notice.setText(
+            f"{report.unestimated} step{'s' if report.unestimated != 1 else ''} "
+            "unestimated · counted as 0d"
+        )
+
+    def _label(self, phase: Phase, stretches: list[tuple[Phase, QColor]]) -> str:
+        if phase.milestone is None:
+            alone = all(other.milestone is None for other, _ in stretches)
+            return WHOLE_LABEL if alone else REMAINDER_LABEL
+        return self._deps.milestone_label(phase.milestone) or phase.milestone.title
+
+    def _bands(self, stretches: list[tuple[Phase, QColor]]) -> tuple[Band, ...]:
+        return tuple(
+            Band(
+                key=phase.milestone.id if phase.milestone else "",
+                label=self._label(phase, stretches),
+                start=phase.start,
+                finish=phase.finish,
+                color=color,
+                lands=phase.milestone is not None,
+            )
+            for phase, color in stretches
+            if phase.finish is not None
+        )
+
+    def _entries(self, stretches: list[tuple[Phase, QColor]]) -> list[MilestoneEntry]:
+        return [
+            MilestoneEntry(
+                step_id=phase.milestone.id,
+                label=self._label(phase, stretches),
+                title=phase.milestone.title,
+                color=color,
+                chosen=read_color(phase.milestone) is not None,
+                start=phase.asked,
+                default_start=phase.start,
+            )
+            for phase, color in stretches
+            if phase.milestone is not None
+        ]
+
+    def _landings(self, stretches: list[tuple[Phase, QColor]]) -> list[Landing]:
+        return [
+            Landing(
+                key=phase.milestone.id if phase.milestone else "",
+                label=self._label(phase, stretches),
+                color=color,
+                finish=phase.finish,
+                days=phase.days,
+                steps=len(phase.steps),
+                asked=phase.asked if phase.pushed else None,
+            )
+            for phase, color in stretches
+        ]
 
     @staticmethod
     def _cell(cells: tuple[Cell, ...], seat: tuple[int, int]) -> Cell:
@@ -321,37 +486,6 @@ class TimeEstimatesActivity(EntityActivity):
         if calendar.finish is not None:
             lines.append(f"lands {format_date(calendar.finish)}")
         return "\n".join(lines)
-
-    @staticmethod
-    def _insight(report: TimeReport, cells: tuple[Cell, ...], floor: float) -> str:
-        """The grid's takeaway in one breath: the effort split, then what staffing buys."""
-        # The prose formatter, not the column one: "9.75 days of work", never "1.95w".
-        effort = (
-            f"{format_day_count(report.total_days)} of work — "
-            f"{format_day_count(report.human_days)} human, "
-            f"{format_day_count(report.agent_days)} agent."
-        )
-        fastest = min(cell.days for cell in cells)
-        slowest = max(cell.days for cell in cells)
-        if slowest - fastest <= FLOOR_TOLERANCE:
-            return (
-                f"{effort} Staffing does not change this plan — "
-                "the dependency chain sets the pace."
-            )
-        team = min(
-            (cell for cell in cells if cell.days - fastest <= FLOOR_TOLERANCE),
-            key=lambda cell: (cell.humans + cell.agents, cell.humans),
-        )
-        who = _team(team.humans, team.agents)
-        if fastest - floor <= FLOOR_TOLERANCE:
-            return (
-                f"{effort} {who} reaches the {format_days(floor)} dependency floor — "
-                "more capacity changes nothing."
-            )
-        return (
-            f"{effort} {who} is fastest here at {format_days(fastest)}; "
-            f"the dependencies alone would allow {format_days(floor)}."
-        )
 
 
 class TimeEstimatesModule:
@@ -378,7 +512,8 @@ class TimeEstimatesModule:
                 menu="Project",
                 group="open",
                 order=40,
-                tip="How long the project takes with people and agents in parallel",
+                tip="How long the project takes with people and agents in parallel, "
+                "and when each milestone lands",
                 state=self._on_a_project,
                 run=self._open,
             )

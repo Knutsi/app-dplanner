@@ -94,3 +94,96 @@ def test_the_prose_prints_both_matrices_and_the_agent_note(cli):
     cli("project", "create", "Manual")
     cli("step", "add", "Manual", "By hand", "--days", "1")
     assert "No agent steps" in cli("schedule", "matrix", "Manual")
+
+
+# -- milestones in sequence --------------------------------------------------------------------
+
+
+@pytest.fixture
+def staged(cli):
+    """The chain closed by two milestones: v1 is the model, v2 the docs on top of it."""
+    cli("step", "add", "Discovery", "Ship the docs", "--days", "2")
+    cli("step", "link", "ship-the-docs", "write-the-docs")
+    cli("step", "link", "ship-the-docs", "draft-the-model")
+    cli("milestone", "set", "draft-the-model", "--label", "v1")
+    cli("milestone", "set", "ship-the-docs", "--label", "v2")
+    return cli
+
+
+def test_the_milestones_land_in_sequence_for_the_smallest_team(staged):
+    data = json.loads(staged("schedule", "matrix", "Discovery", "--json"))
+    assert data["team"] == {"humans": 1, "agents": 1}
+    v1, v2 = data["milestones"]
+    assert v1["label"] == "v1" and len(v1["steps"]) == 2 and v1["step"] == v1["steps"][-1]
+    assert (v1["start"], v1["finish"]) == ("2026-09-07", "2026-09-16")  # 8 calendar days
+    assert v2["label"] == "v2"
+    assert v2["start"] == "2026-09-17"
+    assert v2["finish"] == "2026-09-23"  # the agent day, then 2/0.5 = 4 days of docs
+    assert v1["color"] == "#5f87d7" and v2["color"] == "#e0602c"
+    assert not v1["pushed"] and not v2["pushed"]
+    assert {cell["finish"] for cell in data["calendar"]} == {"2026-09-23"}
+
+
+def test_dating_a_milestone_moves_its_stretch_and_the_whole(staged, cli_library):
+    said = staged("schedule", "milestone", "ship-the-docs", "--start", "2026-10-05")
+    assert "v2 (Ship the docs): starts 5 October" in said
+    library = LibraryStore(cli_library).load()
+    docs = next(step for step in library.projects[0].steps if step.title == "Ship the docs")
+    assert docs.module_data[MODULE_ID] == {"start": "2026-10-05", "format": 1}
+    data = json.loads(staged("schedule", "matrix", "Discovery", "--json"))
+    v2 = data["milestones"][1]
+    assert (v2["asked"], v2["start"], v2["finish"]) == ("2026-10-05", "2026-10-05", "2026-10-09")
+    assert data["calendar"][0]["finish"] == "2026-10-09"
+    staged("schedule", "milestone", "ship-the-docs", "--clear-start")
+    library = LibraryStore(cli_library).load()
+    docs = next(step for step in library.projects[0].steps if step.title == "Ship the docs")
+    assert MODULE_ID not in docs.module_data
+
+
+def test_a_date_the_sequence_cannot_keep_is_pushed_and_said(staged):
+    staged("schedule", "milestone", "ship-the-docs", "--start", "2026-09-10")
+    data = json.loads(staged("schedule", "matrix", "Discovery", "--json"))
+    v2 = data["milestones"][1]
+    assert v2["pushed"] and v2["start"] == "2026-09-17"
+    said = staged("schedule", "matrix", "Discovery")
+    assert "asked for 10 September, but the previous lands later" in said
+
+
+def test_a_milestone_colour_is_stored_lower_case_and_cleared(staged, cli_library):
+    staged("schedule", "milestone", "draft-the-model", "--color", "#C98500")
+    data = json.loads(staged("schedule", "matrix", "Discovery", "--json"))
+    assert data["milestones"][0]["color"] == "#c98500"
+    assert data["milestones"][1]["color"] == "#e0602c"  # the next slot is still dealt in turn
+    assert "--color is #rrggbb" in staged(
+        "schedule", "milestone", "draft-the-model", "--color", "orange", expect=1
+    )
+    staged("schedule", "milestone", "draft-the-model", "--clear-color")
+    library = LibraryStore(cli_library).load()
+    model = next(step for step in library.projects[0].steps if step.title == "Draft the model")
+    assert MODULE_ID not in model.module_data
+
+
+def test_only_a_milestone_takes_a_date(staged):
+    said = staged("schedule", "milestone", "read-the-spec", "--start", "2026-10-05", expect=1)
+    assert "is not a milestone" in said
+    assert "nothing to change" in staged("schedule", "milestone", "draft-the-model", expect=1)
+
+
+def test_the_prose_lists_the_milestones_in_sequence(staged):
+    said = staged("schedule", "matrix", "Discovery")
+    assert "Milestones in sequence (1 person + 1 agents)" in said
+    assert "v1: 7 September → 16 September (1.6w, 2 steps)" in said
+    assert "v2: 17 September → 23 September (5d, 2 steps)" in said
+
+
+def test_a_loop_in_the_file_is_refused_with_its_steps_named(cli, workspace):
+    """The model refuses a cycle; a file does not. Write one in by hand."""
+    steps = workspace / "discovery" / "steps"
+    draft = json.loads((steps / "draft-the-model" / "step.json").read_text())["id"]
+    record = steps / "read-the-spec" / "step.json"
+    raw = json.loads(record.read_text())
+    raw["edges"] = {"requires": [draft]}
+    record.write_text(json.dumps(raw))
+    said = cli("schedule", "matrix", "Discovery", expect=1)
+    assert "wait on each other" in said
+    assert "'Read the spec'" in said and "'Draft the model'" in said
