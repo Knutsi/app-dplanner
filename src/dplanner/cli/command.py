@@ -115,6 +115,12 @@ class CliCommand:
     # False for verbs that make no sense against a library — `skill show`, for instance.
     needs_library: bool = True
     examples: tuple[str, ...] = ()
+    # Set on a verb that reshapes a project's graph — adds or removes steps, links them,
+    # places a feature: how to find that project from the parsed arguments. The
+    # composition root puts the topology gate (``cli/gate.py``) in front of every verb
+    # that says so, and the generated skill marks them; a verb that edits content — a
+    # description, an estimate, a title — leaves it None and is never refused.
+    edits_graph: Callable[[CliContext, Namespace], Project] | None = None
 
     @property
     def id(self) -> str:

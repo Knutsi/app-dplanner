@@ -408,7 +408,7 @@ def test_a_facet_is_not_offered_as_a_kind(services, project, tab):
 
 
 def test_creating_a_kind_marks_it_in_the_same_undo_step(services, project, tab, monkeypatch):
-    from dplanner.modules.step_feature.aspect import read as is_feature
+    from dplanner.modules.feature.aspect import is_feature
 
     answer_new_dialog(monkeypatch, "Bulk import")
     services.actions.run(named(services, "Feature").id, services.context.current())
@@ -750,7 +750,10 @@ def test_panning_does_not_stop_beyond_the_graph(services, project, tab):
     bar.setValue(bar.value() + 5_000)
 
     moved = canvas_view.mapToScene(canvas_view.viewport().rect()).boundingRect().top() - top
-    assert moved == pytest.approx(5_000.0, abs=2.0)
+    # In scene units: the view frames the graph on first show, and how far it zoomed to do
+    # so depends on the viewport the dock left it — the panels beside it, the sizes an
+    # earlier test's window remembered — so the scroll is read through the transform.
+    assert moved * canvas_view.transform().m11() == pytest.approx(5_000.0, abs=2.0)
 
 
 def test_the_canvas_has_no_scroll_bars(services, project, tab):
@@ -1178,7 +1181,7 @@ def test_the_new_button_drops_the_kinds_down(services, project, tab):
 
 
 def test_an_entry_in_that_dropdown_runs_the_verb(services, project, tab, monkeypatch):
-    from dplanner.modules.step_feature.aspect import read as is_feature
+    from dplanner.modules.feature.aspect import is_feature
 
     answer_new_dialog(monkeypatch, "Bulk import")
     menu = tab._toolbar.dropdown("steps.new")

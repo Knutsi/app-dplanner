@@ -31,6 +31,7 @@ SKILL_DIR = ".claude/skills/dplanner"
 SKILL_FILE = "SKILL.md"
 REFERENCE_FILE = "reference.md"
 
+
 def _description(aspects: Sequence[AspectSpec]) -> str:
     # Projected from the build's aspect list like everything else in the skill, so it
     # cannot under-describe a build the way a hand-written enumeration did.
@@ -86,7 +87,10 @@ def _skill(registry: CliRegistry, aspects: Sequence[AspectSpec]) -> str:
         lines.append(f"### `{PROG} {noun}`")
         lines.append("")
         for command in commands:
-            lines.append(f"- `{PROG} {command.id}` — {command.summary}")
+            # A verb that reshapes the graph runs behind the topology gate; the skill says
+            # so on the line itself, because that is where an agent reads what a verb costs.
+            gated = " *(reads the topology first)*" if command.edits_graph is not None else ""
+            lines.append(f"- `{PROG} {command.id}` — {command.summary}{gated}")
         lines.append("")
     lines += [
         f"Every argument of every command is in [{REFERENCE_FILE}]({REFERENCE_FILE}).",

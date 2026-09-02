@@ -102,8 +102,7 @@ def _configure(parser: ArgumentParser) -> None:
         "--efficiency",
         type=float,
         metavar="PERCENT",
-        help="a person's focus on this project, 1-100 — overrides the stored factor "
-        "for this run",
+        help="a person's focus on this project, 1-100 — overrides the stored factor for this run",
     )
 
 
@@ -114,8 +113,7 @@ def _configure_focus(parser: ArgumentParser) -> None:
         "--clear",
         action="store_true",
         # No "%" in argparse help text — it reads as a format specifier.
-        help=f"remove the stored factor, back to the {DEFAULT_EFFICIENCY * 100:g} percent "
-        "default",
+        help=f"remove the stored factor, back to the {DEFAULT_EFFICIENCY * 100:g} percent default",
     )
 
 
@@ -130,9 +128,7 @@ def _configure_milestone(parser: ArgumentParser) -> None:
         help="begin it when the previous milestone lands again",
     )
     parser.add_argument("--color", metavar="#RRGGBB", help="the colour it wears in the calendar")
-    parser.add_argument(
-        "--clear-color", action="store_true", help="back to the automatic colour"
-    )
+    parser.add_argument("--clear-color", action="store_true", help="back to the automatic colour")
 
 
 def _focus(context: CliContext, args: Namespace) -> int:
@@ -155,9 +151,7 @@ def _focus(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _milestone(
-    context: CliContext, args: Namespace, milestone_label: Callable[[Step], str]
-) -> int:
+def _milestone(context: CliContext, args: Namespace, milestone_label: Callable[[Step], str]) -> int:
     if args.start and args.clear_start:
         raise CliError("give either --start or --clear-start")
     if args.color and args.clear_color:
@@ -213,9 +207,7 @@ def _matrix(
     if args.efficiency is not None and not 0 < args.efficiency <= 100:
         raise CliError("--efficiency is a percentage between 1 and 100")
     project = find_project(context.library, args.project)
-    efficiency = (
-        args.efficiency / 100 if args.efficiency is not None else read_efficiency(project)
-    )
+    efficiency = args.efficiency / 100 if args.efficiency is not None else read_efficiency(project)
     start = start_of(project)
 
     def is_milestone(step: Step) -> bool:
@@ -270,8 +262,7 @@ def _matrix(
         "has_agent_steps": report.has_agent_steps,
         "floor": {"days": report.floor, "calendar_days": report.calendar_floor},
         "parallel": [
-            {"humans": cell.humans, "agents": cell.agents, "days": cell.days}
-            for cell in parallel
+            {"humans": cell.humans, "agents": cell.agents, "days": cell.days} for cell in parallel
         ],
         "calendar": [
             {
@@ -299,9 +290,7 @@ def _matrix(
             for phase, color in zip(team.phases, colors, strict=True)
         ],
     }
-    context.report(
-        data, _report(project.title, report, parallel, calendar, team, milestone_label)
-    )
+    context.report(data, _report(project.title, report, parallel, calendar, team, milestone_label))
     return 0
 
 
@@ -371,8 +360,9 @@ def _report(
     ]
     lines += _grid(
         calendar,
-        lambda cell: format_days(cell.days)
-        + (f" · {format_date(cell.finish)}" if cell.finish else ""),
+        lambda cell: (
+            format_days(cell.days) + (f" · {format_date(cell.finish)}" if cell.finish else "")
+        ),
     )
     people = f"{team.humans} {'person' if team.humans == 1 else 'people'}"
     lines += ["", f"Milestones in sequence ({people} + {team.agents} agents)"]

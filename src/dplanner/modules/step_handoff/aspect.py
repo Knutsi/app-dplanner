@@ -31,6 +31,7 @@ SCOPES: Final = ("downstream", "project")
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
+
 def read_note(step: Step) -> str:
     return step.module_text.get(MODULE_ID, "")
 
@@ -79,9 +80,7 @@ def asset_source() -> AssetSource:
     not a sweep's.
     """
 
-    def scan(
-        _library: Library, project: Project, files: FilesFor
-    ) -> Sequence[AssetLocation]:
+    def scan(_library: Library, project: Project, files: FilesFor) -> Sequence[AssetLocation]:
         return [
             AssetLocation(
                 node_id=step.id,

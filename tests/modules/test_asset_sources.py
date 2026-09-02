@@ -158,7 +158,7 @@ def test_a_spec_figure_is_used_by_its_index_row_or_a_markdown_body(store, librar
         area, [], "notes", f"![sketch]({linked})".encode(), "notes.md", "2026-09-01"
     )
     project.module_data[SPEC_ID] = write_index(
-        SpecIndex(documents=documents, requirements=[], assets=assets)
+        SpecIndex(documents=documents, assets=assets)
     )
 
     entries = catalog(library, project, store.files, [spec_source()])

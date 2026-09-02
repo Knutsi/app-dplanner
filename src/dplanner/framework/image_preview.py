@@ -56,9 +56,7 @@ class ImagePreviewDialog(QDialog):
         if close is not None:
             close.clicked.connect(self.reject)
         if path:
-            external = buttons.addButton(
-                "Open Externally", QDialogButtonBox.ButtonRole.ActionRole
-            )
+            external = buttons.addButton("Open Externally", QDialogButtonBox.ButtonRole.ActionRole)
             external.clicked.connect(lambda: self._open_externally(path))
             copy = buttons.addButton("Copy Path", QDialogButtonBox.ButtonRole.ActionRole)
             copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(path))

@@ -84,7 +84,6 @@ def _normalized(text: str) -> str:
     return " ".join(text.lower().split())
 
 
-
 def render_page(data: bytes, page_number: int, scale: float) -> bytes:
     """One page as a PNG. ``scale`` multiplies PDF points; 2.0 reads like 144 DPI."""
     import pypdfium2 as pdfium
@@ -92,9 +91,7 @@ def render_page(data: bytes, page_number: int, scale: float) -> bytes:
     document = pdfium.PdfDocument(data)
     try:
         if not 1 <= page_number <= len(document):
-            raise ValueError(
-                f"no page {page_number} — the document has {len(document)} pages"
-            )
+            raise ValueError(f"no page {page_number} — the document has {len(document)} pages")
         bitmap = document[page_number - 1].render(scale=scale, rev_byteorder=True)
         return encode_rgb(bitmap.width, bitmap.height, bitmap.stride, bytes(bitmap.buffer))
     finally:

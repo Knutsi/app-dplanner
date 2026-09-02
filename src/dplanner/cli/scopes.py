@@ -194,7 +194,7 @@ def _titles(project: Project, ids: Sequence[StepId]) -> str:
 def _grouping_kind(kinds: Sequence[ScopeKind]) -> ScopeKind | None:
     """The kind the others are read as lists of — the feature, in this build.
 
-    Named once here rather than spelled ``"step_feature"`` in three checks, so the lint
+    Named once here rather than spelled ``"feature"`` in three checks, so the lint
     still says something true in a build that ships a different set of collectors.
     """
     wanted = {kind.gathers for kind in kinds if kind.gathers}
@@ -207,7 +207,7 @@ def _label(kinds: Sequence[ScopeKind], step: Step) -> str:
 
 
 def _verb(kind: ScopeKind) -> str:
-    """The noun a kind's own verbs live under: ``step_feature`` → ``feature``."""
+    """The noun a kind's own verbs live under: ``step_milestone`` → ``milestone``."""
     return kind.id.removeprefix("step_")
 
 

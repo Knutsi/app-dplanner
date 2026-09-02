@@ -68,14 +68,19 @@ def commands(
             help="the project the copies go into; default: the steps' own",
         )
 
+    def _project_of_duplicate(context: CliContext, args: Namespace) -> Project:
+        """The project the copies land in — what the topology gate asks about."""
+        library = context.library
+        if args.into:
+            return find_project(library, args.into)
+        return library.project_of(find_step(library, args.step[0], context.current).id)
+
     def _step_duplicate(context: CliContext, args: Namespace) -> int:
         """The window's Duplicate, as one transaction: the same clone command, the same
         policies, the attachments copied after it — see clipboard.py."""
         library = context.library
         originals = [find_step(library, needle, context.current) for needle in args.step]
-        target = (
-            find_project(library, args.into) if args.into else library.project_of(originals[0].id)
-        )
+        target = _project_of_duplicate(context, args)
         clips = clip(library, context.store.files, file_modules, [s.id for s in originals])
         command, copies = paste(
             library, target.id, clips, anchor=None, policies=paste_policies, verb="Duplicate"
@@ -179,6 +184,7 @@ def commands(
                 "dplanner step duplicate read-the-spec",
                 "dplanner step duplicate read-the-spec draft-the-model --into rollout",
             ),
+            edits_graph=_project_of_duplicate,
         ),
         CliCommand(
             path=("region", "list"),
@@ -263,9 +269,7 @@ def _list(context: CliContext, args: Namespace) -> int:
     if not layouts:
         context.report(data, "no saved layouts")
         return 0
-    lines = [
-        f"{name}  ({len(snap.steps)} steps)" for name, snap in sorted(layouts.items())
-    ]
+    lines = [f"{name}  ({len(snap.steps)} steps)" for name, snap in sorted(layouts.items())]
     context.report(data, "\n".join(lines))
     return 0
 
@@ -437,9 +441,7 @@ def _region_add(context: CliContext, args: Namespace) -> int:
         if w <= 0 or h <= 0:
             raise CliError("a region needs a positive width and height")
     region = new_region(title, x, y, w, h)
-    context.apply(
-        set_regions_command(project, [*read_regions(project), region], "Add Region")
-    )
+    context.apply(set_regions_command(project, [*read_regions(project), region], "Add Region"))
     placed = positions(context.library, project)
     row = _region_row(project, region, placed)
     context.report(row | {"project": project.id}, _region_line(row))
@@ -473,8 +475,7 @@ def _region_fit(context: CliContext, args: Namespace) -> int:
     region = _find_region(project, args.region)
     x, y, w, h = _wrap_rect(context, project, args.steps)
     refitted = [
-        r.moved_to(x, y).sized(w, h) if r.id == region.id else r
-        for r in read_regions(project)
+        r.moved_to(x, y).sized(w, h) if r.id == region.id else r for r in read_regions(project)
     ]
     context.apply(set_regions_command(project, refitted, "Fit Region"))
     placed = positions(context.library, project)

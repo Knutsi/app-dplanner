@@ -38,7 +38,7 @@ def cli(cli):
 
 def test_a_feature_gathers_its_own_work_up_to_the_previous_feature(cli):
     found = data(cli("scope", "show", "Export", "--json"))
-    assert found["kind"] == "step_feature"
+    assert found["kind"] == "feature"
     assert [row["step_title"] for row in found["direct"]] == ["Reporting", "Export"]
     assert found["gathers"] == []  # A feature is the finest grain; it reads flat.
     assert [row["title"] for row in found["after"]] == ["Import"]
@@ -87,9 +87,7 @@ def test_a_collector_with_nothing_behind_it_is_reported(cli):
     cli("step", "add", "widget", "Lonely feature")
     cli("feature", "set", "Lonely feature")
     findings = data(cli("project", "lint", "--json", expect=1))["findings"]
-    message = next(
-        row["message"] for row in findings if row["check"] == "scope.gathers-nothing"
-    )
+    message = next(row["message"] for row in findings if row["check"] == "scope.gathers-nothing")
     assert "dplanner feature clear 'Lonely feature'" in message
 
 

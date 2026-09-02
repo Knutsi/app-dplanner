@@ -158,7 +158,7 @@ class SpecModule:
                 menu="Project",
                 group="documents",
                 order=40,
-                tip="Remove the selected document and its requirements; the file stays on disk",
+                tip="Remove the selected document from the index; the file stays on disk",
                 state=self._on_a_document,
                 run=self._remove,
             )
@@ -239,9 +239,7 @@ class SpecModule:
         project_id = context.focus_entity("project")
         if project_id is None or not self._deps.library.has(project_id):
             return
-        title, accepted = QInputDialog.getText(
-            self._deps.parent, "New Spec Document", "Title:"
-        )
+        title, accepted = QInputDialog.getText(self._deps.parent, "New Spec Document", "Title:")
         if not accepted or not title.strip():
             return
         project = self._deps.library.project(project_id)
@@ -321,18 +319,15 @@ class SpecModule:
             return  # The state gate already prevents this; stay honest anyway.
         project_id, document = found
         index = read_index(self._deps.library.project(project_id))
-        documents, requirements, dropped = remove_document(
-            index.documents, index.requirements, document.name
-        )
-        detail = f" and its {len(dropped)} requirements" if dropped else ""
-        question = f"Remove {document.name!r}{detail}? The file stays on disk."
+        documents = remove_document(index.documents, document.name)
+        question = f"Remove {document.name!r}? The file stays on disk."
         if not confirm(self._deps.parent, "Remove Spec Document", question):
             return
         self._deps.undo.push(
             SetModuleDataCommand(
                 project_id,
                 MODULE_ID,
-                write_index(replace(index, documents=documents, requirements=requirements)),
+                write_index(replace(index, documents=documents)),
                 label="Remove Spec Document",
             )
         )

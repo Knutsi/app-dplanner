@@ -67,6 +67,7 @@ def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
         "Tests",
         "Covers",
         "Agent",
+        "Feature",
         "Milestone",
         "Handoff",
         "GitHub",

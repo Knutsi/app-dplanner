@@ -478,10 +478,12 @@ Four rules, each a decision:
   pasted steps without a collision — an id is per project, and a copy that kept `T100` would
   make "T100 failed" name two things. `step_agent_run` drops its entry: a chip and a marching
   ring on a step nobody is running would be a lie. Everything else — status, estimate,
-  handoff, spec links, the milestone label, the PR ref — copies as it is, and two of those are
-  judgment calls worth naming: a duplicated milestone shares its label, and a duplicated step
-  keeps its PR ref, because a cut-and-paste move must keep both and a duplicate is rarer than
-  a move. If that proves wrong, `github` is one more entry in the tuple.
+  handoff, spec figures, the milestone label, the PR ref — copies as it is, and two of those
+  are judgment calls worth naming: a duplicated milestone shares its label, and a duplicated
+  step keeps its PR ref, because a cut-and-paste move must keep both and a duplicate is rarer
+  than a move. If that proves wrong, `github` is one more entry in the tuple. `feature` is
+  the third policy: a copy drops the marker, because a record has one instance and the
+  original keeps it — the same rule the drop and `feature set` refuse a second placement by.
 
 Where the block lands is the canvas's business, through the same seam New uses: the anchor
 is the last click, centred as New centres, and the block keeps its arrangement around it;
@@ -1184,7 +1186,7 @@ same registry and introduces no second description of any command.
 
 `dplanner project lint` asks whether a plan is complete enough to hand to an agent — and
 completeness is a fact about *every* feature at once: an unestimated step is estimation's
-concern, an uncited requirement is the spec's, a dangling edge is the graph's. No module can
+concern, an unplaced feature is the feature module's, a dangling edge is the graph's. No module can
 own that question without importing the others, so the verb lives in `cli/lint.py` beside
 `cli/aspects.py`, whose rationale it repeats: a command that answers a question *about* the
 features takes them as arguments.
@@ -1199,21 +1201,24 @@ cross-feature report inside one feature and grow that module's signature with fa
 not its business.
 
 Two deliberate behaviours: findings exit 1, so an agent gates a handover on lint exactly as
-it gates on a test suite; and the conditional checks (spec citations only where requirements
-exist, a start date only where estimates do) keep the report an obligation list rather than
+it gates on a test suite; and the conditional checks (a topology only once a project has
+steps, a start date only where estimates do) keep the report an obligation list rather than
 noise about features a project never adopted.
 
 A check is handed the store's file lookup as its third argument (`FilesFor`) alongside the
 library and project, because some facts live *beside* a node rather than in it: whether a
-requirement's quote still anchors in its document's text layer, whether a description's
+feature's quote still anchors in its document's text layer, whether a description's
 `![](assets/…)` resolves to a file actually attached. The check re-derives those answers on
-every run rather than trusting anything stored at mark time — `spec import` can replace a
-document with no window open to notice, which is the same argument the ordering makes.
+every run rather than trusting anything stored at add time — `spec import` can replace a
+document with no window open to notice, which is the same argument the ordering makes. The
+quote check itself is the spec module's (`anchor_quote`), handed to the feature module's
+`lint_checks(anchor=…)` by the composition root: the record is one module's and the
+document another's, and neither imports the other.
 
 ## Authoring a step is one verb, many modules
 
-A fully authored step needs a description, an instruction, an estimate, its requirement
-links and its figures — five modules' facts, and five commands when every module keeps to
+A fully authored step needs a description, an instruction, an estimate, the feature it
+realises and its figures — five modules' facts, and five commands when every module keeps to
 its own verb. Measured against a real plan, that was most of the invocations. So `step add`
 takes **authors**: each contributing module's Qt-free `cli.py` exports a `StepAuthor` — the
 flags it registers on the verb's parser, and what it applies to the fresh step — and the
@@ -1472,6 +1477,18 @@ leaves two nodes where a stale point would have hidden one exactly under the oth
 double-click gets both too: it pointed at a spot in the same sense, and so does a paste,
 which hands the same callback every step it added at once.
 
+
+A **drop** is the third caller. Something dragged from a panel onto the canvas — a feature
+from the Features panel — is a one-shot gesture exactly like the double-click on empty
+space: Qt's drag events never reach the mouse handlers the mode stack reads, and a mode has
+state to enter and leave where a drop has neither. So `GraphView` records the point and
+hands the mime data up, `ProjectActivity` finds the `CanvasDrop` for its type, and the
+handler — written in the composition root, because it reads one module's catalogue and
+births through another module's `create` — places the step with its marker and its position
+in the one undo step every placed step gets. What the canvas accepts is a tuple of
+`CanvasDrop`s on its `Deps`, named by the root like the kinds; a refusal is a `CliError`
+whose message is the status bar's, the same words the CLI would print.
+
 ## The description is the instructions
 
 A step used to carry two prose fields — a description and an agent instruction — and the
@@ -1538,9 +1555,12 @@ instructions*) and the inherited context.
 
 The briefing is deliberately **self-contained**: between the standing instruction and the
 step's own sit the step's facts — its description as a section of its own only when a
-separate instruction displaced it, the requirements it implements (titles *and* quotes, so
-the agent reads the obligation rather than chasing an id), and the branch or PR the work
-lands on. The agent module renders these as opaque
+separate instruction displaced it, the feature it realises or — on a work step — the
+features it *flows into* (titles *and* the spec passages they were read from, so the agent
+reads the obligation rather than chasing an id; the flows-into list is `scope.gatherers`,
+the same walk the Covers tab reads), and the branch or PR the work lands on. The project's
+topology sits ahead of all of these as a *project section*, right after the standing
+instruction, because it frames every step the same way. The agent module renders these as opaque
 blocks; the composition root words them, exactly as it words the preamble and epilogue,
 because each names another module's vocabulary. Two block kinds, two framings: *parts* are
 context handed forward from earlier steps (`### From "…"`), *sections* are facts about this
@@ -1899,8 +1919,10 @@ cases the two readings are the same answer. A control with one outcome is noise.
 
 ### Who owns which half
 
-The marker aspects — `step_check` and `step_feature` — are bare `{"on": true}` entries in their
-own packages with a Type toggle and nothing else. The *Covers* tab that shows what any of them
+`step_check` is a bare `{"on": true}` marker in its own package with a Type toggle and nothing
+else; a feature step's marker names the catalogue record it realises (see *A feature is a
+record, and a feature step is its instance*), and the walk reads only whether the marker is
+there. The *Covers* tab that shows what any of them
 gathers is registered by the **tests** module, because that tab is a list of tests, which is
 testing's business. That keeps the wiring one-directional: `TestsDeps` takes the wired
 `ScopeKind`s, and neither marker module needs anything from anybody.
@@ -2091,3 +2113,76 @@ recognises the moment. None needs action today.
   numbers rather than in the one that owns the table. (The schedule that knows about
   parallelism, once listed here, landed as `parallel_finish` and the time estimates tab —
   see *Time estimates: two worker pools, one greedy simulation*.)
+
+## A feature is a record, and a feature step is its instance
+
+A specification used to be read into **requirements**: quoted obligations in the spec
+module's index, linked N:M to steps, cited in briefings, checked by lint. It was honest and
+it was the wrong grain. Nobody demos a requirement; people name, build and test *features*,
+and the graph already knew that — a feature step gathers the work that flows into it, and
+`dplanner scope show` reads it. What was missing was the feature *before* it is on the graph:
+the thing a person reads out of the spec, adds by hand, drags into place.
+
+So a feature is now a **record** in the project's catalogue (`modules/feature/catalogue.py`)
+— title, description, where in the spec it was read from, images — and a feature step
+carries only the record's id. The record is stored because an unplaced feature is a fact the
+graph cannot derive; membership is still never stored, for every reason *Deriving rather than
+storing* gives. Three consequences are the design:
+
+- **A feature is implemented once.** One record, at most one step naming it. The drop, the
+  Type toggle, `feature set` and `step add --feature` all refuse a second instance in the
+  same words, and `feature.duplicate` names one that arrived by hand. That is what lets the
+  Features panel say *placed* or *not placed* and mean it.
+- **Records outlive their instances.** Toggling Feature off, deleting the step, `project
+  clear-steps` — each clears the marker and leaves the record in the catalogue, unplaced.
+  Undo has to restore either side independently, which is the rule an edge to a deleted
+  step already follows; and a record somebody wrote is never lost to a gesture on the
+  graph. Only the feature verbs create and remove records.
+- **A work step reaches the spec through the feature it flows into.** No link on the step:
+  its briefing lists the features `scope.gatherers` says own it, with the passages they were
+  read from. A citation that was N:M on requirements is a walk on features, and it cannot
+  go stale when `dplanner step link` rewires the graph with no window open.
+
+The trace is therefore graph → feature step → record → spec passage. The quote is still
+checked against the document — on `feature add`, and on every lint — through the spec
+module's `anchor_quote`, handed across by the composition root: the record belongs to one
+module and the document to another. Two things were deliberately not done. Requirements
+were not converted into features: a requirement was a citation and a feature is a thing, and
+only a person reading the spec again can say which citations were features — so the spec's
+format 3 drops the key and the skill says how to read them out afresh. And the marker the
+retired `step_feature` module wrote is not minted into a record at open: a per-entry
+converter cannot see the project, so it passes through and reads as *unregistered* — still a
+feature to the graph, named by lint, registered by the first `feature set`.
+
+## The topology is read before the graph is edited
+
+A project's **topology** is its own account of how its graph is shaped: what counts as a
+feature here, what follows one, where the milestones fall. It is prose beside the project
+(`modules/spec.md` — the spec module's one prose document, edited in the Specs tab as a
+pinned first row and by `dplanner topology set`), and it reaches every briefing as a project
+section. An agent that edits the graph without having read it produces a plan in the wrong
+shape, and a wrong shape costs far more to correct than an empty one. So the CLI refuses.
+
+The gate is a **declaration on the command**. A verb that reshapes a graph — adds or removes
+steps, links them, places a feature — sets `CliCommand.edits_graph` to a resolver saying how
+to find the project from its own arguments, and the composition root puts `cli/gate.py`'s
+check in front of every declaring verb. No path table in the root, no wrapper reverse-
+engineering argparse: the verb says what it is, the skill marks it (*reads the topology
+first*), and a content verb — a title, a description, a feature's wording — declares
+nothing and is never refused. The check runs before the handler, so a refusal is not a
+half-applied run.
+
+"Has read" is a **digest, not a flag**. `topology show` records the sha256 of the text it
+printed, per project, in a per-user, per-machine file under `core/config_dir.py` (Qt-free,
+because `cli/` must reach it) — never in the plan, which is shared. The gate compares that
+with the text as it is now, so a topology that changed since it was read is unread again with
+no version stamp and no migration: the comparison is the check, the same shape as a compiled
+document's staleness. A project with no topology refuses too — the first thing to do with a
+project is to say what shape it wants, and the refusal names the verb. The window is never
+gated: the topology is the user's own text, and the gate exists for the agent driving the
+CLI. `project import` is not gated either: it creates a project from an export that carries
+the topology as `text.spec`, and `topology.missing` lint catches one without.
+
+The test suite's shared registry runs behind a gate with no record file — one that refuses
+nothing and writes nothing — so no test ever writes the real per-user file and every CLI test
+adds steps freely; the gate itself is exercised over a record under `tmp_path`.

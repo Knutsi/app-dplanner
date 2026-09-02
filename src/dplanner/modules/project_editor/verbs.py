@@ -382,8 +382,8 @@ class StepVerbs:
         """
         step = Step(title=title)
         commands: list[Command] = [AddNodeCommand(project_id, step)]
-        if kind is not None and (entry := kind.entry(self.library.project(project_id))):
-            commands.append(SetModuleDataCommand(step.id, kind.id, entry))
+        if kind is not None:
+            commands += kind.commands(self.library.project(project_id), step)
         if at is not None:
             commands.append(SetModuleDataCommand(step.id, POSITION_KEY, write_position(*at)))
         label = f"New {kind.name if kind is not None else 'Step'}"

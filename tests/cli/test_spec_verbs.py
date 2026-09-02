@@ -1,4 +1,5 @@
-"""``dplanner spec``: documents, versions, requirements, links — over a real library.
+"""``dplanner spec`` and ``dplanner topology``: documents, versions, figures and the
+project's own account of its shape — over a real library.
 
 **No ``qapp`` fixture anywhere in this file**: the spec workflow is an agent's workflow,
 and it has to run where a graphics stack does not exist.
@@ -8,43 +9,9 @@ import json
 from pathlib import Path
 
 import pytest
+from tests.cli.spec_helpers import source, tiny_pdf
 
 PDF = b"%PDF-1.4 not really, but binary enough\xff\xfe\x00"
-
-
-def tiny_pdf(*page_texts: str) -> bytes:
-    """A minimal but real PDF, one page per string — built by hand so these tests need
-    no Qt and no PDF writer, only the reader under test."""
-    objects: list[bytes] = []
-    page_ids = [4 + 2 * i for i in range(len(page_texts))]
-    kids = " ".join(f"{page_id} 0 R" for page_id in page_ids)
-    objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
-    objects.append(f"<< /Type /Pages /Kids [{kids}] /Count {len(page_texts)} >>".encode())
-    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
-    for page_id, text in zip(page_ids, page_texts, strict=True):
-        content = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
-        objects.append(
-            (
-                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-                f"/Resources << /Font << /F1 3 0 R >> >> /Contents {page_id + 1} 0 R >>"
-            ).encode()
-        )
-        objects.append(
-            b"<< /Length %d >>\nstream\n%s\nendstream" % (len(content), content)
-        )
-    out = bytearray(b"%PDF-1.4\n")
-    offsets = []
-    for number, body in enumerate(objects, start=1):
-        offsets.append(len(out))
-        out += f"{number} 0 obj\n".encode() + body + b"\nendobj\n"
-    xref_at = len(out)
-    out += f"xref\n0 {len(objects) + 1}\n".encode() + b"0000000000 65535 f \n"
-    for offset in offsets:
-        out += f"{offset:010d} 00000 n \n".encode()
-    out += (
-        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF\n"
-    ).encode()
-    return bytes(out)
 
 
 @pytest.fixture
@@ -55,12 +22,6 @@ def project(cli):
 
 def data(text):
     return json.loads(text)
-
-
-def source(tmp_path, name, content):
-    path = tmp_path / name
-    path.write_bytes(content if isinstance(content, bytes) else content.encode())
-    return str(path)
 
 
 # -- importing ---------------------------------------------------------------------------------
@@ -176,124 +137,22 @@ def test_diff_on_a_pdf_diffs_the_text_layers(cli, project, tmp_path):
     assert Path(report["previous"]).is_file() and Path(report["current"]).is_file()
 
 
-# -- requirements ------------------------------------------------------------------------------
+# -- the topology ------------------------------------------------------------------------------
 
 
-@pytest.fixture
-def marked(cli, project, tmp_path):
-    cli("spec", "import", project, source(tmp_path, "spec.md", "# Spec"), "--name", "spec")
-    cli("spec", "mark", project, "spec", "--title", "Hash with argon2id", "--quote", "MUST")
-    return project
+def test_topology_set_and_show(cli, cli_stdin, project, workspace):
+    out = cli_stdin("topology", "set", project, "--file", "-", stdin="Views are features.\n")
+    assert "topology set" in out and "topology show" in out
+    assert (next(workspace.glob("*/modules/spec.md"))).read_text() == "Views are features.\n"
+    shown = data(cli("topology", "show", project, "--json"))
+    assert shown["topology"] == "Views are features.\n" and len(shown["digest"]) == 16
+    assert "Views are features." in cli("topology", "show", project)
 
 
-def test_mark_generates_ids_and_updates_by_id(cli, marked):
-    cli("spec", "mark", marked, "spec", "--title", "Second rule")
-    listed = data(cli("spec", "requirements", marked, "--json"))["requirements"]
-    assert [req["id"] for req in listed] == ["r1", "r2"]
-    cli("spec", "mark", marked, "spec", "--title", "Hash with scrypt", "--id", "r1")
-    listed = data(cli("spec", "requirements", marked, "--json"))["requirements"]
-    assert listed[0]["title"] == "Hash with scrypt"
-
-
-def test_link_ties_a_step_to_a_requirement(cli, marked):
-    cli("step", "add", marked, "Hash passwords")
-    cli("spec", "link", "Hash passwords", "r1")
-    listed = data(cli("spec", "requirements", marked, "--json"))["requirements"]
-    assert [step["title"] for step in listed[0]["steps"]] == ["Hash passwords"]
-    cli("spec", "link", "Hash passwords", "r1", "--remove")
-    listed = data(cli("spec", "requirements", marked, "--json"))["requirements"]
-    assert listed[0]["steps"] == []
-
-
-def test_linking_an_unknown_requirement_is_refused(cli, marked):
-    cli("step", "add", marked, "Hash passwords")
-    out = cli("spec", "link", "Hash passwords", "r9", expect=1)
-    assert "no requirement" in out
-
-
-def test_unmark_reports_the_steps_left_dangling(cli, marked):
-    cli("step", "add", marked, "Hash passwords")
-    cli("spec", "link", "Hash passwords", "r1")
-    out = cli("spec", "unmark", marked, "r1")
-    assert "still linked" in out and "Hash passwords" in out
-    # The step keeps its (now dangling) link — undo must be able to restore either side.
-    report = data(cli("spec", "requirements", marked, "--json"))
-    assert report["requirements"] == []
-
-
-def test_requirements_filter_by_document(cli, marked, tmp_path):
-    cli("spec", "import", marked, source(tmp_path, "other.md", "# Other"))
-    cli("spec", "mark", marked, "other", "--title", "Elsewhere")
-    ids = [
-        req["id"]
-        for req in data(cli("spec", "requirements", marked, "--document", "spec", "--json"))[
-            "requirements"
-        ]
-    ]
-    assert ids == ["r1"]
-
-
-# -- quote validation and pages ----------------------------------------------------------------
-
-
-def test_mark_finds_the_quote_and_records_its_page(cli, project, tmp_path):
-    pdf = tiny_pdf("Nothing here.", "All credentials MUST be hashed.")
-    cli("spec", "import", project, source(tmp_path, "s.pdf", pdf))
-    quote = "MUST be hashed"
-    report = data(
-        cli("spec", "mark", project, "s", "--title", "Hashing", "--quote", quote, "--json")
-    )
-    assert report["quote_found"] is True and report["page"] == 2
-    listed = data(cli("spec", "requirements", project, "--json"))["requirements"]
-    assert listed[0]["page"] == 2
-
-
-def test_an_absent_quote_warns_but_still_marks(cli, project, tmp_path):
-    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("Nothing here.")))
-    out = cli("spec", "mark", project, "s", "--title", "Ghost", "--quote", "does not appear")
-    assert "warning" in out and "not found" in out
-    assert data(cli("spec", "requirements", project, "--json"))["requirements"]
-
-
-def test_a_page_that_disagrees_with_the_quote_warns_but_is_kept(cli, project, tmp_path):
-    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("Nothing.", "The rule.")))
-    out = cli("spec", "mark", project, "s", "--title", "Rule", "--quote", "The rule", "--page", "1")
-    assert "not found on page 1 — it anchors on 2" in out
-    assert data(cli("spec", "requirements", project, "--json"))["requirements"][0]["page"] == 1
-
-
-def test_a_quote_on_several_pages_accepts_any_of_them_as_page(cli, project, tmp_path):
-    # The same sentence on pages 1 and 2: --page is disambiguation, not a mismatch.
-    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("The rule.", "The rule.")))
-    out = cli("spec", "mark", project, "s", "--title", "Rule", "--quote", "The rule", "--page", "2")
-    assert "warning" not in out
-    assert data(cli("spec", "requirements", project, "--json"))["requirements"][0]["page"] == 2
-    # Unnamed, the first occurrence is recorded.
-    out = cli("spec", "mark", project, "s", "--title", "Again", "--quote", "The rule")
-    assert data(cli("spec", "requirements", project, "--json"))["requirements"][1]["page"] == 1
-
-
-def test_strict_refuses_a_quote_that_does_not_anchor(cli, project, tmp_path):
-    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("Nothing here.")))
-    out = cli(
-        "spec", "mark", project, "s", "--title", "Ghost",
-        "--quote", "does not appear", "--strict", expect=1,
-    )
-    assert "--strict" in out
-    assert data(cli("spec", "requirements", project, "--json"))["requirements"] == []
-    # An anchoring quote passes strict; no quote at all passes too (nothing to refute).
-    cli("spec", "mark", project, "s", "--title", "Real", "--quote", "Nothing here", "--strict")
-    cli("spec", "mark", project, "s", "--title", "Quoteless", "--strict")
-    listed = data(cli("spec", "requirements", project, "--json"))["requirements"]
-    assert [req["title"] for req in listed] == ["Real", "Quoteless"]
-
-
-def test_quotes_are_validated_against_prose_documents_too(cli, project, tmp_path):
-    cli("spec", "import", project, source(tmp_path, "s.md", "The rule\nis here."))
-    report = data(
-        cli("spec", "mark", project, "s", "--title", "Rule", "--quote", "rule is here", "--json")
-    )
-    assert report["quote_found"] is True and report["page"] is None
+def test_topology_show_says_when_there_is_none(cli, project):
+    out = cli("topology", "show", project)
+    assert "no topology yet" in out and "topology set" in out
+    assert data(cli("topology", "show", project, "--json"))["topology"] == ""
 
 
 # -- rendered pages and assets -----------------------------------------------------------------
@@ -355,18 +214,17 @@ def test_attach_to_step_copies_the_figure_beside_the_step(cli, project, tmp_path
     assert list(workspace.glob("*/steps/*/modules/spec/assets/*.png"))
 
 
-def test_linking_does_not_erase_attachments(cli, project, tmp_path):
-    """write_step_entry exists because write_links rewrote the whole entry from the links
-    alone — this is the regression that must never come back."""
-    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("A rule.")))
+def test_attaching_again_keeps_earlier_attachments(cli, project, tmp_path):
+    """write_step_entry rewrites the whole entry from what it is handed — a second attach
+    must read the first back rather than erase it."""
+    cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("One.", "Two.")))
     cli("spec", "render", project, "s", "--page", "1")
-    cli("spec", "mark", project, "s", "--title", "Rule")
+    cli("spec", "render", project, "s", "--page", "2")
     cli("step", "add", project, "Hash passwords")
     cli("spec", "attach-to-step", "Hash passwords", "a1")
-    cli("spec", "link", "Hash passwords", "r1")
+    cli("spec", "attach-to-step", "Hash passwords", "a2")
     shown = data(cli("step", "show", "Hash passwords", "--json"))
-    assert shown["aspects"]["spec"]["requirements"] == ["r1"]
-    assert shown["aspects"]["spec"]["attachments"][0]["asset"] == "a1"
+    assert [a["asset"] for a in shown["aspects"]["spec"]["attachments"]] == ["a1", "a2"]
 
 
 def test_an_attached_figure_reaches_the_agent_briefing(cli, project, tmp_path):
@@ -388,30 +246,6 @@ def test_an_attached_figure_reaches_the_agent_briefing(cli, project, tmp_path):
     assert len(figures) == 1 and figures[0] in shown["prompt"]
 
 
-def test_link_takes_several_requirements_in_one_call(cli, project, tmp_path):
-    cli("spec", "import", project, source(tmp_path, "s.md", "# Spec"))
-    for title in ("One", "Two", "Three"):
-        cli("spec", "mark", project, "s", "--title", title)
-    cli("step", "add", project, "Hash passwords")
-    cli("spec", "link", "Hash passwords", "r1", "r2", "r3")
-    shown = data(cli("step", "show", "Hash passwords", "--json"))
-    assert shown["aspects"]["spec"]["requirements"] == ["r1", "r2", "r3"]
-    cli("spec", "link", "Hash passwords", "r1", "r3", "--remove")
-    shown = data(cli("step", "show", "Hash passwords", "--json"))
-    assert shown["aspects"]["spec"]["requirements"] == ["r2"]
-
-
-def test_one_unknown_id_refuses_the_whole_batch(cli, project, tmp_path):
-    cli("spec", "import", project, source(tmp_path, "s.md", "# Spec"))
-    cli("spec", "mark", project, "s", "--title", "One")
-    cli("step", "add", project, "Hash passwords")
-    out = cli("spec", "link", "Hash passwords", "r1", "r9", expect=1)
-    assert "'r9'" in out
-    # Nothing was written — not even the id that existed.
-    shown = data(cli("step", "show", "Hash passwords", "--json"))
-    assert "spec" not in shown["aspects"]
-
-
 def test_attach_to_step_takes_several_assets(cli, project, tmp_path, workspace):
     cli("spec", "import", project, source(tmp_path, "s.pdf", tiny_pdf("One.", "Two.")))
     cli("spec", "render", project, "s", "--page", "1")
@@ -426,35 +260,50 @@ def test_attach_to_step_takes_several_assets(cli, project, tmp_path, workspace):
     assert "'a9'" in out
 
 
-def test_the_index_is_stamped_format_2(cli, project, tmp_path, workspace):
+def test_the_index_is_stamped_format_3(cli, project, tmp_path, workspace):
     cli("spec", "import", project, source(tmp_path, "s.md", "# Spec"))
     entry = json.loads(next(workspace.glob("*/modules/spec.json")).read_text())
-    assert entry["format"] == 2
+    assert entry["format"] == 3
+
+
+def test_an_older_index_drops_its_requirements_at_open(cli, project, tmp_path, workspace):
+    """Format 2 carried requirements; format 3 does not. The key goes, the rest stays —
+    for the project's index and a step's entry alike."""
+    cli("spec", "import", project, source(tmp_path, "s.md", "# Spec"))
+    cli("step", "add", project, "Hash passwords")
+    index = next(workspace.glob("*/modules/spec.json"))
+    entry = json.loads(index.read_text())
+    entry["requirements"] = [{"id": "r1", "document": "s", "title": "Old"}]
+    entry["format"] = 2
+    index.write_text(json.dumps(entry))
+    step_modules = next(workspace.glob("*/steps/hash-passwords")) / "modules"
+    step_modules.mkdir(exist_ok=True)
+    step_entry = step_modules / "spec.json"
+    step_entry.write_text(json.dumps({"requirements": ["r1"], "format": 2}))
+    cli("spec", "list", project)  # Any run migrates.
+    assert "requirements" not in json.loads(index.read_text())
+    assert json.loads(index.read_text())["format"] == 3
+    assert not step_entry.exists()  # Nothing left to keep: the entry is removed.
 
 
 # -- removing ----------------------------------------------------------------------------------
 
 
-def test_remove_takes_the_document_and_its_requirements(cli, marked, tmp_path, workspace):
+@pytest.fixture
+def marked(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "spec.md", "# Spec"), "--name", "spec")
+    return project
+
+
+def test_remove_takes_the_document_and_keeps_the_blob(cli, marked, tmp_path, workspace):
     cli("spec", "import", marked, source(tmp_path, "other.md", "# Other"))
-    cli("spec", "mark", marked, "other", "--title", "Elsewhere")
     report = data(cli("spec", "remove", marked, "spec", "--json"))
     assert report["document"] == "spec"
-    assert report["requirements_removed"] == ["r1"]
     listed = data(cli("spec", "list", marked, "--json"))
     assert [doc["name"] for doc in listed["documents"]] == ["other"]
-    remaining = data(cli("spec", "requirements", marked, "--json"))["requirements"]
-    assert [req["id"] for req in remaining] == ["r2"]
     # The blob outlives the index entry — an orphan is recoverable, a dangling pointer is not.
     blobs = list(workspace.glob("*/modules/spec/documents/*.md"))
     assert len(blobs) == 2
-
-
-def test_remove_reports_the_steps_left_dangling(cli, marked):
-    cli("step", "add", marked, "Hash passwords")
-    cli("spec", "link", "Hash passwords", "r1")
-    out = cli("spec", "remove", marked, "spec")
-    assert "still linked" in out and "Hash passwords" in out
 
 
 def test_removing_the_last_document_removes_the_index_file(cli, marked, workspace):
@@ -466,7 +315,7 @@ def test_removing_the_last_document_removes_the_index_file(cli, marked, workspac
 
 
 def test_a_failing_verb_writes_no_index(cli, project, tmp_path):
-    cli("spec", "mark", project, "nowhere", "--title", "x", expect=1)
+    cli("spec", "attach", project, str(tmp_path / "nowhere.png"), expect=1)
     assert data(cli("spec", "list", project, "--json"))["documents"] == []
 
 

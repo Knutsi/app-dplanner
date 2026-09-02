@@ -99,9 +99,11 @@ class EstimationModule:
                 order=10,
                 hint="Working days. A week is five.",
                 factory=lambda: EstimateSection(deps.library, deps.undo),
-                shown_for=lambda step_id: step_id is not None
-                and deps.library.has(step_id)
-                and enabled(deps.library.step(step_id)),
+                shown_for=lambda step_id: (
+                    step_id is not None
+                    and deps.library.has(step_id)
+                    and enabled(deps.library.step(step_id))
+                ),
             )
         )
         deps.actions.register(

@@ -84,9 +84,7 @@ def asset_source() -> AssetSource:
     list should say.
     """
 
-    def scan(
-        _library: Library, project: Project, files: FilesFor
-    ) -> Sequence[AssetLocation]:
+    def scan(_library: Library, project: Project, files: FilesFor) -> Sequence[AssetLocation]:
         referenced: dict[str, list[AssetUse]] = {}
 
         def note(names: list[str], use: AssetUse) -> None:
@@ -138,7 +136,7 @@ def read_stamp(step: Step) -> dict[str, Any]:
     """What the last compile recorded, or ``{}`` — a collector nobody has compiled yet.
 
     There is no ``{"on": true}`` marker here on purpose: a collector is already marked by
-    ``step_feature`` or ``step_milestone``, and absence of this entry is the honest way to
+    ``feature`` or ``step_milestone``, and absence of this entry is the honest way to
     say *never compiled*.
     """
     entry = step.module_data.get(COMPILED_ID)

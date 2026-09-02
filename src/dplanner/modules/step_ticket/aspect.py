@@ -17,6 +17,7 @@ DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
 FIELDS = ("system", "key", "url")
 
+
 @dataclass(frozen=True)
 class Ticket:
     system: str = ""

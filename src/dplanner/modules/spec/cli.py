@@ -1,36 +1,44 @@
-"""``dplanner spec …`` — a project's specification documents and their requirements.
+"""``dplanner spec …`` and ``dplanner topology …`` — a project's specification documents,
+its figures, and its own account of how its graph is shaped.
 
 This is the agent's surface: import a spec beside a project, read it (``show`` prints text,
 markdown *and* PDFs — import extracts a PDF's text layer, and ``--page`` narrows to one
-page; ``path`` still hands over the original file), mark the requirements found in it —
-``--quote`` is validated against the document and ``--page`` anchors it — link the steps
-created from them, ``render`` a page into an image and ``attach-to-step`` it so a figure
-travels with the step's briefing, and — when the spec is replaced — ``diff`` what changed
-(PDFs diff by their text layers) and ``requirements`` to find the steps affected.
+page; ``path`` still hands over the original file), ``render`` a page into an image and
+``attach-to-step`` it so a figure travels with the step's briefing, and — when the spec is
+replaced — ``diff`` what changed (PDFs diff by their text layers). What the spec *asks for*
+is read into features (``dplanner feature add``), whose quotes this module checks through
+:func:`anchor_quote`, handed across by the composition root.
+
+The **topology** is the project's prose beside the documents: ``topology set`` writes it
+and ``topology show`` prints it — and records that it was read, which is what the gate in
+``cli/gate.py`` checks before any verb reshapes the graph.
 """
 
 from argparse import ArgumentParser, Namespace
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor, StepAuthored
+from dplanner.cli.gate import digest
 from dplanner.cli.lint import LintCheck, LintFinding
-from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
+from dplanner.cli.lookup import body_from, find_project, find_step, project_arg, step_arg
 from dplanner.core.text_diff import diff_hunks
-from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor
 from dplanner.modules.spec.aspect import (
     MODULE_ID,
+    TOPOLOGY_LABEL,
     read_attachments,
-    read_links,
+    read_topology,
+    topology_edit,
     write_step_entry,
 )
 from dplanner.modules.spec.documents import (
     KIND_PDF,
-    Requirement,
     SpecDocument,
     attach_asset,
     binary_refusal,
@@ -40,11 +48,8 @@ from dplanner.modules.spec.documents import (
     document_text,
     import_document,
     layer_from,
-    linked_ids,
-    linked_steps,
     matching_documents,
     new_document,
-    next_id,
     quote_anchors,
     read_index,
     record_asset,
@@ -55,17 +60,10 @@ from dplanner.modules.spec.pdf import render_page, split_pages
 
 
 def step_author() -> StepAuthor:
-    """`step add`'s spec flags: the new step arrives citing its requirements, figures
-    beside it — through the same cores the standalone verbs use, so the two paths
-    cannot drift."""
+    """`step add`'s spec flag: the new step arrives with its figures beside it — through
+    the same core the standalone verb uses, so the two paths cannot drift."""
 
     def configure(parser: ArgumentParser) -> None:
-        parser.add_argument(
-            "--link",
-            nargs="+",
-            metavar="R",
-            help="requirement ids the new step implements",
-        )
         parser.add_argument(
             "--attach",
             nargs="+",
@@ -74,123 +72,107 @@ def step_author() -> StepAuthor:
         )
 
     def author(context: CliContext, step: Step, args: Namespace) -> StepAuthored | None:
-        if args.link is None and args.attach is None:
+        if not args.attach:
             return None
         project = context.library.project_of(step.id)
-        links = read_links(step)
-        attachments = read_attachments(step)
-        if args.link:
-            links = linked_ids(project, step, list(dict.fromkeys(args.link)))
-        files: list[str] = []
-        if args.attach:
-            attachments, files = copied_to_step(
-                context.store.files, project, step, list(dict.fromkeys(args.attach))
-            )
-        context.apply(
-            SetModuleDataCommand(step.id, MODULE_ID, write_step_entry(links, attachments))
+        attachments, files = copied_to_step(
+            context.store.files, project, step, list(dict.fromkeys(args.attach))
         )
-        notes = []
-        if args.link:
-            notes.append(f"linked {', '.join(args.link)}")
-        if args.attach:
-            notes.append(f"attached {', '.join(args.attach)}")
-        return StepAuthored(
-            {"requirements": sorted(set(links)), "attachments": files}, "; ".join(notes)
-        )
+        context.apply(SetModuleDataCommand(step.id, MODULE_ID, write_step_entry(attachments)))
+        return StepAuthored({"attachments": files}, f"attached {', '.join(args.attach)}")
 
     return StepAuthor(configure, author)
 
 
 def lint_checks() -> list[LintCheck]:
-    def spec_findings(
+    def topology_missing(
         _product: Library, project: Project, _files: FilesFor
     ) -> list[LintFinding]:
-        requirements = read_index(project).requirements
-        known = {requirement.id for requirement in requirements}
-        findings = [
-            LintFinding(
-                check="spec.requirement-unimplemented",
-                subject_id=requirement.id,
-                subject=requirement.title,
-                message="no step implements it — "
-                f"`dplanner spec link <step> {requirement.id}`",
-            )
-            for requirement in requirements
-            if not linked_steps(project, requirement.id)
-        ]
-        for step in project.steps:
-            links = read_links(step)
-            findings += [
-                LintFinding(
-                    check="spec.link-dangling",
-                    subject_id=step.id,
-                    subject=step.title,
-                    message=f"links {link}, which is not in the spec index — "
-                    f"`dplanner spec link '{step.title}' {link} --remove`",
-                )
-                for link in links
-                if link not in known
-            ]
-            # Only a project that has requirements can expect its steps to cite them.
-            if requirements and not links:
-                findings.append(
-                    LintFinding(
-                        check="spec.step-unlinked",
-                        subject_id=step.id,
-                        subject=step.title,
-                        message="implements no requirement — "
-                        f"`dplanner spec link '{step.title}' <requirement>`",
-                    )
-                )
-        return findings
-
-    def unanchored_quotes(
-        _product: Library, project: Project, files: FilesFor
-    ) -> list[LintFinding]:
-        """A requirement whose quote no longer appears in its document — the spec was
-        replaced and the anchor drifted. Re-validated here rather than stored at mark
-        time, because a stored answer is stale the moment `spec import` replaces the
-        document with no window running to notice."""
-        index = read_index(project)
-        cited = [req for req in index.requirements if req.quote]
-        if not cited:
+        """A project with steps and no account of its shape. The gate refuses the CLI
+        until one exists; lint says the same thing about a plan built in a window."""
+        if not project.steps or read_topology(project).strip():
             return []
-        try:
-            area = files(project.id, MODULE_ID)
-        except KeyError:
-            return []  # A never-flushed project has no documents to check against.
-        documents = {doc.name: doc for doc in index.documents}
-        texts: dict[str, str | None] = {}  # Each document's text is read once, not per quote.
-        findings = []
-        for requirement in cited:
-            document = documents.get(requirement.document)
-            if document is None:
-                continue  # Its document is gone — `spec remove` already reported that.
-            if document.name not in texts:
-                texts[document.name] = document_text(area, document)
-            text = texts[document.name]
-            if text is None:
-                continue  # An unreadable document cannot refute a quote.
-            anchored, _page = quote_anchors(text, requirement.quote, document.kind)
-            if not anchored:
-                findings.append(
-                    LintFinding(
-                        check="spec.quote-unanchored",
-                        subject_id=requirement.id,
-                        subject=requirement.title,
-                        message=f"its quote no longer anchors in {requirement.document} — "
-                        f"re-read the document and re-mark: `dplanner spec mark "
-                        f"'{project.title}' {requirement.document} --id {requirement.id} "
-                        "--title … --quote …`",
-                    )
-                )
-        return findings
+        return [
+            LintFinding(
+                check="topology.missing",
+                subject_id=project.id,
+                subject=project.title,
+                message="has no topology — say how its graph is shaped: "
+                f"`dplanner topology set '{project.title}' --file -`",
+            )
+        ]
 
-    return [spec_findings, unanchored_quotes]
+    return [topology_missing]
 
 
-def commands() -> list[CliCommand]:
+def anchor_quote(
+    files: FilesFor, project: Project, document_name: str, quote: str
+) -> tuple[bool | None, list[int]]:
+    """(was the quote found in the document, on which pages). ``(None, [])`` when there
+    is nothing to check: no quote, no such document, or a PDF whose text cannot be read.
+
+    The spec module's one answer to "does this passage anchor?", handed to the feature
+    module by the composition root so ``feature add`` and lint check a source the same
+    way ``spec mark`` once did. A warning, never a refusal, is the caller's rule: PDF
+    extraction loses ligatures and hyphenation, and a check that failed on rendering
+    noise would teach people to stop quoting.
+    """
+    if not quote:
+        return None, []
+    documents = {doc.name: doc for doc in read_index(project).documents}
+    document = documents.get(document_name)
+    if document is None:
+        return None, []
+    try:
+        area = files(project.id, MODULE_ID)
+    except KeyError:
+        return None, []  # A never-flushed project has no documents to check against.
+    text = document_text(area, document)
+    if text is None:
+        return None, []
+    return quote_anchors(text, quote, document.kind)
+
+
+def document_names(project: Project) -> list[str]:
+    """The names a feature's source may point at — the editor's dropdown."""
+    return [doc.name for doc in read_index(project).documents]
+
+
+def commands(*, note_read: Callable[[str, str], None]) -> list[CliCommand]:
+    """``note_read(project id, text)`` is the gate's ear: ``topology show`` calls it
+    with what it printed, so the read is recorded where the gate will look."""
+
+    def _topology_show(context: CliContext, args: Namespace) -> int:
+        project = find_project(context.library, args.project)
+        text = read_topology(project)
+        if text.strip():
+            note_read(project.id, text)
+        context.report(
+            {"project": project.id, "topology": text, "digest": digest(text) if text else ""},
+            text.rstrip("\n")
+            if text.strip()
+            else f"{project.title}: no topology yet — write one with "
+            f"`dplanner topology set {project.title!r} --file -`",
+        )
+        return 0
+
     return [
+        CliCommand(
+            path=("topology", "show"),
+            summary="Print how a project's graph is shaped, and record that you read it "
+            "— the graph-editing verbs refuse until the current text has been read.",
+            configure=project_arg,
+            run=_topology_show,
+            examples=("dplanner topology show 'Search rewrite'",),
+        ),
+        CliCommand(
+            path=("topology", "set"),
+            summary="Write a project's topology from a markdown file or stdin: what counts "
+            "as a feature here, what follows one, where the milestones fall.",
+            configure=_configure_topology_set,
+            run=_topology_set,
+            examples=("dplanner topology set 'Search rewrite' --file -",),
+        ),
         CliCommand(
             path=("spec", "new"),
             summary="Create an empty markdown spec document beside a project — the "
@@ -240,8 +222,8 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("spec", "remove"),
-            summary="Remove a spec document and the requirements marked in it; "
-            "the file stays on disk for the workspace's VCS.",
+            summary="Remove a spec document from the index; the file stays on disk for "
+            "the workspace's VCS, and features read from it keep their source.",
             configure=_one_document,
             run=_remove,
             examples=("dplanner spec remove 'Search rewrite' auth-spec",),
@@ -284,39 +266,6 @@ def commands() -> list[CliCommand]:
             run=_attach_to_step,
             examples=("dplanner spec attach-to-step 'Hash passwords' a1 a3",),
         ),
-        CliCommand(
-            path=("spec", "mark"),
-            summary="Mark a requirement in a spec document, or update one by id; the "
-            "quote is checked against the document.",
-            configure=_configure_mark,
-            run=_mark,
-            examples=(
-                "dplanner spec mark 'Search rewrite' auth-spec"
-                " --title 'Passwords hashed with argon2id'"
-                " --quote 'All stored credentials MUST use argon2id' --page 4",
-            ),
-        ),
-        CliCommand(
-            path=("spec", "unmark"),
-            summary="Remove a requirement; steps that linked it keep their (now dangling) link.",
-            configure=_configure_unmark,
-            run=_unmark,
-            examples=("dplanner spec unmark 'Search rewrite' r3",),
-        ),
-        CliCommand(
-            path=("spec", "requirements"),
-            summary="List a project's requirements and the steps linked to each.",
-            configure=_configure_requirements,
-            run=_requirements,
-            examples=("dplanner spec requirements 'Search rewrite' --document auth-spec",),
-        ),
-        CliCommand(
-            path=("spec", "link"),
-            summary="Link a step to the requirements it implements (or --remove the links).",
-            configure=_configure_link,
-            run=_link,
-            examples=("dplanner spec link 'Hash passwords' r1 r4 r7",),
-        ),
     ]
 
 
@@ -357,19 +306,9 @@ def _configure_attach(parser: ArgumentParser) -> None:
     parser.add_argument("image", help="the file to copy in beside the specs")
 
 
-def _configure_mark(parser: ArgumentParser) -> None:
-    _one_document(parser)
-    parser.add_argument("--title", required=True, help="the obligation, in one line")
-    parser.add_argument("--id", help="requirement id (default: the next free rN)")
-    parser.add_argument("--quote", default="", help="the passage anchoring it to the document")
-    parser.add_argument(
-        "--page", type=int, help="the page it sits on (default: where the quote is found)"
-    )
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="refuse the mark when the quote is not found, instead of warning",
-    )
+def _configure_topology_set(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument("--file", required=True, help="a markdown file, or - for stdin")
 
 
 def _configure_render(parser: ArgumentParser) -> None:
@@ -385,29 +324,7 @@ def _configure_attach_to_step(parser: ArgumentParser) -> None:
     parser.add_argument(
         "asset", nargs="+", help="asset ids from `dplanner spec assets`; several at once"
     )
-    parser.add_argument(
-        "--remove", action="store_true", help="detach them from the step instead"
-    )
-
-
-def _configure_unmark(parser: ArgumentParser) -> None:
-    project_arg(parser)
-    parser.add_argument("requirement", help="the requirement id to remove")
-
-
-def _configure_requirements(parser: ArgumentParser) -> None:
-    project_arg(parser)
-    parser.add_argument("--document", help="only requirements marked in this document")
-
-
-def _configure_link(parser: ArgumentParser) -> None:
-    step_arg(parser)
-    parser.add_argument(
-        "requirement",
-        nargs="+",
-        help="requirement ids in the step's project; several at once",
-    )
-    parser.add_argument("--remove", action="store_true", help="remove the links instead")
+    parser.add_argument("--remove", action="store_true", help="detach them from the step instead")
 
 
 # -- shared lookups ----------------------------------------------------------------------------
@@ -435,10 +352,6 @@ def _content(context: CliContext, project: Project, document: SpecDocument, blob
     return blob_bytes(context.store.files(project.id, MODULE_ID), document, blob)
 
 
-
-
-
-
 def _absolute(context: CliContext, project: Project, blob: str) -> str:
     return str(context.store.files(project.id, MODULE_ID).absolute(blob))
 
@@ -451,13 +364,9 @@ def _new(context: CliContext, args: Namespace) -> int:
     index = read_index(project)
     today = datetime.now(UTC).date().isoformat()
     area = context.store.files(project.id, MODULE_ID)
-    docs, document = new_document(
-        area, index.documents, args.title, today, name=args.name or ""
-    )
+    docs, document = new_document(area, index.documents, args.title, today, name=args.name or "")
     context.apply(
-        SetModuleDataCommand(
-            project.id, MODULE_ID, write_index(replace(index, documents=docs))
-        )
+        SetModuleDataCommand(project.id, MODULE_ID, write_index(replace(index, documents=docs)))
     )
     context.report(
         {"project": project.id, "document": document.name, "outcome": "added"},
@@ -480,9 +389,7 @@ def _import(context: CliContext, args: Namespace) -> int:
     index = read_index(project)
     today = datetime.now(UTC).date().isoformat()
     area = context.store.files(project.id, MODULE_ID)
-    docs, document, outcome = import_document(
-        area, index.documents, name, data, source.name, today
-    )
+    docs, document, outcome = import_document(area, index.documents, name, data, source.name, today)
     if outcome != "unchanged":
         updated = replace(index, documents=docs)
         context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(updated)))
@@ -502,9 +409,6 @@ def _list(context: CliContext, args: Namespace) -> int:
     project = find_project(context.library, args.project)
     index = read_index(project)
     docs = index.documents
-    marked = {
-        doc.name: [r.id for r in index.requirements if r.document == doc.name] for doc in docs
-    }
     context.report(
         {
             "project": project.id,
@@ -515,7 +419,6 @@ def _list(context: CliContext, args: Namespace) -> int:
                     "kind": doc.kind,
                     "imported": doc.imported,
                     "has_previous": doc.previous is not None,
-                    "requirements": marked[doc.name],
                 }
                 for doc in docs
             ],
@@ -523,7 +426,6 @@ def _list(context: CliContext, args: Namespace) -> int:
         "\n".join(
             f"{doc.name}  ({doc.kind}, imported {doc.imported}, {doc.filename})"
             + ("  [previous kept]" if doc.previous else "")
-            + (f"  {len(marked[doc.name])} requirements" if marked[doc.name] else "")
             for doc in docs
         )
         or "(no spec documents — add one with `dplanner spec import`)",
@@ -550,12 +452,8 @@ def _show(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _pdf_text(
-    context: CliContext, project: Project, document: SpecDocument, blob: str
-) -> str:
+def _pdf_text(context: CliContext, project: Project, document: SpecDocument, blob: str) -> str:
     return layer_from(context.store.files(project.id, MODULE_ID), document, blob)
-
-
 
 
 def _path(context: CliContext, args: Namespace) -> int:
@@ -572,33 +470,13 @@ def _remove(context: CliContext, args: Namespace) -> int:
     project = find_project(context.library, args.project)
     document = _document(project, args.document)
     index = read_index(project)
-    docs, requirements, dropped = remove_document(
-        index.documents, index.requirements, document.name
+    docs = remove_document(index.documents, document.name)
+    context.apply(
+        SetModuleDataCommand(project.id, MODULE_ID, write_index(replace(index, documents=docs)))
     )
-    updated = replace(index, documents=docs, requirements=requirements)
-    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(updated)))
-    still_linked = {req.id: linked_steps(project, req.id) for req in dropped}
-    note = f"{document.name}: removed"
-    if dropped:
-        note += f" with {len(dropped)} requirements"
-    orphans = [req_id for req_id, steps in still_linked.items() if steps]
-    if orphans:
-        titles = ", ".join(
-            sorted({step.title for req_id in orphans for step in still_linked[req_id]})
-        )
-        note += f" — still linked from {titles}; unlink with `dplanner spec link --remove`"
     context.report(
-        {
-            "project": project.id,
-            "document": document.name,
-            "requirements_removed": [req.id for req in dropped],
-            "still_linked": {
-                req_id: [step.id for step in steps]
-                for req_id, steps in still_linked.items()
-                if steps
-            },
-        },
-        note,
+        {"project": project.id, "document": document.name},
+        f"{document.name}: removed (the file stays on disk)",
     )
     return 0
 
@@ -725,8 +603,6 @@ def _assets(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-
-
 def _attach_to_step(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step)
     project = context.library.project_of(step.id)
@@ -741,9 +617,7 @@ def _attach_to_step(context: CliContext, args: Namespace) -> int:
     else:
         attachments, files = copied_to_step(context.store.files, project, step, wanted)
         note = f"{step.title}: attached {', '.join(wanted)}"
-    context.apply(
-        SetModuleDataCommand(step.id, MODULE_ID, write_step_entry(read_links(step), attachments))
-    )
+    context.apply(SetModuleDataCommand(step.id, MODULE_ID, write_step_entry(attachments)))
     context.report(
         {"step": step.id, "assets": wanted, "files": files, "attachments": len(attachments)},
         note,
@@ -751,146 +625,13 @@ def _attach_to_step(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _mark(context: CliContext, args: Namespace) -> int:
+def _topology_set(context: CliContext, args: Namespace) -> int:
+    body = body_from(args.file)
     project = find_project(context.library, args.project)
-    document = _document(project, args.document)
-    index = read_index(project)
-    quote_found, found_pages = _validate_quote(context, project, document, args.quote)
-    # Only a definite miss refuses: None means "nothing to check" (no quote, or a PDF
-    # whose text cannot be read), and strictness must not punish the unknowable.
-    if args.strict and quote_found is False:
-        raise CliError(
-            f"--strict: the quote was not found in {document.name} — check the wording "
-            "against `dplanner spec show`, or drop --strict (PDF extraction can mangle text)"
-        )
-    page = args.page if args.page is not None else (found_pages[0] if found_pages else None)
-    requirement = Requirement(
-        id=args.id or next_id([req.id for req in index.requirements], "r"),
-        document=document.name,
-        title=args.title,
-        quote=args.quote,
-        page=page,
-    )
-    requirements = index.requirements
-    if requirement.id in [req.id for req in requirements]:
-        requirements = [requirement if req.id == requirement.id else req for req in requirements]
-        outcome = "updated"
-    else:
-        requirements = [*requirements, requirement]
-        outcome = "marked"
-    updated = replace(index, requirements=requirements)
-    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(updated)))
-    note = f"{requirement.id}: {requirement.title} ({outcome} in {document.name})"
-    if args.quote and quote_found is False:
-        note += "\nwarning: the quote was not found in the document — check it anchors"
-    elif args.page is not None and found_pages and args.page not in found_pages:
-        # A quote can recur; --page naming any occurrence is disambiguation, not a miss.
-        anchored = ", ".join(str(number) for number in found_pages)
-        note += f"\nwarning: the quote was not found on page {args.page} — it anchors on {anchored}"
+    context.apply(EditTextCommand(topology_edit(project, body), label=TOPOLOGY_LABEL))
     context.report(
-        {
-            "project": project.id,
-            "requirement": requirement.id,
-            "outcome": outcome,
-            "quote_found": quote_found,
-            "page": page,
-        },
-        note,
-    )
-    return 0
-
-
-def _validate_quote(
-    context: CliContext, project: Project, document: SpecDocument, quote: str
-) -> tuple[bool | None, list[int]]:
-    """(was the quote found, on which pages). (None, []) when there is nothing to check.
-
-    A warning, never a refusal: PDF extraction loses ligatures and hyphenation, and a
-    mark that failed on rendering noise would teach people to stop quoting.
-    """
-    if not quote:
-        return None, []
-    text = document_text(context.store.files(project.id, MODULE_ID), document)
-    if text is None:
-        return None, []  # A document whose text cannot be read cannot refute a quote.
-    return quote_anchors(text, quote, document.kind)
-
-
-def _unmark(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.library, args.project)
-    index = read_index(project)
-    if args.requirement not in [req.id for req in index.requirements]:
-        raise CliError(f"no requirement {args.requirement!r} in {project.title!r}")
-    remaining = [req for req in index.requirements if req.id != args.requirement]
-    updated = replace(index, requirements=remaining)
-    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_index(updated)))
-    still_linked = linked_steps(project, args.requirement)
-    note = f"{args.requirement}: removed"
-    if still_linked:
-        titles = ", ".join(step.title for step in still_linked)
-        note += f" — still linked from {titles}; unlink with `dplanner spec link --remove`"
-    context.report(
-        {
-            "project": project.id,
-            "requirement": args.requirement,
-            "still_linked": [step.id for step in still_linked],
-        },
-        note,
-    )
-    return 0
-
-
-def _requirements(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.library, args.project)
-    requirements = read_index(project).requirements
-    if args.document is not None:
-        name = _document(project, args.document).name
-        requirements = [req for req in requirements if req.document == name]
-    linked = {req.id: linked_steps(project, req.id) for req in requirements}
-    context.report(
-        {
-            "project": project.id,
-            "requirements": [
-                {
-                    "id": req.id,
-                    "document": req.document,
-                    "title": req.title,
-                    "quote": req.quote,
-                    "page": req.page,
-                    "steps": [{"id": step.id, "title": step.title} for step in linked[req.id]],
-                }
-                for req in requirements
-            ],
-        },
-        "\n".join(
-            f"{req.id} ({req.document}): {req.title}"
-            + (
-                "\n  steps: " + ", ".join(step.title for step in linked[req.id])
-                if linked[req.id]
-                else "\n  steps: (none — create them and `dplanner spec link`)"
-            )
-            for req in requirements
-        )
-        or "(no requirements — mark them with `dplanner spec mark`)",
-    )
-    return 0
-
-
-def _link(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.library, args.step)
-    project = context.library.project_of(step.id)
-    wanted = list(dict.fromkeys(args.requirement))
-    if args.remove:
-        doomed = set(wanted)
-        links = [entry for entry in read_links(step) if entry not in doomed]
-        note = f"{step.title}: no longer linked to {', '.join(wanted)}"
-    else:
-        links = linked_ids(project, step, wanted)
-        note = f"{step.title}: linked to {', '.join(wanted)}"
-    entry = write_step_entry(links, read_attachments(step))
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
-    context.report(
-        {"step": step.id, "requirements": sorted(set(links))},
-        note,
+        {"project": project.id, "characters": len(body), "digest": digest(body)},
+        f"{project.title}: topology set, {len(body)} characters — read it back with "
+        f"`dplanner topology show {project.title!r}` before editing the graph",
     )
     return 0

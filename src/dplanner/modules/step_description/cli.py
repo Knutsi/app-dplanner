@@ -41,9 +41,7 @@ def lint_checks() -> list[LintCheck]:
             if enabled(step) and not read(step)
         ]
 
-    def missing_images(
-        _product: Library, project: Project, files: FilesFor
-    ) -> list[LintFinding]:
+    def missing_images(_product: Library, project: Project, files: FilesFor) -> list[LintFinding]:
         """A description that embeds ![](assets/…) naming a file that is not beside the
         step — the reference an agent's briefing would carry into nothing."""
         findings = []
@@ -176,9 +174,7 @@ def _clear(context: CliContext, args: Namespace) -> int:
     if prose:
         commands.insert(
             0,
-            EditTextCommand(
-                TextEdit(step.id, MODULE_ID, 0, prose, ""), label="Clear Description"
-            ),
+            EditTextCommand(TextEdit(step.id, MODULE_ID, 0, prose, ""), label="Clear Description"),
         )
     context.apply(
         commands[0] if len(commands) == 1 else CompositeCommand("Clear Description", commands)

@@ -81,16 +81,13 @@ def find_current_project(
     matches = [
         project
         for project in library.projects
-        if (directory := _dir_of(store, project)) is not None
-        and find_repo_root(directory) == root
+        if (directory := _dir_of(store, project)) is not None and find_repo_root(directory) == root
     ]
     if len(matches) == 1:
         return matches[0]
     if matches:
         names = ", ".join(sorted(project.title or project.folder_name for project in matches))
-        raise CliError(
-            f"this repository holds several library projects — pass --project: {names}"
-        )
+        raise CliError(f"this repository holds several library projects — pass --project: {names}")
     return None
 
 

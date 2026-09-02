@@ -193,10 +193,13 @@ class MatrixView(QWidget):
         if self.selection not in self._cells and self._humans and self._agents:
             self.selection = (self._humans[0], self._agents[0])
         metrics = QFontMetricsF(self.font())
-        self._gutter = max(
-            (metrics.horizontalAdvance(_human_label(count)) for count in self._humans),
-            default=0.0,
-        ) + ROW_GAP
+        self._gutter = (
+            max(
+                (metrics.horizontalAdvance(_human_label(count)) for count in self._humans),
+                default=0.0,
+            )
+            + ROW_GAP
+        )
         self._header = metrics.height() + HEADER_GAP
         width = self._gutter + len(self._agents) * (TILE_WIDTH + TILE_GAP) - TILE_GAP
         height = self._header + len(self._humans) * (TILE_HEIGHT + TILE_GAP) - TILE_GAP

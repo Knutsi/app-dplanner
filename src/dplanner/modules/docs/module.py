@@ -226,9 +226,7 @@ class DocsModule:
 
     def _section(self) -> DocsSection:
         deps = self._deps
-        return DocsSection(
-            deps.library, deps.undo, deps.files, self._link(), deps.pick_assets
-        )
+        return DocsSection(deps.library, deps.undo, deps.files, self._link(), deps.pick_assets)
 
     def _link(self) -> CompileLink:
         """The compile verb in the vocabulary a view uses, so no surface re-derives it."""

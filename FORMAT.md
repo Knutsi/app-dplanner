@@ -194,7 +194,16 @@ cannot change meaning when the graph does, and a **missing result reads as pendi
 absence rule again, so a run over two hundred tests writes two hundred ids and no statuses.
 `project_editor` is another instance: a position
 beside each step, and the named layouts and regions beside the project
-(`{"layouts": {...}, "regions": [...]}`, coordinates as grid-snapped floats). `step_agent_instruction` does the same with prose: the
+(`{"layouts": {...}, "regions": [...]}`, coordinates as grid-snapped floats). `feature` is
+the fifth: the **catalogue** beside the project — `{"features": [{"id": "f1", "title": "…",
+"description": "…", "source": {"document": "auth-spec", "quote": "…", "page": 4},
+"images": ["assets/<sha16>.png"]}]}`, every key but `id` and `title` omitted when empty —
+and beside a step only `{"feature": "f1"}`, the id of the record it realises. The record is
+stored because a feature nobody has placed yet is a fact the graph cannot derive; what a
+placed one *gathers* is never stored. `spec` spans three ways: the document index beside
+the project, the figures beside a step, and the project's **topology** — how its graph is
+shaped — as `modules/spec.md`, the project's one prose document under that id.
+`step_agent_instruction` does the same with prose: the
 step's own instruction beside the step, the project's standing instruction (prepended to
 every briefing) as `modules/step_agent_instruction.md` beside the project, images in the
 file area at either level. `module_data` is on every node and `set_module_data` is flat
@@ -217,8 +226,8 @@ shape for the same reason.
 `{"tests": [{"id": "T100", "title": "…", "body": "…"}]}` beside a step: a *test* belongs to
 exactly one step, a step carries several, and each has its own result in a run. The body is
 markdown **inside the record** rather than in `modules/testing.md`, because a node holds
-exactly one prose document and this is N of them — `spec`'s requirement records are the same
-shape for the same reason. The trade is explicit: a body edit diffs as one changed line
+exactly one prose document and this is N of them — `feature`'s catalogue records, each with
+a markdown `description`, are the same shape for the same reason. The trade is explicit: a body edit diffs as one changed line
 rather than line by line, which is bearable while test bodies are a few lines each. Images
 are the exception and go where a description's do, in the step's file area. Ids are minted
 per *project* and meant to be read — `T100, T101, …`, and `R100, R101, …` for runs — so a
@@ -229,11 +238,15 @@ detaches its history.
 a toggleable aspect is the presence of its `module_data` entry, and two aspects need a
 shape for "on, but empty": `step_ticket` writes `{"on": true}` when the Type toggle
 enables it before any field is filled (a filled ticket's entry replaces the marker),
-`step_check` and `step_feature` write `{"on": true}` and never anything else — what either
-one *gathers* is the graph's answer, not a stored list — and `step_agent_instruction` writes `{"on": true}` — plus `"separate": true` when the step
+`step_check` writes `{"on": true}` and never anything else — what it *gathers* is the
+graph's answer, not a stored list — and `step_agent_instruction` writes `{"on": true}` — plus `"separate": true` when the step
 opts into an instruction distinct from its description — beside the step whose prose file
 may not exist at all. Both are format 1 of their existing `ModuleDataFormat`s; a step
 carrying only the old prose file still reads as agent-on, so no migration ships with them.
+A feature step's marker names its record instead (`{"feature": "f1"}`); a bare `{"on":
+true}` under `feature` — what the retired `step_feature` wrote — still reads as a feature
+to the graph, and as *unregistered* to `feature list` and lint until `feature set` mints
+its record.
 
 **Absence encodes the default, and the default is not always "off".** Every aspect above is
 one most steps do not have, so the marker records the *claim*. Two go the other way:
@@ -297,7 +310,11 @@ inherited it. Modules never import each other, and this is why they do not have 
 when it grew a project's start date, and the rename cost no project-format migration and no
 import. `modules/step_milestone/aspect.py` is the second: `step_release` became
 `step_milestone` when *release* turned out to be the wrong word for a thing that collects
-features. Three rules they make concrete:
+features. `modules/feature/aspect.py` is the third: `step_feature` became `feature` when a
+feature grew a catalogue beside the project and stopped being a marker on a step — and its
+converter is the one that cannot finish the job, because a per-entry converter never sees
+the project and so cannot mint the record; the entry passes through and reads as
+*unregistered* until a verb does. Three rules they make concrete:
 
 - **The retired format's version is frozen forever.** `RETIRED_STEP_ESTIMATION` is format 1
   because that is what that module last wrote, whatever the successor does next.

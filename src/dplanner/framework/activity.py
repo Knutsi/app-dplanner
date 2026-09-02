@@ -103,9 +103,7 @@ class EntityActivity(ActivityBase):
 
     def activity_nodes(self) -> tuple["ContextNode", ...]:
         return (
-            ContextNode(
-                self.uri, (("entity", entity_uri(self._entity_kind, self.entity_id)),)
-            ),
+            ContextNode(self.uri, (("entity", entity_uri(self._entity_kind, self.entity_id)),)),
         )
 
     def on_activated(self) -> None:

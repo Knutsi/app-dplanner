@@ -29,9 +29,10 @@ opened later wears the same marks and a second window would too.
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QMimeData, QPointF, Qt
 from PySide6.QtWidgets import QMenu, QVBoxLayout, QWidget
 
+from dplanner.cli.command import CliError
 from dplanner.domain.commands import (
     Command,
     CompositeCommand,
@@ -64,7 +65,7 @@ from dplanner.modules.project_editor.clipboard import PastePolicy
 from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, ClipboardWatch
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import StepNodeItem
-from dplanner.modules.project_editor.kinds import StepKind
+from dplanner.modules.project_editor.kinds import CanvasDrop, StepKind
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
 from dplanner.modules.project_editor.marks import Marks, ports
@@ -158,6 +159,8 @@ class ProjectEditorDeps:
     # sources, and what a copy may not carry is each owner's policy — see clipboard.py.
     file_modules: tuple[str, ...] = ()
     paste_policies: tuple[PastePolicy, ...] = ()
+    # What the canvas takes by drop, named by the composition root — see kinds.py.
+    drops: tuple[CanvasDrop, ...] = ()
 
 
 class ProjectActivity(EntityActivity):
@@ -188,6 +191,8 @@ class ProjectActivity(EntityActivity):
             base_mode=IdleMode,
             status=lambda text: deps.status.show_status(text, 4000),
             run_action=self.run_action,
+            accepts=self._accepts_drop,
+            dropped=self._on_drop,
         )
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
@@ -428,6 +433,26 @@ class ProjectActivity(EntityActivity):
         """Double-click on empty space: the same creation the New verbs run, unprompted."""
         self._verbs.create(self.project_id, "New step", at=(x, y))
 
+    def _accepts_drop(self, mime: QMimeData) -> bool:
+        return any(mime.hasFormat(drop.mime_type) for drop in self._deps.drops)
+
+    def _on_drop(self, mime: QMimeData, scene_pos: QPointF) -> None:
+        """Something dropped on empty canvas: the handler for its type places it, and a
+        refusal — a feature already placed, a payload from another project — goes to the
+        status bar in the same words the CLI would use."""
+        for drop in self._deps.drops:
+            if not mime.hasFormat(drop.mime_type):
+                continue
+            at = centred_on(scene_pos.x(), scene_pos.y())
+            try:
+                placed = drop.place(self.project_id, bytes(mime.data(drop.mime_type).data()), at)
+            except CliError as error:
+                self._deps.status.show_status(str(error), 4000)
+                return
+            if placed:
+                self.note_placed(placed)
+            return
+
     def note_placed(self, step_ids: list[StepId]) -> None:
         """Steps were just placed on this canvas — born here, or pasted.
 
@@ -584,6 +609,19 @@ class ProjectEditorModule:
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
         """Show a project in a tab. Handed to the index segment as a plain function."""
         self._deps.tabs.open(PROJECT_KIND, project_id, preview=preview)
+
+    def create_step(
+        self,
+        project_id: NodeId,
+        title: str,
+        *,
+        kind: StepKind | None = None,
+        at: tuple[float, float] | None = None,
+    ) -> Step:
+        """Give birth to a step the way the New verbs do — the seam a drop handler in the
+        composition root places through, so a dropped feature is one undo step with its
+        marker and its position like any other placed step."""
+        return self._verbs.create(project_id, title, kind=kind, at=at)
 
     def reveal(self, step_id: StepId) -> None:
         """Show the step's project and select it there.

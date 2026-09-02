@@ -76,9 +76,7 @@ class StepPropertiesModule:
                 id=f"{MODULE_ID}.details",
                 label="Details",
                 order=10,
-                factory=lambda: DetailsSection(
-                    self._deps.library, self._deps.details.sections()
-                ),
+                factory=lambda: DetailsSection(self._deps.library, self._deps.details.sections()),
                 # The tab *is* its blocks: once every one has hidden itself there is
                 # nothing behind it, and a tab opening onto blank space teaches nothing.
                 # Asked of the registry this module already holds, so nothing new is wired.

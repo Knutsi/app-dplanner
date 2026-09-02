@@ -8,10 +8,9 @@ same functions the CLI answers with, and every change arrives back through the m
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Any
 
-from PySide6.QtCore import QModelIndex, QRect, QSize, Qt, QTimer
-from PySide6.QtGui import QIcon, QPainter
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -20,9 +19,6 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QStackedWidget,
-    QStyle,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -30,7 +26,8 @@ from PySide6.QtWidgets import (
 
 from dplanner.cli.command import CliError
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, NodeId, Project
+from dplanner.domain.fields import ModuleTextField
+from dplanner.domain.model import Library, NodeId, Project, TextEdit
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import EntityActivity
@@ -44,11 +41,13 @@ from dplanner.framework.context import (
     entity_uri,
     selection_uri,
 )
+from dplanner.framework.list_rows import DETAIL_ROLE, TwoLineDelegate
 from dplanner.framework.markdown_view import MarkdownView
+from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.toolbar import ActionToolbar
 from dplanner.framework.undo import UndoService
-from dplanner.modules.spec.aspect import MODULE_ID
+from dplanner.modules.spec.aspect import MODULE_ID, read_topology
 from dplanner.modules.spec.documents import (
     KIND_MARKDOWN,
     KIND_PDF,
@@ -87,64 +86,19 @@ CAPTION_GAP = 6
 BLOCK_GAP = 12
 STRIP_MARGIN = 8  # DESIGN.md's 4-point scale: a toolbar strip breathes at 8.
 
-ROW_PADDING_V = 10
-ROW_PADDING_H = 12
-ROW_LINE_GAP = 4
-SECONDARY_ALPHA = 160  # ~63 % — DESIGN.md's opacity-derived secondary text.
-
 NAME_ROLE = int(Qt.ItemDataRole.UserRole) + 1
-DETAIL_ROLE = int(Qt.ItemDataRole.UserRole) + 2
 
-
-class _DocumentDelegate(QStyledItemDelegate):
-    """Two lines per document: the name, then what kind of thing it is and when it came."""
-
-    def paint(
-        self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | Any
-    ) -> None:
-        opt = QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-        opt.text = ""
-        style = opt.widget.style() if opt.widget else None
-        if style is not None:
-            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
-
-        palette = opt.palette
-        selected = bool(opt.state & QStyle.StateFlag.State_Selected)
-        role = palette.ColorRole.HighlightedText if selected else palette.ColorRole.Text
-        primary = palette.color(role)
-        secondary = palette.color(role)
-        secondary.setAlpha(SECONDARY_ALPHA)
-
-        rect = opt.rect.adjusted(ROW_PADDING_H, ROW_PADDING_V, -ROW_PADDING_H, -ROW_PADDING_V)
-        metrics = opt.fontMetrics
-        elide = Qt.TextElideMode.ElideRight
-        align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        painter.save()
-        painter.setPen(primary)
-        painter.drawText(
-            QRect(rect.left(), rect.top(), rect.width(), metrics.height()),
-            align,
-            metrics.elidedText(index.data(Qt.ItemDataRole.DisplayRole), elide, rect.width()),
-        )
-        painter.setPen(secondary)
-        painter.drawText(
-            QRect(
-                rect.left(),
-                rect.top() + metrics.height() + ROW_LINE_GAP,
-                rect.width(),
-                metrics.height(),
-            ),
-            align,
-            metrics.elidedText(index.data(DETAIL_ROLE) or "", elide, rect.width()),
-        )
-        painter.restore()
-
-    def sizeHint(  # noqa: N802 - Qt override
-        self, option: QStyleOptionViewItem, index: QModelIndex | Any
-    ) -> QSize:
-        metrics = option.fontMetrics
-        return QSize(0, 2 * ROW_PADDING_V + 2 * metrics.height() + ROW_LINE_GAP)
+# The pinned first row: the project's own account of how its graph is shaped. Not a
+# document — it is the project's prose under this module's id, edited in place through
+# the prose stack rather than through a document session, and never a selected
+# "spec_document" (so Remove and Open Externally stay greyed on it).
+TOPOLOGY_ROW = "\x00topology"
+TOPOLOGY_TITLE = "Topology"
+TOPOLOGY_PLACEHOLDER = (
+    "How this project's graph is shaped: what counts as a feature here, what follows one "
+    "(a check? a review?), where the milestones fall. An agent reads this before it "
+    "adds a step."
+)
 
 
 class SpecsActivity(EntityActivity):
@@ -168,6 +122,10 @@ class SpecsActivity(EntityActivity):
         self._undo = undo
         self.project_id = project_id
         self._shown: tuple[str, str] | None = None  # (name, blob) the viewer is rendering.
+        # Whether the person chose the topology row while there were documents to read
+        # instead: only then does a refresh keep it. Otherwise the first document leads —
+        # the topology leads by itself only while there is nothing else to read.
+        self._topology_chosen = False
 
         # The editing session: which document, the record current when editing began (what
         # `previous` stays pinned to), the record as this session last wrote it, and the
@@ -205,7 +163,7 @@ class SpecsActivity(EntityActivity):
         toolbar_row.addStretch(1)
         side_layout.addLayout(toolbar_row)
         self.list = QListWidget(side)
-        self.list.setItemDelegate(_DocumentDelegate(self.list))
+        self.list.setItemDelegate(TwoLineDelegate(self.list))
         self.list.currentItemChanged.connect(lambda *_a: self._on_selection())
         side_layout.addWidget(self.list, 1)
 
@@ -220,10 +178,12 @@ class SpecsActivity(EntityActivity):
         self._editor = SpecMarkdownEditor()
         self._editor.textChanged.connect(self._on_typed)
         self._editor_page = self._build_editor_page()
+        self._topology_page = self._build_topology_page(library, undo, project_id)
         self._views.addWidget(self._notice)
         self._views.addWidget(self._text)
         self._views.addWidget(self._pdf)
         self._views.addWidget(self._editor_page)
+        self._views.addWidget(self._topology_page)
 
         splitter.addWidget(side)
         splitter.addWidget(self._views)
@@ -236,6 +196,7 @@ class SpecsActivity(EntityActivity):
         # index data, and retitling the tab is `SpecModule._retitle_tabs`'s job.
         self._unsubscribes = [
             library.module_data_changed.connect(self._on_module_data),
+            library.text_edited.connect(self._on_text_edited),
             theme.changed.connect(lambda _theme: self._paint_toolbar(theme)),
         ]
         self._paint_toolbar(theme)
@@ -258,9 +219,7 @@ class SpecsActivity(EntityActivity):
     def activity_nodes(self) -> tuple[ContextNode, ...]:
         # The base's entity edge, plus — while editing — which document, so `spec.edit`'s
         # checked state stays a pure function of the context.
-        edges: tuple[tuple[str, Uri], ...] = (
-            ("entity", entity_uri("project", self.project_id)),
-        )
+        edges: tuple[tuple[str, Uri], ...] = (("entity", entity_uri("project", self.project_id)),)
         if self._editing is not None:
             edges += ((EDITING_EDGE, selection_uri(DOCUMENT_ENTITY, self._editing)),)
         return (ContextNode(self.uri, edges),)
@@ -279,6 +238,7 @@ class SpecsActivity(EntityActivity):
     def close(self) -> None:
         self._flush_edit()
         self._flush_timer.stop()
+        self.topology.dispose()
         self.toolbar.dispose()
         for unsubscribe in self._unsubscribes:
             unsubscribe()
@@ -392,6 +352,35 @@ class SpecsActivity(EntityActivity):
             prune_blob(area, docs, superseded)
             self._session_blobs.discard(superseded)
 
+    def _build_topology_page(
+        self, library: Library, undo: UndoService[Library], project_id: NodeId
+    ) -> QWidget:
+        """The topology, always editable: one prose document bound through the undo stack,
+        exactly as the standing agent instruction is — no session, no Done, because the
+        text is the project's own and every keystroke is already one undoable edit."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(BLOCK_GAP, BLOCK_GAP, BLOCK_GAP, BLOCK_GAP)
+        layout.setSpacing(CAPTION_GAP)
+        note = QLabel(
+            "How this project's graph is shaped. An agent must read it (`dplanner topology"
+            " show`) before it edits the graph from the CLI, and again whenever it changes.",
+            page,
+        )
+        note.setObjectName("InspectorNote")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        self.topology = ProseSection(
+            lambda pid: ModuleTextField(library, pid, MODULE_ID),
+            undo,
+            placeholder=TOPOLOGY_PLACEHOLDER,
+            margin=0,
+            expand_title=TOPOLOGY_TITLE,
+        )
+        self.topology.show_target(project_id)
+        layout.addWidget(self.topology, 1)
+        return page
+
     def _build_editor_page(self) -> QWidget:
         # The formatting strip is the editor's own chrome, flush on top of the text area —
         # the canvas toolbar idiom (`#EditorToolbar` shares `#CanvasToolbar`'s QSS), so it
@@ -483,7 +472,18 @@ class SpecsActivity(EntityActivity):
             self._abort_edit()
         self._refresh()
 
+    def _on_text_edited(self, edit: TextEdit, _origin: object) -> None:
+        # The topology row's second line says whether one has been written; the prose
+        # itself reaches the editor through its own binding.
+        if edit.node_id == self.project_id and edit.key == MODULE_ID:
+            written = bool(read_topology(self._project()).strip())
+            self.list.item(0).setData(
+                DETAIL_ROLE,
+                "how this project's graph is shaped" if written else "not written yet",
+            )
+
     def _on_selection(self) -> None:
+        self._topology_chosen = self._current_name() == TOPOLOGY_ROW and self.list.count() > 1
         if self.is_editing and self._current_name() != self._editing:
             self.end_edit()  # Which flushes, and re-renders the newly selected document.
         elif not self.is_editing:
@@ -492,26 +492,31 @@ class SpecsActivity(EntityActivity):
 
     def _publish_selection(self) -> None:
         name = self._current_name()
-        nodes = () if name is None else (ContextNode(selection_uri(DOCUMENT_ENTITY, name)),)
+        nodes: tuple[ContextNode, ...] = ()
+        if name is not None and name != TOPOLOGY_ROW:
+            nodes = (ContextNode(selection_uri(DOCUMENT_ENTITY, name)),)
         self.publish_selection(nodes)
 
     def _refresh(self) -> None:
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         keep = self._current_name()
-        index = read_index(self._project())
-        documents = index.documents
-        marked = {
-            doc.name: sum(r.document == doc.name for r in index.requirements)
-            for doc in documents
-        }
+        documents = read_index(self._project()).documents
         self.list.blockSignals(True)
         self.list.clear()
+        pinned = QListWidgetItem(TOPOLOGY_TITLE)
+        written = bool(read_topology(self._project()).strip())
+        pinned.setData(
+            DETAIL_ROLE,
+            "how this project's graph is shaped" if written else "not written yet",
+        )
+        pinned.setData(NAME_ROLE, TOPOLOGY_ROW)
+        self.list.addItem(pinned)
+        if keep == TOPOLOGY_ROW and (self._topology_chosen or not documents):
+            self.list.setCurrentItem(pinned)
         for doc in documents:
             item = QListWidgetItem(doc.name)
             detail = f"{doc.kind} · imported {doc.imported}"
-            if marked[doc.name]:
-                detail += f" · {marked[doc.name]} requirements"
             if doc.previous:
                 detail += " · previous kept"
             item.setData(DETAIL_ROLE, detail)
@@ -519,8 +524,10 @@ class SpecsActivity(EntityActivity):
             self.list.addItem(item)
             if doc.name == keep:
                 self.list.setCurrentItem(item)
-        if self.list.currentItem() is None and self.list.count():
-            self.list.setCurrentRow(0)
+        if self.list.currentItem() is None:
+            # A reader arriving lands on the first document; the topology leads only
+            # while there is nothing else to read.
+            self.list.setCurrentRow(1 if documents else 0)
         self.list.blockSignals(False)
         self._on_selection()
 
@@ -530,6 +537,11 @@ class SpecsActivity(EntityActivity):
         return name if isinstance(name, str) else None
 
     def _show_current(self) -> None:
+        if self._current_name() == TOPOLOGY_ROW:
+            if self._shown != (TOPOLOGY_ROW, ""):
+                self._shown = (TOPOLOGY_ROW, "")
+                self._views.setCurrentWidget(self._topology_page)
+            return
         document = self._current_document()
         if document is None:
             self._say("No spec documents yet — add one, or `dplanner spec import` from a shell.")

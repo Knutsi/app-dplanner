@@ -174,11 +174,21 @@ def _fresh_session_settings():
 
 @pytest.fixture
 def registry():
+    """The whole CLI, with the topology gate switched off.
+
+    A gate with no record file refuses nothing and writes nothing, so no test here needs
+    a topology to add a step and none ever writes the per-user record. The gate itself is
+    exercised over a real record under ``tmp_path`` in ``tests/cli/test_topology_gate.py``.
+    """
     from dplanner.cli.command import CliRegistry
+    from dplanner.cli.gate import TopologyGate
     from dplanner.modules import default_cli_commands
+    from dplanner.modules.spec.aspect import read_topology
 
     registry = CliRegistry()
-    registry.register_all(default_cli_commands())
+    registry.register_all(
+        default_cli_commands(gate=TopologyGate(record_path=None, topology_of=read_topology))
+    )
     return registry
 
 

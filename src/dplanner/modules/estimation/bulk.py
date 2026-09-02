@@ -63,6 +63,7 @@ def _step_context(step_id: StepId) -> Context:
     """A context naming exactly one step — what a row's double-click runs a verb against."""
     return Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)})
 
+
 STEP_COLUMN = 0
 DESCRIPTION_COLUMN = 1
 ESTIMATE_COLUMN = 2
@@ -116,9 +117,7 @@ class BulkEstimateActivity(EntityActivity):
         caption.setObjectName("InspectorCaption")
         layout.addWidget(caption)
 
-        note = QLabel(
-            "Run down the list and size each step.", page
-        )
+        note = QLabel("Run down the list and size each step.", page)
         note.setObjectName("InspectorNote")
         note.setWordWrap(True)
         layout.addWidget(note)

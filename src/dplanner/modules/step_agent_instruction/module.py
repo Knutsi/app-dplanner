@@ -170,9 +170,11 @@ class StepAgentInstructionModule:
                 label=SPEC.label,
                 order=40,
                 factory=make_section,
-                shown_for=lambda step_id: step_id is not None
-                and deps.library.has(step_id)
-                and enabled(deps.library.step(step_id)),
+                shown_for=lambda step_id: (
+                    step_id is not None
+                    and deps.library.has(step_id)
+                    and enabled(deps.library.step(step_id))
+                ),
             )
         )
         if deps.cards is not None:
@@ -267,14 +269,10 @@ class StepAgentInstructionModule:
                     label="Set Agent Instruction",
                 )
             )
-        commands.append(
-            SetModuleDataCommand(step.id, MODULE_ID, {}, label="Clear Agent Aspect")
-        )
+        commands.append(SetModuleDataCommand(step.id, MODULE_ID, {}, label="Clear Agent Aspect"))
         # One undo step restores both the mark and the instruction text.
         self._deps.undo.push(
-            commands[0]
-            if len(commands) == 1
-            else CompositeCommand("Clear Agent Aspect", commands)
+            commands[0] if len(commands) == 1 else CompositeCommand("Clear Agent Aspect", commands)
         )
 
     # -- running -------------------------------------------------------------------------------
@@ -350,6 +348,7 @@ class StepAgentInstructionModule:
             instruction=instruction.body,
             parts=parts,
             sections=sections,
+            project_sections=deps.briefing.project_sections(deps.library, step, deps.files),
             epilogue=deps.briefing.epilogue(step),
             preamble=deps.briefing.preamble,
             project_instruction=read_project(project),

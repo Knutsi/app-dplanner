@@ -54,7 +54,7 @@ def test_aspect_list_names_every_aspect(cli):
         "step_milestone",
         "step_handoff",
         "step_check",
-        "step_feature",
+        "feature",
         "testing",
     }
 

@@ -1,4 +1,4 @@
-"""The project half of the spec module: the document index and the requirements.
+"""The project half of the spec module: the document index and the figures.
 
 The JSON entry beside the project (``modules/spec.json``) holds only pointers and names;
 the document bytes live in the module's file area, content-addressed like a description's
@@ -11,7 +11,7 @@ flushes: an intermediate blob that a single editing session wrote and then super
 churn, not history, and :func:`prune_blob` removes it once nothing in the index names it.
 
 Everything here is Qt-free and shared verbatim by ``cli.py`` and the Specs tab, so the two
-surfaces cannot disagree about what a document or a requirement is.
+surfaces cannot disagree about what a document or a figure is.
 """
 
 import hashlib
@@ -31,6 +31,7 @@ from dplanner.domain.assets import (
     asset_references,
     attach,
 )
+from dplanner.domain.ids import next_id
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor, ModuleFileArea
 from dplanner.modules.spec.aspect import (
@@ -38,7 +39,6 @@ from dplanner.modules.spec.aspect import (
     MODULE_ID,
     SpecAttachment,
     read_attachments,
-    read_links,
 )
 from dplanner.modules.spec.pdf import find_quote_pages, text_blob_name
 from dplanner.modules.spec.pdf import text_layer as extract_text_layer
@@ -62,15 +62,6 @@ class SpecDocument:
 
 
 @dataclass(frozen=True)
-class Requirement:
-    id: str  # Unique within the project; "r1", "r2", … when not caller-chosen.
-    document: str  # The SpecDocument.name it was marked in.
-    title: str
-    quote: str = ""  # The passage anchoring it to the document's text.
-    page: int | None = None  # Where in the document, for a PDF; None for prose.
-
-
-@dataclass(frozen=True)
 class SpecAsset:
     """An image beside the specs: a rendered page, or something attached by hand."""
 
@@ -86,7 +77,6 @@ class SpecIndex:
     """Everything ``modules/spec.json`` holds beside a project."""
 
     documents: list[SpecDocument]
-    requirements: list[Requirement]
     assets: list[SpecAsset]
 
 
@@ -105,17 +95,6 @@ def read_index(project: Project) -> SpecIndex:
         for raw in _dicts(entry.get("documents"))
         if isinstance(raw.get("name"), str) and isinstance(raw.get("file"), str)
     ]
-    requirements = [
-        Requirement(
-            id=raw["id"],
-            document=raw.get("document", ""),
-            title=raw.get("title", ""),
-            quote=raw.get("quote", ""),
-            page=_page(raw.get("page")),
-        )
-        for raw in _dicts(entry.get("requirements"))
-        if isinstance(raw.get("id"), str)
-    ]
     assets = [
         SpecAsset(
             id=raw["id"],
@@ -127,7 +106,7 @@ def read_index(project: Project) -> SpecIndex:
         for raw in _dicts(entry.get("assets"))
         if isinstance(raw.get("id"), str) and isinstance(raw.get("file"), str)
     ]
-    return SpecIndex(documents=documents, requirements=requirements, assets=assets)
+    return SpecIndex(documents=documents, assets=assets)
 
 
 def _dicts(value: Any) -> list[dict[str, Any]]:
@@ -154,17 +133,6 @@ def write_index(index: SpecIndex) -> dict[str, Any]:
                 "imported": doc.imported,
             }
             for doc in index.documents
-        ]
-    if index.requirements:
-        data["requirements"] = [
-            {
-                "id": req.id,
-                "document": req.document,
-                "title": req.title,
-                **({"quote": req.quote} if req.quote else {}),
-                **({"page": req.page} if req.page is not None else {}),
-            }
-            for req in index.requirements
         ]
     if index.assets:
         data["assets"] = [
@@ -299,9 +267,7 @@ def new_document(
     """
     chosen = name or slugify(title, fallback="document")
     if any(doc.name == chosen for doc in documents):
-        raise CliError(
-            f"a spec document named {chosen!r} already exists — pick another title"
-        )
+        raise CliError(f"a spec document named {chosen!r} already exists — pick another title")
     docs, document, _outcome = import_document(
         area, documents, chosen, f"# {title}\n".encode(), f"{chosen}.md", today
     )
@@ -354,22 +320,12 @@ def prune_blob(area: ModuleFileArea, documents: Sequence[SpecDocument], blob: st
     area.remove(blob)
 
 
-def remove_document(
-    documents: Sequence[SpecDocument],
-    requirements: Sequence[Requirement],
-    name: str,
-) -> tuple[list[SpecDocument], list[Requirement], list[Requirement]]:
-    """The index without ``name``, and the requirements that were marked in it.
-
-    Returns (remaining documents, remaining requirements, dropped requirements). The blobs
-    stay on disk — an orphan is recoverable where a dangling pointer is not (see the module
-    docstring) — and step links to a dropped requirement dangle and read as absent, the same
-    tolerance ``unmark`` relies on.
-    """
-    remaining = [doc for doc in documents if doc.name != name]
-    kept = [req for req in requirements if req.document != name]
-    dropped = [req for req in requirements if req.document == name]
-    return remaining, kept, dropped
+def remove_document(documents: Sequence[SpecDocument], name: str) -> list[SpecDocument]:
+    """The index without ``name``. The blobs stay on disk — an orphan is recoverable where
+    a dangling pointer is not (see the module docstring) — and a feature whose source
+    names the document keeps its record: the passage it quotes is still what it was read
+    from, and lint simply has no document to check the quote against any more."""
+    return [doc for doc in documents if doc.name != name]
 
 
 def matching_documents(documents: Sequence[SpecDocument], needle: str) -> list[SpecDocument]:
@@ -379,17 +335,6 @@ def matching_documents(documents: Sequence[SpecDocument], needle: str) -> list[S
         return exact[:1]
     lowered = needle.lower()
     return [doc for doc in documents if lowered in doc.name.lower()]
-
-
-def next_id(existing: Sequence[str], prefix: str) -> str:
-    """The next free "<prefix>N" — requirements are "r1, r2, …", assets "a1, a2, …":
-    ids a person can say out loud and an agent can guess the shape of."""
-    numbers = [
-        int(entry[len(prefix) :])
-        for entry in existing
-        if entry.startswith(prefix) and entry[len(prefix) :].isdigit()
-    ]
-    return f"{prefix}{max(numbers, default=0) + 1}"
 
 
 def record_asset(
@@ -421,9 +366,7 @@ def record_asset(
     return [*assets, asset], asset, "added"
 
 
-def referenced_assets(
-    assets: Sequence[SpecAsset], body: str, today: str
-) -> list[SpecAsset]:
+def referenced_assets(assets: Sequence[SpecAsset], body: str, today: str) -> list[SpecAsset]:
     """The asset list with an entry for every ``assets/…`` file ``body`` links to.
 
     An image pasted into the in-app editor lands in the file area without passing through
@@ -452,9 +395,7 @@ def asset_source() -> AssetSource:
     lifecycle (``previous`` pinning, session pruning) is this module docstring's.
     """
 
-    def scan(
-        _library: Library, project: Project, files: FilesFor
-    ) -> Sequence[AssetLocation]:
+    def scan(_library: Library, project: Project, files: FilesFor) -> Sequence[AssetLocation]:
         index = read_index(project)
         used: dict[str, list[AssetUse]] = {}
         for asset in index.assets:
@@ -495,9 +436,7 @@ def asset_source() -> AssetSource:
             names = area_assets(files, step.id, MODULE_ID)
             if not names:
                 continue
-            attached = {
-                attachment.file: attachment for attachment in read_attachments(step)
-            }
+            attached = {attachment.file: attachment for attachment in read_attachments(step)}
             locations += [
                 AssetLocation(
                     node_id=step.id,
@@ -523,14 +462,9 @@ def asset_source() -> AssetSource:
     return AssetSource(id=MODULE_ID, label="Spec figures", scan=scan)
 
 
-def linked_steps(project: Project, requirement_id: str) -> list[Step]:
-    """Every step in ``project`` linked to this requirement — the "what is affected" query."""
-    return [step for step in project.steps if requirement_id in read_links(step)]
-
-
 # -- reading, anchoring and copying: the shared half of the verbs -----------------------------
-# Called by the verbs, by ``lint_checks()`` and by ``step_author()`` — user-facing
-# refusals, so they raise CliError (Qt-free, like everything here).
+# Called by the verbs, by the feature module's quote check (through a seam the composition
+# root wires) and by ``step_author()`` — user-facing refusals, so they raise CliError.
 
 
 def blob_bytes(area: ModuleFileArea, document: SpecDocument, blob: str) -> bytes:
@@ -556,8 +490,8 @@ def quote_anchors(text: str, quote: str, kind: str) -> tuple[bool, list[int]]:
     every page, because the same sentence can recur and ``--page`` naming any
     occurrence is right.
 
-    One implementation for ``spec mark`` and ``project lint``, so the mark that passed
-    can never be the requirement lint flags — or the other way round.
+    One implementation for ``feature add`` and ``project lint``, so the quote that passed
+    can never be the one lint flags — or the other way round.
     """
     if kind == KIND_PDF:
         pages = find_quote_pages(text, quote)
@@ -583,23 +517,9 @@ def layer_from(area: ModuleFileArea, document: SpecDocument, blob: str) -> str:
 
 
 def some(noun: str, ids: Sequence[str]) -> str:
-    """"asset 'a1'" or "assets 'a1', 'a2'" — refusals read the same at any count."""
+    """ "asset 'a1'" or "assets 'a1', 'a2'" — refusals read the same at any count."""
     listed = ", ".join(repr(entry) for entry in ids)
     return f"{noun}{'s' if len(ids) != 1 else ''} {listed}"
-
-
-def linked_ids(project: Project, step: Step, ids: Sequence[str]) -> list[str]:
-    """The step's links with ``ids`` added — refusing every unknown id in one message,
-    before anything is written. Shared by ``spec link`` and ``step add --link``."""
-    known = {req.id for req in read_index(project).requirements}
-    unknown = [entry for entry in ids if entry not in known]
-    if unknown:
-        raise CliError(
-            f"no {some('requirement', unknown)} in {project.title!r} — "
-            "see `dplanner spec requirements`"
-        )
-    links = read_links(step)
-    return [*links, *[entry for entry in ids if entry not in links]]
 
 
 def copied_to_step(
@@ -636,8 +556,6 @@ def copied_to_step(
         if not any(entry.asset == asset_id for entry in attachments):
             attachments = [
                 *attachments,
-                SpecAttachment(
-                    file=file, document=asset.document, page=asset.page, asset=asset_id
-                ),
+                SpecAttachment(file=file, document=asset.document, page=asset.page, asset=asset_id),
             ]
     return attachments, copied

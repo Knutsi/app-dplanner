@@ -21,7 +21,14 @@ from typing import Any
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor
 from dplanner.cli.lint import LintCheck, LintFinding
-from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
+from dplanner.cli.lookup import (
+    find_project,
+    find_step,
+    project_arg,
+    project_of,
+    project_of_step,
+    step_arg,
+)
 from dplanner.core.storage.locations import find_repo_root, init_repo, origin_url
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -117,8 +124,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
         ),
         CliCommand(
             path=("project", "create"),
-            summary="Create a project directory inside a git repository and add it "
-            "to the library.",
+            summary="Create a project directory inside a git repository and add it to the library.",
             configure=_configure_create,
             run=_project_create,
             examples=("dplanner project create 'Search rewrite' --summary 'Replace the index'",),
@@ -140,11 +146,11 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
         ),
         CliCommand(
             path=("project", "clear-steps"),
-            summary="Remove every step, keeping the project and its documents — "
-            "the re-plan verb.",
+            summary="Remove every step, keeping the project and its documents — the re-plan verb.",
             configure=project_arg,
             run=_project_clear_steps,
             examples=("dplanner project clear-steps discovery",),
+            edits_graph=project_of,
         ),
         CliCommand(
             path=("project", "graph"),
@@ -169,9 +175,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
             summary="Create a project from JSON on stdin, in export's shape.",
             configure=_configure_import,
             run=_project_import,
-            examples=(
-                "dplanner project import --dir ~/code/widget/planning < discovery.json",
-            ),
+            examples=("dplanner project import --dir ~/code/widget/planning < discovery.json",),
         ),
         CliCommand(
             path=("step", "list"),
@@ -190,14 +194,15 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
         CliCommand(
             path=("step", "add"),
             summary="Add a step to a project — and author it in the same call: "
-            "description, instruction, estimate, links, figures.",
+            "description, instruction, estimate, the feature it realises, figures.",
             configure=_configure_step_add,
             run=_step_add,
             examples=(
                 "dplanner step add discovery 'Read the spec'",
                 "dplanner step add discovery 'Draft the model' --after 'Read the spec'"
-                " --describe-file model.md --agent-file - --days 3 --link r6 r7 --attach a1",
+                " --describe-file model.md --agent-file - --days 3 --feature f2 --attach a1",
             ),
+            edits_graph=project_of,
         ),
         CliCommand(
             path=("step", "rename"),
@@ -212,6 +217,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
             configure=step_arg,
             run=_step_remove,
             examples=("dplanner step remove read-the-spec",),
+            edits_graph=project_of_step,
         ),
         CliCommand(
             path=("step", "link"),
@@ -222,6 +228,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
                 "dplanner step link draft-the-model read-the-spec",
                 "dplanner step link a b --kind relates",
             ),
+            edits_graph=project_of_step,
         ),
         CliCommand(
             path=("step", "unlink"),
@@ -229,6 +236,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
             configure=_configure_link,
             run=_step_unlink,
             examples=("dplanner step unlink draft-the-model read-the-spec",),
+            edits_graph=project_of_step,
         ),
         CliCommand(
             path=("step", "isolate"),
@@ -439,9 +447,7 @@ def mermaid(library: Library, project: Project, short: bool = False) -> str:
     rows = placed(library, project)
     if not rows:
         return "flowchart TD\n    %% no steps yet"
-    node_ids = {
-        row.step.id: f"s{row.index}" if short else f"s{row.step.id[:12]}" for row in rows
-    }
+    node_ids = {row.step.id: f"s{row.index}" if short else f"s{row.step.id[:12]}" for row in rows}
     for wave in range(1, rows[-1].wave + 1):
         lines.append(f'    subgraph wave{wave}["Wave {wave}"]')
         for row in rows:

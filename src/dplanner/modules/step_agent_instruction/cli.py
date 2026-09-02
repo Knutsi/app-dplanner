@@ -126,6 +126,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             instruction=instruction.body,
             parts=briefing.parts(context.library, step, context.store.files),
             sections=briefing.sections(context.library, step, context.store.files),
+            project_sections=briefing.project_sections(context.library, step, context.store.files),
             epilogue=briefing.epilogue(step),
             preamble=briefing.preamble,
             project_instruction=project_instruction,
@@ -193,9 +194,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
 
 
 def _one_target(parser: ArgumentParser) -> None:
-    parser.add_argument(
-        "step", nargs="?", help="step id, folder name, or part of its title"
-    )
+    parser.add_argument("step", nargs="?", help="step id, folder name, or part of its title")
     parser.add_argument(
         "--for-project",
         dest="for_project",
@@ -255,9 +254,7 @@ def _off(context: CliContext, args: Namespace) -> int:
     if current:
         edit = TextEdit(step.id, MODULE_ID, 0, current, "")
         context.apply(EditTextCommand(edit, label="Set Agent Instruction"))
-    context.apply(
-        SetModuleDataCommand(step.id, MODULE_ID, {}, label="Clear Agent Aspect")
-    )
+    context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}, label="Clear Agent Aspect"))
     context.report({"step": step.id, "agent": False}, f"{step.title}: not an agent step")
     return 0
 

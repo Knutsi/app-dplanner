@@ -60,9 +60,11 @@ class StepHandoffModule:
                 label=SPEC.label,
                 order=60,
                 factory=lambda: HandoffSection(deps.library, deps.undo, deps.files),
-                shown_for=lambda step_id: step_id is not None
-                and deps.library.has(step_id)
-                and enabled(deps.library.step(step_id)),
+                shown_for=lambda step_id: (
+                    step_id is not None
+                    and deps.library.has(step_id)
+                    and enabled(deps.library.step(step_id))
+                ),
             )
         )
         deps.actions.register(

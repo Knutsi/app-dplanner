@@ -56,9 +56,11 @@ class StepTicketModule:
                 label=SPEC.label,
                 order=20,
                 factory=lambda: TicketSection(deps.library, deps.undo),
-                shown_for=lambda step_id: step_id is not None
-                and deps.library.has(step_id)
-                and enabled(deps.library.step(step_id)),
+                shown_for=lambda step_id: (
+                    step_id is not None
+                    and deps.library.has(step_id)
+                    and enabled(deps.library.step(step_id))
+                ),
             )
         )
         deps.actions.register(
@@ -97,9 +99,7 @@ class StepTicketModule:
             )
             if not confirm(self._deps.parent, "Clear Ticket", question):
                 return
-        self._deps.undo.push(
-            SetModuleDataCommand(step.id, MODULE_ID, {}, label="Clear Ticket")
-        )
+        self._deps.undo.push(SetModuleDataCommand(step.id, MODULE_ID, {}, label="Clear Ticket"))
 
     def _focused(self, context: Context) -> Step | None:
         step_id = context.focus_entity("step")

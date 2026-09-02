@@ -1,15 +1,16 @@
-"""The spec aspect: which requirements a step implements, and the figures it carries.
+"""The spec aspect: the figures a step carries, and the project's topology.
 
-One module id, two shapes — the pattern ``estimation`` set. Beside a *project*, ``spec``
-keeps the document index, the requirements and the assets (see :mod:`.documents`); beside a
-*step* it keeps the requirement ids the step answers for and the spec figures copied next
-to it (``attach-to-step``). The step half is the aspect: it is what ``dplanner aspect
-list`` and the generated skill describe, and it is how an agent records *why* a step
-exists and what it should look at.
+One module id, three shapes — the pattern ``estimation`` set. Beside a *project*, ``spec``
+keeps the document index and the assets in ``module_data`` (see :mod:`.documents`) and
+the **topology** in ``module_text``: the prose that says how this project's graph is
+shaped — what counts as a feature here, what follows one, where the milestones fall. Beside
+a *step* it keeps the spec figures copied next to it (``attach-to-step``). The step half is
+the aspect: it is what ``dplanner aspect list`` and the generated skill describe.
 
-A link is a plain id, resolved tolerantly: a requirement that has since been unmarked
-reads as a dangling id, not an error — the same philosophy as an edge naming a deleted
-step, and for the same reason (undo must be able to restore either side independently).
+What a step *answers for* in the spec is no longer stored here. A spec is read into
+**features** (``modules/feature``), each pointing back at the passage it came from, and a
+work step reaches the spec through the feature it flows into — the graph's answer, not a
+link.
 """
 
 from collections.abc import Sequence
@@ -19,7 +20,7 @@ from typing import Any
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.assets import assets
-from dplanner.domain.model import NodeId, Step
+from dplanner.domain.model import NodeId, Project, Step, TextEdit
 from dplanner.domain.store import FilesFor
 
 MODULE_ID = "spec"
@@ -33,17 +34,17 @@ def _to_format_2(data: dict[str, Any]) -> dict[str, Any]:
     return dict(data)
 
 
-DATA_FORMAT = ModuleDataFormat(MODULE_ID, 2, (_to_format_2,))
+def _to_format_3(data: dict[str, Any]) -> dict[str, Any]:
+    """Requirements became features, kept by their own module. The ``requirements`` key —
+    the project's record list and a step's link list alike — is dropped; what it said is
+    not converted, because a requirement was a citation and a feature is a thing, and
+    only a person reading the spec again can say which citations were features."""
+    return {key: value for key, value in data.items() if key != "requirements"}
 
-LINKS_KEY = "requirements"
+
+DATA_FORMAT = ModuleDataFormat(MODULE_ID, 3, (_to_format_2, _to_format_3))
+
 ATTACHMENTS_KEY = "attachments"
-
-def read_links(step: Step) -> list[str]:
-    """The requirement ids this step is linked to. Unreadable data reads as no links."""
-    ids = step.module_data.get(MODULE_ID, {}).get(LINKS_KEY)
-    if not isinstance(ids, list):
-        return []
-    return [entry for entry in ids if isinstance(entry, str)]
 
 
 @dataclass(frozen=True)
@@ -73,16 +74,9 @@ def read_attachments(step: Step) -> list[SpecAttachment]:
     ]
 
 
-def write_step_entry(
-    ids: Sequence[str], attachments: Sequence[SpecAttachment] = ()
-) -> dict[str, Any]:
-    """The whole step entry — links *and* attachments, because writing one from the other's
-    reader is how an edit erases what it never looked at. ``{}`` (remove the file) when
-    both are empty."""
+def write_step_entry(attachments: Sequence[SpecAttachment] = ()) -> dict[str, Any]:
+    """The whole step entry — ``{}`` (remove the file) when there is nothing to keep."""
     data: dict[str, Any] = {}
-    unique = sorted(set(ids))
-    if unique:
-        data[LINKS_KEY] = unique
     if attachments:
         data[ATTACHMENTS_KEY] = [
             {
@@ -96,9 +90,7 @@ def write_step_entry(
     return stamped(data, DATA_FORMAT.version)
 
 
-def attachment_paths(
-    files: FilesFor, step_id: NodeId
-) -> tuple[str, ...]:
+def attachment_paths(files: FilesFor, step_id: NodeId) -> tuple[str, ...]:
     """A step's spec figures as absolute paths — what a briefing lists and the
     launcher stages. A step the store has never flushed has no directory, and no files."""
     try:
@@ -110,17 +102,38 @@ def attachment_paths(
 
 def summary(step: Step) -> str:
     """One short phrase for a step's row, empty when the aspect has nothing to say."""
-    count = len(read_links(step))
+    count = len(read_attachments(step))
     if count == 0:
         return ""
-    return "meets 1 requirement" if count == 1 else f"meets {count} requirements"
+    return "1 spec figure" if count == 1 else f"{count} spec figures"
+
+
+# -- the topology: the project's one prose document under this id ------------------------------
+
+
+def read_topology(project: Project) -> str:
+    """How this project's graph is shaped, in the project's own words — "" when nobody
+    has written it yet."""
+    return project.module_text.get(MODULE_ID, "")
+
+
+def topology_edit(project: Project, body: str) -> TextEdit:
+    """One positioned edit replacing the whole topology — what ``topology set`` and the
+    Specs tab's editor both apply, labelled apart from typing so they never coalesce."""
+    return TextEdit(project.id, MODULE_ID, 0, read_topology(project), body)
+
+
+TOPOLOGY_LABEL = "Set Topology"
 
 
 # Last, because it names the pieces above: the one declaration everything reads.
 SPEC = AspectSpec(
     id=MODULE_ID,
-    label="Spec requirements",
-    summary="Which spec requirements a step implements; link with `dplanner spec link`.",
+    label="Spec figures",
+    summary=(
+        "Figures from the project's spec copied beside a step so its briefing carries "
+        "them; attach with `dplanner spec attach-to-step`."
+    ),
     data_format=DATA_FORMAT,
     phrase=summary,
 )

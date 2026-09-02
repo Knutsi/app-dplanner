@@ -1443,3 +1443,33 @@ desktops.
 
 **Belongs upstream?** Yes; it completes the lightbox's "let me actually see that" with
 "…in the tool I trust for it".
+
+## 10. From the features-and-topology pass
+
+### `framework/list_rows.py` — `TwoLineDelegate` (new)
+
+**What.** The two-line list row the Specs tab had as a private delegate — name over a
+quieter detail line, `DETAIL_ROLE` for the second line, `MUTED_ROLE` to draw a whole row in
+the secondary tone — promoted so the Features panel could share it instead of copying it.
+
+**Belongs upstream?** Yes; every side-panel list of named things wants it.
+
+### `framework/asset_gallery.py` — `set_files(…, remove=)`
+
+**What.** The files mode can now be given what removing a thumbnail means. Before, only the
+area mode was editable; a record that *names* its images (a feature's `images` list) needs
+the ✕ to drop the reference while the file stays for the sweep, and the gallery cannot know
+that.
+
+**Belongs upstream?** Yes, with the gallery.
+
+### `project_editor/graph.py` — drop hooks on `GraphView` (module code, pattern worth noting)
+
+**What.** `accepts(QMimeData) -> bool` and `dropped(QMimeData, QPointF)` on the view,
+`setAcceptDrops(True)`, and the three drag events forwarding to them. The point is recorded
+through `note_click` before the handler runs, so a dropped thing is placed the way a
+clicked-for one is.
+
+**Why note it here.** A drop is deliberately *not* a mode on the input stack — Qt's drag
+events are a separate family that never reaches `mousePressEvent`, and a mode has state to
+enter and leave. If the framework ever grows a canvas base class, this is the shape.

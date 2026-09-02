@@ -141,9 +141,7 @@ class TestsModule:
                 id=f"{MODULE_ID}.tab",
                 label="Tests",
                 order=30,  # Between Ticket (20) and Agent (40).
-                factory=lambda: TestsSection(
-                    deps.library, deps.undo, deps.files, deps.pick_assets
-                ),
+                factory=lambda: TestsSection(deps.library, deps.undo, deps.files, deps.pick_assets),
                 shown_for=lambda step_id: (
                     self._step(step_id) is not None and enabled(deps.library.step(step_id or ""))
                 ),

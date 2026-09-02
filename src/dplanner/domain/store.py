@@ -245,9 +245,7 @@ class LibraryStore:
         self._remember_library_stamp()
         return library
 
-    def _open_project(
-        self, directory: Path
-    ) -> tuple[Project, _ProjectRecord, tuple[Any, ...]]:
+    def _open_project(self, directory: Path) -> tuple[Project, _ProjectRecord, tuple[Any, ...]]:
         """Open one project directory, or raise ``StorageError`` saying why it cannot be."""
         directory = directory.expanduser()
         if not directory.is_dir():
@@ -282,9 +280,7 @@ class LibraryStore:
             project.steps.append(self._load_step(record, _join(STEPS_DIR, folder), pending))
         return project
 
-    def _load_step(
-        self, record: _ProjectRecord, directory: str, pending: tuple[Any, ...]
-    ) -> Step:
+    def _load_step(self, record: _ProjectRecord, directory: str, pending: tuple[Any, ...]) -> Step:
         raw = _read_json(record.storage, _join(directory, STEP_META))
         step = Step(
             node_id=str(raw.get("id", "")) or None,
@@ -393,9 +389,7 @@ class LibraryStore:
         must be stable until membership actually changes (attach/detach invalidate).
         """
         if self._groups is None:
-            self._groups = grouped_by_repo(
-                [record.storage for record in self._records.values()]
-            )
+            self._groups = grouped_by_repo([record.storage for record in self._records.values()])
         return self._groups
 
     def repo_for(self, project_id: ProjectId) -> StorageProvider | None:
@@ -472,9 +466,7 @@ class LibraryStore:
         """
         if self._stat_library() != self._library_stamp:
             return True
-        return any(
-            self._snapshot(record) != record.disk for record in self._records.values()
-        )
+        return any(self._snapshot(record) != record.disk for record in self._records.values())
 
     def _snapshot(self, record: _ProjectRecord) -> dict[str, tuple[int, int]]:
         """Every file of the *plan* in the project directory — and nothing beside it.

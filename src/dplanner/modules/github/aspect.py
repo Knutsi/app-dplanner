@@ -19,6 +19,7 @@ DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
 PR_STATES = ("open", "merged", "closed", "")  # "" = never checked, e.g. recorded gh-less.
 
+
 @dataclass(frozen=True)
 class GithubRefs:
     branch: str = ""

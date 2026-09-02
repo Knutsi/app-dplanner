@@ -50,15 +50,18 @@ class Briefing:
     callable shapes, with two adapter closures in the root bridging them.
 
     ``parts`` is handed-forward context (a handoff, a global note); ``sections`` the
-    step's own facts (description, requirements, the PR); ``instruction`` the block the
-    ``## Instructions`` heading carries — the step's separate instruction when one exists,
-    the description otherwise, decided by the root; ``epilogue`` closes the prompt with
-    the report-back protocol and ``preamble`` opens it. The default is the honest empty
-    briefing of a build where no other module contributes.
+    step's own facts (description, the feature it realises, the PR);
+    ``project_sections`` the project's — its topology — rendered beside the standing
+    instruction; ``instruction`` the block the ``## Instructions`` heading carries — the
+    step's separate instruction when one exists, the description otherwise, decided by
+    the root; ``epilogue`` closes the prompt with the report-back protocol and
+    ``preamble`` opens it. The default is the honest empty briefing of a build where no
+    other module contributes.
     """
 
     parts: PartsFor = _no_parts
     sections: PartsFor = _no_parts
+    project_sections: PartsFor = _no_parts
     epilogue: Callable[[Step], str] = field(default=lambda _step: "")
     preamble: str = ""
     instruction: Callable[[Library, Step, FilesFor], PromptPart] = _own_instruction
@@ -125,6 +128,7 @@ def assemble(
     project_files: Sequence[str] = (),
     instruction_files: Sequence[str] = (),
     sections: Sequence[PromptPart] = (),
+    project_sections: Sequence[PromptPart] = (),
 ) -> AssembledPrompt:
     """The whole prompt as markdown, and the files it points at.
 
@@ -133,9 +137,11 @@ def assemble(
     ``project_instruction`` is the project's standing instruction, ahead of the step's own;
     either instruction's section disappears entirely when it is empty and carries no files,
     which is what lets a step ride on the standing instruction alone.
-    ``sections`` are the step's own facts — a description, the requirements it implements —
+    ``sections`` are the step's own facts — a description, the feature it realises —
     worded by the composition root and rendered here as opaque blocks, between the standing
     instruction and the step's, so the agent reads what the step *is* before how to do it.
+    ``project_sections`` are the project's own facts — its topology — rendered right after
+    the standing instruction, because they frame every step the same way.
     """
     blocks: list[tuple[str, list[str]]] = [
         ("header", [f"# Step: {step_title}", "", f"Project: {project_title}", ""])
@@ -148,6 +154,13 @@ def assemble(
             project_lines += [project_instruction.rstrip(), ""]
         project_lines += _files_lines(project_files)
         blocks.append(("project", project_lines))
+    if project_sections:
+        blocks.append(
+            (
+                "project",
+                [line for section in project_sections for line in section_lines(section)],
+            )
+        )
     if sections:
         blocks.append(
             ("context", [line for section in sections for line in section_lines(section)])
@@ -167,6 +180,7 @@ def assemble(
         blocks.append(("protocol", ["## When you are done", "", epilogue.rstrip(), ""]))
     files = (
         *project_files,
+        *(path for section in project_sections for path in section.files),
         *(path for section in sections for path in section.files),
         *instruction_files,
         *(path for part in parts for path in part.files),
@@ -174,9 +188,7 @@ def assemble(
     # Each segment carries the newline that joins it to the next, so the concatenation
     # is exactly the joined text — the invariant PromptSegment promises.
     segments = tuple(
-        PromptSegment(
-            origin, "\n".join(block) + ("\n" if index < len(blocks) - 1 else "")
-        )
+        PromptSegment(origin, "\n".join(block) + ("\n" if index < len(blocks) - 1 else ""))
         for index, (origin, block) in enumerate(blocks)
     )
     text = "\n".join(line for _origin, block in blocks for line in block)

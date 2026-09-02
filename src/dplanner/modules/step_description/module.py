@@ -114,9 +114,11 @@ class StepDescriptionModule:
                     library=deps.library,
                     pick_for_target=pick_for_target,
                 ),
-                shown_for=lambda step_id: step_id is not None
-                and deps.library.has(step_id)
-                and enabled(deps.library.step(step_id)),
+                shown_for=lambda step_id: (
+                    step_id is not None
+                    and deps.library.has(step_id)
+                    and enabled(deps.library.step(step_id))
+                ),
             )
         )
         deps.actions.register(
@@ -145,9 +147,7 @@ class StepDescriptionModule:
             return
         if not enabled(step):
             self._deps.undo.push(
-                SetModuleDataCommand(
-                    step.id, MODULE_ID, write_state(True), label="Add Description"
-                )
+                SetModuleDataCommand(step.id, MODULE_ID, write_state(True), label="Add Description")
             )
             return
         prose = read(step)
