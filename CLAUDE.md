@@ -440,7 +440,11 @@ root, stop and look for the registry or capability you have not found yet.
   group as a band (Step's `classify` holds Type, Status and Test), and since a child menu
   sits at its first entry's `order`, siblings in one group claim bands of it — the one place
   `order` says more than "rank inside this group", written down in `menus.py`.
-  `ARCHITECTURE.md`'s *A submenu is one child menu per title* has the reasoning.
+  `ARCHITECTURE.md`'s *A submenu is one child menu per title* has the reasoning. **A child
+  menu whose entries are data carries a `fill` instead of specs** — `DataMenuSpec`, placed
+  by the same table, cleared and refilled every time it opens (Tools ▸ Agent List is the
+  example; a fixed verb inside one renders through `append_action`). `ARCHITECTURE.md`'s
+  *A child menu of data is rebuilt when it opens* has the reasoning.
 - **An `ActionSpec` may carry a glyph, and only the pop-ups paint it.** `icon` is a
   `(QColor) -> QIcon` painter, rendered by `build_menu`, `append_action` and a toolbar
   dropdown — all built fresh on every open. The menu bar's QActions outlive every theme
@@ -504,12 +508,15 @@ root, stop and look for the registry or capability you have not found yet.
   **stands down while the plan changed underneath**: the reload rebuilds it and it
   re-adopts its runs from the per-user store, so an exit is never written over the agent's
   own last `dplanner` call. Runs are per-user, per-machine facts (`user_config`), never the
-  plan. The Agents browser (status-bar button, *View ▸ Agents…*) is the management view;
-  *Step ▸ Show Agent Terminal* focuses the window through `terminal.py`'s per-platform
-  provider (tmux pane, tty via AppleScript, ancestor pid via xdotool, PowerShell pid) and
-  is greyed with the reason where the desktop cannot; *Clear Agent Run* is the window's
-  twin of `agent-state clear`. `ARCHITECTURE.md`'s *The peer reports back through its run
-  directory* has the reasoning.
+  plan. The Agents browser (status-bar button, *View ▸ Agents…*) is the management view and
+  **Tools ▸ Agent List** the quick switch — a data child menu of the live runs, each entry
+  raising its terminal; *Step ▸ Show Agent Terminal* focuses the window through
+  `terminal.py`'s per-platform provider (tmux pane, tty via AppleScript, ancestor pid via
+  xdotool, PowerShell pid). All three grey a run that cannot be switched to with its
+  reason, **per run** (`terminal.focus_reason` — a tmux pane is reachable on a desktop
+  whose bare windows are not); *Clear Agent Run* is the window's twin of `agent-state
+  clear`. `ARCHITECTURE.md`'s *The peer reports back through its run directory* has the
+  reasoning.
 - **Which terminal opens is a table, not a chain.** `launcher.TERMINALS` is one row per
   known terminal per platform with a probe saying whether it is installed; *Automatic* is
   the first installed row (the platform's own default), and the settings dropdown lists the

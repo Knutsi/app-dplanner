@@ -58,7 +58,9 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # the documentation it gathers. Its own group rather than "agent"'s, because launching
     # a coding agent in a terminal and filling one field are not two of a kind.
     "Step": ("edit", "link", "classify", "test_result", "agent", "docs", "open", "navigate"),
-    "Tools": ("agent",),
+    # "runs" is the Agent List — the live shells this window launched, a data child menu
+    # rebuilt on open — above "agent", the agent-facing setup (the skill, the CLI).
+    "Tools": ("runs", "agent"),
     "Debug": ("llm",),
     "Help": ("about",),
 }
