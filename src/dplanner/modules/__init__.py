@@ -106,8 +106,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
     from dplanner.modules.step_agent_run.aspect import MODULE_ID as AGENT_RUN_ID
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
-    from dplanner.modules.step_agent_run.aspect import record_launch as agent_run_launch
-    from dplanner.modules.step_agent_run.module import StepAgentRunModule
+    from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_check.aspect import write as check_write
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
@@ -293,6 +292,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             "working": ("working", "info"),
             "plan-for-review": ("plan ready", "attention"),
             "pending-approval": ("needs approval", "attention"),
+            "needs-input": ("needs input", "attention"),
         }.get(agent_run_state(step), ("", ""))
         status = step_status(step)
         milestone = milestone_read(step)
@@ -598,6 +598,31 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
     )
 
+    def reveal_step(step_id: str) -> None:
+        """Select a step in its project: ``steps.reveal`` against a context naming it."""
+        from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+
+        services.actions.run(
+            "steps.reveal",
+            Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)}),
+        )
+
+    # Built ahead of the list because Run Agent's module closes over it: every launch is
+    # handed here, and this is the one place that keeps an eye on the shell afterwards.
+    agent_runs = StepAgentRunModule(
+        StepAgentRunDeps(
+            library=library,
+            undo=services.undo,
+            actions=services.actions,
+            status=services.window,
+            parent=services.window,
+            # An exit is never written over a plan that changed underneath — the same
+            # narrowed store the library watcher reads.
+            repo=store,
+            reveal=reveal_step,
+        )
+    )
+
     return [
         # -- the shell -------------------------------------------------------------------
         AppShellModule(
@@ -842,15 +867,18 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # its directory. "" (a disabled verb) when the repository has vanished.
                 workdir_for=lambda step_id: str(find_repo_root(project_dir_of(step_id)) or ""),
                 briefing=briefing,
-                # The launch stamp: written directly, off the undo stack — Ctrl+Z cannot
-                # un-launch a shell.
-                record_launch=lambda step_id: agent_run_launch(library, step_id),
+                # The spawned shell goes to the run tracker: it stamps the launch — directly,
+                # off the undo stack, since Ctrl+Z cannot un-launch a shell — and watches
+                # the run's files for the shell's end.
+                record_launch=lambda step_id, files: agent_runs.track(
+                    step_id, str(files.shell_file), str(files.exit_file)
+                ),
                 pick_assets=pick_assets,
             )
         ),
-        # Declares the agent-run format only; Run Agent and the CLI write it, the canvas
-        # reads it through step_accent above.
-        StepAgentRunModule(),
+        # The shells Run Agent above spawns, and the canvas reads the aspect through
+        # step_accent above.
+        agent_runs,
         DocsModule(
             DocsDeps(
                 library=library,
@@ -1162,6 +1190,8 @@ def _agent_epilogue(step_title: str) -> str:
         f"- `dplanner agent-state set '{title}' working` while implementing\n"
         f"- `dplanner agent-state set '{title}' pending-approval` while waiting on an"
         " approval\n"
+        f"- `dplanner agent-state set '{title}' needs-input` when you have a question the"
+        " developer must answer before you can go on\n"
         "When the work is finished, record it in DPlanner:\n"
         f"- `dplanner status set '{title}' done` and `dplanner agent-state clear '{title}'`\n"
         f"- `dplanner handoff set '{title}' --file -` with anything later steps should"

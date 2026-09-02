@@ -145,8 +145,43 @@ def test_prepare_writes_a_cmd_wrapper_on_windows(tmp_path):
 
 def test_the_default_is_claude_code_in_plan_mode_interactively(tmp_path):
     script = prepare("p", tmp_path, platform="linux").script.read_text()
-    assert "exec claude --permission-mode plan" in script
+    assert "\nclaude --permission-mode plan" in script
     assert "prompt.md" in script
+
+
+def test_the_script_reports_the_shell_and_the_exit(tmp_path):
+    """The wrapper is the one process that knows when the agent ends, so it says so
+    beside the prompt: the shell's facts first, the exit status last — and a failure
+    holds the window open long enough to be read."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    files = prepare(
+        "p", tmp_path, platform="linux", directory=run_dir, step_title="Deploy: the 'beta' (v2)"
+    )
+    script = files.script.read_text()
+    assert files.title == "dplanner: Deploy: the beta (v2)"
+    assert files.shell_file == run_dir / "shell" and files.exit_file == run_dir / "exit"
+    assert "printf '\\033]0;%s\\007' 'dplanner: Deploy: the beta (v2)'" in script
+    assert (
+        f'"$(tty)" "$$" "$TMUX_PANE" "$TERM_PROGRAM" \'dplanner: Deploy: the beta (v2)\''
+        f" > {run_dir}/shell"
+    ) in script
+    assert f"trap 'echo closed > {run_dir}/exit; exit 129' HUP" in script
+    assert f'echo "$code" > {run_dir}/exit' in script
+    assert "read -r _" in script
+    assert "exec " not in script  # A replaced shell could not report the exit.
+
+
+def test_the_windows_script_reports_the_same_two_files(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    files = prepare("p", tmp_path, platform="win32", directory=run_dir, step_title="Deploy")
+    script = files.script.read_text()
+    assert "title dplanner: Deploy" in script
+    assert f"Set-Content -Path '{run_dir / 'shell'}'" in script and "'pid=' + $PID" in script
+    assert "exit $LASTEXITCODE" in script
+    assert f'>"{run_dir / "exit"}" echo %code%' in script
+    assert "pause" in script
 
 
 def test_a_worktree_slug_isolates_the_run(tmp_path):
@@ -163,7 +198,7 @@ def test_no_worktree_slug_means_no_git_lines(tmp_path):
 
 def test_a_command_without_the_placeholder_still_gets_the_prompt(tmp_path):
     script = prepare("p", tmp_path, agent_command="my-agent", platform="linux").script.read_text()
-    assert "exec my-agent \"$(cat" in script
+    assert "\nmy-agent \"$(cat" in script
 
 
 def test_the_presets_cover_the_known_agents():
@@ -171,6 +206,28 @@ def test_the_presets_cover_the_known_agents():
 
     assert [preset.id for preset in PRESETS] == ["claude", "codex", "opencode"]
     assert all("{prompt}" in preset.command for preset in PRESETS)
+
+
+def test_picking_a_terminal_prefills_its_command(app):
+    """The same dropdown-over-field as the agent: the rows are this platform's known
+    terminals, marked when not installed, and Automatic is the empty template."""
+    from PySide6.QtWidgets import QComboBox, QLineEdit
+
+    from dplanner.modules.step_agent_instruction.settings_page import build_page, launch_command
+
+    page = build_page(None, platform="darwin")
+    combo = page.findChild(QComboBox, "AgentTerminalCombo")
+    edit = page.findChild(QLineEdit, "AgentLaunchCommandEdit")
+    assert combo is not None and edit is not None
+    labels = [combo.itemText(i) for i in range(combo.count())]
+    assert labels[1] == "Terminal" and labels[-1] == "Automatic"
+    assert any(label.startswith("iTerm") for label in labels)
+    assert combo.currentText() == "Automatic"  # Untouched means the platform's default.
+    terminal = labels.index("Terminal")
+    combo.setCurrentIndex(terminal)
+    combo.activated.emit(terminal)
+    assert edit.text() == "open -a Terminal {script}"
+    assert launch_command() == "open -a Terminal {script}"
 
 
 def test_picking_a_preset_prefills_the_command(app):
@@ -198,6 +255,9 @@ def fake_files(tmp_path) -> LaunchFiles:
         directory=tmp_path,
         prompt_file=tmp_path / "prompt.md",
         script=tmp_path / "run.sh",
+        shell_file=tmp_path / "shell",
+        exit_file=tmp_path / "exit",
+        title="dplanner: Deploy",
     )
 
 
@@ -230,11 +290,54 @@ def test_the_first_terminal_found_wins(tmp_path):
 
 
 def test_macos_opens_terminal_app(tmp_path):
+    """The platform's own default terminal, whatever else is installed: Automatic
+    behaves the way the machine does, and the dropdown is where Ghostty or iTerm is."""
     command = resolve_command(
         "", fake_files(tmp_path), Path("/work"), platform="darwin",
-        which=lambda _name: None, env={},
+        which=lambda _name: None, env={}, app_exists=lambda _name: True,
     )
     assert command is not None and command[:3] == ["open", "-a", "Terminal"]
+
+
+def test_the_terminal_table_is_one_per_platform_and_probes_installs():
+    from dplanner.modules.step_agent_instruction.launcher import is_installed, terminals_for
+
+    assert [p.label for p in terminals_for("darwin")] == [
+        "tmux (new window)", "Terminal", "iTerm", "Ghostty",
+    ]
+    assert [p.id for p in terminals_for("win32")] == ["wt", "cmd", "ghostty-win"]
+    assert terminals_for("linux")[0].id == "tmux" and "ghostty" in [
+        p.id for p in terminals_for("linux")
+    ]
+    ghostty_mac = next(p for p in terminals_for("darwin") if p.id == "ghostty-mac")
+    none = lambda _n: None  # noqa: E731 - a stand-in for shutil.which
+    assert is_installed(ghostty_mac, which=none, env={}, app_exists=lambda n: n == "Ghostty")
+    assert not is_installed(ghostty_mac, which=none, env={}, app_exists=lambda _n: False)
+    tmux = terminals_for("linux")[0]
+    assert is_installed(tmux, which=lambda _n: None, env={"TMUX": "x"})
+    assert not is_installed(tmux, which=lambda _n: "/usr/bin/tmux", env={})
+
+
+def test_a_template_never_puts_a_windows_path_through_shlex(tmp_path):
+    """Placeholders are substituted per token after the split, so a backslash in the
+    script's path survives — shlex would have eaten it."""
+    files = LaunchFiles(
+        directory=tmp_path,
+        prompt_file=tmp_path / "prompt.md",
+        script=Path(r"C:\Users\me\run.cmd"),
+        shell_file=tmp_path / "shell",
+        exit_file=tmp_path / "exit",
+        title="dplanner: Deploy",
+    )
+    template = 'wt -d {workdir} cmd /k {script} --title "{title}"'
+    command = resolve_command(template, files, Path(r"C:\work"), platform="win32")
+    assert command == [
+        "wt", "-d", r"C:\work", "cmd", "/k", r"C:\Users\me\run.cmd", "--title", "dplanner: Deploy",
+    ]
+
+
+def test_an_unusable_template_answers_none(tmp_path):
+    assert resolve_command("myterm {nonsense}", fake_files(tmp_path), Path("/w"), "linux") is None
 
 
 def test_windows_prefers_windows_terminal(tmp_path):

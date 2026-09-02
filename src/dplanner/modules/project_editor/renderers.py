@@ -120,6 +120,16 @@ SELECTED_FILL_GAIN = 1.6
 # The chip on the bottom edge, left end — the badge's mirror, worn by a live agent run.
 CHIP_H = 14.0
 
+# The ring the same run wears: a dashed line marching round the body a few pixels out, in
+# the chip's tone. Motion is what says "somebody is at work on this one right now" — a
+# static outline would be one more border. The dash pattern is in pen widths (Qt's unit
+# for it) and the phase advances by RING_STEP per scene tick; one full dash-and-gap per
+# ~14 ticks reads as a steady crawl rather than a flicker.
+RING_GAP = 3.0
+RING_W = 1.5
+RING_DASH = (4.0, 3.0)
+RING_STEP = 0.5
+
 # The icon medallions on the top edge, left end: one small circle per aspect kind a step
 # carries, bound by the same boundingRect inequality the badge is. Twice grown by a fifth from
 # the 14 they were first drawn at, and rounded to the pixel at the end of it.
@@ -148,6 +158,7 @@ PAINT_MARGIN = max(
     BADGE_H / 2 + 1.0 + LIFT,
     ICON_D / 2 + 1.0 + LIFT,
     CHIP_H / 2 + 1.0,
+    RING_GAP + RING_W + 1.0 + LIFT,
     SHADOW_DROP + SHADOW_SPREAD + 1.0,
 )
 
@@ -165,7 +176,8 @@ class NodeAccent:
     The canvas never learns which aspect means "muted", what a badge says, or which
     aspect a pill stands for — the composition root translates aspects into this, the
     same seam ``step_aspects`` uses for the subtitle. A ``badge`` sits on the top edge
-    (a milestone label); a ``chip`` sits on the bottom edge (a live agent run); a ``pill``
+    (a milestone label); a ``chip`` sits on the bottom edge (a live agent run — and the
+    same run wears the marching ring, so one field says both); a ``pill``
     sits on the second line with a tone that is "good" or "bad", never "merged";
     ``branch`` and ``spark`` ask for the small glyphs beside it; ``bar_tone`` is the slim
     strip inside the left edge.
@@ -211,6 +223,7 @@ class NodeState:
     hovered: bool = False
     link_state: str = ""  # "" | "valid" | "invalid"
     hints: RenderHints = field(default_factory=RenderHints)
+    ring_phase: float = 0.0  # Where the live ring's dashes are; the scene advances it.
 
 
 def paint_node(
@@ -240,6 +253,8 @@ def paint_node(
         painter.translate(0.0, -LIFT)
 
     paint_body(painter, palette, body, accent, state)
+    if accent.chip_text:
+        paint_ring(painter, body, accent.chip_tone, state.ring_phase)
     inner = body.adjusted(PADDING, PADDING, -PADDING, -PADDING)
     paint_title(painter, inner, title, text_colour, accent.muted)
     paint_detail_line(painter, inner, subtitle, accent, text_colour, faded)
@@ -483,6 +498,23 @@ def paint_badge(painter: QPainter, palette: QPalette, text: str, room: float) ->
     painter.setPen(QColor(palette.text().color()))
     painter.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), shown)
     painter.setFont(font)
+
+
+def paint_ring(painter: QPainter, body: QRectF, tone: str, phase: float) -> None:
+    """The dashed ring round a node with a live agent run, its dashes at ``phase``.
+
+    Drawn outside the body so it reads as something around the card rather than a second
+    border, and never filled: what is inside is the node, unchanged.
+    """
+    _, border = CHIP_TONES.get(tone, CHIP_TONES["info"])
+    pen = QPen(border, RING_W)
+    pen.setDashPattern(list(RING_DASH))
+    pen.setDashOffset(-phase)
+    pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    ring = body.adjusted(-RING_GAP, -RING_GAP, RING_GAP, RING_GAP)
+    painter.drawRoundedRect(ring, RADIUS + RING_GAP, RADIUS + RING_GAP)
 
 
 def paint_chip(painter: QPainter, palette: QPalette, text: str, tone: str) -> None:

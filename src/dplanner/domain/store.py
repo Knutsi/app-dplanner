@@ -80,6 +80,11 @@ STEP_META = "step.json"
 MODULES_DIR = "modules"
 STEPS_DIR = "steps"
 
+# What of a project directory is the plan: the entries a flush may write, and therefore the
+# only entries an outside change is looked for in. Everything else in the directory — a
+# repository's source tree, `.git/`, an agent's worktree — is somebody else's.
+PLAN_ENTRIES = (PROJECT_META, MODULES_DIR, STEPS_DIR)
+
 # Which container directory holds a node's children, and what a child's meta file is called.
 CONTAINER = {"project": STEPS_DIR}
 META_FILE = {"project": PROJECT_META, "step": STEP_META}
@@ -472,30 +477,29 @@ class LibraryStore:
         )
 
     def _snapshot(self, record: _ProjectRecord) -> dict[str, tuple[int, int]]:
-        """Every file in the project directory, except git's own.
+        """Every file of the *plan* in the project directory — and nothing beside it.
 
         A project directory is often the repository root itself (New Project's git-init
-        flow makes exactly that), which would put `.git/` inside this walk — and git
-        rewrites its own files constantly: a commit obviously, but even `git status`
-        refreshes `.git/index`. Counting those as "another writer" made every Save read
-        as an outside change and reload the application in a loop. Git's files are not
-        plan content; pruning the directory also keeps the 1.5-second autosave cadence
-        from walking a repository's whole object store.
+        flow makes exactly that), so the directory holds far more than the plan: the
+        user's source tree, `.git/`, and the agent worktrees Run Agent keeps under
+        `.dplanner/worktrees/`. None of it is anything this store reads or writes, and
+        counting it as "another writer" made every Save, every source edit and every file
+        an agent touched reload the application. So the walk is ``PLAN_ENTRIES`` — the
+        meta file and the two directories the format owns — which is exactly the set a
+        flush could overwrite, and the only set the question is about.
         """
         root = record.storage.root
         if not root.is_dir():
             return {}
         found: dict[str, tuple[int, int]] = {}
-        stack = [root]
+        stack = [root / name for name in PLAN_ENTRIES]
         while stack:
-            for entry in stack.pop().iterdir():
-                if entry.name == ".git":
-                    continue
-                if entry.is_dir():
-                    stack.append(entry)
-                elif entry.is_file():
-                    stat = entry.stat()
-                    found[str(entry.relative_to(root))] = (stat.st_size, stat.st_mtime_ns)
+            entry = stack.pop()
+            if entry.is_dir():
+                stack.extend(entry.iterdir())
+            elif entry.is_file():
+                stat = entry.stat()
+                found[str(entry.relative_to(root))] = (stat.st_size, stat.st_mtime_ns)
         return found
 
     def _remember_disk(self, record: _ProjectRecord) -> None:

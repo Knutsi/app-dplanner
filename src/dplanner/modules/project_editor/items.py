@@ -68,6 +68,7 @@ class StepNodeItem(QGraphicsItem):
         self._link_state = ""
         self._accent = NodeAccent()
         self._hints = RenderHints()
+        self._ring_phase = 0.0
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
@@ -83,6 +84,17 @@ class StepNodeItem(QGraphicsItem):
         if accent != self._accent:
             self._accent = accent
             self.update()
+
+    def wears_ring(self) -> bool:
+        """Whether this node has a live agent run — the one thing the scene animates."""
+        return bool(self._accent.chip_text)
+
+    def set_ring_phase(self, phase: float) -> None:
+        """Where the ring's dashes are — pushed by the scene's tick, one number for all."""
+        if phase != self._ring_phase:
+            self._ring_phase = phase
+            if self.wears_ring():
+                self.update()
 
     def set_link_state(self, state: str) -> None:
         """ "" while nothing is being dragged at this node, else "valid" or "invalid"."""
@@ -154,6 +166,7 @@ class StepNodeItem(QGraphicsItem):
                 hovered=self._hovered,
                 link_state=self._link_state,
                 hints=self._hints,
+                ring_phase=self._ring_phase,
             ),
         )
 

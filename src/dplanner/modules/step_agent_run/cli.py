@@ -2,8 +2,9 @@
 
 Run Agent stamps ``launched``; the agent moves the state along as it works —
 ``plan-for-review`` when its plan is ready, ``working`` while implementing,
-``pending-approval`` while waiting on one — and clears it when the run ends
-(``status set … done`` is the claim about the work; this is the claim about the shell).
+``pending-approval`` while waiting on one, ``needs-input`` when it has a question for the
+developer — and clears it when the run ends (``status set … done`` is the claim about the
+work; this is the claim about the shell).
 """
 
 from argparse import ArgumentParser, Namespace

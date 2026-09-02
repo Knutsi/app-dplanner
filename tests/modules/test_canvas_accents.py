@@ -165,3 +165,59 @@ def test_clearing_the_status_unmutes(services, project, tab):
     services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("done")))
     services.undo.undo()
     assert node(tab, step)._accent.muted is False
+
+
+# -- the live ring -----------------------------------------------------------------------------
+
+
+def test_a_live_agent_run_wears_a_marching_ring(services, project, tab):
+    """The chip says an agent is on the step; the ring moving says it is on it *now*. One
+    scene clock drives every ring, and it runs only while there is one to drive."""
+    scene = tab._scene
+    step = project.steps[0]
+    assert not scene._ring_timer.isActive()
+
+    SetModuleDataCommand(step.id, agent_run.MODULE_ID, agent_run.write("working")).redo(
+        services.document
+    )
+    item = node(tab, step)
+    assert item.wears_ring() and scene._ring_timer.isActive()
+    before = item._ring_phase
+    scene.advance_rings()
+    assert item._ring_phase != before
+    assert node(tab, project.steps[1])._ring_phase == item._ring_phase  # One clock for all.
+
+    SetModuleDataCommand(step.id, agent_run.MODULE_ID, {}).redo(services.document)
+    assert not item.wears_ring() and not scene._ring_timer.isActive()
+
+
+def test_the_ring_is_painted_outside_the_body_and_moves_with_the_phase(app):
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QImage, QPainter, QPalette
+
+    from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+    from dplanner.modules.project_editor.renderers import (
+        PAINT_MARGIN,
+        RING_GAP,
+        NodeState,
+        paint_node,
+    )
+
+    def render(accent, phase=0.0):
+        margin = int(PAINT_MARGIN)
+        size = (int(NODE_W) + 2 * margin, int(NODE_H) + 2 * margin)
+        image = QImage(*size, QImage.Format.Format_ARGB32)
+        image.fill(0)
+        painter = QPainter(image)
+        painter.translate(margin, margin)
+        paint_node(painter, QPalette(), "T", "", accent, NodeState(ring_phase=phase))
+        painter.end()
+        row = int(-RING_GAP) + margin
+        columns = range(margin + 20, margin + int(NODE_W) - 20)
+        return [image.pixelColor(x, row).alpha() for x in columns]
+
+    assert not any(render(NodeAccent()))
+    inked = render(NodeAccent(chip_text="working", chip_tone="info"))
+    assert any(inked) and not all(inked)  # Dashes and gaps.
+    assert render(NodeAccent(chip_text="working", chip_tone="info"), phase=2.0) != inked
+    assert QRectF(0, 0, NODE_W, NODE_H).adjusted(-RING_GAP, 0, 0, 0).left() > -PAINT_MARGIN

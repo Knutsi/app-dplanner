@@ -226,7 +226,23 @@ def test_removing_the_last_file_removes_the_area(store, library, project_dir):
 
 def test_a_project_changed_underneath_is_noticed(store, library, project_dir):
     assert not store.changed_underneath()
-    (project_dir / "note.md").write_text("left by an agent\n")
+    (project_dir / "steps" / "read-the-spec" / "note.md").write_text("left by an agent\n")
+    assert store.changed_underneath()
+
+
+def test_only_the_plan_counts_as_another_writer(store, library, project_dir):
+    """A project directory that is the repository root holds the user's source tree and
+    the agent worktrees Run Agent keeps under .dplanner/ — none of it plan content, and
+    every edit there used to reload the whole window. The plan is project.dproj,
+    modules/ and steps/; a file beside them is somebody else's business."""
+    (project_dir / "main.py").write_text("print('hi')\n")
+    worktree = project_dir / ".dplanner" / "worktrees" / "build-it" / "src"
+    worktree.mkdir(parents=True)
+    (worktree / "main.py").write_text("print('agent')\n")
+    assert not store.changed_underneath()
+
+    (project_dir / "modules").mkdir(exist_ok=True)
+    (project_dir / "modules" / "time_estimates.json").write_text("{}\n")
     assert store.changed_underneath()
 
 
@@ -257,7 +273,8 @@ def test_gits_own_files_are_never_another_writer(tmp_path):
     subprocess.run([*git, "status", "--porcelain"], check=True, capture_output=True)
     assert not store.changed_underneath()
 
-    (project_dir / "note.md").write_text("left by an agent\n")
+    (project_dir / "steps").mkdir(exist_ok=True)
+    (project_dir / "steps" / "note.md").write_text("left by an agent\n")
     assert store.changed_underneath()
 
 
@@ -306,7 +323,8 @@ def test_an_outside_edit_in_one_project_does_not_block_another(tmp_path):
     loaded = store.load()
     alpha, beta = loaded.projects
 
-    (beta_dir / "note.md").write_text("left by an agent\n")
+    (beta_dir / "steps").mkdir()
+    (beta_dir / "steps" / "note.md").write_text("left by an agent\n")
 
     loaded.set_field(alpha.id, "summary", "still saveable")
     store.flush({(alpha.id, "meta")})

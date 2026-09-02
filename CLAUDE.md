@@ -381,7 +381,11 @@ root, stop and look for the registry or capability you have not found yet.
   flush over anything that changed underneath** (`StaleWorkspaceError`) — checked **per
   project**, so one project's outside edit never blocks saving another; the library file
   has its own stamp. The window notices and reloads when it owes nothing, and says so when
-  it does. That one check also makes a lock between CLI runs unnecessary.
+  it does. That one check also makes a lock between CLI runs unnecessary. **What it looks
+  at is the plan, not the directory**: `PLAN_ENTRIES` (`project.dproj`, `modules/`,
+  `steps/`) — a project directory is often the repository root, and counting the source
+  tree or an agent worktree under `.dplanner/` as another writer reloaded the window on
+  every edit anyone made.
 - **Reloading the library is a full rebuild**, not a reset. Registries refuse duplicate
   ids, which is what makes that the only implementable answer — and the correct one.
   Opening a *different* library is not even a reload: File ▸ New/Open Project Library
@@ -488,8 +492,34 @@ root, stop and look for the registry or capability you have not found yet.
   can honestly deliver. The terminal opens at the project's **git repository root** (via
   the `workdir_for` seam the composition root wires from `find_repo_root`). The prompt goes
   to a per-run temp directory, never the project. The agent reports back through the CLI
-  (`status set`, `handoff set`). `ARCHITECTURE.md`'s *Running an agent launches a peer, not
-  a task* has the reasoning.
+  (`status set`, `agent-state set`, `handoff set`). `ARCHITECTURE.md`'s *Running an agent
+  launches a peer, not a task* has the reasoning.
+- **The peer reports its end through its run directory, and the window clears the chip.**
+  The wrapper script is the one process that knows when the agent exits, so it writes the
+  shell's facts (`shell`: tty, pid, tmux pane, terminal program, window title) beside the
+  prompt on start and the exit status (`exit`; `closed` on a hang-up) at the end — no
+  terminal-specific hook, so it is the same on every platform and terminal. The agent-run
+  module (`step_agent_run/`) polls the runs it launched, clears the step's state when a
+  shell ends — directly, with the launch origin, the way the launch was stamped — and
+  **stands down while the plan changed underneath**: the reload rebuilds it and it
+  re-adopts its runs from the per-user store, so an exit is never written over the agent's
+  own last `dplanner` call. Runs are per-user, per-machine facts (`user_config`), never the
+  plan. The Agents browser (status-bar button, *View ▸ Agents…*) is the management view;
+  *Step ▸ Show Agent Terminal* focuses the window through `terminal.py`'s per-platform
+  provider (tmux pane, tty via AppleScript, ancestor pid via xdotool, PowerShell pid) and
+  is greyed with the reason where the desktop cannot; *Clear Agent Run* is the window's
+  twin of `agent-state clear`. `ARCHITECTURE.md`'s *The peer reports back through its run
+  directory* has the reasoning.
+- **Which terminal opens is a table, not a chain.** `launcher.TERMINALS` is one row per
+  known terminal per platform with a probe saying whether it is installed; *Automatic* is
+  the first installed row (the platform's own default), and the settings dropdown lists the
+  same rows and pre-fills the editable template — the agent presets' pattern. A new
+  terminal is a row, never an `if`.
+- **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
+  state; the dashed ring round the body moves, which is what says "somebody is on this one
+  right now". One `QTimer` on the scene advances every ring and runs only while a node
+  wears one — `GraphScene._settle_ring_timer` after every sync. The ring is derived from the
+  chip (`NodeAccent.chip_text`), so one field says both.
 - **Inherited handoffs are computed, never stored** — `step_handoff/handoff.py` is one
   function with three readers (tab, CLI, agent prompt). Same rule as the ordering, and the
   reasoning is in `ARCHITECTURE.md`'s *Pass-forward is derived at read time*.

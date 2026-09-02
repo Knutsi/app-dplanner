@@ -87,7 +87,7 @@ PREVIEW_NOTE = (
 )
 
 
-def _no_record(_step_id: StepId) -> None:
+def _no_record(_step_id: StepId, _files: launcher.LaunchFiles) -> None:
     return None
 
 
@@ -114,9 +114,10 @@ class StepAgentInstructionDeps:
     # place allowed to know what the other aspects store. The same object feeds
     # ``dplanner agent prompt``, so the two surfaces cannot drift.
     briefing: Briefing = EMPTY_BRIEFING
-    # Stamps "an agent shell was launched on this step" — the step_agent_run aspect,
-    # reached through the root because modules never import each other.
-    record_launch: Callable[[StepId], None] = field(default=_no_record)
+    # Hands the spawned shell over: the step_agent_run module stamps the aspect and
+    # watches the run's files for the shell's end — reached through the root because
+    # modules never import each other.
+    record_launch: Callable[[StepId, launcher.LaunchFiles], None] = field(default=_no_record)
     # Insert from Assets…: a modal picker over the node's project's catalog, composed by
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], "list[Payload]"] | None = None
@@ -373,13 +374,14 @@ class StepAgentInstructionModule:
             agent_command=agent_command(),
             worktree=worktree,
             directory=run_dir,
+            step_title=step.title,
         )
         command = None
         if workdir.is_dir():
             command = launcher.resolve_command(launch_command(), prepared, workdir)
         if command is not None:
             launcher.spawn(command, workdir)
-            deps.record_launch(step.id)
+            deps.record_launch(step.id, prepared)
             deps.status.show_status(f"Agent launched on “{step.title}”", 4000)
             return
         # No shell was started, so nothing is stamped: the fallback hands over the prompt.
