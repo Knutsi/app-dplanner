@@ -493,10 +493,7 @@ def test_a_double_click_moves_the_point_on_too(app, services, project, tab, monk
     assert after["y"] > made["y"]
 
 
-def test_deleting_the_shown_step_leaves_the_panel_empty(app, services, project, tab, monkeypatch):
-    from dplanner.modules.project_editor import verbs
-
-    monkeypatch.setattr(verbs, "confirm", lambda *_args: True)
+def test_deleting_the_shown_step_leaves_the_panel_empty(app, services, project, tab):
     step = project.steps[0]
     scene(tab).select_step(step.id)
     press_key(app, tab, Qt.Key.Key_Delete)
@@ -676,11 +673,8 @@ def test_delete_removes_the_picked_edges_as_one_step(app, services, project, tab
     assert services.document.step(third.id).edges["requires"] == [second.id, first.id]
 
 
-def test_delete_means_the_verb_the_selection_calls_for(app, services, project, tab, monkeypatch):
+def test_delete_means_the_verb_the_selection_calls_for(app, services, project, tab):
     """One key, two verbs, and no branch on the canvas: the first the context allows runs."""
-    from dplanner.modules.project_editor import verbs
-
-    monkeypatch.setattr(verbs, "confirm", lambda *_args: True)
     first, second = project.steps
     services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
 
@@ -693,10 +687,7 @@ def test_delete_means_the_verb_the_selection_calls_for(app, services, project, t
     assert len(project.steps) == 1
 
 
-def test_deleting_a_multiple_selection_is_one_undo_step(services, project, tab, monkeypatch):
-    from dplanner.modules.project_editor import verbs
-
-    monkeypatch.setattr(verbs, "confirm", lambda *_args: True)
+def test_deleting_a_multiple_selection_is_one_undo_step(services, project, tab):
     first, second = project.steps
     scene(tab).select_steps([first.id, second.id])
     services.actions.run("steps.delete", services.context.current())
@@ -726,7 +717,7 @@ def test_moving_a_node_does_not_pan_the_canvas(app, services, project, tab):
     assert view(tab).mapToScene(view(tab).viewport().rect().topLeft()) == looking_at
 
 
-def test_the_canvas_is_a_plane_no_graph_can_move(services, project, tab, monkeypatch):
+def test_the_canvas_is_a_plane_no_graph_can_move(services, project, tab):
     """The scrollable area is a constant centred on the origin.
 
     Nothing about the graph may reach it — it used to be grown from the items, and every
@@ -734,9 +725,6 @@ def test_the_canvas_is_a_plane_no_graph_can_move(services, project, tab, monkeyp
     panning away under the drag. A constant cannot do that, and it is also what lets the
     user keep panning long after the last node is behind them.
     """
-    from dplanner.modules.project_editor import verbs
-
-    monkeypatch.setattr(verbs, "confirm", lambda *_args: True)
     canvas = scene(tab)
     was = canvas.sceneRect()
     assert was.contains(QRectF(-50_000.0, -50_000.0, 100_000.0, 100_000.0))
@@ -962,11 +950,8 @@ def test_the_minimap_draws_every_node(app, services, project, tab):
     assert len(minimap(tab)._nodes) == len(project.steps)
 
 
-def test_the_minimap_goes_off_screen_without_a_graph(app, services, project, tab, monkeypatch):
+def test_the_minimap_goes_off_screen_without_a_graph(app, services, project, tab):
     """An empty box is worse than no box — DESIGN.md's rule for a panel, one surface down."""
-    from dplanner.modules.project_editor import verbs
-
-    monkeypatch.setattr(verbs, "confirm", lambda *_args: True)
     scene(tab).select_steps([step.id for step in project.steps])
     services.actions.run("steps.delete", services.context.current())
     settle(app)
@@ -1212,11 +1197,18 @@ def test_closing_the_tab_lets_its_toolbars_go(services, project, tab):
 # -- selecting everything ----------------------------------------------------------------------
 
 
-def test_select_all_selects_every_step(app, services, project, tab):
-    press_key(app, tab, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+def test_select_all_selects_every_step(services, project, tab):
+    """Select All is the Edit menu's, bound to the standard key there: a menu shortcut fires
+    through the shortcut map before the canvas sees the key, so the canvas keymap has no
+    row for it and the binding is asserted on the menu bar's own action."""
+    from PySide6.QtGui import QKeySequence
+
+    services.actions.run("steps.select_all", services.context.current())
     assert set(scene(tab).selection().steps) == {step.id for step in project.steps}
     published = services.context.current().selected_entities("step")
     assert set(published) == {step.id for step in project.steps}
+    bound = services.window.dynamic_menubar.action("steps.select_all").shortcuts()
+    assert QKeySequence(QKeySequence.StandardKey.SelectAll) in bound
 
 
 def test_select_all_is_disabled_off_a_canvas(services):
@@ -1418,11 +1410,8 @@ def test_double_clicking_the_title_renames(app, services, project, tab, monkeypa
     assert services.undo.undo_text() == "Rename Region"
 
 
-def test_the_delete_key_reaches_a_selected_region(app, services, project, tab, monkeypatch):
+def test_the_delete_key_reaches_a_selected_region(app, services, project, tab):
     region = add_region(services, project, 400.0, 300.0, 200.0, 120.0)
-    monkeypatch.setattr(
-        "dplanner.modules.project_editor.region_verbs.confirm", lambda *_args: True
-    )
     scene(tab).select_region(region.id)
     press_key(app, tab, Qt.Key.Key_Delete)
 
@@ -1481,3 +1470,218 @@ def test_a_medallion_stays_inside_the_item_that_paints_it():
     is what ``boundingRect`` is made of, so growing ``ICON_D`` without measuring it here is
     how a selected step loses the top half of its icons."""
     assert ICON_D / 2 + 1.0 + LIFT <= PAINT_MARGIN
+
+
+# -- the Edit menu: cut, copy, paste, duplicate --------------------------------------------------
+#
+# The clipboard is the process's, so these read it back through Qt; what a clip holds and how
+# a paste clones it is pinned Qt-free in test_project_editor_clipboard.py.
+
+
+def clipboard_steps():
+    from PySide6.QtGui import QGuiApplication
+
+    from dplanner.modules.project_editor.clipboard import MIME_TYPE, from_json
+
+    data = QGuiApplication.clipboard().mimeData()
+    if data is None or not data.hasFormat(MIME_TYPE):
+        return []
+    return from_json(bytes(data.data(MIME_TYPE).data()))
+
+
+def linked_pair(services, project):
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    return first, second
+
+
+def test_copy_puts_the_steps_on_the_clipboard_beside_their_titles(services, project, tab):
+    from PySide6.QtGui import QGuiApplication
+
+    first, second = linked_pair(services, project)
+    services.actions.run("steps.copy", context_of(services, first.id, second.id))
+
+    assert [c.title for c in clipboard_steps()] == ["Read the spec", "Draft the model"]
+    assert QGuiApplication.clipboard().text() == "Read the spec\nDraft the model"
+    assert not services.undo.can_undo() or services.undo.undo_text() == "Change Links"
+
+
+def test_paste_is_one_undo_step_that_lands_at_the_click_and_selects_the_copies(
+    services, project, tab
+):
+    first, second = linked_pair(services, project)
+    services.actions.run("steps.copy", context_of(services, first.id, second.id))
+    tab._view.note_click(QPointF(900.0, 700.0))
+
+    services.actions.run("steps.paste", services.context.current())
+
+    assert len(project.steps) == 4
+    copy_first, copy_second = project.steps[2:]
+    assert (copy_first.title, copy_second.title) == ("Read the spec", "Draft the model")
+    assert services.document.step(copy_second.id).edges["requires"] == [copy_first.id]
+    assert services.undo.undo_text() == "Paste 2 Steps"
+    assert set(scene(tab).selection().steps) == {copy_first.id, copy_second.id}
+    placed = [step.module_data["project_editor"] for step in (copy_first, copy_second)]
+    assert min(p["x"] for p in placed) == snapped(900.0 - NODE_W / 2)
+    assert min(p["y"] for p in placed) == snapped(700.0 - NODE_H / 2)
+    services.undo.undo()
+    assert [s.id for s in project.steps] == [first.id, second.id]
+
+
+def test_pasting_twice_stacks_the_blocks_rather_than_hiding_one(services, project, tab):
+    first, _second = project.steps
+    services.actions.run("steps.copy", context_of(services, first.id))
+    tab._view.note_click(QPointF(900.0, 700.0))
+    services.actions.run("steps.paste", services.context.current())
+    services.actions.run("steps.paste", services.context.current())
+    one, two = (step.module_data["project_editor"] for step in project.steps[-2:])
+    assert two["y"] > one["y"] and two["x"] == one["x"]
+
+
+def test_paste_reaches_another_project_disconnected_like_any_paste(
+    services, project, tab, make_project
+):
+    _first, second = linked_pair(services, project)
+    services.actions.run("steps.copy", context_of(services, second.id))
+    other = make_project("Rollout")
+    services.tabs.open("project", other.id)
+
+    services.actions.run("steps.paste", services.context.current())
+
+    assert [s.title for s in other.steps] == ["Draft the model"]
+    assert "requires" not in other.steps[0].edges
+    assert len(project.steps) == 2
+
+
+def test_paste_needs_a_canvas_and_steps_on_the_clipboard(services, project, tab):
+    from PySide6.QtGui import QGuiApplication
+
+    QGuiApplication.clipboard().setText("only text")
+    assert not state(services, "steps.paste", services.context.current()).enabled
+
+    services.actions.run("steps.copy", context_of(services, *[s.id for s in project.steps]))
+    pasteable = state(services, "steps.paste", services.context.current())
+    assert pasteable.enabled and pasteable.label == "&Paste 2 Steps"
+
+    services.tabs.close_activity(tab)
+    assert not state(services, "steps.paste", services.context.current()).enabled
+
+
+def test_cut_copy_and_duplicate_act_on_the_chosen_steps_wherever_they_are(services, project):
+    """No canvas open: the verbs still read the selection, the way Delete does, so a table's
+    right-click menu can offer them. Only Paste needs the canvas — it is the target."""
+    context = context_of(services, project.steps[0].id)
+    for verb in ("steps.cut", "steps.copy", "steps.duplicate", "steps.delete_edit"):
+        assert state(services, verb, context).enabled, verb
+    assert not state(services, "steps.paste", context).enabled
+    both = context_of(services, *[s.id for s in project.steps])
+    assert state(services, "steps.cut", both).label == "Cu&t 2 Steps"
+    assert state(services, "steps.copy", both).label == "&Copy 2 Steps"
+    assert state(services, "steps.duplicate", both).label == "D&uplicate 2 Steps"
+    assert not state(services, "steps.copy", context_of(services)).enabled
+
+
+def test_duplicate_lands_one_row_below_selected_and_leaves_the_clipboard_alone(
+    services, project, tab
+):
+    from PySide6.QtGui import QGuiApplication
+
+    from dplanner.modules.project_editor.placement import below, positions
+
+    QGuiApplication.clipboard().setText("untouched")
+    first, second = linked_pair(services, project)
+    was = positions(services.document, project)[second.id]
+
+    services.actions.run("steps.duplicate", context_of(services, second.id))
+
+    copy = project.steps[-1]
+    assert copy.title == "Draft the model" and copy.id != second.id
+    assert "requires" not in copy.edges  # The link to the original's upstream is not copied.
+    assert services.document.step(second.id).edges["requires"] == [first.id]
+    assert services.undo.undo_text() == "Duplicate Step"
+    assert list(scene(tab).selection().steps) == [copy.id]
+    entry = copy.module_data["project_editor"]
+    assert (entry["x"], entry["y"]) == tuple(snapped(v) for v in below(*was))
+    assert QGuiApplication.clipboard().text() == "untouched"
+
+
+def test_cut_is_copy_then_delete_and_a_paste_after_it_brings_fresh_steps(services, project, tab):
+    first, second = linked_pair(services, project)
+
+    services.actions.run("steps.cut", context_of(services, first.id, second.id))
+
+    assert project.steps == []
+    assert [c.title for c in clipboard_steps()] == ["Read the spec", "Draft the model"]
+    assert services.undo.undo_text() == "Cut 2 Steps"
+    services.undo.undo()
+    assert [s.id for s in project.steps] == [first.id, second.id]
+
+    services.actions.run("steps.paste", services.context.current())
+    assert len(project.steps) == 4
+    assert {s.id for s in project.steps[2:]}.isdisjoint({first.id, second.id})
+
+
+def test_a_copy_carries_its_attachments(services, project, tab):
+    from dplanner.domain.assets import attach
+
+    first = project.steps[0]
+    name = attach(services.repo.files(first.id, "step_description"), b"\x89PNG-ish", "shot.png")
+    services.document.set_text(first.id, "step_description", f"![shot]({name})")
+
+    services.actions.run("steps.duplicate", context_of(services, first.id))
+
+    copy = project.steps[-1]
+    assert copy.module_text["step_description"] == f"![shot]({name})"
+    assert services.repo.files(copy.id, "step_description").read_bytes(name) == b"\x89PNG-ish"
+
+
+def test_a_copied_test_is_re_minted_and_a_copied_agent_run_is_forgotten(services, project, tab):
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.step_agent_run.aspect import MODULE_ID as RUN_ID
+    from dplanner.modules.step_agent_run.aspect import write as write_run
+    from dplanner.modules.testing.aspect import Test, read, write
+
+    first, second = project.steps
+    services.undo.push(
+        SetModuleDataCommand(first.id, "testing", write([Test("T100", "a"), Test("T101", "b")]))
+    )
+    services.undo.push(SetModuleDataCommand(second.id, "testing", write([Test("T102", "c")])))
+    services.undo.push(SetModuleDataCommand(first.id, RUN_ID, write_run("working")))
+
+    services.actions.run("steps.duplicate", context_of(services, first.id, second.id))
+
+    copy_first, copy_second = project.steps[2:]
+    assert [t.id for t in read(copy_first)] == ["T103", "T104"]
+    assert [t.id for t in read(copy_second)] == ["T105"]
+    assert RUN_ID not in copy_first.module_data
+    assert RUN_ID in first.module_data
+
+
+def test_the_edit_menu_delete_is_the_step_menu_delete_in_a_second_seat(services, project, tab):
+    context = context_of(services, *[s.id for s in project.steps])
+    assert state(services, "steps.delete_edit", context).label == "&Delete 2 Steps"
+    assert state(services, "steps.delete", context).label == "&Delete 2 Steps"
+    assert services.actions.spec("steps.delete_edit").palette is False
+    services.actions.run("steps.delete_edit", context)
+    assert project.steps == [] and services.undo.undo_text() == "Delete 2 Steps"
+
+
+def test_the_edit_menu_reads_history_clipboard_selection(services):
+    menu = next(a.menu() for a in services.window.menuBar().actions() if a.text() == "&Edit")
+    rendered = []
+    for action in menu.actions():
+        if not action.isVisible():
+            continue
+        rendered.append("|" if action.isSeparator() else action.text())
+    assert rendered == [
+        "&Undo",
+        "&Redo",
+        "|",
+        "Cu&t Step",
+        "&Copy Step",
+        "&Paste",
+        "D&uplicate Step",
+        "&Delete Step",
+        "|",
+        "Select &All Steps",
+    ]

@@ -611,6 +611,20 @@ root, stop and look for the registry or capability you have not found yet.
   becomes the **selection** and the remembered point steps one row down (`placement.below()`),
   both through the `created` seam — they belong to the canvas, not to the verb — so New twice
   in a row leaves two nodes rather than one hiding another.
+- **The Edit menu's Cut, Copy, Paste, Duplicate, Delete and Select All are the graph's.**
+  Registered by `project_editor` as ordinary `ActionSpec`s — no dispatcher until a second
+  surface needs a clipboard, because a shortcut can be owned by one enabled QAction at a
+  time. Cut/Copy/Duplicate act on `verbs.chosen_steps` exactly as Delete does; only Paste
+  needs a current canvas. The Ctrl keys are **menu shortcuts** (every text widget reclaims
+  them through `ShortcutOverride`; measured, not assumed) and Delete is **not** (a bare `Del`
+  would fire in every list, and `StandardKey.Delete` also claims Ctrl+D). Deleting steps and
+  regions no longer asks — undo is the safety net. A copy is a **clone**
+  (`project_editor/clipboard.py`): fresh ids, links between copies remapped and every link
+  to the outside dropped, files in the payload and written after the one composite
+  command, and a `PastePolicy` per module with a say (`testing` re-mints ids,
+  `step_agent_run` forgets). `dplanner step duplicate` is the same function.
+  `ARCHITECTURE.md`'s *Edit verbs belong to the surface whose things they act on* and *Copy
+  and paste are a clone through the same command* have the reasoning.
 - **What a collector gathers is one verb: `dplanner scope show`.** In `cli/scopes.py`, the
   cross-feature home — a check, a feature and a milestone are one derivation asked three
   ways, so three near-copies of the report is exactly what that file prevents. It also owns

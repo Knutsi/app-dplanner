@@ -50,6 +50,7 @@ QT_PACKAGES = ("PySide6", "shiboken6")
 HEADLESS_FILES = (
     "cli.py",
     "aspect.py",
+    "clipboard.py",
     "positions.py",
     "placement.py",
     "named_layouts.py",

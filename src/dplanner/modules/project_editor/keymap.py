@@ -11,6 +11,12 @@ what lets one Delete key mean "remove these links" when edges are picked and "re
 steps" when steps are, without a branch anywhere: the two actions already know which of them
 applies. Keys with one meaning are a one-element tuple and read the same way.
 
+**Only bare keys belong here.** The Edit menu's verbs — Cut, Copy, Paste, Duplicate, Select
+All — carry their standard Ctrl shortcuts on the menu bar, because every text widget reclaims
+those through ``ShortcutOverride`` and a menu shortcut fires before this table is consulted;
+a row for one here would be dead. Delete is the exception in the other direction: a bare
+``Del`` on the menu bar would fire in every list in the window, so it stays a canvas key.
+
 This table is the whole binding layer. A rebinding feature reads it and writes a copy; today
 nothing does, and that is the only reason it is a module constant rather than a setting.
 """
@@ -42,9 +48,6 @@ CANVAS_KEYS: Final[dict[Binding, tuple[str, ...]]] = {
     (Qt.Key.Key_R, _NONE): ("steps.rename",),
     (Qt.Key.Key_Delete, _NONE): ("steps.unlink", "steps.delete", "regions.delete"),
     (Qt.Key.Key_Backspace, _NONE): ("steps.unlink", "steps.delete", "regions.delete"),
-    # Modified, but still bound here rather than as a shortcut: Ctrl+A means "select the
-    # text" in every editor, and only the canvas may take it to mean steps.
-    (Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier): ("steps.select_all",),
 }
 
 
