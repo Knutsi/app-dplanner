@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from math import ceil
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -130,7 +130,15 @@ class MonthsView(QWidget):
         self._cell = CELL_MIN
         self._offset = 0  # months the user has paged away from the plan's own window
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        # A height-for-width widget: how tall it is follows from how wide it is, and the
+        # *layout* asks (`heightForWidth`) rather than the widget resizing itself in its
+        # own resize event. The latter is a loop inside a scroll area — the new height
+        # toggles the scrollbar, the scrollbar changes the width, the width changes the
+        # height — and it once took the process down 184,800 frames deep. CLAUDE.md's
+        # *Checks* has the episode.
+        policy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
         self.setMinimumWidth(self._month_width(CELL_MIN))
 
     # -- the host's side of the contract -------------------------------------------------------
@@ -143,6 +151,7 @@ class MonthsView(QWidget):
         self._begin, self._wanted = _month_span(start, finish)
         self._begin = _add_months(self._begin, self._offset)
         self._relayout()
+        self.updateGeometry()  # The month count changed, so the height for this width did.
 
     def emphasise(self, key: str | None) -> None:
         """Fade every stretch but this one; None shows them all alike."""
@@ -213,18 +222,38 @@ class MonthsView(QWidget):
     def _month_height(cell: int) -> int:
         return TITLE_HEIGHT + 6 * (cell + CELL_GAP) - CELL_GAP
 
-    def _relayout(self) -> None:
-        """Fit the months to the width: as many across as fit at the smallest cell, then
-        the cells grow to use what is left, and the rows fill out."""
-        width = self.width()
+    def _fit(self, width: int) -> tuple[int, int, int]:
+        """``(columns, cell, rows)`` for a width: as many months across as fit at the
+        smallest cell, then the cells grow to use what is left, and the rows fill out."""
         narrowest = self._month_width(CELL_MIN)
-        columns = (width + MONTH_GAP) // (narrowest + MONTH_GAP)
-        self._columns = max(1, min(MONTHS_ACROSS_AT_MOST, columns))
-        room = width - (self._columns - 1) * MONTH_GAP - self._columns * 6 * CELL_GAP
-        self._cell = max(CELL_MIN, min(CELL_MAX, room // (7 * self._columns)))
-        rows = ceil(self._wanted / self._columns) if self._wanted else 0
+        columns = max(1, min(MONTHS_ACROSS_AT_MOST, (width + MONTH_GAP) // (narrowest + MONTH_GAP)))
+        room = width - (columns - 1) * MONTH_GAP - columns * 6 * CELL_GAP
+        cell = max(CELL_MIN, min(CELL_MAX, room // (7 * columns)))
+        rows = ceil(self._wanted / columns) if self._wanted else 0
+        return columns, cell, rows
+
+    def _height_for(self, cell: int, rows: int) -> int:
+        return rows * self._month_height(cell) + max(0, rows - 1) * MONTH_GAP
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt override
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802 - Qt override
+        _columns, cell, rows = self._fit(width)
+        return self._height_for(cell, rows)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        width = self.minimumWidth()
+        return QSize(width, self.heightForWidth(width))
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return self.sizeHint()
+
+    def _relayout(self) -> None:
+        """Take the columns and cell the current width affords; the height is the layout's
+        to ask for, never set from here."""
+        self._columns, self._cell, rows = self._fit(self.width())
         self._count = rows * self._columns
-        self.setFixedHeight(rows * self._month_height(self._cell) + max(0, rows - 1) * MONTH_GAP)
         self.update()
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override

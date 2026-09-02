@@ -47,9 +47,7 @@ def project(services, make_project):
     for step, days in ((read, 2.0), (draft, 2.0), (docs, 1.0)):
         SetModuleDataCommand(step.id, ESTIMATION_ID, write_days(days)).redo(library)
     SetModuleDataCommand(docs.id, AGENT_ID, write_state(True)).redo(library)
-    SetModuleDataCommand(
-        project.id, ESTIMATION_ID, write_start(date(2026, 9, 7))
-    ).redo(library)
+    SetModuleDataCommand(project.id, ESTIMATION_ID, write_start(date(2026, 9, 7))).redo(library)
     return project
 
 
@@ -167,6 +165,43 @@ def test_the_calendar_fills_the_width_it_is_given(tab):
     assert tab.months.month_count == 6
 
 
+def test_the_calendar_answers_height_for_width_and_never_resizes_itself(app, staged, tab):
+    """The layout asks how tall the calendar is for a width; the calendar never sets its
+    own height in its resize event. That distinction is what keeps a scroll area from
+    looping — the height toggles the scrollbar, the scrollbar changes the width, the
+    width changes the height — which once ran the process 184,800 frames deep."""
+    from PySide6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
+
+    months = tab.months
+    assert months.hasHeightForWidth()
+    narrow, wide = months.heightForWidth(200), months.heightForWidth(700)
+    assert narrow > wide  # One column stacks the months; four across need fewer rows.
+    assert months.sizeHint().height() == months.heightForWidth(months.minimumWidth())
+
+    # The shape that looped: a resizable scroll area whose content height sits right at
+    # the viewport's, swept across every width that could flip the scrollbar.
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    other = tab.months.__class__(page)
+    other.show_bands(*_bands_of(months))
+    layout.addWidget(other)
+    layout.addStretch(1)
+    scroller = QScrollArea()
+    scroller.setWidgetResizable(True)
+    scroller.setWidget(page)
+    scroller.show()
+    for width in range(180, 720, 4):
+        scroller.resize(width, other.heightForWidth(width) + 20)
+        app.processEvents()
+    assert other.columns >= 1
+    scroller.close()
+
+
+def _bands_of(months):
+    """What a calendar was last shown, so a second one can be shown the same."""
+    return months._start, months._bands, months._today
+
+
 def test_an_unestimated_step_is_noted(services, project, tab):
     read, _draft, _docs = project.steps
     services.undo.push(SetModuleDataCommand(read.id, ESTIMATION_ID, {}))
@@ -193,9 +228,7 @@ def test_a_separate_instruction_moves_a_step_between_pools(services, project, ta
     _read, _draft, docs = project.steps
     services.undo.push(SetModuleDataCommand(docs.id, AGENT_ID, {}))
     assert tab.matrix.agent_counts == (1,)
-    services.undo.push(
-        EditTextCommand(TextEdit(docs.id, AGENT_ID, 0, "", "Mind the edge cases"))
-    )
+    services.undo.push(EditTextCommand(TextEdit(docs.id, AGENT_ID, 0, "", "Mind the edge cases")))
     assert tab.matrix.agent_counts == (1, 2, 3, 4)
 
 
@@ -225,9 +258,9 @@ def test_a_foreign_focus_write_refreshes_bar_and_cells(services, project, tab):
 def test_unreadable_focus_reads_as_the_default(services, project):
     library = services.document
     for stored in (True, "half", 0.0, 1.5):
-        SetModuleDataCommand(
-            project.id, MODULE_ID, {"efficiency": stored, "format": 1}
-        ).redo(library)
+        SetModuleDataCommand(project.id, MODULE_ID, {"efficiency": stored, "format": 1}).redo(
+            library
+        )
         assert read_efficiency(project) == 0.5
     SetModuleDataCommand(project.id, MODULE_ID, {"efficiency": 1, "format": 1}).redo(library)
     assert read_efficiency(project) == 1.0  # an int is a number; a bool is not

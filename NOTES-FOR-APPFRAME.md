@@ -1536,3 +1536,32 @@ this: its close relaid the parent.
 **Belongs upstream?** As a note beside whatever tab host the template grows; the fix is two
 lines wherever `setTabVisible` is driven from a predicate.
 
+---
+
+## 11. From the time-estimates crash
+
+### A widget that sets its own height in `resizeEvent` loops inside a scroll area
+
+**What.** Not a framework change — the fix is in a module — but a trap the template's docs
+should name. `MonthsView` computed how many months fit the width in `resizeEvent` and
+called `setFixedHeight` with the result. Inside a `widgetResizable` `QScrollArea` whose
+vertical bar is *as needed*, that is a cycle: the new height decides whether the bar shows,
+the bar takes 16 px of width, the width changes the column count, the column count changes
+the height. Every step is synchronous (`setFixedHeight` → `updateGeometry` → the layout
+re-activates → `setGeometry` → another resize event), so it is not a flicker but a
+recursion, and it ended 184,800 frames deep in whatever function happened to touch the
+guard page — `_Pep_PrivateMangle` in shiboken, which had nothing to do with it.
+
+**The rule.** A widget whose height follows from its width is a *height-for-width* widget:
+`sizePolicy().setHeightForWidth(True)`, `hasHeightForWidth()`, `heightForWidth(w)` as a pure
+function of the width, and `resizeEvent` only re-reading the columns it will paint. Layouts
+and `QScrollArea` both understand that contract and settle; a widget that answers a resize
+by resizing does not.
+
+**How to see it.** `gdb -batch -ex run -ex bt` on the crashing test and count the frames;
+faulthandler's four-line Python trace and the symbol at the top of the C stack both
+mislead here.
+
+**Belongs upstream?** As a paragraph in the template's widget guidance, beside the palette
+snapshot trap.
+
