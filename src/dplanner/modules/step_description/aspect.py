@@ -14,12 +14,20 @@ content-addressed helpers in :mod:`dplanner.domain.assets` — which also carrie
 reasoning for why an asset add is not undoable.
 """
 
-import re
+from collections.abc import Sequence
 from typing import Any
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
-from dplanner.domain.model import Step
+from dplanner.domain.assets import (
+    AssetLocation,
+    AssetSource,
+    AssetUse,
+    area_assets,
+    asset_references,
+)
+from dplanner.domain.model import Library, Project, Step
+from dplanner.domain.store import FilesFor
 
 MODULE_ID = "step_description"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
@@ -51,18 +59,36 @@ def write_state(on: bool) -> dict[str, Any]:
     return {} if on else stamped({"off": True}, DATA_FORMAT.version)
 
 
-_IMAGE_REFERENCE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)")
+def asset_source() -> AssetSource:
+    """This aspect's slice of the project's asset catalog.
 
-
-def image_references(markdown: str) -> list[str]:
-    """The area-relative image paths the markdown embeds — ``![](assets/…)``.
-
-    External URLs and absolute paths are not the module's files and are skipped. The
-    shape is written down here, beside the store it points into, so a lint check and a
-    future renderer cannot disagree about what a reference is.
+    A description image is used while the markdown links to it — the same claim the
+    ``description.image-missing`` lint makes in the opposite direction.
     """
-    found = _IMAGE_REFERENCE.findall(markdown)
-    return [ref for ref in found if "://" not in ref and not ref.startswith("/")]
+
+    def scan(
+        _library: Library, project: Project, files: FilesFor
+    ) -> Sequence[AssetLocation]:
+        locations: list[AssetLocation] = []
+        for step in project.steps:
+            names = area_assets(files, step.id, MODULE_ID)
+            if not names:
+                continue
+            referenced = set(asset_references(read(step)))
+            locations += [
+                AssetLocation(
+                    node_id=step.id,
+                    module_id=MODULE_ID,
+                    name=name,
+                    uses=(AssetUse("step", step.id, step.title, "description"),)
+                    if name in referenced
+                    else (),
+                )
+                for name in names
+            ]
+        return locations
+
+    return AssetSource(id=MODULE_ID, label="Descriptions", scan=scan)
 
 
 def summary(step: Step) -> str:

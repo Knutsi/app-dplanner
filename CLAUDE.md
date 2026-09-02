@@ -301,6 +301,22 @@ root, stop and look for the registry or capability you have not found yet.
   `ProseSection` and still hand-rolls its own Attach button and file list, so it is the one
   prose editor that takes no paste. That is a gap, not a rule. `ARCHITECTURE.md`'s *A pasted
   image is an attachment and a link, not an embed* has the reasoning.
+- **The asset library is a derived union, and reuse is a copy.** Every file-carrying module
+  exports an `asset_source()` from its Qt-free half saying what its areas hold and what
+  still uses each file; `domain/assets.catalog()` is one derivation with three readers —
+  the Assets tab (`modules/project_assets/`), `dplanner asset list`/`uses` and `asset
+  prune` — and the composition root's `_asset_sources()` is the one assembly both surfaces
+  read. Picking an existing asset into an editor (`Insert from Assets…`, wired as
+  `ProseSection.set_picker` beside `set_area`) copies bytes into the target's *own* area
+  through the ordinary attach path, so a link never points into another module's
+  directory; identical bytes carry identical content-addressed names, which is what lets
+  the browser group them as one asset. Display names are the browser module's project
+  metadata (`{"titles": …}`), never part of a link — renaming cannot break a reference.
+  Handoff and agent-instruction files are used *by existence* (briefings carry those areas
+  wholesale); the pool (`asset attach`) is `prunable=False`; `asset prune` is dry-run by
+  default and never enters a directory no source scanned. `ARCHITECTURE.md`'s *An asset
+  library is a view, not a store* and *Inserting an existing asset is a paste with a
+  different source* have the reasoning.
 - **Double-clicking a step anywhere runs `steps.details`** — a modal dialog hosting a second
   `StepPanel`, disposed on close. It is the one gesture across canvas, order, progression and
   estimates; a table runs it against a context naming exactly the row's step. Reveal-in-graph

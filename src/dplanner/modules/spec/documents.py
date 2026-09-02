@@ -15,7 +15,6 @@ surfaces cannot disagree about what a document or a requirement is.
 """
 
 import hashlib
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
@@ -24,8 +23,15 @@ from typing import Any
 from dplanner.cli.command import CliError
 from dplanner.core.fsio import slugify
 from dplanner.core.module_data import stamped
-from dplanner.domain.assets import attach
-from dplanner.domain.model import Project, Step
+from dplanner.domain.assets import (
+    AssetLocation,
+    AssetSource,
+    AssetUse,
+    area_assets,
+    asset_references,
+    attach,
+)
+from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor, ModuleFileArea
 from dplanner.modules.spec.aspect import (
     DATA_FORMAT,
@@ -427,10 +433,94 @@ def referenced_assets(
     """
     known = {asset.file for asset in assets}
     updated = list(assets)
-    for file in dict.fromkeys(re.findall(r"\]\((assets/[^)\s]+)\)", body)):
+    for file in asset_references(body):
         if file not in known:
             updated, _asset, _outcome = record_asset(updated, file, "", None, today)
     return updated
+
+
+def asset_source() -> AssetSource:
+    """The spec module's slice of the project's asset catalog: figures, never documents.
+
+    A figure beside the project is used while the index names it (an ``aN`` id is a claim
+    — de-indexing is spec's own business) or while any markdown spec's body links to it —
+    the union, because ``spec import`` never runs :func:`referenced_assets`, so an
+    imported spec can reference a blob no index row records. A figure copied beside a
+    step is used while an attachment record names it; a detached copy stays on disk by
+    ``attach-to-step --remove``'s own words and is exactly what a sweep is for. The
+    ``documents/`` and ``text/`` blobs are not assets and are never listed here — their
+    lifecycle (``previous`` pinning, session pruning) is this module docstring's.
+    """
+
+    def scan(
+        _library: Library, project: Project, files: FilesFor
+    ) -> Sequence[AssetLocation]:
+        index = read_index(project)
+        used: dict[str, list[AssetUse]] = {}
+        for asset in index.assets:
+            fig = f"spec figure {asset.id}"
+            if asset.document:
+                page = f", page {asset.page}" if asset.page else ""
+                fig += f" ({asset.document}{page})"
+            used.setdefault(asset.file, []).append(
+                AssetUse("project", project.id, project.title, fig)
+            )
+        try:
+            area = files(project.id, MODULE_ID)
+        except KeyError:
+            area = None
+        if area is not None:
+            for document in index.documents:
+                if document.kind != KIND_MARKDOWN:
+                    continue
+                data = area.read_bytes(document.file)
+                if data is None:
+                    continue  # A missing blob is the lint's finding, not the catalog's.
+                for name in asset_references(data.decode("utf-8", errors="replace")):
+                    used.setdefault(name, []).append(
+                        AssetUse(
+                            "project", project.id, project.title, f"spec document {document.name}"
+                        )
+                    )
+        locations = [
+            AssetLocation(
+                node_id=project.id,
+                module_id=MODULE_ID,
+                name=name,
+                uses=tuple(used.get(name, ())),
+            )
+            for name in area_assets(files, project.id, MODULE_ID)
+        ]
+        for step in project.steps:
+            names = area_assets(files, step.id, MODULE_ID)
+            if not names:
+                continue
+            attached = {
+                attachment.file: attachment for attachment in read_attachments(step)
+            }
+            locations += [
+                AssetLocation(
+                    node_id=step.id,
+                    module_id=MODULE_ID,
+                    name=name,
+                    uses=(
+                        AssetUse(
+                            "step",
+                            step.id,
+                            step.title,
+                            f"spec figure {attached[name].asset}"
+                            if attached[name].asset
+                            else "spec attachment",
+                        ),
+                    )
+                    if name in attached
+                    else (),
+                )
+                for name in names
+            ]
+        return locations
+
+    return AssetSource(id=MODULE_ID, label="Spec figures", scan=scan)
 
 
 def linked_steps(project: Project, requirement_id: str) -> list[Step]:

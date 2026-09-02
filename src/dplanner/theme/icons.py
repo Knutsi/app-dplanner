@@ -367,6 +367,27 @@ def clock_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
+def image_icon(color: str) -> QIcon:
+    """A framed picture — sun over a hillside: the project's assets."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.4))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(2.5, 3.0, 11.0, 10.0), 1.5, 1.5)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(color))
+    painter.drawEllipse(QPointF(6.0, 6.3), 1.2, 1.2)
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    hills = QPainterPath(QPointF(3.4, 11.6))
+    hills.lineTo(QPointF(6.8, 8.2))
+    hills.lineTo(QPointF(9.0, 10.2))
+    hills.lineTo(QPointF(10.8, 8.6))
+    hills.lineTo(QPointF(12.6, 10.4))
+    painter.drawPath(hills)
+    painter.end()
+    return QIcon(pixmap)
+
+
 def list_icon(color: str) -> QIcon:
     """A numbered list: the order table."""
     pixmap, painter = _canvas()

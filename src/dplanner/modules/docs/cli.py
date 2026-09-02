@@ -28,7 +28,7 @@ from dplanner.cli import CliCommand, CliContext
 from dplanner.cli.assets import step_asset_commands
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
-from dplanner.domain.assets import assets
+from dplanner.domain.assets import assets, image_references
 from dplanner.domain.commands import (
     Command,
     CompositeCommand,
@@ -42,7 +42,6 @@ from dplanner.modules.docs.aspect import (
     COMPILED_ID,
     MODULE_ID,
     enabled,
-    image_references,
     read,
     read_compiled,
     write_stamp,

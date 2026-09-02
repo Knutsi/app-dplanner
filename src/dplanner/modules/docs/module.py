@@ -48,6 +48,7 @@ from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.llm import LLMMessage, LLMTimeoutError
 from dplanner.framework.llm_service import LLMService
+from dplanner.framework.mime_files import Payload
 from dplanner.framework.project_list_segment import ProjectListSegment
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.task_runner import TaskRunner, TaskTimeoutError
@@ -116,6 +117,9 @@ class DocsDeps:
     # compile is a cross-module fact, so the root decides it.
     instructions: Callable[[Step], str] = lambda _step: ""
     parent: QWidget | None = None  # confirm()'s parent, as the other Type toggles have.
+    # Insert from Assets…: a modal picker over the node's project's catalog, composed by
+    # the root. Node id in, picked payloads out; None is a build without the browser.
+    pick_assets: Callable[[str], "list[Payload]"] | None = None
 
 
 class DocsCompiledModule:
@@ -192,7 +196,9 @@ class DocsModule:
                     id=f"{MODULE_ID}.card",
                     label="Docs",
                     order=30,
-                    factory=lambda: ProjectDocsCard(deps.library, deps.undo, deps.files),
+                    factory=lambda: ProjectDocsCard(
+                        deps.library, deps.undo, deps.files, deps.pick_assets
+                    ),
                     icon=read_icon,
                     hint="Prepended to every document compiled in this project.",
                 )
@@ -220,7 +226,9 @@ class DocsModule:
 
     def _section(self) -> DocsSection:
         deps = self._deps
-        return DocsSection(deps.library, deps.undo, deps.files, self._link())
+        return DocsSection(
+            deps.library, deps.undo, deps.files, self._link(), deps.pick_assets
+        )
 
     def _link(self) -> CompileLink:
         """The compile verb in the vocabulary a view uses, so no surface re-derives it."""

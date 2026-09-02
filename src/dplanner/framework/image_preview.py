@@ -8,9 +8,18 @@ a preview dialog whose whole job is fidelity must not be the blurriest surface i
 application.
 """
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication, QImage, QPixmap
-from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout, QWidget
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QImage, QPixmap
+from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QLabel,
+    QMessageBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 OUTER_MARGIN = 20  # DESIGN.md: dialogs breathe more than panels.
 SECTION_GAP = 12
@@ -47,9 +56,21 @@ class ImagePreviewDialog(QDialog):
         if close is not None:
             close.clicked.connect(self.reject)
         if path:
+            external = buttons.addButton(
+                "Open Externally", QDialogButtonBox.ButtonRole.ActionRole
+            )
+            external.clicked.connect(lambda: self._open_externally(path))
             copy = buttons.addButton("Copy Path", QDialogButtonBox.ButtonRole.ActionRole)
             copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(path))
         column.addWidget(buttons)
+
+    def _open_externally(self, path: str) -> None:
+        # Existence is checked here, at click time, never earlier: the file can be gone by
+        # now, and handing the OS a dead path fails silently on some desktops.
+        if not Path(path).is_file():
+            QMessageBox.warning(self, "Open Externally", f"{path} is no longer on disk.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def _fitted(self, image: QImage) -> QPixmap:
         screen = self.screen() or QGuiApplication.primaryScreen()

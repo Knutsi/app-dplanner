@@ -22,6 +22,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Library, StepId
 from dplanner.domain.store import FilesFor
+from dplanner.framework.mime_files import Payload
 from dplanner.framework.prose_section import FIELD_GAP, ProseSection
 from dplanner.framework.undo import UndoService
 from dplanner.modules.docs.aspect import COMPILED_ID, MODULE_ID
@@ -131,6 +132,7 @@ class DocsSection(ProseSection):
         undo: UndoService[Library],
         files: FilesFor | None = None,
         compile_link: CompileLink | None = None,
+        pick_assets: Callable[[str], list[Payload]] | None = None,
     ) -> None:
         def field_for(target_id: str) -> ModuleTextField | None:
             if not library.has(target_id):
@@ -146,6 +148,7 @@ class DocsSection(ProseSection):
         )
         self._library = library
         self._files = files
+        self._pick_assets = pick_assets
         self._link = compile_link
         self._target_id: str | None = None
 
@@ -162,8 +165,11 @@ class DocsSection(ProseSection):
         super().show_target(target_id)
         self._target_id = target_id
         files = self._files
+        pick = self._pick_assets
         if target_id is not None and files is not None and self.isEnabled():
             self.set_area(lambda: files(target_id, MODULE_ID))
+            if pick is not None:
+                self.set_picker(lambda: pick(target_id))
         self._refresh_banner()
 
     def _refresh_banner(self) -> None:
@@ -217,7 +223,11 @@ class ProjectDocsCard(ProseSection):
     """
 
     def __init__(
-        self, library: Library, undo: UndoService[Library], files: FilesFor | None
+        self,
+        library: Library,
+        undo: UndoService[Library],
+        files: FilesFor | None,
+        pick_assets: Callable[[str], list[Payload]] | None = None,
     ) -> None:
         def field_for(target_id: str) -> ModuleTextField | None:
             if not library.has(target_id):
@@ -232,6 +242,7 @@ class ProjectDocsCard(ProseSection):
             attach_title="Attach to Documentation Style",
         )
         self._files = files
+        self._pick_assets = pick_assets
         self.edit.setFixedHeight(self.edit.fontMetrics().lineSpacing() * CARD_LINES + 16)
         layout = self.layout()
         if layout is not None:
@@ -240,8 +251,11 @@ class ProjectDocsCard(ProseSection):
     def show_target(self, target_id: str | None) -> None:
         super().show_target(target_id)
         files = self._files
+        pick = self._pick_assets
         if target_id is not None and files is not None and self.isEnabled():
             self.set_area(lambda: files(target_id, MODULE_ID))
+            if pick is not None:
+                self.set_picker(lambda: pick(target_id))
 
 
 def state_line(standing: Standing) -> str:

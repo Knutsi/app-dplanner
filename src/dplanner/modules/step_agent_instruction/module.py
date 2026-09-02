@@ -39,6 +39,7 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
+from dplanner.framework.mime_files import Payload
 from dplanner.framework.settings_registry import (
     SettingsSection,
     SettingsSectionRegistry,
@@ -116,6 +117,9 @@ class StepAgentInstructionDeps:
     # Stamps "an agent shell was launched on this step" — the step_agent_run aspect,
     # reached through the root because modules never import each other.
     record_launch: Callable[[StepId], None] = field(default=_no_record)
+    # Insert from Assets…: a modal picker over the node's project's catalog, composed by
+    # the root. Node id in, picked payloads out; None is a build without the browser.
+    pick_assets: Callable[[str], "list[Payload]"] | None = None
 
 
 class StepAgentInstructionModule:
@@ -156,6 +160,7 @@ class StepAgentInstructionModule:
                     deps.context.current()
                 ),
                 preview=lambda: deps.actions.run("agent.preview", deps.context.current()),
+                pick_assets=deps.pick_assets,
             )
 
         deps.sections.register(
@@ -176,7 +181,7 @@ class StepAgentInstructionModule:
                     label="Agent",
                     order=20,
                     factory=lambda: ProjectInstructionCard(
-                        deps.library, deps.undo, deps.files
+                        deps.library, deps.undo, deps.files, deps.pick_assets
                     ),
                     icon=typewriter_icon,
                 )

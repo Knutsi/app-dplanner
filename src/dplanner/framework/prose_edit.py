@@ -50,6 +50,12 @@ from dplanner.framework.undo import UndoService
 # no directory yet and the host has said so in its own words.
 type Attach = Callable[[bytes, str], str | None]
 
+# Runs a modal picker over what the project already holds and returns the chosen files —
+# empty when the person cancelled. Payloads, not paths: a picked asset arrives exactly as a
+# paste would, copied into this editor's own area, so reuse never creates a link into
+# somebody else's directory.
+type Pick = Callable[[], list[Payload]]
+
 
 class ProseEdit(QPlainTextEdit):
     """A markdown editor that turns a pasted or dropped file into an attachment and a link."""
@@ -62,6 +68,7 @@ class ProseEdit(QPlainTextEdit):
     ) -> None:
         super().__init__(parent)
         self._attach: Attach | None = None
+        self._pick: Pick | None = None
         self._undo = undo
 
     def set_attach(self, attach: Attach | None) -> None:
@@ -71,6 +78,15 @@ class ProseEdit(QPlainTextEdit):
         widget: a paste is Qt's own and the menu entry is greyed.
         """
         self._attach = attach
+
+    def set_pick(self, pick: Pick | None) -> None:
+        """Say how to offer the project's existing assets, or that this editor cannot.
+
+        Separate from :meth:`set_attach` because they answer different questions — where a
+        file goes, and where one can come from — and a host may have the first without the
+        second.
+        """
+        self._pick = pick
 
     # -- files in ------------------------------------------------------------------------------
 
@@ -95,6 +111,13 @@ class ProseEdit(QPlainTextEdit):
         if chosen:
             self._embed([file_payload(Path(chosen))])
 
+    def insert_from_assets(self) -> None:
+        """The right-click entry for reusing what the project already holds. The chosen
+        assets travel :meth:`_embed` exactly as a paste does — copied into this editor's
+        own area, linked at the caret, one undo step."""
+        if self._pick is not None:
+            self._embed(self._pick())
+
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:  # noqa: N802 - Qt override
         menu = self.createStandardContextMenu(event.pos())
         menu.addSeparator()
@@ -102,6 +125,11 @@ class ProseEdit(QPlainTextEdit):
         # CLAUDE.md: an entry that does not apply right now is disabled, never hidden.
         action.setEnabled(self._attach is not None and not self.isReadOnly())
         action.triggered.connect(self.insert_image_from_file)
+        existing = menu.addAction("Insert from Assets…")
+        existing.setEnabled(
+            self._attach is not None and self._pick is not None and not self.isReadOnly()
+        )
+        existing.triggered.connect(self.insert_from_assets)
         menu.exec(event.globalPos())
         menu.deleteLater()
 

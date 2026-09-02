@@ -61,6 +61,14 @@ it in two parts:
 - **Name every attached figure and what to take from it.** An image attached with
   `describe attach` or `--attach` reaches the agent as a bare file path; the text is what
   says why it matters. Reference each one from the markdown and say what it shows.
+- **Reuse before re-attaching.** `asset list <project>` shows every image the project
+  already carries and what uses each; `asset uses <project> <ref>` finds one by name,
+  sha prefix or title. To reuse an image beside another step, read its absolute `path`
+  from `asset list --json` and `describe attach` it there — content-addressing makes the
+  second copy cheap and keeps every link local. `asset name` gives an image a title,
+  `asset attach` stages one in the project pool before anything uses it, and
+  `asset prune` (dry-run; `--apply` deletes, not undoable) sweeps copies nothing
+  references any more.
 - **Do not restate the standing instruction.** Project-wide conventions are prepended to
   every briefing already; the description carries only what is specific to this step.
 
