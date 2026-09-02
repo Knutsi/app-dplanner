@@ -874,6 +874,15 @@ canvas through a typed callback on their own `Deps`. Where a node *is* is still 
 model — `layout.positions()` answers it — so "the nearest node to the right" is a pure function
 and only the last step, telling the canvas what to select, needs a window.
 
+The lasso is the mode that shows the stack paying for itself. A rubber band is a box and a
+cluster on a busy canvas rarely is, so `LassoMode` claims the press, grows a path under the
+cursor, and on release asks the scene which cards the outline *touches* — the node's body
+rect, not Qt's hit shape, which is the body inflated by the paint margin and would also hand
+back the edges. It then calls `select_steps` and pops, so one lasso ends the mode the way one
+link ends connect; Shift on the release folds the catch into what was already selected.
+Nothing in it is new machinery: the outline it draws is the same `OutlinePreviewItem` the
+region mode drags out, reached through one `aim_outline` on the `Canvas` protocol.
+
 ### An explicit sort persists; the ambient layout never does
 
 Two things place a node, and they persist differently on purpose. The **ambient layout** —
@@ -931,6 +940,29 @@ and cannot outlive what it draws; `GraphView` pushes on `QGraphicsScene.changed`
 scroll, and is the one object in a position to know whether there is still a scene to ask.
 And it is parented to the view rather than to the viewport, because `QGraphicsView` pans by
 `QWidget::scroll`, which drags the viewport's children along with the pixels.
+
+### Marks are a way of looking
+
+*Mark Starts*, *Mark Ends* and *Mark Orphans* colour a node's unconnected sockets and ring a
+node with none. Three decisions sit behind three short functions.
+
+**They are a preference, not a fact about the project.** Whether the graph's ends are lit
+says nothing about the plan, so the value never reaches the project directory — it is one
+`Marks` on the editor module, written to `user_config` and pushed to every open canvas the
+way a mode's `RenderHints` are fanned out. That is also why a tab opened later wears them:
+the module hands its current marks to every activity it builds.
+
+**What a socket has connected is derived every sync.** `marks.ports()` reads the edges whose
+both ends are in the project — exactly the edges the canvas draws — and the activity puts the
+answer on each `NodeSpec`. Stored, it could disagree with the graph the moment `dplanner step
+link` ran with no window open, which is the same argument as the ordering's.
+
+**The toggle reads the module and re-asks, rather than the context.** A mode's `checked` is
+an edge on the activity node because a mode is something the user is *in* on one canvas. A
+mark outlives any tab, so publishing it per activity would be a copy that has to be kept
+agreeing; the toggle's state reads the module's value and the module calls
+`context.refresh()` when it changes — the pattern the theme and panel toggles already use for
+state that lives outside the context graph.
 
 ### The palette a painter is handed is a snapshot
 

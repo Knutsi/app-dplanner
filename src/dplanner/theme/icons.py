@@ -276,6 +276,35 @@ def unlink_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
+def lasso_icon(color: str | QColor) -> QIcon:
+    """A loop with its rope trailing off: draw round the steps to pick."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.3))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    loop = QPainterPath(QPointF(8.0, 3.0))
+    loop.cubicTo(QPointF(14.0, 3.0), QPointF(14.0, 10.5), QPointF(8.0, 10.5))
+    loop.cubicTo(QPointF(2.0, 10.5), QPointF(2.0, 3.0), QPointF(8.0, 3.0))
+    painter.drawPath(loop)
+    tail = QPainterPath(QPointF(5.2, 9.8))
+    tail.cubicTo(QPointF(4.2, 11.8), QPointF(6.8, 12.2), QPointF(5.6, 14.2))
+    painter.drawPath(tail)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def isolate_icon(color: str) -> QIcon:
+    """One node with the joins on both sides cut: cut a selection loose."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(5.0, 5.0, 6.0, 6.0), 1.5, 1.5)
+    for x in (1.0, 12.0):
+        painter.drawLine(QPointF(x, 8.0), QPointF(x + 1.6, 8.0))
+        painter.drawLine(QPointF(x + 1.4, 10.4), QPointF(x + 2.6, 5.6))
+    painter.end()
+    return QIcon(pixmap)
+
+
 def undo_icon(color: str) -> QIcon:
     """An arrow curving back on itself, anticlockwise."""
     return _turn_icon(color, mirrored=False)

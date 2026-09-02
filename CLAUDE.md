@@ -348,6 +348,25 @@ root, stop and look for the registry or capability you have not found yet.
   menu-bar QAction fires application-wide and eats a keystroke in the step editor. Bind it in
   `modules/project_editor/keymap.py`, where a key names the verbs it means in order and the
   first the context allows runs — that is how one Delete key covers links and steps.
+- **Lasso is a mode, and it touches cards.** `LassoMode` draws a `QPainterPath`, and on
+  release the scene answers `nodes_touching(path)` by the node's *body* rect — never
+  `scene.items(path)`, whose hit shape is the body plus `PAINT_MARGIN` and includes the
+  edges. One lasso ends the mode, Shift on the release adds to the selection, and the mode
+  switch is `steps.lasso` (`S` on the canvas), the same shape as `steps.connect`. Region and
+  lasso share one `OutlinePreviewItem` through `Canvas.aim_outline`.
+- **Isolate is one domain question and one domain command.** `Library.boundary_edges()`
+  names every edge with exactly one end in a set (both kinds, skipping edges to a deleted
+  step, as the canvas skips them) and `remove_edges_command()` turns edges into one
+  `CompositeCommand` of per-`(waiter, kind)` replacements — Unlink, `steps.isolate` and
+  `dplanner step isolate` all build from those two, so the surfaces cannot drift.
+- **Marks are a way of looking, remembered per user.** Starts, Ends and Orphans
+  (`project_editor/marks.py`, Qt-free) are one `Marks` value on the module, written to
+  `user_config` and fanned to every scene like `RenderHints`; a tab opened later wears them.
+  Which sockets a node has connected is `marks.ports()` over the drawn edges, derived every
+  sync. The toggles' `checked` reads the module and the module calls `context.refresh()` —
+  the theme-toggle pattern, deliberately not an edge on the activity node, because a
+  preference outlives any tab. `ARCHITECTURE.md`'s *Marks are a way of looking* has the
+  reasoning.
 - **A scrollable area's extent must never depend on what the user is moving.** The canvas is
   a *plane*: a constant scene rect centred on the origin, far larger than any graph. That is
   what lets panning go on for as long as anybody wants, and it is also the answer to the older

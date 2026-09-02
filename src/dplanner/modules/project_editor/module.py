@@ -20,6 +20,10 @@ Four seams keep this module from knowing about anything else in the application:
 **The canvas publishes its mode into the context** as an edge on the activity node, so
 ``steps.connect`` can decide whether it is checked from the context alone. That is the whole
 mechanism behind the toolbar's mode switch, and why there is no other one.
+
+**The marks are the module's**, read from the per-user store once and pushed to every open
+canvas when they change — a way of looking at graphs, not a fact about one project, so a tab
+opened later wears the same marks and a second window would too.
 """
 
 from collections.abc import Callable
@@ -52,6 +56,7 @@ from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.window import StatusHost
 from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
@@ -62,11 +67,16 @@ from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.kinds import StepKind
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
+from dplanner.modules.project_editor.marks import Marks, ports
 from dplanner.modules.project_editor.modes import (
     CONNECT,
+    LASSO,
     REGION_CREATE,
+    CanvasDeps,
     ConnectMode,
     IdleMode,
+    LassoMode,
+    ModeBase,
     RegionCreateMode,
 )
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
@@ -94,6 +104,15 @@ MODULE_ID = "project_editor"
 # project, and every `tabs.open("project", …)` in the application keeps working.
 PROJECT_KIND = "project"
 PANEL_ID = f"{MODULE_ID}.project"
+# The per-user key the marks are kept under — see marks.py.
+MARKS_KEY = "marks"
+
+# The modes a verb can switch on by name. Every other mode is a gesture that starts itself.
+SWITCHABLE_MODES: dict[str, Callable[[CanvasDeps], ModeBase]] = {
+    CONNECT: ConnectMode,
+    LASSO: LassoMode,
+    REGION_CREATE: RegionCreateMode,
+}
 
 
 def _no_aspects(_step_id: StepId) -> list[str]:
@@ -150,6 +169,7 @@ class ProjectActivity(EntityActivity):
         project_id: NodeId,
         verbs: StepVerbs,
         layout_verbs: LayoutVerbs,
+        marks: Marks | None = None,
     ) -> None:
         # Only the pane the user is in may write to the selection scope: a background one
         # re-syncing its canvas — when a step is deleted, say — would otherwise clobber
@@ -162,6 +182,7 @@ class ProjectActivity(EntityActivity):
         self.project_id = project_id
 
         self._scene = GraphScene(self._link_refusal)
+        self._scene.set_marks(marks or Marks())
         self._view = GraphView(
             self._scene,
             base_mode=IdleMode,
@@ -221,21 +242,17 @@ class ProjectActivity(EntityActivity):
         """Replace the selection with these steps — Select All's way in."""
         self._scene.select_steps(step_ids)
 
-    def set_connect_mode(self, on: bool) -> None:
-        """Enter or leave connect mode. Escape does the same thing from the keyboard."""
+    def set_mode(self, name: str, on: bool) -> None:
+        """Enter or leave one of the switchable modes. Escape leaves from the keyboard."""
         if on:
-            if self._view.modes.current().name != CONNECT:
-                self._view.modes.push(ConnectMode(self._view.deps))
-        elif self._view.modes.current().name == CONNECT:
+            if self._view.modes.current().name != name:
+                self._view.modes.push(SWITCHABLE_MODES[name](self._view.deps))
+        elif self._view.modes.current().name == name:
             self._view.modes.pop()
 
-    def set_region_mode(self, on: bool) -> None:
-        """Enter or leave region-drawing mode, the same shape as connect."""
-        if on:
-            if self._view.modes.current().name != REGION_CREATE:
-                self._view.modes.push(RegionCreateMode(self._view.deps))
-        elif self._view.modes.current().name == REGION_CREATE:
-            self._view.modes.pop()
+    def set_marks(self, marks: Marks) -> None:
+        """The user changed which marks are on; every canvas hears it, this one here."""
+        self._scene.set_marks(marks)
 
     def frame(self) -> None:
         self._view.frame_content()
@@ -306,6 +323,7 @@ class ProjectActivity(EntityActivity):
             return  # The project was deleted; the tab is about to close.
         project = self._project()
         placed = positions(self._product, project)
+        connected = ports(project.steps)
         nodes = [
             NodeSpec(
                 step_id=step.id,
@@ -314,6 +332,7 @@ class ProjectActivity(EntityActivity):
                 x=placed[step.id][0],
                 y=placed[step.id][1],
                 accent=self._deps.step_accent(step.id),
+                ports=connected[step.id],
             )
             for step in project.steps
         ]
@@ -370,8 +389,7 @@ class ProjectActivity(EntityActivity):
         nodes = (
             tuple(ContextNode(selection_uri("step", step_id)) for step_id in selection.steps)
             + tuple(
-                ContextNode(selection_uri(EDGE_KIND, edge.entity_id()))
-                for edge in selection.edges
+                ContextNode(selection_uri(EDGE_KIND, edge.entity_id())) for edge in selection.edges
             )
             + tuple(
                 ContextNode(selection_uri(REGION_KIND, region_id))
@@ -459,9 +477,7 @@ class ProjectActivity(EntityActivity):
             for region in read_regions(project)
         ]
         label = "Move Region" if len(moves) == 1 else f"Move {len(moves)} Regions"
-        commands: list[Command] = [
-            set_regions_command(project, updated, label, view_origin=self)
-        ]
+        commands: list[Command] = [set_regions_command(project, updated, label, view_origin=self)]
         commands += [self._move_command(step_id, x, y) for step_id, x, y in carried]
         if len(commands) == 1:
             self._deps.undo.push(commands[0])
@@ -515,6 +531,7 @@ class ProjectEditorModule:
 
     def __init__(self, deps: ProjectEditorDeps) -> None:
         self._deps = deps
+        self._marks = Marks.from_json(get_global(MODULE_ID, MARKS_KEY))
         self._verbs = StepVerbs(
             library=deps.library,
             undo=deps.undo,
@@ -551,15 +568,17 @@ class ProjectEditorModule:
             current_project=self._current_project,
             select_step=self.reveal,
             select_steps=self._select_steps,
-            set_connect_mode=self._set_connect_mode,
+            set_mode=self._set_mode,
             frame=self._frame,
+            marks=lambda: self._marks,
+            set_mark=self._set_mark,
         )
         self._region_verbs = RegionVerbs(
             library=deps.library,
             undo=deps.undo,
             parent=deps.parent,
             current_project=self._current_project,
-            set_region_mode=self._set_region_mode,
+            set_region_mode=lambda on: self._set_mode(REGION_CREATE, on),
         )
 
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
@@ -585,7 +604,7 @@ class ProjectEditorModule:
 
         def factory(target: str | None) -> ProjectActivity:
             assert target is not None
-            return ProjectActivity(deps, target, self._verbs, self._layout_verbs)
+            return ProjectActivity(deps, target, self._verbs, self._layout_verbs, self._marks)
 
         deps.tabs.register_factory(PROJECT_KIND, factory)
         # Order 10: above the step panel, because a project is what a step is part of.
@@ -636,15 +655,18 @@ class ProjectEditorModule:
         if current is not None:
             current.note_placed(step_ids)
 
-    def _set_connect_mode(self, on: bool) -> None:
+    def _set_mode(self, name: str, on: bool) -> None:
         current = self._current_activity()
         if current is not None:
-            current.set_connect_mode(on)
+            current.set_mode(name, on)
 
-    def _set_region_mode(self, on: bool) -> None:
-        current = self._current_activity()
-        if current is not None:
-            current.set_region_mode(on)
+    def _set_mark(self, name: str, on: bool) -> None:
+        """Flip one mark for every canvas, now and later, and let the toggles re-ask."""
+        self._marks = self._marks.with_(name, on)
+        set_global(MODULE_ID, MARKS_KEY, self._marks.to_json())
+        for activity in self._activities():
+            activity.set_marks(self._marks)
+        self._deps.context.refresh()
 
     def _select_steps(self, step_ids: list[StepId]) -> None:
         current = self._current_activity()

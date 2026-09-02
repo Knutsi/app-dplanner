@@ -28,7 +28,7 @@ them. The graph can therefore grow features without learning a single thing abou
 """
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
@@ -392,6 +392,32 @@ class Library(Node):
         """The steps in the same project that wait on this one."""
         project = self.project_of(step_id)
         return [step for step in project.steps if step_id in step.edges.get("requires", [])]
+
+    def boundary_edges(self, step_ids: Iterable[StepId]) -> list[tuple[StepId, str, StepId]]:
+        """Every edge, of any kind, with exactly one end in ``step_ids``, as
+        ``(waiter, kind, source)`` in project order.
+
+        What "disconnect these" removes: the links among the set stay. An edge naming a
+        step that no longer exists is skipped — the canvas draws none, and a verb that
+        enabled itself on an arrow nobody can see would be a puzzle. Grouped by project
+        because nothing here assumes the ids share one.
+        """
+        chosen = set(step_ids)
+        projects: list[Project] = []
+        for step_id in chosen:
+            project = self.project_of(step_id)
+            if project not in projects:
+                projects.append(project)
+        found: list[tuple[StepId, str, StepId]] = []
+        for project in projects:
+            for waiter in project.steps:
+                for kind, sources in waiter.edges.items():
+                    for source in sources:
+                        if (waiter.id in chosen) != (source in chosen) and project.step(
+                            source
+                        ) is not None:
+                            found.append((waiter.id, kind, source))
+        return found
 
     # -- structure -----------------------------------------------------------------------------
 

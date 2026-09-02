@@ -22,7 +22,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QKeyEvent, QMouseEvent, QPainter, QResizeEvent
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QPainter, QPainterPath, QResizeEvent
 from PySide6.QtWidgets import (
     QApplication,
     QGraphicsScene,
@@ -37,9 +37,11 @@ from dplanner.framework.widgets import install_ctrl_wheel_zoom
 from dplanner.modules.project_editor.items import (
     EdgeItem,
     LinkPreviewItem,
+    OutlinePreviewItem,
     StepNodeItem,
 )
 from dplanner.modules.project_editor.keymap import bound_actions
+from dplanner.modules.project_editor.marks import Marks
 from dplanner.modules.project_editor.minimap import Minimap
 from dplanner.modules.project_editor.modes import (
     HINTS_BY_MODE,
@@ -50,7 +52,7 @@ from dplanner.modules.project_editor.modes import (
     ModeStack,
     PanMode,
 )
-from dplanner.modules.project_editor.region_items import RegionItem, RegionPreviewItem
+from dplanner.modules.project_editor.region_items import RegionItem
 from dplanner.modules.project_editor.regions import Region
 from dplanner.modules.project_editor.renderers import RING_STEP, NodeAccent, RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef
@@ -81,6 +83,7 @@ class NodeSpec:
     x: float
     y: float
     accent: NodeAccent = field(default_factory=NodeAccent)
+    ports: tuple[bool, bool] = (False, False)  # (something arrives, something leaves).
 
 
 class GraphScene(QGraphicsScene):
@@ -90,6 +93,7 @@ class GraphScene(QGraphicsScene):
         super().__init__()
         self._link_refusal = link_refusal
         self._hints = RenderHints()
+        self._marks = Marks()
         self._nodes: dict[StepId, StepNodeItem] = {}
         self._edges: dict[EdgeRef, EdgeItem] = {}
         self._regions: dict[str, RegionItem] = {}
@@ -111,9 +115,9 @@ class GraphScene(QGraphicsScene):
         self._preview = LinkPreviewItem()
         self._preview.hide()
         self.addItem(self._preview)
-        self._region_preview = RegionPreviewItem()
-        self._region_preview.hide()
-        self.addItem(self._region_preview)
+        self._outline = OutlinePreviewItem()
+        self._outline.hide()
+        self.addItem(self._outline)
 
         self.nodes_moved: Signal[list[tuple[StepId, float, float]]] = Signal()
         # (source, target): the user connected source to target. Whether that is a legal link
@@ -150,9 +154,11 @@ class GraphScene(QGraphicsScene):
             if item is None:
                 item = self._nodes[spec.step_id] = StepNodeItem(spec.step_id)
                 item.set_render_hints(self._hints)  # A node born mid-mode dresses for it.
+                item.set_marks(self._marks)
                 self.addItem(item)
             item.set_text(spec.title, spec.subtitle)
             item.set_accent(spec.accent)
+            item.set_ports(spec.ports)
             # A node being dragged owns its position until the gesture ends. The model is
             # authoritative everywhere else — including when the CLI writes mid-drag.
             if spec.step_id not in self._press_at and spec.step_id not in self._held_steps:
@@ -294,6 +300,20 @@ class GraphScene(QGraphicsScene):
         for item in self._nodes.values():
             item.set_render_hints(hints)
 
+    def set_marks(self, marks: Marks) -> None:
+        """Fan the user's marks out to every node, the same way."""
+        self._marks = marks
+        for item in self._nodes.values():
+            item.set_marks(marks)
+
+    def nodes_touching(self, path: QPainterPath) -> list[StepNodeItem]:
+        """The steps whose card the outline touches — what a lasso picks.
+
+        By the card, not ``items(path)``: a node's hit shape is its bounding rect, which
+        reaches the paint margin out on every side, and the edges are items too.
+        """
+        return [node for node in self._nodes.values() if path.intersects(node.body_scene_rect())]
+
     def region_at(self, scene_pos: QPointF) -> RegionItem | None:
         """The region under this point — by the full rect, not Qt's hit shape, because a
         body press is exactly what the hit shape hides from Qt. Later-created wins, matching
@@ -314,12 +334,12 @@ class GraphScene(QGraphicsScene):
             if rect.contains(node.sceneBoundingRect().center())
         ]
 
-    def aim_region_preview(self, rect: QRectF) -> None:
-        self._region_preview.aim(rect)
-        self._region_preview.show()
+    def aim_outline(self, path: QPainterPath) -> None:
+        self._outline.aim(path)
+        self._outline.show()
 
-    def hide_region_preview(self) -> None:
-        self._region_preview.hide()
+    def hide_outline(self) -> None:
+        self._outline.hide()
 
     def hold_region(self, region_id: str, step_ids: set[StepId]) -> None:
         """A mode owns this region's geometry — and these steps' — until it releases."""
@@ -548,9 +568,7 @@ class GraphView(QGraphicsView):
         """
         scene = self.scene()
         if isinstance(scene, GraphScene):
-            self.minimap.show_graph(
-                scene.node_rects(), self._looking_at(), scene.region_rects()
-            )
+            self.minimap.show_graph(scene.node_rects(), self._looking_at(), scene.region_rects())
 
     def _looking_at(self) -> QRectF:
         return self.mapToScene(self.viewport().rect()).boundingRect()

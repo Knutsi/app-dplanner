@@ -213,7 +213,7 @@ src/dplanner/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
 │   ├── library/             membership: File ▸ New/Open Project and New/Open Project Library
 │   ├── projects/            the Projects folder in the index, and the project verbs
-│   ├── project_editor/      a project in a tab: the canvas, its modes and renderers, sorts, named layouts and regions
+│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, lasso, regions) and renderers, sorts, named layouts, marks
 │   │                        (kinds.py is what Step ▸ New offers; the list itself is the composition root's)
 │   │                        (clipboard.py is what a copied step is; clipboard_verbs.py the Edit menu's
 │   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone)

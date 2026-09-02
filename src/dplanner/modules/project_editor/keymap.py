@@ -46,6 +46,7 @@ CANVAS_KEYS: Final[dict[Binding, tuple[str, ...]]] = {
     (Qt.Key.Key_F, _NONE): ("canvas.frame",),
     (Qt.Key.Key_N, _NONE): ("steps.new",),
     (Qt.Key.Key_R, _NONE): ("steps.rename",),
+    (Qt.Key.Key_S, _NONE): ("steps.lasso",),
     (Qt.Key.Key_Delete, _NONE): ("steps.unlink", "steps.delete", "regions.delete"),
     (Qt.Key.Key_Backspace, _NONE): ("steps.unlink", "steps.delete", "regions.delete"),
 }

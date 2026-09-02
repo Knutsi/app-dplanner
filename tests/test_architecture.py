@@ -56,6 +56,7 @@ HEADLESS_FILES = (
     "named_layouts.py",
     "sorts.py",
     "regions.py",
+    "marks.py",
     "schedule.py",
     "collect.py",
     "runs.py",
