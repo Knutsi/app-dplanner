@@ -141,6 +141,10 @@ would not; the Covers tab's New/Cumulative switch is the worked example.
 - Everything else is a quiet bordered button (the `#ToolbarButton`/`#OpenDialogButton`
   look) or a plain default `QPushButton`.
 - Destructive or dismissive actions (Cancel, Reject) never get the accent.
+- A dialog whose every edit is live and already undoable carries **no buttons at all** —
+  there is nothing to confirm and nothing to cancel, and a Close button under a form that
+  has already saved is a line of chrome saying so. Escape and the title bar close it; the
+  step details dialog is the worked example.
 
 ## Colour
 

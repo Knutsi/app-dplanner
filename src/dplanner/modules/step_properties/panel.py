@@ -1,43 +1,40 @@
-"""One step's detail panel: its title, and a tab per aspect editor other modules registered.
+"""One step's detail panel: the aspect bar, and a tab per aspect editor other modules registered.
 
 **This module never learns which aspects exist.** It is handed a list of
 :class:`~dplanner.framework.inspector.InspectorSection` objects and turns each into a tab; an
 aspect module never learns that a panel renders it. The composition root is the only place
 that knows both, which is what lets the fifth aspect cost one registration and nothing else.
+The bar across the top is the same seam one presenter along: it renders the Step ▸ Type
+submenu on its right, and the templates it words on its left are named by the composition
+root.
 
 **Nor does it learn who is looking at a step.** There is one panel in the window and it reads
 the context: whichever pane the user is in publishes a step selection, and this shows it. A
 canvas, a table and anything added later reach it the same way, and none of them is its host.
+The bar, though, is handed a context naming *this panel's* step — the panel inside the
+details dialog shows a step nobody selected, and its toggles must act on what is on screen.
 
-The title sits above the tab bar rather than inside a tab of its own: a step's name belongs
-to the step, not to any aspect, and it should stay readable while you move between them.
+The name is not here: it is the first block of the Details tab, registered by this module
+like any other block, so the control stack reads top-down from the one field every step has.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtWidgets import (
-    QHBoxLayout,
-    QLineEdit,
-    QStackedLayout,
-    QTabBar,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QHBoxLayout, QStackedLayout, QTabBar, QVBoxLayout, QWidget
 
-from dplanner.domain.commands import SetFieldCommand
 from dplanner.domain.model import Library, NodeId, StepId, TextEdit
-from dplanner.framework.context import Context
+from dplanner.framework.action_registry import ActionRegistry
+from dplanner.framework.aspect_bar import AspectBar, AspectTemplate
+from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.framework.inspector import InspectorExtension, InspectorSection
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
-from dplanner.theme.icons import ICON_SIZE, plus_icon
 from dplanner.theme.themes import Theme
 
 # DESIGN.md: side panels get 16 px outer margins, and more space between blocks than within
 # one — 12 between, 6 from a caption to its field. The panel's own caption is its frame's
-# header, so nothing here prints one.
+# header, so nothing here prints one; the bar is chrome and runs edge to edge above it all.
 PANEL_MARGIN = 16
 BLOCK_GAP = 12
 CAPTION_GAP = 6
@@ -53,10 +50,11 @@ class StepPanel(QWidget):
         self,
         library: Library,
         undo: UndoService[Library],
+        actions: ActionRegistry,
         sections: Sequence[InspectorSection] = (),
+        templates: Sequence[AspectTemplate] = (),
         theme: ThemeService | None = None,
         parent: QWidget | None = None,
-        on_add_aspect: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("InspectorPanel")
@@ -67,10 +65,7 @@ class StepPanel(QWidget):
         self._step_id: StepId | None = None
         self._sections = list(sections)
 
-        self.title_edit = QLineEdit(self)
-        self.title_edit.setObjectName("InspectorTitle")
-        self.title_edit.setPlaceholderText("What this step is")
-        self.title_edit.editingFinished.connect(self._commit_title)
+        self.bar = AspectBar(actions, self._own_context, templates, undo=undo, parent=self)
 
         # One extension per section, built once for this panel. The factory takes no
         # arguments: a contributing module closed over whatever it needs at registration.
@@ -85,27 +80,11 @@ class StepPanel(QWidget):
         self.tab_bar.setUsesScrollButtons(True)
         self.tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
 
-        # Right of the last tab, so "there could be more here" reads as part of the bar.
-        # A bare QTabBar has no corner widget, so the row is the panel's own.
-        self.add_aspect = QToolButton(self)
-        self.add_aspect.setObjectName("ToolbarButton")
-        self.add_aspect.setToolTip("Add or remove aspects")
-        self.add_aspect.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.add_aspect.setAutoRaise(True)
-        self.add_aspect.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
-        # Painted from the palette now and re-painted from the theme below, so a host that
-        # passes no ThemeService still gets a glyph rather than an empty square.
-        self.add_aspect.setIcon(plus_icon(self.palette().text().color()))
-        self.add_aspect.setVisible(False)  # Nothing to add until a step is shown.
-        if on_add_aspect is not None:
-            self.add_aspect.clicked.connect(on_add_aspect)
-
         tab_row = QHBoxLayout()
         tab_row.setContentsMargins(0, 0, 0, 0)
         tab_row.setSpacing(CAPTION_GAP)
         tab_row.addWidget(self.tab_bar)
         tab_row.addStretch(1)
-        tab_row.addWidget(self.add_aspect, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self._pages = QStackedLayout()
         for section, extension in zip(sections, self._extensions, strict=True):
@@ -113,34 +92,40 @@ class StepPanel(QWidget):
             self._pages.addWidget(extension.widget)
         self.tab_bar.currentChanged.connect(self._pages.setCurrentIndex)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(PANEL_MARGIN, 0, PANEL_MARGIN, 0)
-        layout.setSpacing(CAPTION_GAP)
-        layout.addWidget(self.title_edit)
-        layout.addSpacing(BLOCK_GAP)
-        layout.addLayout(tab_row)
-        layout.addLayout(self._pages, stretch=1)
+        column = QVBoxLayout()
+        column.setContentsMargins(PANEL_MARGIN, BLOCK_GAP, PANEL_MARGIN, 0)
+        column.setSpacing(CAPTION_GAP)
+        column.addLayout(tab_row)
+        column.addLayout(self._pages, stretch=1)
 
-        def paint_tab_icons(current: Theme) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.bar)
+        layout.addLayout(column, stretch=1)
+
+        def paint(current: Theme) -> None:
             for index, section in enumerate(sections):
                 if section.icon is not None:
                     self.tab_bar.setTabIcon(index, section.icon(current.text_secondary))
-            # A colour copied out of the palette goes stale; the glyph is repainted with
-            # the tabs it sits beside.
-            self.add_aspect.setIcon(plus_icon(current.text_secondary))
+            # A colour copied out of the palette goes stale; the bar's glyphs are repainted
+            # with the tabs they sit above.
+            self.bar.paint(current.text_secondary)
 
         self._unsubscribes = [
-            library.field_changed.connect(self._on_field),
             library.structure_changed.connect(self._on_structure),
             # A tab follows its aspect: toggles arrive as module data, and the agent
-            # aspect is also implied by its prose, so both writes re-ask shown_for.
+            # aspect is also implied by its prose, so both writes re-ask shown_for — and
+            # re-read the bar, since a toggle may have changed another toggle's state.
             library.module_data_changed.connect(self._on_module_data),
             library.text_edited.connect(self._on_text),
         ]
         if theme is not None:
             # A panel is shorter-lived than the theme service; detach in dispose().
-            self._unsubscribes.append(theme.changed.connect(paint_tab_icons))
-            paint_tab_icons(theme.current)
+            self._unsubscribes.append(theme.changed.connect(paint))
+            paint(theme.current)
+        else:
+            self.bar.paint(self.palette().text().color())
 
     # -- what the context says ---------------------------------------------------------------
 
@@ -161,14 +146,13 @@ class StepPanel(QWidget):
         """
         if step_id is None or not self._product.has(step_id):
             self._step_id = None
-            self.add_aspect.setVisible(False)
+            self.bar.refresh()
             self._show_in_extensions(None)
             return
-        self.add_aspect.setVisible(True)
         if step_id == self._step_id:
             return
         self._step_id = step_id
-        self.title_edit.setText(self._product.step(step_id).title)
+        self.bar.refresh()
         self._refresh_tab_visibility()
         self._show_in_extensions(step_id)
 
@@ -186,33 +170,26 @@ class StepPanel(QWidget):
 
     # -- internals -----------------------------------------------------------------------------
 
+    def _own_context(self) -> Context:
+        """The bar's context: this panel's step, whether or not anybody selected it."""
+        if self._step_id is None:
+            return Context({})
+        node = ContextNode(selection_uri("step", self._step_id))
+        return Context({SCOPE_SELECTION: (node,)})
+
     def _show_in_extensions(self, step_id: StepId | None) -> None:
         for extension in self._extensions:
             extension.show_target(step_id)
 
-    def _commit_title(self) -> None:
-        # editingFinished also fires during teardown, when the step may already be gone.
-        if self._step_id is None or not self._product.has(self._step_id):
-            return
-        value = self.title_edit.text().strip()
-        if value != self._product.step(self._step_id).title:
-            self._undo.push(SetFieldCommand(self._step_id, "title", value, view_origin=self))
-
-    def _on_field(self, node_id: NodeId, field: str, origin: object) -> None:
-        if node_id != self._step_id or field != "title":
-            return
-        # Not a plain `origin is self`: an undo performed while this field has focus still
-        # has to reach it, and only a focused field is mid-edit.
-        if not (origin is self and self.title_edit.hasFocus()):
-            self.title_edit.setText(self._product.step(node_id).title)
-
     def _on_module_data(self, node_id: NodeId, _module_id: str, _origin: object) -> None:
         if node_id == self._step_id:
             self._refresh_tab_visibility()
+            self.bar.refresh()
 
     def _on_text(self, edit: TextEdit, _origin: object) -> None:
         if edit.node_id == self._step_id:
             self._refresh_tab_visibility()
+            self.bar.refresh()
 
     def _refresh_tab_visibility(self) -> None:
         """Show each tab only where its section has something to say about this step.
@@ -225,7 +202,13 @@ class StepPanel(QWidget):
             return
         for index, section in enumerate(self._sections):
             shown = section.shown_for is None or section.shown_for(self._step_id)
-            self.tab_bar.setTabVisible(index, shown)
+            # Only on a change: QTabBar.setTabVisible *clears* its layout-dirty flag when
+            # the value is unchanged, so a blanket loop ends by forgetting the tab it just
+            # showed and paints it with an empty rect. And it lays nothing out itself — the
+            # layout happens in sizeHint() — so ask the parent layout to come and read it.
+            if shown != self.tab_bar.isTabVisible(index):
+                self.tab_bar.setTabVisible(index, shown)
+        self.tab_bar.updateGeometry()
         if not self.tab_bar.isTabVisible(self.tab_bar.currentIndex()):
             for index in range(self.tab_bar.count()):
                 if self.tab_bar.isTabVisible(index):

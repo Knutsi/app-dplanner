@@ -8,17 +8,12 @@ has to know that module exists.
 
 from dataclasses import dataclass
 
-from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, Step
-from dplanner.framework.action_registry import (
-    DISABLED,
-    ActionRegistry,
-    ActionSpec,
-    ActionState,
-)
-from dplanner.framework.context import Context
+from dplanner.domain.model import Library
+from dplanner.framework.action_registry import ActionRegistry
+from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_check.aspect import DATA_FORMAT, MODULE_ID, SPEC, read, write
+from dplanner.theme.icons import shield_icon
 
 
 @dataclass(frozen=True)
@@ -37,42 +32,16 @@ class StepCheckModule:
 
     def register(self) -> None:
         self._deps.actions.register(
-            ActionSpec(
+            aspect_toggle(
                 id="check.toggle",
                 label=SPEC.label,
-                menu="Step",
-                group="classify",
-                submenu="Type",
                 order=60,
+                module_id=MODULE_ID,
+                library=self._deps.library,
+                undo=self._deps.undo,
+                enabled=read,
+                fresh=lambda _step, _project: write(True),
+                icon=shield_icon,
                 tip="Gather every test this step waits on, so a run can be scoped to it",
-                state=self._current,
-                run=self._toggle,
             )
         )
-
-    def _current(self, context: Context) -> ActionState:
-        step = self._focused(context)
-        if step is None:
-            return DISABLED
-        return ActionState(checked=read(step))
-
-    def _toggle(self, context: Context) -> None:
-        step = self._focused(context)
-        if step is None:
-            return
-        # No confirmation on the way out: a check stores nothing, so clearing loses nothing.
-        on = not read(step)
-        self._deps.undo.push(
-            SetModuleDataCommand(
-                step.id,
-                MODULE_ID,
-                write(on),
-                label="Mark as Check" if on else "Clear Check",
-            )
-        )
-
-    def _focused(self, context: Context) -> Step | None:
-        step_id = context.focus_entity("step")
-        if step_id is None or not self._deps.library.has(step_id):
-            return None
-        return self._deps.library.step(step_id)

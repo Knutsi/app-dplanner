@@ -28,7 +28,6 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QTreeWidgetItem, QWidget
 
 from dplanner.domain.commands import (
-    Command,
     CompositeCommand,
     EditTextCommand,
     SetModuleDataCommand,
@@ -37,12 +36,12 @@ from dplanner.domain.model import Library, NodeId, Step, StepId, TextEdit
 from dplanner.domain.scope import ScopeKind, kind_of
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import (
-    DISABLED,
     ActionRegistry,
     ActionSpec,
     ActionState,
 )
 from dplanner.framework.activity import follow_entity_tabs
+from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
@@ -116,7 +115,7 @@ class DocsDeps:
     # A collector's own note, used as the brief for its document. Which prose briefs a
     # compile is a cross-module fact, so the root decides it.
     instructions: Callable[[Step], str] = lambda _step: ""
-    parent: QWidget | None = None  # confirm()'s parent, as the other Type toggles have.
+    parent: QWidget | None = None  # The compiler's QObject parent and confirm()'s.
     # Insert from Assets…: a modal picker over the node's project's catalog, composed by
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], "list[Payload]"] | None = None
@@ -256,16 +255,17 @@ class DocsModule:
 
     def _action_specs(self) -> list[ActionSpec]:
         return [
-            ActionSpec(
+            aspect_toggle(
                 id="docs.toggle",
                 label=SPEC.label,
-                menu="Step",
-                group="classify",
-                submenu="Type",
                 order=85,  # Among the facets, beside Description (80).
+                module_id=MODULE_ID,
+                library=self._deps.library,
+                undo=self._deps.undo,
+                enabled=enabled,
+                fresh=lambda _step, _project: write_state(True),
+                icon=read_icon,
                 tip="Give this step prose saying what it adds to the documentation",
-                state=self._toggle_state,
-                run=self._toggle,
             ),
             ActionSpec(
                 id=COMPILE_ACTION,
@@ -278,40 +278,6 @@ class DocsModule:
                 run=lambda context: self.compile_step(self._focused_id(context)),
             ),
         ]
-
-    # -- the fragment toggle -----------------------------------------------------------------
-
-    def _toggle_state(self, context: Context) -> ActionState:
-        step = self._focused(context)
-        return DISABLED if step is None else ActionState(checked=enabled(step))
-
-    def _toggle(self, context: Context) -> None:
-        step = self._focused(context)
-        if step is None:
-            return
-        if not enabled(step):
-            self._deps.undo.push(
-                SetModuleDataCommand(step.id, MODULE_ID, write_state(True), label="Add Docs")
-            )
-            return
-        prose = read(step)
-        if prose and not confirm(
-            self._deps.parent,
-            "Clear Docs",
-            f"Remove the documentation from {step.title or 'this step'!r}? It is not kept.",
-        ):
-            return
-        # Mark and prose in one command, so a single Ctrl+Z restores both.
-        cleared: list[Command] = [
-            SetModuleDataCommand(step.id, MODULE_ID, write_state(False), label="Clear Docs")
-        ]
-        if prose:
-            cleared.insert(
-                0, EditTextCommand(TextEdit(step.id, MODULE_ID, 0, prose, ""), label="Clear Docs")
-            )
-        self._deps.undo.push(
-            cleared[0] if len(cleared) == 1 else CompositeCommand("Clear Docs", cleared)
-        )
 
     # -- compiling -------------------------------------------------------------------------
 

@@ -24,6 +24,7 @@ from dplanner.core.storage.locations import find_repo_root
 from dplanner.core.storage.pointer import POINTER_FILE
 from dplanner.domain.library_file import LIBRARY_ENV, resolve_library_path
 from dplanner.domain.model import Library, Project
+from dplanner.domain.shelf import migrate_shelved
 from dplanner.domain.store import PROJECT_META, LibraryStore, StaleWorkspaceError
 
 
@@ -144,6 +145,7 @@ def open_library(
     context = CliContext(out=out, as_json=as_json, opened=library, opened_store=store)
     store.dirty.connect(lambda owner_id, aspect: context.marks.add((owner_id, aspect)))
     migrate_module_data(store, formats)
+    migrate_shelved(store, formats)
     try:
         yield context
         try:

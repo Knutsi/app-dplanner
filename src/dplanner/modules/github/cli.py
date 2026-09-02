@@ -19,6 +19,7 @@ from dplanner.cli.lookup import find_step, step_arg
 from dplanner.core.storage.locations import origin_url
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Project, Step
+from dplanner.domain.shelf import turn_off
 from dplanner.modules.github.aspect import (
     MODULE_ID,
     GithubRefs,
@@ -54,7 +55,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("github", "clear"),
-            summary="Remove a step's branch and/or PR ref.",
+            summary="Remove a step's branch and/or PR ref; both at once turns the aspect off.",
             configure=_configure_clear,
             run=_clear,
             examples=("dplanner github clear 'Read the spec' --pr",),
@@ -143,8 +144,12 @@ def _clear(context: CliContext, args: Namespace) -> int:
         # Already clear is success — state-clearing verbs must survive batches.
         context.report({"step": step.id}, f"{step.title}: no GitHub refs")
         return 0
-    both = args.branch == args.pr  # Neither flag or both: clear everything.
-    refs = GithubRefs() if both else _cleared_half(current, branch=args.branch)
+    both = args.branch == args.pr  # Neither flag or both: turn the aspect off, kept.
+    if both:
+        context.apply(turn_off(step.id, MODULE_ID, label="Remove GitHub"))
+        context.report({"step": step.id}, f"{step.title}: GitHub refs cleared")
+        return 0
+    refs = _cleared_half(current, branch=args.branch)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(refs)))
     context.report({"step": step.id} | write(refs), f"{step.title}: GitHub refs cleared")
     return 0

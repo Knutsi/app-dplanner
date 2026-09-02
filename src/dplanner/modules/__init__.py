@@ -65,6 +65,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.domain.ordering import placed
     from dplanner.domain.schedule import format_date, format_days, schedule
     from dplanner.domain.store import LibraryStore
+    from dplanner.framework.aspect_bar import AspectTemplate
     from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
@@ -82,7 +83,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
         parse_drag,
         read_catalogue,
     )
-    from dplanner.modules.feature.catalogue import registration as feature_registration
     from dplanner.modules.feature.module import FeatureDeps, FeatureModule
     from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
     from dplanner.modules.github.aspect import pr_label
@@ -98,7 +98,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ProjectAssetsDeps,
         ProjectAssetsModule,
     )
-    from dplanner.modules.project_editor.kinds import CanvasDrop, StepKind
+    from dplanner.modules.project_editor.drops import CanvasDrop
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
@@ -121,9 +121,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.step_agent_run.aspect import MODULE_ID as AGENT_RUN_ID
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
-    from dplanner.modules.step_check.aspect import MODULE_ID as CHECK_ID
     from dplanner.modules.step_check.aspect import read as check_read
-    from dplanner.modules.step_check.aspect import write as check_write
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_description.aspect import summary as description_summary
@@ -134,10 +132,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.step_description.section import SeparateInstructionLink
     from dplanner.modules.step_handoff.module import StepHandoffDeps, StepHandoffModule
     from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
-    from dplanner.modules.step_milestone.aspect import next_milestone_label
-    from dplanner.modules.step_milestone.aspect import project_labels as milestone_labels
     from dplanner.modules.step_milestone.aspect import read as milestone_read
-    from dplanner.modules.step_milestone.aspect import write as milestone_write
     from dplanner.modules.step_milestone.module import StepMilestoneDeps, StepMilestoneModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
     from dplanner.modules.step_properties.module import (
@@ -367,6 +362,49 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # below.
     step_properties = StepPropertiesModule(
         StepPropertiesDeps(
+            # The templates on the bar's left: what a step *amounts to*, as the set of
+            # Type toggles that are on — clicking one moves every toggle to match, and a
+            # step carrying exactly that set lights it up. Step is the catch-all: any
+            # combination no other template names is still a step. Collectors carry no
+            # estimate of their own; an agent step gets what an agent reports back
+            # through. Each wears its body tone when selected: violet the milestone, teal
+            # the feature, the agent-run chip's blue for an agent step; Step and Check
+            # keep the accent. Wired, never inferred, like the scope kinds.
+            templates=(
+                AspectTemplate(
+                    "Step",
+                    frozenset({"estimate.toggle", "description.toggle"}),
+                    catch_all=True,
+                ),
+                AspectTemplate(
+                    "Milestone",
+                    frozenset({"milestone.toggle", "description.toggle"}),
+                    tone="highlight",
+                    glyph="tag",
+                ),
+                AspectTemplate(
+                    "Feature",
+                    frozenset({"feature.toggle", "description.toggle"}),
+                    tone="feature",
+                    glyph="layers",
+                ),
+                AspectTemplate(
+                    "Agent",
+                    frozenset(
+                        {
+                            "agent.toggle",
+                            "description.toggle",
+                            "estimate.toggle",
+                            "handoff.toggle",
+                        }
+                    ),
+                    tone="info",
+                    glyph="spark",
+                ),
+                AspectTemplate(
+                    "Check", frozenset({"check.toggle", "description.toggle"}), glyph="shield"
+                ),
+            ),
             library=library,
             undo=services.undo,
             panels=services.panels,
@@ -401,15 +439,17 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 f"{record.title!r} is already placed as {holder.title!r} — a feature is "
                 "implemented once"
             )
-        kind = StepKind(
-            FEATURE_ID,
-            "Feature",
-            lambda _project, step: [
-                SetModuleDataCommand(step.id, FEATURE_ID, feature_write(record.id))
-            ],
-            icon="layers",
-        )
-        return [project_editor.create_step(project_id, record.title, kind=kind, at=at).id]
+        return [
+            project_editor.create_step(
+                project_id,
+                record.title,
+                at=at,
+                carrying=lambda step: [
+                    SetModuleDataCommand(step.id, FEATURE_ID, feature_write(record.id))
+                ],
+                label="Place Feature",
+            ).id
+        ]
 
     project_editor = ProjectEditorModule(
         ProjectEditorDeps(
@@ -446,50 +486,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # The project panel renders whatever registered a card here — the project-level
             # counterpart of the step panel's inspector_sections.
             cards=services.detail_cards,
-            # What Step ▸ New offers. A *kind* is what a node is — it wears a body colour
-            # and the graph reads differently for it; a *facet* is what a step carries, and
-            # "New ▸ Description" would be nonsense, which is why this is a named list
-            # rather than the Type submenu. Ticket and Test are one line away if they ever
-            # earn a place. The tuple order is the order the menu shows.
-            # The glyph on each is the medallion its node will wear, from the same
-            # vocabulary ``step_type_icons`` answers in — named once, here.
             # What the canvas takes by drop: a feature from the Features panel.
             drops=(CanvasDrop(FEATURE_MIME, place_feature),),
-            step_kinds=(
-                # A new feature is a record in the catalogue *and* the step that is its
-                # instance, born together — the same function the Type toggle uses.
-                StepKind(FEATURE_ID, "Feature", feature_registration, icon="layers"),
-                StepKind(
-                    MILESTONE_ID,
-                    "Milestone",
-                    # A fresh milestone generates its label from the ones already there,
-                    # exactly as the Type toggle does — one function, two ways in.
-                    lambda project, step: [
-                        SetModuleDataCommand(
-                            step.id,
-                            MILESTONE_ID,
-                            milestone_write(next_milestone_label(milestone_labels(project))),
-                        )
-                    ],
-                    icon="tag",
-                ),
-                StepKind(
-                    AGENT_INSTRUCTION_ID,
-                    "Agent Step",
-                    lambda _project, step: [
-                        SetModuleDataCommand(step.id, AGENT_INSTRUCTION_ID, agent_write_state(True))
-                    ],
-                    icon="spark",
-                ),
-                StepKind(
-                    CHECK_ID,
-                    "Check",
-                    lambda _project, step: [
-                        SetModuleDataCommand(step.id, CHECK_ID, check_write(True))
-                    ],
-                    icon="shield",
-                ),
-            ),
         )
     )
     # Constructed before the list because the projects index opens Specs through it — the
@@ -526,7 +524,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
     estimation = EstimationModule(
         EstimationDeps(
-            parent=services.window,
             library=library,
             undo=services.undo,
             details=services.step_details,
@@ -885,13 +882,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 undo=services.undo,
                 sections=services.inspector_sections,
                 actions=services.actions,
-                parent=services.window,
             )
         ),
         StepDescriptionModule(
             StepDescriptionDeps(
                 actions=services.actions,
-                parent=services.window,
                 library=library,
                 undo=services.undo,
                 details=services.step_details,
@@ -970,7 +965,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepHandoffModule(
             StepHandoffDeps(
                 actions=services.actions,
-                parent=services.window,
                 library=library,
                 undo=services.undo,
                 sections=services.inspector_sections,
@@ -983,7 +977,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 undo=services.undo,
                 sections=services.inspector_sections,
                 actions=services.actions,
-                parent=services.window,
             )
         ),
         # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
@@ -1661,6 +1654,7 @@ def default_module_formats() -> list[ModuleDataFormat]:
     the same list has to be reachable without them — and it must stay complete, because a
     format missing here is data the CLI silently declines to bring forward.
     """
+    from dplanner.domain import shelf
     from dplanner.modules.project_assets import cli as project_assets
     from dplanner.modules.project_editor import positions
     from dplanner.modules.time_estimates import schedule as time_schedule
@@ -1670,8 +1664,10 @@ def default_module_formats() -> list[ModuleDataFormat]:
     # list from aspect_specs() alone would silently omit them. A project's start date
     # needs no entry: it rides on the estimation aspect's format, which is the same module
     # writing under the same id on another node.
+    # The shelf is the fourth: the domain's own, holding turned-off aspects' data.
     return [spec.data_format for spec in aspect_specs()] + [
         positions.DATA_FORMAT,
         time_schedule.DATA_FORMAT,
         project_assets.DATA_FORMAT,
+        shelf.DATA_FORMAT,
     ]

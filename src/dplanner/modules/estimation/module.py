@@ -17,8 +17,7 @@ from dataclasses import dataclass, field
 
 from PySide6.QtWidgets import QWidget
 
-from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, ProjectId, Step, StepId
+from dplanner.domain.model import Library, ProjectId, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -27,15 +26,16 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.activity import follow_entity_tabs
+from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import Context, ContextService, activity_uri
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import confirm
-from dplanner.modules.estimation.aspect import DATA_FORMAT, MODULE_ID, SPEC, enabled, read, write
+from dplanner.modules.estimation.aspect import DATA_FORMAT, MODULE_ID, SPEC, enabled, write
 from dplanner.modules.estimation.bulk import ESTIMATE_KIND, BulkEstimateActivity
 from dplanner.modules.estimation.section import EstimateSection
 from dplanner.modules.estimation.start_bar import StartDateBar
+from dplanner.theme.icons import gauge_icon
 
 
 def _no_text(_step_id: StepId) -> str:
@@ -51,7 +51,6 @@ class EstimationDeps:
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
-    parent: QWidget | None = None  # confirm()'s parent, as the other Type toggles have.
     # A step's description: one line for a row, the full prose for its tooltip. Wired by the
     # composition root; this module never learns where a description lives.
     step_summary: Callable[[StepId], str] = field(default=_no_text)
@@ -107,16 +106,20 @@ class EstimationModule:
             )
         )
         deps.actions.register(
-            ActionSpec(
+            aspect_toggle(
                 id="estimate.toggle",
                 label=SPEC.label,
-                menu="Step",
-                group="classify",
-                submenu="Type",
                 order=70,
+                module_id=MODULE_ID,
+                library=deps.library,
+                undo=deps.undo,
+                enabled=enabled,
+                # Absence is on, so a fresh estimate writes nothing and turning off leaves
+                # the opt-out: a milestone has no work of its own.
+                fresh=lambda _step, _project: write(None),
+                leaving=write(None, on=False),
+                icon=gauge_icon,
                 tip="Size this step in working days; a milestone has no work of its own",
-                state=self._estimate_state,
-                run=self._toggle_estimate,
             )
         )
 
@@ -151,37 +154,6 @@ class EstimationModule:
     def _selected_steps(self, context: Context) -> list[StepId]:
         library = self._deps.library
         return [s for s in context.selected_entities("step") if library.has(s)]
-
-    def _estimate_state(self, context: Context) -> ActionState:
-        step = self._focused(context)
-        if step is None:
-            return DISABLED
-        return ActionState(checked=enabled(step))
-
-    def _toggle_estimate(self, context: Context) -> None:
-        step = self._focused(context)
-        if step is None:
-            return
-        if not enabled(step):
-            self._deps.undo.push(
-                SetModuleDataCommand(step.id, MODULE_ID, write(None), label="Add Estimate")
-            )
-            return
-        if read(step) is not None and not confirm(
-            self._deps.parent,
-            "Clear Estimate",
-            f"Remove the estimate from {step.title or 'this step'!r}? It is not kept.",
-        ):
-            return
-        self._deps.undo.push(
-            SetModuleDataCommand(step.id, MODULE_ID, write(None, on=False), label="Clear Estimate")
-        )
-
-    def _focused(self, context: Context) -> Step | None:
-        step_id = context.focus_entity("step")
-        if step_id is None or not self._deps.library.has(step_id):
-            return None
-        return self._deps.library.step(step_id)
 
     def _can_estimate(self, context: Context) -> ActionState:
         selected = self._selected_steps(context)

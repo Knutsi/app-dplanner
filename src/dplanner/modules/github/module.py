@@ -6,24 +6,18 @@ from dataclasses import dataclass
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QWidget
 
-from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, Step, StepId
-from dplanner.framework.action_registry import (
-    DISABLED,
-    ActionRegistry,
-    ActionSpec,
-    ActionState,
-)
-from dplanner.framework.context import Context
+from dplanner.domain.model import Library, StepId
+from dplanner.framework.action_registry import ActionRegistry
+from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import confirm
-from dplanner.modules.github.aspect import DATA_FORMAT, MODULE_ID, SPEC, enabled, read, write_state
+from dplanner.modules.github.aspect import DATA_FORMAT, MODULE_ID, SPEC, enabled, write_state
 from dplanner.modules.github.gh import which_gh
 from dplanner.modules.github.notice import maybe_warn
 from dplanner.modules.github.refresh import PrRefresher
 from dplanner.modules.github.section import GithubSection
+from dplanner.theme.icons import branch_icon
 
 
 @dataclass(frozen=True)
@@ -46,38 +40,6 @@ class GithubModule:
     def __init__(self, deps: GithubDeps) -> None:
         self._deps = deps
 
-    def _current(self, context: Context) -> ActionState:
-        step = self._focused(context)
-        if step is None:
-            return DISABLED
-        return ActionState(checked=enabled(step))
-
-    def _toggle(self, context: Context) -> None:
-        step = self._focused(context)
-        if step is None:
-            return
-        if not enabled(step):
-            self._deps.undo.push(
-                SetModuleDataCommand(step.id, MODULE_ID, write_state(True), label="Track on GitHub")
-            )
-            return
-        if read(step) is not None and not confirm(
-            self._deps.parent,
-            "Clear GitHub",
-            f"Remove the branch and pull request from {step.title or 'this step'!r}?"
-            " They are not kept.",
-        ):
-            return
-        self._deps.undo.push(
-            SetModuleDataCommand(step.id, MODULE_ID, write_state(False), label="Clear GitHub")
-        )
-
-    def _focused(self, context: Context) -> Step | None:
-        step_id = context.focus_entity("step")
-        if step_id is None or not self._deps.library.has(step_id):
-            return None
-        return self._deps.library.step(step_id)
-
     def register(self) -> None:
         deps = self._deps
         deps.sections.register(
@@ -96,16 +58,17 @@ class GithubModule:
             )
         )
         deps.actions.register(
-            ActionSpec(
+            aspect_toggle(
                 id="github.toggle",
                 label=SPEC.label,
-                menu="Step",
-                group="classify",
-                submenu="Type",
                 order=100,
+                module_id=MODULE_ID,
+                library=deps.library,
+                undo=deps.undo,
+                enabled=enabled,
+                fresh=lambda _step, _project: write_state(True),
+                icon=branch_icon,
                 tip="Track this step's branch and pull request; fill them in on the tab",
-                state=self._current,
-                run=self._toggle,
             )
         )
         PrRefresher(deps.library, deps.tasks, deps.repository_for, parent=deps.parent).start()

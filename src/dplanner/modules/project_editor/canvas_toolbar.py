@@ -16,18 +16,14 @@ A mode you are in, or a mark you have on, has to be readable at a glance, and a 
 is filled with the accent, where a glyph painted in the secondary text colour would have
 nothing left to say.
 
-**New is the one button with an arrow**, and what drops from it is the Step ▸ New submenu
-itself — :data:`DROPDOWNS` names it and ``ActionToolbar`` renders it, so the kinds a step can
-be born as are declared in exactly one place (the composition root) and appear in the menu
-bar, the right-click menu and here without any of the three knowing about the others. It is
-worded for the same reason a mode switch is: a plus alone cannot say that there is more
-behind it.
+New is worded too: it is the verb the strip exists for, and a plus alone reads as a
+decoration.
 """
 
 from collections.abc import Callable, Sequence
 
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QHBoxLayout, QMenu, QToolButton, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QToolButton, QWidget
 
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextService
@@ -54,9 +50,6 @@ GROUPS: tuple[tuple[str, ...], ...] = (
     ("canvas.frame", "order.open"),
     ("canvas.mark_starts", "canvas.mark_ends", "canvas.mark_orphans"),
 )
-
-# Action id → the (menu, submenu) its arrow drops down.
-DROPDOWNS: dict[str, tuple[str, str]] = {"steps.new": ("Step", "New")}
 
 # The switches and New are worded; everything else is its glyph.
 _WORDED = {
@@ -115,7 +108,7 @@ class CanvasToolbar(QWidget):
                 rule.setObjectName("ToolbarRule")
                 rule.setFixedWidth(1)
                 row.addWidget(rule)
-            bar = ActionToolbar(actions, context, tuple(group), BUTTON_TEXT, self, DROPDOWNS)
+            bar = ActionToolbar(actions, context, tuple(group), BUTTON_TEXT, self)
             row.addWidget(bar)
             self._bars.append(bar)
         row.addStretch(1)
@@ -130,14 +123,6 @@ class CanvasToolbar(QWidget):
         """The button for one action id — how a test asks what the row is saying."""
         for bar in self._bars:
             found = bar._buttons.get(action_id)
-            if found is not None:
-                return found
-        return None
-
-    def dropdown(self, action_id: str) -> QMenu | None:
-        """The menu behind a button's arrow, filled as it would open."""
-        for bar in self._bars:
-            found = bar.menu_for(action_id)
             if found is not None:
                 return found
         return None

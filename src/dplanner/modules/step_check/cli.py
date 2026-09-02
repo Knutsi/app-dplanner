@@ -11,6 +11,7 @@ from argparse import Namespace
 from dplanner.cli import CliCommand, CliContext
 from dplanner.cli.lookup import find_step, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.shelf import turn_off
 from dplanner.modules.step_check.aspect import MODULE_ID, read, write
 
 
@@ -25,7 +26,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("check", "clear"),
-            summary="A step is no longer a check; leaves no file behind.",
+            summary="A step is no longer a check.",
             configure=step_arg,
             run=_clear,
             examples=("dplanner check clear 'Pre-release check'",),
@@ -49,6 +50,6 @@ def _clear(context: CliContext, args: Namespace) -> int:
     if not read(step):
         context.report({"step": step.id, "check": False}, f"{step.title}: not a check")
         return 0
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
+    context.apply(turn_off(step.id, MODULE_ID, label="Remove Check"))
     context.report({"step": step.id, "check": False}, f"{step.title}: no longer a check")
     return 0

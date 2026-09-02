@@ -34,8 +34,9 @@ from dplanner.cli.lookup import (
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
+from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
-from dplanner.modules.feature.aspect import MODULE_ID, clear, read, write
+from dplanner.modules.feature.aspect import MODULE_ID, read, write
 from dplanner.modules.feature.catalogue import (
     FeatureRecord,
     FeatureSource,
@@ -524,7 +525,7 @@ def _remove(context: CliContext, args: Namespace) -> int:
     )
     cleared = placements(project).get(record.id, [])
     for step in cleared:
-        context.apply(SetModuleDataCommand(step.id, MODULE_ID, clear()))
+        context.apply(turn_off(step.id, MODULE_ID, label="Remove Feature"))
     note = f"{record.id}: {record.title} — removed"
     if cleared:
         note += " (" + ", ".join(repr(step.title) for step in cleared) + " is a plain step now)"
@@ -566,7 +567,7 @@ def _clear(context: CliContext, args: Namespace) -> int:
         # Already clear is success — state-clearing verbs must survive batches.
         context.report({"step": step.id, "feature": None}, f"{step.title}: not a feature")
         return 0
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, clear()))
+    context.apply(turn_off(step.id, MODULE_ID, label="Remove Feature"))
     context.report(
         {"step": step.id, "feature": None},
         f"{step.title}: no longer a feature's instance (the feature stays in the catalogue)",

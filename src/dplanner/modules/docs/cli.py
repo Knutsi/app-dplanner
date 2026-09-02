@@ -37,6 +37,7 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Library, Project, Step, TextEdit
 from dplanner.domain.scope import ScopeKind
+from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
 from dplanner.modules.docs.aspect import (
     COMPILED_ID,
@@ -245,15 +246,14 @@ def _set(context: CliContext, args: Namespace) -> int:
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
-    """The CLI half of the GUI's Type ▸ Docs toggle: prose and mark in one command, so one
-    undo restores both."""
+    """The CLI half of the GUI's Type ▸ Docs toggle: the fragment goes to the shelf."""
     step = _step(context, args.step)
     message = f"{step.title}: documents nothing"
     if not enabled(step):
         # Already clear is success, and writes nothing.
         context.report({"step": step.id}, message)
         return 0
-    context.apply(_drop(step, MODULE_ID, read(step), "Clear Docs"))
+    context.apply(turn_off(step.id, MODULE_ID, label="Remove Docs"))
     context.report({"step": step.id}, message)
     return 0
 

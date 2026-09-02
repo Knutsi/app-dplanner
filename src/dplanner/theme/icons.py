@@ -42,7 +42,7 @@ def _pen(color: str | QColor, width: float) -> QPen:
     return pen
 
 
-def edit_icon(color: str) -> QIcon:
+def edit_icon(color: str | QColor) -> QIcon:
     """A pencil: normal editing."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 1.2))
@@ -76,7 +76,7 @@ def typewriter_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
-def read_icon(color: str) -> QIcon:
+def read_icon(color: str | QColor) -> QIcon:
     """An open book: reading mode."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 1.2))
@@ -205,7 +205,7 @@ def folder_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
-def branch_icon(color: str) -> QIcon:
+def branch_icon(color: str | QColor) -> QIcon:
     """A git branch: trunk with two nodes, one forked off."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 1.2))
@@ -368,7 +368,7 @@ def _cross(color: str, alpha: int) -> QPixmap:
     return pixmap
 
 
-def gauge_icon(color: str) -> QIcon:
+def gauge_icon(color: str | QColor) -> QIcon:
     """A dial with its needle past halfway: the progression board."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 1.4))
@@ -592,6 +592,43 @@ def info_icon(color: str | QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+def ticket_icon(color: str | QColor) -> QIcon:
+    """A ticket stub: this step is tracked somewhere else."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    stub = QPainterPath(QPointF(2.5, 4.5))
+    stub.lineTo(QPointF(13.5, 4.5))
+    stub.lineTo(QPointF(13.5, 7.0))
+    stub.arcTo(QRectF(12.2, 7.0, 2.6, 2.0), 90, -180)
+    stub.lineTo(QPointF(13.5, 11.5))
+    stub.lineTo(QPointF(2.5, 11.5))
+    stub.lineTo(QPointF(2.5, 9.0))
+    stub.arcTo(QRectF(1.2, 7.0, 2.6, 2.0), 270, -180)
+    stub.closeSubpath()
+    painter.drawPath(stub)
+    painter.drawLine(QPointF(9.5, 5.5), QPointF(9.5, 10.5))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def handoff_icon(color: str | QColor) -> QIcon:
+    """A note leaving a box: what this step passes forward to whoever comes next."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    box = QPainterPath(QPointF(7.5, 3.0))
+    box.lineTo(QPointF(2.5, 3.0))
+    box.lineTo(QPointF(2.5, 13.0))
+    box.lineTo(QPointF(7.5, 13.0))
+    painter.drawPath(box)
+    painter.drawLine(QPointF(6.0, 8.0), QPointF(13.5, 8.0))
+    painter.drawLine(QPointF(10.5, 5.0), QPointF(13.5, 8.0))
+    painter.drawLine(QPointF(10.5, 11.0), QPointF(13.5, 8.0))
+    painter.end()
+    return QIcon(pixmap)
+
+
 # The medallion vocabulary the canvas painted first, as row and menu icons: one painter per
 # kind name a step can wear ("tag" a milestone, "layers" a feature, "spark" an agent step,
 # "beaker" one carrying tests, "shield" a check). It lives here, beside the glyphs, so a
@@ -602,6 +639,8 @@ GLYPH_ICONS: dict[str, Callable[[str | QColor], QIcon]] = {
     "spark": spark_icon,
     "beaker": beaker_icon,
     "shield": shield_icon,
+    "ticket": ticket_icon,
+    "handoff": handoff_icon,
 }
 
 

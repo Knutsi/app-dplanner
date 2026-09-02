@@ -26,7 +26,7 @@ canvas when they change — a way of looking at graphs, not a fact about one pro
 opened later wears the same marks and a second window would too.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QMimeData, QPointF, Qt
@@ -63,9 +63,9 @@ from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.clipboard import PastePolicy
 from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, ClipboardWatch
+from dplanner.modules.project_editor.drops import CanvasDrop
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import StepNodeItem
-from dplanner.modules.project_editor.kinds import CanvasDrop, StepKind
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
 from dplanner.modules.project_editor.marks import Marks, ports
@@ -98,7 +98,7 @@ from dplanner.modules.project_editor.selection import (
     CanvasSelection,
     EdgeRef,
 )
-from dplanner.modules.project_editor.verbs import StepVerbs
+from dplanner.modules.project_editor.verbs import NEW_STEP_TITLE, StepVerbs
 
 MODULE_ID = "project_editor"
 # The tab kind stays "project": the module is the editor, but the thing in the tab is still a
@@ -152,14 +152,11 @@ class ProjectEditorDeps:
     # The project panel renders every section registered here as a card — the registry the
     # composition root exposes as services.detail_cards. This module never learns whose.
     cards: InspectorSectionRegistry = field(default_factory=InspectorSectionRegistry)
-    # What the New submenu offers besides a plain step. Named by the composition root, so
-    # this module never learns what a feature or a milestone is — see kinds.py.
-    step_kinds: tuple[StepKind, ...] = ()
     # A copied step carries its attachments: the file areas to read are the asset catalog's
     # sources, and what a copy may not carry is each owner's policy — see clipboard.py.
     file_modules: tuple[str, ...] = ()
     paste_policies: tuple[PastePolicy, ...] = ()
-    # What the canvas takes by drop, named by the composition root — see kinds.py.
+    # What the canvas takes by drop, named by the composition root — see drops.py.
     drops: tuple[CanvasDrop, ...] = ()
 
 
@@ -430,8 +427,25 @@ class ProjectActivity(EntityActivity):
             self._deps.status.show_status(state.label or "Those steps cannot be linked", 4000)
 
     def _on_create(self, x: float, y: float) -> None:
-        """Double-click on empty space: the same creation the New verbs run, unprompted."""
-        self._verbs.create(self.project_id, "New step", at=(x, y))
+        """Double-click on empty space: the same creation New runs, at the point."""
+        self._verbs.create(self.project_id, NEW_STEP_TITLE, at=(x, y))
+
+    def note_placed(self, step_ids: list[StepId]) -> None:
+        """Steps were just placed on this canvas — born here, or pasted.
+
+        Two things follow from that and neither belongs to the verb: they become the
+        selection, so the panel beside the canvas is already showing what was made; and the
+        remembered point steps past them, so pressing New or Paste twice leaves two rows
+        rather than one hiding another. The double-click lands here too — it pointed at a
+        spot in exactly the same sense.
+        """
+        self._scene.select_steps(step_ids)
+        point = self._view.last_click
+        if point is not None:
+            placed = positions(self._product, self._project())
+            ys = [placed[s][1] for s in step_ids if s in placed]
+            height = max(ys) - min(ys) if ys else 0.0
+            self._view.note_click(QPointF(*below(point.x(), point.y() + height)))
 
     def _accepts_drop(self, mime: QMimeData) -> bool:
         return any(mime.hasFormat(drop.mime_type) for drop in self._deps.drops)
@@ -453,22 +467,15 @@ class ProjectActivity(EntityActivity):
                 self.note_placed(placed)
             return
 
-    def note_placed(self, step_ids: list[StepId]) -> None:
-        """Steps were just placed on this canvas — born here, or pasted.
+    def note_created(self, step_id: StepId) -> None:
+        """One step was just born here — by New or a double-click, never a paste.
 
-        Two things follow from that and neither belongs to the verb: they become the
-        selection, so the panel beside the canvas is already showing what was made; and the
-        remembered point steps past them, so pressing New or Paste twice leaves two rows
-        rather than one hiding another. The double-click lands here too — it pointed at a
-        spot in exactly the same sense.
+        The details dialog opens on it, the same ``steps.details`` a double-click on a
+        node runs, so naming it and saying what it is are the gesture's second half. A
+        paste places steps too, but they arrive named and configured; only a birth asks.
         """
-        self._scene.select_steps(step_ids)
-        point = self._view.last_click
-        if point is not None:
-            placed = positions(self._product, self._project())
-            ys = [placed[s][1] for s in step_ids if s in placed]
-            height = max(ys) - min(ys) if ys else 0.0
-            self._view.note_click(QPointF(*below(point.x(), point.y() + height)))
+        assert step_id  # Placed first, so the selection the verb reads is already this one.
+        self.run_action("steps.details")
 
     def new_step_position(self) -> tuple[float, float] | None:
         """The top-left a new node should take: centred on wherever the user last pointed.
@@ -562,9 +569,9 @@ class ProjectEditorModule:
             undo=deps.undo,
             parent=deps.parent,
             current_project=self._current_project,
-            step_kinds=deps.step_kinds,
             new_position=self._new_step_position,
             placed=self._on_placed,
+            created=self._on_created,
         )
         # The watcher is a child of the window, which is what disconnects it from the
         # process-global clipboard when this build is discarded.
@@ -615,13 +622,14 @@ class ProjectEditorModule:
         project_id: NodeId,
         title: str,
         *,
-        kind: StepKind | None = None,
         at: tuple[float, float] | None = None,
+        carrying: Callable[[Step], Sequence[Command]] | None = None,
+        label: str = "New Step",
     ) -> Step:
-        """Give birth to a step the way the New verbs do — the seam a drop handler in the
+        """Give birth to a step the way New does — the seam a drop handler in the
         composition root places through, so a dropped feature is one undo step with its
         marker and its position like any other placed step."""
-        return self._verbs.create(project_id, title, kind=kind, at=at)
+        return self._verbs.create(project_id, title, at=at, carrying=carrying, label=label)
 
     def reveal(self, step_id: StepId) -> None:
         """Show the step's project and select it there.
@@ -692,6 +700,11 @@ class ProjectEditorModule:
         current = self._current_activity()
         if current is not None:
             current.note_placed(step_ids)
+
+    def _on_created(self, step_id: StepId) -> None:
+        current = self._current_activity()
+        if current is not None:
+            current.note_created(step_id)
 
     def _set_mode(self, name: str, on: bool) -> None:
         current = self._current_activity()

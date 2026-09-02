@@ -169,17 +169,33 @@ def test_toggling_on_mints_a_record_and_off_keeps_it(services, project, step):
     services.actions.run("feature.toggle", services.context.current())
     assert read(step) == "f1"
     assert [r.title for r in read_catalogue(project)] == ["Bulk import"]
-    assert services.undo.undo_text() == "Mark as Feature"
+    assert services.undo.undo_text() == "Add Feature"
 
     services.actions.run("feature.toggle", services.context.current())
     assert read(step) is None
     # The record stays, unplaced: nothing a person wrote is lost, and undo is exact.
     assert [r.id for r in read_catalogue(project)] == ["f1"]
     assert instance_of(project, "f1") is None
+    # The shelf remembers which feature the step was: on again is the same instance.
+    services.actions.run("feature.toggle", services.context.current())
+    assert read(step) == "f1" and [r.id for r in read_catalogue(project)] == ["f1"]
+    services.undo.undo()
     services.undo.undo()
     assert read(step) == "f1"
     services.undo.undo()
     assert read(step) is None and read_catalogue(project) == []
+
+
+def test_a_shelved_feature_taken_by_another_step_is_not_restored(services, project, step):
+    other = Step(title="Other")
+    AddNodeCommand(project.id, other).redo(services.document)
+    select(services, step)
+    services.actions.run("feature.toggle", services.context.current())
+    services.actions.run("feature.toggle", services.context.current())  # Shelved: f1.
+    services.document.set_module_data(other.id, MODULE_ID, write("f1"))
+    services.actions.run("feature.toggle", services.context.current())
+    # A feature is implemented once: the step becomes a new feature instead.
+    assert read(step) == "f2" and [r.id for r in read_catalogue(project)] == ["f1", "f2"]
 
 
 def test_toggling_an_unregistered_step_registers_it(services, project, step):
@@ -200,18 +216,21 @@ def test_deleting_the_instance_leaves_the_record_unplaced(services, project, ste
     assert instance_of(project, "f1") is not None
 
 
-def test_new_feature_is_born_with_its_record(services, project, monkeypatch):
-    from PySide6.QtWidgets import QInputDialog
+def test_the_feature_template_registers_a_new_step(services, project, monkeypatch):
+    """New births a plain step and opens its details; the Feature template there runs
+    the toggle, which is where the record is minted."""
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
 
+    opened = []
+    monkeypatch.setattr(StepDetailsDialog, "exec", lambda self: opened.append(self))
     services.tabs.open("project", project.id)
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Search", True))
-    services.actions.run("steps.new_feature", services.context.current())
+    services.actions.run("steps.new", services.context.current())
     created = project.steps[-1]
-    assert created.title == "Search" and read(created) == "f1"
-    assert [r.title for r in read_catalogue(project)] == ["Search"]
-    assert services.undo.undo_text() == "New Feature"
-    services.undo.undo()
-    assert read_catalogue(project) == [] and len(project.steps) == 0
+    (dialog,) = opened
+    dialog.panel.bar.template("Feature").trigger()
+    assert read(created) == "f1"
+    assert [r.title for r in read_catalogue(project)] == ["New step"]
+    dialog.dispose()
 
 
 # -- the Feature tab ---------------------------------------------------------------------------

@@ -10,13 +10,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, Step
+from dplanner.domain.model import Library
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
     ActionSpec,
     ActionState,
 )
+from dplanner.framework.aspect_toggle import focused_step
 from dplanner.framework.context import Context
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_status.aspect import (
@@ -62,7 +63,7 @@ class StepStatusModule:
 
     def _current(self, status: str) -> Callable[[Context], ActionState]:
         def state(context: Context) -> ActionState:
-            step = self._focused(context)
+            step = focused_step(context, self._deps.library)
             if step is None:
                 return DISABLED
             return ActionState(checked=read(step) == status)
@@ -71,7 +72,7 @@ class StepStatusModule:
 
     def _setter(self, status: str) -> Callable[[Context], None]:
         def run(context: Context) -> None:
-            step = self._focused(context)
+            step = focused_step(context, self._deps.library)
             if step is None or read(step) == status:
                 return
             self._deps.undo.push(
@@ -79,9 +80,3 @@ class StepStatusModule:
             )
 
         return run
-
-    def _focused(self, context: Context) -> Step | None:
-        step_id = context.focus_entity("step")
-        if step_id is None or not self._deps.library.has(step_id):
-            return None
-        return self._deps.library.step(step_id)

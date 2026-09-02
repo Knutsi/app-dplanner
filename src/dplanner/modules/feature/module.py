@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from PySide6.QtWidgets import QInputDialog, QWidget
 
 from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
-from dplanner.domain.model import Library, NodeId, Step, StepId
+from dplanner.domain.model import Library, NodeId, StepId
+from dplanner.domain.shelf import shelved, turn_off, turn_on
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -22,12 +23,13 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
+from dplanner.framework.aspect_toggle import focused_step
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
-from dplanner.modules.feature.aspect import MODULE_ID, SPEC, clear, read
+from dplanner.modules.feature.aspect import MODULE_ID, RECORD_KEY, SPEC, read
 from dplanner.modules.feature.catalogue import (
     FeatureRecord,
     instance_of,
@@ -44,6 +46,7 @@ from dplanner.modules.feature.panel import (
     parse_feature_ref,
 )
 from dplanner.modules.feature.section import FeatureSection
+from dplanner.theme.icons import layers_icon
 
 PANEL_ID = f"{MODULE_ID}.panel"
 
@@ -74,6 +77,9 @@ class FeatureModule:
 
     def register(self) -> None:
         deps = self._deps
+        # Not ``aspect_toggle``: turning a feature on writes two nodes — the catalogue's
+        # record and the step's marker — where that helper writes one fresh entry. Off is
+        # the shelf's own ``turn_off``, exactly as every other Type toggle's.
         deps.actions.register(
             ActionSpec(
                 id="feature.toggle",
@@ -82,6 +88,7 @@ class FeatureModule:
                 group="classify",
                 submenu="Type",
                 order=20,
+                icon=layers_icon,
                 tip="Make this step the instance of a feature record; the work upstream "
                 "of it flows into the feature",
                 state=self._toggle_state,
@@ -248,7 +255,7 @@ class FeatureModule:
             )
         ]
         if instance is not None:
-            commands.append(SetModuleDataCommand(instance.id, MODULE_ID, clear()))
+            commands.append(turn_off(instance.id, MODULE_ID, label="Remove Feature"))
         self._deps.undo.push(CompositeCommand("Remove Feature", commands))
 
     def _reveal(self, context: Context) -> None:
@@ -269,37 +276,37 @@ class FeatureModule:
     # -- the toggle ----------------------------------------------------------------------------
 
     def _toggle_state(self, context: Context) -> ActionState:
-        step = self._focused(context)
+        step = focused_step(context, self._deps.library)
         if step is None:
             return DISABLED
         return ActionState(checked=read(step) is not None)
 
     def _toggle(self, context: Context) -> None:
-        step = self._focused(context)
+        step = focused_step(context, self._deps.library)
         if step is None:
             return
         if read(step):
-            # Off clears the marker only: the record stays in the catalogue, unplaced, so
-            # undo restores exactly and nothing a person wrote is lost.
-            self._deps.undo.push(
-                SetModuleDataCommand(step.id, MODULE_ID, clear(), label="Clear Feature")
-            )
+            # Off shelves the marker, like every aspect; the record stays in the
+            # catalogue, unplaced, so nothing a person wrote is lost and undo is exact.
+            self._deps.undo.push(turn_off(step.id, MODULE_ID, label="Remove Feature"))
+            return
+        project = self._deps.library.project_of(step.id)
+        kept = shelved(step, MODULE_ID)
+        kept_id = kept[0].get(RECORD_KEY) if kept is not None else None
+        records = {record.id for record in read_catalogue(project)}
+        if kept_id in records and instance_of(project, str(kept_id)) is None:
+            # The shelf remembers which feature this step was — and it is still free.
+            self._deps.undo.push(turn_on(step, MODULE_ID, fresh={}, label="Add Feature"))
             return
         # A plain step becomes a new, registered feature; an unregistered one is registered.
         self.register_step(step.id)
 
     def register_step(self, step_id: StepId) -> None:
         """Mint a record titled like the step and mark the step as its instance — one
-        undo step. What New ▸ Feature, the toggle and the tab's Register button do."""
+        undo step. What the Feature template, the toggle and the tab's Register button do."""
         if not self._deps.library.has(step_id):
             return
         step = self._deps.library.step(step_id)
         commands = registration(self._deps.library.project_of(step_id), step)
         if commands:
-            self._deps.undo.push(CompositeCommand("Mark as Feature", commands))
-
-    def _focused(self, context: Context) -> Step | None:
-        step_id = context.focus_entity("step")
-        if step_id is None or not self._deps.library.has(step_id):
-            return None
-        return self._deps.library.step(step_id)
+            self._deps.undo.push(CompositeCommand("Add Feature", commands))

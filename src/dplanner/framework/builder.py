@@ -32,6 +32,8 @@ from PySide6.QtWidgets import QApplication
 
 from dplanner.core.module_data import migrate_module_data
 from dplanner.core.repository import RepositoryFactory
+from dplanner.domain.shelf import DATA_FORMAT as SHELF_FORMAT
+from dplanner.domain.shelf import migrate_shelved
 from dplanner.framework.action_registry import ActionRegistry, MenuStructure
 from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import (
@@ -229,7 +231,9 @@ class AppBuilder:
         # (they do so in register()), and persisted straight away — per owner, so a
         # takeover's remove-and-write lands in one save.
         formats = [m.data_format for m in modules if isinstance(m, PersistsModuleData)]
-        changed = migrate_module_data(repo, formats)
+        # The shelf is the domain's, not a module's; what it holds is theirs.
+        changed = migrate_module_data(repo, [*formats, SHELF_FORMAT])
+        changed += migrate_shelved(repo, formats)
         if changed:
             repo.flush({(owner_id, "module_data") for owner_id in changed})
         for module in modules:

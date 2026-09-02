@@ -9,12 +9,10 @@ from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_step, step_arg
 from dplanner.domain.assets import assets, image_references
 from dplanner.domain.commands import (
-    Command,
-    CompositeCommand,
     EditTextCommand,
-    SetModuleDataCommand,
 )
 from dplanner.domain.model import Library, Project, Step, TextEdit
+from dplanner.domain.shelf import turn_off, turn_on
 from dplanner.domain.store import FilesFor
 from dplanner.modules.step_description.aspect import (
     MODULE_ID,
@@ -141,6 +139,10 @@ def step_author() -> StepAuthor:
 def _set(context: CliContext, args: Namespace) -> int:
     body = body_from(args.file)
     step = _step(context, args.step)
+    if not enabled(step):
+        # Writing a description is wanting one: the opt-out goes, and whatever the shelf
+        # kept comes back first so the edit below replaces it rather than doubling it.
+        context.apply(turn_on(step, MODULE_ID, fresh=write_state(True), label="Add Description"))
     current = read(step)
     # One positioned edit over the whole document, labelled so a burst of GUI typing and a
     # whole-file replacement never coalesce into one undo step.
@@ -158,8 +160,8 @@ def _clear(context: CliContext, args: Namespace) -> int:
 
     A description defaults to *on*, so deleting the prose would only mean "not written yet"
     and lint would keep asking. This says the step wants none — a milestone is a marker in
-    the graph, not work to describe. Prose and mark go in one command, so one undo restores
-    both, exactly as the GUI toggle does it.
+    the graph, not work to describe. The prose goes to the shelf, exactly as the GUI
+    toggle does it, so turning the aspect back on brings it back.
     """
     step = _step(context, args.step)
     message = f"{step.title}: no description — this step wants none"
@@ -167,17 +169,8 @@ def _clear(context: CliContext, args: Namespace) -> int:
         # Already clear is success, and writes nothing.
         context.report({"step": step.id}, message)
         return 0
-    prose = read(step)
-    commands: list[Command] = [
-        SetModuleDataCommand(step.id, MODULE_ID, write_state(False), label="Clear Description")
-    ]
-    if prose:
-        commands.insert(
-            0,
-            EditTextCommand(TextEdit(step.id, MODULE_ID, 0, prose, ""), label="Clear Description"),
-        )
     context.apply(
-        commands[0] if len(commands) == 1 else CompositeCommand("Clear Description", commands)
+        turn_off(step.id, MODULE_ID, leaving=write_state(False), label="Remove Description")
     )
     context.report({"step": step.id}, message)
     return 0

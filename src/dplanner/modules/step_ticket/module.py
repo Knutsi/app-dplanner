@@ -2,34 +2,25 @@
 
 Off by default — most steps are not tracked anywhere else, so a plain step carries no
 Ticket tab. The Type ▸ Ticket toggle turns the aspect on (an empty entry the tab then
-fills in) and off (asking first when a reference exists — it is not kept).
+fills in) and off (shelving the reference, so turning it back on brings it back).
 """
 
 from dataclasses import dataclass
 
-from PySide6.QtWidgets import QWidget
-
-from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, Step
-from dplanner.framework.action_registry import (
-    DISABLED,
-    ActionRegistry,
-    ActionSpec,
-    ActionState,
-)
-from dplanner.framework.context import Context
+from dplanner.domain.model import Library
+from dplanner.framework.action_registry import ActionRegistry
+from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import confirm
 from dplanner.modules.step_ticket.aspect import (
     DATA_FORMAT,
     MODULE_ID,
     SPEC,
     enabled,
     enabled_entry,
-    read,
 )
 from dplanner.modules.step_ticket.section import TicketSection
+from dplanner.theme.icons import ticket_icon
 
 
 @dataclass(frozen=True)
@@ -38,7 +29,6 @@ class StepTicketDeps:
     undo: UndoService[Library]
     sections: InspectorSectionRegistry
     actions: ActionRegistry
-    parent: QWidget  # confirm()'s parent, as the delete verb's is.
 
 
 class StepTicketModule:
@@ -64,45 +54,16 @@ class StepTicketModule:
             )
         )
         deps.actions.register(
-            ActionSpec(
+            aspect_toggle(
                 id="ticket.toggle",
                 label="Ticket",
-                menu="Step",
-                group="classify",
-                submenu="Type",
                 order=40,
+                module_id=MODULE_ID,
+                library=deps.library,
+                undo=deps.undo,
+                enabled=enabled,
+                fresh=lambda _step, _project: enabled_entry(),
+                icon=ticket_icon,
                 tip="Track this step against a ticket elsewhere; fill it in on the tab",
-                state=self._current,
-                run=self._toggle,
             )
         )
-
-    def _current(self, context: Context) -> ActionState:
-        step = self._focused(context)
-        if step is None:
-            return DISABLED
-        return ActionState(checked=enabled(step))
-
-    def _toggle(self, context: Context) -> None:
-        step = self._focused(context)
-        if step is None:
-            return
-        if not enabled(step):
-            self._deps.undo.push(
-                SetModuleDataCommand(step.id, MODULE_ID, enabled_entry(), label="Add Ticket")
-            )
-            return
-        if read(step) is not None:
-            question = (
-                f"Remove the ticket reference from {step.title or 'this step'!r}?"
-                " The reference is not kept."
-            )
-            if not confirm(self._deps.parent, "Clear Ticket", question):
-                return
-        self._deps.undo.push(SetModuleDataCommand(step.id, MODULE_ID, {}, label="Clear Ticket"))
-
-    def _focused(self, context: Context) -> Step | None:
-        step_id = context.focus_entity("step")
-        if step_id is None or not self._deps.library.has(step_id):
-            return None
-        return self._deps.library.step(step_id)

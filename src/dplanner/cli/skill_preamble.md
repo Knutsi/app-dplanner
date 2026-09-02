@@ -251,8 +251,8 @@ and the workflow runs from import to steps an agent can execute *in isolation*:
    --document <doc> --quote '…' --page N` per feature you find — the things a person would
    name, demo and test, cut the way the topology says. The quote is checked against the
    document and the page recorded (found automatically when the quote is); when the same
-   sentence recurs, `--page` records the occurrence you mean — any page the quote anchors
-   on is accepted, another warns and names them. Add `--strict` when a quote that does
+   sentence appears on several pages, `--page` records the occurrence you mean — any page
+   the quote anchors on is accepted, another warns and names them. Add `--strict` when a quote that does
    not anchor should stop you rather than warn; `--describe-file` for what the feature is
    in a person's words; `--image` for a mock-up. The catalogue is the durable trace of
    your reading — the next agent starts from `feature list`, not from scratch.

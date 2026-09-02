@@ -533,6 +533,23 @@ def test_state_clearing_verbs_treat_already_clear_as_success(cli):
     assert "no description" in cli("describe", "clear", "Deploy")
 
 
+def test_clearing_shelves_and_setting_again_brings_it_back(cli, cli_stdin):
+    """`clear` is off, not gone: the milestone's label and the description's prose wait on
+    the shelf, and the next `set` — or the window's toggle — restores them."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    cli("milestone", "set", "Deploy", "--label", "MVP")
+    assert "no longer a milestone" in cli("milestone", "clear", "Deploy")
+    assert "milestone MVP" in cli("milestone", "set", "Deploy")  # Kept, not regenerated.
+
+    cli_stdin("describe", "set", "Deploy", "--file", "-", stdin="Ship it to the beta ring.")
+    cli("describe", "clear", "Deploy")
+    assert "(no description)" in cli("describe", "show", "Deploy")
+    cli_stdin("describe", "set", "Deploy", "--file", "-", stdin="Rewritten.")
+    assert "Rewritten." in cli("describe", "show", "Deploy")
+    assert "Ship it" not in cli("describe", "show", "Deploy")
+
+
 # -- authoring a step at birth -----------------------------------------------------------------
 
 

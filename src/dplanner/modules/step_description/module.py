@@ -9,43 +9,31 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from PySide6.QtWidgets import QWidget
-
-from dplanner.domain.commands import (
-    Command,
-    CompositeCommand,
-    EditTextCommand,
-    SetModuleDataCommand,
-)
 from dplanner.domain.fields import ModuleTextField
-from dplanner.domain.model import Library, Step, TextEdit
+from dplanner.domain.model import Library
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import (
-    DISABLED,
     ActionRegistry,
-    ActionSpec,
-    ActionState,
 )
+from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.asset_gallery import AreaFor
-from dplanner.framework.context import Context
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.prose_edit import Pick
 from dplanner.framework.text_binding import TextField
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import confirm
 from dplanner.modules.step_description.aspect import (
     DATA_FORMAT,
     MODULE_ID,
     SPEC,
     enabled,
-    read,
     write_state,
 )
 from dplanner.modules.step_description.section import (
     DescriptionSection,
     SeparateInstructionLink,
 )
+from dplanner.theme.icons import edit_icon
 
 PLACEHOLDER = (
     "What this step is — and, on an agent step, what the agent is briefed with."
@@ -66,7 +54,6 @@ class StepDescriptionDeps:
     # The agent aspect through this module's own vocabulary, wired by the composition
     # root — the "Separate agent instruction" checkbox. None is a build without agents.
     agent_link: SeparateInstructionLink | None = None
-    parent: QWidget | None = None  # confirm()'s parent, as the other Type toggles have.
     # Insert from Assets…: a modal picker over the step's project's catalog, composed by
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], list[Payload]] | None = None
@@ -122,55 +109,19 @@ class StepDescriptionModule:
             )
         )
         deps.actions.register(
-            ActionSpec(
+            aspect_toggle(
                 id="description.toggle",
                 label=SPEC.label,
-                menu="Step",
-                group="classify",
-                submenu="Type",
                 order=80,
+                module_id=MODULE_ID,
+                library=deps.library,
+                undo=deps.undo,
+                enabled=enabled,
+                # Absence is on: a fresh description writes nothing, and turning off leaves
+                # the opt-out behind while the prose waits on the shelf.
+                fresh=lambda _step, _project: write_state(True),
+                leaving=write_state(False),
+                icon=edit_icon,
                 tip="Give this step prose saying what it is — and what an agent is briefed with",
-                state=self._current,
-                run=self._toggle,
             )
         )
-
-    def _current(self, context: Context) -> ActionState:
-        step = self._focused(context)
-        if step is None:
-            return DISABLED
-        return ActionState(checked=enabled(step))
-
-    def _toggle(self, context: Context) -> None:
-        step = self._focused(context)
-        if step is None:
-            return
-        if not enabled(step):
-            self._deps.undo.push(
-                SetModuleDataCommand(step.id, MODULE_ID, write_state(True), label="Add Description")
-            )
-            return
-        prose = read(step)
-        if prose and not confirm(
-            self._deps.parent,
-            "Clear Description",
-            f"Remove the description from {step.title or 'this step'!r}? It is not kept.",
-        ):
-            return
-        # Mark and prose in one command, so a single Ctrl+Z restores both — the shape the
-        # agent toggle established for exactly this pair of stores.
-        clear: list[Command] = [
-            SetModuleDataCommand(step.id, MODULE_ID, write_state(False), label="Clear Description")
-        ]
-        if prose:
-            edit = TextEdit(step.id, MODULE_ID, 0, prose, "")
-            clear.insert(0, EditTextCommand(edit, label="Clear Description"))
-        self._deps.undo.push(
-            clear[0] if len(clear) == 1 else CompositeCommand("Clear Description", clear)
-        )
-
-    def _focused(self, context: Context) -> Step | None:
-        step_id = context.focus_entity("step")
-        if step_id is None or not self._deps.library.has(step_id):
-            return None
-        return self._deps.library.step(step_id)

@@ -150,7 +150,7 @@ def test_dropping_a_feature_places_its_step_in_one_undo_step(services, project, 
     placed = instance_of(project, "f1")
     assert placed is not None and placed.id == created.id
     assert POSITION_KEY in created.module_data  # A drop points at a spot, like a click.
-    assert services.undo.undo_text() == "New Feature"
+    assert services.undo.undo_text() == "Place Feature"
     assert services.context.current().selected_entity("step") == created.id
     services.undo.undo()
     assert len(project.steps) == 1 and instance_of(project, "f1") is None

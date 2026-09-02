@@ -13,9 +13,11 @@ from dplanner.cli.assets import step_asset_commands
 from dplanner.cli.lookup import body_from, find_step, step_arg
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.model import TextEdit
+from dplanner.domain.shelf import turn_off
 from dplanner.modules.step_handoff.aspect import (
     MODULE_ID,
     SCOPES,
+    enabled,
     read_note,
     read_scope,
     write_scope,
@@ -55,7 +57,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("handoff", "clear"),
-            summary="Remove a step's handoff note and scope; attached files stay.",
+            summary="Turn a step's handoff off; the note is kept, and attached files stay.",
             configure=step_arg,
             run=_clear,
             examples=("dplanner handoff clear 'Set up CI'",),
@@ -119,11 +121,11 @@ def _show(context: CliContext, args: Namespace) -> int:
 
 def _clear(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step)
-    current = read_note(step)
-    if current:
-        edit = TextEdit(step.id, MODULE_ID, 0, current, "")
-        context.apply(EditTextCommand(edit, label="Clear Handoff"))
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
+    if not enabled(step):
+        # Already clear is success — state-clearing verbs must survive batches.
+        context.report({"step": step.id}, f"{step.title}: no handoff")
+        return 0
+    context.apply(turn_off(step.id, MODULE_ID, label="Remove Handoff"))
     context.report({"step": step.id}, f"{step.title}: handoff cleared")
     return 0
 
