@@ -1502,3 +1502,18 @@ of them can be an `ActionSpec.icon`. Two new glyphs: `ticket_icon`, `handoff_ico
 
 **Belongs upstream?** The signature widening, yes — an `ActionSpec.icon` is `(QColor) ->
 QIcon`, and a painter that only takes a `str` cannot be one.
+
+### `QTabBar.setTabVisible` — a trap any per-target tab host will hit
+
+**What.** Qt 6.11's `setTabVisible` begins `layoutDirty = (visible != tab->visible)` and
+returns when unchanged — so it *clears* the dirty flag a previous call set — and it lays
+nothing out itself (that happens lazily in `sizeHint()`), nor does it call
+`updateGeometry()`. A loop that sets every tab's visibility from a predicate therefore ends
+with the flag clean, the new tabs' rects empty, and the strip painting what it painted
+before. `StepPanel._refresh_tab_visibility` calls it only on a change and then
+`updateGeometry()`. A modal that used to open and close beside the strip had been hiding
+this: its close relaid the parent.
+
+**Belongs upstream?** As a note beside whatever tab host the template grows; the fix is two
+lines wherever `setTabVisible` is driven from a predicate.
+

@@ -1228,7 +1228,10 @@ shelves what it held, so nothing asks and the next toggle-on brings it back.
 **A tab follows its aspect.** An `InspectorSection` may carry a `shown_for(step_id)`
 predicate; the step panel re-asks it on every target change and on model writes to the
 shown step, and hides the tab (`QTabBar.setTabVisible` — indices stay stable, so the
-tab-to-page mapping never re-shuffles) when the answer is no. Milestone, Agent and Ticket
+tab-to-page mapping never re-shuffles) when the answer is no. Only on a change, and
+followed by `updateGeometry()`: `setTabVisible` clears its own layout-dirty flag when
+handed an unchanged value and lays nothing out itself, so a blanket loop leaves the strip
+painting stale rects — `NOTES-FOR-APPFRAME.md` §10 has the trap. Milestone, Agent and Ticket
 answer with "does this step carry the aspect", so toggling one off removes its tab and
 toggling it on brings the tab back *with* whatever the toggle generated — which is the
 answer to the earlier worry that a generated milestone label needs somewhere to be edited:

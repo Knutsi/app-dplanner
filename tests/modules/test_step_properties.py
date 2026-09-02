@@ -198,6 +198,12 @@ def test_a_bar_action_runs_the_owning_modules_toggle_and_follows_the_model(
     assert check_read(step) is True
     assert action.isChecked() is True
     assert "Covers" in visible_labels(panel)
+    # Shown and *laid out*: QTabBar.setTabVisible only flags the layout dirty, and clears
+    # that flag again when called with an unchanged value, so a tab can be "visible" with
+    # an empty rect and never paint. The strip must have grown to hold it.
+    covers = next(i for i in range(panel.tab_bar.count()) if panel.tab_bar.tabText(i) == "Covers")
+    assert panel.tab_bar.tabRect(covers).width() > 0
+    assert panel.tab_bar.sizeHint().width() > panel.tab_bar.tabRect(0).width()
 
     services.undo.undo()
     assert check_read(step) is False

@@ -201,7 +201,13 @@ class StepPanel(QWidget):
             return
         for index, section in enumerate(self._sections):
             shown = section.shown_for is None or section.shown_for(self._step_id)
-            self.tab_bar.setTabVisible(index, shown)
+            # Only on a change: QTabBar.setTabVisible *clears* its layout-dirty flag when
+            # the value is unchanged, so a blanket loop ends by forgetting the tab it just
+            # showed and paints it with an empty rect. And it lays nothing out itself — the
+            # layout happens in sizeHint() — so ask the parent layout to come and read it.
+            if shown != self.tab_bar.isTabVisible(index):
+                self.tab_bar.setTabVisible(index, shown)
+        self.tab_bar.updateGeometry()
         if not self.tab_bar.isTabVisible(self.tab_bar.currentIndex()):
             for index in range(self.tab_bar.count()):
                 if self.tab_bar.isTabVisible(index):
