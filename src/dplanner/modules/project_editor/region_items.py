@@ -7,7 +7,7 @@ nothing with them but ``live_palette``.
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsPathItem, QStyleOptionGraphicsItem, QWidget
+from PySide6.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget
 
 from dplanner.modules.project_editor.items import live_palette
 from dplanner.modules.project_editor.positions import GRID
@@ -179,29 +179,3 @@ class RegionItem(QGraphicsItem):
     def hoverLeaveEvent(self, event: object) -> None:  # noqa: N802 - Qt override
         self._hovered = False
         self.update()
-
-
-class RegionPreviewItem(QGraphicsPathItem):
-    """The dashed outline that follows a region being dragged out."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.setZValue(10)
-
-    def aim(self, rect: QRectF) -> None:
-        path = QPainterPath()
-        path.addRoundedRect(rect, REGION_RADIUS, REGION_RADIUS)
-        self.setPath(path)
-
-    def paint(
-        self,
-        painter: QPainter,
-        _option: QStyleOptionGraphicsItem,
-        _widget: QWidget | None = None,
-    ) -> None:
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        colour = QColor(live_palette(self).text().color())
-        colour.setAlpha(SECONDARY_ALPHA)
-        painter.setPen(QPen(colour, 1.4, Qt.PenStyle.DashLine))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(self.path())

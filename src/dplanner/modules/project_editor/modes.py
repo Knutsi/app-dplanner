@@ -31,13 +31,14 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import QPainterPath
 from PySide6.QtWidgets import QGraphicsView
 
 from dplanner.core.signals import Signal
 from dplanner.domain.model import StepId
-from dplanner.modules.project_editor.items import StepNodeItem
+from dplanner.modules.project_editor.items import HANDLE_GRAB, StepNodeItem
 from dplanner.modules.project_editor.positions import centred_on
-from dplanner.modules.project_editor.region_items import RegionItem
+from dplanner.modules.project_editor.region_items import REGION_RADIUS, RegionItem
 from dplanner.modules.project_editor.regions import MIN_REGION
 from dplanner.modules.project_editor.renderers import RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection
@@ -53,6 +54,7 @@ LINK_DRAG = "link-drag"
 REGION_CREATE = "region-create"
 REGION_DRAG = "region-drag"
 REGION_RESIZE = "region-resize"
+LASSO = "lasso"
 
 
 def mode_uri(name: str) -> str:
@@ -61,14 +63,15 @@ def mode_uri(name: str) -> str:
 
 # What each mode wants every node to show, fanned out by the scene when the stack changes.
 # Kept beside the mode names so a new mode decides its look in the same breath. Connect
-# shows every handle — each is a target; pan and the region modes hide them — their presses
-# do not link. Anything unlisted gets the default (idle's hover-only handle).
+# shows every handle — each is a target; pan, lasso and the region modes hide them — their
+# presses do not link. Anything unlisted gets the default (idle's hover-only handle).
 HINTS_BY_MODE = {
     CONNECT: RenderHints(handles="always"),
     PAN: RenderHints(handles="hidden"),
     REGION_CREATE: RenderHints(handles="hidden"),
     REGION_DRAG: RenderHints(handles="hidden"),
     REGION_RESIZE: RenderHints(handles="hidden"),
+    LASSO: RenderHints(handles="hidden"),
 }
 
 
@@ -100,9 +103,7 @@ class Canvas(Protocol):
     selection_changed: Signal[CanvasSelection]
     region_create_requested: Signal[float, float, float, float]
     # Regions that finished moving, with the steps they carried — one gesture, one emission.
-    regions_moved: Signal[
-        list[tuple[str, float, float]], list[tuple[StepId, float, float]]
-    ]
+    regions_moved: Signal[list[tuple[str, float, float]], list[tuple[StepId, float, float]]]
     region_resized: Signal[str, float, float, float, float]
 
     def node_at(self, scene_pos: QPointF) -> StepNodeItem | None: ...
@@ -111,7 +112,13 @@ class Canvas(Protocol):
 
     def select_step(self, step_id: StepId | None) -> None: ...
 
+    def select_steps(self, step_ids: list[StepId]) -> None: ...
+
     def selected_step(self) -> StepId | None: ...
+
+    def selection(self) -> CanvasSelection: ...
+
+    def nodes_touching(self, path: QPainterPath) -> list[StepNodeItem]: ...
 
     def link_refusal(self, waiter: StepId, source: StepId) -> str | None: ...
 
@@ -127,9 +134,10 @@ class Canvas(Protocol):
 
     def nodes_inside(self, region: RegionItem) -> list[StepNodeItem]: ...
 
-    def aim_region_preview(self, rect: QRectF) -> None: ...
+    # The one outline a gesture drawing an area shows: a region's rectangle, a lasso's path.
+    def aim_outline(self, path: QPainterPath) -> None: ...
 
-    def hide_region_preview(self) -> None: ...
+    def hide_outline(self) -> None: ...
 
     def hold_region(self, region_id: str, step_ids: set[StepId]) -> None: ...
 
@@ -435,7 +443,7 @@ class RegionCreateMode(ModeBase):
 
     def exit(self) -> None:
         self.deps.view.viewport().unsetCursor()
-        self.deps.canvas.hide_region_preview()
+        self.deps.canvas.hide_outline()
 
     def mouse_press(self, event: CanvasEvent) -> bool:
         self._anchor = event.scene_pos
@@ -443,9 +451,11 @@ class RegionCreateMode(ModeBase):
 
     def mouse_move(self, event: CanvasEvent) -> bool:
         if self._anchor is not None:
-            self.deps.canvas.aim_region_preview(
-                QRectF(self._anchor, event.scene_pos).normalized()
+            outline = QPainterPath()
+            outline.addRoundedRect(
+                QRectF(self._anchor, event.scene_pos).normalized(), REGION_RADIUS, REGION_RADIUS
             )
+            self.deps.canvas.aim_outline(outline)
         return True
 
     def mouse_release(self, event: CanvasEvent) -> bool:
@@ -453,7 +463,7 @@ class RegionCreateMode(ModeBase):
             return True
         rect = QRectF(self._anchor, event.scene_pos).normalized()
         self._anchor = None
-        self.deps.canvas.hide_region_preview()
+        self.deps.canvas.hide_outline()
         if rect.width() >= MIN_REGION and rect.height() >= MIN_REGION:
             self.deps.canvas.region_create_requested.emit(
                 rect.x(), rect.y(), rect.width(), rect.height()
@@ -485,9 +495,7 @@ class RegionDragMode(ModeBase):
 
     def enter(self) -> None:
         canvas = self.deps.canvas
-        self._carried = {
-            node.step_id: node.pos() for node in canvas.nodes_inside(self._region)
-        }
+        self._carried = {node.step_id: node.pos() for node in canvas.nodes_inside(self._region)}
         canvas.hold_region(self._region.region_id, set(self._carried))
 
     def exit(self) -> None:
@@ -560,9 +568,7 @@ class RegionResizeMode(ModeBase):
         w, h = self._region.size()
         if (w, h) != self._was:
             at = self._region.pos()
-            self.deps.canvas.region_resized.emit(
-                self._region.region_id, at.x(), at.y(), w, h
-            )
+            self.deps.canvas.region_resized.emit(self._region.region_id, at.x(), at.y(), w, h)
         self._pop()
         return True
 
@@ -576,6 +582,70 @@ class RegionResizeMode(ModeBase):
     def _pop(self) -> None:
         if self.stack is not None:
             self.stack.pop()
+
+
+class LassoMode(ModeBase):
+    """Draw round the steps to pick: every card the outline touches is selected.
+
+    A rubber band is a box, and a cluster on a busy canvas rarely is. One lasso ends the
+    mode, like one link ends connect; Shift held on the release adds the catch to what was
+    already selected rather than replacing it. A press that never moves is a click, and a
+    click here means nothing — the selection is left as it was.
+    """
+
+    name = LASSO
+
+    def __init__(self, deps: CanvasDeps) -> None:
+        super().__init__(deps)
+        self._path: QPainterPath | None = None
+
+    def enter(self) -> None:
+        self.deps.view.viewport().setCursor(Qt.CursorShape.CrossCursor)
+        self.deps.status("Lasso: draw round the steps to pick. Shift adds, Esc leaves.")
+
+    def exit(self) -> None:
+        self.deps.view.viewport().unsetCursor()
+        self.deps.canvas.hide_outline()
+
+    def mouse_press(self, event: CanvasEvent) -> bool:
+        if event.button == Qt.MouseButton.LeftButton:
+            self._path = QPainterPath(event.scene_pos)
+        return True
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        if self._path is not None:
+            self._path.lineTo(event.scene_pos)
+            self.deps.canvas.aim_outline(self._path)
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        path = self._path
+        self._path = None
+        if path is None:
+            return True
+        self.deps.canvas.hide_outline()
+        extent = path.boundingRect()
+        if extent.width() >= HANDLE_GRAB or extent.height() >= HANDLE_GRAB:
+            path.closeSubpath()
+            picked = [node.step_id for node in self.deps.canvas.nodes_touching(path)]
+            if event.modifiers & Qt.KeyboardModifier.ShiftModifier:
+                kept = list(self.deps.canvas.selection().steps)
+                picked = kept + [step_id for step_id in picked if step_id not in kept]
+            self.deps.canvas.select_steps(picked)
+        if self.stack is not None:
+            self.stack.pop()
+        return True
+
+    def double_click(self, event: CanvasEvent) -> bool:
+        return True  # No step-creating double clicks while drawing.
+
+    def key_press(self, key: CanvasKey) -> bool:
+        if key.key == Qt.Key.Key_Escape and self._path is not None:
+            # Mid-draw: drop the outline and stay, the way connect drops a pending step.
+            self._path = None
+            self.deps.canvas.hide_outline()
+            return True
+        return False  # Nothing pending: the canvas pops the mode instead.
 
 
 class IdleMode(ModeBase):

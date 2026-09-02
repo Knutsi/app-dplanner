@@ -2,9 +2,16 @@
 
 The step verbs next door push commands: they alter the model, they are undoable, and they can
 reach nothing but the ``Context``. These are the other family. Moving the selection, entering
-connect mode and framing the graph change **what the user is looking at**, so they push no
-command, appear on no undo stack, and reach the current canvas through typed callbacks on
-their own ``Deps`` — the same seam ``StepVerbs.current_project`` already uses.
+connect or lasso mode, framing the graph and switching a mark on change **what the user is
+looking at**, so they push no command, appear on no undo stack, and reach the current canvas
+through typed callbacks on their own ``Deps`` — the same seam ``StepVerbs.current_project``
+already uses.
+
+**A mode switch reads the context; a mark reads the module.** The canvas publishes its mode
+as an edge on the activity node, so a mode button's ``checked`` is a pure function of the
+context. A mark is a per-user preference that outlives any tab, so its ``checked`` reads the
+module's value and the module asks the context to refresh when it changes — the same shape
+the theme and panel toggles use, deliberately not a second thing published per tab.
 
 Both families are ``ActionSpec``s, and that is the point of putting these here at all. The
 canvas keymap binds keys to action ids, so a movement key runs the same object the menu and
@@ -28,7 +35,8 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.context import Context
-from dplanner.modules.project_editor.modes import CONNECT, mode_uri
+from dplanner.modules.project_editor.marks import MARK_NAMES, Marks
+from dplanner.modules.project_editor.modes import CONNECT, LASSO, mode_uri
 from dplanner.modules.project_editor.placement import positions
 
 # Which way each verb looks, as (dx, dy) in scene coordinates — y grows downwards.
@@ -53,8 +61,12 @@ class CanvasVerbs:
     # The window capabilities these steer. Each is a no-op when no canvas is current.
     select_step: Callable[[StepId], None]
     select_steps: Callable[[list[StepId]], None]
-    set_connect_mode: Callable[[bool], None]
+    # Enter or leave a named canvas mode (modes.CONNECT, modes.LASSO).
+    set_mode: Callable[[str, bool], None]
     frame: Callable[[], None]
+    # The user's marks, and the switch for one of them by name (marks.MARK_NAMES).
+    marks: Callable[[], Marks]
+    set_mark: Callable[[str, bool], None]
 
     def register_into(self, actions: ActionRegistry) -> None:
         for spec in self._specs():
@@ -70,8 +82,19 @@ class CanvasVerbs:
                 group="link",
                 order=5,
                 tip="Pick a step, then the step that waits on it. Esc leaves",
-                state=self._can_connect,
-                run=self._connect,
+                state=self._mode_state(CONNECT),
+                run=self._mode_toggle(CONNECT),
+            ),
+            ActionSpec(
+                id="steps.lasso",
+                label="Lasso &Select",
+                menu="Step",
+                group="navigate",
+                # After the Go verbs and before Select All: it is the other way to pick many.
+                order=40,
+                tip="Draw round the steps to select them. Shift adds. Esc leaves",
+                state=self._mode_state(LASSO),
+                run=self._mode_toggle(LASSO),
             ),
             ActionSpec(
                 id="steps.reveal",
@@ -118,6 +141,32 @@ class CanvasVerbs:
                 state=self._on_a_canvas,
                 run=lambda _context: self.frame(),
             ),
+            *[
+                ActionSpec(
+                    id=f"canvas.mark_{name}",
+                    label=label,
+                    menu="View",
+                    group="canvas",
+                    submenu="Mark",
+                    # After Frame Graph; the Sort and Layout child menus sit at 10.
+                    order=60 + 10 * index,
+                    tip=tip,
+                    state=self._mark_state(name),
+                    run=self._mark_toggle(name),
+                )
+                for index, (name, label, tip) in enumerate(
+                    zip(
+                        MARK_NAMES,
+                        ("&Starts", "&Ends", "&Orphans"),
+                        (
+                            "Colour the left socket of every step nothing leads to",
+                            "Colour the right socket of every step nothing follows",
+                            "Ring every step with no links at all",
+                        ),
+                        strict=True,
+                    )
+                )
+            ],
         ]
 
     # -- state ---------------------------------------------------------------------------------
@@ -125,15 +174,40 @@ class CanvasVerbs:
     def _on_a_canvas(self, _context: Context) -> ActionState:
         return ENABLED if self.current_project() is not None else DISABLED
 
-    def _can_connect(self, context: Context) -> ActionState:
+    def _mode_state(self, name: str) -> Callable[[Context], ActionState]:
         """Checked while the mode is on — which is why the mode is in the context at all.
 
         The canvas publishes its mode as an edge on the activity node, so this stays a pure
         function of the context and the toolbar's checked button costs nothing.
         """
-        if self.current_project() is None:
-            return DISABLED
-        return ActionState(checked=context.edge("mode") == mode_uri(CONNECT))
+
+        def state(context: Context) -> ActionState:
+            if self.current_project() is None:
+                return DISABLED
+            return ActionState(checked=context.edge("mode") == mode_uri(name))
+
+        return state
+
+    def _mode_toggle(self, name: str) -> Callable[[Context], None]:
+        def run(context: Context) -> None:
+            self.set_mode(name, context.edge("mode") != mode_uri(name))
+
+        return run
+
+    def _mark_state(self, name: str) -> Callable[[Context], ActionState]:
+        """A preference, so never disabled: switching it off a canvas is harmless and the
+        next canvas opened shows it."""
+
+        def state(_context: Context) -> ActionState:
+            return ActionState(checked=self.marks().is_on(name))
+
+        return state
+
+    def _mark_toggle(self, name: str) -> Callable[[Context], None]:
+        def run(_context: Context) -> None:
+            self.set_mark(name, not self.marks().is_on(name))
+
+        return run
 
     def _has_steps(self, _context: Context) -> ActionState:
         project_id = self.current_project()
@@ -202,9 +276,6 @@ class CanvasVerbs:
         step_id = context.selected_entity("step")
         if step_id is not None and self.library.has(step_id):
             self.select_step(step_id)
-
-    def _connect(self, context: Context) -> None:
-        self.set_connect_mode(context.edge("mode") != mode_uri(CONNECT))
 
     def _select_all(self, _context: Context) -> None:
         project_id = self.current_project()

@@ -276,6 +276,19 @@ def unlink_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
+def disconnect_icon(color: str) -> QIcon:
+    """One node with the joins on both sides cut: cut a selection loose."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(5.0, 5.0, 6.0, 6.0), 1.5, 1.5)
+    for x in (1.0, 12.0):
+        painter.drawLine(QPointF(x, 8.0), QPointF(x + 1.6, 8.0))
+        painter.drawLine(QPointF(x + 1.4, 10.4), QPointF(x + 2.6, 5.6))
+    painter.end()
+    return QIcon(pixmap)
+
+
 def undo_icon(color: str) -> QIcon:
     """An arrow curving back on itself, anticlockwise."""
     return _turn_icon(color, mirrored=False)

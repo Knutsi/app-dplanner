@@ -31,6 +31,7 @@ from dplanner.domain.commands import (
     SetEdgesCommand,
     SetFieldCommand,
     SetModuleDataCommand,
+    remove_edges_command,
 )
 from dplanner.domain.model import EDGE_KINDS, Library, Project, Step, StepId, TextEdit
 from dplanner.domain.ordering import placed
@@ -228,6 +229,13 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
             configure=_configure_link,
             run=_step_unlink,
             examples=("dplanner step unlink draft-the-model read-the-spec",),
+        ),
+        CliCommand(
+            path=("step", "disconnect"),
+            summary="Remove every link into or out of these steps; links among them stay.",
+            configure=_configure_disconnect,
+            run=_step_disconnect,
+            examples=("dplanner step disconnect draft-the-model review",),
         ),
     ]
 
@@ -651,4 +659,37 @@ def _step_unlink(context: CliContext, args: Namespace) -> int:
     targets = [target for target in step.edges.get(args.kind, []) if target != other_id]
     context.apply(SetEdgesCommand(step.id, args.kind, targets))
     context.report(_step_row(context.library, step), f"Unlinked from {step.title!r}")
+    return 0
+
+
+def _configure_disconnect(parser: ArgumentParser) -> None:
+    parser.add_argument(
+        "steps", nargs="+", help="the steps to cut loose: id, folder name, or part of a title"
+    )
+
+
+def _step_disconnect(context: CliContext, args: Namespace) -> int:
+    """The GUI's Disconnect Steps: one command over ``Library.boundary_edges``."""
+    library = context.library
+    chosen: list[StepId] = []
+    for needle in args.steps:
+        step_id = find_step(library, needle, context.current).id
+        if step_id not in chosen:
+            chosen.append(step_id)
+    boundary = library.boundary_edges(chosen)
+    removed = [
+        {"waiter": waiter, "kind": kind, "source": source} for waiter, kind, source in boundary
+    ]
+    if boundary:
+        label = "Disconnect Step" if len(chosen) == 1 else f"Disconnect {len(chosen)} Steps"
+        context.apply(remove_edges_command(library, boundary, label))
+        text = "\n".join(
+            f"{library.step(waiter).title!r} no longer {kind} {library.step(source).title!r}"
+            for waiter, kind, source in boundary
+        )
+    else:
+        text = "Nothing links in or out of " + ", ".join(
+            repr(library.step(step_id).title) for step_id in chosen
+        )
+    context.report({"removed": removed}, text)
     return 0

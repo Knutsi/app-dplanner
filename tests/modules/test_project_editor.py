@@ -21,7 +21,7 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Project, Step
 from dplanner.framework.context import SCOPE_SELECTION
-from dplanner.modules.project_editor.modes import CONNECT, IDLE, PAN
+from dplanner.modules.project_editor.modes import CONNECT, IDLE, LASSO, PAN, REGION_CREATE
 from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W, snapped
 from dplanner.modules.project_editor.renderers import (
@@ -88,7 +88,14 @@ def chain(services, project):
 # mouse arrives — the scene only ever sees what no mode claimed.
 
 
-def send(app, tab, kind, scene_pos, buttons=Qt.MouseButton.LeftButton):
+def send(
+    app,
+    tab,
+    kind,
+    scene_pos,
+    buttons=Qt.MouseButton.LeftButton,
+    modifiers=Qt.KeyboardModifier.NoModifier,
+):
     viewport = view(tab).viewport()
     local = QPointF(view(tab).mapFromScene(scene_pos))
     # The global position has to be real: QGraphicsScene picks the item under the *screen*
@@ -99,7 +106,7 @@ def send(app, tab, kind, scene_pos, buttons=Qt.MouseButton.LeftButton):
         QPointF(viewport.mapToGlobal(local.toPoint())),
         Qt.MouseButton.LeftButton,
         buttons,
-        Qt.KeyboardModifier.NoModifier,
+        modifiers,
     )
     app.sendEvent(viewport, event)
 
@@ -1346,7 +1353,7 @@ def regions_of(services, project):
 
 
 def test_dragging_out_a_region_is_one_undo_step(app, services, project, tab):
-    tab.set_region_mode(True)
+    tab.set_mode(REGION_CREATE, True)
     drag(app, tab, QPointF(400.0, 296.0), QPointF(720.0, 536.0))
 
     found = regions_of(services, project)
@@ -1452,6 +1459,214 @@ def test_a_node_over_a_region_still_drags_as_a_node(app, services, project, tab)
         0.0,
         0.0,
     )
+
+
+# -- the lasso -------------------------------------------------------------------------------------
+
+
+def lasso(app, tab, points, modifiers=Qt.KeyboardModifier.NoModifier):
+    """Press at the first point, drag through the rest, release at the last."""
+    send(app, tab, QEvent.Type.MouseButtonPress, points[0], modifiers=modifiers)
+    for point in points[1:]:
+        send(app, tab, QEvent.Type.MouseMove, point, modifiers=modifiers)
+    send(app, tab, QEvent.Type.MouseButtonRelease, points[-1], Qt.MouseButton.NoButton, modifiers)
+
+
+def round_first_into_second(tab, first, second):
+    """An outline enclosing the first card and poking ten pixels into the second."""
+    one = scene(tab)._nodes[first.id].body_scene_rect()
+    two = scene(tab)._nodes[second.id].body_scene_rect()
+    return [
+        QPointF(one.left() - 10, one.top() - 10),
+        QPointF(two.left() + 10, one.top() - 10),
+        QPointF(two.left() + 10, one.bottom() + 10),
+        QPointF(one.left() - 10, one.bottom() + 10),
+    ]
+
+
+def test_a_lasso_picks_every_card_it_touches_and_then_lets_go(app, services, project, tab):
+    first, second, third = chain(services, project)
+    services.actions.run("steps.lasso", services.context.current())
+    assert modes(tab).current().name == LASSO
+
+    lasso(app, tab, round_first_into_second(tab, first, second))
+
+    assert set(scene(tab).selection().steps) == {first.id, second.id}
+    assert third.id not in scene(tab).selection().steps
+    assert modes(tab).current().name == IDLE  # One lasso ends the mode, like one link.
+
+
+def test_shift_adds_the_catch_to_the_selection(app, services, project, tab):
+    first, second, third = chain(services, project)
+    scene(tab).select_step(third.id)
+    press_key(app, tab, Qt.Key.Key_S)
+    assert modes(tab).current().name == LASSO
+
+    lasso(
+        app,
+        tab,
+        round_first_into_second(tab, first, second),
+        modifiers=Qt.KeyboardModifier.ShiftModifier,
+    )
+    assert scene(tab).selection().steps == (third.id, first.id, second.id)
+
+
+def test_a_lasso_that_never_moved_is_a_click_that_means_nothing(app, services, project, tab):
+    first, _second = project.steps
+    scene(tab).select_step(first.id)
+    services.actions.run("steps.lasso", services.context.current())
+    click(app, tab, QPointF(900.0, 900.0))
+    assert scene(tab).selection().steps == (first.id,)
+    assert modes(tab).current().name == IDLE
+
+
+def test_escape_drops_a_half_drawn_lasso_before_it_leaves(app, services, project, tab):
+    services.actions.run("steps.lasso", services.context.current())
+    send(app, tab, QEvent.Type.MouseButtonPress, QPointF(0.0, 0.0))
+    send(app, tab, QEvent.Type.MouseMove, QPointF(300.0, 300.0))
+    assert scene(tab)._outline.isVisible()
+
+    press_key(app, tab, Qt.Key.Key_Escape)
+    assert modes(tab).current().name == LASSO
+    assert not scene(tab)._outline.isVisible()
+    press_key(app, tab, Qt.Key.Key_Escape)
+    assert modes(tab).current().name == IDLE
+
+
+def test_the_lasso_button_checks_itself_and_hides_the_handles(app, services, project, tab):
+    button = toolbar_button(tab, "steps.lasso")
+    assert not button.isChecked()
+    services.actions.run("steps.lasso", services.context.current())
+    assert button.isChecked()
+    assert all(item._hints.handles == "hidden" for item in scene(tab)._nodes.values())
+    press_key(app, tab, Qt.Key.Key_Escape)
+    assert not button.isChecked()
+
+
+# -- disconnecting ---------------------------------------------------------------------------------
+
+
+def test_disconnect_wants_a_step_with_a_link_crossing_out(services, project, tab):
+    first, second, _third = chain(services, project)
+    assert not state(services, "steps.disconnect", context_of(services)).enabled
+
+    lonely = Step(title="Alone")
+    services.undo.push(AddNodeCommand(project.id, lonely))
+    alone = state(services, "steps.disconnect", context_of(services, lonely.id))
+    assert not alone.enabled and "nothing links" in (alone.label or "")
+
+    assert state(services, "steps.disconnect", context_of(services, second.id)).enabled
+    both = state(services, "steps.disconnect", context_of(services, first.id, second.id))
+    assert both.enabled and both.label == "D&isconnect 2 Steps"
+
+
+def test_disconnect_cuts_the_crossing_links_and_keeps_the_ones_inside(services, project, tab):
+    first, second, third = chain(services, project)
+    services.undo.push(SetEdgesCommand(first.id, "relates", [third.id]))
+
+    services.actions.run("steps.disconnect", context_of(services, first.id, second.id))
+
+    document = services.document
+    assert document.step(second.id).edges["requires"] == [first.id]  # Inside: kept.
+    assert "requires" not in document.step(third.id).edges
+    assert "relates" not in document.step(first.id).edges
+    assert services.undo.undo_text() == "Disconnect 2 Steps"
+    services.undo.undo()
+    assert document.step(third.id).edges["requires"] == [second.id]
+    assert document.step(first.id).edges["relates"] == [third.id]
+
+
+def test_the_disconnect_button_is_on_the_strip(services, project, tab):
+    assert not toolbar_button(tab, "steps.disconnect").isEnabled()
+    _first, second, _third = chain(services, project)
+    scene(tab).select_step(second.id)
+    assert toolbar_button(tab, "steps.disconnect").isEnabled()
+
+
+# -- marks -----------------------------------------------------------------------------------------
+
+
+def painted_at(tab, step_id, dx: float, dy: float) -> QColor:
+    """The colour ``(dx, dy)`` from a node's top-left corner comes out, rendered over
+    white with the paint margin around it — sockets and rings sit on the edge."""
+    node = scene(tab)._nodes[step_id]
+    margin = int(PAINT_MARGIN)
+    width, height = int(NODE_W + 2 * margin), int(NODE_H + 2 * margin)
+    image = QImage(width, height, QImage.Format.Format_ARGB32)
+    image.fill(QColor("white"))
+    painter = QPainter(image)
+    scene(tab).render(
+        painter,
+        QRectF(image.rect()),
+        QRectF(node.scenePos() - QPointF(margin, margin), QSizeF(width, height)),
+    )
+    painter.end()
+    return image.pixelColor(int(margin + dx), int(margin + dy))
+
+
+def close_to(colour: QColor, wanted: QColor) -> bool:
+    return all(
+        abs(getattr(colour, channel)() - getattr(wanted, channel)()) <= 3
+        for channel in ("red", "green", "blue")
+    )
+
+
+def test_marks_are_off_until_asked_and_then_colour_the_bare_sockets(services, project, tab):
+    from dplanner.modules.project_editor.renderers import END_MARK, START_MARK
+
+    first, second, _third = chain(services, project)
+    assert not close_to(painted_at(tab, first.id, 0.0, NODE_H / 2), START_MARK)
+
+    services.actions.run("canvas.mark_starts", services.context.current())
+    services.actions.run("canvas.mark_ends", services.context.current())
+    assert close_to(painted_at(tab, first.id, 0.0, NODE_H / 2), START_MARK)
+    # Something follows the first step, so its right socket is not an end.
+    assert not close_to(painted_at(tab, first.id, NODE_W, NODE_H / 2), END_MARK)
+    assert not close_to(painted_at(tab, second.id, 0.0, NODE_H / 2), START_MARK)
+    assert close_to(painted_at(tab, _third.id, NODE_W, NODE_H / 2), END_MARK)
+
+
+def test_an_orphan_wears_a_red_ring_only_while_the_mark_is_on(services, project, tab):
+    from dplanner.modules.project_editor.renderers import RING_GAP
+
+    lonely = Step(title="Alone")
+    services.undo.push(AddNodeCommand(project.id, lonely))
+    ring = lambda: painted_at(tab, lonely.id, -RING_GAP, NODE_H / 2)  # noqa: E731
+    assert ring().red() <= ring().green() + 20
+
+    services.actions.run("canvas.mark_orphans", services.context.current())
+    assert ring().red() > ring().green() + 40
+
+    first = project.steps[0]
+    services.undo.push(SetEdgesCommand(lonely.id, "relates", [first.id]))  # Any link will do.
+    assert ring().red() <= ring().green() + 20
+
+
+def test_a_mark_is_remembered_and_every_canvas_wears_it(services, project, tab, make_project):
+    from dplanner.framework.user_config import get_global
+    from dplanner.modules.project_editor.marks import Marks
+    from dplanner.modules.project_editor.module import MARKS_KEY, MODULE_ID
+
+    button = toolbar_button(tab, "canvas.mark_ends")
+    assert not button.isChecked()
+    services.actions.run("canvas.mark_ends", services.context.current())
+    assert button.isChecked()
+    assert Marks.from_json(get_global(MODULE_ID, MARKS_KEY)) == Marks(ends=True)
+
+    other = services.tabs.open("project", make_project("Later").id)
+    assert other._scene._marks == Marks(ends=True)
+    assert scene(tab)._marks == Marks(ends=True)
+
+    services.actions.run("canvas.mark_ends", services.context.current())
+    assert not button.isChecked()
+    assert other._scene._marks == Marks()
+
+
+def test_a_mark_reaches_out_no_further_than_the_item_paints():
+    from dplanner.modules.project_editor.renderers import MARK_R, RING_GAP, RING_W
+
+    assert MARK_R + 1.0 <= PAINT_MARGIN
+    assert RING_GAP + RING_W + 1.0 <= PAINT_MARGIN
 
 
 # -- the node's top edge, which two decorations share -------------------------------------------

@@ -14,6 +14,11 @@ the link between them; selected *edges* mean those edges. Both end in the same c
 picking an arrow on the canvas and picking its two ends are the same verb rather than two that
 have to be kept agreeing. The same reasoning makes Delete act on the whole selection.
 
+**Disconnect cuts a selection loose.** Every link into or out of the selected steps goes and
+every link among them stays — which edges those are is ``Library.boundary_edges``, and the
+command is ``remove_edges_command``, both in the domain so ``dplanner step disconnect`` builds
+the same object.
+
 **A verb that can act on nothing is disabled, not hidden.** These render as toolbar buttons
 now, and a row that reflows as the selection changes is unreadable. ``build_menu`` filters on
 *enabled*, so the right-click menu is unchanged and the menu bar greys the entry instead — which
@@ -33,6 +38,7 @@ from dplanner.domain.commands import (
     SetEdgesCommand,
     SetFieldCommand,
     SetModuleDataCommand,
+    remove_edges_command,
 )
 from dplanner.domain.model import Library, NodeId, Step, StepId
 from dplanner.framework.action_registry import (
@@ -164,6 +170,16 @@ class StepVerbs:
                 run=self._unlink,
             ),
             ActionSpec(
+                id="steps.disconnect",
+                label="D&isconnect Steps",  # &i: D is Delete's.
+                menu="Step",
+                group="link",
+                order=30,
+                tip="Remove every link into or out of the selected steps; links among them stay",
+                state=self._can_disconnect,
+                run=self._disconnect,
+            ),
+            ActionSpec(
                 id="steps.delete",
                 label="&Delete Step",
                 menu="Step",
@@ -276,25 +292,33 @@ class StepVerbs:
         self.undo.push(self._removal_of([EdgeRef(waiter=waiter, kind=kind, source=other)]))
 
     def _removal_of(self, refs: list[EdgeRef]) -> Command:
-        """One command per ``(waiter, kind)``, because ``SetEdgesCommand`` replaces the list.
+        label = "Remove Link" if len(refs) == 1 else f"Remove {len(refs)} Links"
+        return remove_edges_command(
+            self.library, [(ref.waiter, ref.kind, ref.source) for ref in refs], label
+        )
 
-        Two commands for the same pair would each be built from the state before either ran,
-        and the second would put back what the first removed.
-        """
-        by_list: dict[tuple[StepId, str], set[StepId]] = {}
-        for ref in refs:
-            by_list.setdefault((ref.waiter, ref.kind), set()).add(ref.source)
-        commands: list[Command] = [
-            SetEdgesCommand(
-                waiter,
-                kind,
-                [t for t in self.library.step(waiter).edges.get(kind, []) if t not in gone],
-            )
-            for (waiter, kind), gone in sorted(by_list.items())
-        ]
-        if len(commands) == 1:
-            return commands[0]
-        return CompositeCommand(f"Remove {len(refs)} Links", commands)
+    # -- disconnecting ---------------------------------------------------------------------------
+
+    def _boundary(self, context: Context) -> tuple[list[StepId], list[tuple[StepId, str, StepId]]]:
+        chosen = self._chosen(context)
+        return chosen, self.library.boundary_edges(chosen)
+
+    def _can_disconnect(self, context: Context) -> ActionState:
+        chosen, boundary = self._boundary(context)
+        if not chosen:
+            return DISABLED
+        if not boundary:
+            return ActionState(enabled=False, label="Disconnect — nothing links in or out")
+        if len(chosen) == 1:
+            return ENABLED
+        return ActionState(label=f"D&isconnect {len(chosen)} Steps")
+
+    def _disconnect(self, context: Context) -> None:
+        chosen, boundary = self._boundary(context)
+        if not boundary:
+            return  # The state gate already prevents this; stay honest.
+        label = "Disconnect Step" if len(chosen) == 1 else f"Disconnect {len(chosen)} Steps"
+        self.undo.push(remove_edges_command(self.library, boundary, label))
 
     # -- run -----------------------------------------------------------------------------------
 
@@ -345,8 +369,9 @@ class StepVerbs:
         if accepted and title.strip():
             self.undo.push(SetFieldCommand(step.id, "title", title.strip()))
 
-    def _doomed(self, context: Context) -> list[StepId]:
-        """Every selected step, or the one the activity is about — one prompt covers them."""
+    def _chosen(self, context: Context) -> list[StepId]:
+        """Every selected step, or the one the activity is about — what Delete and
+        Disconnect act on."""
         chosen = [s for s in context.selected_entities("step") if self.library.has(s)]
         if chosen:
             return chosen
@@ -354,7 +379,7 @@ class StepVerbs:
         return [step_id] if step_id is not None and self.library.has(step_id) else []
 
     def _can_delete(self, context: Context) -> ActionState:
-        doomed = self._doomed(context)
+        doomed = self._chosen(context)
         if not doomed:
             return DISABLED
         if len(doomed) == 1:
@@ -362,7 +387,7 @@ class StepVerbs:
         return ActionState(label=f"&Delete {len(doomed)} Steps")
 
     def _delete(self, context: Context) -> None:
-        doomed = self._doomed(context)
+        doomed = self._chosen(context)
         if not doomed:
             return
         if len(doomed) == 1:

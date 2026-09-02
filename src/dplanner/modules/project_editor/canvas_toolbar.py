@@ -6,14 +6,15 @@ none of them — the registry is the only thing between them, so adding a button
 string to :data:`GROUPS`.
 
 Grouping is the only structure a toolbar has, so it is spelled out here rather than inferred
-from the menus, where these nine verbs sit under four different headings. A hairline is drawn
+from the menus, where these verbs sit under four different headings. A hairline is drawn
 between groups; :mod:`dplanner.framework.toolbar` renders one group each and knows nothing
 about the others.
 
-Every button is its glyph alone with the spec's label left as the tooltip — except the mode
-switches, which are words and no glyph. A mode you are in has to be readable at a glance, and
-a checked button is filled with the accent, where a glyph painted in the secondary text colour
-would have nothing left to say.
+Every button is its glyph alone with the spec's label left as the tooltip — except the
+switches, which are words and no glyph: the three modes, and the three marks at the far end.
+A mode you are in, or a mark you have on, has to be readable at a glance, and a checked button
+is filled with the accent, where a glyph painted in the secondary text colour would have
+nothing left to say.
 
 **New is the one button with an arrow**, and what drops from it is the Step ▸ New submenu
 itself — :data:`DROPDOWNS` names it and ``ActionToolbar`` renders it, so the kinds a step can
@@ -33,6 +34,7 @@ from dplanner.framework.context import ContextService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.toolbar import ActionToolbar
 from dplanner.theme.icons import (
+    disconnect_icon,
     edit_icon,
     frame_icon,
     list_icon,
@@ -45,26 +47,34 @@ from dplanner.theme.icons import (
 
 GROUPS: tuple[tuple[str, ...], ...] = (
     ("steps.new", "steps.rename", "steps.delete"),
-    ("steps.connect", "steps.unlink"),
+    ("steps.lasso", "steps.connect", "steps.unlink", "steps.disconnect"),
     ("regions.new",),
     ("appshell.undo", "appshell.redo"),
     ("canvas.frame", "order.open"),
+    ("canvas.mark_starts", "canvas.mark_ends", "canvas.mark_orphans"),
 )
 
 # Action id → the (menu, submenu) its arrow drops down.
 DROPDOWNS: dict[str, tuple[str, str]] = {"steps.new": ("Step", "New")}
 
-# The two mode switches and New are worded; everything else is its glyph.
-_WORDED = {"steps.new": "New", "steps.connect": "Connect", "regions.new": "Region"}
-BUTTON_TEXT = {
-    action_id: _WORDED.get(action_id, "") for group in GROUPS for action_id in group
+# The switches and New are worded; everything else is its glyph.
+_WORDED = {
+    "steps.new": "New",
+    "steps.lasso": "Lasso",
+    "steps.connect": "Connect",
+    "regions.new": "Region",
+    "canvas.mark_starts": "Starts",
+    "canvas.mark_ends": "Ends",
+    "canvas.mark_orphans": "Orphans",
 }
+BUTTON_TEXT = {action_id: _WORDED.get(action_id, "") for group in GROUPS for action_id in group}
 
 ICONS: dict[str, Callable[[str], QIcon]] = {
     "steps.new": plus_icon,
     "steps.rename": edit_icon,
     "steps.delete": trash_icon,
     "steps.unlink": unlink_icon,
+    "steps.disconnect": disconnect_icon,
     "appshell.undo": undo_icon,
     "appshell.redo": redo_icon,
     "canvas.frame": frame_icon,

@@ -164,6 +164,58 @@ def test_deleting_a_step_leaves_the_edges_that_named_it(library):
     assert library.requires(second.id) == []
 
 
+def test_boundary_edges_are_the_links_that_cross_a_set(library):
+    """Both directions and both kinds count; links among the set stay out of it."""
+    first, second, third = (
+        find(library, "Read the spec"),
+        find(library, "Draft the model"),
+        find(library, "Review"),
+    )
+    library.set_edges(second.id, "requires", [first.id])
+    library.set_edges(third.id, "requires", [second.id])
+    library.set_edges(first.id, "relates", [third.id])
+    assert library.boundary_edges([second.id]) == [
+        (second.id, "requires", first.id),
+        (third.id, "requires", second.id),
+    ]
+    assert library.boundary_edges([first.id, second.id]) == [
+        (first.id, "relates", third.id),
+        (third.id, "requires", second.id),
+    ]
+    assert library.boundary_edges([first.id, second.id, third.id]) == []
+
+
+def test_boundary_edges_skip_a_link_to_a_step_that_is_gone(library):
+    first, second = find(library, "Read the spec"), find(library, "Draft the model")
+    library.set_edges(second.id, "requires", [first.id])
+    library.remove_child(first.id)
+    assert library.boundary_edges([second.id]) == []
+
+
+def test_removing_edges_is_one_command_per_list_and_one_undo_step(library):
+    from dplanner.domain.commands import remove_edges_command
+
+    first, second, third = (
+        find(library, "Read the spec"),
+        find(library, "Draft the model"),
+        find(library, "Review"),
+    )
+    library.set_edges(third.id, "requires", [first.id, second.id])
+    library.set_edges(second.id, "relates", [first.id])
+    command = remove_edges_command(
+        library,
+        [(third.id, "requires", first.id), (third.id, "requires", second.id)],
+        "Disconnect Step",
+    )
+    assert command.text() == "Disconnect Step"
+    assert len(command.commands) == 1  # One list, one replacement — not two fighting ones.
+    command.redo(library)
+    assert "requires" not in third.edges
+    assert second.edges["relates"] == [first.id]
+    command.undo(library)
+    assert third.edges["requires"] == [first.id, second.id]
+
+
 # -- prose -------------------------------------------------------------------------------------
 
 
