@@ -205,9 +205,9 @@ def test_removing_edges_is_one_command_per_list_and_one_undo_step(library):
     command = remove_edges_command(
         library,
         [(third.id, "requires", first.id), (third.id, "requires", second.id)],
-        "Disconnect Step",
+        "Isolate Step",
     )
-    assert command.text() == "Disconnect Step"
+    assert command.text() == "Isolate Step"
     assert len(command.commands) == 1  # One list, one replacement — not two fighting ones.
     command.redo(library)
     assert "requires" not in third.edges

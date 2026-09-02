@@ -34,9 +34,10 @@ from dplanner.framework.context import ContextService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.toolbar import ActionToolbar
 from dplanner.theme.icons import (
-    disconnect_icon,
     edit_icon,
     frame_icon,
+    isolate_icon,
+    lasso_icon,
     list_icon,
     plus_icon,
     redo_icon,
@@ -47,7 +48,7 @@ from dplanner.theme.icons import (
 
 GROUPS: tuple[tuple[str, ...], ...] = (
     ("steps.new", "steps.rename", "steps.delete"),
-    ("steps.lasso", "steps.connect", "steps.unlink", "steps.disconnect"),
+    ("steps.lasso", "steps.connect", "steps.unlink", "steps.isolate"),
     ("regions.new",),
     ("appshell.undo", "appshell.redo"),
     ("canvas.frame", "order.open"),
@@ -71,10 +72,11 @@ BUTTON_TEXT = {action_id: _WORDED.get(action_id, "") for group in GROUPS for act
 
 ICONS: dict[str, Callable[[str], QIcon]] = {
     "steps.new": plus_icon,
+    "steps.lasso": lasso_icon,
     "steps.rename": edit_icon,
     "steps.delete": trash_icon,
     "steps.unlink": unlink_icon,
-    "steps.disconnect": disconnect_icon,
+    "steps.isolate": isolate_icon,
     "appshell.undo": undo_icon,
     "appshell.redo": redo_icon,
     "canvas.frame": frame_icon,

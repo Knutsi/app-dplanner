@@ -10,12 +10,13 @@ and when the shell itself ends without clearing it, the window that launched it 
 (:func:`record_exit`), because a chip on a step nobody is working on is a lie.
 """
 
+from collections.abc import Sequence
 from typing import Any, Final
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, Step, StepId, now_stamp
+from dplanner.domain.model import Library, Project, Step, StepId, now_stamp
 
 MODULE_ID = "step_agent_run"
 
@@ -92,6 +93,16 @@ def record_exit(library: Library, step_id: StepId) -> bool:
         return False
     SetModuleDataCommand(step_id, MODULE_ID, {}, view_origin=LAUNCH_ORIGIN).redo(library)
     return True
+
+
+def forget_for_paste(_project: Project, steps: Sequence[Step]) -> None:
+    """A copied step carries no agent run — the paste policy this module hands in.
+
+    The state is a fact about a shell somebody launched on the *original*; a chip and a
+    marching ring on a step nobody is working on would be a lie.
+    """
+    for step in steps:
+        step.module_data.pop(MODULE_ID, None)
 
 
 # Last, because it names the pieces above: the one declaration everything reads.

@@ -21,7 +21,6 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.context import Context
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import confirm
 from dplanner.modules.project_editor.modes import REGION_CREATE, mode_uri
 from dplanner.modules.project_editor.regions import (
     Region,
@@ -139,12 +138,6 @@ class RegionVerbs:
         project = self._project()
         chosen = self._selected(context)
         if project is None or not chosen:
-            return
-        if len(chosen) == 1:
-            question = f"Delete the region “{chosen[0].title or 'Region'}”?"
-        else:
-            question = f"Delete {len(chosen)} regions?"
-        if not confirm(self.parent, "Delete Region", question):
             return
         doomed = {region.id for region in chosen}
         kept = [region for region in read_regions(project) if region.id not in doomed]

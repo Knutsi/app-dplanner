@@ -38,6 +38,7 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
+from dplanner.domain.store import FilesFor
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import EntityActivity, follow_entity_tabs
@@ -59,6 +60,8 @@ from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.window import StatusHost
 from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
+from dplanner.modules.project_editor.clipboard import PastePolicy
+from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, ClipboardWatch
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.kinds import StepKind
@@ -135,6 +138,8 @@ class ProjectEditorDeps:
     parent: QWidget
     panels: PanelRegistry
     theme: ThemeService
+    # Where a step's attachments live, for a copy to carry them.
+    files: FilesFor
     # What the aspect modules have to say about a step, one short phrase each.
     step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
     # How a step should look beyond its text — muted, badged — in the canvas's own
@@ -149,6 +154,10 @@ class ProjectEditorDeps:
     # What the New submenu offers besides a plain step. Named by the composition root, so
     # this module never learns what a feature or a milestone is — see kinds.py.
     step_kinds: tuple[StepKind, ...] = ()
+    # A copied step carries its attachments: the file areas to read are the asset catalog's
+    # sources, and what a copy may not carry is each owner's policy — see clipboard.py.
+    file_modules: tuple[str, ...] = ()
+    paste_policies: tuple[PastePolicy, ...] = ()
 
 
 class ProjectActivity(EntityActivity):
@@ -419,19 +428,22 @@ class ProjectActivity(EntityActivity):
         """Double-click on empty space: the same creation the New verbs run, unprompted."""
         self._verbs.create(self.project_id, "New step", at=(x, y))
 
-    def note_created(self, step_id: StepId) -> None:
-        """A step was just born on this canvas.
+    def note_placed(self, step_ids: list[StepId]) -> None:
+        """Steps were just placed on this canvas — born here, or pasted.
 
-        Two things follow from that and neither belongs to the verb: it becomes the
+        Two things follow from that and neither belongs to the verb: they become the
         selection, so the panel beside the canvas is already showing what was made; and the
-        remembered point steps one row down, so pressing New twice leaves two nodes rather
-        than one hiding another. The double-click lands here too — it pointed at a spot in
-        exactly the same sense.
+        remembered point steps past them, so pressing New or Paste twice leaves two rows
+        rather than one hiding another. The double-click lands here too — it pointed at a
+        spot in exactly the same sense.
         """
-        self._scene.select_step(step_id)
+        self._scene.select_steps(step_ids)
         point = self._view.last_click
         if point is not None:
-            self._view.note_click(QPointF(*below(point.x(), point.y())))
+            placed = positions(self._product, self._project())
+            ys = [placed[s][1] for s in step_ids if s in placed]
+            height = max(ys) - min(ys) if ys else 0.0
+            self._view.note_click(QPointF(*below(point.x(), point.y() + height)))
 
     def new_step_position(self) -> tuple[float, float] | None:
         """The top-left a new node should take: centred on wherever the user last pointed.
@@ -527,7 +539,21 @@ class ProjectEditorModule:
             current_project=self._current_project,
             step_kinds=deps.step_kinds,
             new_position=self._new_step_position,
-            created=self._on_created,
+            placed=self._on_placed,
+        )
+        # The watcher is a child of the window, which is what disconnects it from the
+        # process-global clipboard when this build is discarded.
+        self._clipboard = ClipboardWatch(deps.parent, deps.context)
+        self._clipboard_verbs = ClipboardVerbs(
+            library=deps.library,
+            undo=deps.undo,
+            files=deps.files,
+            file_modules=deps.file_modules,
+            held=self._clipboard.count,
+            current_project=self._current_project,
+            new_position=self._new_step_position,
+            placed=self._on_placed,
+            policies=deps.paste_policies,
         )
         self._layout_verbs = LayoutVerbs(
             library=deps.library,
@@ -594,6 +620,7 @@ class ProjectEditorModule:
             )
         )
         self._verbs.register_into(deps.actions)
+        self._clipboard_verbs.register_into(deps.actions)
         self._canvas_verbs.register_into(deps.actions)
         self._layout_verbs.register_into(deps.actions)
         self._region_verbs.register_into(deps.actions)
@@ -623,10 +650,10 @@ class ProjectEditorModule:
         current = self._current_activity()
         return current.new_step_position() if current is not None else None
 
-    def _on_created(self, step_id: StepId) -> None:
+    def _on_placed(self, step_ids: list[StepId]) -> None:
         current = self._current_activity()
         if current is not None:
-            current.note_created(step_id)
+            current.note_placed(step_ids)
 
     def _set_mode(self, name: str, on: bool) -> None:
         current = self._current_activity()

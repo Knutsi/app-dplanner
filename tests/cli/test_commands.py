@@ -246,14 +246,14 @@ def test_unlink_removes_only_that_edge(cli):
     assert len(data(cli("step", "show", "C", "--json"))["requires"]) == 1
 
 
-def test_disconnect_cuts_the_links_that_cross_the_set_and_keeps_the_rest(cli):
+def test_isolate_cuts_the_links_that_cross_the_set_and_keeps_the_rest(cli):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "A")
     cli("step", "add", "Discovery", "B", "--after", "A")
     cli("step", "add", "Discovery", "C", "--after", "B")
     cli("step", "add", "Discovery", "D", "--after", "C")
     ids = {title: data(cli("step", "show", title, "--json"))["id"] for title in "ABCD"}
-    report = data(cli("step", "disconnect", "B", "C", "--json"))
+    report = data(cli("step", "isolate", "B", "C", "--json"))
     assert [(edge["waiter"], edge["source"]) for edge in report["removed"]] == [
         (ids["B"], ids["A"]),
         (ids["D"], ids["C"]),
@@ -263,10 +263,10 @@ def test_disconnect_cuts_the_links_that_cross_the_set_and_keeps_the_rest(cli):
     assert data(cli("step", "show", "D", "--json"))["requires"] == []
 
 
-def test_disconnecting_a_step_with_no_links_is_already_done(cli):
+def test_isolating_a_step_with_no_links_is_already_done(cli):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "A")
-    assert "Nothing links" in cli("step", "disconnect", "A")
+    assert "Nothing links" in cli("step", "isolate", "A")
 
 
 # -- the agent instruction at both levels ------------------------------------------------------

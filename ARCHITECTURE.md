@@ -400,6 +400,95 @@ wear, and it is what lets the canvas toolbar's New button drop that submenu down
 `fill_menu`, so it is the menu and not a copy) instead of the module hand-building a list of
 kinds it is not allowed to know.
 
+### Edit verbs belong to the surface whose things they act on
+
+The Edit menu holds Undo and Redo from the app shell, and then Cut, Copy, Paste, Duplicate,
+Delete and Select All — and those six are the graph editor's, registered by
+`project_editor` as ordinary `ActionSpec`s. The alternative was a dispatching layer: a
+generic `edit.copy` whose meaning is supplied by whichever surface is current. It was not
+built, because the machinery above already gives that behaviour for free. A state callback
+reads the context, so Copy is enabled exactly when steps are chosen; *disabled, never hidden*
+keeps the menu stable while it is not; and a greyed menu-bar action's shortcut does not fire.
+A dispatcher would be a second action registry with one registrant. **The moment for one is
+when a second surface needs Cut/Copy/Paste** — a shortcut can be owned by one enabled QAction
+at a time, and two surfaces enabled at once would be Qt's *ambiguous shortcut*, which fires
+neither. Until then, a second surface's verb is a second spec with a distinct label, and the
+context greys the one that does not apply.
+
+What they act on is what Delete acts on: `verbs.chosen_steps` — the selected steps, else
+the focused one — so Cut and Copy work wherever Delete does, a table's right-click included.
+Only Paste needs a canvas: it is the target. Its state never reads the clipboard;
+`ClipboardWatch` counts what the clipboard holds when the clipboard changes and re-emits
+the context, the same idiom that keeps the Undo label current.
+
+**Standard keys are menu shortcuts here, and Delete is not.** The canvas-keymap rule in
+`CLAUDE.md` is about bare keys: an `H` on a menu-bar QAction eats a keystroke in every
+editor. Ctrl+X, Ctrl+C, Ctrl+V, Ctrl+D and Ctrl+A are different, and this was measured
+rather than assumed: `QPlainTextEdit` and `QLineEdit` claim all of them through
+`ShortcutOverride`, so a window-wide menu shortcut never fires while an editor has focus —
+the property `tests/modules/test_appshell.py` pins for Ctrl+Shift+Right. A table claims
+none of them, but every table here is a tab, so no table ever competes with a canvas for a
+key, and a table has no Ctrl+X of its own to lose. Delete is the exception in the other
+direction: a bare `Del` on the menu bar would fire in every list in the window, and
+`QKeySequence.StandardKey.Delete` binds Ctrl+D as well as `Del`, which would collide with
+Duplicate. So Delete keeps its canvas key and the Edit-menu entry shows no shortcut — and
+that entry is `steps.delete_edit`, the verb's second seat: `steps.delete` stays on the Step
+menu because the canvas, four tables and the toolbar render that menu by name.
+
+**Deleting asks nothing any more.** A prompt in front of an undoable verb teaches the wrong
+lesson — that the gesture is dangerous, when Ctrl+Z is the safety net — and the CLI's `step
+remove` has said so since it existed. Steps and regions both lost their prompt in one pass,
+because the Delete key runs whichever of them the selection calls for and one gesture should
+not sometimes ask. The prompts that remain guard what undo cannot reach: removing a project
+from the library, a release, an outside edit.
+
+### Copy and paste are a clone through the same command
+
+A copied step is a `StepClip` (`project_editor/clipboard.py`): its title, its links, every
+module's data and prose, and the bytes of every file beside it, plus where it sat. A paste
+turns a list of clips into **one** `CompositeCommand` — the same object the window pushes
+and `dplanner step duplicate` applies — so a paste is one undo step and one transaction.
+Duplicate is that paste with the clipboard left alone: what the user had copied stays copied.
+
+Four rules, each a decision:
+
+- **A copy is a clone.** Every clone has a fresh id and an empty folder name, so the store
+  mints it a directory of its own. Reusing the id was considered and rejected: in the same
+  project it collides with the store's record of where the original lives, and in another it
+  makes `library.has()` resolve a step that is not there.
+- **Only the links inside the copy travel, and they go through `SetEdgesCommand`.** The
+  pasted set keeps its internal arrangement and arrives disconnected from everything outside
+  it, in the same project or another: links *between* copied steps are remapped through the
+  old-to-new map, and a link to anything else is dropped. Keeping an outside link where it
+  happened to resolve was tried first and read as a bug — a duplicate that silently waited on
+  its original's upstream — so wiring the copy in is the user's next move, never a guess the
+  paste makes. Setting `step.edges` on the clone before the add would skip `link_refusal`
+  and `edges_changed`, which is why the links are commands in the same composite.
+- **Files ride in the payload and are written after the command.** A cut removes the step and
+  the next autosave's orphan sweep deletes its directory, so a paste after that has nowhere
+  else to read an attachment from — the bytes have to travel with the clip. They are written
+  once the clones exist, because a file area is settled from the node's place in the library;
+  and they stay off the undo stack, the trade `FORMAT.md` makes for every attachment. The
+  same pre-existing gap applies: a paste undone before the first autosave leaves an `assets/`
+  directory behind, exactly as attach-then-undo-creation does today.
+- **Two modules have a say, and the rest copy verbatim.** Aspect data is opaque here, so a
+  module that cannot let its entry travel as it is hands in a `PastePolicy` from its Qt-free
+  half and the composition root assembles the tuple (`_paste_policies`). The policies see the
+  whole batch before any command exists, which is what lets `testing` mint ids across three
+  pasted steps without a collision — an id is per project, and a copy that kept `T100` would
+  make "T100 failed" name two things. `step_agent_run` drops its entry: a chip and a marching
+  ring on a step nobody is running would be a lie. Everything else — status, estimate,
+  handoff, spec links, the milestone label, the PR ref — copies as it is, and two of those are
+  judgment calls worth naming: a duplicated milestone shares its label, and a duplicated step
+  keeps its PR ref, because a cut-and-paste move must keep both and a duplicate is rarer than
+  a move. If that proves wrong, `github` is one more entry in the tuple.
+
+Where the block lands is the canvas's business, through the same seam New uses: the anchor
+is the last click, centred as New centres, and the block keeps its arrangement around it;
+with no click yet — or for Duplicate — every clone goes one row below its original. The
+arrivals then become the selection and the remembered point steps past them, so pasting
+twice stacks two blocks rather than hiding one under the other.
+
 ## Where a panel goes
 
 The window has a centre — the tab groups — and three areas around it: **left, right and
@@ -1375,12 +1464,13 @@ press at all and would otherwise reuse a stale point. A canvas nobody has clicke
 `None`, and New falls back to the ambient layout, which is what it always did.
 
 Two smaller things ride on the same seam, and both belong to the canvas rather than to the
-verb, which is why `StepVerbs` takes a `created` callback rather than doing them itself. The
+verb, which is why `StepVerbs` takes a `placed` callback rather than doing them itself. The
 new step becomes the **selection**, so the step panel is already showing what was just made
 and naming it and describing it are one gesture. And the remembered point **steps one row
 down** — `placement.below()`, the automatic layout's own row pitch — so pressing New twice
 leaves two nodes where a stale point would have hidden one exactly under the other. A
-double-click gets both too: it pointed at a spot in the same sense.
+double-click gets both too: it pointed at a spot in the same sense, and so does a paste,
+which hands the same callback every step it added at once.
 
 ## The description is the instructions
 

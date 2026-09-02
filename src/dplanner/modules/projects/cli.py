@@ -231,11 +231,11 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
             examples=("dplanner step unlink draft-the-model read-the-spec",),
         ),
         CliCommand(
-            path=("step", "disconnect"),
+            path=("step", "isolate"),
             summary="Remove every link into or out of these steps; links among them stay.",
-            configure=_configure_disconnect,
-            run=_step_disconnect,
-            examples=("dplanner step disconnect draft-the-model review",),
+            configure=_configure_isolate,
+            run=_step_isolate,
+            examples=("dplanner step isolate draft-the-model review",),
         ),
     ]
 
@@ -662,14 +662,14 @@ def _step_unlink(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _configure_disconnect(parser: ArgumentParser) -> None:
+def _configure_isolate(parser: ArgumentParser) -> None:
     parser.add_argument(
         "steps", nargs="+", help="the steps to cut loose: id, folder name, or part of a title"
     )
 
 
-def _step_disconnect(context: CliContext, args: Namespace) -> int:
-    """The GUI's Disconnect Steps: one command over ``Library.boundary_edges``."""
+def _step_isolate(context: CliContext, args: Namespace) -> int:
+    """The GUI's Isolate Steps: one command over ``Library.boundary_edges``."""
     library = context.library
     chosen: list[StepId] = []
     for needle in args.steps:
@@ -681,7 +681,7 @@ def _step_disconnect(context: CliContext, args: Namespace) -> int:
         {"waiter": waiter, "kind": kind, "source": source} for waiter, kind, source in boundary
     ]
     if boundary:
-        label = "Disconnect Step" if len(chosen) == 1 else f"Disconnect {len(chosen)} Steps"
+        label = "Isolate Step" if len(chosen) == 1 else f"Isolate {len(chosen)} Steps"
         context.apply(remove_edges_command(library, boundary, label))
         text = "\n".join(
             f"{library.step(waiter).title!r} no longer {kind} {library.step(source).title!r}"
