@@ -289,6 +289,7 @@ def _matrix(
                 "label": milestone_label(phase.milestone) if phase.milestone else "",
                 "steps": [step.id for step in phase.steps],
                 "days": phase.days,
+                "calendar_days": phase.calendar_days,
                 "start": phase.start.isoformat(),
                 "finish": phase.finish.isoformat() if phase.finish else "",
                 "asked": phase.asked.isoformat() if phase.asked else "",
@@ -340,7 +341,7 @@ def _phase_line(phase: Phase, milestone_label: Callable[[Step], str]) -> str:
         if phase.finish
         else f"from {format_date(phase.start)}, nothing estimated"
     )
-    said = f"{name}: {when} ({format_days(phase.days)}, {len(phase.steps)} steps)"
+    said = f"{name}: {when} ({format_days(phase.calendar_days)}, {len(phase.steps)} steps)"
     if phase.pushed and phase.asked is not None:
         said += f" — asked for {format_date(phase.asked)}, but the previous lands later"
     return said

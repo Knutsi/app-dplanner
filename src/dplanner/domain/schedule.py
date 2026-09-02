@@ -308,6 +308,13 @@ class Phase:
         is keeping it."""
         return self.asked is not None and self.start > next_working_day(self.asked)
 
+    @property
+    def calendar_days(self) -> int:
+        """The stretch as a calendar reads it: whole working days from its start to its
+        landing, both counted — what a list prints, where ``days`` is the simulation's
+        fraction. Zero when nothing landed."""
+        return working_days_between(self.start, self.finish) if self.finish else 0
+
 
 def phases(
     library: Library,

@@ -391,6 +391,7 @@ def test_without_milestones_the_plan_is_one_stretch_from_the_start(project):
     assert only.milestone is None
     assert [step.title for step in only.steps] == ["A", "B", "C", "D"]
     assert (only.days, only.start, only.finish) == (10.0, MONDAY, date(2026, 9, 18))
+    assert only.calendar_days == 10
 
 
 def test_milestones_run_in_sequence_each_from_the_day_after_the_last(project):
@@ -460,6 +461,7 @@ def test_a_stretch_with_nothing_estimated_has_no_landing_and_costs_no_days(proje
         start_for=lambda _s: None,
     )
     assert first.finish is None and first.unestimated == 2
+    assert first.calendar_days == 0
     assert second.start == MONDAY  # the next begins where the weightless one did
 
 

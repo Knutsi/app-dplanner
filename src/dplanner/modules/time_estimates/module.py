@@ -461,7 +461,7 @@ class TimeEstimatesActivity(EntityActivity):
                 label=self._label(phase, stretches),
                 color=color,
                 finish=phase.finish,
-                days=phase.days,
+                days=float(phase.calendar_days),
                 steps=len(phase.steps),
                 asked=phase.asked if phase.pushed else None,
             )

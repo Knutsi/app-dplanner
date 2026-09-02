@@ -258,6 +258,14 @@ def test_the_milestones_land_in_sequence_and_the_total_closes_the_list(services,
     assert tab.landing == date(2026, 9, 23)
 
 
+def test_a_stretch_prints_whole_days_never_the_simulation_fraction(services, staged):
+    """At 60% focus a 2d step stretches to 3.33d; two of them land in seven working days,
+    and seven is what the list says — not 6.66667."""
+    tab = services.tabs.open("time", staged.id)
+    tab.focus_bar.percent.setValue(60)
+    assert _landings(tab)[0] == ("v1", "15 September", "7d")
+
+
 def test_each_milestone_wears_its_place_in_the_palette(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, ship = staged.steps
