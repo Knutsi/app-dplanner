@@ -22,13 +22,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.fsio import slugify
-from dplanner.domain.commands import (
-    Command,
-    CompositeCommand,
-    EditTextCommand,
-    SetModuleDataCommand,
-)
-from dplanner.domain.model import Library, Step, StepId, TextEdit
+from dplanner.domain.model import Library, Step, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -37,6 +31,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
+from dplanner.framework.aspect_toggle import aspect_toggle, focused_step
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
@@ -45,7 +40,6 @@ from dplanner.framework.settings_registry import (
     SettingsSectionRegistry,
 )
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import confirm
 from dplanner.framework.window import StatusHost
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.aspect import (
@@ -54,7 +48,6 @@ from dplanner.modules.step_agent_instruction.aspect import (
     SPEC,
     asset_paths,
     enabled,
-    read,
     read_project,
     write_state,
 )
@@ -76,7 +69,7 @@ from dplanner.modules.step_agent_instruction.settings_page import (
     launch_command,
     use_worktree,
 )
-from dplanner.theme.icons import typewriter_icon
+from dplanner.theme.icons import spark_icon, typewriter_icon
 
 PLACEHOLDER = "How to carry this step out: which files, which conventions, what done means."
 
@@ -170,9 +163,11 @@ class StepAgentInstructionModule:
                 label=SPEC.label,
                 order=40,
                 factory=make_section,
-                shown_for=lambda step_id: step_id is not None
-                and deps.library.has(step_id)
-                and enabled(deps.library.step(step_id)),
+                shown_for=lambda step_id: (
+                    step_id is not None
+                    and deps.library.has(step_id)
+                    and enabled(deps.library.step(step_id))
+                ),
             )
         )
         if deps.cards is not None:
@@ -188,16 +183,17 @@ class StepAgentInstructionModule:
                 )
             )
         deps.actions.register(
-            ActionSpec(
+            aspect_toggle(
                 id="agent.toggle",
                 label="Agent",
-                menu="Step",
-                group="classify",
-                submenu="Type",
                 order=30,
+                module_id=MODULE_ID,
+                library=deps.library,
+                undo=deps.undo,
+                enabled=enabled,
+                fresh=lambda _step, _project: write_state(True),
+                icon=spark_icon,
                 tip="Mark this step for agent execution; its description is the briefing",
-                state=self._aspect_state,
-                run=self._toggle_aspect,
             )
         )
         deps.actions.register(
@@ -232,51 +228,6 @@ class StepAgentInstructionModule:
             )
         )
 
-    # -- the aspect itself ---------------------------------------------------------------------
-
-    def _aspect_state(self, context: Context) -> ActionState:
-        step = self._focused(context)
-        if step is None:
-            return DISABLED
-        return ActionState(checked=enabled(step))
-
-    def _toggle_aspect(self, context: Context) -> None:
-        step = self._focused(context)
-        if step is None:
-            return
-        if not enabled(step):
-            self._deps.undo.push(
-                SetModuleDataCommand(
-                    step.id, MODULE_ID, write_state(True), label="Mark as Agent Step"
-                )
-            )
-            return
-        current = read(step)
-        if current:
-            question = (
-                f"Stop treating {step.title or 'this step'!r} as an agent step?"
-                " Its separate agent instruction is not kept."
-            )
-            if not confirm(self._deps.parent, "Clear Agent Aspect", question):
-                return
-        commands: list[Command] = []
-        if current:
-            commands.append(
-                EditTextCommand(
-                    TextEdit(step.id, MODULE_ID, 0, current, ""),
-                    label="Set Agent Instruction",
-                )
-            )
-        commands.append(
-            SetModuleDataCommand(step.id, MODULE_ID, {}, label="Clear Agent Aspect")
-        )
-        # One undo step restores both the mark and the instruction text.
-        self._deps.undo.push(
-            commands[0]
-            if len(commands) == 1
-            else CompositeCommand("Clear Agent Aspect", commands)
-        )
-
     # -- running -------------------------------------------------------------------------------
 
     def _can_run(self, context: Context) -> ActionState:
@@ -285,7 +236,7 @@ class StepAgentInstructionModule:
         The idiom from `CLAUDE.md`: a disabled entry carries what to do about it. The same
         state drives the menu bar, the palette and the Agent tab's button.
         """
-        step = self._focused(context)
+        step = focused_step(context, self._deps.library)
         if step is None:
             return DISABLED
         deps = self._deps
@@ -313,7 +264,7 @@ class StepAgentInstructionModule:
 
     def _can_preview(self, context: Context) -> ActionState:
         """A preview needs an agent step: with the aspect off there is no briefing to see."""
-        step = self._focused(context)
+        step = focused_step(context, self._deps.library)
         if step is None:
             return DISABLED
         if not enabled(step):
@@ -358,7 +309,7 @@ class StepAgentInstructionModule:
         )
 
     def _run(self, context: Context) -> None:
-        step = self._focused(context)
+        step = focused_step(context, self._deps.library)
         if step is None:
             return
         deps = self._deps
@@ -388,7 +339,7 @@ class StepAgentInstructionModule:
         PromptFallbackDialog(assembled.text, str(prepared.prompt_file), deps.parent).exec()
 
     def _preview(self, context: Context) -> None:
-        step = self._focused(context)
+        step = focused_step(context, self._deps.library)
         if step is None:
             return
         assembled = self._assembled(step)
@@ -399,9 +350,3 @@ class StepAgentInstructionModule:
             note_text=PREVIEW_NOTE,
             title="Prompt Preview",
         ).exec()
-
-    def _focused(self, context: Context) -> Step | None:
-        step_id = context.focus_entity("step")
-        if step_id is None or not self._deps.library.has(step_id):
-            return None
-        return self._deps.library.step(step_id)

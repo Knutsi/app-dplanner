@@ -177,6 +177,7 @@ src/dplanner/
 │   ├── schedule.py          the same walk carrying estimates: running totals and dates
 │   ├── progression.py       the status-aware frontier: what can be launched right now
 │   ├── commands.py          undoable changes — the vocabulary the GUI and CLI share
+│   ├── shelf.py             where a turned-off aspect's data waits: turn_off / turn_on, and the migration into it
 │   ├── fields.py            bindable prose, keyed by the module that owns it
 │   ├── assets.py            attaching files to a module's file area, and listing them
 │   ├── migrations.py        the format's version history — append only
@@ -198,7 +199,8 @@ src/dplanner/
 │   ├── panels.py            the window's left/right/bottom areas, and what modules anchor there
 │   ├── index_panel.py       the index tree: folders from whoever registered them
 │   ├── inspector.py         what a module registers to appear in a detail panel
-│   ├── action_dialog.py     one submenu's toggles as checkboxes — the fifth action presenter
+│   ├── aspect_bar.py        one submenu's toggles as a bar — templates worded left, every toggle glyphed right, » overflow
+│   ├── aspect_toggle.py     the Type toggle an aspect module registers, declared once: shelve off, restore on
 │   ├── prose_section.py     a panel section over one document, bound to the undo stack
 │   ├── prose_edit.py        that section's editor: a pasted file becomes a markdown link
 │   ├── mime_files.py        the files a paste or a drop carries — both editors' one answer
@@ -214,13 +216,13 @@ src/dplanner/
 │   ├── library/             membership: File ▸ New/Open Project and New/Open Project Library
 │   ├── projects/            the Projects folder in the index, and the project verbs
 │   ├── project_editor/      a project in a tab: the canvas, its modes (connect, lasso, regions) and renderers, sorts, named layouts, marks
-│   │                        (kinds.py is what Step ▸ New offers; the list itself is the composition root's)
 │   │                        (clipboard.py is what a copied step is; clipboard_verbs.py the Edit menu's
 │   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone)
 │   │                        (its panel also hosts the modules' project-level cards)
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
 │   │                        (its first tab, details.py, stacks whatever registered a Details
-│   │                        block; and `steps.details`: the same panel as the double-click's modal)
+│   │                        block, name.py leading it; and `steps.details`: the same panel as
+│   │                        the double-click's modal, which New opens on a fresh step)
 │   │
 │   │   ── the thirteen aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /
@@ -256,7 +258,8 @@ src/dplanner/
 │   ├── appshell/  sync/  settings/  taskcenter/  debug/
 │   └── llm/  llm_openai/  llm_anthropic/
 │
-└── theme/                 22 themes, the palette, and a chrome-only stylesheet
+└── theme/                 22 themes, the palette, a chrome-only stylesheet, the glyphs, and tones.py —
+                           the semantic colours a node body and a kind button share
 ```
 
 ## Where it came from

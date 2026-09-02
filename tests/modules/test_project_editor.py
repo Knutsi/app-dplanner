@@ -272,10 +272,13 @@ def test_dragging_a_node_stores_its_position(app, services, project, tab):
     assert services.undo.undo_text() == "Move Step"
 
 
-def test_double_clicking_empty_space_creates_a_step_there(app, services, project, tab):
+def test_double_clicking_empty_space_creates_a_step_there(app, services, project, tab, monkeypatch):
+    opened = silence_details(monkeypatch)
     send(app, tab, QEvent.Type.MouseButtonDblClick, QPointF(700, 500))
 
     assert len(project.steps) == 3
+    # And the details dialog opens on it, the name ready to be typed over.
+    assert [dialog.panel.current_step_id() for dialog in opened] == [project.steps[-1].id]
     # Centred on the click: 700 - NODE_W / 2, snapped to the grid.
     assert project.steps[-1].module_data["project_editor"]["x"] == 592.0
 
@@ -351,12 +354,15 @@ def test_the_selection_keeps_the_order_it_was_made_in(services, project, tab):
     assert services.context.current().selected_entities("step") == [second.id, first.id]
 
 
-def test_creating_on_the_canvas_is_one_undo_step(services, project, tab):
-    """A double-click runs the same creation the New verbs do, so it wears the same name."""
+def test_creating_on_the_canvas_is_one_undo_step(services, project, tab, monkeypatch):
+    """A double-click runs the same creation New does, so it wears the same name — and
+    opens the same details dialog, on the step it made."""
+    opened = silence_details(monkeypatch)
     scene(tab).create_requested.emit(240.0, 80.0)
     assert len(project.steps) == 3
     assert project.steps[-1].module_data["project_editor"]["x"] == 240.0
     assert services.undo.undo_text() == "New Step"
+    assert [dialog.panel.current_step_id() for dialog in opened] == [project.steps[-1].id]
     services.undo.undo()
     assert len(project.steps) == 2
 
@@ -364,72 +370,36 @@ def test_creating_on_the_canvas_is_one_undo_step(services, project, tab):
 # -- New, and where a new node lands -------------------------------------------------------
 
 
-def answer_new_dialog(monkeypatch, title):
-    """The New verbs ask for a name; hand one over rather than opening a modal.
+def silence_details(monkeypatch):
+    """New opens the details dialog on the step it made; collect those instead of
+    blocking on a modal. Returns the list the dialogs land in."""
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
 
-    Patched by name rather than through the module's re-exported ``QInputDialog``, which is
-    the form the region verbs' test already uses and the only one strict typing accepts.
-    """
-    monkeypatch.setattr(
-        "dplanner.modules.project_editor.verbs.QInputDialog.getText",
-        staticmethod(lambda *_a, **_k: (title, True)),
-    )
+    opened = []
+    monkeypatch.setattr(StepDetailsDialog, "exec", lambda self: opened.append(self))
+    return opened
 
 
-def new_specs(services):
-    return [
-        spec
-        for spec in services.actions.all_specs()
-        if spec.menu == "Step" and spec.submenu == "New"
-    ]
-
-
-def named(services, title):
-    """The New action for a kind, by the name a person reads."""
-    return next(spec for spec in new_specs(services) if title in spec.label)
-
-
-def test_new_is_a_submenu_of_the_kinds_a_step_can_be(services, project, tab):
-    assert [spec.label for spec in new_specs(services)] == [
-        "&Step…",
-        "&Feature…",
-        "&Milestone…",
-        "&Agent Step…",
-        "&Check…",
-    ]
-    # The plain verb keeps its id: it is bound to N and wears the toolbar's plus.
-    assert new_specs(services)[0].id == "steps.new"
-
-
-def test_a_facet_is_not_offered_as_a_kind(services, project, tab):
-    """New offers what a node *is*, never what it carries — "New Description" is nonsense."""
-    labels = " ".join(spec.label for spec in new_specs(services))
-    assert "Description" not in labels and "Estimate" not in labels
-
-
-def test_creating_a_kind_marks_it_in_the_same_undo_step(services, project, tab, monkeypatch):
-    from dplanner.modules.step_feature.aspect import read as is_feature
-
-    answer_new_dialog(monkeypatch, "Bulk import")
-    services.actions.run(named(services, "Feature").id, services.context.current())
+def test_new_is_one_verb_and_it_opens_the_details_dialog(services, project, tab, monkeypatch):
+    """No submenu of kinds and no prompt: a step is born "New step" and the dialog opens
+    on it with the name selected, where the aspect bar says what it is."""
+    assert not any(spec.submenu == "New" for spec in services.actions.all_specs())
+    opened = silence_details(monkeypatch)
+    tab._view.note_click(QPointF(400.0, 200.0))  # Placed, so the gesture is one composite.
+    services.actions.run("steps.new", services.context.current())
     created = project.steps[-1]
-    assert created.title == "Bulk import" and is_feature(created) is True
-    assert services.undo.undo_text() == "New Feature"
+    assert created.title == "New step"
+    assert services.undo.undo_text() == "New Step"
+    (dialog,) = opened
+    assert dialog.panel.current_step_id() == created.id
+    assert dialog.name_edit().selectedText() == "New step"
     services.undo.undo()
     assert len(project.steps) == 2
 
 
-def test_a_new_milestone_arrives_with_a_generated_label(services, project, tab, monkeypatch):
-    from dplanner.modules.step_milestone.aspect import read as milestone_label
-
-    answer_new_dialog(monkeypatch, "Ship it")
-    services.actions.run(named(services, "Milestone").id, services.context.current())
-    assert milestone_label(project.steps[-1]) == "v1"
-
-
 def test_a_new_step_lands_where_the_canvas_was_last_clicked(services, project, tab, monkeypatch):
     tab._view.note_click(QPointF(400.0, 200.0))
-    answer_new_dialog(monkeypatch, "Placed")
+    silence_details(monkeypatch)
     services.actions.run("steps.new", services.context.current())
     entry = project.steps[-1].module_data["project_editor"]
     # Centred on the click, then snapped to the grid every stored position lands on: the
@@ -450,7 +420,7 @@ def test_a_right_click_counts_as_the_click_new_places_at(services, project, tab,
     monkeypatch.setattr(editor, "build_menu", lambda *a, **k: _Unshown())
     tab._view.note_click(QPointF(0.0, 0.0))
     tab._on_context_menu(tab._view.mapFromScene(QPointF(560.0, 320.0)))
-    answer_new_dialog(monkeypatch, "From the menu")
+    silence_details(monkeypatch)
     services.actions.run("steps.new", services.context.current())
     entry = project.steps[-1].module_data["project_editor"]
     assert (entry["x"], entry["y"]) == (snapped(560.0 - NODE_W / 2), snapped(320.0 - NODE_H / 2))
@@ -459,7 +429,7 @@ def test_a_right_click_counts_as_the_click_new_places_at(services, project, tab,
 def test_a_canvas_nobody_clicked_leaves_the_node_to_the_ambient_layout(
     services, project, tab, monkeypatch
 ):
-    answer_new_dialog(monkeypatch, "Unplaced")
+    silence_details(monkeypatch)
     services.actions.run("steps.new", services.context.current())
     assert "project_editor" not in project.steps[-1].module_data
 
@@ -467,7 +437,7 @@ def test_a_canvas_nobody_clicked_leaves_the_node_to_the_ambient_layout(
 def test_a_new_step_is_selected_the_moment_it_exists(services, project, tab, monkeypatch):
     """New leaves you on what you just made: the panel beside the canvas is already showing
     it, so naming a step and describing it are one gesture rather than two."""
-    answer_new_dialog(monkeypatch, "Placed")
+    silence_details(monkeypatch)
     services.actions.run("steps.new", services.context.current())
     created = project.steps[-1]
     assert list(scene(tab).selection().steps) == [created.id]
@@ -480,9 +450,8 @@ def test_two_new_steps_in_a_row_do_not_land_on_one_another(services, project, ta
     from dplanner.modules.project_editor.sorts import V_GAP
 
     tab._view.note_click(QPointF(400.0, 200.0))
-    answer_new_dialog(monkeypatch, "First")
+    silence_details(monkeypatch)
     services.actions.run("steps.new", services.context.current())
-    answer_new_dialog(monkeypatch, "Second")
     services.actions.run("steps.new", services.context.current())
 
     first, second = (step.module_data["project_editor"] for step in project.steps[-2:])
@@ -493,8 +462,8 @@ def test_a_double_click_moves_the_point_on_too(app, services, project, tab, monk
     """It pointed at a spot in the same sense a right-click did, so New after it lands
     below what the double-click made rather than on top of it."""
     tab._view.note_click(QPointF(400.0, 200.0))  # The press a double-click begins with.
+    silence_details(monkeypatch)
     scene(tab).create_requested.emit(400.0, 200.0)
-    answer_new_dialog(monkeypatch, "After the double-click")
     services.actions.run("steps.new", services.context.current())
     made, after = (step.module_data["project_editor"] for step in project.steps[-2:])
     assert after["y"] > made["y"]
@@ -1161,35 +1130,10 @@ def test_the_toolbar_carries_verbs_from_other_modules(services, project, tab):
     assert any(a.uri.startswith("app://activity/order") for a in services.tabs.activities())
 
 
-def test_the_new_button_drops_the_kinds_down(services, project, tab):
-    """The arrow renders Step \u25b8 New itself — not a copy of it — so the kinds are declared
-    once, in the composition root, and the toolbar cannot come to offer a different list."""
-    menu = tab._toolbar.dropdown("steps.new")
-    assert menu is not None
-    assert [action.text() for action in menu.actions()] == [
-        "&Step\u2026",
-        "&Feature\u2026",
-        "&Milestone\u2026",
-        "&Agent Step\u2026",
-        "&Check\u2026",
-    ]
-    # Each wears the medallion its node will wear, so the list reads at a glance.
-    assert all(not action.icon().isNull() for action in menu.actions())
-
-
-def test_an_entry_in_that_dropdown_runs_the_verb(services, project, tab, monkeypatch):
-    from dplanner.modules.step_feature.aspect import read as is_feature
-
-    answer_new_dialog(monkeypatch, "Bulk import")
-    menu = tab._toolbar.dropdown("steps.new")
-    assert menu is not None
-    menu.actions()[1].trigger()
-    assert is_feature(project.steps[-1]) is True
-
-
-def test_only_the_new_button_carries_an_arrow(services, project, tab):
-    """A dropdown is for a verb that has kinds behind it; the rest of the row is one click."""
-    assert toolbar_button(tab, "steps.new").menu() is not None
+def test_no_button_carries_an_arrow(services, project, tab):
+    """New is one click: the kinds are chosen in the details dialog it opens, not from a
+    dropdown of their own."""
+    assert toolbar_button(tab, "steps.new").menu() is None
     assert toolbar_button(tab, "steps.delete").menu() is None
 
 
@@ -1332,9 +1276,7 @@ def add_region(services, project, x, y, w, h, title="Region"):
     )
 
     region = new_region(title, x, y, w, h)
-    services.undo.push(
-        set_regions_command(project, [*read_regions(project), region], "Add Region")
-    )
+    services.undo.push(set_regions_command(project, [*read_regions(project), region], "Add Region"))
     return region
 
 

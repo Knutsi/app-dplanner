@@ -395,10 +395,10 @@ button's dropdown. The menu bar deliberately does not, and the reason is the sam
 the application, so a colour baked into one at startup would still be there three themes
 later. A pop-up has no such problem — it is thrown away when it closes.
 
-It earns its place on the New submenu, where each kind wears the very medallion its node will
-wear, and it is what lets the canvas toolbar's New button drop that submenu down (through
-`fill_menu`, so it is the menu and not a copy) instead of the module hand-building a list of
-kinds it is not allowed to know.
+It earns its place on the Type submenu, where each toggle wears the very medallion its node
+will wear, and it is what lets the aspect bar paint the same glyphs (through the specs, so
+they are the registry's and not a copy) instead of the panel hand-building a list of
+aspects it is not allowed to know.
 
 ### Edit verbs belong to the surface whose things they act on
 
@@ -638,7 +638,11 @@ and the project panel's cards were already the proof. The dialog never reads the
 it is opened *about* a step and stays on it, driven by `show_step` directly, which is what
 lets a table row open it for the row under the cursor even when that pane's publish was
 suppressed. The double-click the tables used to spend on reveal-in-graph moved to the Step
-menu as `steps.reveal`, where every view's right-click already renders it.
+menu as `steps.reveal`, where every view's right-click already renders it. The dialog
+carries no buttons: every edit inside it is already applied and already on the undo stack,
+so there is nothing to confirm and nothing to cancel, and Escape closes it. It is also
+where a fresh step is configured — New and the canvas double-click open it on the step
+they just made, with the name field focused and selected.
 
 **The project panel hosts the same contract, as cards.** A module with something to say about
 a *project* registers an `InspectorSection` into `services.detail_cards` — the registry type
@@ -1340,12 +1344,15 @@ aspect (Milestone, Feature, Agent, Ticket), each independent, because a Type rad
 would reintroduce the exclusive type field this section rules out. Toggling Milestone on
 generates the next label from the project's existing ones (`next_milestone_label` in
 `step_milestone/aspect.py`, shared with `dplanner milestone set`); toggling any of them off
-asks first when data would be dropped, since it is not kept.
+shelves what it held, so nothing asks and the next toggle-on brings it back.
 
 **A tab follows its aspect.** An `InspectorSection` may carry a `shown_for(step_id)`
 predicate; the step panel re-asks it on every target change and on model writes to the
 shown step, and hides the tab (`QTabBar.setTabVisible` — indices stay stable, so the
-tab-to-page mapping never re-shuffles) when the answer is no. Milestone, Agent and Ticket
+tab-to-page mapping never re-shuffles) when the answer is no. Only on a change, and
+followed by `updateGeometry()`: `setTabVisible` clears its own layout-dirty flag when
+handed an unchanged value and lays nothing out itself, so a blanket loop leaves the strip
+painting stale rects — `NOTES-FOR-APPFRAME.md` §10 has the trap. Milestone, Agent and Ticket
 answer with "does this step carry the aspect", so toggling one off removes its tab and
 toggling it on brings the tab back *with* whatever the toggle generated — which is the
 answer to the earlier worry that a generated milestone label needs somewhere to be edited:
@@ -1382,34 +1389,99 @@ files outside its own package is exactly what the layering forbids. The inverted
 needs none of them: **existing projects change not at all**, every step keeps its Details
 tab, and a milestone loses its estimate the moment somebody says so.
 
-The Details tab then had to follow its own contents. It *is* its blocks, so it asks the
-registry it already holds whether any of them would show — nothing new is wired, and a tab
-that opens onto blank space stopped being possible.
+The Details tab *is* its blocks — and since the name became its first block (see *The
+aspect bar renders the registry* below), it always has one to show, so it no longer asks
+whether it would open onto blank space.
 
-### The chooser renders the registry, never a copy of it
+### Turning an aspect off shelves it
+
+Every Type toggle used to delete what the aspect held, after asking. That was honest — a
+toggle that silently destroyed a milestone label would be worse — but it made every toggle a
+small act of courage, cost a confirm dialog per aspect, and got in the way of the gesture
+the toggles exist for: switching a step from one kind to another and back. So an aspect
+turned off is **shelved**: its `module_data` entry and its `module_text` move to a per-node
+entry under the domain's own id, `modules/shelf.json` beside the step, and `turn_on`
+restores them before it would ever write a fresh entry.
+
+The shelf is a *domain* concern, not a flag inside each module's entry, and that is the
+decision worth recording. The alternative — every aspect storing `{"off": true, …its data}`
+— would have put a new key in front of every reader: a briefing, a lint, the canvas subtitle,
+`dplanner … show`, each learning to check the flag before believing the data, and each a
+place to forget. With the shelf, the entry is genuinely absent (or, for the two aspects whose
+default is on, replaced by their opt-out marker exactly as before), so *absence encodes the
+default* still holds and not one `read()` changed. The shelf only remembers what absence
+replaced. Two consequences follow and both are handled once: the migration pass reaches into
+the shelf (`migrate_shelved`, beside `migrate_module_data` at both call sites), because
+shelved data is a module's data at the version it was shelved; and the asset catalog counts
+a shelved prose's links as uses, so `asset prune` never sweeps away a picture the next
+toggle-on would bring back to. A module's file area was already left alone by a toggle.
+
+Two builders are the whole vocabulary — `turn_off(step, module, leaving=…)` and
+`turn_on(step, module, fresh=…)` in `domain/shelf.py` — and both surfaces use them: a GUI
+toggle pushes the command, a CLI `clear` applies it, so `dplanner milestone clear` and Step
+▸ Type ▸ Milestone are one behaviour. That in turn collapsed eleven near-identical toggle
+implementations into one `framework/aspect_toggle.py` factory: a module hands over its
+`enabled` predicate, a `fresh` entry (a marker, or a generated milestone label, or one blank
+test) and — for estimate and description — what to leave behind, and gets back the
+checkable Step ▸ Type verb. The one soft spot, named rather than engineered away: a CLI
+`set` on a shelved aspect writes a live entry and leaves the shelf's copy stale until the
+next turn-off overwrites it. The shelf is never read while the aspect is on, so nothing
+misreads; it is a few stale bytes, not a wrong answer.
+
+### The aspect bar renders the registry, never a copy of it
 
 The toggles live in Step ▸ Type, which is a menu, and a menu is not somewhere a person looks
-when the question is *what does this step carry*. So the step panel grew a **"+" beside the
-last tab**, opening a dialog of checkboxes — and the dialog lists no aspects of its own. It
-reads the same specs the *Type* submenu renders (`framework/action_dialog.py`), through the
-same context, and every row runs the owning module's toggle through `ActionRegistry.run`. So
-each stays one undoable command with its own confirmation, an aspect a build does not ship
-has no row, and adding an aspect is still one registration in one package.
+when the question is *what does this step carry*. So the step panel wears an **aspect bar**
+across its top — and the bar lists no aspects of its own. It reads the same specs the *Type*
+submenu renders (`framework/aspect_bar.py`), through a context the host hands over, and
+every button runs the owning module's toggle through `ActionRegistry.run`. So each stays one
+undoable command, an aspect a build does not ship has no button, and adding an aspect is
+still one registration in one package.
 
-It is the same rule as *a right-click renders a menu, never a copy of one*, one presenter
-along — and it settles a question that looked like it needed a feature. **"Some step types
-can never carry this aspect" needs no mechanism at all**: a toggle whose `state()` returns
+What the bar adds to the submenu is a *reading*. Its right half is every toggle as a glyph.
+Its left half is **templates**: a name and the set of toggles that are on — *Milestone* is
+milestone and description, *Agent* is agent, description, estimate and handoff, *Step* is
+the estimate and description every step is born with — worded, and wearing their body tone
+when selected, so a selected Feature button and a feature node are one identity (which is
+why the tones moved to `theme/tones.py`, where both can reach them). Clicking a template
+runs whichever toggles differ, on for its set and off for everything else, inside one
+`UndoService.gesture`, so *Make Milestone* is one Ctrl+Z however many aspects it moved and
+each is still the owning module's own command — the gesture is the framework's answer to
+"one gesture, several verbs", and it is what let the bar stay a presenter with no command
+of its own. And it goes both ways: a template reads as selected exactly when the step
+carries its set and nothing else, so a combination somebody built toggle by toggle lights
+up the template it amounts to, and one extra aspect puts it out — onto *Step*, the
+catch-all (`AspectTemplate.catch_all`), because a step with an unnamed combination of
+aspects is still a step and a bar with nothing lit would be saying it is nothing. Nothing
+stores which template is current; it is a set comparison on every refresh, which is the same *derived,
+never stored* rule as the ordering. Which templates exist is `StepPropertiesDeps.templates`,
+named by the composition root in the order the bar shows them, for the same reason the
+scope kinds are wired rather than inferred. The bar is two `QToolBar`s rather than one row of buttons, for
+the reason the Tests tab already had two: a `QToolBar` too narrow for its contents grows the
+» overflow button and puts the tail in a menu — as checkable entries, check marks and all —
+where a plain row would simply clip. The left bar takes the slack, so at a width where
+anything has to go the facets keep their glyphs and the kinds fold first. That is the whole
+overflow mechanism, and it cost no code.
+
+It replaced the "+" beside the tabs and the dialog of checkboxes it opened, which was the
+same registry-rendering rule with a worse reading — a list you had to summon to see what a
+step already was. It settles the same question that dialog did: **"some step types can never
+carry this aspect" needs no mechanism at all**. A toggle whose `state()` returns
 `ActionState(enabled=False, label="Estimate — a milestone has no work of its own")` renders
-as a greyed row carrying its reason, because *hidden means absent; disabled means not now*
-already says so. Nothing was built for it; it is one predicate away when it is wanted.
+as a greyed button carrying its reason in the tooltip, because *hidden means absent; disabled
+means not now* already says so. Nothing was built for it; it is one predicate away when it is
+wanted.
 
 The context arrives as a function rather than a `ContextService`, which is what lets the
 panel inside the details *dialog* — showing a step nobody selected — hand over one naming
 its own step. The specs cannot tell the difference, and neither can they be made to care.
+The panel re-reads the bar on every model write to the shown step, because one toggle can
+change another's state.
 
-One deletion came with it: the panel's `Waits on … · Blocks …` line is gone. The canvas, the
-Order tab and the progression board all show the graph; the panel is for what a step
-*carries*. That is a line of vertical space back on every visit, and less code.
+The name moved with it. It used to sit above the tab bar as a field of the panel's own; it is
+now the first block of the Details tab, registered by `step_properties` like any other block
+at order 0, so the modal's control stack reads top-down from the one field every step has —
+and the Details tab, having a block that always shows, no longer asks whether it has one.
 
 ### A kind is what a node is; a facet is what it carries
 
@@ -1419,12 +1491,25 @@ a kind: a node exists in order to be one, the graph reads differently for it, an
 body colour. An **estimate** is a facet: a fact a step of any kind may hold. Both are
 aspects, both are toggles — but only kinds answer the question *New* asks.
 
-So `Step ▸ New` is a named list (`project_editor/kinds.py`'s `StepKind`), handed to the
-canvas by the composition root exactly as `ScopeKind` is handed to the tests module. A kind
-is a label and a function returning the module data a fresh step of that kind carries; the
-canvas learns nothing about features. Deriving the list from the Type submenu instead would
-have put *New ▸ Description* in the menu, and the entry that would have to be filtered out
-is the proof the two lists are answering different questions.
+So the kinds live on as the bar's *templates* — `StepPropertiesDeps.templates`, each a
+kind with the facets it usually carries and the tone it wears — handed to the step panel
+by the composition root exactly as `ScopeKind` is handed to the tests module. The bar words
+them on its left; the panel learns nothing about features. Deriving the list from the Type
+submenu instead would have worded *Description* beside *Milestone*, and the entry that
+would have to be filtered out is the proof the two lists are answering different
+questions.
+
+**Step ▸ New is one verb, and the dialog is where a fresh step is configured.** It used to be
+a submenu — a plain step, then one entry per kind, each prompting for a title — and the kinds
+were a `StepKind` list of their own with an `entry` function per kind. Once the bar could say
+what a step is in one click, that submenu was a second, narrower way to say the same thing:
+it offered four of eleven aspects, asked for a name in a `QInputDialog` that the details
+dialog already has a field for, and needed its own list to stay in step with the toggles.
+So New creates a plain step titled "New step" and opens `steps.details` on it — through the
+`created` seam, where selecting the new step already lived — with the name field focused and
+its text selected. Typing replaces the placeholder, the bar sets the kind, Escape closes.
+The canvas double-click does the same at the point it was given. What went: `kinds.py`, the
+toolbar's New dropdown, and the prompt.
 
 The body colours follow the same ranking the model uses. Done outranks a kind — a shipped
 milestone reads finished — and a milestone outranks a feature, because that is the coarser
@@ -1437,10 +1522,9 @@ which additionally *mutes* its node, so that pair is separated by weight as well
 The nearest claimed hue is the agent-run chip's teal, and that is a labelled pill on the
 bottom edge of a running step, never a body.
 
-A kind also names its **medallion glyph** — a name in the canvas's vocabulary ("layers",
-"tag", "spark", "shield"), never a painter, so `kinds.py` stays Qt-free. That one string is
-what puts the same glyph on the Step ▸ New entry, on the toolbar's New dropdown and on the
-node itself, from one declaration in the composition root.
+Every Type toggle carries its **medallion glyph** — a painter from `theme/icons.py`'s
+`GLYPH_ICONS` vocabulary, the same one the canvas answers in — so one declaration puts the
+same glyph on the Type submenu entry, on the aspect bar and on the node itself.
 
 ### A step placed by pointing at a spot earns a stored position
 
@@ -1463,14 +1547,16 @@ raised — and the context handler records again for the keyboard menu key, whic
 press at all and would otherwise reuse a stale point. A canvas nobody has clicked answers
 `None`, and New falls back to the ambient layout, which is what it always did.
 
-Two smaller things ride on the same seam, and both belong to the canvas rather than to the
-verb, which is why `StepVerbs` takes a `placed` callback rather than doing them itself. The
-new step becomes the **selection**, so the step panel is already showing what was just made
-and naming it and describing it are one gesture. And the remembered point **steps one row
-down** — `placement.below()`, the automatic layout's own row pitch — so pressing New twice
-leaves two nodes where a stale point would have hidden one exactly under the other. A
-double-click gets both too: it pointed at a spot in the same sense, and so does a paste,
-which hands the same callback every step it added at once.
+Three smaller things ride on the same seams, and all belong to the canvas rather than to
+the verb, which is why `StepVerbs` takes callbacks rather than doing them itself. Through
+`placed` — which a paste shares, handing over every step it added at once — the new step
+becomes the **selection**, and the remembered point **steps one row down** —
+`placement.below()`, the automatic layout's own row pitch — so pressing New twice leaves two
+nodes where a stale point would have hidden one exactly under the other. Through `created`
+— which only a birth calls, never a paste, because pasted steps arrive named — the details
+dialog **opens on it**, the same `steps.details` a double-click on a node runs, so naming
+the step and saying what it is are the gesture's second half. A double-click on empty space
+gets all three too: it pointed at a spot in the same sense.
 
 ## The description is the instructions
 

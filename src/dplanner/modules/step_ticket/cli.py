@@ -5,6 +5,7 @@ from argparse import ArgumentParser, Namespace
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_step, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.shelf import turn_off
 from dplanner.modules.step_ticket.aspect import FIELDS, MODULE_ID, Ticket, enabled, write
 
 
@@ -19,7 +20,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("ticket", "clear"),
-            summary="Remove a step's ticket, leaving no file behind.",
+            summary="Turn a step's ticket off; the reference is kept.",
             configure=step_arg,
             run=_clear,
             examples=("dplanner ticket clear 'Read the spec'",),
@@ -51,6 +52,6 @@ def _clear(context: CliContext, args: Namespace) -> int:
         # Already clear is success — state-clearing verbs must survive batches.
         context.report({"step": step.id}, f"{step.title}: no ticket")
         return 0
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
+    context.apply(turn_off(step.id, MODULE_ID, label="Remove Ticket"))
     context.report({"step": step.id}, f"{step.title}: ticket cleared")
     return 0

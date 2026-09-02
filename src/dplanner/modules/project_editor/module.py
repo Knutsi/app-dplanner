@@ -64,7 +64,6 @@ from dplanner.modules.project_editor.clipboard import PastePolicy
 from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, ClipboardWatch
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import StepNodeItem
-from dplanner.modules.project_editor.kinds import StepKind
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
 from dplanner.modules.project_editor.marks import Marks, ports
@@ -97,7 +96,7 @@ from dplanner.modules.project_editor.selection import (
     CanvasSelection,
     EdgeRef,
 )
-from dplanner.modules.project_editor.verbs import StepVerbs
+from dplanner.modules.project_editor.verbs import NEW_STEP_TITLE, StepVerbs
 
 MODULE_ID = "project_editor"
 # The tab kind stays "project": the module is the editor, but the thing in the tab is still a
@@ -151,9 +150,6 @@ class ProjectEditorDeps:
     # The project panel renders every section registered here as a card — the registry the
     # composition root exposes as services.detail_cards. This module never learns whose.
     cards: InspectorSectionRegistry = field(default_factory=InspectorSectionRegistry)
-    # What the New submenu offers besides a plain step. Named by the composition root, so
-    # this module never learns what a feature or a milestone is — see kinds.py.
-    step_kinds: tuple[StepKind, ...] = ()
     # A copied step carries its attachments: the file areas to read are the asset catalog's
     # sources, and what a copy may not carry is each owner's policy — see clipboard.py.
     file_modules: tuple[str, ...] = ()
@@ -425,8 +421,8 @@ class ProjectActivity(EntityActivity):
             self._deps.status.show_status(state.label or "Those steps cannot be linked", 4000)
 
     def _on_create(self, x: float, y: float) -> None:
-        """Double-click on empty space: the same creation the New verbs run, unprompted."""
-        self._verbs.create(self.project_id, "New step", at=(x, y))
+        """Double-click on empty space: the same creation New runs, at the point."""
+        self._verbs.create(self.project_id, NEW_STEP_TITLE, at=(x, y))
 
     def note_placed(self, step_ids: list[StepId]) -> None:
         """Steps were just placed on this canvas — born here, or pasted.
@@ -444,6 +440,16 @@ class ProjectActivity(EntityActivity):
             ys = [placed[s][1] for s in step_ids if s in placed]
             height = max(ys) - min(ys) if ys else 0.0
             self._view.note_click(QPointF(*below(point.x(), point.y() + height)))
+
+    def note_created(self, step_id: StepId) -> None:
+        """One step was just born here — by New or a double-click, never a paste.
+
+        The details dialog opens on it, the same ``steps.details`` a double-click on a
+        node runs, so naming it and saying what it is are the gesture's second half. A
+        paste places steps too, but they arrive named and configured; only a birth asks.
+        """
+        assert step_id  # Placed first, so the selection the verb reads is already this one.
+        self.run_action("steps.details")
 
     def new_step_position(self) -> tuple[float, float] | None:
         """The top-left a new node should take: centred on wherever the user last pointed.
@@ -537,9 +543,9 @@ class ProjectEditorModule:
             undo=deps.undo,
             parent=deps.parent,
             current_project=self._current_project,
-            step_kinds=deps.step_kinds,
             new_position=self._new_step_position,
             placed=self._on_placed,
+            created=self._on_created,
         )
         # The watcher is a child of the window, which is what disconnects it from the
         # process-global clipboard when this build is discarded.
@@ -654,6 +660,11 @@ class ProjectEditorModule:
         current = self._current_activity()
         if current is not None:
             current.note_placed(step_ids)
+
+    def _on_created(self, step_id: StepId) -> None:
+        current = self._current_activity()
+        if current is not None:
+            current.note_created(step_id)
 
     def _set_mode(self, name: str, on: bool) -> None:
         current = self._current_activity()

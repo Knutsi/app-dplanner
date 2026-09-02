@@ -14,6 +14,8 @@ The stack is generic over your aggregate, and the concrete commands live in
 reversed, named and possibly merged.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Protocol
 
 from dplanner.core.signals import Signal
@@ -35,6 +37,28 @@ class Command[DocT](Protocol):
         ...
 
 
+class _Gesture[DocT]:
+    """Several already-applied commands as one undo step — what :meth:`gesture` records."""
+
+    def __init__(self, label: str, commands: list[Command[DocT]]) -> None:
+        self._label = label
+        self._commands = commands
+
+    def text(self) -> str:
+        return self._label
+
+    def redo(self, document: DocT) -> None:
+        for command in self._commands:
+            command.redo(document)
+
+    def undo(self, document: DocT) -> None:
+        for command in reversed(self._commands):
+            command.undo(document)
+
+    def merge_with(self, other: Command[DocT]) -> bool:
+        return False
+
+
 class UndoService[DocT]:
     """The stack, plus the two rules that make it feel right: merging and sealing."""
 
@@ -43,11 +67,41 @@ class UndoService[DocT]:
         self._stack: list[Command[DocT]] = []
         self._applied = 0  # Commands 0.._applied-1 are applied; the rest are redoable.
         self._top_sealed = False
+        self._gesture: list[Command[DocT]] | None = None
         self.changed: Signal[()] = Signal()
 
     def push(self, command: Command[DocT]) -> None:
         """Apply ``command`` and record it, merging into the top command when allowed."""
         command.redo(self._document)
+        if self._gesture is not None:
+            self._gesture.append(command)  # Placed as one step when the gesture ends.
+            return
+        self._place(command)
+
+    @contextmanager
+    def gesture(self, label: str) -> Iterator[None]:
+        """Every push inside the block lands on the stack as **one** step named ``label``.
+
+        For a gesture that runs several verbs — a template that flips five toggles, each
+        the owning module's own command — where the alternative is every verb learning to
+        build a composite for a caller it cannot see. Each command is applied as it is
+        pushed, so the verbs in the block see each other's effects; the stack only hears
+        about the whole at the end. A gesture inside a gesture belongs to the outer one.
+        """
+        if self._gesture is not None:
+            yield
+            return
+        self._gesture = []
+        try:
+            yield
+        finally:
+            commands, self._gesture = self._gesture, None
+            if len(commands) == 1:
+                self._place(commands[0])
+            elif commands:
+                self._place(_Gesture(label, commands))
+
+    def _place(self, command: Command[DocT]) -> None:
         del self._stack[self._applied :]  # A new edit invalidates the redo tail.
         if self._stack and not self._top_sealed and self._stack[-1].merge_with(command):
             self.changed.emit()

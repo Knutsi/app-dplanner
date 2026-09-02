@@ -54,13 +54,16 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
+from dplanner.framework.aspect_toggle import focused_step
 from dplanner.framework.context import Context
 from dplanner.framework.undo import UndoService
-from dplanner.modules.project_editor.kinds import StepKind
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.positions import write_position
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef, parse_edge_id
-from dplanner.theme.icons import glyph_painter, plus_icon
+from dplanner.theme.icons import plus_icon
+
+# What a step is called until somebody types over it in the details dialog.
+NEW_STEP_TITLE = "New step"
 
 
 def _nowhere() -> tuple[float, float] | None:
@@ -68,6 +71,10 @@ def _nowhere() -> tuple[float, float] | None:
 
 
 def _unnoticed(_step_ids: list[StepId]) -> None:
+    return None
+
+
+def _unnoticed_one(_step_id: StepId) -> None:
     return None
 
 
@@ -91,9 +98,6 @@ class StepVerbs:
     parent: QWidget
     # Which project a new step goes into: the one the current tab is showing.
     current_project: Callable[[], NodeId | None]
-    # The kinds the New submenu offers, named by the composition root. Empty is a build
-    # with no type-ish aspects at all, and New is then the one plain verb it always was.
-    step_kinds: tuple[StepKind, ...] = ()
     # Where a new node goes — the top-left the canvas's last click asks for, or None when
     # the gesture came from somewhere with no canvas under it (the menu bar over a table).
     # None falls back to the ambient layout, which is what New has always done.
@@ -104,60 +108,32 @@ class StepVerbs:
     # under the other. Both belong to whoever placed them; a verb bench in a test has no
     # canvas and needs neither.
     placed: Callable[[list[StepId]], None] = _unnoticed
+    # One step has just been *born* — by New or a double-click, never a paste. The canvas
+    # opens the details dialog on it, so naming it is the gesture's second half; a paste
+    # arrives named and gets ``placed`` only.
+    created: Callable[[StepId], None] = _unnoticed_one
 
     def register_into(self, actions: ActionRegistry) -> None:
         for spec in self._specs():
             actions.register(spec)
 
-    def _new_specs(self) -> list[ActionSpec]:
-        """The New submenu: a plain step, then one entry per kind, in the given order.
-
-        ``steps.new`` keeps its id through the change — it is bound to ``N`` in the keymap
-        and wears the toolbar's plus — and simply moves into the submenu beside the kinds.
-
-        Each entry carries the glyph its node will wear, so the submenu (rendered as the
-        toolbar's New dropdown and inside the Step menu alike) can be read at a glance.
-        """
-        plain = ActionSpec(
-            id="steps.new",
-            label="&Step…",
-            menu="Step",
-            group="edit",
-            submenu="New",
-            order=10,
-            icon=plus_icon,
-            tip="Add a step to the project in this tab",
-            state=self._in_a_project,
-            run=self._new,
-        )
-        return [plain] + [
-            ActionSpec(
-                id=kind.action_id,
-                label=kind.label,
-                menu="Step",
-                group="edit",
-                submenu="New",
-                order=20 + 10 * index,
-                icon=glyph_painter(kind.icon),
-                tip=f"Add a step that is a {kind.name.lower()} from the moment it exists",
-                state=self._in_a_project,
-                run=self._runner(kind),
-            )
-            for index, kind in enumerate(self.step_kinds)
-        ]
-
-    def _runner(self, kind: StepKind) -> Callable[[Context], None]:
-        """One kind's ``run``: a closure over the argument rather than over the loop
-        variable, which every generated spec would otherwise share."""
-
-        def run(context: Context) -> None:
-            self._new(context, kind)
-
-        return run
-
     def _specs(self) -> list[ActionSpec]:
         return [
-            *self._new_specs(),
+            # One New, not a submenu of kinds: a step is born plain and configured in the
+            # details dialog that opens on it (through the ``created`` seam), where the
+            # aspect bar offers every kind and facet at once. ``steps.new`` keeps its id —
+            # it is bound to ``N`` in the keymap and wears the toolbar's plus.
+            ActionSpec(
+                id="steps.new",
+                label="&New Step",
+                menu="Step",
+                group="edit",
+                order=10,
+                icon=plus_icon,
+                tip="Add a step to the project in this tab and open its details",
+                state=self._in_a_project,
+                run=self._new,
+            ),
             ActionSpec(
                 id="steps.rename",
                 label="&Rename Step…",
@@ -233,12 +209,6 @@ class StepVerbs:
         if step_id is None:
             return DISABLED
         return ENABLED if self.library.has(step_id) else DISABLED
-
-    def _focused(self, context: Context) -> Step | None:
-        step_id = context.focus_entity("step")
-        if step_id is None or not self.library.has(step_id):
-            return None
-        return self.library.step(step_id)
 
     # -- linking -------------------------------------------------------------------------------
 
@@ -354,45 +324,43 @@ class StepVerbs:
 
     # -- run -----------------------------------------------------------------------------------
 
-    def _new(self, _context: Context, kind: StepKind | None = None) -> None:
+    def _new(self, _context: Context) -> None:
+        """No prompt: the step is born as "New step" and named in the details dialog
+        that ``created`` opens on it, where the name field is already selected."""
         project_id = self.current_project()
         if project_id is None:
             return  # The state gate already prevents this; stay honest.
-        what = kind.name if kind is not None else "Step"
-        title, accepted = QInputDialog.getText(self.parent, f"New {what}", f"{what} name:")
-        if accepted and title.strip():
-            self.create(project_id, title.strip(), kind=kind, at=self.new_position())
+        self.create(project_id, NEW_STEP_TITLE, at=self.new_position())
 
     def create(
         self,
         project_id: NodeId,
         title: str,
         *,
-        kind: StepKind | None = None,
         at: tuple[float, float] | None = None,
     ) -> Step:
-        """Add a step — marked as a kind, placed where it was asked for — as **one** undo step.
+        """Add a step, placed where it was asked for, as **one** undo step.
 
-        The one place a step is born on the canvas: the New verbs come here, and so does the
-        double-click on empty space. A gesture is one undo, so the mark and the position ride
-        with the node rather than arriving as two more entries on the stack.
+        The one place a step is born on the canvas: New comes here, and so does the
+        double-click on empty space. A gesture is one undo, so the position rides with the
+        node rather than arriving as a second entry on the stack.
 
         A placed step earns a *stored* position, unlike the ambient layout, for the same
         reason a dragged one does: somebody chose where it goes.
         """
         step = Step(title=title)
         commands: list[Command] = [AddNodeCommand(project_id, step)]
-        if kind is not None and (entry := kind.entry(self.library.project(project_id))):
-            commands.append(SetModuleDataCommand(step.id, kind.id, entry))
         if at is not None:
             commands.append(SetModuleDataCommand(step.id, POSITION_KEY, write_position(*at)))
-        label = f"New {kind.name if kind is not None else 'Step'}"
-        self.undo.push(commands[0] if len(commands) == 1 else CompositeCommand(label, commands))
+        self.undo.push(
+            commands[0] if len(commands) == 1 else CompositeCommand("New Step", commands)
+        )
         self.placed([step.id])
+        self.created(step.id)
         return step
 
     def _rename(self, context: Context) -> None:
-        step = self._focused(context)
+        step = focused_step(context, self.library)
         if step is None:
             return
         title, accepted = QInputDialog.getText(

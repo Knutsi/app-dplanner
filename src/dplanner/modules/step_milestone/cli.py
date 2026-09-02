@@ -10,6 +10,7 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.ordering import placed
+from dplanner.domain.shelf import shelved, turn_off, turn_on
 from dplanner.modules.step_milestone.aspect import (
     MODULE_ID,
     next_milestone_label,
@@ -33,7 +34,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("milestone", "clear"),
-            summary="A step is no longer a milestone point; leaves no file behind.",
+            summary="A step is no longer a milestone point; the label is kept.",
             configure=step_arg,
             run=_clear,
             examples=("dplanner milestone clear 'Ship the beta'",),
@@ -58,15 +59,21 @@ def _configure_set(parser: ArgumentParser) -> None:
 
 def _set(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step)
-    if args.label is None:
-        project = context.library.project_of(step.id)
-        label = next_milestone_label(project_labels(project, skip=step.id))
+    if args.label is None and (kept := shelved(step, MODULE_ID)) is not None and not read(step):
+        # No label asked for and one on the shelf: bring it back rather than generate.
+        context.apply(turn_on(step, MODULE_ID, fresh={}, label="Add Milestone"))
+        entry = kept[0]
+        label = read(step)
     else:
-        label = args.label
-    entry = write(label)
-    if not entry:
-        raise CliError("a milestone needs a label")
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
+        if args.label is None:
+            project = context.library.project_of(step.id)
+            label = next_milestone_label(project_labels(project, skip=step.id))
+        else:
+            label = args.label
+        entry = write(label)
+        if not entry:
+            raise CliError("a milestone needs a label")
+        context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
     context.report({"step": step.id} | entry, f"{step.title}: milestone {label.strip()}")
     return 0
 
@@ -77,7 +84,7 @@ def _clear(context: CliContext, args: Namespace) -> int:
         # Already clear is success — state-clearing verbs must survive batches.
         context.report({"step": step.id}, f"{step.title}: not a milestone")
         return 0
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
+    context.apply(turn_off(step.id, MODULE_ID, label="Remove Milestone"))
     context.report({"step": step.id}, f"{step.title}: no longer a milestone")
     return 0
 

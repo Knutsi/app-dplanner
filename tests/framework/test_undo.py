@@ -102,3 +102,41 @@ def test_every_change_announces_itself(document):
     undo.undo()
     undo.redo()
     assert len(seen) == 3
+
+
+def test_a_gesture_lands_as_one_step_and_undoes_as_one(document):
+    """Several pushes inside a gesture are applied as they come — later ones see earlier
+    ones' effects — and reach the stack as one named step."""
+    undo = UndoService(document)
+    with undo.gesture("Make Three"):
+        undo.push(Append(1, mergeable=False))
+        assert document == [1]
+        undo.push(Append(2, mergeable=False))
+        undo.push(Append(3, mergeable=False))
+    assert document == [1, 2, 3]
+    assert undo.undo_text() == "Make Three"
+    undo.undo()
+    assert document == []
+    undo.redo()
+    assert document == [1, 2, 3]
+
+
+def test_a_gesture_of_one_push_is_that_push_and_of_none_is_nothing(document):
+    undo = UndoService(document)
+    with undo.gesture("Nothing"):
+        pass
+    assert not undo.can_undo()
+    with undo.gesture("One"):
+        undo.push(Append(1))
+    assert undo.undo_text() == "Append"
+
+
+def test_a_gesture_inside_a_gesture_belongs_to_the_outer_one(document):
+    undo = UndoService(document)
+    with undo.gesture("Outer"):
+        undo.push(Append(1, mergeable=False))
+        with undo.gesture("Inner"):
+            undo.push(Append(2, mergeable=False))
+    assert undo.undo_text() == "Outer"
+    undo.undo()
+    assert document == []

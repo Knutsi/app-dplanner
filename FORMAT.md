@@ -245,6 +245,18 @@ every step keeps its estimate and its description until a person says otherwise.
 opted-out `estimation` entry carries no `days` and so reads as unestimated, which every
 total already skips.
 
+**An aspect turned off is shelved, not dropped.** Turning an aspect off moves its entry and
+its prose to the domain's own entry beside the node — `modules/shelf.json`,
+`{"format": 1, "aspects": {"step_milestone": {"data": {…}}, "step_description": {"data":
+{…}, "text": "…"}}}` — and leaves the aspect's own entry as absence says it should: gone
+for a marker aspect, the `{"off": true}` opt-out for the two above. Turning it on restores
+from the shelf before it would write anything fresh, and an emptied shelf leaves no file.
+An aspect that held nothing shelves nothing, so a bare marker toggled off is exactly what it
+was before. The shelf is *not* an aspect and belongs to no module: `domain/shelf.py` owns
+the format, the migration pass migrates each shelved entry with its module's own chain, and
+files in a module's area are left where they are — they were never undoable, and the
+shelved prose still links them. `dplanner … clear` shelves the same way the toggle does.
+
 **Not every module entry is an aspect.** The graph editor stores each node's position as
 `modules/project_editor.json` beside the step, and it is deliberately *not* an `AspectSpec`:
 an aspect is a fact about the work that an agent may want to write, and a layout is

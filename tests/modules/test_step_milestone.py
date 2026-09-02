@@ -231,33 +231,25 @@ def test_toggling_on_generates_the_next_label_undoably(services, panel_step, sec
     assert read(panel_step) == ""
 
 
-def test_toggling_off_asks_first_and_clears(services, panel_step, monkeypatch):
-    import dplanner.modules.step_milestone.module as release_module
+def test_toggling_off_shelves_the_label_and_toggling_on_brings_it_back(services, panel_step):
+    """Nothing is asked and nothing is lost: the label waits on the shelf, and the next
+    toggle-on restores it rather than generating a new one."""
+    from dplanner.domain.shelf import shelved
 
     services.document.set_module_data(panel_step.id, MODULE_ID, write("MVP"))
-    asked = []
-
-    def yes(*args: object) -> bool:
-        asked.append(args)
-        return True
-
-    monkeypatch.setattr(release_module, "confirm", yes)
     select(services, panel_step)
     services.actions.run("milestone.toggle", services.context.current())
-    assert asked and read(panel_step) == ""
+    assert read(panel_step) == ""
+    assert shelved(panel_step, MODULE_ID) == (write("MVP"), "")
+
+    services.actions.run("milestone.toggle", services.context.current())
+    assert read(panel_step) == "MVP"
+    assert shelved(panel_step, MODULE_ID) is None
+
+    services.undo.undo()
+    assert read(panel_step) == ""
     services.undo.undo()
     assert read(panel_step) == "MVP"
-
-
-def test_a_declined_confirm_changes_nothing(services, panel_step, monkeypatch):
-    import dplanner.modules.step_milestone.module as release_module
-
-    services.document.set_module_data(panel_step.id, MODULE_ID, write("MVP"))
-    monkeypatch.setattr(release_module, "confirm", lambda *_args: False)
-    select(services, panel_step)
-    services.actions.run("milestone.toggle", services.context.current())
-    assert read(panel_step) == "MVP"
-    assert not services.undo.can_undo()
 
 
 def test_with_no_step_selected_the_toggle_is_disabled(services):

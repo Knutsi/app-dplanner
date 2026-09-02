@@ -89,7 +89,7 @@ def migrate_module_data(repo: Repository[Any], formats: Sequence[ModuleDataForma
     return changed
 
 
-def _migrated(data: dict[str, Any], declared: ModuleDataFormat) -> dict[str, Any] | None:
+def migrated(data: dict[str, Any], declared: ModuleDataFormat) -> dict[str, Any] | None:
     """``data`` at ``declared.version``, or None when it is already there or beyond."""
     version = data_version(data)
     if version >= declared.version:
@@ -110,10 +110,10 @@ def _bring_current(repo: Repository[Any], owner: DataOwner, declared: ModuleData
     data = owner.module_data.get(declared.module_id)
     if data is None:
         return False
-    migrated = _migrated(data, declared)
-    if migrated is None:
+    current = migrated(data, declared)
+    if current is None:
         return False
-    repo.set_module_data(owner.id, declared.module_id, migrated)
+    repo.set_module_data(owner.id, declared.module_id, current)
     return True
 
 
@@ -123,7 +123,7 @@ def _take_over(
     retired = owner.module_data.get(takeover.retired.module_id)
     if retired is None:
         return False
-    current = _migrated(retired, takeover.retired)
+    current = migrated(retired, takeover.retired)
     if current is None and data_version(retired) > takeover.retired.version:
         return False  # Newer than the retired module ever wrote: not ours to touch.
     existing = owner.module_data.get(successor.module_id, {})

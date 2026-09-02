@@ -24,6 +24,7 @@ from dplanner.core.storage.locations import find_repo_root
 from dplanner.core.storage.pointer import POINTER_FILE
 from dplanner.domain.library_file import LIBRARY_ENV, resolve_library_path
 from dplanner.domain.model import Library, Project
+from dplanner.domain.shelf import migrate_shelved
 from dplanner.domain.store import PROJECT_META, LibraryStore, StaleWorkspaceError
 
 
@@ -81,16 +82,13 @@ def find_current_project(
     matches = [
         project
         for project in library.projects
-        if (directory := _dir_of(store, project)) is not None
-        and find_repo_root(directory) == root
+        if (directory := _dir_of(store, project)) is not None and find_repo_root(directory) == root
     ]
     if len(matches) == 1:
         return matches[0]
     if matches:
         names = ", ".join(sorted(project.title or project.folder_name for project in matches))
-        raise CliError(
-            f"this repository holds several library projects — pass --project: {names}"
-        )
+        raise CliError(f"this repository holds several library projects — pass --project: {names}")
     return None
 
 
@@ -147,6 +145,7 @@ def open_library(
     context = CliContext(out=out, as_json=as_json, opened=library, opened_store=store)
     store.dirty.connect(lambda owner_id, aspect: context.marks.add((owner_id, aspect)))
     migrate_module_data(store, formats)
+    migrate_shelved(store, formats)
     try:
         yield context
         try:
