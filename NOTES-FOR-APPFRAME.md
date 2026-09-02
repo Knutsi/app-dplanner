@@ -1454,8 +1454,9 @@ desktops.
 **What.** Replaces `action_dialog.py`. `AspectBar(registry, context, templates, undo=,
 menu=, submenu=)` renders every spec in one `(menu, submenu)` as a checkable `QAction` on
 the right `QToolBar`, icon-only, and the `templates` — `AspectTemplate(label, toggles,
-tone, glyph)`, each a *set* of those spec ids — on the left, worded, with an optional tone
-it wears when selected (a per-button stylesheet over the `:checked` rule). A template click
+tone, glyph, catch_all)`, each a *set* of those spec ids — on the left, worded, with an
+optional tone it wears when selected (a per-button stylesheet over the `:checked` rule);
+one may be the catch-all, lit whenever no other matches. A template click
 runs every differing spec through `registry.run` inside `undo.gesture(...)`; a template is
 checked when the checked set equals its set, computed on every `refresh()`. `paint(ink)`
 repaints the specs' `icon` painters and the templates' named glyphs. Overflow is

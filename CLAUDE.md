@@ -276,7 +276,8 @@ root, stop and look for the registry or capability you have not found yet.
   Check), worded and wearing a body tone from `theme/tones.py`. Clicking one runs every
   toggle that differs inside **one `UndoService.gesture`**, and a template reads as
   selected exactly when the step carries its set and nothing else — a combination is a
-  template, both ways, computed on every refresh and never stored. **Overflow is
+  template, both ways, computed on every refresh and never stored — and **Step is the
+  catch-all**, lit for any combination no other template names. **Overflow is
   `QToolBar`'s own » button**, which lists what no longer fits as checkable menu
   entries. It takes the context as a **function**, so the panel inside the details
   dialog names its own step. **"This type can never carry that aspect" needs no new

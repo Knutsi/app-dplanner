@@ -10,8 +10,10 @@ composition root as data (a template is wired, never inferred). Clicking one run
 toggles differ — on for the template's set, off for everything else — inside one undo
 gesture, so *Make Milestone* is one Ctrl+Z however many aspects it moved. And it goes both
 ways: a template reads as selected exactly when the step carries its set and nothing else,
-so a combination somebody built by hand lights up the template it amounts to. The bar
-never stores which template is "current"; it is a comparison on every refresh.
+so a combination somebody built by hand lights up the template it amounts to — and one
+template may be the **catch-all**, lit whenever no other matches, because a step with an
+unnamed combination of aspects is still a step. The bar never stores which template is
+"current"; it is a comparison on every refresh.
 
 Two ``QToolBar``s rather than one row of buttons, for the same reason the Tests tab has
 two: a ``QToolBar`` too narrow for its contents grows the » overflow button and puts the
@@ -55,6 +57,9 @@ class AspectTemplate:
     toggles: frozenset[str]  # Type toggle action ids that are on; every other one is off.
     tone: str | None = None  # A name in ``theme.tones.BODY_TONES``; None keeps the accent.
     glyph: str | None = None  # A name in ``theme.icons.GLYPH_ICONS``; None draws none.
+    catch_all: bool = False  # Selected whenever no template matches exactly.
+    catch_all: bool = False  # Selected whenever no template matches exactly.
+    catch_all: bool = False  # Selected whenever no template matches exactly.
 
 
 def _tool_bar(parent: QWidget) -> QToolBar:
@@ -195,10 +200,16 @@ class AspectBar(QWidget):
         offered = {action_id for action_id, (visible, _e, _c) in states.items() if visible}
         checked = {action_id for action_id, (_v, _e, is_on) in states.items() if is_on}
         any_enabled = any(enabled for _v, enabled, _c in states.values())
+        # Exactly its set, and nothing else the build offers: a combination is a template.
+        matched = {
+            template.label
+            for template, _action in self._templates
+            if checked == (template.toggles & offered)
+        }
         for template, action in self._templates:
             action.setEnabled(any_enabled)
-            # Exactly its set, and nothing else the build offers: a combination is a template.
-            action.setChecked(any_enabled and checked == (template.toggles & offered))
+            selected = template.label in matched or (template.catch_all and not matched)
+            action.setChecked(any_enabled and selected)
 
     def paint(self, ink: str | QColor) -> None:
         """Glyphs in the theme's secondary text colour; re-call on theme change."""

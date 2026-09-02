@@ -201,7 +201,7 @@ def test_a_plain_step_is_the_step_template_and_a_template_is_one_undo(services, 
 
 def test_a_combination_built_by_hand_lights_its_template(services, project, panel):
     """It goes both ways: toggle Feature on and Estimate off by hand, and the Feature
-    template reads as selected; add a Ticket, and no template does."""
+    template reads as selected; add a Ticket, and it is just a Step again."""
     step = project.steps[0]
     select(services, step.id)
     panel.bar.action("feature.toggle").trigger()
@@ -209,7 +209,8 @@ def test_a_combination_built_by_hand_lights_its_template(services, project, pane
     panel.bar.action("estimate.toggle").trigger()
     assert panel.bar.template("Feature").isChecked() is True
     panel.bar.action("ticket.toggle").trigger()
-    assert not any(panel.bar.template(label).isChecked() for label in panel.bar.template_labels())
+    assert panel.bar.template("Feature").isChecked() is False
+    assert panel.bar.template("Step").isChecked() is True  # The catch-all.
 
 
 def test_a_bar_action_runs_the_owning_modules_toggle_and_follows_the_model(

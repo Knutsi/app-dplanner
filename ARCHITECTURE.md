@@ -1329,8 +1329,10 @@ each is still the owning module's own command — the gesture is the framework's
 "one gesture, several verbs", and it is what let the bar stay a presenter with no command
 of its own. And it goes both ways: a template reads as selected exactly when the step
 carries its set and nothing else, so a combination somebody built toggle by toggle lights
-up the template it amounts to, and one extra aspect puts it out. Nothing stores which
-template is current; it is a set comparison on every refresh, which is the same *derived,
+up the template it amounts to, and one extra aspect puts it out — onto *Step*, the
+catch-all (`AspectTemplate.catch_all`), because a step with an unnamed combination of
+aspects is still a step and a bar with nothing lit would be saying it is nothing. Nothing
+stores which template is current; it is a set comparison on every refresh, which is the same *derived,
 never stored* rule as the ordering. Which templates exist is `StepPropertiesDeps.templates`,
 named by the composition root in the order the bar shows them, for the same reason the
 scope kinds are wired rather than inferred. The bar is two `QToolBar`s rather than one row of buttons, for

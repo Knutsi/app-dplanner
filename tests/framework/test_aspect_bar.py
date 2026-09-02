@@ -97,7 +97,7 @@ def toggles():
 
 
 TEMPLATES = (
-    AspectTemplate("Step", frozenset({"estimate", "description"})),
+    AspectTemplate("Step", frozenset({"estimate", "description"}), catch_all=True),
     AspectTemplate("Milestone", frozenset({"milestone", "description"}), tone="highlight"),
     AspectTemplate("Feature", frozenset({"feature", "description"}), glyph="layers"),
 )
@@ -164,21 +164,34 @@ def test_a_combination_is_a_template_and_only_an_exact_one(app, toggles):
     combination built by hand lights up the template it amounts to, and one extra aspect
     puts it out again."""
     bar = make_bar(toggles)
-    assert not any(bar.template(label).isChecked() for label in bar.template_labels())
-
-    bar.action("estimate").trigger()
     bar.action("description").trigger()
-    assert bar.template("Step").isChecked() is True
-    assert bar.template("Milestone").isChecked() is False
-
-    bar.action("docs").trigger()
-    assert bar.template("Step").isChecked() is False
-
-    bar.action("docs").trigger()
-    bar.action("estimate").trigger()
     bar.action("milestone").trigger()
     assert bar.template("Milestone").isChecked() is True
     assert bar.template("Step").isChecked() is False
+
+    bar.action("docs").trigger()
+    assert bar.template("Milestone").isChecked() is False
+
+
+def test_the_catch_all_template_is_lit_whenever_no_other_matches(app, toggles):
+    """A combination no template names is still a step: the catch-all lights for it, for
+    nothing at all, and for its own set — and yields the moment another template matches."""
+    bar = make_bar(toggles)
+    assert bar.template("Step").isChecked() is True  # Nothing on at all.
+    bar.action("milestone").trigger()
+    bar.action("docs").trigger()
+    assert bar.template("Step").isChecked() is True  # Milestone + docs is nobody's set.
+    assert bar.template("Milestone").isChecked() is False
+    bar.action("docs").trigger()
+    bar.action("description").trigger()
+    assert bar.template("Milestone").isChecked() is True
+    assert bar.template("Step").isChecked() is False
+
+
+def test_without_a_catch_all_an_unnamed_combination_lights_nothing(app, toggles):
+    bar = make_bar(toggles, templates=TEMPLATES[1:])
+    bar.action("docs").trigger()
+    assert not any(bar.template(label).isChecked() for label in bar.template_labels())
 
 
 def test_applying_the_matching_template_changes_nothing(app, toggles):
