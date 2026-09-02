@@ -23,7 +23,12 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # the app shell and the settings dialog. "export" holds the Export submenu — one entry
     # per feature that can write itself out (the order list's CSV today).
     "File": ("project", "library", "save", "branch", "export", "window"),
-    "Edit": ("history",),
+    # "history" is the app shell's Undo/Redo. "clipboard" and "selection" are the graph's:
+    # Cut, Copy, Paste, Duplicate and Delete's second seat (its home is Step, which every
+    # right-click renders), then Select All — registered by project_editor because the step
+    # graph is the one surface with a clipboard representation. ARCHITECTURE.md's *Edit
+    # verbs belong to the surface whose things they act on* has the reasoning.
+    "Edit": ("history", "clipboard", "selection"),
     # "palette" is the command palette alone — the way to *any* verb, set off from the
     # panel toggles below it. "areas" is the whole-side collapse switches, ahead of the
     # per-panel checkmarks in "panels". "canvas" is the graph editor's own view verbs —

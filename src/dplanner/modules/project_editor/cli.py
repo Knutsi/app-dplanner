@@ -1,4 +1,4 @@
-"""``dplanner layout …`` and ``dplanner region …`` — arranging the graph from the command line.
+"""``dplanner layout …``, ``region …`` and ``step duplicate`` — the graph editor's verbs.
 
 The same command objects the window pushes, so an apply here is undoable in a tab open on
 the same library. ``layout save`` upserts rather than refusing a collision: an agent
@@ -10,13 +10,14 @@ canvas coordinates. ``--rect`` remains for placing one by hand.
 """
 
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg
 from dplanner.domain.commands import Command
 from dplanner.domain.model import Project, Step
+from dplanner.modules.project_editor.clipboard import PastePolicy, clip, paste, write_files
 from dplanner.modules.project_editor.named_layouts import (
     apply_layout_commands,
     delete_layout_command,
@@ -51,7 +52,52 @@ WRAP_PAD = 32.0
 WRAP_PAD_TOP = TITLE_STRIP_H + 24.0
 
 
-def commands(days_for: Callable[[Step], float | None]) -> list[CliCommand]:
+def commands(
+    days_for: Callable[[Step], float | None],
+    *,
+    paste_policies: Sequence[PastePolicy] = (),
+    file_modules: Sequence[str] = (),
+) -> list[CliCommand]:
+    def _configure_duplicate(parser: ArgumentParser) -> None:
+        parser.add_argument(
+            "step", nargs="+", help="steps to copy: id, folder name, or part of a title"
+        )
+        parser.add_argument(
+            "--into",
+            metavar="PROJECT",
+            help="the project the copies go into; default: the steps' own",
+        )
+
+    def _step_duplicate(context: CliContext, args: Namespace) -> int:
+        """The window's Duplicate, as one transaction: the same clone command, the same
+        policies, the attachments copied after it — see clipboard.py."""
+        library = context.library
+        originals = [find_step(library, needle, context.current) for needle in args.step]
+        target = (
+            find_project(library, args.into) if args.into else library.project_of(originals[0].id)
+        )
+        clips = clip(library, context.store.files, file_modules, [s.id for s in originals])
+        command, copies = paste(
+            library, target.id, clips, anchor=None, policies=paste_policies, verb="Duplicate"
+        )
+        context.apply(command)
+        write_files(context.store.files, list(zip(copies, clips, strict=True)))
+        pairs = list(zip(originals, copies, strict=True))
+        context.report(
+            {
+                "project": target.id,
+                "steps": [
+                    {"id": copy.id, "title": copy.title, "from": original.id}
+                    for original, copy in pairs
+                ],
+            },
+            "\n".join(
+                f"Duplicated {original.title!r} as {copy.id} in {target.title}"
+                for original, copy in pairs
+            ),
+        )
+        return 0
+
     def _sort(context: CliContext, args: Namespace) -> int:
         project = find_project(context.library, args.project)
         if not project.steps:
@@ -122,6 +168,17 @@ def commands(days_for: Callable[[Step], float | None]) -> list[CliCommand]:
             configure=_project_and_name,
             run=_delete,
             examples=('dplanner layout delete discovery "release plan"',),
+        ),
+        CliCommand(
+            path=("step", "duplicate"),
+            summary="Copy steps — aspects, prose, attachments and what they wait on — into "
+            "a project, one row below the originals.",
+            configure=_configure_duplicate,
+            run=_step_duplicate,
+            examples=(
+                "dplanner step duplicate read-the-spec",
+                "dplanner step duplicate read-the-spec draft-the-model --into rollout",
+            ),
         ),
         CliCommand(
             path=("region", "list"),

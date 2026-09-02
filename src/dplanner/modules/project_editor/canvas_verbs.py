@@ -8,7 +8,9 @@ their own ``Deps`` — the same seam ``StepVerbs.current_project`` already uses.
 
 Both families are ``ActionSpec``s, and that is the point of putting these here at all. The
 canvas keymap binds keys to action ids, so a movement key runs the same object the menu and
-the command palette do, and rebinding later is a table rather than a rewrite.
+the command palette do, and rebinding later is a table rather than a rewrite. Select All is
+the one with a menu shortcut instead — it lives on the Edit menu, where every editor expects
+Ctrl+A to be, and stays here because it steers the canvas rather than changing the plan.
 
 **Where a node is, is a fact about the model.** ``layout.positions()`` already answers it for
 every step, stored or automatic, so "the nearest node to the right" is a pure function and
@@ -18,6 +20,8 @@ step, telling the canvas what to select, needs the window at all.
 
 from collections.abc import Callable
 from dataclasses import dataclass
+
+from PySide6.QtGui import QKeySequence
 
 from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.framework.action_registry import (
@@ -101,10 +105,13 @@ class CanvasVerbs:
             ActionSpec(
                 id="steps.select_all",
                 label="Select &All Steps",
-                menu="Step",
-                group="navigate",
-                # After the Go verbs: they walk the selection, this replaces it.
-                order=50,
+                menu="Edit",
+                group="selection",
+                order=10,
+                # A menu shortcut rather than a canvas key: every text widget reclaims
+                # Ctrl+A through ShortcutOverride, and the state gate keeps it off a tab
+                # with no canvas. keymap.py says why the bare keys stay there.
+                shortcut=QKeySequence.StandardKey.SelectAll,
                 tip="Select every step in this project",
                 state=self._has_steps,
                 run=self._select_all,
