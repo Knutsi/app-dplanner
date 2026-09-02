@@ -25,6 +25,7 @@ from PySide6.QtGui import (
     QPen,
 )
 
+from dplanner.modules.project_editor.marks import Marks
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.theme.icons import (
     paint_beaker_glyph,
@@ -69,6 +70,15 @@ SHADOW_ALPHA = 12
 HANDLE_R = 5.0
 # Connect mode's hovered handle grows a touch, so the one under the cursor is unmissable.
 HANDLE_EMPHASIS = 1.5
+
+# A marked socket: a disc a touch larger than the handle, in a hue the canvas already uses
+# for something of the same feeling — the valid green for where the graph starts, the
+# attention amber for where it ends — with a hairline of window colour so it reads on any
+# body. An orphan wears a solid ring in the refusal red, outside the body like the agent
+# ring, since a node nothing touches is nearly always a mistake.
+MARK_R = HANDLE_R + 1.0
+START_MARK = QColor(120, 200, 140)
+END_MARK = QColor(220, 170, 90)
 
 # Secondary text as opacity rather than a theme colour: a painter has only the palette, and
 # an alpha-derived secondary is theme-independent by construction (DESIGN.md exception #1).
@@ -140,6 +150,7 @@ GLYPH_GAP = 5.0
 # here or it is clipped there.
 PAINT_MARGIN = max(
     HANDLE_R + 4.0,
+    MARK_R + 1.0,
     BADGE_H / 2 + 1.0 + LIFT,
     ICON_D / 2 + 1.0 + LIFT,
     CHIP_H / 2 + 1.0,
@@ -202,13 +213,16 @@ class RenderHints:
 
 @dataclass(frozen=True)
 class NodeState:
-    """The transient half of a node's look: selection, hover, link aim, and mode hints."""
+    """The transient half of a node's look: selection, hover, link aim, mode hints, and
+    what the marks have to say about its sockets."""
 
     selected: bool = False
     hovered: bool = False
     link_state: str = ""  # "" | "valid" | "invalid"
     hints: RenderHints = field(default_factory=RenderHints)
     ring_phase: float = 0.0  # Where the live ring's dashes are; the scene advances it.
+    ports: tuple[bool, bool] = (False, False)  # (something arrives, something leaves).
+    marks: Marks = field(default_factory=Marks)
 
 
 def paint_node(
@@ -238,6 +252,7 @@ def paint_node(
         painter.translate(0.0, -LIFT)
 
     paint_body(painter, palette, body, accent, state)
+    paint_marks(painter, palette, body, state)
     if accent.chip_text:
         paint_ring(painter, body, accent.chip_tone, state.ring_phase)
     inner = body.adjusted(PADDING, PADDING, -PADDING, -PADDING)
@@ -328,6 +343,29 @@ def paint_body(
     painter.drawRoundedRect(body, RADIUS, RADIUS)
     if accent.bar_tone in BAR_TONES:
         paint_status_bar(painter, body, accent.bar_tone)
+
+
+def paint_marks(painter: QPainter, palette: QPalette, body: QRectF, state: NodeState) -> None:
+    """The marks that are on, where this node has earned them.
+
+    Painted before the handle, so a hovered handle still wins the right socket; in connect
+    mode the faded handle sits over the end disc, which is accepted — the amber still shows
+    round it, and connect mode is exactly when you are about to give the node an end.
+    """
+    incoming, outgoing = state.ports
+    marks = state.marks
+    if marks.orphans and not (incoming or outgoing):
+        painter.setPen(QPen(INVALID_TINT, RING_W))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        ring = body.adjusted(-RING_GAP, -RING_GAP, RING_GAP, RING_GAP)
+        painter.drawRoundedRect(ring, RADIUS + RING_GAP, RADIUS + RING_GAP)
+    painter.setPen(QPen(QColor(palette.window().color()), 1.0))
+    if marks.starts and not incoming:
+        painter.setBrush(START_MARK)
+        painter.drawEllipse(QPointF(body.left(), body.center().y()), MARK_R, MARK_R)
+    if marks.ends and not outgoing:
+        painter.setBrush(END_MARK)
+        painter.drawEllipse(QPointF(body.right(), body.center().y()), MARK_R, MARK_R)
 
 
 def paint_status_bar(painter: QPainter, body: QRectF, tone: str) -> None:

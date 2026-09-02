@@ -20,6 +20,10 @@ Four seams keep this module from knowing about anything else in the application:
 **The canvas publishes its mode into the context** as an edge on the activity node, so
 ``steps.connect`` can decide whether it is checked from the context alone. That is the whole
 mechanism behind the toolbar's mode switch, and why there is no other one.
+
+**The marks are the module's**, read from the per-user store once and pushed to every open
+canvas when they change — a way of looking at graphs, not a fact about one project, so a tab
+opened later wears the same marks and a second window would too.
 """
 
 from collections.abc import Callable
@@ -34,6 +38,7 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
+from dplanner.domain.store import FilesFor
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import EntityActivity, follow_entity_tabs
@@ -51,18 +56,26 @@ from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.window import StatusHost
 from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
+from dplanner.modules.project_editor.clipboard import PastePolicy
+from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, ClipboardWatch
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
+from dplanner.modules.project_editor.marks import Marks, ports
 from dplanner.modules.project_editor.modes import (
     CONNECT,
+    LASSO,
     REGION_CREATE,
+    CanvasDeps,
     ConnectMode,
     IdleMode,
+    LassoMode,
+    ModeBase,
     RegionCreateMode,
 )
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
@@ -90,6 +103,15 @@ MODULE_ID = "project_editor"
 # project, and every `tabs.open("project", …)` in the application keeps working.
 PROJECT_KIND = "project"
 PANEL_ID = f"{MODULE_ID}.project"
+# The per-user key the marks are kept under — see marks.py.
+MARKS_KEY = "marks"
+
+# The modes a verb can switch on by name. Every other mode is a gesture that starts itself.
+SWITCHABLE_MODES: dict[str, Callable[[CanvasDeps], ModeBase]] = {
+    CONNECT: ConnectMode,
+    LASSO: LassoMode,
+    REGION_CREATE: RegionCreateMode,
+}
 
 
 def _no_aspects(_step_id: StepId) -> list[str]:
@@ -115,6 +137,8 @@ class ProjectEditorDeps:
     parent: QWidget
     panels: PanelRegistry
     theme: ThemeService
+    # Where a step's attachments live, for a copy to carry them.
+    files: FilesFor
     # What the aspect modules have to say about a step, one short phrase each.
     step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
     # How a step should look beyond its text — muted, badged — in the canvas's own
@@ -126,6 +150,10 @@ class ProjectEditorDeps:
     # The project panel renders every section registered here as a card — the registry the
     # composition root exposes as services.detail_cards. This module never learns whose.
     cards: InspectorSectionRegistry = field(default_factory=InspectorSectionRegistry)
+    # A copied step carries its attachments: the file areas to read are the asset catalog's
+    # sources, and what a copy may not carry is each owner's policy — see clipboard.py.
+    file_modules: tuple[str, ...] = ()
+    paste_policies: tuple[PastePolicy, ...] = ()
 
 
 class ProjectActivity(EntityActivity):
@@ -137,6 +165,7 @@ class ProjectActivity(EntityActivity):
         project_id: NodeId,
         verbs: StepVerbs,
         layout_verbs: LayoutVerbs,
+        marks: Marks | None = None,
     ) -> None:
         # Only the pane the user is in may write to the selection scope: a background one
         # re-syncing its canvas — when a step is deleted, say — would otherwise clobber
@@ -149,6 +178,7 @@ class ProjectActivity(EntityActivity):
         self.project_id = project_id
 
         self._scene = GraphScene(self._link_refusal)
+        self._scene.set_marks(marks or Marks())
         self._view = GraphView(
             self._scene,
             base_mode=IdleMode,
@@ -208,21 +238,17 @@ class ProjectActivity(EntityActivity):
         """Replace the selection with these steps — Select All's way in."""
         self._scene.select_steps(step_ids)
 
-    def set_connect_mode(self, on: bool) -> None:
-        """Enter or leave connect mode. Escape does the same thing from the keyboard."""
+    def set_mode(self, name: str, on: bool) -> None:
+        """Enter or leave one of the switchable modes. Escape leaves from the keyboard."""
         if on:
-            if self._view.modes.current().name != CONNECT:
-                self._view.modes.push(ConnectMode(self._view.deps))
-        elif self._view.modes.current().name == CONNECT:
+            if self._view.modes.current().name != name:
+                self._view.modes.push(SWITCHABLE_MODES[name](self._view.deps))
+        elif self._view.modes.current().name == name:
             self._view.modes.pop()
 
-    def set_region_mode(self, on: bool) -> None:
-        """Enter or leave region-drawing mode, the same shape as connect."""
-        if on:
-            if self._view.modes.current().name != REGION_CREATE:
-                self._view.modes.push(RegionCreateMode(self._view.deps))
-        elif self._view.modes.current().name == REGION_CREATE:
-            self._view.modes.pop()
+    def set_marks(self, marks: Marks) -> None:
+        """The user changed which marks are on; every canvas hears it, this one here."""
+        self._scene.set_marks(marks)
 
     def frame(self) -> None:
         self._view.frame_content()
@@ -293,6 +319,7 @@ class ProjectActivity(EntityActivity):
             return  # The project was deleted; the tab is about to close.
         project = self._project()
         placed = positions(self._product, project)
+        connected = ports(project.steps)
         nodes = [
             NodeSpec(
                 step_id=step.id,
@@ -301,6 +328,7 @@ class ProjectActivity(EntityActivity):
                 x=placed[step.id][0],
                 y=placed[step.id][1],
                 accent=self._deps.step_accent(step.id),
+                ports=connected[step.id],
             )
             for step in project.steps
         ]
@@ -396,20 +424,31 @@ class ProjectActivity(EntityActivity):
         """Double-click on empty space: the same creation New runs, at the point."""
         self._verbs.create(self.project_id, NEW_STEP_TITLE, at=(x, y))
 
-    def note_created(self, step_id: StepId) -> None:
-        """A step was just born on this canvas.
+    def note_placed(self, step_ids: list[StepId]) -> None:
+        """Steps were just placed on this canvas — born here, or pasted.
 
-        Three things follow from that and none belongs to the verb: it becomes the
-        selection; the remembered point steps one row down, so pressing New twice leaves
-        two nodes rather than one hiding another; and the details dialog opens on it —
-        the same verb a double-click on a node runs — so naming it and saying what it is
-        are the gesture's second half. The double-click on empty space lands here too: it
-        pointed at a spot in exactly the same sense.
+        Two things follow from that and neither belongs to the verb: they become the
+        selection, so the panel beside the canvas is already showing what was made; and the
+        remembered point steps past them, so pressing New or Paste twice leaves two rows
+        rather than one hiding another. The double-click lands here too — it pointed at a
+        spot in exactly the same sense.
         """
-        self._scene.select_step(step_id)
+        self._scene.select_steps(step_ids)
         point = self._view.last_click
         if point is not None:
-            self._view.note_click(QPointF(*below(point.x(), point.y())))
+            placed = positions(self._product, self._project())
+            ys = [placed[s][1] for s in step_ids if s in placed]
+            height = max(ys) - min(ys) if ys else 0.0
+            self._view.note_click(QPointF(*below(point.x(), point.y() + height)))
+
+    def note_created(self, step_id: StepId) -> None:
+        """One step was just born here — by New or a double-click, never a paste.
+
+        The details dialog opens on it, the same ``steps.details`` a double-click on a
+        node runs, so naming it and saying what it is are the gesture's second half. A
+        paste places steps too, but they arrive named and configured; only a birth asks.
+        """
+        assert step_id  # Placed first, so the selection the verb reads is already this one.
         self.run_action("steps.details")
 
     def new_step_position(self) -> tuple[float, float] | None:
@@ -498,13 +537,29 @@ class ProjectEditorModule:
 
     def __init__(self, deps: ProjectEditorDeps) -> None:
         self._deps = deps
+        self._marks = Marks.from_json(get_global(MODULE_ID, MARKS_KEY))
         self._verbs = StepVerbs(
             library=deps.library,
             undo=deps.undo,
             parent=deps.parent,
             current_project=self._current_project,
             new_position=self._new_step_position,
+            placed=self._on_placed,
             created=self._on_created,
+        )
+        # The watcher is a child of the window, which is what disconnects it from the
+        # process-global clipboard when this build is discarded.
+        self._clipboard = ClipboardWatch(deps.parent, deps.context)
+        self._clipboard_verbs = ClipboardVerbs(
+            library=deps.library,
+            undo=deps.undo,
+            files=deps.files,
+            file_modules=deps.file_modules,
+            held=self._clipboard.count,
+            current_project=self._current_project,
+            new_position=self._new_step_position,
+            placed=self._on_placed,
+            policies=deps.paste_policies,
         )
         self._layout_verbs = LayoutVerbs(
             library=deps.library,
@@ -519,15 +574,17 @@ class ProjectEditorModule:
             current_project=self._current_project,
             select_step=self.reveal,
             select_steps=self._select_steps,
-            set_connect_mode=self._set_connect_mode,
+            set_mode=self._set_mode,
             frame=self._frame,
+            marks=lambda: self._marks,
+            set_mark=self._set_mark,
         )
         self._region_verbs = RegionVerbs(
             library=deps.library,
             undo=deps.undo,
             parent=deps.parent,
             current_project=self._current_project,
-            set_region_mode=self._set_region_mode,
+            set_region_mode=lambda on: self._set_mode(REGION_CREATE, on),
         )
 
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
@@ -553,7 +610,7 @@ class ProjectEditorModule:
 
         def factory(target: str | None) -> ProjectActivity:
             assert target is not None
-            return ProjectActivity(deps, target, self._verbs, self._layout_verbs)
+            return ProjectActivity(deps, target, self._verbs, self._layout_verbs, self._marks)
 
         deps.tabs.register_factory(PROJECT_KIND, factory)
         # Order 10: above the step panel, because a project is what a step is part of.
@@ -569,6 +626,7 @@ class ProjectEditorModule:
             )
         )
         self._verbs.register_into(deps.actions)
+        self._clipboard_verbs.register_into(deps.actions)
         self._canvas_verbs.register_into(deps.actions)
         self._layout_verbs.register_into(deps.actions)
         self._region_verbs.register_into(deps.actions)
@@ -598,20 +656,28 @@ class ProjectEditorModule:
         current = self._current_activity()
         return current.new_step_position() if current is not None else None
 
+    def _on_placed(self, step_ids: list[StepId]) -> None:
+        current = self._current_activity()
+        if current is not None:
+            current.note_placed(step_ids)
+
     def _on_created(self, step_id: StepId) -> None:
         current = self._current_activity()
         if current is not None:
             current.note_created(step_id)
 
-    def _set_connect_mode(self, on: bool) -> None:
+    def _set_mode(self, name: str, on: bool) -> None:
         current = self._current_activity()
         if current is not None:
-            current.set_connect_mode(on)
+            current.set_mode(name, on)
 
-    def _set_region_mode(self, on: bool) -> None:
-        current = self._current_activity()
-        if current is not None:
-            current.set_region_mode(on)
+    def _set_mark(self, name: str, on: bool) -> None:
+        """Flip one mark for every canvas, now and later, and let the toggles re-ask."""
+        self._marks = self._marks.with_(name, on)
+        set_global(MODULE_ID, MARKS_KEY, self._marks.to_json())
+        for activity in self._activities():
+            activity.set_marks(self._marks)
+        self._deps.context.refresh()
 
     def _select_steps(self, step_ids: list[StepId]) -> None:
         current = self._current_activity()

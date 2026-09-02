@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from dplanner.framework.mime_files import Payload
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
+    from dplanner.modules.project_editor.clipboard import PastePolicy
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
 
 __all__ = [
@@ -414,6 +415,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
             parent=services.window,
             panels=services.panels,
             theme=services.theme,
+            files=store.files,
+            file_modules=tuple(source.id for source in _asset_sources()),
+            paste_policies=_paste_policies(),
             # A node's second line: whatever the aspects have to say about that step. The
             # milestone and GitHub phrases are skipped because the accent already wears them
             # — the badge the label, the pill and glyph the PR and branch.
@@ -1269,6 +1273,20 @@ def _covered_tests(
     ]
 
 
+def _paste_policies() -> tuple["PastePolicy", ...]:
+    """What a copied step may not carry verbatim, one policy per module that has a say.
+
+    Assembled here because each policy lives in its owner's Qt-free half and no module may
+    import another's; both the window's Paste/Duplicate and ``step duplicate`` read this
+    tuple. Two entries, on purpose: an id minted per project (a test's) and the state of a
+    shell somebody is running. Everything else a step carries copies as it is.
+    """
+    from dplanner.modules.step_agent_run.aspect import forget_for_paste
+    from dplanner.modules.testing.aspect import remint_for_paste
+
+    return (remint_for_paste, forget_for_paste)
+
+
 def _asset_sources() -> tuple["AssetSource", ...]:
     """Every module's slice of the asset catalog, in reading order.
 
@@ -1387,7 +1405,11 @@ def default_cli_commands() -> list["CliCommand"]:
         *progression_cli.commands(status_for=step_status, days_for=estimated_days),
         # The timeline sort reads a step's length through estimation's Qt-free reader —
         # handed over here so neither cli.py imports the other.
-        *layout_cli.commands(days_for=estimated_days),
+        *layout_cli.commands(
+            days_for=estimated_days,
+            paste_policies=_paste_policies(),
+            file_modules=tuple(source.id for source in sources),
+        ),
         # The staffing matrix reads estimates, agent-ness and the start date through the
         # owners' Qt-free readers — handed over here so no cli.py imports another module's.
         *time_cli.commands(

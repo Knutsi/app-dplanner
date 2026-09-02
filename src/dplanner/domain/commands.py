@@ -22,6 +22,7 @@ the top of the stack.
 """
 
 import time
+from collections.abc import Iterable
 from typing import Any, Protocol
 
 from dplanner.domain.model import (
@@ -299,3 +300,27 @@ class CompositeCommand:
 
     def merge_with(self, other: Command) -> bool:
         return False
+
+
+def remove_edges_command(
+    library: Library, edges: Iterable[tuple[StepId, str, StepId]], label: str
+) -> CompositeCommand:
+    """Remove these ``(waiter, kind, source)`` edges as one undo step.
+
+    One :class:`SetEdgesCommand` per ``(waiter, kind)``, because it replaces the list: two
+    commands on the same list would each be built from the state before either ran, and
+    the second would put back what the first removed. Always a composite, so the undo
+    entry says what was done rather than "Change Links".
+    """
+    by_list: dict[tuple[StepId, str], set[StepId]] = {}
+    for waiter, kind, source in edges:
+        by_list.setdefault((waiter, kind), set()).add(source)
+    commands: list[Command] = [
+        SetEdgesCommand(
+            waiter,
+            kind,
+            [t for t in library.step(waiter).edges.get(kind, []) if t not in gone],
+        )
+        for (waiter, kind), gone in sorted(by_list.items())
+    ]
+    return CompositeCommand(label, commands)

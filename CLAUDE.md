@@ -365,6 +365,25 @@ root, stop and look for the registry or capability you have not found yet.
   menu-bar QAction fires application-wide and eats a keystroke in the step editor. Bind it in
   `modules/project_editor/keymap.py`, where a key names the verbs it means in order and the
   first the context allows runs — that is how one Delete key covers links and steps.
+- **Lasso is a mode, and it touches cards.** `LassoMode` draws a `QPainterPath`, and on
+  release the scene answers `nodes_touching(path)` by the node's *body* rect — never
+  `scene.items(path)`, whose hit shape is the body plus `PAINT_MARGIN` and includes the
+  edges. One lasso ends the mode, Shift on the release adds to the selection, and the mode
+  switch is `steps.lasso` (`S` on the canvas), the same shape as `steps.connect`. Region and
+  lasso share one `OutlinePreviewItem` through `Canvas.aim_outline`.
+- **Isolate is one domain question and one domain command.** `Library.boundary_edges()`
+  names every edge with exactly one end in a set (both kinds, skipping edges to a deleted
+  step, as the canvas skips them) and `remove_edges_command()` turns edges into one
+  `CompositeCommand` of per-`(waiter, kind)` replacements — Unlink, `steps.isolate` and
+  `dplanner step isolate` all build from those two, so the surfaces cannot drift.
+- **Marks are a way of looking, remembered per user.** Starts, Ends and Orphans
+  (`project_editor/marks.py`, Qt-free) are one `Marks` value on the module, written to
+  `user_config` and fanned to every scene like `RenderHints`; a tab opened later wears them.
+  Which sockets a node has connected is `marks.ports()` over the drawn edges, derived every
+  sync. The toggles' `checked` reads the module and the module calls `context.refresh()` —
+  the theme-toggle pattern, deliberately not an edge on the activity node, because a
+  preference outlives any tab. `ARCHITECTURE.md`'s *Marks are a way of looking* has the
+  reasoning.
 - **A scrollable area's extent must never depend on what the user is moving.** The canvas is
   a *plane*: a constant scene rect centred on the origin, far larger than any graph. That is
   what lets panning go on for as long as anybody wants, and it is also the answer to the older
@@ -628,9 +647,24 @@ root, stop and look for the registry or capability you have not found yet.
   refreshes so the menu's own New lands where the menu was raised. No click yet means no
   stored position, which is the ambient layout doing what it always did. The step then
   becomes the **selection**, the remembered point steps one row down (`placement.below()`),
-  and `steps.details` opens on it — all through the `created` seam, because they belong to
-  the canvas, not to the verb — so New twice in a row leaves two nodes rather than one
-  hiding another, and naming a step is the gesture's second half.
+  and `steps.details` opens on it — the first two through the `placed` seam a paste shares,
+  the dialog through `created`, which only a birth calls — because they belong to the
+  canvas, not to the verb — so New twice in a row leaves two nodes rather than one hiding
+  another, and naming a step is the gesture's second half.
+- **The Edit menu's Cut, Copy, Paste, Duplicate, Delete and Select All are the graph's.**
+  Registered by `project_editor` as ordinary `ActionSpec`s — no dispatcher until a second
+  surface needs a clipboard, because a shortcut can be owned by one enabled QAction at a
+  time. Cut/Copy/Duplicate act on `verbs.chosen_steps` exactly as Delete does; only Paste
+  needs a current canvas. The Ctrl keys are **menu shortcuts** (every text widget reclaims
+  them through `ShortcutOverride`; measured, not assumed) and Delete is **not** (a bare `Del`
+  would fire in every list, and `StandardKey.Delete` also claims Ctrl+D). Deleting steps and
+  regions no longer asks — undo is the safety net. A copy is a **clone**
+  (`project_editor/clipboard.py`): fresh ids, links between copies remapped and every link
+  to the outside dropped, files in the payload and written after the one composite
+  command, and a `PastePolicy` per module with a say (`testing` re-mints ids,
+  `step_agent_run` forgets). `dplanner step duplicate` is the same function.
+  `ARCHITECTURE.md`'s *Edit verbs belong to the surface whose things they act on* and *Copy
+  and paste are a clone through the same command* have the reasoning.
 - **What a collector gathers is one verb: `dplanner scope show`.** In `cli/scopes.py`, the
   cross-feature home — a check, a feature and a milestone are one derivation asked three
   ways, so three near-copies of the report is exactly what that file prevents. It also owns

@@ -21,6 +21,7 @@ Ids are minted per *project*, not per step, so a run's results map is flat and a
 say "t7 failed" out loud. ``spec``'s ``next_id`` is the precedent.
 """
 
+import dataclasses
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -201,6 +202,22 @@ def mint_ids(project: Project, count: int) -> list[str]:
     """``count`` free ids at once, for a verb that adds more than one test in a run."""
     first = int(next_test_id(project)[len(TEST_ID_PREFIX) :])
     return [f"{TEST_ID_PREFIX}{first + offset}" for offset in range(count)]
+
+
+def remint_for_paste(project: Project, steps: Sequence[Step]) -> None:
+    """A copied step's tests get fresh ids — the paste policy this module hands in.
+
+    An id is minted per project, so a copy that kept ``T100`` would make "T100 failed" name
+    two tests; and a paste after a cut must not inherit the removed test's run history under
+    the old id either. Minted across the whole batch at once, because the clones are not in
+    the project yet and would otherwise all be offered the same next number.
+    """
+    carrying = [(step, read(step)) for step in steps if read(step)]
+    fresh = iter(mint_ids(project, sum(len(tests) for _step, tests in carrying)))
+    for step, tests in carrying:
+        step.module_data[MODULE_ID] = write(
+            [dataclasses.replace(test, id=next(fresh)) for test in tests]
+        )
 
 
 def covered(

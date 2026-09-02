@@ -24,10 +24,12 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.domain.model import StepId
+from dplanner.modules.project_editor.marks import Marks
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W
 from dplanner.modules.project_editor.renderers import (
     INVALID_TINT,
     PAINT_MARGIN,
+    SECONDARY_ALPHA,
     VALID_TINT,
     NodeAccent,
     NodeState,
@@ -38,6 +40,9 @@ from dplanner.modules.project_editor.selection import EdgeRef
 
 # How far a press may land from the handle's centre and still mean it.
 HANDLE_GRAB = 12.0
+
+# The outline preview's wash: the same faint ink a region's body wears.
+OUTLINE_FILL_ALPHA = 10
 
 # How wide a curve is to the mouse. An edge is drawn 1.4 px thin and no one can click that,
 # so its shape() is the stroked path at this width — comfortably a target, still narrow
@@ -69,6 +74,8 @@ class StepNodeItem(QGraphicsItem):
         self._accent = NodeAccent()
         self._hints = RenderHints()
         self._ring_phase = 0.0
+        self._ports = (False, False)
+        self._marks = Marks()
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
@@ -108,8 +115,25 @@ class StepNodeItem(QGraphicsItem):
             self._hints = hints
             self.update()
 
+    def set_ports(self, ports: tuple[bool, bool]) -> None:
+        """(something arrives, something leaves) — derived by the activity every sync."""
+        if ports != self._ports:
+            self._ports = ports
+            self.update()
+
+    def set_marks(self, marks: Marks) -> None:
+        """Which marks the user has on — pushed by the scene, like the render hints."""
+        if marks != self._marks:
+            self._marks = marks
+            self.update()
+
     def handle_scene_pos(self) -> QPointF:
         return self.mapToScene(QPointF(NODE_W, NODE_H / 2))
+
+    def body_scene_rect(self) -> QRectF:
+        """The card itself, in scene coordinates — what a lasso has to touch. Not the
+        bounding rect, which reaches ``PAINT_MARGIN`` further out on every side."""
+        return self.mapRectToScene(QRectF(0.0, 0.0, NODE_W, NODE_H))
 
     def is_over_handle(self, scene_pos: QPointF) -> bool:
         delta = scene_pos - self.handle_scene_pos()
@@ -167,6 +191,8 @@ class StepNodeItem(QGraphicsItem):
                 link_state=self._link_state,
                 hints=self._hints,
                 ring_phase=self._ring_phase,
+                ports=self._ports,
+                marks=self._marks,
             ),
         )
 
@@ -279,6 +305,33 @@ class LinkPreviewItem(QGraphicsPathItem):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setPen(QPen(VALID_TINT if self._ok else INVALID_TINT, 2.0, Qt.PenStyle.DashLine))
         painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(self.path())
+
+
+class OutlinePreviewItem(QGraphicsPathItem):
+    """The dashed outline that follows a gesture drawing an area: a region being dragged
+    out, a lasso being drawn. One item, since one gesture runs at a time."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setZValue(10)
+
+    def aim(self, path: QPainterPath) -> None:
+        self.setPath(path)
+
+    def paint(
+        self,
+        painter: QPainter,
+        _option: QStyleOptionGraphicsItem,
+        _widget: QWidget | None = None,
+    ) -> None:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        ink = QColor(live_palette(self).text().color())
+        wash = QColor(ink)
+        wash.setAlpha(OUTLINE_FILL_ALPHA)
+        ink.setAlpha(SECONDARY_ALPHA)
+        painter.setPen(QPen(ink, 1.4, Qt.PenStyle.DashLine))
+        painter.setBrush(wash)
         painter.drawPath(self.path())
 
 

@@ -58,8 +58,6 @@ class AspectTemplate:
     tone: str | None = None  # A name in ``theme.tones.BODY_TONES``; None keeps the accent.
     glyph: str | None = None  # A name in ``theme.icons.GLYPH_ICONS``; None draws none.
     catch_all: bool = False  # Selected whenever no template matches exactly.
-    catch_all: bool = False  # Selected whenever no template matches exactly.
-    catch_all: bool = False  # Selected whenever no template matches exactly.
 
 
 def _tool_bar(parent: QWidget) -> QToolBar:
