@@ -138,6 +138,12 @@ def test_the_move_shortcut_yields_to_word_selection_in_a_text_editor(session, pr
 
     services = session.services
     session.window.show()
+    # A window-context shortcut fires only in the *active* window, and the offscreen
+    # platform delivers activation through the queued window-system events — under a
+    # loaded worker, show() alone loses this race about one run in five. qWaitForWindowActive
+    # flushes that queue and waits, which is the one idiom that makes the precondition true
+    # rather than usually-true.
+    assert QTest.qWaitForWindowActive(session.window)
     open_all(services, projects[:2])
     ctrl_shift = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
 
