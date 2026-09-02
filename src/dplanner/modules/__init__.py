@@ -63,6 +63,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.domain.ordering import placed
     from dplanner.domain.schedule import format_date, format_days, schedule
     from dplanner.domain.store import LibraryStore
+    from dplanner.framework.aspect_bar import KindButton
     from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
@@ -85,7 +86,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ProjectAssetsDeps,
         ProjectAssetsModule,
     )
-    from dplanner.modules.project_editor.kinds import StepKind
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
@@ -108,7 +108,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
     from dplanner.modules.step_check.aspect import read as check_read
-    from dplanner.modules.step_check.aspect import write as check_write
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_description.aspect import summary as description_summary
@@ -118,14 +117,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
     from dplanner.modules.step_description.section import SeparateInstructionLink
     from dplanner.modules.step_feature.aspect import read as feature_read
-    from dplanner.modules.step_feature.aspect import write as feature_write
     from dplanner.modules.step_feature.module import StepFeatureDeps, StepFeatureModule
     from dplanner.modules.step_handoff.module import StepHandoffDeps, StepHandoffModule
     from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
-    from dplanner.modules.step_milestone.aspect import next_milestone_label
-    from dplanner.modules.step_milestone.aspect import project_labels as milestone_labels
     from dplanner.modules.step_milestone.aspect import read as milestone_read
-    from dplanner.modules.step_milestone.aspect import write as milestone_write
     from dplanner.modules.step_milestone.module import StepMilestoneDeps, StepMilestoneModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
     from dplanner.modules.step_properties.module import (
@@ -355,6 +350,16 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # below.
     step_properties = StepPropertiesModule(
         StepPropertiesDeps(
+            # The Type toggles that are *kinds* — what a node is — worded on the bar's
+            # left in this order, each wearing its body tone when checked: violet the
+            # milestone, teal the feature, the agent-run chip's blue for an agent step,
+            # and a check keeps the accent. Wired, never inferred, like the scope kinds.
+            kinds=(
+                KindButton("milestone.toggle", "highlight"),
+                KindButton("feature.toggle", "feature"),
+                KindButton("agent.toggle", "info"),
+                KindButton("check.toggle"),
+            ),
             library=library,
             undo=services.undo,
             panels=services.panels,
@@ -397,37 +402,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # The project panel renders whatever registered a card here — the project-level
             # counterpart of the step panel's inspector_sections.
             cards=services.detail_cards,
-            # What Step ▸ New offers. A *kind* is what a node is — it wears a body colour
-            # and the graph reads differently for it; a *facet* is what a step carries, and
-            # "New ▸ Description" would be nonsense, which is why this is a named list
-            # rather than the Type submenu. Ticket and Test are one line away if they ever
-            # earn a place. The tuple order is the order the menu shows.
-            # The glyph on each is the medallion its node will wear, from the same
-            # vocabulary ``step_type_icons`` answers in — named once, here.
-            step_kinds=(
-                StepKind(
-                    "step_feature", "Feature", lambda _project: feature_write(True), icon="layers"
-                ),
-                StepKind(
-                    "step_milestone",
-                    "Milestone",
-                    # A fresh milestone generates its label from the ones already there,
-                    # exactly as the Type toggle does — one function, two ways in.
-                    lambda project: milestone_write(
-                        next_milestone_label(milestone_labels(project))
-                    ),
-                    icon="tag",
-                ),
-                StepKind(
-                    "step_agent_instruction",
-                    "Agent Step",
-                    lambda _project: agent_write_state(True),
-                    icon="spark",
-                ),
-                StepKind(
-                    "step_check", "Check", lambda _project: check_write(True), icon="shield"
-                ),
-            ),
         )
     )
     # Constructed before the list because the projects index opens Specs through it — the
@@ -464,7 +438,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
     estimation = EstimationModule(
         EstimationDeps(
-            parent=services.window,
             library=library,
             undo=services.undo,
             details=services.step_details,
@@ -561,9 +534,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 PickerEntry(
                     key=entry.name,
                     title=title or basename,
-                    detail=", ".join(
-                        dict.fromkeys(source.label for source, _l in entry.locations)
-                    ),
+                    detail=", ".join(dict.fromkeys(source.label for source, _l in entry.locations)),
                     # The display name becomes the typed link's alt text; the suffix
                     # stays the content's own.
                     filename=f"{title}{PurePosixPath(entry.name).suffix}" if title else basename,
@@ -825,13 +796,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 undo=services.undo,
                 sections=services.inspector_sections,
                 actions=services.actions,
-                parent=services.window,
             )
         ),
         StepDescriptionModule(
             StepDescriptionDeps(
                 actions=services.actions,
-                parent=services.window,
                 library=library,
                 undo=services.undo,
                 details=services.step_details,
@@ -910,7 +879,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepHandoffModule(
             StepHandoffDeps(
                 actions=services.actions,
-                parent=services.window,
                 library=library,
                 undo=services.undo,
                 sections=services.inspector_sections,
@@ -923,7 +891,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 undo=services.undo,
                 sections=services.inspector_sections,
                 actions=services.actions,
-                parent=services.window,
             )
         ),
         # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
@@ -1507,6 +1474,7 @@ def default_module_formats() -> list[ModuleDataFormat]:
     the same list has to be reachable without them — and it must stay complete, because a
     format missing here is data the CLI silently declines to bring forward.
     """
+    from dplanner.domain import shelf
     from dplanner.modules.project_assets import cli as project_assets
     from dplanner.modules.project_editor import positions
     from dplanner.modules.time_estimates import schedule as time_schedule
@@ -1516,8 +1484,10 @@ def default_module_formats() -> list[ModuleDataFormat]:
     # list from aspect_specs() alone would silently omit them. A project's start date
     # needs no entry: it rides on the estimation aspect's format, which is the same module
     # writing under the same id on another node.
+    # The shelf is the fourth: the domain's own, holding turned-off aspects' data.
     return [spec.data_format for spec in aspect_specs()] + [
         positions.DATA_FORMAT,
         time_schedule.DATA_FORMAT,
         project_assets.DATA_FORMAT,
+        shelf.DATA_FORMAT,
     ]

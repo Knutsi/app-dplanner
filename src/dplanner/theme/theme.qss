@@ -414,7 +414,7 @@ QSplitter::handle:vertical:pressed {
 /* The strip of verbs over a drawing or editing surface — the canvas, and the spec editor.
    It sits on the window colour rather than the surface's, so the surface starts where the
    chrome stops, and one hairline says where that is. */
-#CanvasToolbar, #EditorToolbar {
+#CanvasToolbar, #EditorToolbar, #AspectBar {
     background-color: $BG_ELEVATED;
     border-bottom: 1px solid $BORDER;
 }
@@ -748,7 +748,7 @@ QSplitter::handle:vertical:pressed {
 /* A strip of controls on a tab page, not application chrome: no frame, no ground of its
    own. It is a QToolBar purely for the » overflow button, which is the only widget in Qt
    that degrades a full control row gracefully instead of squeezing it. */
-#TestsToolBar {
+#TestsToolBar, #AspectBarTools {
     background: transparent;
     border: none;
     padding: 0px;

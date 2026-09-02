@@ -30,6 +30,7 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.activity import follow_entity_tabs
+from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -44,7 +45,6 @@ from dplanner.framework.project_list_segment import LeadingRow, ProjectListSegme
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import confirm
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.activity import (
     ALL_TESTS_KIND,
@@ -66,7 +66,7 @@ from dplanner.modules.testing.aspect import (
 )
 from dplanner.modules.testing.section import CoversSection, TestsSection
 from dplanner.modules.testing.view import word
-from dplanner.theme.icons import list_icon, project_icon
+from dplanner.theme.icons import beaker_icon, list_icon, project_icon
 
 RESULT_ORDER = ("ok", "failed", "skipped", "pending")
 NO_RUN = "start a test run first (Project ▸ New Test Run)"
@@ -141,9 +141,7 @@ class TestsModule:
                 id=f"{MODULE_ID}.tab",
                 label="Tests",
                 order=30,  # Between Ticket (20) and Agent (40).
-                factory=lambda: TestsSection(
-                    deps.library, deps.undo, deps.files, deps.pick_assets
-                ),
+                factory=lambda: TestsSection(deps.library, deps.undo, deps.files, deps.pick_assets),
                 shown_for=lambda step_id: (
                     self._step(step_id) is not None and enabled(deps.library.step(step_id or ""))
                 ),
@@ -195,16 +193,19 @@ class TestsModule:
 
     def _action_specs(self) -> list[ActionSpec]:
         return [
-            ActionSpec(
+            aspect_toggle(
                 id="test.toggle",
                 label=SPEC.label,
-                menu="Step",
-                group="classify",
-                submenu="Type",
                 order=50,
+                module_id=MODULE_ID,
+                library=self._deps.library,
+                undo=self._deps.undo,
+                enabled=enabled,
+                # The list is the marker: turning on adds one blank test to fill in,
+                # exactly as Add Test does, unless the shelf has the old roster.
+                fresh=lambda _step, project: write([Test(id=next_test_id(project), title="")]),
+                icon=beaker_icon,
                 tip="Give this step tests: what must keep passing once the work is done",
-                state=self._toggle_state,
-                run=self._toggle,
             ),
             ActionSpec(
                 id="test.add",
@@ -327,31 +328,6 @@ class TestsModule:
             return None
         found = runs.open_run(runs.read(project))
         return None if found is None else (project, found)
-
-    # -- the Type toggle -------------------------------------------------------------------
-
-    def _toggle_state(self, context: Context) -> ActionState:
-        step = self._focused_step(context)
-        if step is None:
-            return DISABLED
-        return ActionState(checked=enabled(step))
-
-    def _toggle(self, context: Context) -> None:
-        step = self._focused_step(context)
-        if step is None:
-            return
-        tests = read(step)
-        if not tests:
-            self._add(context)
-            return
-        count = f"{len(tests)} test{'' if len(tests) == 1 else 's'}"
-        question = (
-            f"Remove all {count} from {step.title or 'this step'!r}? The tests are not kept; "
-            "archiving one keeps it and its results instead."
-        )
-        if not confirm(self._deps.parent, "Clear Tests", question):
-            return
-        self._deps.undo.push(SetModuleDataCommand(step.id, MODULE_ID, {}, label="Clear Tests"))
 
     def _on_a_step(self, context: Context) -> ActionState:
         return DISABLED if self._focused_step(context) is None else ActionState()

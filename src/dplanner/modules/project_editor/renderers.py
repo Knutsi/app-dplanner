@@ -33,6 +33,15 @@ from dplanner.theme.icons import (
     paint_spark_glyph,
     paint_tag_glyph,
 )
+from dplanner.theme.tones import (
+    BADGE_BORDER,
+    BADGE_TINT,
+    BODY_TONES,
+    CHIP_ATTENTION_BORDER,
+    CHIP_ATTENTION_TINT,
+    CHIP_INFO_BORDER,
+    CHIP_INFO_TINT,
+)
 
 RADIUS = 8.0  # = theme.tokens.RADIUS_MD, matched by eye rather than import: this is a painter.
 PADDING = 12.0
@@ -70,33 +79,9 @@ FILL_ALPHA = 28
 VALID_TINT = QColor(120, 200, 140, 180)
 INVALID_TINT = QColor(220, 110, 110, 180)
 BUSY_TINT = QColor(110, 160, 220, 180)
-BADGE_TINT = QColor(150, 130, 220, 70)
-BADGE_BORDER = QColor(150, 130, 220, 160)
-# A toned body colours the whole node, so its kind reads at any zoom. "highlight" is the
-# badge's purple family — a milestone node, its badge and the order table's milestone row
-# are one identity; "good" is the green family — finished work recedes into a calm green
-# column the eye can skip; "feature" is teal — the other collector, one rank down.
-#
-# Teal because of where the hues already are: it sits 76° from the milestone's violet, so
-# the two collectors never read as one, and 42° from the done green — which additionally
-# *mutes* its node, so the pair is told apart by weight as well as by hue, and a feature
-# still wears its layer medallion. The nearest claimed hue is the agent-run chip's teal,
-# and that is a labelled pill on the bottom edge of a running step, never a body.
-# Fill low-alpha, border full-strength.
-HIGHLIGHT_FILL = QColor(150, 130, 220, 36)
-GOOD_FILL = QColor(120, 200, 140, 36)
-GOOD_BORDER = QColor(120, 200, 140, 160)
-FEATURE_FILL = QColor(80, 180, 175, 36)
-FEATURE_BORDER = QColor(80, 180, 175, 160)
-BODY_TONES = {
-    "highlight": (HIGHLIGHT_FILL, BADGE_BORDER),
-    "good": (GOOD_FILL, GOOD_BORDER),
-    "feature": (FEATURE_FILL, FEATURE_BORDER),
-}
-CHIP_INFO_TINT = QColor(90, 170, 200, 70)
-CHIP_INFO_BORDER = QColor(90, 170, 200, 160)
-CHIP_ATTENTION_TINT = QColor(220, 170, 90, 70)
-CHIP_ATTENTION_BORDER = QColor(220, 170, 90, 160)
+# A toned body colours the whole node, so its kind reads at any zoom. The tones live in
+# ``theme/tones.py`` — the aspect bar's kind buttons wear the same ones, and a checked
+# Feature button and a feature node are one identity.
 
 # A muted node: the same colours, further faded. What "muted" means is the caller's business.
 MUTED_TEXT_ALPHA = 110

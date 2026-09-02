@@ -8,17 +8,12 @@ aspect, and nothing here has to know that module exists.
 
 from dataclasses import dataclass
 
-from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, Step
-from dplanner.framework.action_registry import (
-    DISABLED,
-    ActionRegistry,
-    ActionSpec,
-    ActionState,
-)
-from dplanner.framework.context import Context
+from dplanner.domain.model import Library
+from dplanner.framework.action_registry import ActionRegistry
+from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_feature.aspect import DATA_FORMAT, MODULE_ID, SPEC, read, write
+from dplanner.theme.icons import layers_icon
 
 
 @dataclass(frozen=True)
@@ -37,42 +32,16 @@ class StepFeatureModule:
 
     def register(self) -> None:
         self._deps.actions.register(
-            ActionSpec(
+            aspect_toggle(
                 id="feature.toggle",
                 label=SPEC.label,
-                menu="Step",
-                group="classify",
-                submenu="Type",
                 order=20,
+                module_id=MODULE_ID,
+                library=self._deps.library,
+                undo=self._deps.undo,
+                enabled=read,
+                fresh=lambda _step, _project: write(True),
+                icon=layers_icon,
                 tip="Collect the work and tests behind this step, up to the previous feature",
-                state=self._current,
-                run=self._toggle,
             )
         )
-
-    def _current(self, context: Context) -> ActionState:
-        step = self._focused(context)
-        if step is None:
-            return DISABLED
-        return ActionState(checked=read(step))
-
-    def _toggle(self, context: Context) -> None:
-        step = self._focused(context)
-        if step is None:
-            return
-        # No confirmation on the way out: a feature stores nothing, so clearing loses nothing.
-        on = not read(step)
-        self._deps.undo.push(
-            SetModuleDataCommand(
-                step.id,
-                MODULE_ID,
-                write(on),
-                label="Mark as Feature" if on else "Clear Feature",
-            )
-        )
-
-    def _focused(self, context: Context) -> Step | None:
-        step_id = context.focus_entity("step")
-        if step_id is None or not self._deps.library.has(step_id):
-            return None
-        return self._deps.library.step(step_id)

@@ -56,7 +56,6 @@ from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import StepNodeItem
-from dplanner.modules.project_editor.kinds import StepKind
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
 from dplanner.modules.project_editor.modes import (
@@ -84,7 +83,7 @@ from dplanner.modules.project_editor.selection import (
     CanvasSelection,
     EdgeRef,
 )
-from dplanner.modules.project_editor.verbs import StepVerbs
+from dplanner.modules.project_editor.verbs import NEW_STEP_TITLE, StepVerbs
 
 MODULE_ID = "project_editor"
 # The tab kind stays "project": the module is the editor, but the thing in the tab is still a
@@ -127,9 +126,6 @@ class ProjectEditorDeps:
     # The project panel renders every section registered here as a card — the registry the
     # composition root exposes as services.detail_cards. This module never learns whose.
     cards: InspectorSectionRegistry = field(default_factory=InspectorSectionRegistry)
-    # What the New submenu offers besides a plain step. Named by the composition root, so
-    # this module never learns what a feature or a milestone is — see kinds.py.
-    step_kinds: tuple[StepKind, ...] = ()
 
 
 class ProjectActivity(EntityActivity):
@@ -361,8 +357,7 @@ class ProjectActivity(EntityActivity):
         nodes = (
             tuple(ContextNode(selection_uri("step", step_id)) for step_id in selection.steps)
             + tuple(
-                ContextNode(selection_uri(EDGE_KIND, edge.entity_id()))
-                for edge in selection.edges
+                ContextNode(selection_uri(EDGE_KIND, edge.entity_id())) for edge in selection.edges
             )
             + tuple(
                 ContextNode(selection_uri(REGION_KIND, region_id))
@@ -398,22 +393,24 @@ class ProjectActivity(EntityActivity):
             self._deps.status.show_status(state.label or "Those steps cannot be linked", 4000)
 
     def _on_create(self, x: float, y: float) -> None:
-        """Double-click on empty space: the same creation the New verbs run, unprompted."""
-        self._verbs.create(self.project_id, "New step", at=(x, y))
+        """Double-click on empty space: the same creation New runs, at the point."""
+        self._verbs.create(self.project_id, NEW_STEP_TITLE, at=(x, y))
 
     def note_created(self, step_id: StepId) -> None:
         """A step was just born on this canvas.
 
-        Two things follow from that and neither belongs to the verb: it becomes the
-        selection, so the panel beside the canvas is already showing what was made; and the
-        remembered point steps one row down, so pressing New twice leaves two nodes rather
-        than one hiding another. The double-click lands here too — it pointed at a spot in
-        exactly the same sense.
+        Three things follow from that and none belongs to the verb: it becomes the
+        selection; the remembered point steps one row down, so pressing New twice leaves
+        two nodes rather than one hiding another; and the details dialog opens on it —
+        the same verb a double-click on a node runs — so naming it and saying what it is
+        are the gesture's second half. The double-click on empty space lands here too: it
+        pointed at a spot in exactly the same sense.
         """
         self._scene.select_step(step_id)
         point = self._view.last_click
         if point is not None:
             self._view.note_click(QPointF(*below(point.x(), point.y())))
+        self.run_action("steps.details")
 
     def new_step_position(self) -> tuple[float, float] | None:
         """The top-left a new node should take: centred on wherever the user last pointed.
@@ -447,9 +444,7 @@ class ProjectActivity(EntityActivity):
             for region in read_regions(project)
         ]
         label = "Move Region" if len(moves) == 1 else f"Move {len(moves)} Regions"
-        commands: list[Command] = [
-            set_regions_command(project, updated, label, view_origin=self)
-        ]
+        commands: list[Command] = [set_regions_command(project, updated, label, view_origin=self)]
         commands += [self._move_command(step_id, x, y) for step_id, x, y in carried]
         if len(commands) == 1:
             self._deps.undo.push(commands[0])
@@ -508,7 +503,6 @@ class ProjectEditorModule:
             undo=deps.undo,
             parent=deps.parent,
             current_project=self._current_project,
-            step_kinds=deps.step_kinds,
             new_position=self._new_step_position,
             created=self._on_created,
         )

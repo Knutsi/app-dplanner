@@ -625,33 +625,32 @@ def test_the_agent_toggle_marks_and_unmarks_the_step(services, step):
     assert enabled(step)
 
 
-def test_toggling_agent_off_confirms_and_drops_the_text_as_one_undo_step(
-    services, step, monkeypatch
-):
-    import dplanner.modules.step_agent_instruction.module as agent_module
+def test_toggling_agent_off_shelves_the_text_and_on_brings_it_back(services, step):
+    """Nothing asks: the separate instruction waits on the shelf, and one undo restores
+    both the mark and the text."""
+    from dplanner.domain.shelf import shelved_text
     from dplanner.modules.step_agent_instruction.aspect import enabled
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
-    asked = []
-
-    def yes(*args: object) -> bool:
-        asked.append(args)
-        return True
-
-    monkeypatch.setattr(agent_module, "confirm", yes)
     select(services, step)
     services.actions.run("agent.toggle", services.context.current())
-    assert asked and not enabled(step)
+    assert not enabled(step)
     assert step.module_text.get("step_agent_instruction", "") == ""
+    assert shelved_text(step, "step_agent_instruction") == "Ship it."
     services.undo.undo()
     assert enabled(step)
     assert step.module_text["step_agent_instruction"] == "Ship it."
 
+    services.undo.redo()
+    services.actions.run("agent.toggle", services.context.current())
+    assert enabled(step)
+    assert step.module_text["step_agent_instruction"] == "Ship it."
 
-def test_the_ticket_toggle_adds_the_empty_aspect_and_clears_it(services, step, monkeypatch):
-    import dplanner.modules.step_ticket.module as ticket_module
+
+def test_the_ticket_toggle_adds_the_empty_aspect_and_shelves_a_filled_one(services, step):
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_ticket.aspect import MODULE_ID, Ticket, enabled, write
+    from dplanner.domain.shelf import SHELF_ID
+    from dplanner.modules.step_ticket.aspect import MODULE_ID, Ticket, enabled, read, write
 
     select(services, step)
     context = services.context.current()
@@ -661,26 +660,17 @@ def test_the_ticket_toggle_adds_the_empty_aspect_and_clears_it(services, step, m
     services.actions.run("ticket.toggle", context)
     assert enabled(step) and spec.state(context).checked is True
 
-    # Off with no reference filled in: no confirm, entry gone.
-    asked = []
-
-    def yes(*args: object) -> bool:
-        asked.append(args)
-        return True
-
-    monkeypatch.setattr(ticket_module, "confirm", yes)
+    # Off with no reference filled in: the marker goes and nothing is shelved for it.
     services.actions.run("ticket.toggle", context)
-    assert not asked and not enabled(step)
+    assert not enabled(step)
 
-    # Off with a reference: asks first, and undo restores it.
+    # Off with a reference: shelved, and on again brings the very reference back.
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write(Ticket(key="WID-14"))))
     services.actions.run("ticket.toggle", context)
-    assert asked and not enabled(step)
-    services.undo.undo()
-    assert step.module_data[MODULE_ID]["key"] == "WID-14"
-
-
-# -- the CLI -----------------------------------------------------------------------------------
+    assert not enabled(step) and SHELF_ID in step.module_data
+    services.actions.run("ticket.toggle", context)
+    assert read(step) == Ticket(key="WID-14")
+    assert SHELF_ID not in step.module_data
 
 
 def test_agent_prompt_carries_handoffs_and_the_epilogue(cli_stdin, workspace):

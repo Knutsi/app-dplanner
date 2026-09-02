@@ -19,10 +19,11 @@ and the composition root assembles the tuple, exactly as lint checks arrive.
 import hashlib
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 
 from dplanner.domain.model import Library, NodeId, Project
+from dplanner.domain.shelf import shelved_text
 from dplanner.domain.store import FilesFor, ModuleFileArea
 
 ASSETS_DIR = "assets"
@@ -164,11 +165,27 @@ def catalog(
     grouped: dict[str, list[tuple[AssetSource, AssetLocation]]] = {}
     for source in sources:
         for location in source.scan(library, project, files):
-            grouped.setdefault(location.name, []).append((source, location))
+            grouped.setdefault(location.name, []).append(
+                (source, _with_shelved_use(library, location))
+            )
     return [
         AssetEntry(name=name, locations=tuple(locations))
         for name, locations in sorted(grouped.items())
     ]
+
+
+def _with_shelved_use(library: Library, location: AssetLocation) -> AssetLocation:
+    """A file the module's *shelved* prose links is still in use.
+
+    A source scans what its aspect holds now; an aspect turned off holds nothing, and its
+    prose sits on the shelf with the links intact. Marking those here, once, is what keeps
+    ``asset prune`` from sweeping away a picture the next toggle-on would bring back to.
+    """
+    node = library.node(location.node_id)
+    if location.name not in asset_references(shelved_text(node, location.module_id)):
+        return location
+    use = AssetUse(node.kind, node.id, getattr(node, "title", ""), f"{location.module_id} (off)")
+    return replace(location, uses=(*location.uses, use))
 
 
 def prunable(entries: Sequence[AssetEntry]) -> list[tuple[AssetSource, AssetLocation]]:

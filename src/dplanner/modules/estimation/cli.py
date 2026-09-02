@@ -23,6 +23,7 @@ from dplanner.domain.schedule import (
     format_day_count,
     format_days,
 )
+from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
 from dplanner.modules.estimation.aspect import MODULE_ID, enabled, read, write
 from dplanner.modules.estimation.schedule import (
@@ -174,7 +175,9 @@ def _clear(context: CliContext, args: Namespace) -> int:
         # a batch without dirtying a project it had no change to make to.
         context.report({"step": step.id}, message)
         return 0
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(None, on=False)))
+    context.apply(
+        turn_off(step.id, MODULE_ID, leaving=write(None, on=False), label="Remove Estimate")
+    )
     context.report({"step": step.id}, message)
     return 0
 

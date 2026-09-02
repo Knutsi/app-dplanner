@@ -12,6 +12,7 @@ from dplanner.cli import CliCommand, CliContext
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.ordering import placed
+from dplanner.domain.shelf import turn_off
 from dplanner.modules.step_feature.aspect import MODULE_ID, read, write
 
 
@@ -26,7 +27,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("feature", "clear"),
-            summary="A step is no longer a feature; leaves no file behind.",
+            summary="A step is no longer a feature.",
             configure=step_arg,
             run=_clear,
             examples=("dplanner feature clear 'Bulk import'",),
@@ -58,7 +59,7 @@ def _clear(context: CliContext, args: Namespace) -> int:
         # Already clear is success — state-clearing verbs must survive batches.
         context.report({"step": step.id, "feature": False}, f"{step.title}: not a feature")
         return 0
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
+    context.apply(turn_off(step.id, MODULE_ID, label="Remove Feature"))
     context.report({"step": step.id, "feature": False}, f"{step.title}: no longer a feature")
     return 0
 

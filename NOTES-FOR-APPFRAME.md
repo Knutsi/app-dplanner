@@ -1314,7 +1314,8 @@ Recording these so a future backport does not over-reach:
 
 ## 7. From the aspect-toggling pass
 
-- **`framework/action_dialog.py` — actions as a dialog of checkboxes.** The fifth presenter
+- **`framework/action_dialog.py` — actions as a dialog of checkboxes.** *Retired in the step
+  modal pass (§10) in favour of `aspect_bar.py`; the design note stands.* The fifth presenter
   beside the menu bar, palette, toolbar and `action_menu`'s pop-ups, and it follows the same
   one policy: render the registry, never a copy of it. `TogglesDialog(actions, context, menu=,
   submenu=)` lists every spec in one submenu as a checkbox with its `tip` as a second line,
@@ -1443,3 +1444,61 @@ desktops.
 
 **Belongs upstream?** Yes; it completes the lightbox's "let me actually see that" with
 "…in the tool I trust for it".
+
+---
+
+## 10. From the step modal glow-up
+
+### `framework/aspect_bar.py` — one submenu's toggles as a bar
+
+**What.** Replaces `action_dialog.py`. `AspectBar(registry, context, kinds, menu=,
+submenu=)` renders every spec in one `(menu, submenu)` as a checkable `QAction` on one of
+two `QToolBar`s: the ids named in `kinds` on the left, worded, each with an optional tone
+name it wears when checked (a per-button stylesheet over the `:checked` rule); everything
+else on the right, icon-only. Clicks go through `registry.run`; `refresh()` re-reads every
+state, `paint(ink)` repaints the specs' `icon` painters. Overflow is `QToolBar`'s own »
+extension button — no code of ours.
+
+**Why.** A dialog you summon to see what a thing already is was the wrong reading of the
+same registry. And the split into two bars is the Tests tab's trick: the left bar takes the
+slack, so the side that folds first is the one whose entries still read as words in a menu.
+
+**Belongs upstream?** Yes, as the sixth presenter in `action_dialog`'s place. Nothing in it
+names an aspect. The `kinds` split and the tone are the only application-shaped inputs, and
+both are plain data. The context is a `Callable[[], Context]` for the same reason the dialog's
+was.
+
+### `framework/aspect_toggle.py` — a checkable toggle over a shelved entry
+
+**What.** `aspect_toggle(...)` returns the `ActionSpec` for one on/off aspect: `state`
+reads a predicate, `run` pushes `domain/shelf.turn_off`/`turn_on`. `focused_step()` beside it
+is the six-line "the step the context focuses, if the library still has it" that eleven
+modules had each copied.
+
+**Belongs upstream?** The factory is DPlanner-shaped (it knows `Step` and `Project`); the
+*shape* — a `(menu, submenu)` of independent checkable toggles built from one declaration
+each — is worth a paragraph in the template's docs. `focused_step` is the kind of helper
+`Context` could grow: `context.focused(kind, library.has)`.
+
+### `framework/builder.py` — migrating what the domain shelved
+
+**What.** The builder appends the domain's `shelf.DATA_FORMAT` to the modules' formats and
+runs `migrate_shelved` after `migrate_module_data`, so data a module shelved at format *n*
+comes back at the module's current format. The CLI's `discovery.py` does the same.
+
+**Why.** Shelved data is a module's data at rest somewhere the module cannot see. Either the
+migration pass reaches in, or turning an aspect on hands the module a shape it stopped
+reading two versions ago.
+
+**Belongs upstream?** The hook, if the template ever grows a shelf. `migrate_module_data`'s
+private `_migrated` became public `migrated()` for it — that rename is worth carrying.
+
+### `theme/tones.py`, and four icon painters widened
+
+**What.** The canvas's body tones moved out of `project_editor/renderers.py` into the theme
+package so a framework widget (the bar) can wear them. `edit_icon`, `read_icon`,
+`branch_icon` and `gauge_icon` now accept `str | QColor` like the medallion painters, so any
+of them can be an `ActionSpec.icon`. Two new glyphs: `ticket_icon`, `handoff_icon`.
+
+**Belongs upstream?** The signature widening, yes — an `ActionSpec.icon` is `(QColor) ->
+QIcon`, and a painter that only takes a `str` cannot be one.

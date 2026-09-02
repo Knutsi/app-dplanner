@@ -21,6 +21,7 @@ from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Node, Project, Step, TextEdit
+from dplanner.domain.shelf import turn_off, turn_on
 from dplanner.domain.store import FilesFor
 from dplanner.modules.step_agent_instruction.aspect import (
     MODULE_ID,
@@ -152,7 +153,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
         ),
         CliCommand(
             path=("agent", "off"),
-            summary="Unmark an agent step, dropping any separate instruction it carried.",
+            summary="Unmark an agent step; a separate instruction is kept for marking it again.",
             configure=step_arg,
             run=_off,
             examples=("dplanner agent off 'Read the spec'",),
@@ -193,9 +194,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
 
 
 def _one_target(parser: ArgumentParser) -> None:
-    parser.add_argument(
-        "step", nargs="?", help="step id, folder name, or part of its title"
-    )
+    parser.add_argument("step", nargs="?", help="step id, folder name, or part of its title")
     parser.add_argument(
         "--for-project",
         dest="for_project",
@@ -235,9 +234,8 @@ def _on(context: CliContext, args: Namespace) -> int:
     if enabled(step):
         context.report({"step": step.id, "agent": True}, f"{step.title}: already an agent step")
         return 0
-    context.apply(
-        SetModuleDataCommand(step.id, MODULE_ID, write_state(True), label="Set Agent Aspect")
-    )
+    # The shelf first: `agent off` kept a separate instruction, and on brings it back.
+    context.apply(turn_on(step, MODULE_ID, fresh=write_state(True), label="Add Agent"))
     context.report({"step": step.id, "agent": True}, f"{step.title}: agent step")
     return 0
 
@@ -251,13 +249,7 @@ def _off(context: CliContext, args: Namespace) -> int:
             {"step": step.id, "agent": False}, f"{step.title}: already not an agent step"
         )
         return 0
-    current = read(step)
-    if current:
-        edit = TextEdit(step.id, MODULE_ID, 0, current, "")
-        context.apply(EditTextCommand(edit, label="Set Agent Instruction"))
-    context.apply(
-        SetModuleDataCommand(step.id, MODULE_ID, {}, label="Clear Agent Aspect")
-    )
+    context.apply(turn_off(step.id, MODULE_ID, label="Remove Agent"))
     context.report({"step": step.id, "agent": False}, f"{step.title}: not an agent step")
     return 0
 

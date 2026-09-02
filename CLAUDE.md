@@ -255,17 +255,29 @@ root, stop and look for the registry or capability you have not found yet.
   Description absence means *on*** and the marker (`{"off": true}`) records the opt-out,
   because most steps are work and work has a size and a name. That is one `FORMAT.md` rule
   applied honestly, and it is what makes the change cost existing projects nothing. The
-  Details tab is its blocks: it asks its own `step_details` registry whether any would show.
+  Details tab is its blocks, and always shows: the name leads it, and a step always has one.
   The CLI half of the two opt-outs is `dplanner estimate clear` and `describe clear`, which
   therefore mean **off**, not "empty" — for an aspect whose default is on there is nothing
   else clearing could sensibly mean, and lint skips a step that has opted out.
-- **The "+" beside the tabs renders the Type submenu, never a copy of it.**
-  `framework/action_dialog.py`'s `TogglesDialog` lists the specs in one `(menu, submenu)` as
-  checkboxes and runs each through `ActionRegistry.run`, so a toggle keeps its own undo
-  command and its own confirmation. It takes the context as a **function**, so the panel
-  inside the details dialog can name its own step. **"This type can never carry that aspect"
-  needs no new mechanism** — a toggle returning `ActionState(enabled=False, label=…)` is the
-  existing *disabled, never hidden* rule; do not build one until it is asked for.
+- **Turning an aspect off shelves it; nothing asks and nothing is lost.** The entry and
+  the prose move to `modules/shelf.json` beside the step (`domain/shelf.py`: `turn_off`,
+  `turn_on`) and come back on the next toggle-on; with the entry genuinely absent, no
+  reader learns a new key. Every Type toggle is one `framework/aspect_toggle.py` call —
+  the module hands over `enabled`, a `fresh` entry and (for the two opt-out aspects) what
+  to `leave` — and every CLI `clear`/`off` verb applies the same `turn_off`. The migration
+  pass reaches into the shelf (`migrate_shelved`) and the asset catalog counts a shelved
+  prose's links as uses. `FORMAT.md` has the shape; `ARCHITECTURE.md`'s *Turning an
+  aspect off shelves it* has the reasoning.
+- **The aspect bar across the panel's top renders the Type submenu, never a copy of it.**
+  `framework/aspect_bar.py` puts the *kinds* — named by the composition root as
+  `StepPropertiesDeps.kinds`, worded and wearing their body tone from `theme/tones.py` when
+  checked — in a left `QToolBar` and every other Type toggle in a right one as a glyph,
+  and runs each through `ActionRegistry.run`, so a toggle keeps its own undo command.
+  **Overflow is `QToolBar`'s own » button**, which lists what no longer fits as checkable
+  menu entries. It takes the context as a **function**, so the panel inside the details
+  dialog names its own step. **"This type can never carry that aspect" needs no new
+  mechanism** — a toggle returning `ActionState(enabled=False, label=…)` is the existing
+  *disabled, never hidden* rule; do not build one until it is asked for.
 - **Tests can be read grouped by what collects them.** The Tests tab's third selector groups
   rows by feature, milestone or check, filled by `scope.gatherers()` in the one place rows
   are ordered (`TestsActivity._rows`); `TestsTable` draws a spanned heading wherever the key
@@ -427,9 +439,9 @@ root, stop and look for the registry or capability you have not found yet.
 - **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
   `MENU_STRUCTURE`, so anything with a context menu owns a menu in that table — the canvas has
   `Step`, the index tree has `Project`, the tab bar renders View's Tabs submenu (via
-  `build_menu`'s `submenu` filter), and the canvas toolbar's New button drops Step ▸ New down
-  the same way (`ActionToolbar`'s `menus`). Make the thing under the cursor
-  current *first*, then build; the menu then reads the same context every other presenter does.
+  `build_menu`'s `submenu` filter), and a toolbar button may drop a submenu down the same
+  way (`ActionToolbar`'s `menus`). Make the thing under the cursor current *first*, then
+  build; the menu then reads the same context every other presenter does.
   **A text widget's own standard menu is the exception**: `ProseEdit` appends *Insert
   Image…* to `createStandardContextMenu()`, because a verb acting on one widget's caret
   belongs in no menu bar and would be greyed everywhere else.
@@ -445,8 +457,8 @@ root, stop and look for the registry or capability you have not found yet.
   `(QColor) -> QIcon` painter, rendered by `build_menu`, `append_action` and a toolbar
   dropdown — all built fresh on every open. The menu bar's QActions outlive every theme
   change, so a colour baked into one goes stale; that is the same trap as `option.palette`.
-  A `StepKind` names its **medallion glyph** as a string, so `kinds.py` stays Qt-free and one
-  declaration puts the same glyph on the menu entry, the toolbar dropdown and the node.
+  Every Type toggle carries the glyph its node's medallion wears (`theme/icons.py`'s
+  `GLYPH_ICONS` vocabulary), so the Type submenu, the aspect bar and the node agree.
 - **A picked node is lifted, not recoloured.** Selection thickens the border to the accent,
   *gains* whatever fill the node already had (so a picked milestone is still purple), lifts
   the card two pixels over a soft shadow — faint, and clipped to the ground around it rather
@@ -596,21 +608,24 @@ root, stop and look for the registry or capability you have not found yet.
 - **A kind is what a node *is*; a facet is what it carries.** Milestone, Feature, Check and
   Agent Step are kinds — a node exists in order to be one, and wears a body colour for it:
   purple a milestone, **teal a feature**, green a done step (`BODY_TONES` in
-  `project_editor/renderers.py`; done outranks milestone outranks feature, and the medallion
-  still says what else the node is). An estimate or a description is a facet. Only kinds
-  appear in **Step ▸ New**, which is why that list is named in the composition root
-  (`project_editor/kinds.py`'s `StepKind`) rather than derived from the Type submenu —
-  *New ▸ Description* would be nonsense.
+  `theme/tones.py`; done outranks milestone outranks feature, and the medallion still says
+  what else the node is). An estimate or a description is a facet. Only kinds are worded
+  on the **aspect bar's left**, which is why that list is named in the composition root
+  (`StepPropertiesDeps.kinds`) rather than derived from the Type submenu — the bar's right
+  is the facets, as glyphs. **Step ▸ New is one verb**: a step is born plain, titled "New
+  step", and the details dialog opens on it with the name selected, where the bar says
+  what it is.
 - **A step placed by pointing at a spot earns a stored position.** `StepVerbs.create()` is
-  the one place a step is born on the canvas — the New verbs and the double-click on empty
-  space both come through it — and it writes the mark and the position **in the same
-  command**, because a gesture is one undo. Where it lands is `GraphView.last_click`, which
+  the one place a step is born on the canvas — New and the double-click on empty space both
+  come through it — and it writes the position **in the same command** as the node,
+  because a gesture is one undo. Where it lands is `GraphView.last_click`, which
   every button press records *before* the mode stack sees it, and which a right-click
   refreshes so the menu's own New lands where the menu was raised. No click yet means no
   stored position, which is the ambient layout doing what it always did. The step then
-  becomes the **selection** and the remembered point steps one row down (`placement.below()`),
-  both through the `created` seam — they belong to the canvas, not to the verb — so New twice
-  in a row leaves two nodes rather than one hiding another.
+  becomes the **selection**, the remembered point steps one row down (`placement.below()`),
+  and `steps.details` opens on it — all through the `created` seam, because they belong to
+  the canvas, not to the verb — so New twice in a row leaves two nodes rather than one
+  hiding another, and naming a step is the gesture's second half.
 - **What a collector gathers is one verb: `dplanner scope show`.** In `cli/scopes.py`, the
   cross-feature home — a check, a feature and a milestone are one derivation asked three
   ways, so three near-copies of the report is exactly what that file prevents. It also owns

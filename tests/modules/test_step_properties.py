@@ -7,6 +7,7 @@ opened by the ``steps.details`` verb and disposed when it closes.
 """
 
 import pytest
+from PySide6.QtWidgets import QDialogButtonBox, QLineEdit
 
 from dplanner.domain.commands import AddNodeCommand, RemoveNodeCommand, SetFieldCommand
 from dplanner.domain.model import Step
@@ -31,6 +32,11 @@ def project(services, make_project):
 @pytest.fixture
 def panel(services, project):
     return services.window.dock.widget_for(PANEL_ID)
+
+
+def name_edit(panel):
+    """The Name field: the first block of the Details tab, not a field of the panel's own."""
+    return panel.findChild(QLineEdit, "InspectorTitle")
 
 
 def test_one_step_selected_is_something_to_edit(services, project, panel):
@@ -72,9 +78,8 @@ def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
         "GitHub",
     ]
     assert all_labels == expected
-    # Every tab follows an aspect now, the Details tab included — it is its blocks. A
-    # plain step keeps Details, because a description and an estimate default to on;
-    # Handoff and GitHub are the exception and stay off until somebody asks.
+    # Every other tab follows an aspect; Details always shows, because the name leads it
+    # and a step always has one. Handoff and GitHub stay off until somebody asks.
     assert visible_labels(panel) == ["Details"]
 
 
@@ -139,57 +144,70 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
     assert panel.tab_bar.isTabVisible(panel.tab_bar.currentIndex())
 
 
-def test_the_title_is_shown_and_edited_undoably(services, project, panel):
+def test_the_name_is_shown_and_edited_undoably(services, project, panel):
     step = project.steps[0]
     select(services, step.id)
-    assert panel.title_edit.text() == "Read the spec"
+    assert name_edit(panel).text() == "Read the spec"
 
-    panel.title_edit.setText("Read the whole spec")
-    panel.title_edit.editingFinished.emit()
+    name_edit(panel).setText("Read the whole spec")
+    name_edit(panel).editingFinished.emit()
     assert step.title == "Read the whole spec"
     services.undo.undo()
     assert step.title == "Read the spec"
 
 
-def test_the_plus_button_opens_the_type_toggles_over_this_panels_step(services, project, panel):
-    """The chooser renders the Step ▸ Type submenu; it never keeps a list of its own.
+# -- the aspect bar ---------------------------------------------------------------------------
 
-    And it reads the *panel's* step, not the window's selection — a panel inside the
-    details dialog is showing a step nobody selected.
-    """
-    from dplanner.framework.action_dialog import TogglesDialog
-    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
-    from dplanner.modules.step_check.aspect import read as check_read
 
-    step = project.steps[0]
-    select(services, step.id)
-    assert panel.add_aspect.isVisibleTo(panel) is True
-
-    node = ContextNode(selection_uri("step", step.id))
-    dialog = TogglesDialog(
-        services.actions,
-        lambda: Context({SCOPE_SELECTION: (node,)}),
-        menu="Step",
-        submenu="Type",
-        title="Aspects",
-    )
-    assert list(dialog.rows) == [
+def type_toggle_ids(services):
+    return [
         spec.id
         for spec in services.actions.all_specs()
         if spec.menu == "Step" and spec.submenu == "Type"
     ]
-    # Every row runs the owning module's own toggle: one undoable command, not a copy.
-    dialog.rows["check.toggle"].box.click()
+
+
+def test_the_bar_words_the_kinds_on_the_left_and_glyphs_the_rest_on_the_right(
+    services, project, panel
+):
+    """The bar renders the Step ▸ Type submenu; it never keeps a list of its own. Which
+    toggles are kinds is the composition root's list, in its order; every other toggle in
+    the submenu lands on the right in registry order."""
+    select(services, project.steps[0].id)
+    kinds = ["milestone.toggle", "feature.toggle", "agent.toggle", "check.toggle"]
+    assert panel.bar.ids(panel.bar.kinds_bar) == kinds
+    assert panel.bar.ids(panel.bar.facets_bar) == [
+        action_id for action_id in type_toggle_ids(services) if action_id not in kinds
+    ]
+    assert sorted(kinds + panel.bar.ids(panel.bar.facets_bar)) == sorted(type_toggle_ids(services))
+
+
+def test_a_bar_action_runs_the_owning_modules_toggle_and_follows_the_model(
+    services, project, panel
+):
+    """One undoable command, not a copy — and the check mark is re-read from the model,
+    so an undo made elsewhere reaches the bar."""
+    from dplanner.modules.step_check.aspect import read as check_read
+
+    step = project.steps[0]
+    select(services, step.id)
+    action = panel.bar.action("check.toggle")
+    assert action.isChecked() is False
+
+    action.trigger()
     assert check_read(step) is True
+    assert action.isChecked() is True
+    assert "Covers" in visible_labels(panel)
+
     services.undo.undo()
     assert check_read(step) is False
-    dialog.deleteLater()
+    assert action.isChecked() is False
 
 
-def test_the_plus_button_is_hidden_when_no_step_is_shown(services, project, panel):
+def test_the_bar_is_greyed_with_no_step(services, project, panel):
     select(services, project.steps[0].id)
     panel.show_step(None)
-    assert panel.add_aspect.isVisibleTo(panel) is False
+    assert not panel.bar.action("feature.toggle").isEnabled()
 
 
 def test_deselecting_gets_through_the_unchanged_id_gate(services, project, panel):
@@ -210,11 +228,11 @@ def test_a_deleted_step_takes_the_panel_back_to_empty(services, project, panel):
     assert panel.current_step_id() is None
 
 
-def test_a_change_made_elsewhere_reaches_the_title(services, project, panel):
+def test_a_change_made_elsewhere_reaches_the_name(services, project, panel):
     step = project.steps[0]
     select(services, step.id)
     services.undo.push(SetFieldCommand(step.id, "title", "Renamed elsewhere"))
-    assert panel.title_edit.text() == "Renamed elsewhere"
+    assert name_edit(panel).text() == "Renamed elsewhere"
 
 
 def test_a_disposed_panel_hears_nothing(services, project, panel):
@@ -222,7 +240,7 @@ def test_a_disposed_panel_hears_nothing(services, project, panel):
     select(services, step.id)
     panel.dispose()
     services.undo.push(SetFieldCommand(step.id, "title", "After disposal"))
-    assert panel.title_edit.text() == "Read the spec"
+    assert name_edit(panel).text() == "Read the spec"
 
 
 # -- the details dialog ----------------------------------------------------------------------
@@ -241,7 +259,9 @@ def test_details_needs_exactly_one_selected_step(services, project):
 
 def test_details_opens_a_dialog_that_is_the_panel_and_disposes_it(services, project, monkeypatch):
     """The dialog hosts a second StepPanel over the same sections — 1:1 with the anchored
-    one by construction — and stops hearing the model once closed."""
+    one by construction — and stops hearing the model once closed. It carries no buttons:
+    every edit is live and undoable, so there is nothing to confirm, and the Name field is
+    focused with its text selected so a fresh step can be named by typing."""
     from dplanner.modules.step_properties.dialog import StepDetailsDialog
 
     step = project.steps[0]
@@ -253,9 +273,31 @@ def test_details_opens_a_dialog_that_is_the_panel_and_disposes_it(services, proj
     (dialog,) = opened
     assert dialog.panel.current_step_id() == step.id
     assert dialog.panel.tab_bar.count() > 0  # The aspect tabs arrived.
+    assert dialog.findChild(QDialogButtonBox) is None
+    assert dialog.name_edit().selectedText() == "Read the spec"
+    assert dialog.windowTitle() == "Read the spec"
     # exec() returned, so run() has already disposed it: a model change must not reach it.
     services.undo.push(SetFieldCommand(step.id, "title", "After closing"))
-    assert dialog.panel.title_edit.text() == "Read the spec"
+    assert dialog.name_edit().text() == "Read the spec"
+
+
+def test_the_dialogs_bar_acts_on_the_dialogs_own_step(services, project, monkeypatch):
+    """A panel inside the dialog shows a step nobody selected, and its toggles must act on
+    what is on screen, not on the window's selection."""
+    from dplanner.modules.step_feature.aspect import read as feature_read
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    shown, other = project.steps
+    opened = []
+    monkeypatch.setattr(StepDetailsDialog, "exec", lambda self: opened.append(self))
+    select(services, shown.id)
+    services.actions.run("steps.details", services.context.current())
+    (dialog,) = opened
+    select(services, other.id)  # The window moves on; the dialog does not.
+
+    dialog.panel.bar.action("feature.toggle").trigger()
+    assert feature_read(shown) is True
+    assert feature_read(other) is False
 
 
 def test_an_edit_in_the_dialog_lands_on_the_undo_stack(services, project, monkeypatch):
@@ -263,11 +305,12 @@ def test_an_edit_in_the_dialog_lands_on_the_undo_stack(services, project, monkey
 
     step = project.steps[0]
 
-    def edit_title(dialog):
-        dialog.panel.title_edit.setText("Read the whole spec")
-        dialog.panel.title_edit.editingFinished.emit()
+    def edit_name(dialog):
+        dialog.name_edit().setText("Read the whole spec")
+        dialog.name_edit().editingFinished.emit()
+        assert dialog.windowTitle() == "Read the whole spec"  # The title follows.
 
-    monkeypatch.setattr(StepDetailsDialog, "exec", edit_title)
+    monkeypatch.setattr(StepDetailsDialog, "exec", edit_name)
     select(services, step.id)
     services.actions.run("steps.details", services.context.current())
 
