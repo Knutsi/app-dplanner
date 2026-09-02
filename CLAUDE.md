@@ -269,12 +269,16 @@ root, stop and look for the registry or capability you have not found yet.
   prose's links as uses. `FORMAT.md` has the shape; `ARCHITECTURE.md`'s *Turning an
   aspect off shelves it* has the reasoning.
 - **The aspect bar across the panel's top renders the Type submenu, never a copy of it.**
-  `framework/aspect_bar.py` puts the *kinds* — named by the composition root as
-  `StepPropertiesDeps.kinds`, worded and wearing their body tone from `theme/tones.py` when
-  checked — in a left `QToolBar` and every other Type toggle in a right one as a glyph,
-  and runs each through `ActionRegistry.run`, so a toggle keeps its own undo command.
-  **Overflow is `QToolBar`'s own » button**, which lists what no longer fits as checkable
-  menu entries. It takes the context as a **function**, so the panel inside the details
+  `framework/aspect_bar.py` puts every Type toggle in a right `QToolBar` as a glyph and
+  runs each through `ActionRegistry.run`, so a toggle keeps its own undo command. Its left
+  `QToolBar` is **templates** — `StepPropertiesDeps.templates`, named by the composition
+  root: a label and the *set* of toggles that are on (Step, Milestone, Feature, Agent,
+  Check), worded and wearing a body tone from `theme/tones.py`. Clicking one runs every
+  toggle that differs inside **one `UndoService.gesture`**, and a template reads as
+  selected exactly when the step carries its set and nothing else — a combination is a
+  template, both ways, computed on every refresh and never stored. **Overflow is
+  `QToolBar`'s own » button**, which lists what no longer fits as checkable menu
+  entries. It takes the context as a **function**, so the panel inside the details
   dialog names its own step. **"This type can never carry that aspect" needs no new
   mechanism** — a toggle returning `ActionState(enabled=False, label=…)` is the existing
   *disabled, never hidden* rule; do not build one until it is asked for.
@@ -609,10 +613,10 @@ root, stop and look for the registry or capability you have not found yet.
   Agent Step are kinds — a node exists in order to be one, and wears a body colour for it:
   purple a milestone, **teal a feature**, green a done step (`BODY_TONES` in
   `theme/tones.py`; done outranks milestone outranks feature, and the medallion still says
-  what else the node is). An estimate or a description is a facet. Only kinds are worded
-  on the **aspect bar's left**, which is why that list is named in the composition root
-  (`StepPropertiesDeps.kinds`) rather than derived from the Type submenu — the bar's right
-  is the facets, as glyphs. **Step ▸ New is one verb**: a step is born plain, titled "New
+  what else the node is). An estimate or a description is a facet. The **aspect bar's
+  left** words *templates* — a kind with the facets it usually carries — which is why that
+  list is named in the composition root (`StepPropertiesDeps.templates`) rather than
+  derived from the Type submenu; the bar's right is every toggle, as a glyph. **Step ▸ New is one verb**: a step is born plain, titled "New
   step", and the details dialog opens on it with the name selected, where the bar says
   what it is.
 - **A step placed by pointing at a spot earns a stored position.** `StepVerbs.create()` is

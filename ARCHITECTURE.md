@@ -1317,12 +1317,23 @@ every button runs the owning module's toggle through `ActionRegistry.run`. So ea
 undoable command, an aspect a build does not ship has no button, and adding an aspect is
 still one registration in one package.
 
-What the bar adds to the submenu is a *reading*: the kinds on the left, worded and wearing
-their body tone when checked — a checked Feature button and a feature node are one identity,
-which is why the tones moved to `theme/tones.py` where both can reach them — and the facets
-on the right as glyphs. Which toggles are kinds is `StepPropertiesDeps.kinds`, named by the
-composition root in the order the bar shows them, for the same reason the scope kinds are
-wired rather than inferred. The bar is two `QToolBar`s rather than one row of buttons, for
+What the bar adds to the submenu is a *reading*. Its right half is every toggle as a glyph.
+Its left half is **templates**: a name and the set of toggles that are on — *Milestone* is
+milestone and description, *Agent* is agent, description, estimate and handoff, *Step* is
+the estimate and description every step is born with — worded, and wearing their body tone
+when selected, so a selected Feature button and a feature node are one identity (which is
+why the tones moved to `theme/tones.py`, where both can reach them). Clicking a template
+runs whichever toggles differ, on for its set and off for everything else, inside one
+`UndoService.gesture`, so *Make Milestone* is one Ctrl+Z however many aspects it moved and
+each is still the owning module's own command — the gesture is the framework's answer to
+"one gesture, several verbs", and it is what let the bar stay a presenter with no command
+of its own. And it goes both ways: a template reads as selected exactly when the step
+carries its set and nothing else, so a combination somebody built toggle by toggle lights
+up the template it amounts to, and one extra aspect puts it out. Nothing stores which
+template is current; it is a set comparison on every refresh, which is the same *derived,
+never stored* rule as the ordering. Which templates exist is `StepPropertiesDeps.templates`,
+named by the composition root in the order the bar shows them, for the same reason the
+scope kinds are wired rather than inferred. The bar is two `QToolBar`s rather than one row of buttons, for
 the reason the Tests tab already had two: a `QToolBar` too narrow for its contents grows the
 » overflow button and puts the tail in a menu — as checkable entries, check marks and all —
 where a plain row would simply clip. The left bar takes the slack, so at a width where
@@ -1357,12 +1368,13 @@ a kind: a node exists in order to be one, the graph reads differently for it, an
 body colour. An **estimate** is a facet: a fact a step of any kind may hold. Both are
 aspects, both are toggles — but only kinds answer the question *New* asks.
 
-So the kinds are a named list — `StepPropertiesDeps.kinds`, four toggle ids with the tone
-each wears — handed to the step panel by the composition root exactly as `ScopeKind` is
-handed to the tests module. The bar words them on its left; the panel learns nothing about
-features. Deriving the list from the Type submenu instead would have worded *Description*
-beside *Milestone*, and the entry that would have to be filtered out is the proof the two
-lists are answering different questions.
+So the kinds live on as the bar's *templates* — `StepPropertiesDeps.templates`, each a
+kind with the facets it usually carries and the tone it wears — handed to the step panel
+by the composition root exactly as `ScopeKind` is handed to the tests module. The bar words
+them on its left; the panel learns nothing about features. Deriving the list from the Type
+submenu instead would have worded *Description* beside *Milestone*, and the entry that
+would have to be filtered out is the proof the two lists are answering different
+questions.
 
 **Step ▸ New is one verb, and the dialog is where a fresh step is configured.** It used to be
 a submenu — a plain step, then one entry per kind, each prompting for a title — and the kinds

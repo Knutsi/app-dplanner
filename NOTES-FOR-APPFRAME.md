@@ -1451,13 +1451,15 @@ desktops.
 
 ### `framework/aspect_bar.py` — one submenu's toggles as a bar
 
-**What.** Replaces `action_dialog.py`. `AspectBar(registry, context, kinds, menu=,
-submenu=)` renders every spec in one `(menu, submenu)` as a checkable `QAction` on one of
-two `QToolBar`s: the ids named in `kinds` on the left, worded, each with an optional tone
-name it wears when checked (a per-button stylesheet over the `:checked` rule); everything
-else on the right, icon-only. Clicks go through `registry.run`; `refresh()` re-reads every
-state, `paint(ink)` repaints the specs' `icon` painters. Overflow is `QToolBar`'s own »
-extension button — no code of ours.
+**What.** Replaces `action_dialog.py`. `AspectBar(registry, context, templates, undo=,
+menu=, submenu=)` renders every spec in one `(menu, submenu)` as a checkable `QAction` on
+the right `QToolBar`, icon-only, and the `templates` — `AspectTemplate(label, toggles,
+tone, glyph)`, each a *set* of those spec ids — on the left, worded, with an optional tone
+it wears when selected (a per-button stylesheet over the `:checked` rule). A template click
+runs every differing spec through `registry.run` inside `undo.gesture(...)`; a template is
+checked when the checked set equals its set, computed on every `refresh()`. `paint(ink)`
+repaints the specs' `icon` painters and the templates' named glyphs. Overflow is
+`QToolBar`'s own » extension button — no code of ours.
 
 **Why.** A dialog you summon to see what a thing already is was the wrong reading of the
 same registry. And the split into two bars is the Tests tab's trick: the left bar takes the
@@ -1467,6 +1469,22 @@ slack, so the side that folds first is the one whose entries still read as words
 names an aspect. The `kinds` split and the tone are the only application-shaped inputs, and
 both are plain data. The context is a `Callable[[], Context]` for the same reason the dialog's
 was.
+
+### `framework/undo.py` — `gesture(label)`: several pushes as one step
+
+**What.** A context manager on `UndoService`. Every `push` inside the block is applied at
+once (so later verbs see earlier ones' effects) and collected; on exit the collection lands
+on the stack as one step named `label` — a private composite that redoes in order and
+undoes in reverse, never merges — or as the single command when there was only one, or
+nothing at all when there was none. A gesture inside a gesture belongs to the outer one.
+
+**Why.** A template click runs five *other modules'* verbs. The alternatives were every
+verb learning to hand back its command for a caller it cannot see, or the bar building
+commands it has no business knowing — the gesture keeps each verb as it is and makes the
+click one Ctrl+Z.
+
+**Belongs upstream?** Yes, wholesale. It is thirty lines with no application in them, and
+any presenter that runs several registered actions as one user gesture wants it.
 
 ### `framework/aspect_toggle.py` — a checkable toggle over a shelved entry
 

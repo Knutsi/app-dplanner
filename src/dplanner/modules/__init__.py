@@ -63,7 +63,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.domain.ordering import placed
     from dplanner.domain.schedule import format_date, format_days, schedule
     from dplanner.domain.store import LibraryStore
-    from dplanner.framework.aspect_bar import KindButton
+    from dplanner.framework.aspect_bar import AspectTemplate
     from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
@@ -350,15 +350,43 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # below.
     step_properties = StepPropertiesModule(
         StepPropertiesDeps(
-            # The Type toggles that are *kinds* — what a node is — worded on the bar's
-            # left in this order, each wearing its body tone when checked: violet the
-            # milestone, teal the feature, the agent-run chip's blue for an agent step,
-            # and a check keeps the accent. Wired, never inferred, like the scope kinds.
-            kinds=(
-                KindButton("milestone.toggle", "highlight"),
-                KindButton("feature.toggle", "feature"),
-                KindButton("agent.toggle", "info"),
-                KindButton("check.toggle"),
+            # The templates on the bar's left: what a step *amounts to*, as the set of
+            # Type toggles that are on — clicking one moves every toggle to match, and a
+            # step carrying exactly that set lights it up. Collectors carry no estimate
+            # of their own; an agent step gets what an agent reports back through. Each
+            # wears its body tone when selected: violet the milestone, teal the feature,
+            # the agent-run chip's blue for an agent step; Step and Check keep the
+            # accent. Wired, never inferred, like the scope kinds.
+            templates=(
+                AspectTemplate("Step", frozenset({"estimate.toggle", "description.toggle"})),
+                AspectTemplate(
+                    "Milestone",
+                    frozenset({"milestone.toggle", "description.toggle"}),
+                    tone="highlight",
+                    glyph="tag",
+                ),
+                AspectTemplate(
+                    "Feature",
+                    frozenset({"feature.toggle", "description.toggle"}),
+                    tone="feature",
+                    glyph="layers",
+                ),
+                AspectTemplate(
+                    "Agent",
+                    frozenset(
+                        {
+                            "agent.toggle",
+                            "description.toggle",
+                            "estimate.toggle",
+                            "handoff.toggle",
+                        }
+                    ),
+                    tone="info",
+                    glyph="spark",
+                ),
+                AspectTemplate(
+                    "Check", frozenset({"check.toggle", "description.toggle"}), glyph="shield"
+                ),
             ),
             library=library,
             undo=services.undo,

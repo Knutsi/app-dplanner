@@ -9,8 +9,9 @@ a step** — the panel reads the context, so a canvas, a table and anything adde
 without being its host. **It never learns which aspects exist** — those arrive from
 ``sections``, read when the panel is built, so a contributing module's position in the
 composition root is free (its position *ahead of this one* is not; see the root's comment).
-The bar across the panel's top renders the Step ▸ Type submenu the same way; which of those
-toggles are *kinds* — worded, toned, on the left — is ``kinds``, named by the root.
+The bar across the panel's top renders the Step ▸ Type submenu the same way; the
+*templates* worded on its left — combinations of those toggles — are ``templates``, named
+by the root.
 
 It also owns ``steps.details``: the same panel as a modal dialog, which is what every view's
 double-click on a step runs — and what New opens on the step it just made. One spec, so the
@@ -29,7 +30,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.aspect_bar import KindButton
+from dplanner.framework.aspect_bar import AspectTemplate
 from dplanner.framework.context import Context
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
@@ -59,10 +60,10 @@ class StepPropertiesDeps:
     # the same freedom holds — a block registrant only has to come before a panel exists.
     details: InspectorSectionRegistry
     theme: ThemeService  # Tab glyphs and the bar's follow the theme's secondary text colour.
-    # The Type toggles that are *kinds* — what a node is — in the order the bar words
-    # them on its left, each with the body tone it wears when checked. Wired, never
-    # inferred: the root names them, as it names the scope kinds.
-    kinds: tuple[KindButton, ...] = ()
+    # The templates the bar words on its left — named combinations of Type toggles,
+    # each with the body tone it wears when the step carries exactly that set. Wired,
+    # never inferred: the root names them, as it names the scope kinds.
+    templates: tuple[AspectTemplate, ...] = ()
 
 
 class StepPropertiesModule:
@@ -136,7 +137,7 @@ class StepPropertiesModule:
             self._deps.undo,
             self._deps.actions,
             sections=self._deps.sections.sections(),
-            kinds=self._deps.kinds,
+            templates=self._deps.templates,
             theme=self._deps.theme,
             step_id=step_id,
             parent=self._deps.parent,
@@ -150,6 +151,6 @@ class StepPropertiesModule:
             self._deps.undo,
             self._deps.actions,
             sections=self._deps.sections.sections(),
-            kinds=self._deps.kinds,
+            templates=self._deps.templates,
             theme=self._deps.theme,
         )

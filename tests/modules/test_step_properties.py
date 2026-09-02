@@ -167,19 +167,49 @@ def type_toggle_ids(services):
     ]
 
 
-def test_the_bar_words_the_kinds_on_the_left_and_glyphs_the_rest_on_the_right(
-    services, project, panel
-):
-    """The bar renders the Step ▸ Type submenu; it never keeps a list of its own. Which
-    toggles are kinds is the composition root's list, in its order; every other toggle in
-    the submenu lands on the right in registry order."""
+def test_the_bar_words_the_templates_left_and_glyphs_every_toggle_right(services, project, panel):
+    """The right half renders the Step ▸ Type submenu and never keeps a list of its own;
+    the left half is the composition root's templates, in its order."""
     select(services, project.steps[0].id)
-    kinds = ["milestone.toggle", "feature.toggle", "agent.toggle", "check.toggle"]
-    assert panel.bar.ids(panel.bar.kinds_bar) == kinds
-    assert panel.bar.ids(panel.bar.facets_bar) == [
-        action_id for action_id in type_toggle_ids(services) if action_id not in kinds
-    ]
-    assert sorted(kinds + panel.bar.ids(panel.bar.facets_bar)) == sorted(type_toggle_ids(services))
+    assert panel.bar.toggle_ids() == type_toggle_ids(services)
+    assert panel.bar.template_labels() == ["Step", "Milestone", "Feature", "Agent", "Check"]
+
+
+def test_a_plain_step_is_the_step_template_and_a_template_is_one_undo(services, project, panel):
+    """A fresh step carries an estimate and a description, which is exactly the Step
+    template; Make Milestone moves every toggle that differs as one undo step, and the
+    step then lights Milestone instead — with its label generated, as the toggle does."""
+    from dplanner.modules.estimation.aspect import enabled as estimate_on
+    from dplanner.modules.step_milestone.aspect import read as milestone_label
+
+    step = project.steps[0]
+    select(services, step.id)
+    assert panel.bar.template("Step").isChecked() is True
+    assert panel.bar.template("Milestone").isChecked() is False
+
+    panel.bar.template("Milestone").trigger()
+    assert milestone_label(step) == "v1" and not estimate_on(step)
+    assert panel.bar.template("Milestone").isChecked() is True
+    assert panel.bar.template("Step").isChecked() is False
+    assert "Milestone" in visible_labels(panel)
+    assert services.undo.undo_text() == "Make Milestone"
+
+    services.undo.undo()
+    assert milestone_label(step) == "" and estimate_on(step)
+    assert panel.bar.template("Step").isChecked() is True
+
+
+def test_a_combination_built_by_hand_lights_its_template(services, project, panel):
+    """It goes both ways: toggle Feature on and Estimate off by hand, and the Feature
+    template reads as selected; add a Ticket, and no template does."""
+    step = project.steps[0]
+    select(services, step.id)
+    panel.bar.action("feature.toggle").trigger()
+    assert panel.bar.template("Feature").isChecked() is False  # Still carries an estimate.
+    panel.bar.action("estimate.toggle").trigger()
+    assert panel.bar.template("Feature").isChecked() is True
+    panel.bar.action("ticket.toggle").trigger()
+    assert not any(panel.bar.template(label).isChecked() for label in panel.bar.template_labels())
 
 
 def test_a_bar_action_runs_the_owning_modules_toggle_and_follows_the_model(

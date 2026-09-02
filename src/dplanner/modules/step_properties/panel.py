@@ -5,7 +5,8 @@
 aspect module never learns that a panel renders it. The composition root is the only place
 that knows both, which is what lets the fifth aspect cost one registration and nothing else.
 The bar across the top is the same seam one presenter along: it renders the Step ▸ Type
-submenu, and the kinds it words on its left are named by the composition root.
+submenu on its right, and the templates it words on its left are named by the composition
+root.
 
 **Nor does it learn who is looking at a step.** There is one panel in the window and it reads
 the context: whichever pane the user is in publishes a step selection, and this shows it. A
@@ -24,7 +25,7 @@ from PySide6.QtWidgets import QHBoxLayout, QStackedLayout, QTabBar, QVBoxLayout,
 
 from dplanner.domain.model import Library, NodeId, StepId, TextEdit
 from dplanner.framework.action_registry import ActionRegistry
-from dplanner.framework.aspect_bar import AspectBar, KindButton
+from dplanner.framework.aspect_bar import AspectBar, AspectTemplate
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.framework.inspector import InspectorExtension, InspectorSection
 from dplanner.framework.theme_service import ThemeService
@@ -51,7 +52,7 @@ class StepPanel(QWidget):
         undo: UndoService[Library],
         actions: ActionRegistry,
         sections: Sequence[InspectorSection] = (),
-        kinds: Sequence[KindButton] = (),
+        templates: Sequence[AspectTemplate] = (),
         theme: ThemeService | None = None,
         parent: QWidget | None = None,
     ) -> None:
@@ -64,7 +65,7 @@ class StepPanel(QWidget):
         self._step_id: StepId | None = None
         self._sections = list(sections)
 
-        self.bar = AspectBar(actions, self._own_context, kinds, parent=self)
+        self.bar = AspectBar(actions, self._own_context, templates, undo=undo, parent=self)
 
         # One extension per section, built once for this panel. The factory takes no
         # arguments: a contributing module closed over whatever it needs at registration.

@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QDialog, QLineEdit, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.framework.action_registry import ActionRegistry
-from dplanner.framework.aspect_bar import KindButton
+from dplanner.framework.aspect_bar import AspectTemplate
 from dplanner.framework.inspector import InspectorSection
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
@@ -38,7 +38,7 @@ class StepDetailsDialog(QDialog):
         actions: ActionRegistry,
         *,
         sections: Sequence[InspectorSection],
-        kinds: Sequence[KindButton],
+        templates: Sequence[AspectTemplate],
         theme: ThemeService,
         step_id: StepId,
         parent: QWidget | None = None,
@@ -49,7 +49,7 @@ class StepDetailsDialog(QDialog):
         self._retitle()
 
         self.panel = StepPanel(
-            library, undo, actions, sections=sections, kinds=kinds, theme=theme, parent=self
+            library, undo, actions, sections=sections, templates=templates, theme=theme, parent=self
         )
         self.panel.show_step(step_id)
         self._unsubscribe = library.field_changed.connect(self._on_field)

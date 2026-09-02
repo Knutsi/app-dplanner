@@ -755,6 +755,12 @@ QSplitter::handle:vertical:pressed {
     spacing: 8px;
 }
 
+/* The aspect bar seats eleven glyphs and five words in one row: tighter sides than a
+   toolbar verb, so the whole strip fits the details dialog before anything folds. */
+#AspectBarTools #ToolbarButton {
+    padding: 5px 4px;
+}
+
 #TestsToolBar::separator {
     background-color: $BORDER;
     width: 1px;

@@ -199,7 +199,7 @@ src/dplanner/
 │   ├── panels.py            the window's left/right/bottom areas, and what modules anchor there
 │   ├── index_panel.py       the index tree: folders from whoever registered them
 │   ├── inspector.py         what a module registers to appear in a detail panel
-│   ├── aspect_bar.py        one submenu's toggles as a bar — kinds worded left, facets glyphed right, » overflow
+│   ├── aspect_bar.py        one submenu's toggles as a bar — templates worded left, every toggle glyphed right, » overflow
 │   ├── aspect_toggle.py     the Type toggle an aspect module registers, declared once: shelve off, restore on
 │   ├── prose_section.py     a panel section over one document, bound to the undo stack
 │   ├── prose_edit.py        that section's editor: a pasted file becomes a markdown link
