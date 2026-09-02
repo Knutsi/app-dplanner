@@ -456,11 +456,14 @@ Four rules, each a decision:
   mints it a directory of its own. Reusing the id was considered and rejected: in the same
   project it collides with the store's record of where the original lives, and in another it
   makes `library.has()` resolve a step that is not there.
-- **Links go through `SetEdgesCommand`, not onto the clone.** Setting `step.edges` before the
-  add would skip `link_refusal` and `edges_changed`. Links *between* copied steps are
-  remapped through the old-to-new map; a link to a step outside the copy is kept when the
-  target project has that step — a duplicate keeps its dependencies — and dropped when it
-  does not, because `set_edges` rightly refuses a target in another project.
+- **Only the links inside the copy travel, and they go through `SetEdgesCommand`.** The
+  pasted set keeps its internal arrangement and arrives disconnected from everything outside
+  it, in the same project or another: links *between* copied steps are remapped through the
+  old-to-new map, and a link to anything else is dropped. Keeping an outside link where it
+  happened to resolve was tried first and read as a bug — a duplicate that silently waited on
+  its original's upstream — so wiring the copy in is the user's next move, never a guess the
+  paste makes. Setting `step.edges` on the clone before the add would skip `link_refusal`
+  and `edges_changed`, which is why the links are commands in the same composite.
 - **Files ride in the payload and are written after the command.** A cut removes the step and
   the next autosave's orphan sweep deletes its directory, so a paste after that has nowhere
   else to read an attachment from — the bytes have to travel with the clip. They are written

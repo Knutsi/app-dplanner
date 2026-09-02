@@ -1538,7 +1538,7 @@ def test_pasting_twice_stacks_the_blocks_rather_than_hiding_one(services, projec
     assert two["y"] > one["y"] and two["x"] == one["x"]
 
 
-def test_paste_reaches_another_project_and_drops_links_it_cannot_resolve(
+def test_paste_reaches_another_project_disconnected_like_any_paste(
     services, project, tab, make_project
 ):
     _first, second = linked_pair(services, project)
@@ -1596,7 +1596,8 @@ def test_duplicate_lands_one_row_below_selected_and_leaves_the_clipboard_alone(
 
     copy = project.steps[-1]
     assert copy.title == "Draft the model" and copy.id != second.id
-    assert services.document.step(copy.id).edges["requires"] == [first.id]
+    assert "requires" not in copy.edges  # The link to the original's upstream is not copied.
+    assert services.document.step(second.id).edges["requires"] == [first.id]
     assert services.undo.undo_text() == "Duplicate Step"
     assert list(scene(tab).selection().steps) == [copy.id]
     entry = copy.module_data["project_editor"]

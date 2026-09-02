@@ -619,8 +619,8 @@ root, stop and look for the registry or capability you have not found yet.
   them through `ShortcutOverride`; measured, not assumed) and Delete is **not** (a bare `Del`
   would fire in every list, and `StandardKey.Delete` also claims Ctrl+D). Deleting steps and
   regions no longer asks — undo is the safety net. A copy is a **clone**
-  (`project_editor/clipboard.py`): fresh ids, links between copies remapped, outside links
-  kept where they resolve, files in the payload and written after the one composite
+  (`project_editor/clipboard.py`): fresh ids, links between copies remapped and every link
+  to the outside dropped, files in the payload and written after the one composite
   command, and a `PastePolicy` per module with a say (`testing` re-mints ids,
   `step_agent_run` forgets). `dplanner step duplicate` is the same function.
   `ARCHITECTURE.md`'s *Edit verbs belong to the surface whose things they act on* and *Copy

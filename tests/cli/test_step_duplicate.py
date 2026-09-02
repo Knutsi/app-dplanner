@@ -39,13 +39,13 @@ def test_duplicate_keeps_aspects_and_links_under_a_fresh_id(cli, cli_library):
     [row] = said["steps"]
     copy, original = library.step(row["id"]), library.step(row["from"])
     assert copy.title == "Draft the model" and copy.id != original.id
-    assert copy.edges["requires"] == original.edges["requires"]
+    assert "requires" not in copy.edges and original.edges["requires"]  # Disconnected copy.
     assert [t.title for t in read_tests(copy)] == ["Model parses"]
     assert [t.id for t in read_tests(copy)] == ["T101"]  # The original keeps T100.
     assert read_position(copy) is not None and read_position(original) is None
 
 
-def test_duplicate_into_another_project_drops_links_it_cannot_resolve(cli, cli_library):
+def test_duplicate_into_another_project(cli, cli_library):
     cli("project", "create", "Rollout")
     said = cli("step", "duplicate", "Draft the model", "--into", "Rollout")
 

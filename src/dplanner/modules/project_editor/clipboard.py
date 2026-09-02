@@ -7,9 +7,10 @@ one undo step in a window and one transaction on the command line.
 
 **A copy is a clone, never the same step.** Every clone has a fresh id and an empty folder
 name, so the store mints it a directory of its own; the copied id survives only long enough
-to remap the links *between* copied steps. A link to a step outside the copy is kept when
-the target project has that step (a duplicate keeps its dependencies) and dropped when it
-does not (a paste into another project cannot wait on a step it cannot see).
+to remap the links *between* copied steps. Those are the only links a copy carries: the
+pasted set keeps its internal arrangement and arrives disconnected from everything outside
+it, whether it lands in the same project or another. Wiring it in is the user's next move,
+not something a paste guesses at.
 
 **Files ride in the payload.** A cut removes the step and the next autosave deletes its
 directory, so a later paste has nowhere else to read an attachment from. The bytes are
@@ -212,7 +213,8 @@ def paste(
 
     The clones' aspects are set on the objects before the add — the node does not exist yet,
     so a command per entry would only lengthen the composite — but the links go through
-    :class:`SetEdgesCommand`, so the model validates them and every view hears of them.
+    :class:`SetEdgesCommand`, so the model validates them and every view hears of them. Only
+    links between the clips survive, remapped; a link to anything outside the set is dropped.
     """
     if not clips:
         raise ValueError("nothing to paste")
@@ -238,9 +240,7 @@ def paste(
         for kind, targets in c.edges.items():
             if kind not in EDGE_KINDS:
                 continue  # A kind this build does not know cannot be validated; skip it.
-            wanted = [
-                remapped.get(t, t) for t in targets if t in remapped or project.step(t) is not None
-            ]
+            wanted = [remapped[t] for t in targets if t in remapped]
             if wanted:
                 commands.append(SetEdgesCommand(clone.id, kind, wanted))
     label = f"{verb} Step" if len(clones) == 1 else f"{verb} {len(clones)} Steps"

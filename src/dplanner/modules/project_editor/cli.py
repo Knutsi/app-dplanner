@@ -171,8 +171,8 @@ def commands(
         ),
         CliCommand(
             path=("step", "duplicate"),
-            summary="Copy steps — aspects, prose, attachments and what they wait on — into "
-            "a project, one row below the originals.",
+            summary="Copy steps — aspects, prose, attachments and the links among them — "
+            "into a project, one row below the originals.",
             configure=_configure_duplicate,
             run=_step_duplicate,
             examples=(

@@ -1,7 +1,7 @@
 """What a copied step is, and how a paste clones it — ``clipboard.py`` alone, with no Qt.
 
 The window's Paste and ``dplanner step duplicate`` both end here, so the rules are pinned
-once: fresh ids, links between copies remapped, links outside kept only where they resolve,
+once: fresh ids, links between copies remapped and every link outside the copy dropped,
 a block that keeps its arrangement, and policies that see the whole batch. The two paste
 policies the composition root wires are tested beside them for the same reason.
 """
@@ -98,13 +98,13 @@ def test_a_paste_clones_with_fresh_ids_and_remaps_the_links_between_copies(libra
     assert {s.id for s in clones}.isdisjoint({first.id, second.id, third.id})
     assert copy_second.folder_name != second.folder_name
     assert library.step(copy_third.id).edges["requires"] == [copy_second.id]  # Remapped.
-    assert library.step(copy_second.id).edges["requires"] == [first.id]  # Kept: it resolves.
+    assert "requires" not in library.step(copy_second.id).edges  # Outside the copy: dropped.
     assert command.text() == "Paste 2 Steps"
     command.undo(library)
     assert [s.id for s in project.steps] == [first.id, second.id, third.id]
 
 
-def test_a_paste_into_another_project_drops_links_it_cannot_resolve(library):
+def test_a_paste_into_another_project_arrives_disconnected_too(library):
     other = Project(title="Rollout")
     library.add_child(library.id, other)
     second = steps_of(library)[1]
@@ -121,20 +121,23 @@ def test_a_paste_into_another_project_drops_links_it_cannot_resolve(library):
 
 def test_an_edge_kind_this_build_does_not_know_is_not_carried(library):
     project = library.projects[0]
-    first = project.steps[0]
-    held = StepClip(
-        id="elsewhere",
-        title="From a newer build",
-        edges={"blocks": [first.id], "requires": [first.id]},
-        module_data={},
-        module_text={},
-        files={},
-        x=0.0,
-        y=0.0,
-    )
-    command, [copy] = paste(library, project.id, [held], anchor=None)
+
+    def bare(step_id, edges):
+        return StepClip(
+            id=step_id,
+            title=step_id,
+            edges=edges,
+            module_data={},
+            module_text={},
+            files={},
+            x=0.0,
+            y=0.0,
+        )
+
+    held = [bare("a", {}), bare("b", {"blocks": ["a"], "requires": ["a"]})]
+    command, [copy_a, copy_b] = paste(library, project.id, held, anchor=None)
     command.redo(library)
-    assert library.step(copy.id).edges == {"requires": [first.id]}
+    assert library.step(copy_b.id).edges == {"requires": [copy_a.id]}
 
 
 def test_a_block_keeps_its_arrangement_and_lands_on_the_anchor(library):

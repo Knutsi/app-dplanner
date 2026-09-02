@@ -146,7 +146,7 @@ class ClipboardVerbs:
                 # Not StandardKey.Delete's Ctrl+D: that binding also means Del, which is
                 # every list's own key. A literal, so Duplicate is Ctrl+D everywhere.
                 shortcut="Ctrl+D",
-                tip="Add a copy of these steps one row below, keeping what they wait on",
+                tip="Add a copy of these steps one row below, linked among themselves only",
                 state=self._on_chosen("D&uplicate"),
                 run=self._duplicate,
             ),
