@@ -340,3 +340,144 @@ def test_an_empty_project_has_no_makespan_and_an_empty_pool_is_refused():
         parallel_finish(library, project, days_of({}), NOBODY, humans=0, agents=1)
     with pytest.raises(ValueError):
         parallel_finish(library, project, days_of({}), NOBODY, humans=1, agents=0)
+
+
+# -- the plan in stretches -----------------------------------------------------------------------
+
+
+def test_working_days_between_counts_both_ends_and_skips_the_weekend():
+    from dplanner.domain.schedule import working_days_between
+
+    assert working_days_between(MONDAY, MONDAY) == 1
+    assert working_days_between(MONDAY, date(2026, 9, 11)) == 5
+    assert working_days_between(MONDAY, date(2026, 9, 14)) == 6
+
+
+def test_a_subset_simulation_treats_edges_out_of_it_as_met(project):
+    from dplanner.domain.schedule import parallel_finish
+
+    library, plan = project
+    _a, _b, c, d = plan.steps
+    days = days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0})
+    whole = parallel_finish(library, plan, days, lambda _s: False, humans=1, agents=1)
+    later = parallel_finish(
+        library, plan, days, lambda _s: False, humans=1, agents=1, among=(c, d)
+    )
+    assert whole is not None and whole.days == 10.0
+    assert later is not None and later.days == 7.0  # C no longer waits for B
+
+
+def _stretches(library, plan, *, milestones, dated=None, start=MONDAY):
+    from dplanner.domain.schedule import phases
+
+    days = days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0})
+    dated = dated or {}
+    return phases(
+        library,
+        plan,
+        days,
+        lambda _s: False,
+        humans=1,
+        agents=1,
+        start=start,
+        is_milestone=lambda step: step.title in milestones,
+        start_for=lambda step: dated.get(step.title),
+    )
+
+
+def test_without_milestones_the_plan_is_one_stretch_from_the_start(project):
+    library, plan = project
+    (only,) = _stretches(library, plan, milestones=())
+    assert only.milestone is None
+    assert [step.title for step in only.steps] == ["A", "B", "C", "D"]
+    assert (only.days, only.start, only.finish) == (10.0, MONDAY, date(2026, 9, 18))
+    assert only.calendar_days == 10
+
+
+def test_milestones_run_in_sequence_each_from_the_day_after_the_last(project):
+    """B closes A+B; D closes C+D. The second stretch begins the working day after the
+    first lands, so the whole is the serial schedule cut in two."""
+    library, plan = project
+    first, second = _stretches(library, plan, milestones=("B", "D"))
+    assert [s.title for s in first.steps] == ["A", "B"]
+    assert (first.start, first.finish) == (MONDAY, date(2026, 9, 9))
+    assert [s.title for s in second.steps] == ["C", "D"]
+    assert (second.start, second.finish) == (date(2026, 9, 10), date(2026, 9, 18))
+    assert not first.pushed and not second.pushed
+
+
+def test_a_dated_milestone_begins_on_its_date_and_a_kept_one_says_so(project):
+    library, plan = project
+    _first, second = _stretches(
+        library, plan, milestones=("B", "D"), dated={"D": date(2026, 9, 21)}
+    )
+    assert second.asked == date(2026, 9, 21) and second.start == date(2026, 9, 21)
+    assert not second.pushed
+    assert second.finish == date(2026, 9, 29)
+
+
+def test_a_date_before_the_previous_landing_is_pushed_and_reported(project):
+    library, plan = project
+    _first, second = _stretches(
+        library, plan, milestones=("B", "D"), dated={"D": date(2026, 9, 8)}
+    )
+    assert second.asked == date(2026, 9, 8)
+    assert second.start == date(2026, 9, 10)  # the sequence holds
+    assert second.pushed
+
+
+def test_the_first_milestone_may_be_dated_before_the_project_start(project):
+    library, plan = project
+    first, _second = _stretches(
+        library, plan, milestones=("B", "D"), dated={"B": date(2026, 9, 5)}
+    )
+    assert first.start == MONDAY  # a Saturday rolls to the Monday, which is the start
+    assert not first.pushed
+    earlier, _ = _stretches(library, plan, milestones=("B", "D"), dated={"B": date(2026, 9, 1)})
+    assert earlier.start == date(2026, 9, 1)
+
+
+def test_work_no_milestone_gathers_runs_last_without_one(project):
+    library, plan = project
+    _first, rest = _stretches(library, plan, milestones=("B",))
+    assert rest.milestone is None
+    assert [s.title for s in rest.steps] == ["C", "D"]
+    assert rest.start == date(2026, 9, 10)
+
+
+def test_a_stretch_with_nothing_estimated_has_no_landing_and_costs_no_days(project):
+    from dplanner.domain.schedule import phases
+
+    library, plan = project
+    first, second = phases(
+        library,
+        plan,
+        days_of({"C": 3.0, "D": 4.0}),
+        lambda _s: False,
+        humans=1,
+        agents=1,
+        start=MONDAY,
+        is_milestone=lambda step: step.title in ("B", "D"),
+        start_for=lambda _s: None,
+    )
+    assert first.finish is None and first.unestimated == 2
+    assert first.calendar_days == 0
+    assert second.start == MONDAY  # the next begins where the weightless one did
+
+
+def test_a_loop_in_a_hand_edited_file_is_named():
+    from dplanner.domain.ordering import cyclic
+
+    library = Library()
+    plan = Project(title="Loop")
+    library.add_child(library.id, plan)
+    for title in ("A", "B", "C", "D"):
+        library.add_child(plan.id, Step(title=title))
+    a, b, c, d = plan.steps
+    library.set_edges(b.id, "requires", [a.id])
+    library.set_edges(d.id, "requires", [c.id])
+    assert cyclic(library, plan) == []
+    # The model refuses a cycle; a file does not. Write one behind its back.
+    a.edges["requires"] = [b.id]
+    c.edges["requires"] = [b.id]
+    assert [step.title for step in cyclic(library, plan)] == ["A", "B", "C", "D"]

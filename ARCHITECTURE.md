@@ -1548,11 +1548,54 @@ decisions worth writing down:
 - **The grid is a heatmap: more time is more ink.** Tiles carry one constant low-alpha
   hue scaled by the makespan (the diff tint's trick, so it reads on every theme), which
   makes the dependency floor visible as the flat, lightest region — "more capacity
-  changes nothing" needs no legend, and the computed insight line says it in words. The
-  printed number is the dependable channel; the tint only orients. The page leads with
-  the *selected* team's landing date, because "when does this land for us" is the
-  question the report exists to answer; the two units are a lens toggle over one grid,
-  never two tables.
+  changes nothing" needs no legend. The printed number is the dependable channel; the
+  tint only orients. The two units are a lens toggle over one grid, never two tables.
+- **Milestones run in sequence, and a stretch is a cone.** A plan with milestones is not
+  one simulation but one per milestone: its stretch is `scope.cone` truncated at the
+  milestones before it — what is new since the last one — plus itself, and a step two
+  milestones both reach belongs to the earlier. Each stretch is `parallel_finish` over its
+  own steps (the `among` parameter; an edge out of the subset counts as met, because the
+  sequence already put that work before), beginning the working day after the previous
+  lands. Work no milestone gathers runs last, with no milestone; a project with none is
+  that one stretch, which is the plain simulation it always was. The alternative — one
+  simulation over the whole graph with per-milestone release dates — was rejected because
+  it lets a later milestone's independent work run *during* an earlier one whenever a slot
+  is free, which is what a team can do but not what "milestones in sequence" says, and it
+  makes the calendar impossible to read as bands.
+- **A milestone's own date is an assumption, so it is stored — and it is a floor, not a
+  fact.** `schedule milestone --start` says when a stretch *begins*, not when it lands
+  (the aspect that names a milestone is explicit that a landing date is the schedule's to
+  answer, never stored). A date later than the previous landing opens a gap, which the
+  calendar shows as one; a date earlier than it is **pushed** to the sequence's own day
+  and reported (`Phase.pushed`, the ⚠ in the landing list, the sentence in the CLI) rather
+  than honoured by overlapping — overlap would make the sequence a lie one milestone at a
+  time. The first milestone is the exception: nothing lands before it, so its date wins
+  over the project's start, which is only the default. Both writes — the date and the
+  colour — live under this module's id on the *milestone's* step, `estimation`'s
+  project-plus-step precedent; `FORMAT.md` has the shape.
+- **Colour follows the sequence unless somebody chose.** Eight hues dealt in order, from
+  a palette stepped until every adjacent pair stays apart under the three common
+  colour-vision deficiencies on both themes (the dataviz validator, not an eye); an override
+  pins one milestone without renumbering the rest. The first hue is the report's old tint,
+  so a project without milestones looks as it did. The calendar, the settable list and the
+  landing list share the hex through `schedule.py` and never store a `QColor`, for the
+  palette-snapshot reason in *The palette a painter is handed is a snapshot*.
+- **The page is split at a seam, and the calendar takes the width.** What you set on the
+  left — focus, the staffing picker, the milestones with their dates and colours — and
+  what it answers on the right — the calendar, then the landings. The months view is the
+  one drawing on the page that is not fixed-size: months across follow the width, cells
+  grow with it, the last row fills out. Picking a milestone in either list emphasises its
+  stretch in the calendar and fades the rest, which is how "the work leading up to it" is
+  shown without a word. There is no headline and no explainer: the landing list's last
+  row *is* the answer, and every number's meaning is in a tooltip.
+- **A plan that cannot be dated says so.** The model refuses to create a cycle, but every
+  walk here guards against one a hand-edited file carries — and until now guarded
+  *silently*, placing the looped steps at depth zero and dating a plan that has no order.
+  `ordering.cyclic()` names them (Kahn's peeling: whatever cannot be shed sits on or behind
+  a loop), `time_report` returns a report with `cycle` set and empty grids, the tab shows
+  the names in place of the calendar, and `schedule matrix` exits non-zero with them.
+  A view that computes on every change has to be robust to every state the file can be
+  in, or it is a view that sometimes shows a picture of nothing.
 
 ## A test belongs to a step, and a step carries several
 

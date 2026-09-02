@@ -5,16 +5,15 @@ One custom-painted grid instead of two tables of strings, because the report's j
 Each tile carries one number (through ``domain/schedule.py``'s formatter, so the tab and
 ``dplanner schedule matrix`` cannot print one number two ways) over a sequential tint —
 one hue, more time is more ink. The tint is reinforcement, never the only channel: the
-value is printed in every tile, and the flat lightest region *is* the dependency floor,
-so "more capacity changes nothing" is visible as uniform colour rather than needing a
-legend.
+value is printed in every tile, and a flat lightest region is where more capacity has
+stopped buying time — visible as uniform colour rather than needing a legend.
 
 The tint is a constant low-alpha colour (DESIGN.md's deliberate exception #2) so it reads
 on every theme; everything else — text, headers, the selection ring — comes from the
 palette at paint time, never stored.
 
-Clicking a tile selects a scenario; the hosting page turns that into its headline. The
-widget itself only renders and reports, like every input here.
+Clicking a tile selects a scenario; the hosting page dates the calendar and the milestone
+landings for it. The widget itself only renders and reports, like every input here.
 
 Rebuilt whole whenever the model changes — twelve simulations over tens of steps, cheaper
 to redo than to diff (the order table's argument).
@@ -172,7 +171,6 @@ class MatrixView(QWidget):
         self._cells: dict[tuple[int, int], Cell] = {}
         self._humans: tuple[int, ...] = ()
         self._agents: tuple[int, ...] = ()
-        self._floor = 0.0
         self._collapsed = False
         self._span = (0.0, 0.0)  # (min days, max days) across the shown cells
         self.selection: tuple[int, int] = (1, 1)
@@ -184,13 +182,12 @@ class MatrixView(QWidget):
 
     # -- the host's side of the contract -------------------------------------------------------
 
-    def show_cells(self, cells: tuple[Cell, ...], floor: float, collapse_agents: bool) -> None:
+    def show_cells(self, cells: tuple[Cell, ...], collapse_agents: bool) -> None:
         self._collapsed = collapse_agents
         shown = tuple(cell for cell in cells if not collapse_agents or cell.agents == 1)
         self._cells = {(cell.humans, cell.agents): cell for cell in shown}
         self._humans = tuple(sorted({cell.humans for cell in shown}))
         self._agents = tuple(sorted({cell.agents for cell in shown}))
-        self._floor = floor
         days = [cell.days for cell in shown]
         self._span = (min(days, default=0.0), max(days, default=0.0))
         if self.selection not in self._cells and self._humans and self._agents:

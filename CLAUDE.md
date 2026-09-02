@@ -498,15 +498,22 @@ root, stop and look for the registry or capability you have not found yet.
   progression show` and `--json` are three readers of one function, and the frontier is a
   per-step check, not `ordering.ready()`'s wave one. `ARCHITECTURE.md`'s *Progression is
   the status-aware frontier* has the partition rules and why each was a decision.
-- **Staffing what-ifs are derived; only the focus factor is stored.** The time estimates
+- **Staffing what-ifs are derived; only the assumptions are stored.** The time estimates
   tab and `dplanner schedule matrix` are one derivation — `domain/schedule.py`'s
-  `parallel_finish`, a deterministic two-pool greedy simulation (longest remaining chain
-  first, ties by project order) handed `days_for` and `is_agent` as functions. Calendar
-  time is the same walk over a wrapped `days_for` (`time_estimates/schedule.py`'s
-  `stretched`), so the domain never learns what an efficiency is; the focus factor itself
-  is the one stored value — project-node module data, written by the tab's spinbox and
-  `dplanner schedule focus` alike. `ARCHITECTURE.md`'s *Time estimates: two worker pools,
-  one greedy simulation* has the reasoning.
+  `phases` over `parallel_finish`, a deterministic two-pool greedy simulation (longest
+  remaining chain first, ties by project order) handed `days_for`, `is_agent` and
+  `is_milestone` as functions. **Milestones run in sequence**: each stretch is a
+  milestone's `scope.cone` truncated at the milestones before it, simulated on its own
+  (`parallel_finish`'s `among`) from the working day after the previous one lands — or
+  from a date of its own, when it has one and that is later; an earlier date is *pushed*
+  and reported, never silently overlapped. Calendar time is the same walk over a wrapped
+  `days_for` (`time_estimates/schedule.py`'s `stretched`), so the domain never learns what
+  an efficiency is. Three things reach disk, all under `time_estimates`: the focus factor
+  on the project node, and a milestone's start date and colour on its step — written by
+  the tab's controls and `dplanner schedule focus` / `schedule milestone` alike. A cycle a
+  hand-edited file smuggled in is named by `ordering.cyclic()` and the tab says so instead
+  of drawing a calendar over a broken walk. `ARCHITECTURE.md`'s *Time estimates: two
+  worker pools, one greedy simulation* has the reasoning.
 - **A test belongs to a step, and a step carries several.** A description says what a step
   *is*; a test says how you would prove it, and it outlives the step. A test is **not a
   node** — it is a record in the step's `testing` aspect with its own id, title, markdown

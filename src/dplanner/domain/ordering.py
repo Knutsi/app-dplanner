@@ -50,6 +50,36 @@ def depths(library: Library, project: Project) -> dict[StepId, int]:
     return known
 
 
+def cyclic(library: Library, project: Project) -> list[Step]:
+    """The steps that wait on themselves, directly or through others — in project order.
+
+    The model refuses to *create* a cycle, so this answers for a file edited by hand: every
+    other walk here guards itself and quietly places such a step at depth zero, which is a
+    plan that cannot be timed pretending it can. A surface that dates the plan asks this
+    first and says what it found instead. Empty is the normal answer.
+
+    Kahn's peeling: shed every step whose requirements are all shed; whatever remains sits
+    on a cycle or behind one, and both are named — a step behind a loop is as undatable
+    as the loop itself.
+    """
+    pending: dict[StepId, set[StepId]] = {
+        step.id: {
+            target for target in step.edges.get("requires", []) if project.step(target) is not None
+        }
+        for step in project.steps
+    }
+    shed = True
+    while shed:
+        shed = False
+        for step_id, waiting in tuple(pending.items()):
+            if not waiting:
+                del pending[step_id]
+                for others in pending.values():
+                    others.discard(step_id)
+                shed = True
+    return [step for step in project.steps if step.id in pending]
+
+
 def waves(library: Library, project: Project) -> list[list[Step]]:
     """The steps grouped by depth: everything in ``waves[0]`` can be started now.
 

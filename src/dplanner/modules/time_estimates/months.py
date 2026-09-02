@@ -1,49 +1,92 @@
-"""A compact run of months with the work period lit — when, on a real calendar.
+"""A run of months with the plan lit on it — each milestone's stretch in its own colour.
 
-The headline says "Lands 24 September"; this shows it: the span from the start date to
-the selected team's landing date, filled with the report's one tint, fainter over the
-weekends the schedule skips. The strip runs from the month before the work starts and
-always covers at least six months, growing to keep the landing in view (capped — a
-multi-year plan keeps its date in the headline rather than a wall of months).
+The landing list under it says "v1 · 24 September"; this shows it: from the start date
+to the last landing, every stretch of work filled with its milestone's hue, fainter over
+the weekends the schedule skips, and the day a milestone lands drawn as a filled mark. One
+stretch can be *emphasised* (the host says which, from either list beside the calendar),
+and the others fade so the work leading up to that milestone stands alone.
 
-Every colour but the tint comes from the palette at paint time; the tint is the same
-constant low-alpha blue the matrix uses, so the two surfaces read as one report. Hovering
-a day answers precisely — which working day of how many, a weekend, the landing — so the
-strip itself stays wordless.
+**The calendar fills the width it is given.** It is the one surface on the page that is
+not a fixed-size drawing: the number of months across follows the width and the day cells
+grow with it, so a wide window shows a wide calendar rather than a small one in a corner.
+The height follows from the rows, which is why it is `Expanding` by `Fixed` and sets its own
+height. The window of months runs from the month before the work starts, covers at least
+six, grows to keep the last landing in view (capped — a multi-year plan keeps its dates in
+the list rather than a wall of months), and rounds up to fill its last row.
+
+Every colour but the milestone hues comes from the palette at paint time; the hues are the
+same constants the lists beside it use (``schedule.py``'s ``PALETTE``), so the calendar and
+the lists read as one report. Hovering a day answers precisely — which stretch, which
+working day of how many, a weekend, a landing — so the calendar itself stays wordless.
 """
 
+from dataclasses import dataclass
 from datetime import date, timedelta
+from math import ceil
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QHelpEvent, QMouseEvent, QPainter, QPaintEvent, QPen
-from PySide6.QtWidgets import QToolTip, QWidget
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QHelpEvent,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
+    QResizeEvent,
+)
+from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
-from dplanner.domain.schedule import SATURDAY, format_date
-from dplanner.modules.time_estimates.view import SECONDARY_ALPHA, TINT
+from dplanner.domain.schedule import SATURDAY, format_date, working_days_between
+from dplanner.modules.time_estimates.view import SECONDARY_ALPHA
 
 MONTHS_SHOWN_AT_LEAST = 6
 MONTHS_SHOWN_AT_MOST = 12
-MONTHS_PER_ROW = 3
+MONTHS_ACROSS_AT_MOST = 4
 
-CELL = 18
+# Day cells grow with the width between these, on the 4-point scale's neighbours.
+CELL_MIN = 18
+CELL_MAX = 28
 CELL_GAP = 2
-MONTH_GAP = 12
+MONTH_GAP = 16
 TITLE_HEIGHT = 20
 DAY_RADIUS = 3
 
-# How loudly a day carries the tint: a worked day, a weekend inside the span (kept faint —
-# the schedule skips it, but the band should read as one period), and the endpoints.
+# How loudly a day carries its stretch's hue: a worked day, a weekend inside the stretch
+# (kept faint — the schedule skips it, but the band should read as one period), the
+# plan's first day, and the day a milestone lands (filled: the mark the list points at).
 SPAN_ALPHA = 64
 SPAN_WEEKEND_ALPHA = 24
-ENDPOINT_ALPHA = 130
+START_ALPHA = 130
+LANDING_ALPHA = 220
+# A stretch that is not the emphasised one keeps this much of its ink.
+FADE = 0.4
 
-# Day numbers: quiet by default, quieter on weekends, full ink inside the span.
+# Day numbers: quiet by default, quieter on weekends, full ink inside a stretch — and
+# reversed on a landing, which is filled.
 DAY_ALPHA = 190
 WEEKEND_ALPHA = 90
 
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 _ONE_DAY = timedelta(days=1)
+
+
+@dataclass(frozen=True)
+class Band:
+    """One stretch of the plan as the calendar paints it.
+
+    ``key`` is what the host emphasises by — the milestone's step id, or "" for the work
+    after the last milestone. ``lands`` says ``finish`` is a milestone's landing and gets
+    the filled mark; the remainder's last day is just its last day.
+    """
+
+    key: str
+    label: str
+    start: date
+    finish: date
+    color: QColor
+    lands: bool
 
 
 def _first_of(when: date) -> date:
@@ -65,7 +108,7 @@ def _month_span(start: date, finish: date | None) -> tuple[date, int]:
 
 
 class MonthsView(QWidget):
-    """The months around the plan, the work period filled in.
+    """The months around the plan, each stretch of work filled in its colour.
 
     The calendar is also the start-date control: clicking a day reports it through
     ``day_picked``, and the host turns that into the one undoable write. The widget
@@ -77,30 +120,35 @@ class MonthsView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._start: date | None = None
-        self._finish: date | None = None
+        self._bands: tuple[Band, ...] = ()
+        self._emphasised: str | None = None
         self._today = date.today()
         self._begin = date.today().replace(day=1)
+        self._wanted = 0  # Months the plan asks for; the grid rounds up to fill its rows.
         self._count = 0
+        self._columns = 1
+        self._cell = CELL_MIN
         self._offset = 0  # months the user has paged away from the plan's own window
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setMinimumWidth(self._month_width(CELL_MIN))
 
     # -- the host's side of the contract -------------------------------------------------------
 
-    def show_span(self, start: date, finish: date | None, today: date | None = None) -> None:
+    def show_bands(self, start: date, bands: tuple[Band, ...], today: date | None = None) -> None:
         self._start = start
-        self._finish = finish
+        self._bands = bands
         self._today = today or date.today()
-        self._begin, self._count = _month_span(start, finish)
+        finish = max((band.finish for band in bands), default=None)
+        self._begin, self._wanted = _month_span(start, finish)
         self._begin = _add_months(self._begin, self._offset)
-        rows = (self._count + MONTHS_PER_ROW - 1) // MONTHS_PER_ROW
-        columns = min(self._count, MONTHS_PER_ROW)
-        month_width = 7 * (CELL + CELL_GAP) - CELL_GAP
-        month_height = TITLE_HEIGHT + 6 * (CELL + CELL_GAP) - CELL_GAP
-        self.setFixedSize(
-            columns * month_width + (columns - 1) * MONTH_GAP,
-            rows * month_height + (rows - 1) * MONTH_GAP,
-        )
-        self.update()
+        self._relayout()
+
+    def emphasise(self, key: str | None) -> None:
+        """Fade every stretch but this one; None shows them all alike."""
+        if key != self._emphasised:
+            self._emphasised = key
+            self.update()
 
     def page(self, months: int) -> None:
         """Move the window through time; the plan's own window is offset zero."""
@@ -110,53 +158,85 @@ class MonthsView(QWidget):
 
     @property
     def span(self) -> tuple[date | None, date | None]:
-        return (self._start, self._finish)
+        finish = max((band.finish for band in self._bands), default=None)
+        return (self._start, finish)
+
+    @property
+    def emphasised(self) -> str | None:
+        return self._emphasised
 
     @property
     def month_count(self) -> int:
         return self._count
 
     @property
+    def columns(self) -> int:
+        return self._columns
+
+    @property
+    def cell_size(self) -> int:
+        return self._cell
+
+    @property
     def first_month(self) -> date:
         return self._begin
 
+    def band_at(self, when: date) -> Band | None:
+        return next((band for band in self._bands if band.start <= when <= band.finish), None)
+
     def day_tooltip(self, when: date) -> str:
-        """One precise sentence per day — the strip's only words."""
+        """One precise sentence per day — the calendar's only words."""
         said = f"{WEEKDAYS[when.weekday()]} {format_date(when, today=self._today)}"
-        start, finish = self._start, self._finish
-        if start is not None and finish is not None and start <= when <= finish:
-            if when == finish:
-                said += " — the work lands"
-            elif when.weekday() >= SATURDAY:
-                said += " — weekend, not counted"
-            else:
-                worked = sum(
-                    1
-                    for offset in range((when - start).days + 1)
-                    if (start + offset * _ONE_DAY).weekday() < SATURDAY
-                )
-                total = sum(
-                    1
-                    for offset in range((finish - start).days + 1)
-                    if (start + offset * _ONE_DAY).weekday() < SATURDAY
-                )
-                start_note = " — the work starts, " if when == start else " — "
-                said += f"{start_note}working day {worked} of {total}"
-        else:
+        band = self.band_at(when)
+        if band is None:
             said += " — click to start the work here"
+        elif when == band.finish and band.lands:
+            said += f" — {band.label} lands"
+        elif when.weekday() >= SATURDAY:
+            said += " — weekend, not counted"
+        else:
+            worked = working_days_between(band.start, when)
+            total = working_days_between(band.start, band.finish)
+            starts = " starts," if when == band.start else ","
+            said += f" — {band.label}{starts} working day {worked} of {total}"
         if when == self._today:
             said += " · today"
         return said
 
-    # -- painting ------------------------------------------------------------------------------
+    # -- geometry ------------------------------------------------------------------------------
+
+    @staticmethod
+    def _month_width(cell: int) -> int:
+        return 7 * (cell + CELL_GAP) - CELL_GAP
+
+    @staticmethod
+    def _month_height(cell: int) -> int:
+        return TITLE_HEIGHT + 6 * (cell + CELL_GAP) - CELL_GAP
+
+    def _relayout(self) -> None:
+        """Fit the months to the width: as many across as fit at the smallest cell, then
+        the cells grow to use what is left, and the rows fill out."""
+        width = self.width()
+        narrowest = self._month_width(CELL_MIN)
+        columns = (width + MONTH_GAP) // (narrowest + MONTH_GAP)
+        self._columns = max(1, min(MONTHS_ACROSS_AT_MOST, columns))
+        room = width - (self._columns - 1) * MONTH_GAP - self._columns * 6 * CELL_GAP
+        self._cell = max(CELL_MIN, min(CELL_MAX, room // (7 * self._columns)))
+        rows = ceil(self._wanted / self._columns) if self._wanted else 0
+        self._count = rows * self._columns
+        self.setFixedHeight(rows * self._month_height(self._cell) + max(0, rows - 1) * MONTH_GAP)
+        self.update()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        if event.size().width() != event.oldSize().width():
+            self._relayout()
 
     def _month_origin(self, index: int) -> tuple[float, float]:
-        month_width = 7 * (CELL + CELL_GAP) - CELL_GAP
-        month_height = TITLE_HEIGHT + 6 * (CELL + CELL_GAP) - CELL_GAP
-        row, column = divmod(index, MONTHS_PER_ROW)
+        row, column = divmod(index, self._columns)
         return (
-            column * (month_width + MONTH_GAP),
-            row * (month_height + MONTH_GAP),
+            column * (self._month_width(self._cell) + MONTH_GAP),
+            row * (self._month_height(self._cell) + MONTH_GAP),
         )
 
     def _day_rect(self, index: int, when: date) -> QRectF:
@@ -165,10 +245,10 @@ class MonthsView(QWidget):
         seat = when.day - 1 + first.weekday()
         row, column = divmod(seat, 7)
         return QRectF(
-            left + column * (CELL + CELL_GAP),
-            top + TITLE_HEIGHT + row * (CELL + CELL_GAP),
-            CELL,
-            CELL,
+            left + column * (self._cell + CELL_GAP),
+            top + TITLE_HEIGHT + row * (self._cell + CELL_GAP),
+            self._cell,
+            self._cell,
         )
 
     def _day_at(self, position: QPointF) -> date | None:
@@ -182,6 +262,14 @@ class MonthsView(QWidget):
                 when += _ONE_DAY
         return None
 
+    # -- painting ------------------------------------------------------------------------------
+
+    def _ink(self, band: Band, alpha: int) -> QColor:
+        tint = QColor(band.color)
+        faded = self._emphasised is not None and band.key != self._emphasised
+        tint.setAlpha(round(alpha * FADE) if faded else alpha)
+        return tint
+
     def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt override
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -190,7 +278,6 @@ class MonthsView(QWidget):
         secondary.setAlpha(SECONDARY_ALPHA)
         small = QFont(self.font())
         small.setPointSizeF(small.pointSizeF() - 1.5)
-        start, finish = self._start, self._finish
         for index in range(self._count):
             first = _add_months(self._begin, index)
             left, top = self._month_origin(index)
@@ -198,7 +285,7 @@ class MonthsView(QWidget):
             painter.setPen(secondary)
             title = format_date(first, today=self._today).split(" ", 1)[1]
             painter.drawText(
-                QRectF(left, top, 7 * (CELL + CELL_GAP) - CELL_GAP, TITLE_HEIGHT - 4),
+                QRectF(left, top, self._month_width(self._cell), TITLE_HEIGHT - 4),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 title,
             )
@@ -206,42 +293,40 @@ class MonthsView(QWidget):
             until = _add_months(first, 1)
             when = first
             while when < until:
-                rect = self._day_rect(index, when)
-                weekend = when.weekday() >= SATURDAY
-                in_span = (
-                    start is not None and finish is not None and start <= when <= finish
-                )
-                if in_span:
-                    tint = QColor(TINT)
-                    if when in (start, finish):
-                        tint.setAlpha(ENDPOINT_ALPHA)
-                    else:
-                        tint.setAlpha(SPAN_WEEKEND_ALPHA if weekend else SPAN_ALPHA)
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.setBrush(tint)
-                    painter.drawRoundedRect(rect, DAY_RADIUS, DAY_RADIUS)
-                if when == finish:
-                    ring = QPen(self.palette().highlight().color(), 1.5)
-                    painter.setPen(ring)
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawRoundedRect(
-                        rect.adjusted(0.75, 0.75, -0.75, -0.75), DAY_RADIUS, DAY_RADIUS
-                    )
-                elif when == self._today:
-                    painter.setPen(QPen(secondary, 1.0))
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawRoundedRect(
-                        rect.adjusted(0.5, 0.5, -0.5, -0.5), DAY_RADIUS, DAY_RADIUS
-                    )
-                number = QColor(ink)
-                if in_span:
-                    number.setAlpha(255)
-                else:
-                    number.setAlpha(WEEKEND_ALPHA if weekend else DAY_ALPHA)
-                painter.setPen(number)
-                painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(when.day))
+                self._paint_day(painter, self._day_rect(index, when), when, ink, secondary)
                 when += _ONE_DAY
         painter.end()
+
+    def _paint_day(
+        self, painter: QPainter, rect: QRectF, when: date, ink: QColor, secondary: QColor
+    ) -> None:
+        weekend = when.weekday() >= SATURDAY
+        band = self.band_at(when)
+        landing = band is not None and band.lands and when == band.finish
+        if band is not None:
+            if landing:
+                alpha = LANDING_ALPHA
+            elif when == self._start:
+                alpha = START_ALPHA
+            else:
+                alpha = SPAN_WEEKEND_ALPHA if weekend else SPAN_ALPHA
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(self._ink(band, alpha))
+            painter.drawRoundedRect(rect, DAY_RADIUS, DAY_RADIUS)
+        if when == self._today:
+            painter.setPen(QPen(secondary, 1.0))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), DAY_RADIUS, DAY_RADIUS)
+        number = QColor(ink)
+        if landing:
+            # A filled mark takes the ground's colour for its number, so it reads on the hue.
+            number = QColor(self.palette().base().color())
+            if self._emphasised is not None and band is not None and band.key != self._emphasised:
+                number = QColor(ink)
+        elif band is None:
+            number.setAlpha(WEEKEND_ALPHA if weekend else DAY_ALPHA)
+        painter.setPen(number)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(when.day))
 
     # -- input ---------------------------------------------------------------------------------
 

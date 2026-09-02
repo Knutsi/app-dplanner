@@ -34,7 +34,8 @@ from datetime import date, timedelta
 from math import ceil
 
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.ordering import Placed
+from dplanner.domain.ordering import Placed, placed
+from dplanner.domain.scope import cone
 
 WORKING_DAYS_PER_WEEK = 5
 SATURDAY = 5  # date.weekday(): Monday is 0.
@@ -78,6 +79,18 @@ def working_days_after(start: date, days: float) -> date:
     for _ in range(max(1, ceil(days)) - 1):
         when = next_working_day(when + _ONE_DAY)
     return when
+
+
+def working_days_between(start: date, finish: date) -> int:
+    """How many working days ``start`` through ``finish`` span, both ends counted — the
+    inverse of :func:`working_days_after`, so a landing date reads back as a length."""
+    count = 0
+    when = start
+    while when <= finish:
+        if when.weekday() < SATURDAY:
+            count += 1
+        when += _ONE_DAY
+    return count
 
 
 MONTHS = (
@@ -181,9 +194,15 @@ def parallel_finish(
     *,
     humans: int,
     agents: int,
+    among: Sequence[Step] | None = None,
 ) -> ParallelFinish | None:
     """The makespan with ``humans`` people and ``agents`` coding agents. None only when
-    the project has no steps.
+    there are no steps to run.
+
+    ``among`` narrows the walk to those steps — one stretch of a plan — and an edge to a
+    step outside it counts as already met: whoever hands over a subset is saying the rest
+    has happened, or belongs to another stretch of time (:func:`phases`). The default is
+    the whole project.
 
     Two pools, handed as a predicate the way ``days_for`` is handed as a function: an
     agent step waits for an agent slot, every other step for a human one, and neither
@@ -199,18 +218,15 @@ def parallel_finish(
     """
     if humans < 1 or agents < 1:
         raise ValueError("a pool with work in it needs at least one worker")
-    if not project.steps:
+    steps = tuple(project.steps if among is None else among)
+    if not steps:
         return None
-    order = {step.id: index for index, step in enumerate(project.steps)}
-    days = {step.id: days_for(step) for step in project.steps}
+    order = {step.id: index for index, step in enumerate(steps)}
+    days = {step.id: days_for(step) for step in steps}
     waiting: dict[StepId, set[StepId]] = {}
-    dependents: dict[StepId, list[StepId]] = {step.id: [] for step in project.steps}
-    for step in project.steps:
-        requires = {
-            target
-            for target in step.edges.get("requires", [])
-            if project.step(target) is not None
-        }
+    dependents: dict[StepId, list[StepId]] = {step.id: [] for step in steps}
+    for step in steps:
+        requires = {target for target in step.edges.get("requires", []) if target in order}
         waiting[step.id] = requires
         for target in requires:
             dependents[target].append(step.id)
@@ -229,18 +245,18 @@ def parallel_finish(
         tails[step_id] = (days[step_id] or 0.0) + ahead
         return tails[step_id]
 
-    for step in project.steps:
+    for step in steps:
         tail_of(step.id, frozenset())
 
     free = {True: agents, False: humans}  # Keyed by is_agent's answer.
-    pool = {step.id: is_agent(step) for step in project.steps}
+    pool = {step.id: is_agent(step) for step in steps}
     ready: dict[bool, list[StepId]] = {True: [], False: []}
-    for step in project.steps:
+    for step in steps:
         if not waiting[step.id]:
             ready[pool[step.id]].append(step.id)
     running: list[tuple[float, StepId]] = []
     now = 0.0
-    remaining = len(project.steps)
+    remaining = len(steps)
     while remaining:
         for lane, queue in ready.items():
             while queue and free[lane]:
@@ -265,6 +281,104 @@ def parallel_finish(
         days=now,
         unestimated=sum(1 for value in days.values() if value is None),
     )
+
+
+@dataclass(frozen=True)
+class Phase:
+    """One stretch of the plan: a milestone and the work leading up to it — or, with no
+    milestone, the work nothing gathers, which runs after the last one.
+
+    ``finish`` is None when nothing in the stretch is estimated, for ``Scheduled``'s
+    reason. ``asked`` is the milestone's own start date when it has one; ``start`` is
+    where the stretch actually begins, which differs only when the date asked for fell
+    before the previous milestone landed — the sequence holds and the ask is reported.
+    """
+
+    milestone: Step | None
+    steps: tuple[Step, ...]  # Project order, the milestone last among its own.
+    days: float  # Makespan of this stretch alone, in working days.
+    start: date
+    finish: date | None
+    asked: date | None
+    unestimated: int
+
+    @property
+    def pushed(self) -> bool:
+        """Whether the date asked for could not be kept — a weekend rolling to its Monday
+        is keeping it."""
+        return self.asked is not None and self.start > next_working_day(self.asked)
+
+    @property
+    def calendar_days(self) -> int:
+        """The stretch as a calendar reads it: whole working days from its start to its
+        landing, both counted — what a list prints, where ``days`` is the simulation's
+        fraction. Zero when nothing landed."""
+        return working_days_between(self.start, self.finish) if self.finish else 0
+
+
+def phases(
+    library: Library,
+    project: Project,
+    days_for: Callable[[Step], float | None],
+    is_agent: Callable[[Step], bool],
+    *,
+    humans: int,
+    agents: int,
+    start: date,
+    is_milestone: Callable[[Step], bool],
+    start_for: Callable[[Step], date | None],
+) -> list[Phase]:
+    """The plan as milestones run one after another, each dated from the last.
+
+    A milestone's stretch is its ``requires`` cone truncated at the milestones before it
+    (``scope.cone``) — what is new since the last one — plus itself; a step two milestones
+    both reach belongs to the earlier. Stretches run **in sequence**: the first begins at
+    ``start``, every later one the working day after the previous lands, and a milestone
+    with a date of its own (``start_for``) begins there instead when that is later. Each
+    stretch is :func:`parallel_finish` over its own steps, so the team is the same
+    throughout and the whole is that one simulation asked once per milestone.
+
+    What no milestone gathers runs last, as a stretch with no milestone. A project with no
+    milestones is that one stretch, which is the plain simulation from ``start``. Both
+    ``is_milestone`` and ``start_for`` are handed in like ``days_for``: the domain learns
+    that some steps close a stretch, never what marks them.
+    """
+    milestones = [place.step for place in placed(library, project) if is_milestone(place.step)]
+    taken: set[StepId] = set()
+    groups: list[tuple[Step | None, tuple[Step, ...]]] = []
+    for closing in milestones:
+        found = cone(library, project, closing.id, stops_at=is_milestone)
+        own = ({step.id for step in found.steps} - taken) | {closing.id}
+        taken |= own
+        groups.append((closing, tuple(step for step in project.steps if step.id in own)))
+    rest = tuple(step for step in project.steps if step.id not in taken)
+    if rest:
+        groups.append((None, rest))
+
+    result: list[Phase] = []
+    when = start  # The earliest the next stretch may begin.
+    for index, (milestone, steps) in enumerate(groups):
+        asked = start_for(milestone) if milestone is not None else None
+        begins = asked if asked is not None and (index == 0 or asked >= when) else when
+        begins = next_working_day(begins)
+        run = parallel_finish(
+            library, project, days_for, is_agent, humans=humans, agents=agents, among=steps
+        )
+        assert run is not None  # A group is never empty: a milestone is at least itself.
+        finish = working_days_after(begins, run.days) if run.days > 0 else None
+        result.append(
+            Phase(
+                milestone=milestone,
+                steps=steps,
+                days=run.days,
+                start=begins,
+                finish=finish,
+                asked=asked,
+                unestimated=run.unestimated,
+            )
+        )
+        when = next_working_day(finish + _ONE_DAY) if finish is not None else begins
+    return result
 
 
 @dataclass(frozen=True)

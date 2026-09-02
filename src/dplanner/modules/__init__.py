@@ -489,6 +489,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # readers — the matrix never learns what any of them is stored as.
             days_for=estimated_days,
             is_agent=agent_enabled,
+            milestone_label=milestone_read,
             start_of=lambda project_id: start_of(library.project(project_id)),
             # Clicking the calendar re-dates the plan: one undoable write of the
             # estimation module's own entry, composed here so neither module imports
@@ -1359,7 +1360,12 @@ def default_cli_commands() -> list["CliCommand"]:
         *layout_cli.commands(days_for=estimated_days),
         # The staffing matrix reads estimates, agent-ness and the start date through the
         # owners' Qt-free readers — handed over here so no cli.py imports another module's.
-        *time_cli.commands(days_for=estimated_days, is_agent=agent_marked, start_of=start_of),
+        *time_cli.commands(
+            days_for=estimated_days,
+            is_agent=agent_marked,
+            start_of=start_of,
+            milestone_label=milestone_read,
+        ),
         *github_cli.commands(),
         *aspect_commands(specs),
         # Each module exports what "missing" means for its own aspect; the list order is
