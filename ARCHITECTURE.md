@@ -1246,13 +1246,17 @@ answer is that **an editing session is one replace**, the same operation `dplann
 import` performs on an existing name, so the CLI needed no new editing verb and the two
 surfaces still speak one vocabulary.
 
-Concretely: the editor flushes on the autosave rhythm (a pause in typing) and at session
-boundaries, and every flush writes a new blob and pushes the index update as a
-`SetModuleDataCommand` with one label — command merging turns however many flushes into a
-single undo entry, and `previous` stays pinned to the blob that was current when editing
-began, so `spec diff` answers "what did this session change". Undo restores the
-pre-session index, and the pre-session blob is still on disk — the same invariant every
-replace relies on. The one carve-out from "orphans are never pruned": a blob the session
+Concretely: a markdown document has no read mode — picking its row opens it in the
+editor, and that is the session's start; picking another row, or closing the tab, is its
+end. The editor flushes on the autosave rhythm (a pause in typing) and at those boundaries,
+and every flush writes a new blob and pushes the index update as a `SetModuleDataCommand`
+with one label — command merging turns however many flushes into a single undo entry, and
+`previous` stays pinned to the blob that was current when the row was picked, so `spec
+diff` answers "what did this session change". Undo restores the pre-session index, and the
+pre-session blob is still on disk — the same invariant every replace relies on. There was
+a *Done* once, and an *Edit Spec Document* verb to reach the editor: a read mode nobody
+wanted for text they came to write, and a button whose absence a reader took to mean
+"unsaved". Both went; the idle flush was always what persisted. The one carve-out from "orphans are never pruned": a blob the session
 itself wrote and then superseded is churn, not history, and is removed once nothing in the
 index names it (`prune_blob`). Typing inside the editor is the widget's own undo stack;
 the application stack holds only the session-level replaces — two stacks because they hold
@@ -1260,12 +1264,11 @@ two different kinds of fact, keystrokes and index states.
 
 Three edges are decisions, not accidents. **Only markdown edits in-app**: a PDF is not
 text, and plain text pushed through a rich-text round-trip would come back as markdown —
-`spec.edit` is disabled with the reason on both, per *Hidden means absent; disabled means
-not now*. **Qt normalises the markdown it writes**, so the editor only saves a document
-the user actually modified — opening one never reformats it — and says so inline when the
-first save would. **A foreign change to the edited document ends the session**: the model
-is the authority, unflushed keystrokes yield, and anything already flushed survives as a
-recoverable blob. An agent replacing the document under an open window resolves through
+both render read-only. **Qt normalises the markdown it writes**, so the editor only saves a
+document the user actually modified — opening one never reformats it — and says so inline
+when the first save would. **A foreign change to the edited document ends the session** and
+reopens the document as it now is: the model is the authority, unflushed keystrokes yield,
+and anything already flushed survives as a recoverable blob. An agent replacing the document under an open window resolves through
 *Two writers, one folder* like every other write.
 
 ## Deriving rather than storing

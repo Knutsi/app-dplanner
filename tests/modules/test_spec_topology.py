@@ -60,4 +60,3 @@ def test_the_topology_row_selects_no_document(services, project, activity):
     context = services.context.current()
     assert context.selected_entity("spec_document") is None
     assert not services.actions.spec("spec.remove").state(context).enabled
-    assert not services.actions.spec("spec.edit").state(context).enabled

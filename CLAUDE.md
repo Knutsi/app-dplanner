@@ -529,7 +529,9 @@ root, stop and look for the registry or capability you have not found yet.
   reloaded float writes as `5.0`, making a file's bytes depend on whether the project had
   been reopened. `module_data` is opaque to the model, so the coercion belongs in the
   aspect's `write()` — see `modules/estimation/aspect.py`.
-- **Editing a spec in-app is a replace.** The Specs tab's markdown editor flushes a session
+- **Editing a spec in-app is a replace, and markdown has no read mode.** Picking a markdown
+  row opens the editor and starts the session; picking another row or closing the tab ends
+  it; the idle flush persists in between. The Specs tab's markdown editor flushes a session
   as one `spec import`-style replace: blob written straight to the file area, the index
   through one merged command, `previous` pinned to the session's base so `spec diff` shows
   the session. Markdown only — PDFs and plain text stay view-only — and the editor prunes

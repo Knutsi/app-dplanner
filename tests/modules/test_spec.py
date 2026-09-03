@@ -12,7 +12,6 @@ import pytest
 from dplanner.domain.commands import RemoveNodeCommand, SetModuleDataCommand
 from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.framework.markdown_view import MarkdownView
 from dplanner.modules.spec.activity import NAME_ROLE, SpecsActivity
 from dplanner.modules.spec.aspect import MODULE_ID
 from dplanner.modules.spec.documents import (
@@ -109,8 +108,9 @@ def test_a_markdown_document_renders_with_its_area_images(services, project, tmp
     imported(services, project, "auth", f"![]({asset})".encode(), "auth.md")
     services.actions.run("spec.open", select(services, project))
     activity = services.tabs.activities()[0]
-    browser = activity.widget.findChild(MarkdownView)
-    image = browser.loadResource(2, asset)
+    # Markdown opens in the editor; its images resolve through the area exactly as the
+    # viewer's did.
+    image = activity._editor.loadResource(2, asset)
     assert image is not None and not image.isNull()
 
 

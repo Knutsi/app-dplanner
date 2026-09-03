@@ -160,9 +160,7 @@ def project(make_project):
 def imported(services, project, name, data, filename):
     area = services.repo.files(project.id, MODULE_ID)
     existing = read_index(services.document.project(project.id)).documents
-    docs, document, _outcome = import_document(
-        area, existing, name, data, filename, "2026-08-27"
-    )
+    docs, document, _outcome = import_document(area, existing, name, data, filename, "2026-08-27")
     entry = write_index(SpecIndex(documents=docs, assets=[]))
     SetModuleDataCommand(project.id, MODULE_ID, entry).redo(services.document)
     return document
@@ -205,8 +203,8 @@ def test_spec_new_creates_selects_and_edits(services, project, monkeypatch):
 def test_a_session_flushes_as_one_replace_and_prunes_its_churn(services, project):
     base = imported(services, project, "auth", b"# Auth\n", "auth.md")
     activity = specs_tab(services, project)
-    activity.select_document("auth")
-    activity.begin_edit()
+    activity.select_document("auth")  # A markdown row opens in the editor: the session.
+    assert activity.is_editing and activity._views.currentWidget() is activity._editor_page
     area = services.repo.files(project.id, MODULE_ID)
 
     activity._editor.insertPlainText("one ")
@@ -222,7 +220,7 @@ def test_a_session_flushes_as_one_replace_and_prunes_its_churn(services, project
     assert area.read_bytes(first.file) is None
     assert area.read_bytes(base.file) == b"# Auth\n"
 
-    activity.end_edit()
+    activity.end_session()
     assert not activity.is_editing
     # One undo entry for the whole session: undo restores the pre-session index.
     services.undo.undo()
@@ -230,34 +228,42 @@ def test_a_session_flushes_as_one_replace_and_prunes_its_churn(services, project
     assert restored.file == base.file and area.read_bytes(base.file) == b"# Auth\n"
 
 
-def test_opening_the_editor_without_typing_saves_nothing(services, project):
+def test_opening_a_document_without_typing_saves_nothing(services, project):
     base = imported(services, project, "auth", b"# Auth\n", "auth.md")
     activity = specs_tab(services, project)
     activity.select_document("auth")
-    activity.begin_edit()
     activity._flush_edit()
-    activity.end_edit()
+    activity.end_session()
     document = current_doc(services, project, "auth")
     assert document.file == base.file
-    assert document.previous is None  # Never replaced: entering edit mode is not an edit.
+    assert document.previous is None  # Never replaced: opening is not an edit.
 
 
-def test_edit_state_teaches_its_preconditions(services, project):
+def test_only_markdown_opens_in_the_editor(services, project):
+    """A PDF is not text and plain text through a rich-text round-trip would come back as
+    markdown, so those two stay read-only; markdown has no read mode at all."""
     imported(services, project, "guide", b"plain text", "guide.txt")
+    imported(services, project, "auth", b"# Auth\n", "auth.md")
     activity = specs_tab(services, project)
     activity.select_document("guide")
-    state = services.actions.spec("spec.edit").state(services.context.current())
-    assert not state.enabled and "only markdown" in state.label
-    imported(services, project, "auth", b"# Auth\n", "auth.md")
+    assert not activity.is_editing and activity._views.currentWidget() is activity._text
     activity.select_document("auth")
-    state = services.actions.spec("spec.edit").state(services.context.current())
-    assert state.enabled and state.checked is False
-    services.actions.run("spec.edit", services.context.current())
-    assert activity.is_editing
-    state = services.actions.spec("spec.edit").state(services.context.current())
-    assert state.checked is True
-    services.actions.run("spec.edit", services.context.current())
-    assert not activity.is_editing
+    assert activity.is_editing and activity._views.currentWidget() is activity._editor_page
+    assert "spec.edit" not in {spec.id for spec in services.actions.all_specs()}
+
+
+def test_the_idle_flush_persists_without_leaving_the_editor(services, project):
+    """Nothing waits for a Done: a pause in typing writes the blob and the index, and the
+    editor stays where it is, caret and all."""
+    base = imported(services, project, "auth", b"# Auth\n", "auth.md")
+    activity = specs_tab(services, project)
+    activity.select_document("auth")
+    activity._editor.insertPlainText("typed ")
+    activity._flush_timer.timeout.emit()  # What the pause does.
+    saved = current_doc(services, project, "auth")
+    assert saved.file != base.file and saved.previous == base.file
+    assert activity.is_editing and activity._views.currentWidget() is activity._editor_page
+    assert "typed" in activity._editor.body()
 
 
 def test_switching_documents_ends_the_session_with_a_flush(services, project):
@@ -265,26 +271,35 @@ def test_switching_documents_ends_the_session_with_a_flush(services, project):
     imported(services, project, "other", b"# Other\n", "other.md")
     activity = specs_tab(services, project)
     activity.select_document("auth")
-    activity.begin_edit()
     activity._editor.insertPlainText("typed ")
     activity.select_document("other")
-    assert not activity.is_editing
     assert current_doc(services, project, "auth").previous is not None
+    # …and the other document has a session of its own now.
+    assert activity.is_editing and activity._editor.body().startswith("# Other")
 
 
-def test_a_foreign_change_to_the_edited_document_ends_the_session(services, project):
+def test_picking_the_topology_row_ends_the_session(services, project):
     imported(services, project, "auth", b"# Auth\n", "auth.md")
     activity = specs_tab(services, project)
     activity.select_document("auth")
-    activity.begin_edit()
+    activity._editor.insertPlainText("typed ")
+    activity.list.setCurrentRow(0)
+    assert not activity.is_editing
+    assert activity._views.currentWidget() is activity._topology_page
+    assert current_doc(services, project, "auth").previous is not None
+
+
+def test_a_foreign_change_to_the_edited_document_reopens_it_as_it_is(services, project):
+    imported(services, project, "auth", b"# Auth\n", "auth.md")
+    activity = specs_tab(services, project)
+    activity.select_document("auth")
     activity._editor.insertPlainText("unsaved ")
     imported(services, project, "auth", b"# Auth v2\n", "auth.md")  # An agent, say.
-    assert not activity.is_editing
-    assert activity._views.currentWidget() is not activity._editor_page
-    # The model is the authority: the foreign replace stands, the unflushed typing is gone.
-    assert b"v2" in services.repo.files(project.id, MODULE_ID).read_bytes(
-        current_doc(services, project, "auth").file
-    )
+    # The model is the authority: the foreign replace stands, the unflushed typing is
+    # gone, and the document is open again as it now is — a fresh session.
+    assert activity.is_editing and activity._views.currentWidget() is activity._editor_page
+    assert "v2" in activity._editor.body() and "unsaved" not in activity._editor.body()
+    assert current_doc(services, project, "auth").previous is not None
 
 
 def test_a_pasted_image_is_indexed_at_save(services, project):
@@ -294,27 +309,20 @@ def test_a_pasted_image_is_indexed_at_save(services, project):
     imported(services, project, "auth", b"# Auth\n", "auth.md")
     activity = specs_tab(services, project)
     activity.select_document("auth")
-    activity.begin_edit()
     mime = QMimeData()
     mime.setImageData(QImage.fromData(one_pixel_png()))
     activity._editor.insertFromMimeData(mime)
-    activity.end_edit()
+    activity.end_session()
     index = read_index(services.document.project(project.id))
     assert len(index.assets) == 1 and index.assets[0].file.startswith("assets/")
     assert index.assets[0].id == "a1"
 
 
-def test_done_with_no_edits_still_returns_to_the_viewer(services, project):
-    """View → edit → Done without typing: the render cache must not strand the editor page.
-
-    The cache's early-return assumes the shown widget is right; after a no-op session it
-    is the editor page. This is the bug where Done uncheck the toggle but changed nothing.
-    """
-    imported(services, project, "auth", b"# Auth\n", "auth.md")
+def test_closing_the_tab_flushes_the_session(services, project):
+    base = imported(services, project, "auth", b"# Auth\n", "auth.md")
     activity = specs_tab(services, project)
-    activity.select_document("auth")  # Renders the viewer, warming the cache.
-    assert activity._views.currentWidget() is activity._text
-    activity.begin_edit()
-    assert activity._views.currentWidget() is activity._editor_page
-    activity.end_edit()
-    assert activity._views.currentWidget() is activity._text
+    activity.select_document("auth")
+    activity._editor.insertPlainText("typed ")
+    services.tabs.close_activity(activity)
+    saved = current_doc(services, project, "auth")
+    assert saved.file != base.file and saved.previous == base.file
