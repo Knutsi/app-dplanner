@@ -333,6 +333,7 @@ then authored `step add`s.
 - **Nothing is written when a command fails.** A run is a transaction.
 - **Someone else may be writing too.** If a command says a project changed on disk, a
   window or another run wrote to it. Run the command again — you will be working from what
-  is actually there.
+  is actually there. A window open on the project shows your changes as they land; only an
+  entry the user was editing at that very moment is held back and put to them.
 - **A project created inside a git checkout announces itself**: a `.dplanner` pointer
   file is written at the repository root, so discovery works from anywhere in the clone.

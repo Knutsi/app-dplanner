@@ -70,6 +70,7 @@ class SyncModule:
     def __init__(self, deps: SyncDeps) -> None:
         self._deps = deps
         self.service: SyncService | None = None
+        self._worktree_changed = False
 
     def register(self) -> None:
         deps = self._deps
@@ -116,23 +117,19 @@ class SyncModule:
         # operation ends.
         service.before_operation = deps.autosave.pause
 
-        # An operation that rewrote a working tree leaves the in-memory model stale, so
-        # the whole build is replaced once the operation finishes.
-        pending_reload = [False]
-        service.worktree_changed.connect(lambda: pending_reload.__setitem__(0, True))
+        # An operation that rewrote a working tree leaves the in-memory model stale: what
+        # the checkout put there is taken into the model once the operation finishes.
+        service.worktree_changed.connect(self._note_worktree_changed)
 
         def on_busy_changed(busy: bool) -> None:
             refresh_label()
             poke_context()
             if busy:
                 return
-            if pending_reload[0]:
-                pending_reload[0] = False
-                # Autosave deliberately stays paused: a paused autosave cannot flush the
-                # stale model onto the fresh working tree while the old window tears down,
-                # and the discarded build takes the unbalanced pause with it. singleShot
-                # hops the rebuild out of this signal cascade.
-                QTimer.singleShot(0, deps.switcher.reload)
+            if self._worktree_changed:
+                # Autosave stays paused until the fresh tree is in the model, or it would
+                # flush the stale one over it. singleShot hops out of this signal cascade.
+                QTimer.singleShot(0, self._take_worktree)
                 return
             deps.autosave.resume()
             service.refresh()
@@ -354,7 +351,8 @@ class SyncModule:
         """Run a synchronous storage operation with autosave paused, reporting failures.
 
         Synchronous on purpose: a checkout rewrites the files the application is showing,
-        so the rebuild must follow immediately rather than after an event-loop round trip.
+        so taking them into the model must follow immediately rather than after an
+        event-loop round trip.
         """
         deps = self._deps
         deps.autosave.pause()
@@ -364,6 +362,23 @@ class SyncModule:
             QMessageBox.warning(deps.parent, "Storage", str(error))
             deps.autosave.resume()
             return
-        # Autosave stays paused through the rebuild — see on_busy_changed. This module
-        # instance dies with the old build; there is nothing left to resume.
-        deps.switcher.reload()
+        self._take_worktree()
+
+    def _note_worktree_changed(self) -> None:
+        self._worktree_changed = True
+
+    def _take_worktree(self) -> None:
+        """The working tree was rewritten under the window: read it into the model in place.
+
+        The undo history is forgotten with it — its entries describe the tree that was
+        checked out before, and replaying one onto this tree would be a stale edit — but
+        only when the tree actually differed; a new branch off the current commit changes
+        no plan file and keeps everything. Autosave resumes afterwards: the model now
+        matches the tree, so a flush writes exactly what the user changes next.
+        """
+        deps = self._deps
+        self._worktree_changed = False
+        deps.switcher.refresh(forget_history=True)
+        deps.autosave.resume()
+        if self.service is not None:
+            self.service.refresh()

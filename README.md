@@ -208,7 +208,7 @@ src/dplanner/
 │   ├── asset_gallery.py     a module's attached files as thumbnails; click to view
 │   ├── asset_picker.py      a modal picker over named files — Insert from Assets…'s dialog
 │   ├── image_preview.py     the modal lightbox the gallery (and anyone) opens
-│   ├── window_watch.py      noticing that another writer changed the library
+│   ├── window_watch.py      noticing, and taking in, another writer's changes to the library
 │   └── …                    registries, actions, tabs, undo, autosave, tasks, LLM
 │
 ├── modules/
@@ -256,7 +256,7 @@ src/dplanner/
 │   │                        and page rendering; editor.py: the in-app markdown editor)
 │   ├── project_assets/      every asset a project carries and what uses each — the Assets
 │   │                        tab, the pool, display titles, and `dplanner asset`
-│   ├── library_watch/       reloading when something else writes to a project or the library file
+│   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
 │   ├── agent_skill/         the skill dialog, and the install that puts dplanner on PATH
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
 │   ├── appshell/  sync/  settings/  taskcenter/  debug/

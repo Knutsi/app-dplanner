@@ -461,6 +461,32 @@ class Library(Node):
         """Put a removed project or step back exactly where it was."""
         self.add_child(parent_id, child, index, origin)
 
+    def reorder_children(
+        self, parent_id: NodeId, order: list[NodeId], origin: Origin = None
+    ) -> None:
+        """Put a parent's children in ``order`` — a permutation of the ids it holds now.
+
+        Order lives in the parent's list on disk, so an order that arrives from outside has
+        to reach the model or the next flush of the parent writes the old one back.
+        """
+        parent = self._nodes[parent_id]
+        if isinstance(parent, Library):
+            children: list[Any] = parent.projects
+        elif isinstance(parent, Project):
+            children = parent.steps
+        else:
+            raise ValueError(f"a {parent.kind} holds no children")
+        current = [child.id for child in children]
+        if sorted(current) != sorted(order):
+            raise ValueError("the new order must name exactly the current children")
+        if current == order:
+            return
+        by_id = {child.id: child for child in children}
+        children[:] = [by_id[child_id] for child_id in order]
+        self.reindex()
+        self.dirty.emit(parent_id, "structure")
+        self.structure_changed.emit(parent_id, origin)
+
     def _children_of(self, parent_id: NodeId, child_type: type) -> list[Any]:
         parent = self._nodes[parent_id]
         if isinstance(parent, Library) and child_type is Project:

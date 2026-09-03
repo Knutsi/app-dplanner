@@ -161,7 +161,7 @@ class StepAgentRunModule:
         """One tick: settle every live run whose shell has ended, and say so."""
         deps = self._deps
         if any(run.live for run in self._runs) and deps.repo.changed_underneath():
-            return  # The reload that follows rebuilds this module; it checks again then.
+            return  # The watcher takes the change first; the next tick checks again.
         changed = False
         for index, run in enumerate(self._runs):
             settled = settle(run)

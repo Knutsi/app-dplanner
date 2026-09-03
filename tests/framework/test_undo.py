@@ -140,3 +140,45 @@ def test_a_gesture_inside_a_gesture_belongs_to_the_outer_one(document):
     assert undo.undo_text() == "Outer"
     undo.undo()
     assert document == []
+
+
+class Refusing:
+    """A command whose document has moved on — what an entry naming a step another writer
+    removed looks like."""
+
+    def text(self):
+        return "Refusing"
+
+    def redo(self, document):
+        document.append("x")
+
+    def undo(self, document):
+        raise KeyError("gone")
+
+    def merge_with(self, other):
+        return False
+
+
+def test_an_entry_the_document_refuses_is_dropped_and_the_stack_stays_usable(document):
+    undo = UndoService(document)
+    undo.push(Append(1, mergeable=False))
+    undo.push(Refusing())
+    undo.push(Append(3, mergeable=False))
+    undo.undo()  # 3 goes.
+    undo.undo()  # The refused entry: dropped, along with the redo tail after it.
+    assert document == [1, "x"]
+    assert not undo.can_redo()
+    assert undo.can_undo() and undo.undo_text() == "Append"
+    undo.undo()
+    assert document == [1]  # Append's undo takes the last element, whatever it is.
+
+
+def test_clearing_forgets_everything_and_announces_itself(document):
+    undo = UndoService(document)
+    heard = []
+    undo.changed.connect(lambda: heard.append(True))
+    undo.push(Append(1))
+    undo.clear()
+    assert not undo.can_undo() and not undo.can_redo()
+    assert document == [1]  # Forgetting the history is not undoing it.
+    assert len(heard) == 2

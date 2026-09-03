@@ -7,11 +7,14 @@ always registered, gated by state rather than absence (a library's repositories 
 runtime, so there is no build-time capability to hide behind).
 """
 
+import json
 import subprocess
 
 import pytest
+from PySide6.QtWidgets import QInputDialog
 
 from dplanner.core.storage.locations import init_repo
+from dplanner.domain.commands import SetFieldCommand
 from dplanner.domain.seed import seed_project
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.sync import module as sync_module_mod
@@ -271,3 +274,58 @@ def test_quit_without_committing_sets_the_discard_flag(app, rows):
     dialog._quit_without_committing()
     assert dialog.discard is True
     assert dialog.result() == ExitDialog.DialogCode.Accepted
+
+
+# -- a branch operation keeps the window ------------------------------------------------------
+
+
+def test_new_branch_keeps_the_window_and_autosave_running(
+    session, services, make_project, monkeypatch
+):
+    project = make_project("Discovery")
+    edit_and_flush(services, project)
+    select_project(services, project)
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *_a, **_k: ("feature", True)))
+    window = session.window
+    services.undo.push(SetFieldCommand(project.id, "summary", "before the branch"))
+    services.autosave.flush_now()
+
+    services.actions.run("sync.new_branch", services.context.current())
+
+    assert session.window is window
+    assert services.undo.can_undo()  # Nothing on disk changed: the history is still true.
+    services.document.set_field(project.id, "summary", "after the branch")
+    services.autosave.flush_now()
+    meta = json.loads((services.repo.project_dir(project.id) / "project.dproj").read_text())
+    assert meta["summary"] == "after the branch"
+
+
+def test_switch_branch_takes_the_checkout_in_place(session, services, make_project, monkeypatch):
+    project = make_project("Discovery")
+    edit_and_flush(services, project)
+    select_project(services, project)
+    service = sync_service(services)
+    group = services.repo.repo_for(project.id)
+    service.save_sync("on main")
+    main = service.branch_of(group)
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *_a, **_k: ("feature", True)))
+    services.actions.run("sync.new_branch", services.context.current())
+    services.document.set_field(project.id, "summary", "written on feature")
+    services.autosave.flush_now()
+    service.save_sync("on feature")
+    services.undo.push(SetFieldCommand(project.id, "title", "Renamed on feature"))
+    services.autosave.flush_now()
+
+    window = session.window
+    monkeypatch.setattr(QInputDialog, "getItem", staticmethod(lambda *_a, **_k: (main, True)))
+    services.actions.run("sync.switch_branch", services.context.current())
+
+    assert session.window is window
+    assert services.document.projects[0].summary != "written on feature"
+    assert services.document.projects[0].title == "Discovery"
+    assert not services.undo.can_undo()  # The history described the other branch.
+    assert not sync_module(services)._worktree_changed
+    services.document.set_field(project.id, "summary", "back on main")
+    services.autosave.flush_now()  # Autosave resumed with the tree in the model.
+    meta = json.loads((services.repo.project_dir(project.id) / "project.dproj").read_text())
+    assert meta["summary"] == "back on main"

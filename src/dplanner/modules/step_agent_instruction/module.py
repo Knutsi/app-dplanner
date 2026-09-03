@@ -15,6 +15,7 @@ the same assembled text, because the prompt is the library and the terminal was 
 way to hand it over.
 """
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,8 +23,8 @@ from pathlib import Path
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.fsio import slugify
-from dplanner.domain.model import Library, Step, StepId
-from dplanner.domain.store import FilesFor
+from dplanner.domain.model import Library, Node, Step, StepId
+from dplanner.domain.store import Conflict, FilesFor
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -57,6 +58,7 @@ from dplanner.modules.step_agent_instruction.prompt import (
     Briefing,
     PromptPart,
     assemble,
+    conflict_prompt,
 )
 from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog
 from dplanner.modules.step_agent_instruction.section import (
@@ -82,6 +84,22 @@ PREVIEW_NOTE = (
 
 def _no_record(_step_id: StepId, _files: launcher.LaunchFiles) -> None:
     return None
+
+
+def _our_version(node: Node, entry: str) -> str:
+    """The window's version of one entry, in the shape the file on disk has."""
+    if entry == "meta":
+        meta: dict[str, object] = {"title": getattr(node, "title", "")}
+        if isinstance(node, Step):
+            meta["edges"] = node.edges
+        else:
+            meta["summary"] = getattr(node, "summary", "")
+        return json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    module_id, suffix = entry.rsplit(".", 1)
+    if suffix == "json":
+        data = node.module_data.get(module_id, {})
+        return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    return node.module_text.get(module_id, "")
 
 
 @dataclass(frozen=True)
@@ -317,11 +335,23 @@ class StepAgentInstructionModule:
         run_dir = launcher.new_run_dir()
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
-        workdir = Path(deps.workdir_for(step.id)).expanduser()
         # The slug carries a short id so two steps with one title never share a worktree.
         worktree = f"{slugify(step.title, fallback='step')}-{step.id[:6]}" if use_worktree() else ""
+        spawned, prepared = self._launch(step, assembled.text, run_dir, worktree)
+        if not spawned:
+            # No shell was started, so nothing is stamped: the fallback hands over the prompt.
+            PromptFallbackDialog(assembled.text, str(prepared.prompt_file), deps.parent).exec()
+
+    def _launch(
+        self, step: Step, text: str, run_dir: Path, worktree: str
+    ) -> tuple[bool, launcher.LaunchFiles]:
+        """Open the configured terminal on ``text`` for ``step``; the run is recorded only
+        when a shell was actually spawned. Both prompts this module launches come through
+        here, so a change to how a terminal opens is made once."""
+        deps = self._deps
+        workdir = Path(deps.workdir_for(step.id)).expanduser()
         prepared = launcher.prepare(
-            assembled.text,
+            text,
             workdir,
             agent_command=agent_command(),
             worktree=worktree,
@@ -331,13 +361,56 @@ class StepAgentInstructionModule:
         command = None
         if workdir.is_dir():
             command = launcher.resolve_command(launch_command(), prepared, workdir)
-        if command is not None:
-            launcher.spawn(command, workdir)
-            deps.record_launch(step.id, prepared)
-            deps.status.show_status(f"Agent launched on “{step.title}”", 4000)
-            return
-        # No shell was started, so nothing is stamped: the fallback hands over the prompt.
-        PromptFallbackDialog(assembled.text, str(prepared.prompt_file), deps.parent).exec()
+        if command is None:
+            return False, prepared
+        launcher.spawn(command, workdir)
+        deps.record_launch(step.id, prepared)
+        deps.status.show_status(f"Agent launched on “{step.title}”", 4000)
+        return True, prepared
+
+    # -- reconciling a conflict ----------------------------------------------------------------
+
+    def conflict_refusal(self, step_id: StepId) -> str:
+        """Why a conflict on ``step_id`` cannot be handed to an agent; "" when it can."""
+        if not self._deps.library.has(step_id):
+            return "the step is gone"
+        if not self._deps.workdir_for(step_id):
+            return "the project's folder is not in a git repository"
+        return ""
+
+    def hand_conflicts(self, step_id: StepId, conflicts: Sequence[Conflict]) -> bool:
+        """Launch the agent on the entries two writers changed at once; True when a shell
+        was spawned.
+
+        The window's version of every entry is written beside the prompt first, because the
+        window yields to the plan on disk once the agent is on its way — the run directory
+        is the one place the unsaved version survives. No worktree: the agent must write to
+        the checkout the window is showing, or its merge lands somewhere nobody is looking.
+        """
+        deps = self._deps
+        library = deps.library
+        step = library.step(step_id)
+        run_dir = launcher.new_run_dir()
+        entries: list[tuple[str, str]] = []
+        for conflict in conflicts:
+            if not library.has(conflict.node_id):
+                continue
+            ours = run_dir / "mine" / conflict.path
+            ours.parent.mkdir(parents=True, exist_ok=True)
+            ours.write_text(_our_version(library.node(conflict.node_id), conflict.entry))
+            entries.append((conflict.path, str(ours)))
+        text = conflict_prompt(
+            step_title=step.title or "Untitled step",
+            project_title=library.project_of(step_id).title or "Untitled project",
+            preamble=deps.briefing.preamble,
+            entries=entries,
+        )
+        spawned, prepared = self._launch(step, text, run_dir, worktree="")
+        if not spawned:
+            PromptFallbackDialog(
+                text, str(prepared.prompt_file), deps.parent, title="Resolve Conflict"
+            ).exec()
+        return spawned
 
     def _preview(self, context: Context) -> None:
         step = focused_step(context, self._deps.library)

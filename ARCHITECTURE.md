@@ -1058,14 +1058,96 @@ through the ordinary flush, as a structure mark on the library root. Around that
 
 - A **CLI run** reports it as one line and writes nothing. A run is a transaction, so
   running it again picks up the change and is correct.
-- A **window** with nothing pending simply reloads — `AppSession.reload()` rebuilds the whole
-  application, which is what makes a reload correct, at the cost of open tabs and undo
-  history.
-- A **window with unflushed edits** stops: autosave keeps its marks and pauses itself, and
-  *File ▸ Reload from Disk* makes the choice the user's. Nobody else can make that call.
+- A **window** takes the change into its live model, entry by entry — the next section —
+  and a flush that was refused is retried once the folder has been seen.
+- A **window that changed the very same entry** and has not flushed it stops on that
+  entry: autosave keeps its marks and pauses itself, and a modal makes the choice the
+  user's — an agent, theirs, ours, or later. Nobody else can make that call.
 
 The same check is why **two CLI runs need no lock between them**: the second is refused for
 exactly the same reason and can be run again. One mechanism, three cases.
+
+### Adopting the other writer's changes in place
+
+Every outside change used to cost the whole rebuild: `AppSession.reload()` built a second
+window, showed it, and discarded the first. Correct, and visibly a close-and-reopen — the
+undo history, the selection, the canvas viewport, the caret, split panes and open dialogs
+all went with the old build, and an agent running five CLI verbs in a row rebuilt the
+window once per two-second tick. The rule now is the one above with a second half:
+
+> **Nothing writes over a file it has not seen — and nothing rebuilds over a model it can
+> still reconcile.**
+
+`LibraryStore.adopt_outside_changes` is the reconcile, and it is possible because of four
+things the format and the model already were:
+
+- **The stamp is per file, and a plan file is one entry of one node.** `project.dproj` is a
+  project's title, summary and child order; `steps/<slug>/step.json` a step's title and
+  edges; `modules/<id>.json` one module's data; `modules/<id>.md` one module's prose; a step
+  directory a node. The diff between what was last seen and what is there is a set of paths,
+  and `_classify` turns each into *which node, which entry*. Nothing else is compared, so a
+  re-read of a fifty-step project touches the entries the agent wrote and no other.
+- **Identity is the id.** A fresh read of the project is matched to the live one by uuid,
+  through the same `_load_project` opening uses — on the record's own provider, so a tick is
+  a file read and never a git subprocess.
+- **Every mutator takes an origin, and every view treats an unknown one as "repaint".**
+  Adoption calls `set_field`, `set_edges`, `set_module_data`, `apply_text_edit`,
+  `add_child`, `remove_child` and `reorder_children` with `OUTSIDE_ORIGIN`; the canvas
+  reconciles by key, the step panel drops a vanished step, the index rebuilds. No view
+  learned anything.
+- **A prose edit is positional.** A whole-document `describe set` arrives as
+  `diff_hunks(live, fresh)` applied highest position first, so `TextBinding` splices each
+  hunk through a `QTextCursor` around the user's caret. One replacement from position zero
+  would have collapsed the caret to the start.
+
+Three decisions inside it:
+
+- **Mutators, not commands.** Adoption never pushes and never undoes; a command's only
+  extra over the mutator is the before-state it keeps for undo, which nothing would use.
+  Membership already applied the mutators directly with `LIBRARY_ORIGIN`; this is the same
+  case. *Syncing an external fact* below is the third writer that bypasses the stack, and
+  the reasoning there — the stack is the GUI user's journal — is the reasoning here.
+- **Dirty is muted while adopting.** A change read off disk is not something to write back:
+  forwarding it would have autosave rewrite the agent's file 1.5 s later and race the
+  agent's next run into a `StaleWorkspaceError` of its own.
+- **A conflict is per entry, and the store knows it.** Autosave's `(owner, aspect)` marks
+  say a step's module data is dirty, not *which* module's — too coarse to tell a local
+  estimate from the agent's status on the same step. So the store keeps `_unflushed`, fed
+  from the typed signals (which carry the module id) and cleared per entry as flushes write.
+  An outside change to an unflushed entry is reported as a `Conflict` and left alone, its
+  stamp kept old so that project's flush is still refused; `take=` adopts it (theirs),
+  `mark_seen` counts it seen (ours). A step with any unflushed entry that disappeared on
+  disk is a conflict too, not a removal.
+
+And the boundaries: a project whose read is inconsistent — a torn JSON, a snapshot that
+moved during the read — is **deferred** to the next tick rather than adopted half-written,
+which is what the strict read exists for (the tolerant one that opens a library would take
+a torn file for an emptied node); a torn *library file* likewise, or every project would
+read as departed. A pending format migration, or any failure halfway, sets
+`rebuild_required`, and `SessionControl.refresh` falls back to `reload()`: the rebuild is
+still correct by construction, it is just no longer the first move. The watcher no longer
+holds off while this window owes a write — a flush re-stamps as it writes, so our own files
+never read as foreign, and the conflict rule answers the case the guard existed for.
+
+**The undo history survives an agent's edits and is dropped by a branch switch.** An entry
+that names a step the agent removed, or prose whose positions moved under adopted hunks, is
+refused by the model when undone; `UndoService` drops that entry and the redo tail after it
+rather than leaving the pointer past a still-applied command. A checkout or a pull replaces
+the tree wholesale, so its refresh passes `forget_history=True` and the stack is cleared —
+only when something was actually taken, which is why New Branch, which changes no plan
+file, keeps it.
+
+**The conflict modal hands the merge to an agent** because the user asked for that over a
+banner. `modules/library_watch/` names the entries and the agent module writes the window's
+version of each into the run directory (`mine/<path>`) *before* the window yields to the
+plan on disk — the run directory is the one place the unsaved version survives. The prompt
+(`conflict_prompt`) points at both, asks for a merge written back through the owning verb,
+and ends with `agent-state clear`; no worktree, because the agent must write to the
+checkout the window shows. The launch is the ordinary one, so the run is tracked on the
+step like any other — chip, ring, Agents browser — and the merge arrives as an outside
+change. *Later* leaves a status-bar button that reopens the question; *Keep Mine* on a step
+the agent deleted writes back only what this window changed, which is the honest reading of
+"mine".
 
 What the check *looks at* is the plan, not the directory. A project directory is often
 the repository root itself — New Project's git-init flow makes exactly that — and then the
@@ -1084,10 +1166,10 @@ a decision, not a leak:
 
 - **Branch switch and create** (`SyncService.switch_branch_sync` / `create_branch_sync`,
   run through `_run_guarded` in `modules/sync/module.py`). A checkout rewrites the very
-  files the application is showing; the full rebuild must follow *immediately*, not after
-  an event-loop round trip during which a paint, a context change or an autosave could read
-  a model that no longer matches the tree. `_run_guarded` pauses autosave around the body
-  for the same reason.
+  files the application is showing; taking them into the model must follow *immediately*,
+  not after an event-loop round trip during which a paint, a context change or an autosave
+  could read a model that no longer matches the tree. `_run_guarded` pauses autosave around
+  the body for the same reason, and resumes it once the tree is in the model.
 - **The branch list** before the switch dialog opens: a subprocess, but a local one, and
   the dialog's contents must be current at the moment it appears.
 - **Save at quit** (`service.save_sync()` in the close guard). The window is closing; there
@@ -1163,7 +1245,11 @@ The refresher builds the same `SetModuleDataCommand` every other writer builds, 
   surface that could undo exists.)
 
 The concurrent-writer story needs nothing new: the refresh dirties the project like any
-edit, and *Two writers, one folder* above already covers an agent flushing underneath.
+edit, and *Two writers, one folder* above already covers an agent flushing underneath. The
+store's own adoption of an outside change (*Adopting the other writer's changes in place*)
+is the same shape one level down — a change nobody in this window decided, applied with an
+origin no view claims, off the stack — with one difference: it is *read off disk*, so it
+does not dirty anything.
 
 ## The skill is a projection, not a document
 

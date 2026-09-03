@@ -16,7 +16,8 @@ cadence — so a burst of typing costs one write, and a pause costs nothing.
 
 **``pause()`` nests.** A branch switch rewrites files under the running application; a
 flush racing it would write a stale model over freshly checked-out content. The counter is
-what lets the reload path leave autosave paused and simply discard the whole build.
+what lets a reload that discards the build leave autosave paused, and a refused write pause
+it until whoever is listening has settled the collision.
 
 **A refused write keeps its marks and stops trying.** A store may decline to flush — the
 usual reason is that something else wrote to the same folder — and the wrong answers are

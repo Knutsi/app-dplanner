@@ -6,6 +6,9 @@ to know every module's vocabulary. The project's standing instruction and the st
 this module's data, so they arrive as plain arguments. The same assembly answers the GUI's
 Run Agent, the ``dplanner agent prompt`` verb, and the preview and fallback dialogs, so none
 of them can drift.
+
+:func:`conflict_prompt` is the one other prompt this module launches: the briefing for an
+agent asked to reconcile an entry the window and another writer both changed.
 """
 
 from collections.abc import Callable, Sequence
@@ -193,3 +196,51 @@ def assemble(
     )
     text = "\n".join(line for _origin, block in blocks for line in block)
     return AssembledPrompt(text=text, files=files, segments=segments)
+
+
+def conflict_prompt(
+    step_title: str,
+    project_title: str,
+    preamble: str,
+    entries: Sequence[tuple[str, str]],
+) -> str:
+    """The briefing for reconciling entries two writers changed at once.
+
+    ``entries`` pairs each plan file (project-relative) with where the window's version of
+    it was saved. The plan on disk holds the other writer's version — the window has yielded
+    to it by the time the agent reads this — so the agent reads both, merges, and writes the
+    result back with the verb that owns the entry. No status change and no handoff: this run
+    does not carry out the step, it settles what two writers meant.
+    """
+    lines = [f"# Conflict on step: {step_title}", f"Project: {project_title}", ""]
+    if preamble:
+        lines += ["## Before you start", "", preamble, ""]
+    lines += [
+        "## What happened",
+        "",
+        "The DPlanner window and a `dplanner` run changed the same entries of this plan"
+        " within seconds of each other. The plan on disk now holds the run's version of"
+        " each; the window's unsaved version was saved beside this prompt:",
+        "",
+    ]
+    for path, mine in entries:
+        lines.append(f"- `{path}` — the window's version: `{mine}`")
+    lines += [
+        "",
+        "## Instructions",
+        "",
+        "For each entry, read both versions and merge them so that nothing either writer"
+        " meant is lost. Write the result into the plan with the `dplanner` verb that owns"
+        " the entry (`dplanner describe set --file …` for a description, `dplanner estimate"
+        " set` for an estimate, `dplanner status set` for a status, and so on — `dplanner"
+        " skill status` lists them). A `.json` entry is one module's structured data; a"
+        " `.md` entry is its prose; `step.json` holds the step's title and links. If two"
+        " versions cannot be reconciled, keep both in the entry and say so in it.",
+        "",
+        "## When you are done",
+        "",
+        f"Run `dplanner agent-state clear '{step_title}'` so the window stops showing this"
+        " run as live. Do not change the step's status.",
+        "",
+    ]
+    return "\n".join(lines)

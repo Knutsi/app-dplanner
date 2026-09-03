@@ -3,6 +3,9 @@
 :class:`AppBuilder` owns one build. The session owns the *sequence* of builds. Reloading
 the library does not reconfigure the running application — it constructs an entirely new
 window, services and module instances, shows it, then closes and discards the old one.
+:meth:`AppSession.refresh` is what an outside change asks for first: the repository reads
+the change into the document the running build already holds, and the rebuild is what
+refresh falls back to when the repository cannot.
 
 That sounds heavy and is in fact the cheap option. Every registry refuses a duplicate id,
 so a reload *cannot* be implemented as a re-registration; and the alternative — teaching
@@ -29,8 +32,10 @@ from PySide6.QtWidgets import QMessageBox, QWidget
 from dplanner.core.formats import UnsupportedFormatError
 from dplanner.core.repository import RepositoryFactory
 from dplanner.core.storage.provider import StorageError
+from dplanner.domain.store import Adoption
 from dplanner.framework.action_registry import MenuStructure
 from dplanner.framework.builder import AppBuilder, ModuleFactory, SeedFactory
+from dplanner.framework.window_watch import WatchableRepository
 from dplanner.identity import APP_NAME
 
 if TYPE_CHECKING:
@@ -107,8 +112,18 @@ def show_startup_failure(failure: OpenFailure) -> None:
     _failure_box(failure, None).exec()
 
 
+@dataclass(frozen=True)
+class RefreshResult:
+    """What :meth:`SessionControl.refresh` did: took the change in place (``adoption`` says
+    what), or fell back to the whole rebuild."""
+
+    rebuilt: bool
+    adoption: Adoption | None = None
+
+
 class SessionControl(Protocol):
-    """What modules may do to the session: ask for the current library to be rebuilt.
+    """What modules may do to the session: bring the running build up to date with what is
+    on disk, in place where possible and by a rebuild otherwise.
 
     The narrow face of :class:`AppSession`. Modules depend on this and never on the session
     itself, so the builder can hand them a real capability instead of a back-reference that
@@ -116,6 +131,8 @@ class SessionControl(Protocol):
     """
 
     def reload(self) -> bool: ...
+
+    def refresh(self, *, forget_history: bool = False) -> RefreshResult: ...
 
 
 class AppSession:
@@ -151,12 +168,36 @@ class AppSession:
     def reload(self) -> bool:
         """Rebuild the current library, after something changed it on disk.
 
-        The caller has ensured nothing is mid-flight — a reload is only ever asked for by
-        the watcher when nothing is pending, or after a synchronous operation settled.
+        The fallback behind :meth:`refresh`, and what *File ▸ Reload from Disk* does. The
+        caller has ensured nothing is mid-flight.
         """
         if self.library_path is None:
             return False
         return self._open(self.library_path)
+
+    def refresh(self, *, forget_history: bool = False) -> RefreshResult:
+        """Take what changed on disk into the running build; rebuild only if that is
+        impossible.
+
+        The repository reads the change into the document every view is already subscribed
+        to, so the window, its tabs, its selection and its undo history all stay. What it
+        cannot express — a pending format migration, a failure halfway — costs the rebuild,
+        which is what every outside change used to cost. ``forget_history`` is for a change
+        that replaced the document wholesale (a branch switch, a pull): the undo entries
+        then describe another tree, and are cleared once anything was actually taken.
+        """
+        services = self.services
+        if services is None:
+            return RefreshResult(rebuilt=self.reload())
+        repo: object = services.repo
+        if not isinstance(repo, WatchableRepository):
+            return RefreshResult(rebuilt=self.reload())
+        adoption = repo.adopt_outside_changes()
+        if adoption.rebuild_required:
+            return RefreshResult(rebuilt=self.reload(), adoption=adoption)
+        if forget_history and adoption.applied:
+            services.undo.clear()
+        return RefreshResult(rebuilt=False, adoption=adoption)
 
     def _open(self, library_path: Path, progress: Callable[[str], None] | None = None) -> bool:
         try:
@@ -178,7 +219,14 @@ class AppSession:
 
         old_window, old_services = self.window, self.services
         self.window, self.services, self.library_path = window, services, library_path
+        if old_window is not None:
+            # A replacement stands where the window it replaces stood — the geometry saved
+            # at close is the previous session's, and this window has not closed yet.
+            window.restoreGeometry(old_window.saveGeometry())
         window.show()
+        if old_window is not None:
+            window.raise_()
+            window.activateWindow()
 
         # Shown first, then the old one discarded: the screen never goes empty, and the old
         # build takes any unbalanced autosave pause with it when it goes.
