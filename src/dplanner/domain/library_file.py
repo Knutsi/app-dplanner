@@ -39,11 +39,18 @@ def resolve_library_path(explicit: str | None = None) -> Path:
     return Path(named).expanduser() if named else default_library_path()
 
 
-def read_library_file(path: Path) -> list[Path]:
-    """The project directories the library lists, in order. Tolerant of bad rows."""
+def read_library_file(path: Path, *, strict: bool = False) -> list[Path]:
+    """The project directories the library lists, in order. Tolerant of bad rows.
+
+    ``strict`` raises on a file that cannot be read at all instead of answering "no
+    projects" — for a reader that would otherwise take a torn write for every project
+    having left the library.
+    """
     try:
         raw = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
+        if strict:
+            raise
         return []
     if not isinstance(raw, dict):
         return []

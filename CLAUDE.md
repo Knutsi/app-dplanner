@@ -419,7 +419,10 @@ root, stop and look for the registry or capability you have not found yet.
   The CLI has no timer: a run is a transaction that flushes once, at the end, and writes
   nothing if the verb failed.
 - **Every model change goes through a command** on the single undo stack, and carries an
-  `origin` so the view that made the edit can ignore its own echo.
+  `origin` so the view that made the edit can ignore its own echo. Two kinds of change
+  bypass the stack, never the vocabulary: an external fact (the bullet below) and
+  **reading disk** — `load`, membership, and the store adopting another writer's change —
+  which apply the library's mutators directly with an origin of their own.
 - **A background sync of an external fact applies its command directly, off the undo
   stack, with its own origin** — undoing the user's edit must never restore a stale PR
   state instead. `modules/github/refresh.py` is the example; `ARCHITECTURE.md`'s *Syncing
@@ -428,16 +431,33 @@ root, stop and look for the registry or capability you have not found yet.
   open. The store records what each project directory last looked like and **refuses to
   flush over anything that changed underneath** (`StaleWorkspaceError`) — checked **per
   project**, so one project's outside edit never blocks saving another; the library file
-  has its own stamp. The window notices and reloads when it owes nothing, and says so when
-  it does. That one check also makes a lock between CLI runs unnecessary. **What it looks
-  at is the plan, not the directory**: `PLAN_ENTRIES` (`project.dproj`, `modules/`,
-  `steps/`) — a project directory is often the repository root, and counting the source
-  tree or an agent worktree under `.dplanner/` as another writer reloaded the window on
-  every edit anyone made.
-- **Reloading the library is a full rebuild**, not a reset. Registries refuse duplicate
-  ids, which is what makes that the only implementable answer — and the correct one.
-  Opening a *different* library is not even a reload: File ▸ New/Open Project Library
-  spawns a detached instance (`modules/library/module.py::spawn_instance`).
+  has its own stamp. That one check also makes a lock between CLI runs unnecessary. **What
+  it looks at is the plan, not the directory**: `PLAN_ENTRIES` (`project.dproj`,
+  `modules/`, `steps/`) — a project directory is often the repository root, and counting
+  the source tree or an agent worktree under `.dplanner/` as another writer reloaded the
+  window on every edit anyone made.
+- **The window takes an outside change in place, entry by entry.** The same per-file
+  record says *which* files changed, and each plan file is one entry of one node, so
+  `LibraryStore.adopt_outside_changes` reads the change into the live model through the
+  mutators with `OUTSIDE_ORIGIN` — prose as `diff_hunks`, so an open editor keeps its
+  caret — and re-stamps exactly what it read. Every view repaints as for any foreign edit;
+  the window, its tabs, selection and undo history stay. **An entry this window changed and
+  has not flushed is a conflict**, reported and not adopted: that project's flush stays
+  refused, autosave stays paused, and `modules/library_watch/` asks in a modal — hand both
+  versions to the configured agent (Run Agent's launcher; the window yields to disk and the
+  merge arrives like any outside change), take theirs, keep mine, or later. The watcher no
+  longer waits for a quiet window: a flush re-stamps as it writes, so our own writes never
+  read as foreign. Branch switch and pull go through the same `SessionControl.refresh`,
+  clearing undo history (theirs describes another tree). `ARCHITECTURE.md`'s *Adopting the
+  other writer's changes in place* has the reasoning.
+- **Reloading the library is a full rebuild — and the fallback, not the rule.**
+  `SessionControl.refresh()` adopts; `reload()` is what it falls back to when the store
+  cannot read what it found (a pending format migration, a failure halfway), and what *File
+  ▸ Reload from Disk* still does. A rebuild is a rebuild because registries refuse duplicate
+  ids, which is what makes that the only implementable answer — and the correct one. The
+  new window takes the old one's geometry. Opening a *different* library is not even a
+  reload: File ▸ New/Open Project Library spawns a detached instance
+  (`modules/library/module.py::spawn_instance`).
 - **Discarding a build is `discard_build()`, and closing the window is not enough.** Qt keeps
   a closed `QWidget` in `topLevelWidgets()`, so without `deleteLater()` the whole build —
   services, model, every module — stays reachable forever. Nobody notices in the application;
@@ -555,9 +575,10 @@ root, stop and look for the registry or capability you have not found yet.
   terminal-specific hook, so it is the same on every platform and terminal. The agent-run
   module (`step_agent_run/`) polls the runs it launched, clears the step's state when a
   shell ends — directly, with the launch origin, the way the launch was stamped — and
-  **stands down while the plan changed underneath**: the reload rebuilds it and it
-  re-adopts its runs from the per-user store, so an exit is never written over the agent's
-  own last `dplanner` call. Runs are per-user, per-machine facts (`user_config`), never the
+  **stands down while the plan changed underneath**: the watcher adopts the change first
+  (or the rebuild it falls back to re-adopts the runs from the per-user store) and the
+  next tick checks again, so an exit is never written over the agent's own last
+  `dplanner` call. Runs are per-user, per-machine facts (`user_config`), never the
   plan. The Agents browser (status-bar button, *View ▸ Agents…*) is the management view and
   **Tools ▸ Agent List** the quick switch — a data child menu of the live runs, each entry
   raising its terminal; *Step ▸ Show Agent Terminal* focuses the window through

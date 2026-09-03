@@ -135,15 +135,41 @@ class UndoService[DocT]:
     def undo(self) -> None:
         if not self.can_undo():
             return
+        try:
+            self._stack[self._applied - 1].undo(self._document)
+        except (KeyError, ValueError):
+            self._drop_from(self._applied - 1)
+            return
         self._applied -= 1
-        self._stack[self._applied].undo(self._document)
         self._top_sealed = True  # Typing after an undo must never merge into old history.
         self.changed.emit()
 
     def redo(self) -> None:
         if not self.can_redo():
             return
-        self._stack[self._applied].redo(self._document)
+        try:
+            self._stack[self._applied].redo(self._document)
+        except (KeyError, ValueError):
+            self._drop_from(self._applied)
+            return
         self._applied += 1
         self._top_sealed = True
+        self.changed.emit()
+
+    def _drop_from(self, index: int) -> None:
+        """The document refused a command: it names what is no longer there — a step
+        another writer removed, prose whose positions moved under an adopted edit. That
+        entry and everything after it describe a document that no longer exists, so they
+        go; the history before it is still true."""
+        del self._stack[index:]
+        self._applied = min(self._applied, len(self._stack))
+        self._top_sealed = True
+        self.changed.emit()
+
+    def clear(self) -> None:
+        """Forget the history: the document it was recorded over has been replaced
+        wholesale — a branch switch, a pull — and undoing into it would replay stale edits."""
+        self._stack.clear()
+        self._applied = 0
+        self._top_sealed = False
         self.changed.emit()

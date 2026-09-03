@@ -160,7 +160,7 @@ def _fresh_session_settings():
     from PySide6.QtCore import QSettings
 
     settings = QSettings()
-    for group in ("appearance", "modules", "layout", "libraries"):
+    for group in ("appearance", "modules", "layout", "libraries", "window"):
         settings.beginGroup(group)
         settings.remove("")
         settings.endGroup()

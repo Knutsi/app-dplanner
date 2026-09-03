@@ -9,9 +9,11 @@ half of a launch — **the shell is a peer this window keeps an eye on**:
   pid (``runs.settle``). When the shell has ended, the step's state is cleared the way the
   launch was stamped — directly, off the undo stack, with the launch origin — and the
   status bar says how it ended. The write is skipped while the workspace has changed
-  underneath: the reload that follows rebuilds this module, which re-adopts its runs from
-  the per-user store and checks again, so the exit is never written over an agent's own
-  last ``dplanner`` call.
+  underneath: the library watcher adopts the change into the live model first — or,
+  when the store cannot reconcile it, falls back to a rebuild whose new module re-adopts
+  its runs from the per-user store — and the next tick checks again on a plan this
+  window has seen, so the exit is never written over an agent's own last ``dplanner``
+  call.
 - A status-bar button ("Agent on “X”", "2 agents running") opens the Agents browser —
   View ▸ Agents… does the same — where every run this machine launched is a row with its
   state or outcome, *Show Terminal*, *Reveal* and a dismiss.
@@ -178,7 +180,7 @@ class StepAgentRunModule:
         """One tick: settle every live run whose shell has ended, and say so."""
         deps = self._deps
         if any(run.live for run in self._runs) and deps.repo.changed_underneath():
-            return  # The reload that follows rebuilds this module; it checks again then.
+            return  # The watcher takes the change first; the next tick checks again.
         changed = False
         for index, run in enumerate(self._runs):
             settled = settle(run)

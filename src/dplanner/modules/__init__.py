@@ -687,6 +687,37 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
     )
 
+    # Built ahead of the list too: the library watcher hands an entry two writers changed
+    # at once to this module's launcher, and it is listed before this module.
+    agent_instruction = StepAgentInstructionModule(
+        StepAgentInstructionDeps(
+            library=library,
+            undo=services.undo,
+            sections=services.inspector_sections,
+            actions=services.actions,
+            context=services.context,
+            settings_sections=services.settings_sections,
+            status=services.window,
+            parent=services.window,
+            # Its project-level card: the standing instruction every briefing opens with.
+            cards=services.detail_cards,
+            files=store.files,
+            # How staged assets are read at launch — bytes by absolute path.
+            read_asset=read_absolute,
+            # Where the agent runs: the project's git repository root, derived from
+            # its directory. "" (a disabled verb) when the repository has vanished.
+            workdir_for=lambda step_id: str(find_repo_root(project_dir_of(step_id)) or ""),
+            briefing=briefing,
+            # The spawned shell goes to the run tracker: it stamps the launch — directly,
+            # off the undo stack, since Ctrl+Z cannot un-launch a shell — and watches
+            # the run's files for the shell's end.
+            record_launch=lambda step_id, files: agent_runs.track(
+                step_id, str(files.shell_file), str(files.exit_file)
+            ),
+            pick_assets=pick_assets,
+        )
+    )
+
     return [
         # -- the shell -------------------------------------------------------------------
         AppShellModule(
@@ -746,17 +777,23 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 projects_in=projects_in,
             )
         ),
-        # After sync, so a reload notice lands to the right of the library path.
+        # After sync, so the conflict button lands to the right of the library path.
         LibraryWatchModule(
             LibraryWatchDeps(
-                # The narrowed store from above: the watcher needs changed_underneath(),
-                # which the Repository protocol deliberately does not promise.
+                # The narrowed store from above: the watcher needs changed_underneath()
+                # and adopt_outside_changes(), which the Repository protocol deliberately
+                # does not promise.
                 repo=store,
                 autosave=services.autosave,
                 actions=services.actions,
                 switcher=services.switcher,
                 status=services.window,
                 parent=services.window,
+                library=library,
+                # An entry both writers changed goes to Run Agent's launcher with both
+                # versions; the run is tracked on the step like any other.
+                hand_to_agent=agent_instruction.hand_conflicts,
+                agent_refusal=agent_instruction.conflict_refusal,
             )
         ),
         TaskCenterModule(
@@ -910,34 +947,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 pick_assets=pick_assets,
             )
         ),
-        StepAgentInstructionModule(
-            StepAgentInstructionDeps(
-                library=library,
-                undo=services.undo,
-                sections=services.inspector_sections,
-                actions=services.actions,
-                context=services.context,
-                settings_sections=services.settings_sections,
-                status=services.window,
-                parent=services.window,
-                # Its project-level card: the standing instruction every briefing opens with.
-                cards=services.detail_cards,
-                files=store.files,
-                # How staged assets are read at launch — bytes by absolute path.
-                read_asset=read_absolute,
-                # Where the agent runs: the project's git repository root, derived from
-                # its directory. "" (a disabled verb) when the repository has vanished.
-                workdir_for=lambda step_id: str(find_repo_root(project_dir_of(step_id)) or ""),
-                briefing=briefing,
-                # The spawned shell goes to the run tracker: it stamps the launch — directly,
-                # off the undo stack, since Ctrl+Z cannot un-launch a shell — and watches
-                # the run's files for the shell's end.
-                record_launch=lambda step_id, files: agent_runs.track(
-                    step_id, str(files.shell_file), str(files.exit_file)
-                ),
-                pick_assets=pick_assets,
-            )
-        ),
+        # Run Agent, built above the list; the library watcher borrows its launcher.
+        agent_instruction,
         # The shells Run Agent above spawns, and the canvas reads the aspect through
         # step_accent above.
         agent_runs,

@@ -1625,3 +1625,71 @@ clicked-for one is.
 **Why note it here.** A drop is deliberately *not* a mode on the input stack — Qt's drag
 events are a separate family that never reaches `mousePressEvent`, and a mode has state to
 enter and leave. If the framework ever grows a canvas base class, this is the shape.
+
+## 13. From the adopt-outside-changes pass
+
+The window used to answer every outside change with `AppSession.reload()` — a second
+window shown, the first discarded. It now reads the change into the live model
+(`ARCHITECTURE.md`'s *Adopting the other writer's changes in place*). Four framework files
+moved for it.
+
+### `framework/window_watch.py` — the protocol widened, the busy guard dropped
+
+**What.** `WatchableRepository` gains `adopt_outside_changes(*, take=)` and
+`mark_seen(conflicts)`; `WorkspaceWatcher.__init__` no longer takes `is_busy`.
+
+**Why.** The guard skipped the poll while this window owed a write, so that a pending
+write of our own was never reported as somebody else's. Two things made it unnecessary: a
+flush re-stamps the record *as it writes*, so our own files never read as foreign; and an
+entry both sides changed is now the repository's per-entry conflict, which is a finer
+answer than "not now". Keeping the guard would have delayed taking an agent's edit for as
+long as the user kept typing.
+
+**Upstream?** With the repository half, as before. The lesson that travels on its own: a
+watcher that only reports is half a feature — the thing that knows what changed is the
+thing that should take it in.
+
+### `framework/session.py` — `refresh()` beside `reload()`, and the replacement's geometry
+
+**What.** `SessionControl.refresh(*, forget_history=False) -> RefreshResult` adopts in
+place and falls back to `reload()` when the repository says it must; `forget_history`
+clears the undo stack once anything was taken. `_open()` hands the old window's
+`saveGeometry()` to the new one and activates it.
+
+**Why.** The rebuild is now the fallback, not the rule, and one seam had to say so for
+three callers (the watcher, branch switch, pull). The geometry: a replacement that appears
+at the default size in the WM's default place *is* the close-and-reopen the user sees,
+even when the rebuild itself is instant.
+
+**Upstream?** Yes. A session that can refresh is what any two-writer application needs;
+the geometry hand-over is a one-liner every reload path should have had.
+
+### `framework/undo.py` — `clear()`, and an entry the document refuses is dropped
+
+**What.** `clear()` forgets the history and announces it. `undo()`/`redo()` catch
+`KeyError`/`ValueError` from the command, drop that entry and the redo tail after it, and
+seal — instead of decrementing the pointer first and leaving the stack pointing past a
+still-applied command.
+
+**Why.** Once a document can change under the stack, some entries stop being true: one
+naming a step another writer removed, a positional text edit whose offsets moved under
+adopted hunks. Clearing the whole history on every outside change would have thrown away
+the user's work for an agent's status flip; dropping the one refused entry keeps the rest.
+
+**Upstream?** Yes, both. The pointer-order bug was latent in the template.
+
+### `framework/main_window.py` — geometry in the per-user store
+
+**What.** `GEOMETRY_KEY` saved on close, restored on construction after the default size.
+Bare `QSettings`, the convention for a window-level fact. Tests clear the `window` group.
+
+**Upstream?** Yes.
+
+### A module that used to die with the build now survives it
+
+**What we found.** `modules/sync/module.py` kept a `pending_reload` flag set by
+`worktree_changed` and consumed by the rebuild. With the window surviving a branch switch,
+a flag nothing reset would have fired a spurious rebuild after the next Save. The general
+form: **any state a module let the rebuild garbage-collect is state it now has to reset
+itself.** Worth a look at every module that reads `SessionControl` when a reload path is
+replaced by an in-place one.

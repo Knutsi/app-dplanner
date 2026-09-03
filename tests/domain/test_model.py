@@ -324,3 +324,19 @@ def test_a_command_label_names_the_change_rather_than_the_mechanism(library):
     step = find(library, "Review")
     assert SetModuleDataCommand(step.id, "m", {"x": 1}, label="Move Step").text() == "Move Step"
     assert SetModuleDataCommand(step.id, "m", {"x": 1}).text() == "Edit"
+
+
+def test_children_can_be_reordered_in_place(library):
+    project = library.projects[0]
+    order = [step.id for step in project.steps]
+    heard = []
+    library.structure_changed.connect(lambda parent, origin: heard.append((parent, origin)))
+
+    library.reorder_children(project.id, order[::-1], origin="outside")
+
+    assert [step.id for step in project.steps] == order[::-1]
+    assert heard == [(project.id, "outside")]
+    library.reorder_children(project.id, order[::-1])
+    assert len(heard) == 1  # Already in that order: nothing happened.
+    with pytest.raises(ValueError, match="exactly the current children"):
+        library.reorder_children(project.id, order[:-1])

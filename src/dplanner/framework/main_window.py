@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from PySide6.QtCore import QByteArray, QSettings
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QMainWindow, QWidget
 
@@ -21,6 +22,9 @@ from dplanner.identity import APP_NAME
 if TYPE_CHECKING:
     from dplanner.framework.menubar import DynamicMenuBar
 
+# One window-level fact in the bare per-user store, like the theme and the zoom.
+GEOMETRY_KEY = "window/geometry"
+
 
 class AppWindow(QMainWindow):
     def __init__(self, tabs: TabHost, dock: PanelDock, parent: QWidget | None = None) -> None:
@@ -29,6 +33,10 @@ class AppWindow(QMainWindow):
         self.setWindowTitle(APP_NAME)
         self.resize(1100, 760)
         self.setMinimumSize(720, 480)
+        # Where the last window was left; the size above is only the first launch's.
+        remembered = QSettings().value(GEOMETRY_KEY)
+        if isinstance(remembered, QByteArray) and not remembered.isEmpty():
+            self.restoreGeometry(remembered)
 
         # Assigned by the builder; held here so the QMenus outlive construction.
         self.dynamic_menubar: DynamicMenuBar | None = None
@@ -91,4 +99,5 @@ class AppWindow(QMainWindow):
                 return
         for hook in self.close_hooks:
             hook()
+        QSettings().setValue(GEOMETRY_KEY, self.saveGeometry())
         super().closeEvent(event)

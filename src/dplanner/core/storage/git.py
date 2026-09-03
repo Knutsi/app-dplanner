@@ -221,8 +221,8 @@ class GitStorage(LocalStorage):
         """Check out ``name``, committing pending work to the branch left behind.
 
         This rewrites files under the running application, so ``worktree_changed`` fires
-        and the caller rebuilds the workspace. Patching a live model against an arbitrary
-        checkout is not something anyone should try to get right.
+        and the caller brings its model up to date with the tree — by reading what changed
+        into it, or by rebuilding when it cannot.
         """
         if name == self.current_branch():
             return
