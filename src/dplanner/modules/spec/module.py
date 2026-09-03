@@ -34,14 +34,11 @@ from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
 from dplanner.modules.spec.activity import (
     DOCUMENT_ENTITY,
-    EDITING_EDGE,
     SPECS_KIND,
     SpecsActivity,
 )
 from dplanner.modules.spec.aspect import DATA_FORMAT, MODULE_ID, read_attachments
 from dplanner.modules.spec.documents import (
-    KIND_MARKDOWN,
-    KIND_PDF,
     SpecDocument,
     binary_refusal,
     default_name,
@@ -141,18 +138,6 @@ class SpecModule:
         )
         deps.actions.register(
             ActionSpec(
-                id="spec.edit",
-                label="&Edit Spec Document",
-                menu="Project",
-                group="documents",
-                order=30,
-                tip="Edit the selected markdown document in place; run again to finish",
-                state=self._edit_state,
-                run=self._edit,
-            )
-        )
-        deps.actions.register(
-            ActionSpec(
                 id="spec.remove",
                 label="&Remove Spec Document",
                 menu="Project",
@@ -218,18 +203,6 @@ class SpecModule:
         document = next((doc for doc in documents if doc.name == name), None)
         return None if document is None else (project_id, document)
 
-    def _edit_state(self, context: Context) -> ActionState:
-        found = self._selected_document(context)
-        if found is None:
-            return DISABLED
-        _project_id, document = found
-        if document.kind == KIND_PDF:
-            return ActionState(enabled=False, label="Cannot Edit — PDFs are view-only")
-        if document.kind != KIND_MARKDOWN:
-            # Plain text through a rich-text round-trip would come back as markdown.
-            return ActionState(enabled=False, label="Cannot Edit — only markdown edits in-app")
-        return ActionState(checked=context.edge(EDITING_EDGE) is not None)
-
     def _open(self, context: Context) -> None:
         project_id = context.focus_entity("project")
         if project_id is not None:
@@ -262,21 +235,8 @@ class SpecModule:
         )
         activity = self._deps.tabs.open(SPECS_KIND, project_id)
         assert isinstance(activity, SpecsActivity)
-        activity.select_document(document.name)
-        activity.begin_edit()
-
-    def _edit(self, context: Context) -> None:
-        found = self._selected_document(context)
-        if found is None:
-            return  # The state gate already prevents this; stay honest anyway.
-        project_id, document = found
-        activity = self._deps.tabs.open(SPECS_KIND, project_id)
-        assert isinstance(activity, SpecsActivity)
-        activity.select_document(document.name)
-        if activity.is_editing:
-            activity.end_edit()
-        else:
-            activity.begin_edit()
+        activity.select_document(document.name)  # A markdown row opens in the editor.
+        activity.focus_editor()
 
     def _add(self, context: Context) -> None:
         project_id = context.focus_entity("project")

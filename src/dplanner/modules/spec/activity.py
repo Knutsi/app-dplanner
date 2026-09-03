@@ -1,4 +1,5 @@
-"""The Specs tab: one project's documents on the left, the chosen one rendered beside.
+"""The Specs tab: one project's documents on the left, the chosen one beside — a PDF
+rendered, plain text shown, markdown open for editing.
 
 The list and the viewers are dumb: everything they show comes from :mod:`.documents`, the
 same functions the CLI answers with, and every change arrives back through the model's
@@ -61,7 +62,6 @@ from dplanner.modules.spec.documents import (
 from dplanner.modules.spec.editor import SpecMarkdownEditor
 from dplanner.modules.spec.viewer import PdfPageView
 from dplanner.theme.icons import (
-    edit_icon,
     external_icon,
     folder_icon,
     graph_icon,
@@ -76,16 +76,11 @@ SPECS_KIND = "specs"
 # The selection-URI kind this tab publishes while it is the active pane.
 DOCUMENT_ENTITY = "spec_document"
 
-# The activity edge published while a document is being edited — `spec.edit`'s checked
-# state is a pure function of it, the same seam as the canvas's input mode.
-EDITING_EDGE = "spec_edit"
-
-TOOLBAR_ACTIONS = ("spec.new", "spec.add", "spec.edit", "spec.remove", "spec.open_external")
+TOOLBAR_ACTIONS = ("spec.new", "spec.add", "spec.remove", "spec.open_external")
 BUTTON_TEXT = dict.fromkeys(TOOLBAR_ACTIONS, "")  # Glyph-only; label → tooltip.
 ICONS: dict[str, Callable[[str], QIcon]] = {
     "spec.new": plus_icon,
     "spec.add": folder_icon,
-    "spec.edit": edit_icon,
     "spec.remove": trash_icon,
     "spec.open_external": external_icon,
 }
@@ -229,11 +224,7 @@ class SpecsActivity(EntityActivity):
         return self._widget
 
     def activity_nodes(self) -> tuple[ContextNode, ...]:
-        # The base's entity edge, plus — while editing — which document, so `spec.edit`'s
-        # checked state stays a pure function of the context.
         edges: tuple[tuple[str, Uri], ...] = (("entity", entity_uri("project", self.project_id)),)
-        if self._editing is not None:
-            edges += ((EDITING_EDGE, selection_uri(DOCUMENT_ENTITY, self._editing)),)
         return (ContextNode(self.uri, edges),)
 
     def on_activated(self) -> None:
@@ -248,8 +239,7 @@ class SpecsActivity(EntityActivity):
         super().on_deactivated()
 
     def close(self) -> None:
-        self._flush_edit()
-        self._flush_timer.stop()
+        self.end_session()
         self.topology.dispose()
         self.toolbar.dispose()
         for unsubscribe in self._unsubscribes:
@@ -258,9 +248,14 @@ class SpecsActivity(EntityActivity):
         self._pdf.clear()
 
     # -- the editing session -------------------------------------------------------------------
+    # A markdown document is never *viewed*: selecting it opens the editor, and the session
+    # — one replace, `previous` pinned to the record as it was when the row was picked —
+    # runs until another row is picked or the tab closes. Typing flushes on the autosave
+    # rhythm, so nothing waits for a Done that no longer exists.
 
     @property
     def is_editing(self) -> bool:
+        """Whether a markdown document is open in the editor — a session is running."""
         return self._editing is not None
 
     def select_document(self, name: str) -> None:
@@ -269,16 +264,8 @@ class SpecsActivity(EntityActivity):
                 self.list.setCurrentRow(row)
                 return
 
-    def begin_edit(self) -> None:
-        """Open the selected markdown document in the editor, starting a session."""
-        document = self._current_document()
-        if document is None or document.kind != KIND_MARKDOWN or self.is_editing:
-            return
-        area = self._files(self.project_id)
-        data = area.read_bytes(document.file)
-        if data is None:
-            self._say(f"{document.file} is missing from the workspace.")
-            return
+    def _open_session(self, document: SpecDocument, area: ModuleFileArea, data: bytes) -> None:
+        """Show ``document`` in the editor, starting its session."""
         body = data.decode("utf-8")
         self._editing = document.name
         self._session_base = document
@@ -289,11 +276,15 @@ class SpecsActivity(EntityActivity):
         # rather than letting the first save silently reformat an imported document.
         self._editor_note.setVisible(self._editor.body().strip() != body.strip())
         self._views.setCurrentWidget(self._editor_page)
-        self._editor.setFocus()
-        self._publish_activity()
 
-    def end_edit(self) -> None:
-        """Flush what the session typed and return to the viewer."""
+    def focus_editor(self) -> None:
+        """Put the caret in the open document — what a freshly created one wants."""
+        if self.is_editing:
+            self._editor.setFocus()
+
+    def end_session(self) -> None:
+        """Flush what the session typed and forget it — another row was picked, or the
+        tab is closing. The next markdown row opens a session of its own."""
         if not self.is_editing:
             return
         # The tab stops being an editor *before* the flush: the flush's own echo re-enters
@@ -301,11 +292,7 @@ class SpecsActivity(EntityActivity):
         self._editing = None
         self._flush_edit()
         self._drop_session()
-        # The render cache's early-return assumes the right widget is already up — while
-        # the editor page is showing, it is not. A Done with no edits must still swap back.
-        self._shown = None
-        self._show_current()
-        self._publish_activity()
+        self._shown = None  # The editor page is up; whatever shows next must be rendered.
 
     def _drop_session(self) -> None:
         self._flush_timer.stop()
@@ -315,15 +302,15 @@ class SpecsActivity(EntityActivity):
         self._session_blobs = set()
 
     def _abort_edit(self) -> None:
-        """The model changed under the session: it is the authority, the session ends.
+        """The model changed under the session: it is the authority, the session ends and
+        the document reopens as it now is.
 
         Unflushed keystrokes are dropped; anything already flushed is on disk and in the
         index history, so nothing the user saved is lost.
         """
         self._drop_session()
-        self._shown = None  # Force the viewer to re-render whatever the model now says.
+        self._shown = None  # Force a re-render of whatever the model now says.
         self._show_current()
-        self._publish_activity()
 
     def _on_typed(self) -> None:
         if self.is_editing and self._editor.document().isModified():
@@ -437,14 +424,6 @@ class SpecsActivity(EntityActivity):
             for face, tip, handler in group:
                 row.addWidget(_tool_button(face, tip, handler))
         row.addStretch(1)
-        # Done leaves through the verb, so the menu, the palette and this button agree.
-        row.addWidget(
-            _tool_button(
-                "Done",
-                "Save and return to the viewer",
-                lambda: self._actions.run("spec.edit", self._context.current()),
-            )
-        )
         layout.addWidget(strip)
         self._editor_note = QLabel("Editing will reformat this document to Qt's markdown style.")
         self._editor_note.setObjectName("InspectorNote")
@@ -497,9 +476,9 @@ class SpecsActivity(EntityActivity):
     def _on_selection(self) -> None:
         self._topology_chosen = self._current_name() == TOPOLOGY_ROW and self.list.count() > 1
         if self.is_editing and self._current_name() != self._editing:
-            self.end_edit()  # Which flushes, and re-renders the newly selected document.
-        elif not self.is_editing:
-            self._show_current()
+            self.end_session()
+        if not self.is_editing:
+            self._show_current()  # Which opens a session when the row is markdown.
         self._publish_selection()
 
     def _publish_selection(self) -> None:
@@ -575,6 +554,8 @@ class SpecsActivity(EntityActivity):
         self._shown = (document.name, document.file)
 
     def _show_document(self, document: SpecDocument, area: ModuleFileArea, data: bytes) -> None:
+        """A PDF renders its pages, plain text is read-only (a rich-text round-trip would
+        hand it back as markdown), and markdown opens in the editor."""
         if document.kind == KIND_PDF:
             self._pdf.show_pdf(data)
             self._views.setCurrentWidget(self._pdf)
@@ -585,9 +566,9 @@ class SpecsActivity(EntityActivity):
             self._say(f"{document.filename} is not UTF-8 text.")
             return
         if document.kind == KIND_MARKDOWN:
-            self._text.show_markdown(body, (area,))
-        else:
-            self._text.show_text(body)
+            self._open_session(document, area, data)
+            return
+        self._text.show_text(body)
         self._views.setCurrentWidget(self._text)
 
     def _say(self, message: str) -> None:
