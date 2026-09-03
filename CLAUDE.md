@@ -85,6 +85,18 @@ worker walking that tree; and a fixture that patched a module global raced the *
 does not help with the first and a careful assertion does not help with the second: build over
 a throwaway tree, and stop what is running before you patch under it.
 
+**A SIGSEGV is not always memory corruption: check the stack depth first.** The
+2026-09-02 crash — every `time_estimates` test, deterministic, "in `resizeEvent`" — was a
+**synchronous layout loop**: the calendar called `setFixedHeight` inside its own resize
+event, inside a resizable scroll area, so the new height toggled the scrollbar, the
+scrollbar changed the width, the width changed the height, and the process died 184,800
+frames deep with `QScrollArea::eventFilter` on the stack 20,000 times. gdb's `bt | wc -l`
+says so in one line, where faulthandler shows four Python frames and a symbol
+(`_Pep_PrivateMangle`) that is only where the stack ran out. **A widget whose height
+depends on its width implements `heightForWidth` and lets the layout ask; it never resizes
+itself in `resizeEvent`.** `time_estimates/months.py` is the worked example, and its
+regression test sweeps a scroll area across every width that could flip the scrollbar.
+
 **A pytest worker dying with SIGSEGV names an innocent test.** The suite has crashed this
 way before (2026-09-01, roughly one run in three): the test reported is whichever one that
 worker happened to be running, and the trigger moves with the total test count. That
