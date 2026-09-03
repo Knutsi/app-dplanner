@@ -21,6 +21,7 @@ STATUSES: Final = ("pending", "in-progress", "done", "blocked")
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
+
 def read(step: Step) -> str:
     """The step's status. Absent or unreadable data reads as ``pending``, never as an error.
 

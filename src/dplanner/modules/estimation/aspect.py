@@ -63,6 +63,7 @@ DATA_FORMAT = ModuleDataFormat(
     takeovers=(Takeover(retired=RETIRED_STEP_ESTIMATION, convert=_from_step_estimation),),
 )
 
+
 def read(step: Step) -> float | None:
     """How many days the step is estimated at, or None. Unreadable data reads as absent.
 

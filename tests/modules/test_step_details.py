@@ -51,7 +51,7 @@ def test_figures_follow_the_aspect_without_reselecting(services, step, details):
     figures = block_holder(details, "spec.figures")
     assert figures.isHidden()
 
-    entry = write_step_entry([], [SpecAttachment(file="assets/one.png")])
+    entry = write_step_entry([SpecAttachment(file="assets/one.png")])
     services.undo.push(SetModuleDataCommand(step.id, SPEC_ID, entry))
     assert not figures.isHidden()
 
@@ -101,6 +101,6 @@ def test_show_target_reaches_hidden_blocks_and_dispose_detaches(services, step):
 
     composite.dispose()
     assert shown[-1] == "disposed"
-    entry = write_step_entry([], [SpecAttachment(file="assets/one.png")])
+    entry = write_step_entry([SpecAttachment(file="assets/one.png")])
     services.undo.push(SetModuleDataCommand(step.id, SPEC_ID, entry))
     assert composite._blocks == []  # And the signal above reached nothing.

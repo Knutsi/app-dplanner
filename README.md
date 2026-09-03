@@ -31,7 +31,7 @@ Early, and honest about it. The model, the storage layer, the index tree, the wh
 graph editor and the order view are in place and tested. Fifteen aspects ship — estimate,
 ticket, description, agent instruction, agent run, status, milestone, feature, handoff,
 GitHub refs,
-spec links, tests, checks and the two documentation ones — each with verbs in the CLI and most with an editor in the step panel
+spec figures, tests, checks and the two documentation ones — each with verbs in the CLI and most with an editor in the step panel
 (`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: a project start date and
 the estimates give every step a running total and a date, in the order table and in
 `dplanner schedule show`. Progression reads the same graph with the statuses in hand:
@@ -239,7 +239,9 @@ src/dplanner/
 │   │                        the status-bar button and the Agents browser are `view.py`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
-│   ├── step_feature/        the steps that collect the work behind them — a marker and a Type toggle
+│   ├── feature/             the project's feature catalogue (catalogue.py) and the step that
+│   │                        realises each: the Features panel and its drag onto the canvas, the
+│   │                        Feature tab, the Type ▸ Feature toggle, `dplanner feature`
 │   ├── step_check/          a step that gathers every test it waits on — the Type ▸ Check toggle
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, the project's Tests tab and the library-wide roll call
@@ -249,7 +251,9 @@ src/dplanner/
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── progression/         the execution board — what can be launched now — and `dplanner progression show`
 │   ├── time_estimates/      the staffing matrix, the milestones in sequence and the calendar they date — `dplanner schedule matrix`, `schedule milestone`
-│   ├── spec/                spec documents beside a project, their requirements and figures, `dplanner spec` (pdf.py: text layers and page rendering; editor.py: the in-app markdown editor)
+│   ├── spec/                spec documents beside a project, their figures, and the project's
+│   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
+│   │                        and page rendering; editor.py: the in-app markdown editor)
 │   ├── project_assets/      every asset a project carries and what uses each — the Assets
 │   │                        tab, the pool, display titles, and `dplanner asset`
 │   ├── library_watch/       reloading when something else writes to a project or the library file

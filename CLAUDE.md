@@ -636,10 +636,10 @@ root, stop and look for the registry or capability you have not found yet.
 - **A `ScopeKind` is wired, never inferred.** `modules/__init__.py::_scope_kinds()` writes
   the three predicates literally: what carries a kind, where its cone stops, and — a
   separate question — which kind it is *read as a list of* (`gathers`). A milestone is read
-  as its features; a feature is the finest grain and reads flat. `step_feature` and
-  `step_check` are bare markers with no tab of their own, and `modules/testing/` renders
-  what any of them gathers, because a list of tests is testing's business. That keeps the
-  wiring one-directional. `ARCHITECTURE.md`'s *A check is a scope over the graph* has the
+  as its features; a feature is the finest grain and reads flat. `step_check` is a bare
+  marker with no tab of its own; a feature step names the catalogue record it realises and
+  its tab edits that record; `modules/testing/` renders what any of them gathers, because a
+  list of tests is testing's business. That keeps the wiring one-directional. `ARCHITECTURE.md`'s *A check is a scope over the graph* has the
   reasoning, including why exclusivity is a predicate rather than a stored list.
 - **A kind is what a node *is*; a facet is what it carries.** Milestone, Feature, Check and
   Agent Step are kinds — a node exists in order to be one, and wears a body colour for it:
@@ -662,7 +662,37 @@ root, stop and look for the registry or capability you have not found yet.
   and `steps.details` opens on it — the first two through the `placed` seam a paste shares,
   the dialog through `created`, which only a birth calls — because they belong to the
   canvas, not to the verb — so New twice in a row leaves two nodes rather than one hiding
-  another, and naming a step is the gesture's second half.
+  another, and naming a step is the gesture's second half. A step that arrives *carrying*
+  something — a dropped feature's marker — arrives named, so it is placed but not `created`.
+- **A feature is a record, and a feature step is its instance.** The project's catalogue
+  (`modules/feature/catalogue.py`, `dplanner feature list`) holds every feature whether or
+  not it is on the graph — read out of a spec with `feature add --document --quote --page`
+  (the quote checked through the spec module's `anchor_quote`, handed across by the root),
+  or added by hand. A feature step carries only the record's id, and a record has **one**
+  instance: the Features panel's drag onto the canvas, the Type toggle, `feature set` and
+  `step add --feature` all refuse a second in the same words. Toggling off shelves the
+  marker like any aspect; deleting the step or `clear-steps` leaves the record unplaced —
+  only the feature verbs create and remove records. A work step's briefing names the
+  features it *flows into* (`scope.gatherers`); it carries no link of its own.
+  `ARCHITECTURE.md`'s *A feature is a record, and a feature step is its instance* has the
+  reasoning.
+- **The topology is read before the graph is edited.** A project's topology (`dplanner
+  topology set|show`; the Specs tab's pinned first row; `modules/spec.md`) says how its
+  graph is shaped, and every CLI verb that reshapes a graph declares `edits_graph` on its
+  `CliCommand` — `cli/gate.py` then refuses until `topology show` has recorded the current
+  text's digest in the per-user `config_dir()/topology-read.json`, and refuses again when
+  the text changes or when there is none. The skill marks those verbs; the window is never
+  gated; the test suite's registry runs behind a gate with no record file. Declare it on a
+  verb that changes shape, never on one that changes content. `ARCHITECTURE.md`'s *The
+  topology is read before the graph is edited* has the reasoning.
+- **A drop on the canvas is the third caller of `StepVerbs.create`.** `GraphView` accepts
+  the mime types the composition root lists as `CanvasDrop`s on `ProjectEditorDeps`
+  (`project_editor/drops.py`), records the point like a click and hands the payload up;
+  the handler lives in the root because it reads one module's catalogue and births
+  through another's `create_step`. A dropped feature is born **as the Feature template**
+  — marker and estimate opt-out in the one command, the same set the template names, so
+  the modal lights *Feature* and not the catch-all. Not a mode: Qt's drag events never
+  reach the mouse handlers, and a drop has no state to leave.
 - **The Edit menu's Cut, Copy, Paste, Duplicate, Delete and Select All are the graph's.**
   Registered by `project_editor` as ordinary `ActionSpec`s — no dispatcher until a second
   surface needs a clipboard, because a shortcut can be owned by one enabled QAction at a
@@ -674,7 +704,8 @@ root, stop and look for the registry or capability you have not found yet.
   (`project_editor/clipboard.py`): fresh ids, links between copies remapped and every link
   to the outside dropped, files in the payload and written after the one composite
   command, and a `PastePolicy` per module with a say (`testing` re-mints ids,
-  `step_agent_run` forgets). `dplanner step duplicate` is the same function.
+  `step_agent_run` forgets, `feature` drops the marker — one instance per record).
+  `dplanner step duplicate` is the same function.
   `ARCHITECTURE.md`'s *Edit verbs belong to the surface whose things they act on* and *Copy
   and paste are a clone through the same command* have the reasoning.
 - **What a collector gathers is one verb: `dplanner scope show`.** In `cli/scopes.py`, the

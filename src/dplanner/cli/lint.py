@@ -36,15 +36,12 @@ LintCheck = Callable[[Library, Project, FilesFor], Sequence[LintFinding]]
 def commands(checks: Sequence[LintCheck]) -> list[CliCommand]:
     def _lint(context: CliContext, args: Namespace) -> int:
         library = context.library
-        projects = (
-            [find_project(library, args.project)] if args.project else list(library.projects)
-        )
+        projects = [find_project(library, args.project)] if args.project else list(library.projects)
         found: list[tuple[Project, LintFinding]] = []
         for project in projects:
             for check in checks:
                 found += [
-                    (project, finding)
-                    for finding in check(library, project, context.store.files)
+                    (project, finding) for finding in check(library, project, context.store.files)
                 ]
         rows = [
             {

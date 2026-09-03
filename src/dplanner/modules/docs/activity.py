@@ -548,7 +548,7 @@ class _GroupDelegate(QStyledItemDelegate):
 def _glyph_for(kinds: Sequence[Any], step: Step) -> str:
     """The medallion the node itself wears, so the list and the canvas agree at a glance."""
     kind = kind_of(kinds, step)
-    return {"step_feature": "layers", "step_milestone": "tag", "step_check": "shield"}.get(
+    return {"feature": "layers", "step_milestone": "tag", "step_check": "shield"}.get(
         kind.id if kind is not None else "", ""
     )
 

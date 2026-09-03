@@ -163,7 +163,7 @@ def imported(services, project, name, data, filename):
     docs, document, _outcome = import_document(
         area, existing, name, data, filename, "2026-08-27"
     )
-    entry = write_index(SpecIndex(documents=docs, requirements=[], assets=[]))
+    entry = write_index(SpecIndex(documents=docs, assets=[]))
     SetModuleDataCommand(project.id, MODULE_ID, entry).redo(services.document)
     return document
 

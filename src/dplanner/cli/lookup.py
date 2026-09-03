@@ -15,11 +15,15 @@ lookup this module does not perform.
 """
 
 import sys
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from dplanner.cli.command import CliError
 from dplanner.domain.model import Library, Project, Step
+
+if TYPE_CHECKING:
+    from dplanner.cli.command import CliContext
 
 
 def step_arg(parser: ArgumentParser) -> None:
@@ -100,3 +104,16 @@ def _find[NodeT: (Project, Step)](candidates: list[NodeT], needle: str, kind: st
     # that the guess failed.
     names = ", ".join(sorted(f"{node.title} ({node.id[:8]})" for node in partial))
     raise CliError(f"{needle!r} matches several {kind}s — use an id: {names}")
+
+
+# -- resolvers a verb hands the topology gate: "which project does this reshape?" ------------
+
+
+def project_of(context: "CliContext", args: Namespace) -> Project:
+    """The project a project verb names — ``args.project`` through :func:`find_project`."""
+    return find_project(context.library, args.project)
+
+
+def project_of_step(context: "CliContext", args: Namespace) -> Project:
+    """The project a step verb's step belongs to, resolved the way the verb itself does."""
+    return context.library.project_of(find_step(context.library, args.step, context.current).id)

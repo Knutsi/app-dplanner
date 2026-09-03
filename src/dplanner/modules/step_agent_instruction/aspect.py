@@ -36,6 +36,7 @@ from dplanner.domain.store import FilesFor
 MODULE_ID = "step_agent_instruction"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
+
 def read(step: Step) -> str:
     """The step's *separate* instruction — empty for most agent steps, whose briefing
     carries the description instead."""
@@ -74,9 +75,7 @@ def read_project(project: Project) -> str:
     return project.module_text.get(MODULE_ID, "")
 
 
-def asset_paths(
-    files: FilesFor, node_id: NodeId
-) -> tuple[str, ...]:
+def asset_paths(files: FilesFor, node_id: NodeId) -> tuple[str, ...]:
     """A node's instruction files as absolute paths.
 
     Absolute because one library spans several project directories: a relative path would
@@ -103,9 +102,7 @@ def asset_source() -> AssetSource:
     sweep's.
     """
 
-    def scan(
-        _library: Library, project: Project, files: FilesFor
-    ) -> Sequence[AssetLocation]:
+    def scan(_library: Library, project: Project, files: FilesFor) -> Sequence[AssetLocation]:
         def held(node_id: NodeId, subject: str, kind: str, where: str) -> list[AssetLocation]:
             return [
                 AssetLocation(

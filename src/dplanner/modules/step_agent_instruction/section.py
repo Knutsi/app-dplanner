@@ -121,9 +121,7 @@ class PartRow(QWidget):
     def set_expanded(self, expanded: bool) -> None:
         self._expanded = expanded
         self.body.setVisible(expanded)
-        self.chevron.setArrowType(
-            Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
-        )
+        self.chevron.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
         self.toggled.emit(expanded)
 
     def set_summary(self, text: str) -> None:
@@ -187,9 +185,7 @@ class AgentSection(QWidget):
         self.project_edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
         self.project_expand = attach_expand(self.project_edit)
         self.project_expand.clicked.connect(
-            lambda: self._expand(
-                self._project_id, "Project Agent Instruction", PROJECT_PLACEHOLDER
-            )
+            lambda: self._expand(self._project_id, "Project Agent Instruction", PROJECT_PLACEHOLDER)
         )
         self.project_assets = AssetGallery(
             self, editable=True, attach_title="Attach to Instruction"
@@ -235,9 +231,7 @@ class AgentSection(QWidget):
         self.step_expand.clicked.connect(
             lambda: self._expand(self._step_id, "Agent Instruction", placeholder)
         )
-        self.step_assets = AssetGallery(
-            self, editable=True, attach_title="Attach to Instruction"
-        )
+        self.step_assets = AssetGallery(self, editable=True, attach_title="Attach to Instruction")
         step_body = _body(self.edit, self.step_assets)
         self.step_part = PartRow("This step", leaf_icon, step_body, expanded=True)
         # Shown in the editor's place while the description is the instructions — most
@@ -316,9 +310,7 @@ class AgentSection(QWidget):
         self.tab_bar.currentChanged.connect(lambda _index: self._refresh_prompt_if_shown())
 
         self._column = QVBoxLayout(self)
-        self._column.setContentsMargins(
-            PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN
-        )
+        self._column.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
         self._column.setSpacing(BLOCK_GAP)
         self._column.addWidget(self.tab_bar)
         self._column.addLayout(self._pages, stretch=1)
@@ -566,9 +558,7 @@ class AgentSection(QWidget):
             "nothing yet" if parts == 0 else f"{parts} block{'s' if parts != 1 else ''}"
         )
         self.context_part.set_summary(
-            "nothing yet"
-            if sections == 0
-            else f"{sections} section{'s' if sections != 1 else ''}"
+            "nothing yet" if sections == 0 else f"{sections} section{'s' if sections != 1 else ''}"
         )
 
     def _refresh_buttons(self) -> None:

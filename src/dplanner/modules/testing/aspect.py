@@ -130,17 +130,13 @@ def asset_source() -> AssetSource:
     off the roster still owns its evidence.
     """
 
-    def scan(
-        _library: Library, project: Project, files: FilesFor
-    ) -> Sequence[AssetLocation]:
+    def scan(_library: Library, project: Project, files: FilesFor) -> Sequence[AssetLocation]:
         locations: list[AssetLocation] = []
         for step in project.steps:
             names = area_assets(files, step.id, MODULE_ID)
             if not names:
                 continue
-            referencing = [
-                (test, set(asset_references(test.body))) for test in read(step)
-            ]
+            referencing = [(test, set(asset_references(test.body))) for test in read(step)]
             locations += [
                 AssetLocation(
                     node_id=step.id,

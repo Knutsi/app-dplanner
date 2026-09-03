@@ -338,25 +338,32 @@ class StepVerbs:
         title: str,
         *,
         at: tuple[float, float] | None = None,
+        carrying: Callable[[Step], Sequence[Command]] | None = None,
+        label: str = "New Step",
     ) -> Step:
         """Add a step, placed where it was asked for, as **one** undo step.
 
-        The one place a step is born on the canvas: New comes here, and so does the
-        double-click on empty space. A gesture is one undo, so the position rides with the
-        node rather than arriving as a second entry on the stack.
+        The one place a step is born on the canvas: New comes here, so does the
+        double-click on empty space, and so does a drop. A gesture is one undo, so the
+        position rides with the node rather than arriving as a second entry on the stack —
+        and so does whatever the step is ``carrying``: the marker a dropped feature arrives
+        with, handed in as commands over the not-yet-added step.
 
         A placed step earns a *stored* position, unlike the ambient layout, for the same
-        reason a dragged one does: somebody chose where it goes.
+        reason a dragged one does: somebody chose where it goes. A step that arrives
+        carrying something arrives *named* — a feature has its title — so it is placed but
+        not ``created``: the dialog that names a new step has nothing to ask it.
         """
         step = Step(title=title)
         commands: list[Command] = [AddNodeCommand(project_id, step)]
+        if carrying is not None:
+            commands += carrying(step)
         if at is not None:
             commands.append(SetModuleDataCommand(step.id, POSITION_KEY, write_position(*at)))
-        self.undo.push(
-            commands[0] if len(commands) == 1 else CompositeCommand("New Step", commands)
-        )
+        self.undo.push(commands[0] if len(commands) == 1 else CompositeCommand(label, commands))
         self.placed([step.id])
-        self.created(step.id)
+        if carrying is None:
+            self.created(step.id)
         return step
 
     def _rename(self, context: Context) -> None:

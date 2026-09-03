@@ -319,9 +319,7 @@ class LayoutVerbs:
             return
         project, name = found
         snap = snapshot(self.library, project)
-        self.undo.push(
-            save_layout_command(project, name, snap, label=f'Update Layout "{name}"')
-        )
+        self.undo.push(save_layout_command(project, name, snap, label=f'Update Layout "{name}"'))
         self.undo.break_coalescing()
         self.status(f"Updated layout “{name}”")
 
@@ -330,9 +328,7 @@ class LayoutVerbs:
         if found is None:
             return
         project, old = found
-        new, accepted = QInputDialog.getText(
-            self.parent, "Rename Layout", "Layout name:", text=old
-        )
+        new, accepted = QInputDialog.getText(self.parent, "Rename Layout", "Layout name:", text=old)
         new = new.strip()
         if not accepted or not new or new == old:
             return

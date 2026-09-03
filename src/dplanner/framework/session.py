@@ -158,9 +158,7 @@ class AppSession:
             return False
         return self._open(self.library_path)
 
-    def _open(
-        self, library_path: Path, progress: Callable[[str], None] | None = None
-    ) -> bool:
+    def _open(self, library_path: Path, progress: Callable[[str], None] | None = None) -> bool:
         try:
             builder = (
                 AppBuilder()

@@ -9,9 +9,9 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
+from dplanner.modules.feature import aspect as feature
 from dplanner.modules.project_editor.renderers import NodeAccent
 from dplanner.modules.step_agent_run import aspect as agent_run
-from dplanner.modules.step_feature import aspect as feature
 from dplanner.modules.step_milestone import aspect as milestone
 from dplanner.modules.step_status import aspect as status
 
@@ -70,7 +70,7 @@ def test_a_release_is_a_highlighted_node_with_a_tag(services, project, tab):
 
 def test_a_feature_is_a_teal_node_with_a_layer_medallion(services, project, tab):
     step = project.steps[0]
-    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write(True)))
+    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write("f1")))
     accent = node(tab, step)._accent
     assert accent.body_tone == "feature"
     assert "layers" in accent.icons
@@ -79,7 +79,7 @@ def test_a_feature_is_a_teal_node_with_a_layer_medallion(services, project, tab)
 def test_a_milestone_outranks_a_feature_on_the_body(services, project, tab):
     """The coarser claim wins the colour; the finer one keeps its medallion."""
     step = project.steps[1]
-    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write(True)))
+    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write("f1")))
     services.undo.push(SetModuleDataCommand(step.id, milestone.MODULE_ID, milestone.write("MVP")))
     accent = node(tab, step)._accent
     assert accent.body_tone == "highlight"
@@ -88,7 +88,7 @@ def test_a_milestone_outranks_a_feature_on_the_body(services, project, tab):
 
 def test_a_done_feature_reads_finished(services, project, tab):
     step = project.steps[0]
-    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write(True)))
+    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write("f1")))
     services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("done")))
     accent = node(tab, step)._accent
     assert accent.body_tone == "good" and accent.muted is True

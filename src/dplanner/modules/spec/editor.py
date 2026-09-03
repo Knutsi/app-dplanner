@@ -139,9 +139,7 @@ class SpecMarkdownEditor(QTextEdit):
         fmt.setFontWeight(QFont.Weight.Bold if level else QFont.Weight.Normal)
         span = QTextCursor(cursor)
         span.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-        span.movePosition(
-            QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor
-        )
+        span.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
         span.mergeCharFormat(fmt)
         self.mergeCurrentCharFormat(fmt)
 

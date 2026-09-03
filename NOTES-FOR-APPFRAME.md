@@ -1565,3 +1565,37 @@ mislead here.
 **Belongs upstream?** As a paragraph in the template's widget guidance, beside the palette
 snapshot trap.
 
+---
+
+## 12. From the features-and-topology pass
+
+### `framework/list_rows.py` — `TwoLineDelegate` (new)
+
+**What.** The two-line list row the Specs tab had as a private delegate — name over a
+quieter detail line, `DETAIL_ROLE` for the second line, `MUTED_ROLE` to draw a whole row in
+the secondary tone — promoted into the framework, and taught three things there: an item's
+icon (the text starts past the decoration the style draws), `EMPHASIS_ROLE` (a bold first
+line) and `RULE_ROLE` (a hairline under the row), which together make a pinned row read as
+a header. The Features panel turned out to want one-line rows and uses the stock delegate.
+
+**Belongs upstream?** Yes; a side-panel list of named things with a second line wants it.
+
+### `framework/asset_gallery.py` — `set_files(…, remove=)`
+
+**What.** The files mode can now be given what removing a thumbnail means. Before, only the
+area mode was editable; a record that *names* its images (a feature's `images` list) needs
+the ✕ to drop the reference while the file stays for the sweep, and the gallery cannot know
+that.
+
+**Belongs upstream?** Yes, with the gallery.
+
+### `project_editor/graph.py` — drop hooks on `GraphView` (module code, pattern worth noting)
+
+**What.** `accepts(QMimeData) -> bool` and `dropped(QMimeData, QPointF)` on the view,
+`setAcceptDrops(True)`, and the three drag events forwarding to them. The point is recorded
+through `note_click` before the handler runs, so a dropped thing is placed the way a
+clicked-for one is.
+
+**Why note it here.** A drop is deliberately *not* a mode on the input stack — Qt's drag
+events are a separate family that never reaches `mousePressEvent`, and a mode has state to
+enter and leave. If the framework ever grows a canvas base class, this is the shape.

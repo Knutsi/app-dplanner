@@ -26,12 +26,13 @@ canvas when they change — a way of looking at graphs, not a fact about one pro
 opened later wears the same marks and a second window would too.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QMimeData, QPointF, Qt
 from PySide6.QtWidgets import QMenu, QVBoxLayout, QWidget
 
+from dplanner.cli.command import CliError
 from dplanner.domain.commands import (
     Command,
     CompositeCommand,
@@ -62,6 +63,7 @@ from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.clipboard import PastePolicy
 from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, ClipboardWatch
+from dplanner.modules.project_editor.drops import CanvasDrop
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.layout_button import LayoutButton
@@ -154,6 +156,8 @@ class ProjectEditorDeps:
     # sources, and what a copy may not carry is each owner's policy — see clipboard.py.
     file_modules: tuple[str, ...] = ()
     paste_policies: tuple[PastePolicy, ...] = ()
+    # What the canvas takes by drop, named by the composition root — see drops.py.
+    drops: tuple[CanvasDrop, ...] = ()
 
 
 class ProjectActivity(EntityActivity):
@@ -184,6 +188,8 @@ class ProjectActivity(EntityActivity):
             base_mode=IdleMode,
             status=lambda text: deps.status.show_status(text, 4000),
             run_action=self.run_action,
+            accepts=self._accepts_drop,
+            dropped=self._on_drop,
         )
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
@@ -441,6 +447,26 @@ class ProjectActivity(EntityActivity):
             height = max(ys) - min(ys) if ys else 0.0
             self._view.note_click(QPointF(*below(point.x(), point.y() + height)))
 
+    def _accepts_drop(self, mime: QMimeData) -> bool:
+        return any(mime.hasFormat(drop.mime_type) for drop in self._deps.drops)
+
+    def _on_drop(self, mime: QMimeData, scene_pos: QPointF) -> None:
+        """Something dropped on empty canvas: the handler for its type places it, and a
+        refusal — a feature already placed, a payload from another project — goes to the
+        status bar in the same words the CLI would use."""
+        for drop in self._deps.drops:
+            if not mime.hasFormat(drop.mime_type):
+                continue
+            at = centred_on(scene_pos.x(), scene_pos.y())
+            try:
+                placed = drop.place(self.project_id, bytes(mime.data(drop.mime_type).data()), at)
+            except CliError as error:
+                self._deps.status.show_status(str(error), 4000)
+                return
+            if placed:
+                self.note_placed(placed)
+            return
+
     def note_created(self, step_id: StepId) -> None:
         """One step was just born here — by New or a double-click, never a paste.
 
@@ -590,6 +616,20 @@ class ProjectEditorModule:
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
         """Show a project in a tab. Handed to the index segment as a plain function."""
         self._deps.tabs.open(PROJECT_KIND, project_id, preview=preview)
+
+    def create_step(
+        self,
+        project_id: NodeId,
+        title: str,
+        *,
+        at: tuple[float, float] | None = None,
+        carrying: Callable[[Step], Sequence[Command]] | None = None,
+        label: str = "New Step",
+    ) -> Step:
+        """Give birth to a step the way New does — the seam a drop handler in the
+        composition root places through, so a dropped feature is one undo step with its
+        marker and its position like any other placed step."""
+        return self._verbs.create(project_id, title, at=at, carrying=carrying, label=label)
 
     def reveal(self, step_id: StepId) -> None:
         """Show the step's project and select it there.

@@ -46,9 +46,7 @@ def test_naming_a_team_narrows_the_grid_to_it(cli):
         cli("schedule", "matrix", "Discovery", "--humans", "2", "--agents", "3", "--json")
     )
     assert data["parallel"] == [{"humans": 2, "agents": 3, "days": 4.0}]
-    assert data["calendar"] == [
-        {"humans": 2, "agents": 3, "days": 8.0, "finish": "2026-09-16"}
-    ]
+    assert data["calendar"] == [{"humans": 2, "agents": 3, "days": 8.0, "finish": "2026-09-16"}]
 
 
 def test_half_a_team_is_refused(cli):

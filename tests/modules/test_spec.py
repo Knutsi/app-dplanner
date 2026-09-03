@@ -13,7 +13,7 @@ from dplanner.domain.commands import RemoveNodeCommand, SetModuleDataCommand
 from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.framework.markdown_view import MarkdownView
-from dplanner.modules.spec.activity import DETAIL_ROLE, SpecsActivity
+from dplanner.modules.spec.activity import NAME_ROLE, SpecsActivity
 from dplanner.modules.spec.aspect import MODULE_ID
 from dplanner.modules.spec.documents import (
     SpecIndex,
@@ -43,7 +43,7 @@ def imported(services, project, name, data, filename):
     """Import a document the way both surfaces do: blob into the area, index as a command."""
     area = services.repo.files(project.id, MODULE_ID)
     docs, document, _outcome = import_document(area, [], name, data, filename, "2026-08-27")
-    entry = write_index(SpecIndex(documents=docs, requirements=[], assets=[]))
+    entry = write_index(SpecIndex(documents=docs, assets=[]))
     SetModuleDataCommand(project.id, MODULE_ID, entry).redo(services.document)
     return document
 
@@ -95,9 +95,12 @@ def test_the_tab_lists_documents_and_follows_the_model(services, project):
     services.actions.run("spec.open", select(services, project))
     activity = services.tabs.activities()[0]
     assert isinstance(activity, SpecsActivity)
-    assert activity.list.count() == 0
+    assert activity.list.count() == 1  # The pinned Topology row; no documents yet.
     imported(services, project, "auth", b"# Auth\n", "auth.md")
-    assert [activity.list.item(i).text() for i in range(activity.list.count())] == ["auth"]
+    assert [activity.list.item(i).text() for i in range(activity.list.count())] == [
+        "Topology",
+        "auth",
+    ]
 
 
 def test_a_markdown_document_renders_with_its_area_images(services, project, tmp_path):
@@ -186,80 +189,36 @@ def test_a_background_tab_does_not_speak_for_the_user(services, project):
     assert services.context.current().selected_entity("spec_document") is None
 
 
-def test_remove_takes_the_document_and_its_requirements_and_undoes(services, project, monkeypatch):
+def test_remove_takes_the_document_and_undoes(services, project, monkeypatch):
     from dplanner.modules.spec import module as spec_module
-    from dplanner.modules.spec.documents import Requirement, read_index
+    from dplanner.modules.spec.documents import read_index
 
     monkeypatch.setattr(spec_module, "confirm", lambda *a, **k: True)
     opened(services, project)
     imported(services, project, "auth", b"body", "auth.txt")
     docs = read_index(services.document.project(project.id)).documents
-    requirement = Requirement(id="r1", document="auth", title="Hash passwords")
-    marked = SpecIndex(documents=docs, requirements=[requirement], assets=[])
-    SetModuleDataCommand(project.id, MODULE_ID, write_index(marked)).redo(services.document)
 
     services.actions.run("spec.remove", services.context.current())
-    emptied = read_index(services.document.project(project.id))
-    assert emptied.documents == [] and emptied.requirements == []
+    assert read_index(services.document.project(project.id)).documents == []
     # The blob outlives the index entry — that is what makes the removal undoable.
     assert services.repo.files(project.id, MODULE_ID).read_bytes(docs[0].file) == b"body"
-
     services.undo.undo()
-    assert read_index(services.document.project(project.id)) == marked
-
-
-def test_remove_respects_a_declined_confirm(services, project, monkeypatch):
-    from dplanner.modules.spec import module as spec_module
-    from dplanner.modules.spec.documents import read_index
-
-    monkeypatch.setattr(spec_module, "confirm", lambda *a, **k: False)
-    opened(services, project)
-    imported(services, project, "auth", b"body", "auth.txt")
-    services.actions.run("spec.remove", services.context.current())
-    docs = read_index(services.document.project(project.id)).documents
-    assert [doc.name for doc in docs] == ["auth"]
-
-
-def test_open_external_hands_the_blob_path_to_the_system(services, project, monkeypatch):
-    from PySide6.QtCore import QUrl
-    from PySide6.QtGui import QDesktopServices
-
-    handed: list[QUrl] = []
-    monkeypatch.setattr(QDesktopServices, "openUrl", handed.append)
-    opened(services, project)
-    document = imported(services, project, "auth", b"body", "auth.txt")
-    services.actions.run("spec.open_external", services.context.current())
-    expected = services.repo.files(project.id, MODULE_ID).absolute(document.file)
-    assert [url.toLocalFile() for url in handed] == [str(expected)]
-
-
-def test_open_external_warns_about_a_missing_blob(services, project, monkeypatch):
-    from PySide6.QtCore import QUrl
-    from PySide6.QtGui import QDesktopServices
-    from PySide6.QtWidgets import QMessageBox
-
-    handed: list[QUrl] = []
-    warned: list[tuple[object, ...]] = []
-    monkeypatch.setattr(QDesktopServices, "openUrl", handed.append)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.append(a))
-    opened(services, project)
-    document = imported(services, project, "auth", b"body", "auth.txt")
-    services.repo.files(project.id, MODULE_ID).remove(document.file)
-    services.actions.run("spec.open_external", services.context.current())
-    assert handed == [] and warned
+    assert [doc.name for doc in read_index(services.document.project(project.id)).documents] == [
+        "auth"
+    ]
 
 
 def test_the_viewer_survives_an_index_edit_that_keeps_the_blob(services, project):
-    from dplanner.modules.spec.documents import Requirement, read_index
+    from dplanner.modules.spec.documents import SpecAsset, read_index
 
     activity = opened(services, project)
     imported(services, project, "auth", b"body", "auth.txt")
     shown = activity._shown
     assert shown is not None
     docs = read_index(services.document.project(project.id)).documents
-    requirement = Requirement(id="r1", document="auth", title="Hash passwords")
-    marked = SpecIndex(documents=docs, requirements=[requirement], assets=[])
+    figure = SpecAsset(id="a1", file="assets/0000.png", document="auth", page=1)
+    marked = SpecIndex(documents=docs, assets=[figure])
     SetModuleDataCommand(project.id, MODULE_ID, write_index(marked)).redo(services.document)
-    # A requirements-only edit repaints the list but never rebuilds the viewer.
+    # An assets-only edit repaints the list but never rebuilds the viewer.
     assert activity._shown is shown
-    assert "1 requirements" in activity.list.item(0).data(DETAIL_ROLE)
+    assert activity.list.item(1).data(NAME_ROLE) == "auth"

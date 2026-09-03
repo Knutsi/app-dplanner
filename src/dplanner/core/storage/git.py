@@ -38,9 +38,7 @@ def init_repo(path: Path) -> Path:
     """``git init`` at ``path`` (created if missing), returning the new repository root."""
     path = path.expanduser()
     path.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        ["git", "init", str(path)], capture_output=True, text=True, check=False
-    )
+    result = subprocess.run(["git", "init", str(path)], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise StorageError(f"git init: {result.stderr.strip()}")
     return path

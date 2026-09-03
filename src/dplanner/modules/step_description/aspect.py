@@ -66,9 +66,7 @@ def asset_source() -> AssetSource:
     ``description.image-missing`` lint makes in the opposite direction.
     """
 
-    def scan(
-        _library: Library, project: Project, files: FilesFor
-    ) -> Sequence[AssetLocation]:
+    def scan(_library: Library, project: Project, files: FilesFor) -> Sequence[AssetLocation]:
         locations: list[AssetLocation] = []
         for step in project.steps:
             names = area_assets(files, step.id, MODULE_ID)

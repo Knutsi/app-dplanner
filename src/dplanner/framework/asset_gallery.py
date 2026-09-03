@@ -122,6 +122,7 @@ class AssetGallery(QWidget):
         self._area_for: AreaFor | None = None
         self._files: list[str] = []
         self._read: ReadBytes | None = None
+        self._remove_file: Callable[[str], None] | None = None
         self._thumbs: dict[str, tuple[float, QPixmap | None]] = {}
         self._names: list[str] = []
         self._columns = 0
@@ -156,16 +157,25 @@ class AssetGallery(QWidget):
         self._area_for = area_for
         self._files = []
         self._read = None
+        self._remove_file = None
         self.note.hide()
         self.attach_button.setVisible(self._editable)
         self.setEnabled(area_for is not None)
         self.refresh()
 
-    def set_files(self, names: Sequence[str], read: ReadBytes | None) -> None:
-        """Show an explicit, read-only list of paths through a byte reader."""
+    def set_files(
+        self,
+        names: Sequence[str],
+        read: ReadBytes | None,
+        remove: Callable[[str], None] | None = None,
+    ) -> None:
+        """Show an explicit list of paths through a byte reader — read-only unless the
+        caller says what removing one means (a record's image list, say, where the file
+        stays and only the reference goes)."""
         self._area_for = None
         self._files = list(names)
         self._read = read
+        self._remove_file = remove
         self.note.hide()
         self.attach_button.setVisible(False)
         self.setEnabled(read is not None)
@@ -252,6 +262,9 @@ class AssetGallery(QWidget):
         return name
 
     def _remove(self, name: str) -> None:
+        if self._remove_file is not None:
+            self._remove_file(name)
+            return  # The caller's write comes back as a model change and a new list.
         area = self._resolve()
         if area is not None:
             area.remove(name)
@@ -263,7 +276,7 @@ class AssetGallery(QWidget):
             if widget is not None:
                 widget.deleteLater()
         self._columns = self._column_count()
-        removable = self._editable and self._area_for is not None
+        removable = self._remove_file is not None or (self._editable and self._area_for is not None)
         for index, name in enumerate(self._names):
             _ratio, pixmap = self._thumbs.get(name, (1.0, None))
             cell = _AssetItem(name, pixmap, self._view, self._remove if removable else None)

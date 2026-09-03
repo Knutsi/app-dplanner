@@ -23,8 +23,8 @@ from dplanner.modules.docs.aspect import (
     write_state,
 )
 from dplanner.modules.docs.module import COMPILE_ACTION, NOT_COLLECTOR_REASON, NOTHING_REASON
+from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
-from dplanner.modules.step_feature.aspect import write as feature_write
 from dplanner.modules.step_milestone.aspect import write as milestone_write
 
 
@@ -74,7 +74,7 @@ def project(services, make_project):
     SetEdgesCommand(auth.id, "requires", [parser.id]).redo(library)
     SetEdgesCommand(v1.id, "requires", [auth.id]).redo(library)
     services.undo.push(SetModuleDataCommand(parser.id, MODULE_ID, write_state(True)))
-    services.undo.push(SetModuleDataCommand(auth.id, "step_feature", feature_write(True)))
+    services.undo.push(SetModuleDataCommand(auth.id, "feature", feature_write("f1")))
     services.undo.push(SetModuleDataCommand(v1.id, "step_milestone", milestone_write("v1")))
     library.set_text(parser.id, MODULE_ID, "Parses queries.")
     return project
@@ -219,7 +219,7 @@ def test_an_answer_for_a_step_that_stopped_collecting_is_dropped(
     """The model was thinking; somebody took the feature mark off. The stale answer is not
     text the user asked for any more — github/section.py's guard, for the same reason."""
     auth = by_title(project, "Auth")
-    services.undo.push(SetModuleDataCommand(auth.id, "step_feature", feature_write(False)))
+    services.undo.push(SetModuleDataCommand(auth.id, "feature", {}))
     module._compiler.compiled.emit(auth.id, "Too late.", "Fake", "fake-1")
     qapp.processEvents()
     assert read_compiled(auth) == ""

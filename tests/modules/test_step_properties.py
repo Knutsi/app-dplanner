@@ -73,6 +73,7 @@ def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
         "Tests",
         "Covers",
         "Agent",
+        "Feature",
         "Milestone",
         "Handoff",
         "GitHub",
@@ -321,7 +322,7 @@ def test_details_opens_a_dialog_that_is_the_panel_and_disposes_it(services, proj
 def test_the_dialogs_bar_acts_on_the_dialogs_own_step(services, project, monkeypatch):
     """A panel inside the dialog shows a step nobody selected, and its toggles must act on
     what is on screen, not on the window's selection."""
-    from dplanner.modules.step_feature.aspect import read as feature_read
+    from dplanner.modules.feature.aspect import is_feature as feature_read
     from dplanner.modules.step_properties.dialog import StepDetailsDialog
 
     shown, other = project.steps

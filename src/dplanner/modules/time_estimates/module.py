@@ -397,9 +397,7 @@ class TimeEstimatesActivity(EntityActivity):
         self.matrix.show_cells(cells, collapse)
 
         calendar = self._selected_cell()
-        colors = [
-            QColor(hex_color) for hex_color in phase_colors(calendar.phases, read_color)
-        ]
+        colors = [QColor(hex_color) for hex_color in phase_colors(calendar.phases, read_color)]
         stretches = list(zip(calendar.phases, colors, strict=True))
         if self._picked is not None and not any(
             phase.milestone is not None and phase.milestone.id == self._picked

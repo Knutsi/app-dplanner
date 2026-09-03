@@ -301,6 +301,7 @@ class StepAgentInstructionModule:
             instruction=instruction.body,
             parts=parts,
             sections=sections,
+            project_sections=deps.briefing.project_sections(deps.library, step, deps.files),
             epilogue=deps.briefing.epilogue(step),
             preamble=deps.briefing.preamble,
             project_instruction=read_project(project),

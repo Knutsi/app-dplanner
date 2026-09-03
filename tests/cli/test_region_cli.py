@@ -56,7 +56,17 @@ def test_add_and_fit_report_only_the_affected_region(cli):
 def test_add_needs_exactly_one_way_of_saying_where(cli):
     assert "either --steps or --rect" in cli("region", "add", "Discovery", "DB", expect=1)
     said = cli(
-        "region", "add", "Discovery", "DB", "--steps", "schema", "--rect", "0", "0", "9", "9",
+        "region",
+        "add",
+        "Discovery",
+        "DB",
+        "--steps",
+        "schema",
+        "--rect",
+        "0",
+        "0",
+        "9",
+        "9",
         expect=1,
     )
     assert "either --steps or --rect" in said

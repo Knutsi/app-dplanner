@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from collections.abc import Container, Sequence
 
     from dplanner.cli import CliCommand
+    from dplanner.cli.gate import TopologyGate
     from dplanner.domain.aspects import AspectSpec
     from dplanner.domain.assets import AssetSource
     from dplanner.domain.model import Library, Project, Step
@@ -71,8 +72,19 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
     from dplanner.modules.estimation.aspect import read as estimated_days
+    from dplanner.modules.estimation.aspect import write as estimate_write
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.estimation.schedule import start_of, write_start
+    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
+    from dplanner.modules.feature.aspect import is_feature
+    from dplanner.modules.feature.aspect import write as feature_write
+    from dplanner.modules.feature.catalogue import (
+        FEATURE_MIME,
+        instance_of,
+        parse_drag,
+        read_catalogue,
+    )
+    from dplanner.modules.feature.module import FeatureDeps, FeatureModule
     from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
@@ -87,12 +99,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ProjectAssetsDeps,
         ProjectAssetsModule,
     )
+    from dplanner.modules.project_editor.drops import CanvasDrop
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
     from dplanner.modules.reopen_tabs.module import ReopenTabsDeps, ReopenTabsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
+    from dplanner.modules.spec.cli import document_names as spec_document_names
     from dplanner.modules.spec.module import SpecDeps, SpecModule
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_INSTRUCTION_ID
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
@@ -117,8 +131,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepDescriptionModule,
     )
     from dplanner.modules.step_description.section import SeparateInstructionLink
-    from dplanner.modules.step_feature.aspect import read as feature_read
-    from dplanner.modules.step_feature.module import StepFeatureDeps, StepFeatureModule
     from dplanner.modules.step_handoff.module import StepHandoffDeps, StepHandoffModule
     from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
     from dplanner.modules.step_milestone.aspect import read as milestone_read
@@ -220,7 +232,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         answer, so a step is the same kind everywhere."""
         return (
             *(("tag",) if milestone_read(step) else ()),
-            *(("layers",) if feature_read(step) else ()),
+            *(("layers",) if is_feature(step) else ()),
             *(("spark",) if agent_enabled(step) else ()),
             *(("beaker",) if test_enabled(step) else ()),
             *(("shield",) if check_read(step) else ()),
@@ -315,7 +327,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 else "highlight"
                 if milestone
                 else "feature"
-                if feature_read(step)
+                if is_feature(step)
                 else ""
             ),
             icons=step_type_icons(step),
@@ -404,6 +416,47 @@ def default_modules(services: "AppServices") -> list["Module"]:
             theme=services.theme,
         )
     )
+
+    def place_feature(project_id: str, payload: bytes, at: tuple[float, float] | None) -> list[str]:
+        """A feature dragged from the Features panel onto a canvas becomes the step that
+        realises it — born through the same ``create`` as New ▸ Feature, marked in the same
+        undo step. Refuses, in the CLI's words, a payload from another project or a record
+        that already has its instance: a feature is implemented once."""
+        from dplanner.cli.command import CliError
+
+        parsed = parse_drag(payload)
+        if parsed is None:
+            return []
+        origin_project, feature_id = parsed
+        if origin_project != project_id:
+            raise CliError("That feature belongs to another project")
+        project = library.project(project_id)
+        record = next((r for r in read_catalogue(project) if r.id == feature_id), None)
+        if record is None:
+            raise CliError(f"No feature {feature_id} in {project.title!r} any more")
+        holder = instance_of(project, record.id)
+        if holder is not None:
+            raise CliError(
+                f"{record.title!r} is already placed as {holder.title!r} — a feature is "
+                "implemented once"
+            )
+        return [
+            project_editor.create_step(
+                project_id,
+                record.title,
+                at=at,
+                # Born as the *Feature* template above: the marker, and the estimate
+                # opted out — a collector carries no estimate of its own — so the modal
+                # lights Feature rather than the catch-all. The set written here and the
+                # template's set are the same fact; change one, change the other.
+                carrying=lambda step: [
+                    SetModuleDataCommand(step.id, FEATURE_ID, feature_write(record.id)),
+                    SetModuleDataCommand(step.id, ESTIMATION_ID, estimate_write(None, on=False)),
+                ],
+                label="Place Feature",
+            ).id
+        ]
+
     project_editor = ProjectEditorModule(
         ProjectEditorDeps(
             library=library,
@@ -439,6 +492,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # The project panel renders whatever registered a card here — the project-level
             # counterpart of the step panel's inspector_sections.
             cards=services.detail_cards,
+            # What the canvas takes by drop: a feature from the Features panel.
+            drops=(CanvasDrop(FEATURE_MIME, place_feature),),
         )
     )
     # Constructed before the list because the projects index opens Specs through it — the
@@ -900,7 +955,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # Read, never added to: grouping the Docs view by feature or milestone is
                 # the same walk the Tests tab makes. A fourth ScopeKind of its own would
                 # teach four tests surfaces about documentation to serve none of it.
-                scopes=_scope_kinds(check_read, feature_read, milestone_read),
+                scopes=_scope_kinds(check_read, is_feature, milestone_read),
                 files=store.files,
                 # Its project-level card: the standing style every composed document follows.
                 cards=services.detail_cards,
@@ -940,10 +995,21 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepCheckModule(
             StepCheckDeps(library=library, undo=services.undo, actions=services.actions)
         ),
-        # A feature is the same shape one rank down: it gathers the work behind it, stopping
-        # at the previous feature. Also no tab of its own, for the same reason.
-        StepFeatureModule(
-            StepFeatureDeps(library=library, undo=services.undo, actions=services.actions)
+        # A feature is a record in the project's catalogue and, once placed, the step that
+        # realises it; it gathers the work behind it, stopping at the previous feature.
+        # The Covers tab that shows what it gathers is still the tests module's.
+        FeatureModule(
+            FeatureDeps(
+                library=library,
+                undo=services.undo,
+                actions=services.actions,
+                panels=services.panels,
+                sections=services.inspector_sections,
+                files=store.files,
+                theme=services.theme,
+                parent=services.window,
+                documents_of=lambda project_id: spec_document_names(library.project(project_id)),
+            )
         ),
         TestsModule(
             TestsDeps(
@@ -960,7 +1026,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # A check declares a scope; a feature and a milestone already were ones, and
                 # all three are the same walk with a different stopping rule. Named here,
                 # the one place that may know every aspect, so none learns the others.
-                scopes=_scope_kinds(check_read, feature_read, milestone_read),
+                scopes=_scope_kinds(check_read, is_feature, milestone_read),
                 pick_assets=pick_assets,
             )
         ),
@@ -1054,14 +1120,18 @@ def _briefing_sections(
     every module's vocabulary — the agent module renders the blocks without learning what
     a description, a requirement or a PR is. An empty fact contributes no section.
     """
+    from dplanner.domain.scope import gatherers
+    from dplanner.modules.feature.aspect import is_feature
+    from dplanner.modules.feature.aspect import read as feature_read
+    from dplanner.modules.feature.catalogue import image_paths, read_catalogue
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
-    from dplanner.modules.spec.aspect import attachment_paths, read_links
-    from dplanner.modules.spec.documents import read_index
+    from dplanner.modules.spec.aspect import attachment_paths
     from dplanner.modules.step_agent_instruction.aspect import read as instruction_read
     from dplanner.modules.step_agent_instruction.prompt import PromptPart
     from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
     from dplanner.modules.step_description.aspect import read as description_read
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
 
     sections: list[PromptPart] = []
     # Without a separate instruction the description IS the ## Instructions block (see
@@ -1072,24 +1142,50 @@ def _briefing_sections(
         sections.append(
             PromptPart(heading="Description", body=description, files=description_files)
         )
-    links = read_links(step)
-    if links:
-        requirements = read_index(library.project_of(step.id)).requirements
-        by_id = {requirement.id: requirement for requirement in requirements}
-        lines: list[str] = []
-        for link in links:
-            requirement = by_id.get(link)
-            if requirement is None:
-                # Links dangle by design (unmark warns, it does not rewrite steps);
-                # the briefing says so instead of pretending the link never existed.
-                lines.append(f"- {link} (no longer in the spec index)")
-                continue
-            where = f", in {requirement.document}" if requirement.document else ""
-            lines.append(f"- **{requirement.title}** ({requirement.id}{where})")
-            lines += [f"  > {quoted}" for quoted in requirement.quote.splitlines()]
+    project = library.project_of(step.id)
+    records = {record.id: record for record in read_catalogue(project)}
+
+    def record_lines(record_id: str) -> list[str]:
+        record = records.get(record_id)
+        if record is None:
+            # A marker may name a record that was removed (undo restores either side
+            # independently); the briefing says so rather than pretending otherwise.
+            return [f"- {record_id} (no longer in the feature catalogue)"]
+        where = ""
+        if record.source is not None:
+            page = f" p.{record.source.page}" if record.source.page is not None else ""
+            where = f", from {record.source.document}{page}"
+        lines = [f"- **{record.title}** ({record.id}{where})"]
+        if record.source is not None:
+            lines += [f"  > {quoted}" for quoted in record.source.quote.splitlines()]
+        return lines
+
+    realised = feature_read(step)
+    if realised:
+        record = records.get(realised)
+        body = "\n".join(record_lines(realised))
+        if record is not None and record.description:
+            body += "\n\n" + record.description.rstrip()
         sections.append(
-            PromptPart(heading="Requirements this step implements", body="\n".join(lines))
+            PromptPart(
+                heading="The feature this step realises",
+                body=body,
+                files=image_paths(files, project.id, record) if record is not None else (),
+            )
         )
+    elif realised is None:
+        # A work step reaches the spec through the feature it flows into: the graph's
+        # answer, the same walk the Covers tab and `scope show` read.
+        owners = gatherers(
+            library,
+            project,
+            carried_by=is_feature,
+            stops_at=lambda other: is_feature(other) or bool(milestone_read(other)),
+        ).get(step.id, ())
+        named = [feature_read(project.step(owner) or step) for owner in owners]
+        lines = [line for record_id in named if record_id for line in record_lines(record_id)]
+        if lines:
+            sections.append(PromptPart(heading="Flows into", body="\n".join(lines)))
     figures = attachment_paths(files, step.id)
     if figures:
         sections.append(
@@ -1116,6 +1212,21 @@ def _briefing_sections(
         if lines:
             sections.append(PromptPart(heading="Where the work lands", body="\n".join(lines)))
     return sections
+
+
+def _briefing_project_sections(
+    library: "Library", step: "Step", _files: "Callable[[str, str], ModuleFileArea]"
+) -> "list[PromptPart]":
+    """The project's own facts as briefing sections: its topology — how the graph is
+    shaped, which every step is read against. Root prose for the same reason as the
+    step's sections: it names another module's vocabulary."""
+    from dplanner.modules.spec.aspect import read_topology
+    from dplanner.modules.step_agent_instruction.prompt import PromptPart
+
+    topology = read_topology(library.project_of(step.id))
+    if not topology.strip():
+        return []
+    return [PromptPart(heading="Topology — how this project's graph is shaped", body=topology)]
 
 
 def _briefing_instruction(
@@ -1157,6 +1268,7 @@ def _default_briefing() -> "Briefing":
     return Briefing(
         parts=_handoff_parts,
         sections=_briefing_sections,
+        project_sections=_briefing_project_sections,
         epilogue=lambda step: _agent_epilogue(step.title),
         preamble=_agent_preamble(),
         instruction=_briefing_instruction,
@@ -1237,16 +1349,14 @@ def _scope_kinds(
         return bool(milestone_label(step))
 
     return (
+        ScopeKind("step_milestone", "Milestone", is_milestone, is_milestone, gathers="feature"),
         ScopeKind(
-            "step_milestone", "Milestone", is_milestone, is_milestone, gathers="step_feature"
-        ),
-        ScopeKind(
-            "step_feature",
+            "feature",
             "Feature",
             is_feature,
             lambda step: is_feature(step) or is_milestone(step),
         ),
-        ScopeKind("step_check", "Check", is_check, lambda _step: False, gathers="step_feature"),
+        ScopeKind("step_check", "Check", is_check, lambda _step: False, gathers="feature"),
     )
 
 
@@ -1278,13 +1388,15 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
 
     Assembled here because each policy lives in its owner's Qt-free half and no module may
     import another's; both the window's Paste/Duplicate and ``step duplicate`` read this
-    tuple. Two entries, on purpose: an id minted per project (a test's) and the state of a
-    shell somebody is running. Everything else a step carries copies as it is.
+    tuple. Three entries, on purpose: an id minted per project (a test's), the state of a
+    shell somebody is running, and a feature's marker — a record has one instance, and
+    the original keeps it. Everything else a step carries copies as it is.
     """
+    from dplanner.modules.feature.catalogue import drop_marker_for_paste
     from dplanner.modules.step_agent_run.aspect import forget_for_paste
     from dplanner.modules.testing.aspect import remint_for_paste
 
-    return (remint_for_paste, forget_for_paste)
+    return (remint_for_paste, forget_for_paste, drop_marker_for_paste)
 
 
 def _asset_sources() -> tuple["AssetSource", ...]:
@@ -1293,10 +1405,11 @@ def _asset_sources() -> tuple["AssetSource", ...]:
     The tuple both surfaces read — ``asset list``/``uses``/``prune`` and the Assets tab —
     assembled here because each ``asset_source()`` lives in its owner's Qt-free half and
     no module may import another's. The order is the report order: the prose surfaces a
-    person writes first, then what rides along to agents, then the spec's figures, then
-    the pool.
+    person writes first, then what rides along to agents, then the spec's figures and
+    the features', then the pool.
     """
     from dplanner.modules.docs.aspect import asset_source as documentation
+    from dplanner.modules.feature.catalogue import asset_source as feature_images
     from dplanner.modules.project_assets.cli import asset_source as pool
     from dplanner.modules.spec.documents import asset_source as spec_figures
     from dplanner.modules.step_agent_instruction.aspect import asset_source as instructions
@@ -1311,28 +1424,37 @@ def _asset_sources() -> tuple["AssetSource", ...]:
         instructions(),
         handoffs(),
         spec_figures(),
+        feature_images(),
         pool(),
     )
 
 
-def default_cli_commands() -> list["CliCommand"]:
+def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand"]:
     """Every ``dplanner <noun> <verb>``, from the same modules the window is built from.
 
     The headless half of the composition root. It imports each module's ``cli.py`` and
     nothing else — no ``module.py``, no Qt — which is what lets ``dplanner project list``
     start in milliseconds and run where a graphics stack does not exist.
+
+    ``gate`` is the topology gate every graph-editing verb runs behind; None builds the
+    real one over the user's config directory. The test suite's shared registry passes a
+    gate with no record file, so no test ever writes the per-user file.
     """
     from dplanner.cli.aspects import commands as aspect_commands
     from dplanner.cli.assets import catalog_commands
     from dplanner.cli.command import CliRegistry
+    from dplanner.cli.gate import RECORD_FILE, TopologyGate, gated
     from dplanner.cli.lint import commands as lint_commands
     from dplanner.cli.scopes import commands as scope_commands
     from dplanner.cli.scopes import lint_checks as scope_lint
     from dplanner.cli.skill import commands as skill_commands
+    from dplanner.core.config_dir import config_dir
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.schedule import start_of
+    from dplanner.modules.feature import cli as feature_cli
+    from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.github import cli as github_cli
     from dplanner.modules.library import cli as library_cli
     from dplanner.modules.progression import cli as progression_cli
@@ -1341,6 +1463,7 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.project_editor import cli as layout_cli
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
+    from dplanner.modules.spec.aspect import read_topology
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_marked
     from dplanner.modules.step_agent_run import cli as agent_state_cli
@@ -1348,8 +1471,6 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_description.aspect import read as description_read
-    from dplanner.modules.step_feature import cli as feature_cli
-    from dplanner.modules.step_feature.aspect import read as feature_read
     from dplanner.modules.step_handoff import cli as handoff_cli
     from dplanner.modules.step_milestone import cli as milestone_cli
     from dplanner.modules.step_milestone.aspect import read as milestone_read
@@ -1362,8 +1483,10 @@ def default_cli_commands() -> list["CliCommand"]:
     from dplanner.modules.time_estimates import cli as time_cli
 
     specs = aspect_specs()
-    scopes = _scope_kinds(check_read, feature_read, milestone_read)
+    scopes = _scope_kinds(check_read, is_feature, milestone_read)
     sources = _asset_sources()
+    if gate is None:
+        gate = TopologyGate(record_path=config_dir() / RECORD_FILE, topology_of=read_topology)
     commands = [
         *library_cli.commands(),
         # The step authors let `step add` author the step in the same call; the list
@@ -1373,11 +1496,14 @@ def default_cli_commands() -> list["CliCommand"]:
                 description_cli.step_author(),
                 agent_cli.step_author(),
                 estimation_cli.step_author(),
+                feature_cli.step_author(),
                 spec_cli.step_author(),
                 testing_cli.step_author(),
             ]
         ),
-        *spec_cli.commands(),
+        # `topology show` tells the gate what it printed; the gate is built here, so the
+        # spec module never learns where the record lives.
+        *spec_cli.commands(note_read=gate.record),
         *estimation_cli.commands(),
         *ticket_cli.commands(),
         *description_cli.commands(),
@@ -1386,7 +1512,9 @@ def default_cli_commands() -> list["CliCommand"]:
         *agent_state_cli.commands(),
         *status_cli.commands(),
         *milestone_cli.commands(),
-        *feature_cli.commands(),
+        # A feature's source quote is checked against the spec document the way a
+        # requirement's once was; the check is the spec module's, handed across here.
+        *feature_cli.commands(anchor=spec_cli.anchor_quote),
         *handoff_cli.commands(),
         *testing_cli.commands(),
         *check_cli.commands(),
@@ -1432,6 +1560,7 @@ def default_cli_commands() -> list["CliCommand"]:
                 *agent_cli.lint_checks(described=lambda step: bool(description_read(step))),
                 *estimation_cli.lint_checks(),
                 *spec_cli.lint_checks(),
+                *feature_cli.lint_checks(anchor=spec_cli.anchor_quote),
                 *testing_cli.lint_checks(),
                 # A step's *own* tests are a different question from what it gathers;
                 # testing's Qt-free reader answers it, handed over rather than imported.
@@ -1439,6 +1568,9 @@ def default_cli_commands() -> list["CliCommand"]:
             ]
         ),
     ]
+    # Every verb that declared it reshapes a graph runs behind the topology gate. Wrapped
+    # before the skill reads the registry, so the skill describes the gated verbs.
+    commands = [gated(command, gate) for command in commands]
     # The skill describes the registry it is registered into, so the loop is closed here
     # rather than by anything going looking for a registry at run time.
     described = CliRegistry()
@@ -1457,13 +1589,13 @@ def aspect_specs() -> list["AspectSpec"]:
     """
     from dplanner.modules.docs import aspect as docs
     from dplanner.modules.estimation import aspect as estimation
+    from dplanner.modules.feature import aspect as feature
     from dplanner.modules.github import aspect as github
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_agent_run import aspect as agent_run
     from dplanner.modules.step_check import aspect as check
     from dplanner.modules.step_description import aspect as description
-    from dplanner.modules.step_feature import aspect as feature
     from dplanner.modules.step_handoff import aspect as handoff
     from dplanner.modules.step_milestone import aspect as milestone
     from dplanner.modules.step_status import aspect as status
@@ -1496,7 +1628,7 @@ _PHRASE_ORDER = (
     "step_status",
     "step_agent_run",
     "step_milestone",
-    "step_feature",
+    "feature",
     "estimation",
     "step_ticket",
     "github",

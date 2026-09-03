@@ -127,6 +127,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             instruction=instruction.body,
             parts=briefing.parts(context.library, step, context.store.files),
             sections=briefing.sections(context.library, step, context.store.files),
+            project_sections=briefing.project_sections(context.library, step, context.store.files),
             epilogue=briefing.epilogue(step),
             preamble=briefing.preamble,
             project_instruction=project_instruction,

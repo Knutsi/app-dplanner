@@ -18,13 +18,18 @@ The user is planning something with you, and the plan is a shared artefact: it i
 files in a folder, usually in version control, and a DPlanner window may be open on it while
 you work. So:
 
-- **Read before writing.** `dplanner project list`, then `dplanner project show <project>`.
-  Say what you found and what you propose before you change it.
+- **Read before writing.** `dplanner project list`, then `dplanner project show <project>`,
+  then **`dplanner topology show <project>`** — the project's own account of how its graph
+  is shaped. The graph-editing verbs (`step add`, `step link`, `feature add`, …) refuse
+  until the current topology has been read on this machine, and refuse again when it
+  changes; a project with none refuses until one is written (`topology set`). Say what you
+  found and what you propose before you change it.
 - **Make small, named changes — and author them whole.** One `step add` per step, carrying
   everything the step needs in the same call: `--describe-file F`, `--agent` if an agent
-  will execute it, `--days N`, `--link r1 r2`, `--attach a1`, `--test 'what must keep
-  being true'`, `--after` for its dependencies. One authored step is one line in the diff and one thing the user can
-  disagree with; five half-steps are noise.
+  will execute it, `--days N`, `--attach a1`, `--test 'what must keep being true'`,
+  `--after` for its dependencies, and `--feature f1` on the one step that realises a
+  feature. One authored step is one line in the diff and one thing the user can disagree
+  with; five half-steps are noise.
 - **The description is the briefing.** Write one good description per step — what it is,
   what done means (see *Writing descriptions*) — and mark agent-executed steps with
   `--agent` (or `dplanner agent on` later). The executing agent receives the description
@@ -42,7 +47,8 @@ you work. So:
   steps end to end) *and* the critical path (dependency-aware, unlimited workers). Real
   staffing lands between them — read the labels, and quote the one you mean.
 - **Re-planning?** `dplanner project clear-steps <project>` removes every step at once and
-  keeps the specs, requirements and start date — then rebuild with authored `step add`s.
+  keeps the specs, the features (unplaced again), the topology and the start date — then
+  rebuild with authored `step add`s.
 
 ## Writing descriptions
 
@@ -112,8 +118,9 @@ the bench view with 200+ rows.
 Three shapes are worth knowing:
 
 - **A collector** is a step that stands for the work behind it. Three kinds, one derivation:
-  a **check** (`dplanner check set`) gathers *everything* it waits on; a **feature**
-  (`dplanner feature set`) gathers its own work up to the previous feature; a **milestone**
+  a **check** (`dplanner check set`) gathers *everything* it waits on; a **feature step**
+  (the one step that realises a record from `feature list` — `step add --feature f1`, or
+  `feature set`) gathers its own work up to the previous feature; a **milestone**
   (`dplanner milestone set`) gathers the features it adds since the previous milestone.
   None of them stores what it holds — it is read off the graph, so linking more work behind
   one widens it automatically, and `--scope` takes any of the three.
@@ -191,11 +198,14 @@ rather than leaving the steps wherever they landed:
   right; `spine` lays the main chain on a central line with feeder work branching off it —
   the right shape when a project drives toward milestones; `timeline` spaces steps by their
   estimates so the graph reads as a schedule. A sort is one undo step in an open window.
-- **Mark the features and the milestones.** `dplanner feature set 'Bulk import'` makes a
-  step the thing people name and demo — it collects the work behind it up to the previous
-  feature. `dplanner milestone set 'Ship the beta' --label MVP` makes a step a milestone
-  (`--label` omitted, one is generated); the spine sort drives toward them, `milestone list`
-  reads as a roadmap, and `scope show` says what each one adds.
+- **Place the features, and mark the milestones.** A feature is a record in the project's
+  catalogue (`dplanner feature list` — read out of a spec, or added by hand) and it is
+  implemented **once**: exactly one step realises it, `step add <project> '<title>'
+  --feature f1 --after <its work>`, and the work upstream of that step flows into the
+  feature. `feature list` says which are placed and which are not; `project lint` reports
+  the unplaced ones. `dplanner milestone set 'Ship the beta' --label MVP` makes a step a
+  milestone (`--label` omitted, one is generated); the spine sort drives toward them,
+  `milestone list` reads as a roadmap, and `scope show` says what each one adds.
 - **Name the areas with regions — coarsely.** A region is a titled rectangle painted
   behind the steps — "Database setup", "Finalize release" — pure annotation, with no
   effect on the plan. `dplanner region add <project> "Database setup" --steps schema
@@ -222,42 +232,61 @@ and the workflow runs from import to steps an agent can execute *in isolation*:
 
 1. **Import it.** `dplanner spec import <project> spec.pdf` stores the document beside the
    project. Importing under the same name again *replaces* it and keeps the previous
-   version, which is what makes step 7 possible. Importing a PDF also extracts its text
+   version, which is what makes step 8 possible. Importing a PDF also extracts its text
    layer.
 2. **Read it yourself.** `spec show` prints any document — for a PDF it prints the
    extracted text, page by page (`--page N` for one page) — and `spec path` still hands
    you the original file. Read the whole thing before planning; you understand it better
    than any parser.
-3. **Mark the requirements.** One `dplanner spec mark <project> <doc> --title … --quote …
-   --page N` per named obligation you find. The quote is checked against the document and
-   the page is recorded (found automatically when the quote is); when the same sentence
-   appears on several pages, `--page` records the occurrence you mean — any page the
-   quote anchors on is accepted, another warns and names them. Add `--strict` when you
-   want a quote that does not anchor to stop you rather than warn. Requirements are the
-   durable trace of your reading — the next agent starts from them, not from scratch.
-4. **Render the figures once.** `spec render <project> <doc> --page N` turns a page into
-   an image asset (`spec assets` lists them); one rendered page can serve several steps.
-5. **Create each step authored, not as a bare title.** A step with only a title is not a
-   plan — the agent who picks it up has nothing to execute. One `step add` carries it all:
-   `--after` its dependencies (see *Linking honestly*), `--describe-file` (what it is —
-   and, on an agent step, the instructions the executing agent receives), `--agent` (an
-   agent will execute it), `--days`, `--link r1 r2` (why it exists), `--attach a1` (the
-   figures its agent must see). Project-wide conventions go in one standing instruction
-   (`agent set --for-project <project> --file -`); `--agent-file` only where a step's
-   *how* differs from its description. The standalone verbs (`describe set`, `agent on`,
-   `estimate set`, `spec link`, `spec attach-to-step` — the last two take several ids per
-   call) remain for editing later. `agent prompt <step>` shows exactly what the executing
+3. **Write the topology with the user.** Before a single step, agree on how this
+   project's graph is shaped and write it down: `dplanner topology set <project> --file -`.
+   Say what counts as a feature *here* (for a React + API project: the views and the API's
+   major parts are features; a component is not, unless it is exported and a feature in
+   itself), what follows a feature (a **check** after every feature that has something to
+   test, say), and where the milestones fall. Then **read it back**: `dplanner topology
+   show <project>`. The graph-editing verbs refuse until the current text has been read
+   on this machine, and refuse again whenever it changes — the topology is what keeps a
+   forty-step plan the right shape, and reading it is cheaper than reshaping the plan.
+4. **Read the features out of the spec.** One `dplanner feature add <project> '<title>'
+   --document <doc> --quote '…' --page N` per feature you find — the things a person would
+   name, demo and test, cut the way the topology says. The quote is checked against the
+   document and the page recorded (found automatically when the quote is); when the same
+   sentence appears on several pages, `--page` records the occurrence you mean — any page
+   the quote anchors on is accepted, another warns and names them. Add `--strict` when a quote that does
+   not anchor should stop you rather than warn; `--describe-file` for what the feature is
+   in a person's words; `--image` for a mock-up. The catalogue is the durable trace of
+   your reading — the next agent starts from `feature list`, not from scratch.
+5. **Render the figures once.** `spec render <project> <doc> --page N` turns a page into
+   an image asset (`spec assets` lists them); one rendered page can serve several steps,
+   and `feature attach <project> f1 <path>` puts one on a feature.
+6. **Create the work steps authored, not as bare titles.** A step with only a title is not
+   a plan — the agent who picks it up has nothing to execute. One `step add` carries it
+   all: `--after` its dependencies (see *Linking honestly*), `--describe-file` (what it is
+   — and, on an agent step, the instructions the executing agent receives), `--agent` (an
+   agent will execute it), `--days`, `--attach a1` (the figures its agent must see).
+   Project-wide conventions go in one standing instruction (`agent set --for-project
+   <project> --file -`); `--agent-file` only where a step's *how* differs from its
+   description. The standalone verbs (`describe set`, `agent on`, `estimate set`, `spec
+   attach-to-step`) remain for editing later. A work step's briefing names the feature it
+   flows into, with the passage it was read from — so it needs no citation of its own.
+7. **Place each feature once.** `step add <project> '<title>' --feature f1 --after <its
+   work steps>` is the step that realises the feature; the work upstream flows into it,
+   and `scope show` prints what it gathers. A record has exactly one such step — a second
+   is refused — and `feature list` says which are placed. Follow the topology for what
+   comes after (a check, a review). `agent prompt <step>` shows exactly what any executing
    agent will receive — read it and ask whether it is enough to work from.
-6. **Run `dplanner project lint <project>` before handing the plan over.** It lists every
-   step missing a description, estimate or requirement link, every agent step with
-   nothing to brief it, every requirement no step implements, every dangling link, every quote that no longer
-   anchors after a spec change, and every description image reference that resolves to
-   nothing — each with the verb that fixes it — and exits 1 until the plan is complete.
-   Hand over clean.
-7. **When the spec changes**, import it again, then `spec diff <project> <doc>` to see what
-   moved (PDFs diff by their text layers), and `spec requirements <project> --document
-   <doc> --json` to find the linked steps. Update the steps and requirements the diff
-   actually touches, and say what you changed.
+8. **Run `dplanner project lint <project>` before handing the plan over.** It lists every
+   step missing a description or estimate, every agent step with nothing to brief it,
+   every feature no step realises (and any realised twice), every quote that no longer
+   anchors after a spec change, a project with no topology, and every description image
+   reference that resolves to nothing — each with the verb that fixes it — and exits 1
+   until the plan is complete. Hand over clean.
+9. **When the spec changes**, import it again, then `spec diff <project> <doc>` to see what
+   moved (PDFs diff by their text layers), and `feature list <project> --document <doc>
+   --json` to find the features read from it and the steps that realise them. `feature
+   edit` the records the diff actually touches (`--quote` re-anchors them), add or
+   remove features, adjust the work behind them — and if the *shape* changed, `topology
+   set` it, `topology show` it, and say what you changed.
 
 ## Recording your work on GitHub
 
@@ -276,9 +305,9 @@ says where the code is:
 Prefer building the project up with authored `step add`s: the user sees each step arrive
 whole and can stop you. To move an agreed plan into a **new** project in one command,
 `dplanner project export | dplanner project import` carries every step's aspects and prose
-and the project's own, including its standing agent instruction — import always creates,
-never merges. (Module *files* — spec blobs, attached images — stay behind; import the spec
-and re-attach figures after.) To rebuild an **existing** project, `project clear-steps`
+and the project's own — the feature catalogue, the topology, its standing agent instruction
+— import always creates, never merges. (Module *files* — spec blobs, attached images — stay
+behind; import the spec and re-attach figures after.) To rebuild an **existing** project, `project clear-steps`
 then authored `step add`s.
 
 ## Conventions
@@ -294,8 +323,11 @@ then authored `step add`s.
   its project itself — from the working directory or `--project` — never as a second
   positional.
 - **Already clear is success.** State-clearing verbs (`status clear`, `estimate clear`,
-  `milestone clear`, `ticket clear`, `handoff clear`, `github clear`, `agent off`,
-  `agent set --clear`) exit 0 when there is nothing to clear — safe to batch.
+  `milestone clear`, `feature clear`, `ticket clear`, `handoff clear`, `github clear`,
+  `agent off`, `agent set --clear`) exit 0 when there is nothing to clear — safe to batch.
+- **A verb marked *reads the topology first*** refuses until `topology show` has printed
+  the project's current topology on this machine. Read it once per session, and again
+  after `topology set`; it costs one command and it is the shape of everything you add.
 - **Exit 1 with one line on stderr** means something you can fix. A traceback means a bug in
   DPlanner; report it rather than working around it.
 - **Nothing is written when a command fails.** A run is a transaction.

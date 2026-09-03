@@ -106,7 +106,7 @@ def graph(*titles):
 
 
 def is_feature(step):
-    return bool(step.module_data.get("step_feature"))
+    return bool(step.module_data.get("feature"))
 
 
 def is_milestone(step):
@@ -115,9 +115,9 @@ def is_milestone(step):
 
 # The kinds, written as the composition root writes them.
 KINDS = (
-    ScopeKind("step_milestone", "Milestone", is_milestone, is_milestone, gathers="step_feature"),
+    ScopeKind("step_milestone", "Milestone", is_milestone, is_milestone, gathers="feature"),
     ScopeKind(
-        "step_feature",
+        "feature",
         "Feature",
         is_feature,
         lambda step: is_feature(step) or is_milestone(step),
@@ -146,7 +146,7 @@ def titles(sources):
 def test_a_feature_reads_the_fragments_behind_it_and_its_own():
     library, project = graph("A", "B", "Auth")
     a, _b, auth = project.steps
-    auth.module_data["step_feature"] = {"on": True}
+    auth.module_data["feature"] = {"feature": "f1"}
     document(a, "About A")
     document(auth, "About the feature")
     assert titles(sources_for(KINDS, library, project, auth.id)) == ["A", "Auth"]
@@ -157,7 +157,7 @@ def test_a_feature_stops_at_the_feature_before_it():
     library, project = graph("A", "First", "B", "Second")
     a, first, b, second = project.steps
     for step in (first, second):
-        step.module_data["step_feature"] = {"on": True}
+        step.module_data["feature"] = {"feature": "f1"}
     document(a, "About A")
     document(b, "About B")
     assert titles(sources_for(KINDS, library, project, second.id)) == ["B"]
@@ -168,7 +168,7 @@ def test_a_milestone_reads_its_features_compiled_documents():
     library, project = graph("A", "Auth", "B", "Search", "v1")
     a, auth, b, search, v1 = project.steps
     for step in (auth, search):
-        step.module_data["step_feature"] = {"on": True}
+        step.module_data["feature"] = {"feature": "f1"}
     v1.module_data["step_milestone"] = {"label": "v1"}
     document(a, "About A")
     document(b, "About B")
@@ -187,7 +187,7 @@ def test_a_milestone_falls_back_to_a_features_notes_when_it_has_no_document():
     """A half-compiled project still produces something honest."""
     library, project = graph("A", "Auth", "v1")
     a, auth, v1 = project.steps
-    auth.module_data["step_feature"] = {"on": True}
+    auth.module_data["feature"] = {"feature": "f1"}
     v1.module_data["step_milestone"] = {"label": "v1"}
     document(a, "About A")
     assert titles(sources_for(KINDS, library, project, v1.id)) == ["A"]
@@ -197,7 +197,7 @@ def test_a_milestone_also_reads_the_loose_steps_it_depends_on():
     """A step no feature gathers still reaches the release it is behind."""
     library, project = graph("A", "Auth", "Loose", "v1")
     a, auth, loose, v1 = project.steps
-    auth.module_data["step_feature"] = {"on": True}
+    auth.module_data["feature"] = {"feature": "f1"}
     v1.module_data["step_milestone"] = {"label": "v1"}
     document(a, "About A")
     document(loose, "About the loose step")
@@ -218,7 +218,7 @@ def test_undocumented_steps_contribute_nothing():
 def test_a_collector_nobody_compiled_reads_as_never():
     library, project = graph("A", "Auth")
     a, auth = project.steps
-    auth.module_data["step_feature"] = {"on": True}
+    auth.module_data["feature"] = {"feature": "f1"}
     document(a, "About A")
     assert state_of(KINDS, library, project, auth.id) == "never"
 
@@ -226,7 +226,7 @@ def test_a_collector_nobody_compiled_reads_as_never():
 def test_a_fresh_compile_reads_as_current():
     library, project = graph("A", "Auth")
     a, auth = project.steps
-    auth.module_data["step_feature"] = {"on": True}
+    auth.module_data["feature"] = {"feature": "f1"}
     document(a, "About A")
     compile_it(library, project, auth, "# Signing in")
     assert state_of(KINDS, library, project, auth.id) == "current"
@@ -235,7 +235,7 @@ def test_a_fresh_compile_reads_as_current():
 def test_editing_a_fragment_makes_its_feature_stale():
     library, project = graph("A", "Auth")
     a, auth = project.steps
-    auth.module_data["step_feature"] = {"on": True}
+    auth.module_data["feature"] = {"feature": "f1"}
     document(a, "About A")
     compile_it(library, project, auth, "# Signing in")
     document(a, "About A, revised")
@@ -246,7 +246,7 @@ def test_hand_editing_the_document_does_not_make_it_stale():
     """The digest is over what was read, not over what was written — so a tweak stands."""
     library, project = graph("A", "Auth")
     a, auth = project.steps
-    auth.module_data["step_feature"] = {"on": True}
+    auth.module_data["feature"] = {"feature": "f1"}
     document(a, "About A")
     compile_it(library, project, auth, "# Signing in")
     auth.module_text[COMPILED_ID] = "# Signing in\n\nWith a one-time link."
@@ -257,7 +257,7 @@ def test_recompiling_a_feature_makes_its_milestone_stale():
     """The cascade, and it costs no notification plumbing: the milestone's sources changed."""
     library, project = graph("A", "Auth", "v1")
     a, auth, v1 = project.steps
-    auth.module_data["step_feature"] = {"on": True}
+    auth.module_data["feature"] = {"feature": "f1"}
     v1.module_data["step_milestone"] = {"label": "v1"}
     document(a, "About A")
     compile_it(library, project, auth, "# Signing in")
@@ -272,7 +272,7 @@ def test_relinking_the_graph_makes_a_document_stale():
     """What a collector gathers is derived, so a link changes the answer — and says so."""
     library, project = graph("A", "Auth")
     a, auth = project.steps
-    auth.module_data["step_feature"] = {"on": True}
+    auth.module_data["feature"] = {"feature": "f1"}
     document(a, "About A")
     compile_it(library, project, auth, "# Signing in")
 

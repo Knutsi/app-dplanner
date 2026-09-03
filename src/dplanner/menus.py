@@ -40,10 +40,11 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # renders and "Step" is what the graph canvas's does — see framework/action_menu.py.
     # "link" holds the two-step verbs: the canvas publishes both ends into the selection
     # scope on a drop and runs the same action the menu does.
-    # "documents" is the spec module's: what a project carries beside its steps.
+    # "documents" is the spec module's: what a project carries beside its steps;
+    # "features" the feature module's: the catalogue of what it delivers, placed or not.
     # "tests" is the test run's two verbs — a run belongs to a project, spans its
     # steps, and there is at most one open at a time.
-    "Project": ("edit", "canvas", "documents", "tests", "open"),
+    "Project": ("edit", "canvas", "documents", "features", "tests", "open"),
     # "edit" is New, Rename and Delete. New is one verb: a step is born plain and the
     # details dialog opens on it, where the aspect bar says what it is.
     # "open" is a surface about the selection — the Step-side mirror of Project's

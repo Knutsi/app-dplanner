@@ -130,9 +130,7 @@ def _layered(
 # -- spine (fishbone) --------------------------------------------------------------------------
 
 
-def spine(
-    library: Library, project: Project, size_for: SizeFor = node_size
-) -> dict[StepId, Point]:
+def spine(library: Library, project: Project, size_for: SizeFor = node_size) -> dict[StepId, Point]:
     """The longest dependency chain on a central line, feeder chains branching back-left
     above and below it — the tree fallen on its side."""
     steps = project.steps
@@ -171,9 +169,7 @@ def spine(
 
     def open_sources(step: Step) -> list[Step]:
         found = [
-            by_id[s]
-            for s in step.edges.get("requires", [])
-            if s in by_id and s not in assigned
+            by_id[s] for s in step.edges.get("requires", []) if s in by_id and s not in assigned
         ]
         return sorted(found, key=lambda source: order[source.id])
 
@@ -317,9 +313,7 @@ def radial(
                 children[node].append(near)
                 queue.append(near)
     # Steps the centre cannot reach still deserve a seat: an outermost ring of their own.
-    unreachable = sorted(
-        (step.id for step in steps if step.id not in ring), key=lambda n: order[n]
-    )
+    unreachable = sorted((step.id for step in steps if step.id not in ring), key=lambda n: order[n])
     outermost = max(ring.values()) + 1
     for step_id in unreachable:
         ring[step_id] = outermost

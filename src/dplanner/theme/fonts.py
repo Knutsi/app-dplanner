@@ -60,7 +60,6 @@ def ui_font() -> QFont:
     return QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont)
 
 
-
 def mono_font(point_size: float = 12.0) -> QFont:
     """Return the monospace font, for metadata and frontmatter views."""
     font = QFont()
