@@ -11,6 +11,11 @@ hidden group never leaves a dangling line, and menus still auto-hide when empty.
 menu is a container of the same kind**: one per title, holding the same group boundaries, so
 two groups feeding one submenu get the rule between them instead of a second child menu
 wearing the same name.
+
+The one exception to create-once-and-mutate is a **data child menu** (`DataMenuSpec`): its
+entries are data rather than verbs, so it is cleared and refilled every time it opens — the
+pop-up presenters' rule, applied to the one container in the bar whose contents a registry
+cannot say.
 """
 
 from PySide6.QtGui import QAction
@@ -19,6 +24,7 @@ from PySide6.QtWidgets import QMainWindow, QMenu
 from dplanner.framework.action_registry import (
     ActionRegistry,
     ActionSpec,
+    DataMenuSpec,
     SortKey,
     key_sequences,
 )
@@ -41,6 +47,7 @@ class DynamicMenuBar:
         # (menu, submenu title) → child QMenu, created on first matching spec. Keyed by
         # title rather than by group: a submenu is one child menu whatever feeds it.
         self._submenus: dict[tuple[str, str], QMenu] = {}
+        self._data_menus: dict[str, tuple[DataMenuSpec, QMenu]] = {}  # spec id → its menu.
         self._keys: dict[QAction, SortKey] = {}  # Every action, separators included.
         self._menu_index = {name: index for index, name in enumerate(registry.menus.menus())}
         # Per container — a menu (title None) or one of its child menus — the separator
@@ -60,7 +67,10 @@ class DynamicMenuBar:
 
         for spec in registry.all_specs():
             self._add_spec(spec)
+        for data in registry.data_menus():
+            self._add_data_menu(data)
         registry.registered.connect(self._add_spec)
+        registry.data_menu_registered.connect(self._add_data_menu)
         context.changed.connect(self.refresh)
         self.refresh(context.current())
 
@@ -114,6 +124,39 @@ class DynamicMenuBar:
             self._submenus[lookup] = child
             self._add_separators(lookup, child)
         return child
+
+    def _add_data_menu(self, spec: DataMenuSpec) -> None:
+        """A data child menu: inserted at its sort position, filled fresh on every open.
+
+        Nothing in it is restated on a context change — its QActions exist only while it
+        is open, so the fill reads the world at the moment the user looks, exactly as a
+        pop-up presenter does. Its menuAction stays visible even when the list is empty:
+        the *menu* is the capability, and an empty list is the fill's own story to tell
+        with a disabled entry.
+        """
+        parent = self._menus[spec.menu]
+        child = QMenu(spec.title, parent)
+        key = self._registry.menus.sort_key(spec)
+        self._keys[child.menuAction()] = key
+        before = next((a for a in parent.actions() if self._keys[a] > key), None)
+        if before is None:
+            parent.addMenu(child)
+        else:
+            parent.insertMenu(before, child)
+        child.aboutToShow.connect(lambda s=spec, c=child: self._fill_data(s, c))
+        self._data_menus[spec.id] = (spec, child)
+        self._refresh_decorations()
+
+    def data_menu(self, spec_id: str) -> QMenu:
+        """The data child menu as it would open right now — how a test asks what it offers."""
+        spec, child = self._data_menus[spec_id]
+        self._fill_data(spec, child)
+        return child
+
+    @staticmethod
+    def _fill_data(spec: DataMenuSpec, child: QMenu) -> None:
+        child.clear()
+        spec.fill(child)
 
     def _add_separators(self, container: tuple[str, str | None], menu: QMenu) -> None:
         """One hidden separator per group boundary, inserted in sort order.

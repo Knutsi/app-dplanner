@@ -8,12 +8,14 @@ one thing four presenters of one registry exist to prevent.
 
 from typing import NamedTuple
 
+import pytest
 from PySide6.QtWidgets import QMainWindow
 
 from dplanner.framework.action_registry import (
     ActionRegistry,
     ActionSpec,
     ActionState,
+    DataMenuSpec,
     MenuStructure,
 )
 from dplanner.framework.context import ContextService
@@ -123,3 +125,52 @@ def test_the_menu_bar_and_a_right_click_render_the_same_menu(app):
     bar = build(app)
     popup = build_menu(bar.registry, bar.context, "Step", bar.window)
     assert entries(popup) == entries(step_menu(bar))
+
+
+def test_a_data_child_menu_sits_in_its_group_with_the_menus_own_rules(app):
+    """Entries that are data — a saved layout, a live run — cannot be specs, so the child
+    menu carries a fill instead, and its placement is still the one table's business:
+    same group, same sort key, same separators as any registered action."""
+    bar = build(app)
+    bar.registry.register_data_menu(
+        DataMenuSpec(
+            id="recent", menu="Step", group="result", title="Recent", fill=lambda _menu: None
+        )
+    )
+    assert entries(step_menu(bar)) == [
+        "rename",
+        "|",
+        ("Test", ["add test", "archive test", "|", "mark ok"]),
+        "|",
+        ("Recent", []),
+        "|",
+        "details",
+    ]
+
+
+def test_a_data_child_menu_is_rebuilt_every_time_it_opens(app):
+    rows = ["first"]
+    bar = build(app)
+
+    def fill(menu):
+        for row in rows:
+            menu.addAction(row)
+
+    bar.registry.register_data_menu(
+        DataMenuSpec(id="recent", menu="Step", group="result", title="Recent", fill=fill)
+    )
+    assert entries(bar.menubar.data_menu("recent")) == ["first"]
+    rows.append("second")
+    assert entries(bar.menubar.data_menu("recent")) == ["first", "second"]
+
+
+def test_a_data_menu_is_validated_and_deduplicated_like_any_spec(app):
+    spec = DataMenuSpec(id="recent", menu="Step", group="result", title="R", fill=lambda _m: None)
+    registry = ActionRegistry(MENUS)
+    registry.register_data_menu(spec)
+    with pytest.raises(ValueError):
+        registry.register_data_menu(spec)
+    with pytest.raises(ValueError):
+        registry.register_data_menu(
+            DataMenuSpec(id="other", menu="Nope", group="result", title="R", fill=lambda _m: None)
+        )

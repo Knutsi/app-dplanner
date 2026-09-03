@@ -191,6 +191,20 @@ def test_a_desktop_without_a_window_tool_is_named_as_the_reason():
     assert terminal.focus({"pid": "1"}, platform="linux", which=lambda _n: None) != ""
 
 
+def test_a_tmux_pane_is_reachable_where_a_bare_window_is_not():
+    """Availability is the run's, not the machine's: ``focus`` selects a pane before it
+    asks the desktop for a window, so ``focus_reason`` answers in the same order."""
+
+    def tmux_only(name):
+        return "/usr/bin/tmux" if name == "tmux" else None
+
+    assert terminal.focus_reason({"pane": "%5"}, platform="linux", which=tmux_only) == ""
+    assert "xdotool or wmctrl" in terminal.focus_reason({}, platform="linux", which=tmux_only)
+    assert "xdotool or wmctrl" in terminal.focus_reason(
+        {"pane": "%5"}, platform="linux", which=lambda _n: None
+    )
+
+
 def test_windows_activates_by_the_powershell_pid_then_the_title():
     runner = Runner({("powershell", "-NoProfile"): (0, "True\r\n")})
     facts = {"pid": "321", "title": "dplanner: Deploy"}
@@ -344,6 +358,61 @@ def test_the_browser_lists_runs_with_their_outcome(services, step, tmp_path):
     assert runs.runs() == [] and runs._browser.findChild(QLabel, "AgentBrowserEmpty").isVisibleTo(
         runs._browser
     )
+
+
+def test_the_browser_greys_show_terminal_per_run(services, step, tmp_path, monkeypatch):
+    """A run in a tmux pane keeps its button on a desktop that cannot raise windows —
+    each row asks about its own shell, never about the machine in general."""
+    monkeypatch.setattr(
+        terminal, "focus_reason", lambda facts, **_kw: "" if facts.get("pane") else "no way in"
+    )
+    runs = module(services)
+    runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"))
+    (tmp_path / "shell").write_text("pane=%5\n")
+    other = tmp_path / "other"
+    other.mkdir()
+    runs.track(step.id, str(other / "shell"), str(other / "exit"))
+    runs._open_browser()
+    in_tmux, bare = runs._browser._rows[str(tmp_path)], runs._browser._rows[str(other)]
+    assert in_tmux.terminal_button.isEnabled()
+    assert not bare.terminal_button.isEnabled()
+    assert bare.terminal_button.toolTip() == "no way in"
+
+
+def test_tools_agent_list_offers_the_live_runs(services, step, tmp_path, monkeypatch):
+    """Tools ▸ Agent List: a row per live run raising its terminal, greyed per run with
+    the reason, the browser at the bottom — and rebuilt every time the menu opens."""
+    menubar = services.window.dynamic_menubar
+    listing = menubar.data_menu("agent_run.list")
+    labels = [a.text().replace("&", "") for a in listing.actions() if not a.isSeparator()]
+    assert labels == ["No agents running from this window", "Agents…"]
+    assert not listing.actions()[0].isEnabled()
+
+    monkeypatch.setattr(
+        terminal, "focus_reason", lambda facts, **_kw: "" if facts.get("pane") else "no way in"
+    )
+    runs = module(services)
+    runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"))
+    row = menubar.data_menu("agent_run.list").actions()[0]
+    assert row.text() == "Agent on “Deploy” — no way in" and not row.isEnabled()
+
+    (tmp_path / "shell").write_text("pane=%5\n")
+    row = menubar.data_menu("agent_run.list").actions()[0]
+    assert row.text() == "Agent on “Deploy”" and row.isEnabled()
+    focused = []
+
+    def focus(facts, **_kw):
+        focused.append(facts)
+        return ""
+
+    monkeypatch.setattr(terminal, "focus", focus)
+    row.trigger()
+    assert focused == [{"pane": "%5"}]
+
+    (tmp_path / "exit").write_text("0\n")
+    runs.check()
+    ended = menubar.data_menu("agent_run.list").actions()[0]
+    assert ended.text() == "No agents running from this window"
 
 
 def test_needs_input_reaches_the_canvas_as_an_attention_chip(services, step):

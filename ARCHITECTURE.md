@@ -491,6 +491,31 @@ with no click yet — or for Duplicate — every clone goes one row below its or
 arrivals then become the selection and the remembered point steps past them, so pasting
 twice stacks two blocks rather than hiding one under the other.
 
+### A child menu of data is rebuilt when it opens
+
+The menu bar's QActions are created once and restated on every context change, and for verbs
+that is right: an action's identity is fixed, only its state moves. A list whose *entries*
+are born and die at runtime — the live agent runs behind Tools ▸ Agent List, a "Recent…"
+menu anywhere — does not fit that shape. Registering an ephemeral `ActionSpec` per row would
+mint action ids nobody manages, leak each row into the command palette, and need the
+un-registration door the registry deliberately keeps shut (reload is a full rebuild for the
+same reason).
+
+The layout picker already answered this on the toolbar: saved layout names are data, so the
+popup is built fresh every time it opens, and only the entries with a fixed identity render
+through the registry. `DataMenuSpec` is that answer given to the menu bar. The spec carries
+`menu`, `group` and `order` — placed and sorted by the same table as any action, so the
+group separators need no new rule — plus a `fill(QMenu)` the presenter calls after clearing
+the child menu on every open. Rows can never go stale because they never outlive a look at
+them; a fixed verb inside the list (the Agent List's *Agents…*) renders through
+`append_action`, never as a copy.
+
+One deliberate asymmetry: a spec-fed child menu disappears when everything in it is hidden,
+but a data child menu stays visible with an empty list. The menu itself is the capability —
+*hidden means absent* — and its emptiness is the fill's own story to tell with a disabled
+entry ("No agents running from this window"), which is the same greyed-teaches-the-
+precondition rule every other presenter follows.
+
 ## Where a panel goes
 
 The window has a centre — the tab groups — and three areas around it: **left, right and
@@ -1713,6 +1738,17 @@ one, with the title as the fallback, through xdotool or wmctrl; Windows activate
 PowerShell pid, then the title. Where a desktop cannot — a Wayland session with neither
 tool — the verb is *disabled with the reason*, never hidden: the rule from *Hidden means
 absent*. Every provider answers a reason string, so one verb reads them all.
+
+The offer to switch lives in three places, and the gate is the same question asked of the
+same run. Tools ▸ Agent List is the quick switch — a data child menu (see *A child menu of
+data is rebuilt when it opens*) listing every live run this window launched, one entry per
+run raising its terminal, the browser under a rule at the bottom; the browser's rows and
+*Show Agent Terminal* are the other two. All three ask `focus_reason`, which is **per run,
+not per desktop**: it reads the shell's recorded facts in the same order `focus` tries
+them, so a run inside a tmux pane stays offered on a Wayland session with no window tool —
+tmux can select the pane wherever its client is — while the run in a bare window beside it
+is greyed with what the desktop would need. Gating every row on the desktop's answer alone
+was the first version, and it greyed switches that would have worked.
 
 ### Which terminal opens is a table, not a chain
 
