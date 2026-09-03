@@ -3,7 +3,8 @@
 Pure widgets, on the task centre's pattern: the module feeds them the run list and the
 callbacks; they only render. Browser rows are persistent widgets keyed by run and
 reconciled on refresh, so a row survives a tick with its buttons' state intact. A live
-row offers *Show Terminal* and *Reveal*; an ended row keeps its outcome until dismissed.
+row offers *Show Terminal* and *Reveal* — greyed per run with the reason when that run's
+terminal cannot be raised; an ended row keeps its outcome until dismissed.
 
 Presentation follows DESIGN.md: the step's title on the primary line, the state or outcome
 and the launch time on a secondary line, rows in a framed scrolling well, quiet buttons —
@@ -211,7 +212,7 @@ class AgentBrowserDialog(QDialog):
         layout.addWidget(self.well, 1)
         layout.addLayout(footer)
 
-    def refresh(self, runs: list[AgentRun], focus_reason: str) -> None:
+    def refresh(self, runs: list[AgentRun], reason_of: Callable[[AgentRun], str]) -> None:
         wanted = {run.key for run in runs}
         for key, row in list(self._rows.items()):
             if key not in wanted:
@@ -233,7 +234,7 @@ class AgentBrowserDialog(QDialog):
                 )
                 self._rows_layout.insertWidget(len(self._rows), existing)
                 self._rows[run.key] = existing
-            existing.refresh(run, focus_reason)
+            existing.refresh(run, reason_of(run))
         live = sum(1 for run in runs if run.live)
         ended = len(runs) - live
         parts = ([f"{live} running"] if live else []) + ([f"{ended} ended"] if ended else [])

@@ -18,8 +18,10 @@ application vocabulary. It is passed in at construction and validated at registr
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from PySide6.QtGui import QColor, QIcon, QKeySequence
+from PySide6.QtWidgets import QMenu
 
 from dplanner.core.signals import Signal
 from dplanner.framework.context import Context
@@ -45,6 +47,27 @@ def always_enabled(_context: Context) -> ActionState:
 type SortKey = tuple[int, int, int, str]
 
 
+class MenuPlacement(Protocol):
+    """Where an entry sits in the bar — all that validation and ordering need to know.
+
+    Both registrations satisfy it: an :class:`ActionSpec` and a :class:`DataMenuSpec` are
+    placed by the same table and sorted by the same key, so the two kinds of entry can
+    never disagree about where a group is.
+    """
+
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def menu(self) -> str: ...
+
+    @property
+    def group(self) -> str: ...
+
+    @property
+    def order(self) -> int: ...
+
+
 class MenuStructure:
     """Top-level menus in bar order, each holding named groups in menu order.
 
@@ -65,7 +88,7 @@ class MenuStructure:
     def groups(self, menu: str) -> tuple[str, ...]:
         return self._structure[menu]
 
-    def validate(self, spec: "ActionSpec") -> None:
+    def validate(self, spec: MenuPlacement) -> None:
         """Raise if a spec names a menu or group that does not exist.
 
         At registration, not at render time: a typo should fail at startup naming the
@@ -80,7 +103,7 @@ class MenuStructure:
                 f" {spec.menu!r} (groups: {', '.join(groups)})"
             )
 
-    def sort_key(self, spec: "ActionSpec") -> SortKey:
+    def sort_key(self, spec: MenuPlacement) -> SortKey:
         """Menu-bar order: (menu, group, order, id) — total and stable across modules."""
         return (
             self._index[spec.menu],
@@ -117,6 +140,28 @@ class ActionSpec:
     run: Callable[[Context], None] = field(default=lambda _context: None)
 
 
+@dataclass(frozen=True)
+class DataMenuSpec:
+    """A child menu whose entries are *data*, rebuilt every time it opens.
+
+    A saved layout, a live agent run: rows that come and go while the application sits
+    there, which registered specs cannot say. So the spec carries a ``fill`` instead of
+    entries — the presenter clears the child menu and calls it on open, the way every
+    pop-up is built fresh, so a row can never go stale. The fill owns the whole story,
+    the empty one included: a data menu stays visible with nothing to list (the *menu*
+    is the capability, and hidden means absent), so say so with a disabled entry. A
+    fixed verb inside one renders through
+    :func:`dplanner.framework.action_menu.append_action`, never as a copy.
+    """
+
+    id: str  # "agent_run.list" — module-prefixed, globally unique.
+    menu: str
+    group: str
+    title: str  # The child menu's name in the bar.
+    fill: Callable[[QMenu], None]
+    order: int = 50
+
+
 def key_sequences(
     shortcut: QKeySequence.StandardKey | str | tuple[str, ...] | None,
 ) -> list[QKeySequence]:
@@ -134,7 +179,9 @@ class ActionRegistry:
     def __init__(self, menus: MenuStructure) -> None:
         self.menus = menus
         self._specs: dict[str, ActionSpec] = {}
+        self._data_menus: dict[str, DataMenuSpec] = {}
         self.registered: Signal[ActionSpec] = Signal()
+        self.data_menu_registered: Signal[DataMenuSpec] = Signal()
 
     def register(self, spec: ActionSpec) -> None:
         if spec.id in self._specs:
@@ -142,6 +189,16 @@ class ActionRegistry:
         self.menus.validate(spec)
         self._specs[spec.id] = spec
         self.registered.emit(spec)
+
+    def register_data_menu(self, spec: DataMenuSpec) -> None:
+        if spec.id in self._data_menus:
+            raise ValueError(f"data menu id {spec.id!r} already registered")
+        self.menus.validate(spec)
+        self._data_menus[spec.id] = spec
+        self.data_menu_registered.emit(spec)
+
+    def data_menus(self) -> list[DataMenuSpec]:
+        return sorted(self._data_menus.values(), key=self.menus.sort_key)
 
     def spec(self, action_id: str) -> ActionSpec:
         return self._specs[action_id]

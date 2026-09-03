@@ -1085,6 +1085,32 @@ about one that never matched. `tests/test_theme.py::test_a_splitter_seam_is_exac
 therefore renders a splitter in each orientation and counts the `$BORDER` pixels across the
 handle — it caught the slab, and it is the shape any handle rule should be checked in.
 
+### `DataMenuSpec`: a menu-bar child menu whose entries are data
+
+**What.** Two changes. `framework/action_registry.py` gained `DataMenuSpec` — `id`, `menu`,
+`group`, `title`, `order` and a `fill(QMenu)` callback — with `register_data_menu`,
+`data_menus()` and a `data_menu_registered` signal beside the spec machinery, and a
+`MenuPlacement` protocol so `MenuStructure.validate`/`sort_key` type against what placement
+actually needs rather than against `ActionSpec`. `framework/menubar.py` renders one: the
+child `QMenu` is inserted at its sort key like any entry (so the group separators just
+work), stays visible when empty, and is cleared and refilled on `aboutToShow`;
+`data_menu(spec_id)` returns it freshly filled, which is how a test asks what it offers.
+
+**Why.** The menu bar's create-once-and-restate QActions cannot say a list whose entries are
+born and die at runtime — live agent runs, in DPlanner's case; recent files, in anybody's.
+Registering ephemeral `ActionSpec`s would leak ids into the palette and need the
+un-registration door the registry deliberately keeps shut. The toolbar already had the
+answer (DPlanner's layout picker builds its popup fresh on open); this is the same rule given
+to the one presenter that never rebuilds. Belongs upstream, we think: "Recent…" menus are
+universal, and `fill_menu` in `action_menu.py` could learn to render the same specs so a
+right-click on a menu holding one cannot drift — not done here because nothing pops Tools up.
+
+**A detail worth keeping.** The data menu's `menuAction` stays visible with an empty list, on
+the *hidden means absent* rule: the menu is the capability, and the fill tells the empty
+story with a disabled entry ("No agents running from this window"). Deriving its visibility
+from its contents — the spec-fed child menus' rule — would make the capability flicker with
+the data.
+
 
 ## 2. Conventions the template documents that we had to change
 

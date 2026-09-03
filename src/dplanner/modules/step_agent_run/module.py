@@ -15,6 +15,10 @@ half of a launch — **the shell is a peer this window keeps an eye on**:
 - A status-bar button ("Agent on “X”", "2 agents running") opens the Agents browser —
   View ▸ Agents… does the same — where every run this machine launched is a row with its
   state or outcome, *Show Terminal*, *Reveal* and a dismiss.
+- Tools ▸ Agent List is the quick switch: a data child menu listing the live runs, each
+  entry raising its terminal. Availability is per run (``terminal.focus_reason`` — a tmux
+  pane is reachable on a desktop whose bare windows are not), and a run that cannot be
+  switched to is greyed with the reason, in the list, the browser and the Step verb alike.
 - Two Step-menu verbs: *Show Agent Terminal* (the focus provider in ``terminal.py``, greyed
   with the reason when the desktop cannot) and *Clear Agent Run*, the window's twin of
   ``dplanner agent-state clear`` — an edit of the user's, so it goes through the undo stack.
@@ -27,18 +31,20 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QMenu, QWidget
 
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, StepId
+from dplanner.framework.action_menu import append_action
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
     ActionRegistry,
     ActionSpec,
     ActionState,
+    DataMenuSpec,
 )
-from dplanner.framework.context import Context
+from dplanner.framework.context import Context, ContextService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.window import StatusHost
@@ -63,6 +69,7 @@ class StepAgentRunDeps:
     library: Library
     undo: UndoService[Library]
     actions: ActionRegistry
+    context: ContextService
     status: StatusHost
     parent: QWidget
     # Whether the plan changed underneath: an exit is never written over another writer.
@@ -143,6 +150,16 @@ class StepAgentRunModule:
                 run=lambda _context: self._open_browser(),
             )
         )
+        deps.actions.register_data_menu(
+            DataMenuSpec(
+                id="agent_run.list",
+                menu="Tools",
+                group="runs",
+                title="Agent List",
+                order=10,
+                fill=self._fill_agent_list,
+            )
+        )
         self.check()
 
     # -- tracking ----------------------------------------------------------------------------
@@ -195,7 +212,7 @@ class StepAgentRunModule:
             return
         self._button.show_runs(self._runs, self._title_of)
         if self._browser.isVisible():
-            self._browser.refresh(self._runs, terminal.support_reason())
+            self._browser.refresh(self._runs, self._focus_reason)
         live = any(run.live for run in self._runs)
         if live and not self._timer.isActive():
             self._timer.start()
@@ -204,7 +221,7 @@ class StepAgentRunModule:
 
     def _open_browser(self) -> None:
         assert self._browser is not None
-        self._browser.refresh(self._runs, terminal.support_reason())
+        self._browser.refresh(self._runs, self._focus_reason)
         self._browser.show()  # Non-modal: the agents keep working underneath.
         self._browser.raise_()
 
@@ -217,18 +234,23 @@ class StepAgentRunModule:
     def _live_run(self, step_id: StepId) -> AgentRun | None:
         return next((run for run in self._runs if run.live and run.step_id == step_id), None)
 
+    def _focus_reason(self, run: AgentRun) -> str:
+        """Why this run's terminal cannot be raised, or "" — per run, not per desktop."""
+        return terminal.focus_reason(read_shell(run))
+
     # -- the verbs -----------------------------------------------------------------------------
 
     def _can_show_terminal(self, context: Context) -> ActionState:
         step_id = self._focused(context)
         if step_id is None:
             return DISABLED
-        if self._live_run(step_id) is None:
+        run = self._live_run(step_id)
+        if run is None:
             return ActionState(
                 enabled=False,
                 label="Show Agent Terminal — no agent shell launched from here is running",
             )
-        reason = terminal.support_reason()
+        reason = self._focus_reason(run)
         if reason:
             return ActionState(enabled=False, label=f"Show Agent Terminal — {reason}")
         return ENABLED
@@ -243,6 +265,27 @@ class StepAgentRunModule:
         reason = terminal.focus(read_shell(run))
         if reason:
             self._deps.status.show_status(f"Could not show the agent's terminal — {reason}", 6000)
+
+    def _fill_agent_list(self, menu: QMenu) -> None:
+        """Tools ▸ Agent List: every live run as an entry that raises its terminal.
+
+        The rows are data on the layout button's pattern — built fresh each time the menu
+        opens — and the browser entry at the bottom renders through the registry. A run
+        that cannot be switched to is greyed with its reason, per run: a tmux pane is
+        reachable on a desktop whose bare windows are not.
+        """
+        live = [run for run in self._runs if run.live]
+        if not live:
+            nothing = menu.addAction("No agents running from this window")
+            nothing.setEnabled(False)
+        for run in live:
+            reason = self._focus_reason(run)
+            name = f"Agent on “{self._title_of(run.step_id)}”"
+            entry = menu.addAction(f"{name} — {reason}" if reason else name)
+            entry.setEnabled(not reason)
+            entry.triggered.connect(lambda _checked=False, r=run: self._show_terminal(r))
+        menu.addSeparator()
+        append_action(menu, self._deps.actions, self._deps.context, "agent_run.show_agents")
 
     def _can_clear(self, context: Context) -> ActionState:
         step_id = self._focused(context)

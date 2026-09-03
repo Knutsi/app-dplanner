@@ -48,6 +48,23 @@ def support_reason(
     return UNSUPPORTED
 
 
+def focus_reason(
+    facts: Mapping[str, str],
+    platform: str = sys.platform,
+    which: Callable[[str], str | None] = shutil.which,
+) -> str:
+    """Why this shell's terminal cannot be raised, or "" when :func:`focus` can try.
+
+    Per run, not per desktop: :func:`focus` selects a tmux pane before it asks the desktop
+    for a window, so a run with a pane is reachable wherever tmux is installed — a Wayland
+    session with no window tool included — and only a run without one needs
+    :func:`support_reason`'s answer.
+    """
+    if facts.get("pane", "") and which("tmux"):
+        return ""
+    return support_reason(platform, which)
+
+
 def focus(
     facts: Mapping[str, str],
     platform: str = sys.platform,

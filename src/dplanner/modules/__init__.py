@@ -677,6 +677,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             library=library,
             undo=services.undo,
             actions=services.actions,
+            context=services.context,
             status=services.window,
             parent=services.window,
             # An exit is never written over a plan that changed underneath — the same
