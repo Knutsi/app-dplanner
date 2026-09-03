@@ -14,6 +14,7 @@ window's.
 from collections.abc import Callable, Sequence
 
 from PySide6.QtCore import QMimeData, Qt
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -21,12 +22,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from dplanner.domain.model import Library, NodeId
+from dplanner.domain.model import Library, NodeId, Step
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import (
@@ -38,7 +40,7 @@ from dplanner.framework.context import (
     entity_uri,
     selection_uri,
 )
-from dplanner.framework.list_rows import DETAIL_ROLE, MUTED_ROLE, TwoLineDelegate
+from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.modules.feature.aspect import MODULE_ID
 from dplanner.modules.feature.catalogue import (
@@ -50,6 +52,7 @@ from dplanner.modules.feature.catalogue import (
     summary_line,
 )
 from dplanner.modules.feature.editor import FeatureEditor
+from dplanner.theme.icons import edit_icon, graph_icon, layers_icon, plus_icon, trash_icon
 
 # The selection-URI kind the panel's own context carries: "<project id>:<feature id>".
 FEATURE_ENTITY = "feature"
@@ -64,6 +67,12 @@ DIALOG_WIDTH = 640
 DIALOG_HEIGHT = 560
 
 TOOLBAR_ACTIONS = ("feature.add", "feature.edit", "feature.remove", "feature.reveal")
+ICONS: dict[str, Callable[[str], QIcon]] = {
+    "feature.add": plus_icon,
+    "feature.edit": edit_icon,
+    "feature.remove": trash_icon,
+    "feature.reveal": graph_icon,
+}
 
 
 def feature_ref(project_id: NodeId, feature_id: str) -> str:
@@ -100,7 +109,6 @@ class _FeatureList(QListWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setItemDelegate(TwoLineDelegate(self))
         self.setDragEnabled(True)
         self.setDragDropMode(QListWidget.DragDropMode.DragOnly)
         self.setDefaultDropAction(Qt.DropAction.CopyAction)
@@ -157,18 +165,23 @@ class FeaturesPanel(QWidget):
         self,
         library: Library,
         actions: ActionRegistry,
+        theme: ThemeService,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("InspectorPanel")
         self._library = library
         self._actions = actions
+        self._theme = theme
         self._project_id: NodeId | None = None
 
         self.list = _FeatureList(self)
         self.list.currentItemChanged.connect(lambda *_a: self._refresh_buttons())
         self.list.itemDoubleClicked.connect(lambda _item: self._run("feature.edit"))
 
+        # Glyph-only, the label as the tooltip — the Specs tab's toolbar recipe. Words on
+        # four buttons would set the panel's width, and "Reveal Feature's Step" alone is
+        # wider than the Index it sits under.
         self.buttons: dict[str, QToolButton] = {}
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
@@ -176,8 +189,9 @@ class FeaturesPanel(QWidget):
         for action_id in TOOLBAR_ACTIONS:
             button = QToolButton(self)
             button.setObjectName("ToolbarButton")
-            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
             button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             button.clicked.connect(lambda _checked=False, a=action_id: self._run(a))
             self.buttons[action_id] = button
             row.addWidget(button)
@@ -202,7 +216,10 @@ class FeaturesPanel(QWidget):
             library.module_data_changed.connect(self._on_module_data),
             library.structure_changed.connect(lambda *_a: self._refresh()),
             library.field_changed.connect(lambda *_a: self._refresh()),
+            # Icons and row inks are copied colours, so a theme change owes a repaint.
+            theme.changed.connect(lambda _theme: self._paint()),
         ]
+        self._paint()
 
     # -- the ContextPanel contract -----------------------------------------------------------
 
@@ -252,6 +269,12 @@ class FeaturesPanel(QWidget):
         self.list.project_id = project_id
         self._refresh()
 
+    def _paint(self) -> None:
+        ink = self._theme.current.text_secondary
+        for action_id, button in self.buttons.items():
+            button.setIcon(ICONS[action_id](ink))
+        self._refresh()
+
     def _refresh(self) -> None:
         keep = self.selected_feature_id()
         self.list.blockSignals(True)
@@ -266,14 +289,18 @@ class FeaturesPanel(QWidget):
         self.hint.setVisible(self.list.count() > 0)
         self._refresh_buttons()
 
-    @staticmethod
-    def _row(record: FeatureRecord, instance: object) -> QListWidgetItem:
-        item = QListWidgetItem(record.title or record.id)
-        item.setData(ID_ROLE, record.id)
+    def _row(self, record: FeatureRecord, instance: Step | None) -> QListWidgetItem:
+        """One line: the feature's glyph and its title. A placed one is drawn in the
+        secondary tone — dealt with — and says on which step in its tooltip; an unplaced
+        one is full ink, and drags."""
         placed = instance is not None
-        detail = summary_line(record, instance)  # type: ignore[arg-type]
-        item.setData(DETAIL_ROLE, detail if placed else f"{detail} — drag onto the canvas")
-        item.setData(MUTED_ROLE, placed)
+        current = self._theme.current
+        ink = current.text_secondary if placed else current.text_primary
+        item = QListWidgetItem(layers_icon(ink), record.title or record.id)
+        item.setData(ID_ROLE, record.id)
+        item.setForeground(QColor(ink))
+        detail = summary_line(record, instance)
+        item.setToolTip(detail if placed else f"{detail} — drag onto the canvas")
         flags = item.flags()
         if placed:
             flags &= ~Qt.ItemFlag.ItemIsDragEnabled
@@ -290,8 +317,7 @@ class FeaturesPanel(QWidget):
             spec = self._actions.spec(action_id)
             state = spec.state(context)
             button.setEnabled(state.enabled)
-            button.setText(state.label or spec.label.replace("&", "").rstrip("…"))
-            button.setToolTip(spec.tip)
+            button.setToolTip(state.label or spec.label.replace("&", ""))
 
     def _run(self, action_id: str) -> None:
         if self._project_id is None:

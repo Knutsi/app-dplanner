@@ -1544,9 +1544,12 @@ lines wherever `setTabVisible` is driven from a predicate.
 
 **What.** The two-line list row the Specs tab had as a private delegate — name over a
 quieter detail line, `DETAIL_ROLE` for the second line, `MUTED_ROLE` to draw a whole row in
-the secondary tone — promoted so the Features panel could share it instead of copying it.
+the secondary tone — promoted into the framework, and taught three things there: an item's
+icon (the text starts past the decoration the style draws), `EMPHASIS_ROLE` (a bold first
+line) and `RULE_ROLE` (a hairline under the row), which together make a pinned row read as
+a header. The Features panel turned out to want one-line rows and uses the stock delegate.
 
-**Belongs upstream?** Yes; every side-panel list of named things wants it.
+**Belongs upstream?** Yes; a side-panel list of named things with a second line wants it.
 
 ### `framework/asset_gallery.py` — `set_files(…, remove=)`
 

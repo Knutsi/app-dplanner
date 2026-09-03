@@ -41,7 +41,7 @@ from dplanner.framework.context import (
     entity_uri,
     selection_uri,
 )
-from dplanner.framework.list_rows import DETAIL_ROLE, TwoLineDelegate
+from dplanner.framework.list_rows import DETAIL_ROLE, EMPHASIS_ROLE, RULE_ROLE, TwoLineDelegate
 from dplanner.framework.markdown_view import MarkdownView
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.theme_service import ThemeService
@@ -60,7 +60,16 @@ from dplanner.modules.spec.documents import (
 )
 from dplanner.modules.spec.editor import SpecMarkdownEditor
 from dplanner.modules.spec.viewer import PdfPageView
-from dplanner.theme.icons import edit_icon, external_icon, folder_icon, plus_icon, trash_icon
+from dplanner.theme.icons import (
+    edit_icon,
+    external_icon,
+    folder_icon,
+    graph_icon,
+    plus_icon,
+    read_icon,
+    spec_icon,
+    trash_icon,
+)
 
 SPECS_KIND = "specs"
 
@@ -194,10 +203,13 @@ class SpecsActivity(EntityActivity):
         self._widget = page
         # No `field_changed` subscription: nothing here reads a field — the list shows
         # index data, and retitling the tab is `SpecModule._retitle_tabs`'s job.
+        self._theme = theme
         self._unsubscribes = [
             library.module_data_changed.connect(self._on_module_data),
             library.text_edited.connect(self._on_text_edited),
             theme.changed.connect(lambda _theme: self._paint_toolbar(theme)),
+            # The rows carry ink-coloured icons, which a copied colour would leave stale.
+            theme.changed.connect(lambda _theme: self._refresh()),
         ]
         self._paint_toolbar(theme)
         self._refresh()
@@ -504,18 +516,24 @@ class SpecsActivity(EntityActivity):
         documents = read_index(self._project()).documents
         self.list.blockSignals(True)
         self.list.clear()
-        pinned = QListWidgetItem(TOPOLOGY_TITLE)
+        # The topology is not one more document: it wears the graph's glyph in the accent,
+        # a bold name, and a rule under it — a header over the list rather than a row in it.
+        pinned = QListWidgetItem(graph_icon(self._theme.current.accent), TOPOLOGY_TITLE)
         written = bool(read_topology(self._project()).strip())
         pinned.setData(
             DETAIL_ROLE,
             "how this project's graph is shaped" if written else "not written yet",
         )
         pinned.setData(NAME_ROLE, TOPOLOGY_ROW)
+        pinned.setData(EMPHASIS_ROLE, True)
+        pinned.setData(RULE_ROLE, True)
         self.list.addItem(pinned)
+        ink = self._theme.current.text_secondary
         if keep == TOPOLOGY_ROW and (self._topology_chosen or not documents):
             self.list.setCurrentItem(pinned)
         for doc in documents:
-            item = QListWidgetItem(doc.name)
+            page = spec_icon if doc.kind == KIND_PDF else read_icon
+            item = QListWidgetItem(page(ink), doc.name)
             detail = f"{doc.kind} · imported {doc.imported}"
             if doc.previous:
                 detail += " · previous kept"

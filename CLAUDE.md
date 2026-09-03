@@ -677,8 +677,10 @@ root, stop and look for the registry or capability you have not found yet.
   the mime types the composition root lists as `CanvasDrop`s on `ProjectEditorDeps`
   (`project_editor/drops.py`), records the point like a click and hands the payload up;
   the handler lives in the root because it reads one module's catalogue and births
-  through another's `create_step`. Not a mode: Qt's drag events never reach the mouse
-  handlers, and a drop has no state to leave.
+  through another's `create_step`. A dropped feature is born **as the Feature template**
+  — marker and estimate opt-out in the one command, the same set the template names, so
+  the modal lights *Feature* and not the catch-all. Not a mode: Qt's drag events never
+  reach the mouse handlers, and a drop has no state to leave.
 - **The Edit menu's Cut, Copy, Paste, Duplicate, Delete and Select All are the graph's.**
   Registered by `project_editor` as ordinary `ActionSpec`s — no dispatcher until a second
   surface needs a clipboard, because a shortcut can be owned by one enabled QAction at a

@@ -72,6 +72,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
     from dplanner.modules.estimation.aspect import read as estimated_days
+    from dplanner.modules.estimation.aspect import write as estimate_write
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.estimation.schedule import start_of, write_start
     from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
@@ -444,8 +445,13 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 project_id,
                 record.title,
                 at=at,
+                # Born as the *Feature* template above: the marker, and the estimate
+                # opted out — a collector carries no estimate of its own — so the modal
+                # lights Feature rather than the catch-all. The set written here and the
+                # template's set are the same fact; change one, change the other.
                 carrying=lambda step: [
-                    SetModuleDataCommand(step.id, FEATURE_ID, feature_write(record.id))
+                    SetModuleDataCommand(step.id, FEATURE_ID, feature_write(record.id)),
+                    SetModuleDataCommand(step.id, ESTIMATION_ID, estimate_write(None, on=False)),
                 ],
                 label="Place Feature",
             ).id
@@ -1000,6 +1006,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 panels=services.panels,
                 sections=services.inspector_sections,
                 files=store.files,
+                theme=services.theme,
                 parent=services.window,
                 documents_of=lambda project_id: spec_document_names(library.project(project_id)),
             )

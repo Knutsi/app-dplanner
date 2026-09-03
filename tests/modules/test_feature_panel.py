@@ -64,19 +64,34 @@ def test_the_panel_follows_the_focused_project(services, project, tab):
 
 
 def test_the_panel_says_what_is_placed(services, project, tab):
+    """One line per feature, the layers glyph on each; a placed one is muted, says which
+    step in its tooltip, and does not drag."""
+    from PySide6.QtCore import Qt
+
     widget = panel(services)
     step = project.steps[0]
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write("f1")))
     placed, unplaced = widget.list.item(0), widget.list.item(1)
+    assert not placed.icon().isNull() and not unplaced.icon().isNull()
+    assert "placed: 'Build the importer'" in placed.toolTip()
+    secondary = services.theme.current.text_secondary
+    assert placed.foreground().color().name() == secondary.lower()
+    assert unplaced.foreground().color().name() != secondary.lower()
+    assert not placed.flags() & Qt.ItemFlag.ItemIsDragEnabled
+    assert "not placed" in unplaced.toolTip() and "drag" in unplaced.toolTip()
+    assert unplaced.flags() & Qt.ItemFlag.ItemIsDragEnabled
+
+
+def test_the_buttons_are_glyphs_with_their_labels_as_tooltips(services, project, tab):
+    """Words on four buttons would set the panel's width; the label lives in the tooltip."""
     from PySide6.QtCore import Qt
 
-    from dplanner.framework.list_rows import DETAIL_ROLE, MUTED_ROLE
-
-    assert "placed: 'Build the importer'" in placed.data(DETAIL_ROLE)
-    assert placed.data(MUTED_ROLE) is True
-    assert not placed.flags() & Qt.ItemFlag.ItemIsDragEnabled
-    assert "not placed" in unplaced.data(DETAIL_ROLE) and "drag" in unplaced.data(DETAIL_ROLE)
-    assert unplaced.flags() & Qt.ItemFlag.ItemIsDragEnabled
+    widget = panel(services)
+    for button in widget.buttons.values():
+        assert button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+        assert not button.icon().isNull()
+        assert button.text() == ""
+    assert widget.buttons["feature.add"].toolTip() == "Add Feature…"
 
 
 def test_a_row_drags_as_its_id_and_project(services, project, tab):
@@ -151,9 +166,28 @@ def test_dropping_a_feature_places_its_step_in_one_undo_step(services, project, 
     assert placed is not None and placed.id == created.id
     assert POSITION_KEY in created.module_data  # A drop points at a spot, like a click.
     assert services.undo.undo_text() == "Place Feature"
+    # Born as the Feature template: a collector carries no estimate of its own.
+    from dplanner.modules.estimation.aspect import enabled as estimate_enabled
+
+    assert estimate_enabled(created) is False
     assert services.context.current().selected_entity("step") == created.id
     services.undo.undo()
     assert len(project.steps) == 1 and instance_of(project, "f1") is None
+
+
+def test_a_dropped_feature_lights_the_feature_template(services, project, tab, monkeypatch):
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    tab._on_drop(feature_mime(project.id, "f1"), QPointF(400.0, 200.0))
+    created = project.steps[-1]
+    opened = []
+    monkeypatch.setattr(StepDetailsDialog, "exec", lambda self: opened.append(self))
+    services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", created.id)),))
+    services.actions.run("steps.details", services.context.current())
+    (dialog,) = opened
+    assert dialog.panel.bar.template("Feature").isChecked() is True
+    assert dialog.panel.bar.template("Step").isChecked() is False
+    dialog.dispose()
 
 
 def test_dropping_a_placed_feature_is_refused_in_the_status_bar(services, project, tab):

@@ -4,7 +4,7 @@ import pytest
 
 from dplanner.domain.model import TextEdit
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.framework.list_rows import DETAIL_ROLE
+from dplanner.framework.list_rows import DETAIL_ROLE, EMPHASIS_ROLE, RULE_ROLE
 from dplanner.modules.spec.activity import NAME_ROLE, TOPOLOGY_ROW, SpecsActivity
 from dplanner.modules.spec.aspect import MODULE_ID, read_topology
 
@@ -25,6 +25,9 @@ def test_the_topology_is_the_first_row_and_shows_its_editor(services, project, a
     first = activity.list.item(0)
     assert first.text() == "Topology" and first.data(NAME_ROLE) == TOPOLOGY_ROW
     assert first.data(DETAIL_ROLE) == "not written yet"
+    # Not one more document: the graph's glyph, a bold name, a rule under the row.
+    assert not first.icon().isNull()
+    assert first.data(EMPHASIS_ROLE) is True and first.data(RULE_ROLE) is True
     assert activity.list.currentRow() == 0
     assert activity._views.currentWidget() is activity._topology_page
 
