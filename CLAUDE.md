@@ -575,9 +575,10 @@ root, stop and look for the registry or capability you have not found yet.
   terminal-specific hook, so it is the same on every platform and terminal. The agent-run
   module (`step_agent_run/`) polls the runs it launched, clears the step's state when a
   shell ends — directly, with the launch origin, the way the launch was stamped — and
-  **stands down while the plan changed underneath**: the reload rebuilds it and it
-  re-adopts its runs from the per-user store, so an exit is never written over the agent's
-  own last `dplanner` call. Runs are per-user, per-machine facts (`user_config`), never the
+  **stands down while the plan changed underneath**: the watcher adopts the change first
+  (or the rebuild it falls back to re-adopts the runs from the per-user store) and the
+  next tick checks again, so an exit is never written over the agent's own last
+  `dplanner` call. Runs are per-user, per-machine facts (`user_config`), never the
   plan. The Agents browser (status-bar button, *View ▸ Agents…*) is the management view and
   **Tools ▸ Agent List** the quick switch — a data child menu of the live runs, each entry
   raising its terminal; *Step ▸ Show Agent Terminal* focuses the window through

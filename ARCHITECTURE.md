@@ -1810,10 +1810,14 @@ One race is designed around. An agent's last `dplanner status set … done` and 
 land within a tick of each other, and a window that wrote the exit over a plan it had not
 re-read would trip the store's own refusal and leave the user with a conflict notice for
 something no person did. So the tick asks the store first — `changed_underneath()`, the
-same narrowed answer the library watcher reads — and stands down when it is true: the
-reload that follows rebuilds the module, which re-adopts its runs and checks again on a
-plan it has seen. *Nothing writes over a file it has not seen* is the rule for background
-writers too.
+same narrowed answer the library watcher reads — and stands down when it is true. The
+watcher's move is to adopt the change into the live model (*Adopting the other writer's
+changes in place*), after which the same module, its runs intact, checks again on the next
+tick over a plan it has seen; when the store cannot reconcile and the watcher falls back to
+a rebuild, the new module re-adopts its runs from the per-user store and checks then. A
+conflict the user has not yet answered keeps the store's answer true and the tick standing
+down, which is the rule doing its job: *nothing writes over a file it has not seen* holds
+for background writers too.
 
 Finding the window again (*Show Agent Terminal*) is honestly best-effort, and the facts the
 script recorded are chosen so the effort mostly succeeds even after the agent has retitled
