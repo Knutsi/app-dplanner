@@ -147,8 +147,15 @@ or `QSpacerItem` cleared before its layout deletes an item the C++ layout still 
 `QObject` in the same position survives it — `~QObject` unregisters from its parent —
 which is why only layout items bite. **Never read a layout back**: keep your own list of
 what you put in it (`StatusColumn._held`, `MilestoneList._rows`) and read that; `takeAt`
-in a loop that drops the wrapper each turn is fine. `NOTES-FOR-APPFRAME.md` §14 has the
-shiboken references.
+in a loop that drops the wrapper each turn is fine. **And add a child layout to its parent
+before filling it**: a parentless `QHBoxLayout()` given `addWidget` and `addStretch` first
+leaves a `QWidgetItem` and a `QSpacerItem` wrapper alive on the Python side (none when
+`addLayout` comes first), which is what the 2026-09-04 evening crash rode on — a worker
+dying in the boundary collector on `test_asset_gallery.py`, whose bare `AssetGallery` had
+exactly those two beside it in `gc_catalog`'s listing. A test that builds a top-level
+widget of its own disposes it with `deleteLater` (the conftest dispatches it before
+collecting), so the tree dies under Qt's rules and never inside the collector.
+`NOTES-FOR-APPFRAME.md` §14 has the shiboken references.
 
 The layering rules below are enforced by `tests/test_architecture.py`, which runs with the
 normal suite. **If it fails, fix the dependency direction — don't loosen the test.** Every

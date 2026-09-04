@@ -25,12 +25,33 @@ def step(services, make_project):
     return step
 
 
-def test_area_mode_shows_thumbnails_and_chips_and_removes(app, services, step):
+@pytest.fixture
+def make_gallery(app):
+    """A bare gallery that is discarded before the boundary collector runs.
+
+    A parentless widget left to ``gc.collect()`` dies *inside* the collector, after
+    whatever the pass cleared before it — the shape ``scripts/gc_catalog.py`` flags, and
+    the one a worker segfaulted on (2026-09-04, evening). ``deleteLater`` here, dispatched
+    by the conftest before it collects, lets Qt delete the tree under its own rules.
+    """
+    made = []
+
+    def make(**kwargs):
+        gallery = AssetGallery(**kwargs)
+        made.append(gallery)
+        return gallery
+
+    yield make
+    for gallery in made:
+        gallery.deleteLater()
+
+
+def test_area_mode_shows_thumbnails_and_chips_and_removes(make_gallery, services, step):
     area = services.repo.files(step.id, MODULE_ID)
     attach(area, png_bytes(), "figure.png")
     attach(area, b"not an image", "notes.bin")
 
-    gallery = AssetGallery(editable=True)
+    gallery = make_gallery(editable=True)
     gallery.set_area(lambda: services.repo.files(step.id, MODULE_ID))
     items = gallery._grid_host.findChildren(asset_gallery._AssetItem)
     assert len(items) == 2
@@ -42,14 +63,14 @@ def test_area_mode_shows_thumbnails_and_chips_and_removes(app, services, step):
     assert doomed not in assets(area)
 
 
-def test_files_mode_is_read_only(app, services, step):
+def test_files_mode_is_read_only(make_gallery, services, step):
     from pathlib import Path
 
     area = services.repo.files(step.id, MODULE_ID)
     name = attach(area, png_bytes(), "figure.png")
     absolute = str(area.absolute(name))
 
-    gallery = AssetGallery(editable=True)
+    gallery = make_gallery(editable=True)
     # File lists carry absolute paths now, read the way the composition root reads them.
     gallery.set_files([absolute], lambda path: Path(path).read_bytes())
     assert gallery._grid_host.findChildren(asset_gallery._Thumb)
@@ -57,14 +78,14 @@ def test_files_mode_is_read_only(app, services, step):
     assert not gallery.attach_button.isVisibleTo(gallery)
 
 
-def test_an_unflushed_node_answers_in_words(app):
-    gallery = AssetGallery(editable=True)
+def test_an_unflushed_node_answers_in_words(make_gallery):
+    gallery = make_gallery(editable=True)
     gallery.set_area(lambda: (_ for _ in ()).throw(KeyError("unflushed")))
     gallery.attach_bytes(b"", "x.png")  # as if a file was chosen in the dialog
     assert "Not saved yet" in gallery.note.text()
 
 
-def test_clicking_a_thumbnail_opens_the_preview(app, services, step, monkeypatch):
+def test_clicking_a_thumbnail_opens_the_preview(make_gallery, services, step, monkeypatch):
     area = services.repo.files(step.id, MODULE_ID)
     name = attach(area, png_bytes(), "figure.png")
 
@@ -78,7 +99,7 @@ def test_clicking_a_thumbnail_opens_the_preview(app, services, step, monkeypatch
             return 0
 
     monkeypatch.setattr(asset_gallery, "ImagePreviewDialog", FakeDialog)
-    gallery = AssetGallery()
+    gallery = make_gallery()
     gallery.set_area(lambda: services.repo.files(step.id, MODULE_ID))
     gallery._view(name)
     assert len(shown) == 1
@@ -88,33 +109,31 @@ def test_clicking_a_thumbnail_opens_the_preview(app, services, step, monkeypatch
     assert path.endswith(name.split("/")[-1]) and path.startswith("/")
 
 
-def test_thumbnails_stay_thumbnail_sized(app, services, step):
+def test_thumbnails_stay_thumbnail_sized(make_gallery, services, step):
     area = services.repo.files(step.id, MODULE_ID)
     name = attach(area, png_bytes(), "figure.png")
-    gallery = AssetGallery()
+    gallery = make_gallery()
     gallery.set_area(lambda: services.repo.files(step.id, MODULE_ID))
     _ratio, pixmap = gallery._thumbs[name]
     assert pixmap is not None
     assert pixmap.deviceIndependentSize().width() <= asset_gallery.THUMBNAIL_SIZE
 
 
-def test_a_hide_when_empty_gallery_takes_no_room_until_it_has_one(app, services, step):
+def test_a_hide_when_empty_gallery_takes_no_room_until_it_has_one(make_gallery, services, step):
     """The test detail pane's setting: an editable gallery still costs a button row, and
     that pane has none to spare. Paste, drop and Insert Image… still reach an empty area."""
-    gallery = AssetGallery(editable=True, hide_when_empty=True)
+    gallery = make_gallery(editable=True, hide_when_empty=True)
     gallery.set_area(lambda: services.repo.files(step.id, MODULE_ID))
     assert gallery.isHidden()
     gallery.attach_bytes(png_bytes(), "figure.png")
     assert not gallery.isHidden()
-    gallery.deleteLater()
 
 
-def test_a_hidden_gallery_still_appears_to_say_it_cannot_attach(app):
+def test_a_hidden_gallery_still_appears_to_say_it_cannot_attach(make_gallery):
     """Hidden-when-empty must not swallow the one message the surface owes the user."""
-    gallery = AssetGallery(editable=True, hide_when_empty=True)
+    gallery = make_gallery(editable=True, hide_when_empty=True)
     gallery.set_area(lambda: (_ for _ in ()).throw(KeyError("unflushed")))
     assert gallery.isHidden()
     gallery.attach_bytes(png_bytes(), "figure.png")
     assert not gallery.isHidden()
     assert "Not saved yet" in gallery.note.text()
-    gallery.deleteLater()

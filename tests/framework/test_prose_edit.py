@@ -150,6 +150,8 @@ def test_an_unflushed_node_inserts_nothing(app):
     widget.insertFromMimeData(image_mime())
     assert widget.toPlainText() == ""
     assert "Not saved yet" in gallery.note.text()
+    gallery.deleteLater()  # A bare widget is Qt's to delete, never the collector's.
+    widget.deleteLater()
     widget.deleteLater()
     gallery.deleteLater()
 

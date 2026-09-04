@@ -1851,3 +1851,36 @@ first time somebody writes a test for one. A `framework/` helper cannot make it 
 nothing short of `shiboken6.invalidate` un-parents the wrapper from Python, and that is
 the magic the rule exists to avoid — so the answer is the list the view keeps. The
 plugin is worth carrying up whole.
+
+### `framework/asset_gallery.py` — a child layout joins its parent before it is filled
+
+**What.** `AssetGallery.__init__` built its attach row as a parentless `QHBoxLayout()`,
+gave it the button and a stretch, and only then `column.addLayout(attach_row)`. The row is
+now added to the column first and filled after; nothing else changed.
+
+**Why.** The suite's boundary `gc.collect()` segfaulted a worker (2026-09-04, evening) on
+`test_asset_gallery.py::test_clicking_a_thumbnail_opens_the_preview`, on a branch that
+changed nothing near it — the crash moved with an unrelated change, as §14's did.
+`scripts/gc_catalog.py` listed the test's garbage in the collector's order: the bare
+`AssetGallery` (a live Python-owned top-level widget, so its whole C++ tree dies inside the
+collector), its layouts, and then a `QWidgetItem` and a `QSpacerItem` wrapper *after* the
+layouts they belong to — cleared before their layout, handed ownership of an item the C++
+layout still holds, deleted twice. Where the two wrappers came from was the surprise: a
+parentless box layout given `addWidget` and `addStretch` *before* `addLayout` leaves both
+alive on the Python side (a ten-line script shows 2 wrappers that way and 0 when the row is
+added first, or built as `QHBoxLayout(self)`). PySide's ownership tracking for a layout
+that is still Python-owned records the items as its children; once the layout is handed to
+a C++ parent the records stay, unowned, and outlive every reason to exist. The reproducer
+is in the commit that carried this note.
+
+**The rule it adds.** Beside §14's *never read a layout back*: **add a child layout to its
+parent before filling it** — `QHBoxLayout(self)` for a widget's own layout, or
+`parent.addLayout(row)` first. And a *test* that builds a bare top-level widget disposes it
+with `deleteLater` (the conftest dispatches deferred deletes before it collects), so the
+tree dies under Qt's rules and never inside the collector; `test_asset_gallery.py`'s
+`make_gallery` fixture is the shape. The pattern of a parentless row filled before joining
+its parent occurs in 22 more files here, harmless while every one of those widgets is
+deleted by `discard_build()` before any collection — the risk is only a bare widget left to
+the collector — and worth a sweep upstream rather than one here.
+
+**Upstream?** Yes: the rule, the reproducer, and the fixture shape.
