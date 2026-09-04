@@ -72,7 +72,10 @@ class GithubModule:
             )
         )
         PrRefresher(deps.library, deps.tasks, deps.repository_for, parent=deps.parent).start()
-        # Deferred past the window's show; notice.py keeps it to once per process.
+        # Deferred past the window's show; notice.py keeps it to once per process. The
+        # window is the context object: a build closed before the turn comes (a test's)
+        # must not have a warning box raised over its deleted window.
+        window = deps.parent
         QTimer.singleShot(
-            0, lambda: maybe_warn(deps.parent, installed=lambda: which_gh() is not None)
+            0, window, lambda: maybe_warn(window, installed=lambda: which_gh() is not None)
         )

@@ -29,6 +29,7 @@ from dplanner.framework.diagnostics import (
     session_ended,
     session_started,
 )
+from dplanner.framework.gc_policy import install_gc_policy
 from dplanner.framework.session import AppSession
 from dplanner.framework.splash import StartupSplash
 from dplanner.framework.theme_service import saved_theme
@@ -63,6 +64,11 @@ def configure_application(app: QApplication) -> None:
     # After the identity metadata: saved_theme() reads QSettings, which resolves its storage
     # location from the organisation and application names set above.
     apply_theme(app, saved_theme())
+
+    # Python's collector meets Qt objects on our terms: on the GUI thread, at safe points,
+    # and never handing a Qt-owned object back to Python — framework/gc_policy.py has the
+    # crashes this prevents.
+    install_gc_policy(app)
 
 
 def build_application(argv: list[str]) -> QApplication:

@@ -1884,3 +1884,115 @@ deleted by `discard_build()` before any collection — the risk is only a bare w
 the collector — and worth a sweep upstream rather than one here.
 
 **Upstream?** Yes: the rule, the reproducer, and the fixture shape.
+
+## 15. From the segfault investigation
+
+Three fixes in two days (§14's `cards()`, the gallery's row, the board's rows) had each
+moved the suite's crash rather than ended it, and the desktop died on a click with a trace
+no test covers. This pass reproduced both crash families on demand, with backtraces, and
+moved the guard from convention into the framework. Each change below is generic; every
+one belongs upstream.
+
+### `framework/task_runner.py` — the worker never holds the last reference to a Qt object
+
+**What.** `run()` no longer starts its thread with a closure over `self` and `body`. The
+worker holds the signal instance (which keeps no reference to its QObject) and a
+`_Handoff` carrying the runner, the body and its task; `_on_completed` schedules
+`handoff.release()` with `QTimer.singleShot(0, …)`, so those references die on the GUI
+thread on the next turn of the event loop, the way `deleteLater` works. A completion
+whose runner was torn down mid-run logs a warning instead of dying with a thread
+traceback. Nothing else changed.
+
+**Why.** shiboken deletes a Python-owned QObject the instant its last Python reference
+goes, on whatever thread that happens (`SbkDeallocWrapperCommon`). The old closure died
+as the worker unwound — *after* it had queued the completion — and whenever nothing on
+the GUI side still held the runner (a test that had returned; in the application, a body
+closing over a parentless service), the C++ object was deleted on the worker while the
+GUI thread delivered the very event just posted for it: SIGSEGV in
+`QCoreApplication::notify` under `sendPostedEvents`, later, somewhere else. A 3000-round
+stress of the real class under `MALLOC_PERTURB_` (create a runner, run an instant body,
+drop the runner, pump events) killed the committed class 3 of 3 — SIGSEGV, SIGABRT,
+SIGBUS: one bug, three allocator moods — and the new one survives 3 of 3 with every
+completion delivered. `tests/framework/test_task_runner.py` records the freeing thread
+with `weakref.finalize` and fails deterministically on the old code. Two simpler designs
+were tried and rejected by the stress: releasing inside the completion slot frees the
+runner's owner — and with it the runner — under its own slot (`Signal source has been
+deleted` in `busy_changed.emit`); handing the references over inside `emit` leaves the
+worker still inside `emit` when the GUI thread has already consumed the event.
+
+**The rule it adds.** A worker thread holds nothing Qt-related except a signal instance,
+and whatever it had to carry goes back to the GUI thread to be dropped there. A
+thread-plus-queued-signal written by hand inherits the same hazard and goes through
+`TaskRunner` instead.
+
+**Upstream?** Yes, whole: the template's runner is the same file.
+
+### `framework/gc_policy.py` (new), `app.py`, `tests/conftest.py` — the collector on our terms
+
+**What.** `configure_application` calls `install_gc_policy(app)`, which does two things.
+It switches Python's automatic cyclic collector off and runs `collect_if_due()` — one step
+of the interpreter's own generational policy, thresholds and all — from a 200 ms timer on
+the GUI thread, so a collection never happens on a worker thread or inside an event
+handler. And it gives every QObject wrapper a finalizer (`QObject.__del__ =
+release_cpp_children`, a `shiboken6.invalidate(self)`) that invalidates the wrappers of
+its C++-created children while the tree is still intact. The conftest installs the same
+policy for every test that has an application, and its per-test `gc.collect()` is now
+*the* collection point of the suite (the timer rarely gets to run while tests pump events
+by hand).
+
+**Why — the finalizer.** §14's double delete needs a `QLayoutItem` wrapper cleared
+*before* its layout, and the reproducer that eluded that pass is now a script. Python's
+collector clears garbage in its list order, and a full collection walks generation 0
+before generation 1 (each younger generation is appended to the tail of the oldest,
+generation 0 first), so a young collection that lands between the creation of a layout's
+wrapper and the creation of its items' wrappers puts the items ahead of the layout.
+`gc.collect(0)` at that spot makes the crash deterministic —
+`scripts/layout_item_double_delete.py`: `~QBoxLayout` through the deleted item's vtable,
+3 of 3, for both the row-filled-before-`addLayout` shape and the `itemAt` read-back, with
+or without the allocator poison — and explains why the crash moved with any allocation
+elsewhere in the build: the young-generation threshold crossed at that spot, or it did
+not. Python runs every finalizer of a garbage cycle before it clears any object in it
+(PEP 442), so a finalizer on the parents sees the tree whole and invalidates the items
+before `tp_clear` can hand one back; released shiboken (every 6.x through 6.11.2) hands it
+back, and its `dev` branch's `tp_clear` detaches the children and keeps the parent link
+instead, with a comment naming the second delete — the same fix, in C++, that no release
+carries yet. With the finalizer both shapes survive 3 of 3, and
+`tests/framework/test_gc_policy.py` pins them (without the guard that test segfaults the
+worker — the crash is its finding). §14's *"nothing short of `shiboken6.invalidate`
+un-parents the wrapper from Python, and that is the magic the rule exists to avoid"* was
+right about the call and wrong about the moment: from a finalizer, at the one point where
+the tree is intact and no wrapper has been touched, it is exactly what shiboken itself
+does on the ordinary dealloc path (`_destroyParentInfo`). The one shape it cannot see is a
+`QLayoutItem` constructed in Python and handed to `addItem` — shiboken counts it as
+Python-made and `invalidate` leaves it alone; nothing here builds one.
+
+**Why — the GUI-thread collector.** Left to itself the collector runs wherever an
+allocation trips its threshold: on an LLM worker thread (the SDKs allocate plenty), where
+deleting a QObject races the GUI thread's event delivery, or inside a Qt event handler on
+the GUI thread, mid-dispatch, with half-built objects on the stack. The desktop crash of
+2026-09-04 — a click on the graph canvas, `QGraphicsItem::setSelected` → a section's
+`textChanged` slot → `QPlainTextEdit.clear()` → `QWidget::screen` →
+`QGuiApplication::screenAt` on a garbage pointer — has the signature of exactly that: a
+use-after-free surfacing far from its cause, in code that is correct on its own.
+Collecting only from a timer slot on the GUI thread removes the trigger; the finalizer
+removes the double delete; the runner removes the worker-side delete.
+
+**The rule it adds.** §14's *never read a layout back* and the gallery's *add a child
+layout to its parent before filling it* stay as hygiene, but the framework no longer
+depends on them. New: never construct a `QLayoutItem` in Python; a worker thread never
+frees a Qt object; and the amplifier for this whole family is `MALLOC_PERTURB_=165`
+(Linux) / `MallocScribble=1` (macOS) — freed memory poisoned, so a use-after-free faults
+at the first bad access instead of somewhere random. The suite's "random" crashes were
+never random, only unpoisoned.
+
+**Upstream?** Yes, both halves, the tests, and the script beside `gc_catalog.py`.
+
+### `modules/github/module.py` — a deferred notice names its window (module code, pattern worth noting)
+
+**What.** The one-time "gh not installed" notice was `QTimer.singleShot(0, lambda: …)`;
+it now names `deps.parent` as the context object. **Why.** A build closed before that
+turn came (every builder test) raised the notice's `QMessageBox` over a deleted window —
+`RuntimeError: Internal C++ object (AppWindow) already deleted` in
+`test_builder.py::test_a_closed_session_leaves_nothing_of_its_build_behind`, on all three
+baseline runs of this pass. **The rule.** A zero-timer that touches a widget names that
+widget as its context; CLAUDE.md already says so for views, and modules are no exception.

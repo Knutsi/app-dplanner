@@ -160,6 +160,7 @@ src/dplanner/
 ├── entry.py               the one `dplanner` command: a window, or a verb
 ├── scripts/measure_edit_cost.py   what an edit costs the GUI thread, measured headless through the journal
 ├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
+├── scripts/layout_item_double_delete.py   the layout-item double delete built to order, and the finalizer that stops it
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
 │   ├── storage/             three providers behind one protocol: folder, git, GitHub
