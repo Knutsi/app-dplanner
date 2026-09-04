@@ -1583,15 +1583,13 @@ def test_an_orphan_wears_a_red_ring_only_while_the_mark_is_on(services, project,
 
 
 def test_a_mark_is_remembered_and_every_canvas_wears_it(services, project, tab, make_project):
-    from dplanner.framework.user_config import get_global
     from dplanner.modules.project_editor.marks import Marks
-    from dplanner.modules.project_editor.module import MARKS_KEY, MODULE_ID
 
     button = toolbar_button(tab, "canvas.mark_ends")
     assert not button.isChecked()
     services.actions.run("canvas.mark_ends", services.context.current())
     assert button.isChecked()
-    assert Marks.from_json(get_global(MODULE_ID, MARKS_KEY)) == Marks(ends=True)
+    assert look_of(services).marks == Marks(ends=True)
 
     other = services.tabs.open("project", make_project("Later").id)
     assert other._scene._marks == Marks(ends=True)
@@ -1905,12 +1903,13 @@ def test_the_stat_line_stays_inside_what_the_item_paints():
 # -- the ground: what is drawn under the graph, and whether gestures snap to it -----------------
 
 
-def ground_of(services):
+def look_of(services):
+    """The look as the per-user store has it — what the next window would wear."""
     from dplanner.framework.user_config import get_global
-    from dplanner.modules.project_editor.grid import Ground
-    from dplanner.modules.project_editor.module import GROUND_KEY, MODULE_ID
+    from dplanner.modules.project_editor.look import Look
+    from dplanner.modules.project_editor.module import LOOK_KEY, MODULE_ID
 
-    return Ground.from_json(get_global(MODULE_ID, GROUND_KEY))
+    return Look.from_json(get_global(MODULE_ID, LOOK_KEY))
 
 
 def test_the_background_is_one_choice_of_several_remembered_per_user(
@@ -1925,10 +1924,10 @@ def test_the_background_is_one_choice_of_several_remembered_per_user(
     context = services.context.current()
     assert state(services, "canvas.ground_lines", context).checked is True
     assert state(services, "canvas.ground_dots", context).checked is False
-    assert ground_of(services).background == "lines"
-    assert view(tab)._ground.background == "lines"
+    assert look_of(services).background == "lines"
+    assert view(tab)._background == "lines"
     other = services.tabs.open("project", make_project("Later").id)
-    assert other._view._ground.background == "lines"
+    assert other._view._background == "lines"
 
 
 def test_snap_to_grid_is_a_toggle_every_canvas_follows(services, project, tab, make_project):
@@ -1939,7 +1938,7 @@ def test_snap_to_grid_is_a_toggle_every_canvas_follows(services, project, tab, m
     services.actions.run("canvas.snap", context)
 
     assert state(services, "canvas.snap", services.context.current()).checked is False
-    assert ground_of(services).snap is False
+    assert look_of(services).snap is False
     assert scene(tab)._snap is False
     other = services.tabs.open("project", make_project("Later").id)
     assert other._scene._snap is False
@@ -1977,10 +1976,8 @@ def test_with_snapping_off_new_lands_exactly_under_the_click(services, project, 
 def ground_pixel(tab, background: str, scene_point: QPointF) -> QColor:
     """The colour the view paints at a point of the plane under this background — through
     the viewport's own paint event, which is where ``drawBackground`` runs."""
-    from dplanner.modules.project_editor.grid import Ground
-
     canvas_view = view(tab)
-    canvas_view.set_ground(Ground(background=background))
+    canvas_view.set_background(background)
     image = canvas_view.viewport().grab().toImage()
     at = canvas_view.mapFromScene(scene_point)
     assert image.rect().contains(at), "the probe point is off the viewport"
@@ -2005,7 +2002,7 @@ def a_grid_crossing_on_bare_ground(tab, pitch: float) -> QPointF:
 def test_the_grid_is_painted_on_the_ground_and_only_when_asked(app, services, project, tab):
     """A dot lands on every 32nd unit at 1:1 (the grid's pitch for that zoom): a crossing
     is a dot under Dots, and bare ground under Plain — and so is the plane between."""
-    from dplanner.modules.project_editor.grid import pitch_for
+    from dplanner.modules.project_editor.ground import pitch_for
 
     pitch = pitch_for(view(tab)._zoom)
     assert pitch == 32.0

@@ -21,11 +21,10 @@ Four seams keep this module from knowing about anything else in the application:
 ``steps.connect`` can decide whether it is checked from the context alone. That is the whole
 mechanism behind the toolbar's mode switch, and why there is no other one.
 
-**The marks are the module's**, read from the per-user store once and pushed to every open
-canvas when they change — a way of looking at graphs, not a fact about one project, so a tab
-opened later wears the same marks and a second window would too. **So is the ground**: the
-background drawn under the graph and whether gestures snap to its grid (``grid.py``) are
-the same kind of preference, kept and fanned out the same way.
+**The look is the module's** — the marks, the background under the graph and whether
+gestures snap to its grid, one ``Look`` (``look.py``) — read from the per-user store once and
+pushed to every open canvas when it changes: a way of looking at graphs, not a fact about
+one project, so a tab opened later wears the same look and a second window would too.
 """
 
 from collections.abc import Callable, Sequence
@@ -68,11 +67,11 @@ from dplanner.modules.project_editor.clipboard import PastePolicy
 from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, ClipboardWatch
 from dplanner.modules.project_editor.drops import CanvasDrop
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
-from dplanner.modules.project_editor.grid import Ground
 from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
-from dplanner.modules.project_editor.marks import Marks, ports
+from dplanner.modules.project_editor.look import Look
+from dplanner.modules.project_editor.marks import ports
 from dplanner.modules.project_editor.modes import (
     CONNECT,
     LASSO,
@@ -115,9 +114,8 @@ MODULE_ID = "project_editor"
 # project, and every `tabs.open("project", …)` in the application keeps working.
 PROJECT_KIND = "project"
 PANEL_ID = f"{MODULE_ID}.project"
-# The per-user keys the marks and the ground are kept under — see marks.py and grid.py.
-MARKS_KEY = "marks"
-GROUND_KEY = "ground"
+# The per-user key the look is kept under — see look.py.
+LOOK_KEY = "look"
 
 # The modes a verb can switch on by name. Every other mode is a gesture that starts itself.
 SWITCHABLE_MODES: dict[str, Callable[[CanvasDeps], ModeBase]] = {
@@ -184,8 +182,7 @@ class ProjectActivity(EntityActivity):
         project_id: NodeId,
         verbs: StepVerbs,
         layout_verbs: LayoutVerbs,
-        marks: Marks | None = None,
-        ground: Ground | None = None,
+        look: Look | None = None,
     ) -> None:
         # Only the pane the user is in may write to the selection scope: a background one
         # re-syncing its canvas — when a step is deleted, say — would otherwise clobber
@@ -198,8 +195,6 @@ class ProjectActivity(EntityActivity):
         self.project_id = project_id
 
         self._scene = GraphScene(self._link_refusal)
-        self._scene.set_marks(marks or Marks())
-        self._scene.set_snap((ground or Ground()).snap)
         self._view = GraphView(
             self._scene,
             base_mode=IdleMode,
@@ -208,7 +203,7 @@ class ProjectActivity(EntityActivity):
             accepts=self._accepts_drop,
             dropped=self._on_drop,
         )
-        self._view.set_ground(ground or Ground())
+        self.set_look(look or Look())  # Before the first sync: a node born dresses for it.
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
         self._page, self._toolbar = self._build_page()
@@ -274,14 +269,12 @@ class ProjectActivity(EntityActivity):
         elif self._view.modes.current().name == name:
             self._view.modes.pop()
 
-    def set_marks(self, marks: Marks) -> None:
-        """The user changed which marks are on; every canvas hears it, this one here."""
-        self._scene.set_marks(marks)
-
-    def set_ground(self, ground: Ground) -> None:
-        """The user changed the ground: the view draws it, the scene snaps to it."""
-        self._scene.set_snap(ground.snap)
-        self._view.set_ground(ground)
+    def set_look(self, look: Look) -> None:
+        """The user changed how graphs look; every canvas hears it, this one here. The
+        marks and the snapping are the scene's, the background the view's."""
+        self._scene.set_marks(look.marks)
+        self._scene.set_snap(look.snap)
+        self._view.set_background(look.background)
 
     def frame(self) -> None:
         self._view.frame_content()
@@ -608,8 +601,7 @@ class ProjectEditorModule:
 
     def __init__(self, deps: ProjectEditorDeps) -> None:
         self._deps = deps
-        self._marks = Marks.from_json(get_global(MODULE_ID, MARKS_KEY))
-        self._ground = Ground.from_json(get_global(MODULE_ID, GROUND_KEY))
+        self._look = Look.from_json(get_global(MODULE_ID, LOOK_KEY))
         self._verbs = StepVerbs(
             library=deps.library,
             undo=deps.undo,
@@ -648,10 +640,8 @@ class ProjectEditorModule:
             select_steps=self._select_steps,
             set_mode=self._set_mode,
             frame=self._frame,
-            marks=lambda: self._marks,
-            set_mark=self._set_mark,
-            ground=lambda: self._ground,
-            set_ground=self._set_ground,
+            look=lambda: self._look,
+            set_look=self._set_look,
         )
         self._region_verbs = RegionVerbs(
             library=deps.library,
@@ -698,9 +688,7 @@ class ProjectEditorModule:
 
         def factory(target: str | None) -> ProjectActivity:
             assert target is not None
-            return ProjectActivity(
-                deps, target, self._verbs, self._layout_verbs, self._marks, self._ground
-            )
+            return ProjectActivity(deps, target, self._verbs, self._layout_verbs, self._look)
 
         deps.tabs.register_factory(PROJECT_KIND, factory)
         # Order 10: above the step panel, because a project is what a step is part of.
@@ -761,20 +749,12 @@ class ProjectEditorModule:
         if current is not None:
             current.set_mode(name, on)
 
-    def _set_mark(self, name: str, on: bool) -> None:
-        """Flip one mark for every canvas, now and later, and let the toggles re-ask."""
-        self._marks = self._marks.with_(name, on)
-        set_global(MODULE_ID, MARKS_KEY, self._marks.to_json())
+    def _set_look(self, look: Look) -> None:
+        """Change how every canvas looks, now and later, and let the toggles re-ask."""
+        self._look = look
+        set_global(MODULE_ID, LOOK_KEY, look.to_json())
         for activity in self._activities():
-            activity.set_marks(self._marks)
-        self._deps.context.refresh()
-
-    def _set_ground(self, ground: Ground) -> None:
-        """Change the ground under every canvas, now and later — the marks' shape exactly."""
-        self._ground = ground
-        set_global(MODULE_ID, GROUND_KEY, ground.to_json())
-        for activity in self._activities():
-            activity.set_ground(ground)
+            activity.set_look(look)
         self._deps.context.refresh()
 
     def _select_steps(self, step_ids: list[StepId]) -> None:

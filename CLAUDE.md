@@ -402,8 +402,11 @@ root, stop and look for the registry or capability you have not found yet.
   keymap and then to Qt, which is why `IdleMode` is nine lines and why a mode that claims a
   press suppresses node dragging without a flag anywhere. A mode still only *reports* — the
   activity turns its signals into commands. The current mode is published into the context, so
-  a mode-switch action's `checked` stays a pure function of it. `ARCHITECTURE.md`'s *Who owns
-  the canvas's input* has the reasoning; add a behaviour as a mode, never as a field.
+  a mode-switch action's `checked` stays a pure function of it. A mode that drags something
+  the canvas draws — a region, a card's frame — is a `GestureMode`: it says what it holds, how
+  to restore it on Escape and what the release means, and inherits the rest.
+  `ARCHITECTURE.md`'s *Who owns the canvas's input* has the reasoning; add a behaviour as a
+  mode, never as a field.
 - **A canvas key names action ids; it is never an `ActionSpec.shortcut`.** A bare `h` on a
   menu-bar QAction fires application-wide and eats a keystroke in the step editor. Bind it in
   `modules/project_editor/keymap.py`, where a key names the verbs it means in order and the
@@ -420,8 +423,9 @@ root, stop and look for the registry or capability you have not found yet.
   `CompositeCommand` of per-`(waiter, kind)` replacements — Unlink, `steps.isolate` and
   `dplanner step isolate` all build from those two, so the surfaces cannot drift.
 - **Marks are a way of looking, remembered per user.** Starts, Ends and Orphans
-  (`project_editor/marks.py`, Qt-free) are one `Marks` value on the module, written to
-  `user_config` and fanned to every scene like `RenderHints`; a tab opened later wears them.
+  (`project_editor/marks.py`, Qt-free) are the `marks` of the module's one `Look`
+  (`look.py`, with the background and Snap to Grid beside them), written to `user_config`
+  and fanned to every scene like `RenderHints`; a tab opened later wears them.
   Which sockets a node has connected is `marks.ports()` over the drawn edges, derived every
   sync. The toggles' `checked` reads the module and the module calls `context.refresh()` —
   the theme-toggle pattern, deliberately not an edge on the activity node, because a
@@ -611,16 +615,17 @@ root, stop and look for the registry or capability you have not found yet.
   handed — nothing measures from `NODE_W` — the title wraps onto as many lines as the card
   has room for, and the estimate is written *under* the card as its caption.
   `ARCHITECTURE.md`'s *A card's size is the step's* has the reasoning.
-- **The ground is a way of looking, and snapping is the gesture's, never the write's.**
-  `project_editor/grid.py`: the background under the graph (plain, dots, lines, crosses) and
-  *Snap to Grid* are one per-user `Ground` value, kept and fanned out exactly like the marks
-  (View ▸ Background, View ▸ Snap to Grid). While snapping is on, a drag, a resize, a
-  region and a placed step land on `GRID` through the scene's one `snap()`; what reaches
-  disk is `snapped(value)` — a whole unit, as a float — so a CLI verb stores what it was
-  given and a sort what it computed. The drawn pitch is `pitch_for(zoom)`, a power-of-two
-  multiple of `GRID` kept a readable distance apart on screen, so the ground is always a
-  coarsening of what snaps. `ARCHITECTURE.md`'s *The ground is a preference; snapping
-  belongs to the gesture* has the reasoning.
+- **The look is one per-user value, and snapping is the gesture's, never the write's.**
+  `project_editor/look.py`: the marks, the background under the graph (plain, dots, lines,
+  crosses — painted by `ground.py`) and *Snap to Grid* are one `Look`, kept under one key,
+  pushed to every canvas by one setter, and read by every toggle in `canvas_verbs.py`; the
+  next preference is a field there, never a third copy of that plumbing. While snapping is
+  on, a drag, a resize, a region and a placed step land on `GRID` through the scene's one
+  `snap()`; what reaches disk is `snapped(value)` — a whole unit, as a float — so a CLI
+  verb stores what it was given and a sort what it computed. The drawn pitch is
+  `pitch_for(zoom)`, a power-of-two multiple of `GRID` kept a readable distance apart on
+  screen, so the ground is always a coarsening of what snaps. `ARCHITECTURE.md`'s *The
+  ground is a preference; snapping belongs to the gesture* has the reasoning.
 - **Derived facts are computed, never stored** — the topological order in
   `domain/ordering.py` is the reference, and `domain/schedule.py` is the same walk carrying
   estimates. Storing one means it can disagree with what it came from, and the CLI is what

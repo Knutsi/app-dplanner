@@ -7,12 +7,12 @@ looking at**, so they push no command, appear on no undo stack, and reach the cu
 through typed callbacks on their own ``Deps`` — the same seam ``StepVerbs.current_project``
 already uses.
 
-**A mode switch reads the context; a mark reads the module.** The canvas publishes its mode
-as an edge on the activity node, so a mode button's ``checked`` is a pure function of the
-context. A mark is a per-user preference that outlives any tab, so its ``checked`` reads the
-module's value and the module asks the context to refresh when it changes — the same shape
-the theme and panel toggles use, deliberately not a second thing published per tab. The
-ground — Snap to Grid and the Background submenu — is a mark in that sense too.
+**A mode switch reads the context; the look reads the module.** The canvas publishes its
+mode as an edge on the activity node, so a mode button's ``checked`` is a pure function of
+the context. The look — the marks, Snap to Grid, the Background submenu — is a per-user
+preference that outlives any tab, so its ``checked`` reads the module's value and the module
+asks the context to refresh when it changes — the same shape the theme and panel toggles
+use, deliberately not a second thing published per tab.
 
 Both families are ``ActionSpec``s, and that is the point of putting these here at all. The
 canvas keymap binds keys to action ids, so a movement key runs the same object the menu and
@@ -40,8 +40,8 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.context import Context
-from dplanner.modules.project_editor.grid import BACKGROUNDS, Ground
-from dplanner.modules.project_editor.marks import MARK_NAMES, Marks
+from dplanner.modules.project_editor.look import BACKGROUNDS, Look
+from dplanner.modules.project_editor.marks import MARK_NAMES
 from dplanner.modules.project_editor.modes import CONNECT, LASSO, mode_uri
 from dplanner.modules.project_editor.placement import positions
 from dplanner.theme.icons import lasso_icon
@@ -71,12 +71,9 @@ class CanvasVerbs:
     # Enter or leave a named canvas mode (modes.CONNECT, modes.LASSO).
     set_mode: Callable[[str, bool], None]
     frame: Callable[[], None]
-    # The user's marks, and the switch for one of them by name (marks.MARK_NAMES).
-    marks: Callable[[], Marks]
-    set_mark: Callable[[str, bool], None]
-    # The user's ground — background and snapping — and the setter for the whole value.
-    ground: Callable[[], Ground]
-    set_ground: Callable[[Ground], None]
+    # The user's look — marks, background, snapping — and the setter for the whole value.
+    look: Callable[[], Look]
+    set_look: Callable[[Look], None]
 
     def register_into(self, actions: ActionRegistry) -> None:
         for spec in self._specs():
@@ -238,33 +235,33 @@ class CanvasVerbs:
         next canvas opened shows it."""
 
         def state(_context: Context) -> ActionState:
-            return ActionState(checked=self.marks().is_on(name))
+            return ActionState(checked=self.look().marks.is_on(name))
 
         return state
 
     def _mark_toggle(self, name: str) -> Callable[[Context], None]:
         def run(_context: Context) -> None:
-            self.set_mark(name, not self.marks().is_on(name))
+            self.set_look(self.look().with_mark(name, not self.look().marks.is_on(name)))
 
         return run
 
     def _snap_state(self, _context: Context) -> ActionState:
-        return ActionState(checked=self.ground().snap)
+        return ActionState(checked=self.look().snap)
 
     def _snap_toggle(self, _context: Context) -> None:
-        self.set_ground(self.ground().with_snap(not self.ground().snap))
+        self.set_look(self.look().with_snap(not self.look().snap))
 
     def _ground_state(self, name: str) -> Callable[[Context], ActionState]:
         """One choice of several, so exactly one entry is checked — the theme menu's shape."""
 
         def state(_context: Context) -> ActionState:
-            return ActionState(checked=self.ground().background == name)
+            return ActionState(checked=self.look().background == name)
 
         return state
 
     def _ground_pick(self, name: str) -> Callable[[Context], None]:
         def run(_context: Context) -> None:
-            self.set_ground(self.ground().with_background(name))
+            self.set_look(self.look().with_background(name))
 
         return run
 

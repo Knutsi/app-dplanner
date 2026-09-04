@@ -1,10 +1,8 @@
-"""The ground under the graph: what is drawn on it, and whether a gesture snaps to it.
+"""The ground under the graph: the background the user chose, painted by name.
 
-Both are ways of looking, kept per user like the marks (``marks.py``): a dotted ground says
-nothing about a project, and whether a drag lands on the grid is a habit of the hand, not a
-fact about the plan. So the value never reaches the project directory — the module keeps
-it in ``user_config`` and pushes it to every open canvas — and nothing the CLI writes is
-snapped, because a verb has no gesture to snap.
+Which background — and whether a gesture snaps to the grid it shows — is the user's
+:class:`~dplanner.modules.project_editor.look.Look`; this file is the painter. Nothing the
+CLI writes is snapped, because a verb has no gesture to snap.
 
 **What is drawn is a coarsening of what snaps.** A gesture lands on ``positions.GRID``;
 the ground shows every ``pitch_for(zoom)``-th line of it — the smallest power-of-two
@@ -13,22 +11,12 @@ always on a line the ground *could* show, and zooming in reveals the finer ones 
 than a grid that drifts against the cards.
 """
 
-from dataclasses import dataclass, replace
 from math import floor
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPalette, QPen, QPolygonF
 
 from dplanner.modules.project_editor.positions import GRID
-
-# The backgrounds a canvas offers, in menu order: name → (the View menu's entry, its tip).
-BACKGROUNDS: dict[str, tuple[str, str]] = {
-    "none": ("&Plain", "Nothing under the graph"),
-    "dots": ("&Dots", "A dot at every grid crossing under the graph"),
-    "lines": ("&Lines", "Graph paper under the graph: a line on every grid pitch"),
-    "crosses": ("&Crosses", "A small cross at every grid crossing under the graph"),
-}
-DEFAULT_BACKGROUND = "dots"
 
 # How close two grid marks may come on screen before the ground steps up to the next
 # coarser pitch: at 24 device pixels a dot grid still reads as a grid, not as a texture.
@@ -48,36 +36,6 @@ LINE_WIDTH = 1.0
 CROSS_ARM = 3.0
 
 
-@dataclass(frozen=True)
-class Ground:
-    """What the user chose to see under the graph, and whether gestures snap to it."""
-
-    background: str = DEFAULT_BACKGROUND
-    snap: bool = True
-
-    def with_background(self, name: str) -> "Ground":
-        if name not in BACKGROUNDS:
-            raise KeyError(name)
-        return replace(self, background=name)
-
-    def with_snap(self, on: bool) -> "Ground":
-        return replace(self, snap=on)
-
-    def to_json(self) -> dict[str, object]:
-        return {"background": self.background, "snap": self.snap}
-
-    @classmethod
-    def from_json(cls, data: object) -> "Ground":
-        """Tolerant: anything that is not a mapping of the known keys reads as the default."""
-        if not isinstance(data, dict):
-            return cls()
-        background = data.get("background", DEFAULT_BACKGROUND)
-        return cls(
-            background=background if background in BACKGROUNDS else DEFAULT_BACKGROUND,
-            snap=bool(data.get("snap", True)),
-        )
-
-
 def pitch_for(zoom: float) -> float:
     """The grid pitch to draw at this zoom, in scene units.
 
@@ -92,16 +50,17 @@ def pitch_for(zoom: float) -> float:
 
 
 def paint_ground(
-    painter: QPainter, rect: QRectF, palette: QPalette, ground: Ground, zoom: float
+    painter: QPainter, rect: QRectF, palette: QPalette, background: str, zoom: float
 ) -> None:
-    """Draw the chosen background over ``rect`` — the part of the plane a view is showing.
+    """Draw ``background`` (a ``look.BACKGROUNDS`` name) over ``rect`` — the part of the
+    plane a view is showing.
 
     Cosmetic pens throughout: a dot is two device pixels and a line one whatever the zoom,
     which is what keeps the ground a texture rather than a drawing that scales with the
     graph. The lines are drawn without antialiasing so a hairline lands on one pixel
     column instead of two grey ones; dots and crosses keep it, since a round dot wants it.
     """
-    if ground.background == "none":
+    if background == "none":
         return
     pitch = pitch_for(zoom)
     ink = QColor(palette.text().color())
@@ -111,11 +70,11 @@ def paint_ground(
     ys = [first_y + step * pitch for step in range(int((rect.bottom() - first_y) / pitch) + 2)]
 
     painter.save()
-    if ground.background == "dots":
+    if background == "dots":
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setPen(_pen(ink, DOT_ALPHA, DOT_SIZE, round_cap=True))
         painter.drawPoints(QPolygonF([QPointF(x, y) for x in xs for y in ys]))
-    elif ground.background == "lines":
+    elif background == "lines":
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         major = pitch * MAJOR_EVERY
         for alpha, wanted in ((LINE_ALPHA, False), (MAJOR_LINE_ALPHA, True)):
@@ -128,7 +87,7 @@ def paint_ground(
                     if (y % major == 0) == wanted
                 ]
             )
-    elif ground.background == "crosses":
+    elif background == "crosses":
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         arm = CROSS_ARM / max(zoom, 1e-6)
         painter.setPen(_pen(ink, CROSS_ALPHA, LINE_WIDTH))

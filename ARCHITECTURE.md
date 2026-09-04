@@ -905,6 +905,13 @@ canvas through a typed callback on their own `Deps`. Where a node *is* is still 
 model — `layout.positions()` answers it — so "the nearest node to the right" is a pure function
 and only the last step, telling the canvas what to select, needs a window.
 
+**A gesture that drags something the canvas draws is a `GestureMode`.** The region drag,
+the region resize and the card resize each hold what they move (so a sync from the model
+leaves that geometry alone until the release), put it back on Escape, and report on the
+release before popping — three modes, one skeleton. The base owns the hold, the cursor, the
+Escape and the pop; a subclass says what it holds, how to restore it, and what the release
+means. The third copy of the skeleton was the moment to write the base, not the first.
+
 The lasso is the mode that shows the stack paying for itself. A rubber band is a box and a
 cluster on a busy canvas rarely is, so `LassoMode` claims the press, grows a path under the
 cursor, and on release asks the scene which cards the outline *touches* — the node's body
@@ -978,10 +985,14 @@ And it is parented to the view rather than to the viewport, because `QGraphicsVi
 node with none. Three decisions sit behind three short functions.
 
 **They are a preference, not a fact about the project.** Whether the graph's ends are lit
-says nothing about the plan, so the value never reaches the project directory — it is one
-`Marks` on the editor module, written to `user_config` and pushed to every open canvas the
-way a mode's `RenderHints` are fanned out. That is also why a tab opened later wears them:
-the module hands its current marks to every activity it builds.
+says nothing about the plan, so the value never reaches the project directory — it is the
+`marks` of the one `Look` on the editor module (`look.py`: marks, the background under the
+graph, Snap to Grid), written to `user_config` and pushed to every open canvas the way a
+mode's `RenderHints` are fanned out. That is also why a tab opened later wears them: the
+module hands its current look to every activity it builds. One value rather than one per
+preference, because the plumbing — a key, a setter, a fan-out, a pair of callbacks on the
+verbs — was the same for each, and the second copy of it (the ground beside the marks) was
+the signal to fold them: the next preference is a field on `Look`, not a third copy.
 
 **What a socket has connected is derived every sync.** `marks.ports()` reads the edges whose
 both ends are in the project — exactly the edges the canvas draws — and the activity puts the
@@ -1105,11 +1116,11 @@ one that says where.
 
 ### The ground is a preference; snapping belongs to the gesture
 
-*View ▸ Background* (plain, dots, lines, crosses) and *View ▸ Snap to Grid* are one per-user
-`Ground` value (`grid.py`), kept in `user_config` and fanned to every open canvas the way the
-marks are — the view draws the background, the scene answers `snap()` — and a tab opened
-later wears it. The background is the theme menu's shape: one choice of several, exactly one
-checked.
+*View ▸ Background* (plain, dots, lines, crosses) and *View ▸ Snap to Grid* are two fields
+of the same per-user `Look` the marks live on (`look.py`), so they are kept, fanned out and
+read by their toggles exactly as the marks are — the view draws the background
+(`ground.py` paints it by name), the scene answers `snap()` — and a tab opened later wears
+them. The background is the theme menu's shape: one choice of several, exactly one checked.
 
 **What snaps is the gesture, never the write.** Before this the grid was invisible and every
 coordinate was rounded to it on its way to disk, which would have made a snap *toggle* mean

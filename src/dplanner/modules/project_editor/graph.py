@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
 from dplanner.core.signals import Signal
 from dplanner.domain.model import StepId
 from dplanner.framework.widgets import install_ctrl_wheel_zoom
-from dplanner.modules.project_editor.grid import Ground, paint_ground
+from dplanner.modules.project_editor.ground import paint_ground
 from dplanner.modules.project_editor.items import (
     EdgeItem,
     LinkPreviewItem,
@@ -51,6 +51,7 @@ from dplanner.modules.project_editor.items import (
     StepNodeItem,
 )
 from dplanner.modules.project_editor.keymap import bound_actions
+from dplanner.modules.project_editor.look import DEFAULT_BACKGROUND
 from dplanner.modules.project_editor.marks import Marks
 from dplanner.modules.project_editor.minimap import Minimap
 from dplanner.modules.project_editor.modes import (
@@ -475,8 +476,8 @@ class GraphView(QGraphicsView):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._zoom = 1.0
         self._framed = False
-        # What lies under the graph — the user's choice, pushed by the module like the marks.
-        self._ground = Ground()
+        # What lies under the graph — the user's look, pushed by the activity like the marks.
+        self._background = DEFAULT_BACKGROUND
         # The application's View ▸ Zoom is font size; a canvas zooms itself.
         install_ctrl_wheel_zoom(self, self.zoom_by)
         self.minimap = Minimap(self)
@@ -603,11 +604,11 @@ class GraphView(QGraphicsView):
 
     # -- looking at it -------------------------------------------------------------------------
 
-    def set_ground(self, ground: Ground) -> None:
-        """Change what is drawn under the graph. Snapping is the scene's half of the same
-        setting; the module pushes both."""
-        if ground != self._ground:
-            self._ground = ground
+    def set_background(self, name: str) -> None:
+        """Change what is drawn under the graph — a ``look.BACKGROUNDS`` name. Snapping is
+        the scene's half of the same look; the activity pushes both."""
+        if name != self._background:
+            self._background = name
             self.viewport().update()
 
     def drawBackground(self, painter: QPainter, rect: QRectF | QRect) -> None:  # noqa: N802
@@ -615,7 +616,7 @@ class GraphView(QGraphicsView):
         # palette is the view's own, read now, so a theme switch repaints the grid with the
         # graph — the same rule as items.live_palette.
         super().drawBackground(painter, rect)
-        paint_ground(painter, QRectF(rect), self.palette(), self._ground, self._zoom)
+        paint_ground(painter, QRectF(rect), self.palette(), self._background, self._zoom)
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)
