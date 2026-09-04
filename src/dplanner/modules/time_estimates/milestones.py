@@ -250,7 +250,9 @@ class MilestoneRow(QWidget):
     start_changed = Signal(str, object)  # (step id, date | None)
     color_changed = Signal(str, object)  # (step id, hex | None)
 
-    def __init__(self, key: str, date_width: int, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, key: str, date_width: int, days_width: int, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.key = key
         self._selected = False
@@ -312,6 +314,7 @@ class MilestoneRow(QWidget):
         self.when.setMinimumWidth(date_width)
         self.when.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.days = _secondary("", self)
+        self.days.setMinimumWidth(days_width)
         self.days.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         words = QVBoxLayout()
@@ -468,11 +471,14 @@ class MilestoneList(QWidget):
                 self._layout.removeWidget(gone)
                 gone.hide()
                 gone.deleteLater()
+        # Both answer columns are as wide as their widest plausible text, so the Begin
+        # controls line up down the list whatever each row's numbers happen to be.
         date_width = self.fontMetrics().horizontalAdvance("⚠ 30 September") + COLUMN_GAP
+        days_width = self.fontMetrics().horizontalAdvance("99.9w")
         for index, entry in enumerate(entries):
             row = self._rows.get(entry.key)
             if row is None:
-                row = MilestoneRow(entry.key, date_width, self)
+                row = MilestoneRow(entry.key, date_width, days_width, self)
                 row.picked.connect(self.picked)
                 row.activated.connect(self.activated)
                 row.start_changed.connect(self.start_changed)
@@ -491,6 +497,7 @@ class MilestoneList(QWidget):
         self.total_when.setText(format_date(finish) if finish else "—")
         self.total_when.setMinimumWidth(date_width)
         self.total_when.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.total_days.setMinimumWidth(days_width)
         self.total_days.setText(format_days(days))
         self.empty.setVisible(not any(entry.is_milestone for entry in entries))
 

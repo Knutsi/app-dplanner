@@ -1,13 +1,14 @@
 """How long the project takes with a stated team, as a tab beside the graph it prices.
 
-The page is split down the middle. On the left, what you set: the focus factor, the
-staffing picker (one heatmap of every team, clicking a tile re-asks the question), and
-the colour map the milestones are shaded from. On the right, what that answers: a
-calendar with every milestone's stretch of work lit in its shade, and under it the
-milestones in one list — each with its swatch, where it begins (the sequence's day, or a
-date of its own, set right there) and where it lands. Calendar days and project days are
-two lenses on one simulation, so they are a toggle over one grid rather than two tables
-side by side. Nothing on the page explains itself; the tooltips do.
+The page is split at a seam, the answer taking the wider side. On the left, what you
+set: the focus factor and the staffing picker (one heatmap of every team, clicking a
+tile re-asks the question). On the right, what that answers: a calendar with every
+milestone's stretch of work lit in its shade — the colour map they are shaded from is
+chosen in the strip above it, beside the month arrows — and under it the milestones in
+one list, each with its swatch, where it begins (the sequence's day, or a date of its
+own, set right there) and where it lands. Calendar days and project days are two lenses
+on one simulation, so they are a toggle over one grid rather than two tables side by
+side. Nothing on the page explains itself; the tooltips do.
 
 The simulation is the domain's (``phases`` over ``parallel_finish``); this module renders
 it and stores only assumptions — the focus factor, the palette, and a milestone's date
@@ -94,8 +95,10 @@ CAPTION_GAP = 6
 BLOCK_GAP = 12
 BUTTON_GAP = 4
 
-# The seam falls at the middle to begin with; the splitter keeps the proportion after.
-HALF = 480
+# Where the seam falls to begin with; the splitter keeps the proportion after. The left
+# holds the focus and the staffing grid and nothing wider, so the calendar gets the rest.
+LEFT_WIDTH = 400
+RIGHT_WIDTH = 560
 
 # What the stretch with no milestone is called: after the last milestone, or all there is.
 REMAINDER_LABEL = "Remaining work"
@@ -175,13 +178,6 @@ class TimeEstimatesActivity(EntityActivity):
         self.matrix.scenario_changed.connect(self._render)
         left.addWidget(self.matrix, 0, Qt.AlignmentFlag.AlignLeft)
 
-        left.addSpacing(BLOCK_GAP)
-        self.palette_caption = QLabel("Milestone colours", settings)
-        self.palette_caption.setObjectName("InspectorCaption")
-        left.addWidget(self.palette_caption)
-        self.palette_picker = PalettePicker(settings)
-        self.palette_picker.palette_picked.connect(self._on_palette_changed)
-        left.addWidget(self.palette_picker, 0, Qt.AlignmentFlag.AlignLeft)
         left.addStretch(1)
 
         # -- right: what it answers ----------------------------------------------------------
@@ -199,6 +195,15 @@ class TimeEstimatesActivity(EntityActivity):
         pager_row.addWidget(self.earlier)
         pager_row.addWidget(self.later)
         pager_row.addStretch(1)
+        # The colour map, on the same strip as the arrows, over the calendar it colours.
+        self.palette_caption = QLabel("Milestone colours", self.pager)
+        self.palette_caption.setObjectName("InspectorCaption")
+        pager_row.addWidget(self.palette_caption)
+        pager_row.addSpacing(CAPTION_GAP)
+        self.palette_picker = PalettePicker(self.pager)
+        self.palette_picker.setToolTip("The colour map the milestones are shaded from")
+        self.palette_picker.palette_picked.connect(self._on_palette_changed)
+        pager_row.addWidget(self.palette_picker)
         right.addWidget(self.pager)
 
         self.months = MonthsView(answer)
@@ -227,7 +232,7 @@ class TimeEstimatesActivity(EntityActivity):
         self.split.addWidget(self._scrolling(answer))
         self.split.setStretchFactor(0, 1)
         self.split.setStretchFactor(1, 1)
-        self.split.setSizes([HALF, HALF])
+        self.split.setSizes([LEFT_WIDTH, RIGHT_WIDTH])
         self._widget = self.split
 
         # After a quiet spell, not per signal: a refresh is two dozen schedule simulations
@@ -396,8 +401,6 @@ class TimeEstimatesActivity(EntityActivity):
         for widget in (
             self.lens_bar,
             self.matrix,
-            self.palette_caption,
-            self.palette_picker,
             self.pager,
             self.months,
             self.milestones,

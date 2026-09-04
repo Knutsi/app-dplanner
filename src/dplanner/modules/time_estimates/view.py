@@ -65,7 +65,7 @@ TINT_MAX_ALPHA = 88
 
 # Tile geometry: 4-point-scale gaps doing the separating (never borders), mark-spec
 # rounding, and a hit target comfortably past the 24 px minimum.
-TILE_WIDTH = 84
+TILE_WIDTH = 72
 TILE_HEIGHT = 40
 TILE_GAP = 4
 TILE_RADIUS = 4

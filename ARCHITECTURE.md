@@ -2010,8 +2010,10 @@ decisions worth writing down:
   share the hex through `schedule.py` and never store a `QColor`, for the
   palette-snapshot reason in *The palette a painter is handed is a snapshot*.
 - **The page is split at a seam, and the calendar takes the width.** What you set on the
-  left — focus, the staffing picker, the colour map — and what it answers on the right —
-  the calendar, then the milestones. The milestones were once two lists, the settable
+  left — focus, the staffing picker — and what it answers on the right — the colour map
+  and the month arrows on one strip, the calendar, then the milestones. The seam starts
+  off-centre: the left holds nothing wider than the staffing grid, so the calendar gets
+  the rest. The milestones were once two lists, the settable
   one on the left and the landing one on the right, painted alike so a reader could cross
   between them; the first real project showed nobody wants to cross. **One list now, one
   row per stretch, the date you set and the date it lands on the same line** — the one
