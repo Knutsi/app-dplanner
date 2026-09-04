@@ -23,8 +23,10 @@ from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
 from dplanner.modules.step_milestone.aspect import write as write_milestone_label
 from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
-    PALETTE,
+    PALETTES,
     read_efficiency,
+    read_palette,
+    shades,
     stretched,
 )
 from dplanner.modules.time_estimates.view import TINT_MIN_ALPHA
@@ -72,7 +74,7 @@ def tab(services, project):
 
 
 def _landings(tab):
-    return [(row.landing.label, row.when.text(), row.days.text()) for row in tab.landings.rows]
+    return [(row.name.text(), row.when.text(), row.days.text()) for row in tab.milestones.rows]
 
 
 # -- the grid and the answer -----------------------------------------------------------------
@@ -82,7 +84,7 @@ def test_the_default_team_dates_the_plan_in_the_landing_list(tab):
     assert tab.landing == date(2026, 9, 16)
     assert tab.matrix.value_at(1, 1) == "1.6w"
     assert _landings(tab) == [("All work", "16 September", "1.6w")]
-    assert not tab.landings.total.isVisibleTo(tab.widget)  # one stretch needs no total
+    assert not tab.milestones.total.isVisibleTo(tab.widget)  # one stretch needs no total
     assert not tab.notice.isVisibleTo(tab.widget)
 
 
@@ -285,9 +287,9 @@ def test_the_milestones_land_in_sequence_and_the_total_closes_the_list(services,
     _read, draft, _docs, ship = staged.steps
     assert tab.milestones.keys == (draft.id, ship.id)
     assert _landings(tab) == [("v1", "16 September", "1.6w"), ("v2", "23 September", "5d")]
-    assert tab.landings.total.isVisibleTo(tab.widget)
-    assert tab.landings.total_when.text() == "23 September"
-    assert tab.landings.total_days.text() == "2.6w"  # 13 working days, 7 → 23 September
+    assert tab.milestones.total.isVisibleTo(tab.widget)
+    assert tab.milestones.total_when.text() == "23 September"
+    assert tab.milestones.total_days.text() == "2.6w"  # 13 working days, 7 → 23 September
     assert tab.landing == date(2026, 9, 23)
 
 
@@ -299,13 +301,66 @@ def test_a_stretch_prints_whole_days_never_the_simulation_fraction(services, sta
     assert _landings(tab)[0] == ("v1", "15 September", "7d")
 
 
-def test_each_milestone_wears_its_place_in_the_palette(services, staged):
+def test_each_milestone_wears_its_shade_of_the_palette(services, staged):
+    """Two milestones sit a quarter and three quarters of the way along the default map."""
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, ship = staged.steps
-    assert tab.milestones.row(draft.id).swatch.color.name() == PALETTE[0]
-    assert tab.milestones.row(ship.id).swatch.color.name() == PALETTE[1]
+    first, second = shades(PALETTES[0], 2)
+    assert tab.milestones.row(draft.id).swatch.color.name() == first
+    assert tab.milestones.row(ship.id).swatch.color.name() == second
     assert tab.milestones.row(draft.id).name.text() == "v1"
     assert tab.milestones.row(draft.id).title.text() == "Draft the model"
+
+
+def test_the_dealt_shades_spread_along_the_map_as_milestones_are_added(services, staged):
+    """Shades of one map, dealt by count: a third milestone re-deals the first two, and a
+    reader still tells them apart by their place in the sequence."""
+    library = services.document
+    tab = services.tabs.open("time", staged.id)
+    read, _draft, _docs, _ship = staged.steps
+    before = [row.swatch.color.name() for row in tab.milestones.rows]
+    services.undo.push(SetModuleDataCommand(read.id, MILESTONE_ID, write_milestone_label("v0")))
+    after = [row.swatch.color.name() for row in tab.milestones.rows]
+    assert after == shades(PALETTES[0], 3) and before == shades(PALETTES[0], 2)
+    assert len(set(after)) == 3
+    assert MODULE_ID not in library.project(staged.id).module_data  # nothing dealt is stored
+
+
+def test_picking_a_palette_reshades_the_milestones_and_is_undoable(services, staged):
+    tab = services.tabs.open("time", staged.id)
+    _read, draft, _docs, ship = staged.steps
+    mako = next(found for found in PALETTES if found.id == "mako")
+    tab.palette_picker.setCurrentIndex(tab.palette_picker.findData("mako"))
+    assert staged.module_data[MODULE_ID] == {"palette": "mako", "format": 1}
+    assert read_palette(staged) is mako
+    assert [row.swatch.color.name() for row in tab.milestones.rows] == shades(mako, 2)
+    assert tab.months.band_at(date(2026, 9, 10)).color.name() == shades(mako, 2)[0]
+    services.undo.undo()
+    assert MODULE_ID not in staged.module_data
+    assert tab.palette_picker.palette_id == PALETTES[0].id  # the picker follows the model
+    assert tab.milestones.row(draft.id).swatch.color.name() == shades(PALETTES[0], 2)[0]
+    assert tab.milestones.row(ship.id).swatch.color.name() == shades(PALETTES[0], 2)[1]
+
+
+def test_the_palette_and_the_focus_factor_share_one_entry_without_clobbering(services, staged):
+    tab = services.tabs.open("time", staged.id)
+    tab.focus_bar.percent.setValue(60)
+    tab.palette_picker.setCurrentIndex(tab.palette_picker.findData("rocket"))
+    assert staged.module_data[MODULE_ID] == {"efficiency": 0.6, "palette": "rocket", "format": 1}
+    tab.focus_bar.percent.setValue(80)
+    assert staged.module_data[MODULE_ID] == {"efficiency": 0.8, "palette": "rocket", "format": 1}
+    tab.palette_picker.setCurrentIndex(tab.palette_picker.findData(PALETTES[0].id))
+    assert staged.module_data[MODULE_ID] == {"efficiency": 0.8, "format": 1}  # default: absent
+
+
+def test_the_swatch_menu_offers_the_palettes_shades_then_custom_and_automatic(services, staged):
+    tab = services.tabs.open("time", staged.id)
+    _read, draft, _docs, _ship = staged.steps
+    menu = tab.milestones.row(draft.id).swatch.menu()
+    titles = [action.text() for action in menu.actions() if not action.isSeparator()]
+    assert titles[:2] == ["Viridis 1", "Viridis 2"]
+    assert titles[-2:] == ["Custom…", "Automatic"]
+    assert not menu.actions()[-1].isEnabled()  # nothing chosen yet, so nothing to hand back
 
 
 def test_the_calendar_paints_each_stretch_and_marks_the_landing(services, staged):
@@ -315,15 +370,16 @@ def test_the_calendar_paints_each_stretch_and_marks_the_landing(services, staged
     second = tab.months.band_at(date(2026, 9, 21))
     assert first is not None and first.key == draft.id and first.label == "v1"
     assert second is not None and second.key == ship.id
-    assert first.color.name() == PALETTE[0] and second.color.name() == PALETTE[1]
+    assert [first.color.name(), second.color.name()] == shades(PALETTES[0], 2)
     assert "v1 lands" in tab.months.day_tooltip(date(2026, 9, 16))
     assert "v2 starts, working day 1 of 5" in tab.months.day_tooltip(date(2026, 9, 17))
     assert "v2 lands" in tab.months.day_tooltip(date(2026, 9, 23))
 
 
 def test_dating_a_milestone_starts_with_the_day_the_sequence_gave_it(services, staged):
-    """*Date…* pre-fills the stretch's own start, so choosing a date is one click and an
-    edit; the cross hands the decision back to the sequence. Both undo."""
+    """*Begin…* pre-fills the stretch's own start, so choosing a date is one click and an
+    edit; the cross hands the decision back to the sequence. Both undo — and the landing
+    date on the same row answers each edit."""
     tab = services.tabs.open("time", staged.id)
     _read, _draft, _docs, ship = staged.steps
     row = tab.milestones.row(ship.id)
@@ -349,7 +405,7 @@ def test_a_date_the_sequence_cannot_keep_is_pushed_and_flagged(services, staged)
     _read, _draft, _docs, ship = staged.steps
     tab.milestones.row(ship.id).date.setDate(QDate(2026, 9, 10))
     tab.milestones.row(ship.id).start_changed.emit(ship.id, date(2026, 9, 10))
-    v2 = tab.landings.rows[1]
+    v2 = tab.milestones.row(ship.id)
     assert v2.when.text() == "⚠ 23 September"
     assert "Asked to begin 10 September" in v2.toolTip()
 
@@ -361,8 +417,8 @@ def test_a_chosen_colour_overrides_the_dealt_one_until_automatic(services, stage
     assert draft.module_data[MODULE_ID] == {"color": "#c98500", "format": 1}
     assert tab.milestones.row(draft.id).swatch.color.name() == "#c98500"
     assert tab.months.band_at(date(2026, 9, 10)).color.name() == "#c98500"
-    assert tab.milestones.row(ship.id).swatch.color.name() == PALETTE[1]  # still dealt in turn
-    assert tab.landings.rows[0].landing.color.name() == "#c98500"
+    # The other is still dealt in turn — its shade is its place among two, not one.
+    assert tab.milestones.row(ship.id).swatch.color.name() == shades(PALETTES[0], 2)[1]
     tab.milestones.row(draft.id).swatch.color_picked.emit(None)
     assert MODULE_ID not in draft.module_data
 
@@ -381,17 +437,16 @@ def test_a_dated_milestone_keeps_its_colour_and_vice_versa(services, staged):
     assert draft.module_data[MODULE_ID] == {"start": "2026-09-01", "format": 1}
 
 
-def test_picking_a_milestone_emphasises_its_stretch_on_both_sides(services, staged):
+def test_picking_a_milestone_emphasises_its_stretch_in_the_calendar(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, ship = staged.steps
     tab.milestones.row(ship.id).picked.emit(ship.id)
     assert tab.picked == ship.id
     assert tab.months.emphasised == ship.id
-    assert tab.landings.rows[1].selected and not tab.landings.rows[0].selected
-    assert tab.milestones.row(ship.id).selected
-    tab.landings.rows[1].picked.emit(ship.id)  # picked again, from the other list: let go
+    assert tab.milestones.rows[1].selected and not tab.milestones.rows[0].selected
+    tab.milestones.rows[1].picked.emit(ship.id)  # picked again: let go
     assert tab.picked is None and tab.months.emphasised is None
-    tab.landings.rows[0].picked.emit(draft.id)
+    tab.milestones.rows[0].picked.emit(draft.id)
     services.undo.push(SetModuleDataCommand(draft.id, MILESTONE_ID, {}))  # no longer one
     assert tab.picked is None
 
@@ -423,8 +478,13 @@ def test_the_milestone_rows_are_never_read_back_out_of_the_layout(monkeypatch, s
 
 
 def test_without_milestones_the_list_says_where_to_make_one(tab):
+    """The whole is still one row — dated, without controls — and the note says how to
+    add a milestone under it."""
     assert tab.milestones.empty.isVisibleTo(tab.widget)
     assert "Step ▸ Type ▸ Milestone" in tab.milestones.empty.text()
+    (whole,) = tab.milestones.rows
+    assert whole.name.text() == "All work" and whole.key == ""
+    assert not whole.begin.isVisibleTo(tab.widget) and not whole.swatch.isVisibleTo(tab.widget)
 
 
 # -- what breaks, said plainly ---------------------------------------------------------------

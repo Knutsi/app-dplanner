@@ -574,6 +574,23 @@ def layers_icon(color: str | QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+def paint_step_glyph(painter: QPainter, rect: QRectF, colour: QColor) -> None:
+    """A small rounded card: one piece of work — the node the graph is made of."""
+    painter.setPen(_pen(colour, 1.3))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(rect, 2.0, 2.0)
+
+
+def step_icon(color: str | QColor) -> QIcon:
+    """The card as a row icon: a plain work step, beside the tag and the layers a list
+    of mixed kinds wears — the canvas paints no medallion for it, because there every
+    node is one."""
+    pixmap, painter = _canvas()
+    paint_step_glyph(painter, QRectF(3.0, 4.5, 10.0, 7.5), QColor(color))
+    painter.end()
+    return QIcon(pixmap)
+
+
 def info_icon(color: str | QColor) -> QIcon:
     """A circled *i*: the tooltip beside a caption that carries a standing convention.
 

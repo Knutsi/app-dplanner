@@ -5,7 +5,7 @@ import json
 import pytest
 
 from dplanner.domain.store import LibraryStore
-from dplanner.modules.time_estimates.schedule import MODULE_ID
+from dplanner.modules.time_estimates.schedule import MODULE_ID, PALETTES, shades
 
 
 @pytest.fixture
@@ -117,7 +117,8 @@ def test_the_milestones_land_in_sequence_for_the_smallest_team(staged):
     assert v2["label"] == "v2"
     assert v2["start"] == "2026-09-17"
     assert v2["finish"] == "2026-09-23"  # the agent day, then 2/0.5 = 4 days of docs
-    assert v1["color"] == "#5f87d7" and v2["color"] == "#e0602c"
+    assert [v1["color"], v2["color"]] == shades(PALETTES[0], 2)
+    assert data["palette"] == "viridis"
     assert not v1["pushed"] and not v2["pushed"]
     assert {cell["finish"] for cell in data["calendar"]} == {"2026-09-23"}
 
@@ -151,7 +152,7 @@ def test_a_milestone_colour_is_stored_lower_case_and_cleared(staged, cli_library
     staged("schedule", "milestone", "draft-the-model", "--color", "#C98500")
     data = json.loads(staged("schedule", "matrix", "Discovery", "--json"))
     assert data["milestones"][0]["color"] == "#c98500"
-    assert data["milestones"][1]["color"] == "#e0602c"  # the next slot is still dealt in turn
+    assert data["milestones"][1]["color"] == shades(PALETTES[0], 2)[1]  # still dealt in turn
     assert "--color is #rrggbb" in staged(
         "schedule", "milestone", "draft-the-model", "--color", "orange", expect=1
     )
@@ -159,6 +160,30 @@ def test_a_milestone_colour_is_stored_lower_case_and_cleared(staged, cli_library
     library = LibraryStore(cli_library).load()
     model = next(step for step in library.projects[0].steps if step.title == "Draft the model")
     assert MODULE_ID not in model.module_data
+
+
+def test_the_palette_is_chosen_listed_and_kept_beside_the_focus_factor(staged, cli_library):
+    said = staged("schedule", "palette", "Discovery")
+    assert "shaded from Viridis" in said and "* viridis" in said and "  mako" in said
+    assert "shaded from Mako" in staged("schedule", "palette", "Discovery", "mako")
+    data = json.loads(staged("schedule", "matrix", "Discovery", "--json"))
+    mako = next(found for found in PALETTES if found.id == "mako")
+    assert data["palette"] == "mako"
+    assert [m["color"] for m in data["milestones"]] == shades(mako, 2)
+    # The focus factor and the palette share the entry; each write keeps the other.
+    staged("schedule", "focus", "Discovery", "--percent", "60")
+    library = LibraryStore(cli_library).load()
+    assert library.projects[0].module_data[MODULE_ID] == {
+        "efficiency": 0.6,
+        "palette": "mako",
+        "format": 1,
+    }
+    assert "no palette called 'neon'" in staged(
+        "schedule", "palette", "Discovery", "neon", expect=1
+    )
+    staged("schedule", "palette", "Discovery", "viridis")  # the default: absent again
+    library = LibraryStore(cli_library).load()
+    assert library.projects[0].module_data[MODULE_ID] == {"efficiency": 0.6, "format": 1}
 
 
 def test_only_a_milestone_takes_a_date(staged):

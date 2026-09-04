@@ -42,7 +42,8 @@ from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
     Cell,
     read_efficiency,
-    write_efficiency,
+    read_palette,
+    write_project,
 )
 
 # Secondary text as opacity rather than a theme colour — DESIGN.md exception #1, the same
@@ -130,8 +131,8 @@ class FocusBar(QWidget):
     def _commit(self) -> None:
         if self._loading or not self._product.has(self._project_id):
             return
-        entry = write_efficiency(self.percent.value() / 100)
         project = self._product.project(self._project_id)
+        entry = write_project(self.percent.value() / 100, read_palette(project).id)
         if entry == project.module_data.get(MODULE_ID, {}):
             return
         self._undo.push(

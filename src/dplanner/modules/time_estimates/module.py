@@ -2,17 +2,19 @@
 
 The page is split down the middle. On the left, what you set: the focus factor, the
 staffing picker (one heatmap of every team, clicking a tile re-asks the question), and
-the milestones — each with its colour and, optionally, a date of its own to begin on. On
-the right, what that answers: a calendar with every milestone's stretch of work lit in its
-colour, and under it the milestones with the dates they land. Calendar days and project
-days are two lenses on one simulation, so they are a toggle over one grid rather than two
-tables side by side. Nothing on the page explains itself; the tooltips do.
+the colour map the milestones are shaded from. On the right, what that answers: a
+calendar with every milestone's stretch of work lit in its shade, and under it the
+milestones in one list — each with its swatch, where it begins (the sequence's day, or a
+date of its own, set right there) and where it lands. Calendar days and project days are
+two lenses on one simulation, so they are a toggle over one grid rather than two tables
+side by side. Nothing on the page explains itself; the tooltips do.
 
 The simulation is the domain's (``phases`` over ``parallel_finish``); this module renders
-it and stores only assumptions — the focus factor, and a milestone's date and colour (see
-``schedule.py`` beside this file). The estimate, agent-step, milestone and start-date
-readers arrive as functions on the Deps, so this module never learns what an estimate is
-stored as or what marks a step for an agent — the same seams the progression board uses.
+it and stores only assumptions — the focus factor, the palette, and a milestone's date
+and colour (see ``schedule.py`` beside this file). The estimate, agent-step, milestone and
+start-date readers arrive as functions on the Deps, so this module never learns what an
+estimate is stored as or what marks a step for an agent — the same seams the progression
+board uses.
 
 **Robust before pretty.** The model refuses to create a cycle, but a file edited by hand
 can carry one; then nothing can be dated, and the page says which steps wait on each
@@ -63,22 +65,24 @@ from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
 from dplanner.modules.time_estimates.milestones import (
-    Landing,
-    LandingList,
     MilestoneEntry,
     MilestoneList,
+    PalettePicker,
 )
 from dplanner.modules.time_estimates.months import Band, MonthsView
 from dplanner.modules.time_estimates.schedule import (
+    EFFICIENCY_KEY,
     MODULE_ID,
     Cell,
     TimeReport,
     phase_colors,
     read_color,
     read_efficiency,
+    read_palette,
     read_start,
     time_report,
     write_milestone,
+    write_project,
 )
 from dplanner.modules.time_estimates.view import FocusBar, MatrixView
 
@@ -172,15 +176,12 @@ class TimeEstimatesActivity(EntityActivity):
         left.addWidget(self.matrix, 0, Qt.AlignmentFlag.AlignLeft)
 
         left.addSpacing(BLOCK_GAP)
-        self.milestones_caption = QLabel("Milestones", settings)
-        self.milestones_caption.setObjectName("InspectorCaption")
-        left.addWidget(self.milestones_caption)
-        self.milestones = MilestoneList(settings)
-        self.milestones.picked.connect(self._on_picked)
-        self.milestones.activated.connect(self._on_activated)
-        self.milestones.start_changed.connect(self._on_start_changed)
-        self.milestones.color_changed.connect(self._on_color_changed)
-        left.addWidget(self.milestones)
+        self.palette_caption = QLabel("Milestone colours", settings)
+        self.palette_caption.setObjectName("InspectorCaption")
+        left.addWidget(self.palette_caption)
+        self.palette_picker = PalettePicker(settings)
+        self.palette_picker.palette_picked.connect(self._on_palette_changed)
+        left.addWidget(self.palette_picker, 0, Qt.AlignmentFlag.AlignLeft)
         left.addStretch(1)
 
         # -- right: what it answers ----------------------------------------------------------
@@ -205,10 +206,12 @@ class TimeEstimatesActivity(EntityActivity):
         right.addWidget(self.months)
 
         right.addSpacing(BLOCK_GAP)
-        self.landings = LandingList(answer)
-        self.landings.picked.connect(self._on_picked)
-        self.landings.activated.connect(self._on_activated)
-        right.addWidget(self.landings)
+        self.milestones = MilestoneList(answer)
+        self.milestones.picked.connect(self._on_picked)
+        self.milestones.activated.connect(self._on_activated)
+        self.milestones.start_changed.connect(self._on_start_changed)
+        self.milestones.color_changed.connect(self._on_color_changed)
+        right.addWidget(self.milestones)
 
         # What changes with the data: a plan that cannot be dated, steps counted as zero.
         self.notice = QLabel(answer)
@@ -336,6 +339,20 @@ class TimeEstimatesActivity(EntityActivity):
         step = self._product.step(step_id)
         self._write_milestone(step, read_start(step), color, "Colour Milestone")
 
+    def _on_palette_changed(self, palette_id: str) -> None:
+        if not self._product.has(self.project_id):
+            return
+        project = self._project()
+        # The focus factor rides along as stored — absent stays absent.
+        stored = project.module_data.get(MODULE_ID, {})
+        efficiency = read_efficiency(project) if EFFICIENCY_KEY in stored else None
+        entry = write_project(efficiency, palette_id)
+        if entry == stored:
+            return
+        self._deps.undo.push(
+            SetModuleDataCommand(self.project_id, MODULE_ID, entry, label="Milestone Palette")
+        )
+
     def _write_milestone(
         self, step: Step, when: date | None, color: str | None, label: str
     ) -> None:
@@ -379,11 +396,11 @@ class TimeEstimatesActivity(EntityActivity):
         for widget in (
             self.lens_bar,
             self.matrix,
-            self.milestones_caption,
-            self.milestones,
+            self.palette_caption,
+            self.palette_picker,
             self.pager,
             self.months,
-            self.landings,
+            self.milestones,
         ):
             widget.setVisible(datable)
         if report is None:
@@ -403,7 +420,11 @@ class TimeEstimatesActivity(EntityActivity):
         self.matrix.show_cells(cells, collapse)
 
         calendar = self._selected_cell()
-        colors = [QColor(hex_color) for hex_color in phase_colors(calendar.phases, read_color)]
+        found = read_palette(self._project())
+        self.palette_picker.show_palette(found)
+        colors = [
+            QColor(hex_color) for hex_color in phase_colors(calendar.phases, read_color, found)
+        ]
         stretches = list(zip(calendar.phases, colors, strict=True))
         if self._picked is not None and not any(
             phase.milestone is not None and phase.milestone.id == self._picked
@@ -413,9 +434,12 @@ class TimeEstimatesActivity(EntityActivity):
 
         self.months.show_bands(report.start, self._bands(stretches))
         self.months.emphasise(self._picked)
-        self.milestones.show_entries(self._entries(stretches), self._picked)
-        self.landings.show_landings(
-            self._landings(stretches), self._picked, finish=calendar.finish, days=calendar.days
+        self.milestones.show_entries(
+            self._entries(stretches),
+            self._picked,
+            found=found,
+            finish=calendar.finish,
+            days=calendar.days,
         )
         self.notice.setVisible(report.unestimated > 0)
         self.notice.setText(
@@ -446,24 +470,13 @@ class TimeEstimatesActivity(EntityActivity):
     def _entries(self, stretches: list[tuple[Phase, QColor]]) -> list[MilestoneEntry]:
         return [
             MilestoneEntry(
-                step_id=phase.milestone.id,
-                label=self._label(phase, stretches),
-                title=phase.milestone.title,
-                color=color,
-                chosen=read_color(phase.milestone) is not None,
-                start=phase.asked,
-                default_start=phase.start,
-            )
-            for phase, color in stretches
-            if phase.milestone is not None
-        ]
-
-    def _landings(self, stretches: list[tuple[Phase, QColor]]) -> list[Landing]:
-        return [
-            Landing(
                 key=phase.milestone.id if phase.milestone else "",
                 label=self._label(phase, stretches),
+                title=phase.milestone.title if phase.milestone else "",
                 color=color,
+                chosen=phase.milestone is not None and read_color(phase.milestone) is not None,
+                start=phase.asked,
+                default_start=phase.start,
                 finish=phase.finish,
                 days=float(phase.calendar_days),
                 steps=len(phase.steps),

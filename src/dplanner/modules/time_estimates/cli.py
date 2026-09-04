@@ -1,13 +1,13 @@
-"""``dplanner schedule matrix``, ``schedule focus`` and ``schedule milestone`` — staffing
-the plan.
+"""``dplanner schedule matrix``, ``schedule focus``, ``schedule palette`` and ``schedule
+milestone`` — staffing the plan.
 
 ``schedule show`` prints the brackets (serial, critical path); ``matrix`` prints what lands
 between them: the makespan for every staffing in a small grid of people by coding agents,
 in project working days and in calendar days once a person's divided focus is priced in —
 and, for one team, the milestones in sequence with the dates they land. One derivation —
 ``time_estimates/schedule.py``'s ``time_report`` — feeds this verb, the tab and ``--json``,
-so the three can never disagree. ``focus`` and ``milestone`` store the assumptions behind
-the calendar half — the same writes the tab's controls push.
+so the three can never disagree. ``focus``, ``palette`` and ``milestone`` store the
+assumptions behind the calendar half — the same writes the tab's controls push.
 
 The estimate, agent-step, milestone and start-date readers arrive as functions from the
 composition root, the same hand-over ``progression_cli.commands(status_for=…)`` uses — no
@@ -28,18 +28,23 @@ from dplanner.domain.model import Project, Step
 from dplanner.domain.schedule import Phase, format_date, format_days
 from dplanner.modules.time_estimates.schedule import (
     DEFAULT_EFFICIENCY,
+    EFFICIENCY_KEY,
     MODULE_ID,
+    PALETTES,
     Cell,
     TimeReport,
     cell_for,
     is_color,
+    palette,
     phase_colors,
     read_color,
     read_efficiency,
+    read_palette,
     read_start,
+    shades,
     time_report,
-    write_efficiency,
     write_milestone,
+    write_project,
 )
 
 
@@ -80,6 +85,16 @@ def commands(
             ),
         ),
         CliCommand(
+            path=("schedule", "palette"),
+            summary="Choose the colour map the milestones are shaded from, or see the choices.",
+            configure=_configure_palette,
+            run=_palette,
+            examples=(
+                "dplanner schedule palette discovery",
+                "dplanner schedule palette discovery mako",
+            ),
+        ),
+        CliCommand(
             path=("schedule", "milestone"),
             summary="Date a milestone's stretch of work, or colour it, instead of the "
             "sequence's own answer.",
@@ -117,6 +132,16 @@ def _configure_focus(parser: ArgumentParser) -> None:
     )
 
 
+def _configure_palette(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument(
+        "name",
+        nargs="?",
+        metavar="PALETTE",
+        help="one of " + ", ".join(found.id for found in PALETTES) + "; omitted, prints them",
+    )
+
+
 def _configure_milestone(parser: ArgumentParser) -> None:
     step_arg(parser)
     parser.add_argument(
@@ -138,7 +163,9 @@ def _focus(context: CliContext, args: Namespace) -> int:
         raise CliError("--percent is a percentage between 1 and 100")
     project = find_project(context.library, args.project)
     value = None if args.clear else args.percent / 100
-    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_efficiency(value)))
+    context.apply(
+        SetModuleDataCommand(project.id, MODULE_ID, write_project(value, read_palette(project).id))
+    )
     said = (
         f"focus back to the default, {DEFAULT_EFFICIENCY:.0%}"
         if value is None
@@ -147,6 +174,39 @@ def _focus(context: CliContext, args: Namespace) -> int:
     context.report(
         {"project": project.id, "efficiency": value if value is not None else ""},
         f"{project.title}: {said}",
+    )
+    return 0
+
+
+def _palette(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.library, args.project)
+    current = read_palette(project)
+    choices = [
+        {"id": found.id, "name": found.name, "shades": shades(found, 4)} for found in PALETTES
+    ]
+    if args.name is None:
+        listed = "\n".join(
+            f"  {'*' if found.id == current.id else ' '} {found.id:<8} {found.name}"
+            for found in PALETTES
+        )
+        context.report(
+            {"project": project.id, "palette": current.id, "palettes": choices},
+            f"{project.title}: milestones shaded from {current.name}\n{listed}",
+        )
+        return 0
+    chosen = palette(args.name)
+    if chosen.id != args.name:
+        raise CliError(
+            f"no palette called {args.name!r} — one of " + ", ".join(found.id for found in PALETTES)
+        )
+    # The focus factor rides along as stored — absent stays absent, so choosing a palette
+    # never writes the default factor into the file.
+    stored = project.module_data.get(MODULE_ID, {})
+    efficiency = read_efficiency(project) if EFFICIENCY_KEY in stored else None
+    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_project(efficiency, chosen.id)))
+    context.report(
+        {"project": project.id, "palette": chosen.id, "palettes": choices},
+        f"{project.title}: milestones shaded from {chosen.name}",
     )
     return 0
 
@@ -248,11 +308,12 @@ def _matrix(
         )
     # The milestones are printed for one team: the one named, else the smallest.
     team = calendar[0]
-    colors = phase_colors(team.phases, read_color)
+    colors = phase_colors(team.phases, read_color, read_palette(project))
     data: dict[str, Any] = {
         "project": project.id,
         "start": report.start.isoformat(),
         "efficiency": efficiency,
+        "palette": read_palette(project).id,
         "effort": {
             "human": report.human_days,
             "agent": report.agent_days,

@@ -110,7 +110,7 @@ def test_a_quick_pick_chip_sets_the_estimate_in_one_gesture(services, project, p
     services.undo.undo()
     assert read_estimate(services.document.step(project.steps[0].id)) is None
 
-    editor.chips.button(1).click()  # ¼ — one agent task, about 90 minutes.
+    editor.chips.button(1).click()  # ¼ — one agent task, about two hours.
     assert read_estimate(services.document.step(project.steps[0].id)) == 0.25
 
 

@@ -638,8 +638,11 @@ root, stop and look for the registry or capability you have not found yet.
   can honestly deliver. The terminal opens at the project's **git repository root** (via
   the `workdir_for` seam the composition root wires from `find_repo_root`). The prompt goes
   to a per-run temp directory, never the project. The agent reports back through the CLI
-  (`status set`, `agent-state set`, `handoff set`). `ARCHITECTURE.md`'s *Running an agent
-  launches a peer, not a task* has the reasoning.
+  (`status set`, `agent-state set`, `handoff set`). **The graph gates launching**: a step
+  whose `requires` do not all read done (through `status_for` on the module's Deps, the
+  progression board's seam) gets a confirmation naming them before a shell opens — the
+  person may know the work landed unrecorded, so it asks rather than refuses.
+  `ARCHITECTURE.md`'s *Running an agent launches a peer, not a task* has the reasoning.
 - **The peer reports its end through its run directory, and the window clears the chip.**
   The wrapper script is the one process that knows when the agent exits, so it writes the
   shell's facts (`shell`: tty, pid, tmux pane, terminal program, window title) beside the
@@ -688,9 +691,13 @@ root, stop and look for the registry or capability you have not found yet.
   from a date of its own, when it has one and that is later; an earlier date is *pushed*
   and reported, never silently overlapped. Calendar time is the same walk over a wrapped
   `days_for` (`time_estimates/schedule.py`'s `stretched`), so the domain never learns what
-  an efficiency is. Three things reach disk, all under `time_estimates`: the focus factor
-  on the project node, and a milestone's start date and colour on its step — written by
-  the tab's controls and `dplanner schedule focus` / `schedule milestone` alike. A cycle a
+  an efficiency is. Four things reach disk, all under `time_estimates`: the focus factor
+  and the colour map on the project node, and a milestone's start date and colour on its
+  step — written by the tab's controls and `dplanner schedule focus` / `schedule palette`
+  / `schedule milestone` alike. **Milestones are shades of one map, dealt by place in the
+  sequence** (`schedule.py`'s `PALETTES` and `shades`), never a list of hues; the
+  milestone list under the calendar is the one list — the date you set and the date it
+  lands sit on one row. A cycle a
   hand-edited file smuggled in is named by `ordering.cyclic()` and the tab says so instead
   of drawing a calendar over a broken walk. `ARCHITECTURE.md`'s *Time estimates: two
   worker pools, one greedy simulation* has the reasoning.
