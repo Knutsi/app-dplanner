@@ -42,7 +42,7 @@ from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
-from dplanner.framework.activity import EntityActivity, follow_entity_tabs
+from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
     ContextNode,
@@ -208,14 +208,12 @@ class ProjectActivity(EntityActivity):
         self._view.modes.changed.connect(lambda _name: self._publish_activity())
 
         self._unsubscribes = [
+            # Connected first, so a typing burst is sealed before the canvas re-syncs.
             self._product.structure_changed.connect(self._on_structure),
-            self._product.edges_changed.connect(lambda *_a: self._sync()),
-            self._product.field_changed.connect(self._on_field),
-            self._product.module_data_changed.connect(self._on_module_data),
-            # Prose reaches the node too — the spark glyph and the subtitle's summaries
-            # read module_text — and sync diffs before repainting, so a keystroke that
-            # changes neither is free.
-            self._product.text_edited.connect(lambda *_a: self._sync()),
+            # Every change inside this project, and none outside it. Prose reaches the
+            # node too — the spark glyph and the subtitle's summaries read module_text —
+            # and sync diffs before repainting, so a keystroke that changes neither is free.
+            follow_project(self._product, self.project_id, self._sync),
         ]
         self._sync()
 
@@ -350,19 +348,12 @@ class ProjectActivity(EntityActivity):
         ]
         self._scene.sync(nodes, edges, read_regions(project))
 
-    def _on_structure(self, _parent_id: NodeId, _origin: object = None) -> None:
-        if not self._product.has(self.project_id):
+    def _on_structure(self, parent_id: NodeId, _origin: object = None) -> None:
+        if not self._product.belongs_to(parent_id, self.project_id):
             return
         if self._scene.selected_step() is not None:
             # A step that has gone ends a typing burst: the next edit is about something else.
             self._deps.undo.break_coalescing()
-        self._sync()
-
-    def _on_field(self, _node_id: NodeId, _field_name: str, _origin: object) -> None:
-        self._sync()
-
-    def _on_module_data(self, _node_id: NodeId, _module_id: str, _origin: object) -> None:
-        self._sync()
 
     # -- gestures become commands ----------------------------------------------------------------
 

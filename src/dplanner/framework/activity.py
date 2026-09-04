@@ -5,11 +5,12 @@ The framework only needs the small surface below; everything else — bindings, 
 context updates — is the activity's own business.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from PySide6.QtWidgets import QWidget
 
+from dplanner.domain.model import Library, NodeId, Project, ProjectId, TextEdit
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
     SCOPE_SELECTION,
@@ -144,10 +145,93 @@ def follow_entity_tabs(
             if not still_exists(activity.entity_id):
                 tabs.close_activity(activity)
 
-    def retitle(*_args: object) -> None:
+    def retitle(*args: object) -> None:
+        # A field signal names the node it changed; only that entity's tab can be retitled
+        # by it. With no node named, every survivor is re-read.
+        changed = args[0] if args else None
         for activity in activities():
+            if changed is not None and changed != activity.entity_id:
+                continue
             if still_exists(activity.entity_id):
                 tabs.set_tab_title(activity, activity.title)
 
     closes_on.connect(close_orphans)
     retitles_on.connect(retitle)
+
+
+type ModelSignal = CoreSignal[*tuple[Any, ...]]
+
+
+def follow_project(
+    library: Library,
+    project_id: ProjectId,
+    changed: Callable[[], None],
+    *,
+    signals: Sequence[ModelSignal] | None = None,
+) -> Callable[[], None]:
+    """Call ``changed`` for every model change inside one project, and for nothing else.
+
+    A view of one project used to connect ``lambda *_: self._refresh()`` to every library
+    signal — so a rename in another project rebuilt its table, and seven modules carried
+    the copy. Each signal names a node: the parent of a structure change, the step of an
+    edge or a text edit, the node of a field or module-data write. The filter is the
+    model's own ``belongs_to`` over that node. ``signals`` narrows which changes count
+    (a view that reads no prose leaves ``text_edited`` out); the default is all five.
+    Returns one unsubscribe for the lot.
+    """
+    return _follow(
+        library, lambda node_id: library.belongs_to(node_id, project_id), changed, signals
+    )
+
+
+def follow_target(
+    library: Library,
+    target_of: Callable[[], NodeId | None],
+    changed: Callable[[], None],
+    *,
+    signals: Sequence[ModelSignal] | None = None,
+) -> Callable[[], None]:
+    """:func:`follow_project` for a surface whose subject moves — a panel section showing
+    whichever step is selected. ``target_of`` is asked at each signal, and a change counts
+    when it is inside the target's project (the target's own, when it is a project)."""
+
+    def within(node_id: NodeId) -> bool:
+        target = target_of()
+        if target is None or not library.has(target):
+            return False
+        node = library.node(target)
+        owner = node.id if isinstance(node, Project) else library.project_of(target).id
+        return library.belongs_to(node_id, owner)
+
+    return _follow(library, within, changed, signals)
+
+
+def _follow(
+    library: Library,
+    within: Callable[[NodeId], bool],
+    changed: Callable[[], None],
+    signals: Sequence[ModelSignal] | None,
+) -> Callable[[], None]:
+    def on_change(first: object, *_rest: object) -> None:
+        node_id = first.node_id if isinstance(first, TextEdit) else first
+        if isinstance(node_id, str) and within(node_id):
+            changed()
+
+    chosen = (
+        signals
+        if signals is not None
+        else (
+            library.structure_changed,
+            library.edges_changed,
+            library.field_changed,
+            library.module_data_changed,
+            library.text_edited,
+        )
+    )
+    unsubscribes = [signal.connect(on_change) for signal in chosen]
+
+    def unfollow() -> None:
+        for unsubscribe in unsubscribes:
+            unsubscribe()
+
+    return unfollow

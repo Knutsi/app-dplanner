@@ -45,6 +45,7 @@ from dplanner.domain.commands import Command, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.scope import ScopeKind, cone, kind_of, leaders, stops_for
 from dplanner.domain.store import FilesFor
+from dplanner.framework.activity import follow_target
 from dplanner.framework.cards import CARD_PADDING, STACK_SPACING
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.module_data_section import FIELD_GAP, PANEL_MARGIN
@@ -622,10 +623,18 @@ class CoversSection(_TestListSection):
         self.outer.addLayout(row)
 
         self._unsubscribes = [
-            library.module_data_changed.connect(lambda *_a: self._refresh()),
-            library.edges_changed.connect(lambda *_a: self._refresh()),
-            library.structure_changed.connect(lambda *_a: self._refresh()),
-            library.field_changed.connect(lambda *_a: self._refresh()),
+            # What a collector gathers is read off its own project; no prose is involved.
+            follow_target(
+                library,
+                lambda: self._target_id,
+                self._refresh,
+                signals=(
+                    library.module_data_changed,
+                    library.edges_changed,
+                    library.structure_changed,
+                    library.field_changed,
+                ),
+            ),
         ]
 
     @property

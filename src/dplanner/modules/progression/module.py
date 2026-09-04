@@ -36,7 +36,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import EntityActivity, follow_entity_tabs
+from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -132,11 +132,20 @@ class ProgressionActivity(EntityActivity):
         outer.addWidget(centered_column(content, BOARD_MAX_WIDTH))
 
         self._widget = page
+        library = self._product
         self._unsubscribes = [
-            self._product.structure_changed.connect(lambda *_a: self._refresh()),
-            self._product.edges_changed.connect(lambda *_a: self._refresh()),
-            self._product.field_changed.connect(lambda *_a: self._refresh()),
-            self._product.module_data_changed.connect(lambda *_a: self._refresh()),
+            # This project only, and no prose: the board reads statuses and titles.
+            follow_project(
+                library,
+                self.project_id,
+                self._refresh,
+                signals=(
+                    library.structure_changed,
+                    library.edges_changed,
+                    library.field_changed,
+                    library.module_data_changed,
+                ),
+            ),
         ]
         self._refresh()
 

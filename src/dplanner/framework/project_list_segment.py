@@ -24,7 +24,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem
 
-from dplanner.domain.model import Library, NodeId
+from dplanner.domain.model import Library, NodeId, Project
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextNode, ContextService, selection_uri
@@ -78,12 +78,23 @@ class ProjectListSegment:
         self._open_project = open_project
         self._leading = leading
         self._unsubscribe = [
-            library.structure_changed.connect(lambda *_args: self.rebuild()),
-            library.field_changed.connect(lambda *_args: self.rebuild()),
+            # The rows are projects, never steps: only the library's own membership and a
+            # project's own fields can change them.
+            library.structure_changed.connect(self._on_structure),
+            library.field_changed.connect(self._on_field),
             # The rows carry ink-coloured icons, which a copied colour would leave stale.
             theme.changed.connect(lambda *_args: self.rebuild()),
         ]
         self.rebuild()
+
+    def _on_structure(self, parent_id: NodeId, *_rest: object) -> None:
+        if parent_id == self._library.id:
+            self.rebuild()
+
+    def _on_field(self, node_id: NodeId, *_rest: object) -> None:
+        if self._library.has(node_id) and isinstance(self._library.node(node_id), Project):
+            self.rebuild()
+
 
     # -- what the panel asks for ---------------------------------------------------------
 

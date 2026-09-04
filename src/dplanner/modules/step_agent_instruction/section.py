@@ -38,6 +38,7 @@ from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionState
+from dplanner.framework.activity import follow_target
 from dplanner.framework.asset_gallery import AssetGallery
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.prose_edit import ProseEdit
@@ -332,9 +333,14 @@ class AgentSection(QWidget):
         self.project_edit.textChanged.connect(self._mark_prompt_stale)
 
         self._unsubscribes = [
-            library.text_edited.connect(lambda *_a: self._refresh_derived()),
-            library.module_data_changed.connect(lambda *_a: self._refresh_derived()),
-            library.edges_changed.connect(lambda *_a: self._refresh_derived()),
+            # Inherited context is read off the step's own project — a keystroke in any
+            # other project's prose is nothing to recompute (and re-list from disk) for.
+            follow_target(
+                library,
+                lambda: self._step_id,
+                self._refresh_derived,
+                signals=(library.text_edited, library.module_data_changed, library.edges_changed),
+            ),
         ]
 
     # -- the panel's side of the contract ------------------------------------------------------

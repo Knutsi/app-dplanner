@@ -49,7 +49,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import EntityActivity, follow_entity_tabs
+from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -225,14 +225,11 @@ class TimeEstimatesActivity(EntityActivity):
         self._widget = self.split
 
         self._unsubscribes = [
-            self._product.structure_changed.connect(lambda *_a: self._refresh()),
-            self._product.edges_changed.connect(lambda *_a: self._refresh()),
-            self._product.module_data_changed.connect(lambda *_a: self._refresh()),
-            # A separate agent instruction is prose, and carrying one marks the step as
-            # agent work — so a text edit can move a step between pools.
-            self._product.text_edited.connect(lambda *_a: self._refresh()),
-            # A milestone's label and a step's title are what the lists print.
-            self._product.field_changed.connect(lambda *_a: self._refresh()),
+            # Every signal, this project only: a separate agent instruction is prose, and
+            # carrying one marks the step as agent work — so a text edit can move a step
+            # between pools — and a milestone's label and a step's title are what the
+            # lists print.
+            follow_project(self._product, self.project_id, self._refresh),
         ]
         self._refresh()
 

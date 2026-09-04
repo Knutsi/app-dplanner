@@ -40,7 +40,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import EntityActivity, follow_entity_tabs
+from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -173,13 +173,9 @@ class OrderActivity(EntityActivity):
 
         self._widget = page
         self._unsubscribes = [
-            self._product.structure_changed.connect(lambda *_a: self._refresh()),
-            self._product.edges_changed.connect(lambda *_a: self._refresh()),
-            self._product.field_changed.connect(lambda *_a: self._refresh()),
-            self._product.module_data_changed.connect(lambda *_a: self._refresh()),
-            # The title column's kind icons read prose presence (an agent instruction), so
-            # a text edit can change what a row wears.
-            self._product.text_edited.connect(lambda *_a: self._refresh()),
+            # Every signal, this project only. The title column's kind icons read prose
+            # presence (an agent instruction), so a text edit can change what a row wears.
+            follow_project(self._product, self.project_id, self._refresh),
         ]
         self._refresh()
 

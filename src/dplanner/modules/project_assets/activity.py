@@ -44,7 +44,7 @@ from PySide6.QtWidgets import (
 from dplanner.domain.assets import AssetEntry, AssetLocation, attach, catalog, prunable
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import NodeId
-from dplanner.framework.activity import EntityActivity
+from dplanner.framework.activity import EntityActivity, follow_project
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -267,10 +267,18 @@ class AssetsActivity(EntityActivity):
         self._refresh_timer.timeout.connect(self._refresh)
         library = deps.library
         self._unsubscribes = [
-            library.module_data_changed.connect(lambda *_a: self._schedule_refresh()),
-            library.text_edited.connect(lambda *_a: self._schedule_refresh()),
-            library.structure_changed.connect(lambda *_a: self._schedule_refresh()),
-            library.field_changed.connect(lambda *_a: self._schedule_refresh()),
+            # This project only; links are not files, so edges are left out.
+            follow_project(
+                library,
+                self.project_id,
+                self._schedule_refresh,
+                signals=(
+                    library.module_data_changed,
+                    library.text_edited,
+                    library.structure_changed,
+                    library.field_changed,
+                ),
+            ),
         ]
         self._refresh()
 

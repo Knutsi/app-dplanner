@@ -214,8 +214,8 @@ class FeaturesPanel(QWidget):
 
         self._unsubscribes = [
             library.module_data_changed.connect(self._on_module_data),
-            library.structure_changed.connect(lambda *_a: self._refresh()),
-            library.field_changed.connect(lambda *_a: self._refresh()),
+            library.structure_changed.connect(self._on_project_change),
+            library.field_changed.connect(self._on_project_change),
             # Icons and row inks are copied colours, so a theme change owes a repaint.
             theme.changed.connect(lambda _theme: self._paint()),
         ]
@@ -326,4 +326,9 @@ class FeaturesPanel(QWidget):
 
     def _on_module_data(self, _node_id: NodeId, module_id: str, _origin: object) -> None:
         if module_id == MODULE_ID:
+            self._refresh()
+
+    def _on_project_change(self, node_id: NodeId, *_rest: object) -> None:
+        """A step added, removed or retitled — in the project on show, or not at all."""
+        if self._project_id is not None and self._library.belongs_to(node_id, self._project_id):
             self._refresh()
