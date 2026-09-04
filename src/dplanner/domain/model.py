@@ -259,6 +259,13 @@ class Library(Node):
             raise KeyError(f"{step_id} is not a step in this library")
         return parent
 
+    def belongs_to(self, node_id: NodeId, project_id: ProjectId) -> bool:
+        """Whether a change to ``node_id`` is a change to ``project_id`` — the node is the
+        project itself or one of its steps. What a view of one project asks before it
+        rebuilds: a signal names a node anywhere in the library, and a rename in another
+        project is nothing to redraw for. Unknown ids answer False, as a removed step's would."""
+        return node_id == project_id or self._parent.get(node_id) == project_id
+
     # -- fields --------------------------------------------------------------------------------
 
     def set_field(self, node_id: NodeId, field: str, value: object, origin: Origin = None) -> None:
@@ -410,12 +417,11 @@ class Library(Node):
                 projects.append(project)
         found: list[tuple[StepId, str, StepId]] = []
         for project in projects:
+            ids = {step.id for step in project.steps}
             for waiter in project.steps:
                 for kind, sources in waiter.edges.items():
                     for source in sources:
-                        if (waiter.id in chosen) != (source in chosen) and project.step(
-                            source
-                        ) is not None:
+                        if (waiter.id in chosen) != (source in chosen) and source in ids:
                             found.append((waiter.id, kind, source))
         return found
 

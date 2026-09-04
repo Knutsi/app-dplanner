@@ -33,6 +33,7 @@ def depths(library: Library, project: Project) -> dict[StepId, int]:
     An edge pointing at a step outside this project cannot occur either, for the same reason.
     """
     known: dict[StepId, int] = {}
+    ids = {step.id for step in project.steps}  # Once per walk: Project.step() is a scan.
 
     def depth_of(step_id: StepId, seen: frozenset[StepId]) -> int:
         if step_id in known:
@@ -40,7 +41,8 @@ def depths(library: Library, project: Project) -> dict[StepId, int]:
         if step_id in seen:  # Defensive: a hand-edited file could still contain one.
             return 0
         waiting = library.step(step_id).edges.get("requires", [])
-        resolved = [t for t in waiting if project.step(t) is not None]
+        resolved = [t for t in waiting if t in ids]
+
         found = 0 if not resolved else 1 + max(depth_of(t, seen | {step_id}) for t in resolved)
         known[step_id] = found
         return found
@@ -62,12 +64,12 @@ def cyclic(library: Library, project: Project) -> list[Step]:
     on a cycle or behind one, and both are named — a step behind a loop is as undatable
     as the loop itself.
     """
+    ids = {step.id for step in project.steps}
     pending: dict[StepId, set[StepId]] = {
-        step.id: {
-            target for target in step.edges.get("requires", []) if project.step(target) is not None
-        }
+        step.id: {target for target in step.edges.get("requires", []) if target in ids}
         for step in project.steps
     }
+
     shed = True
     while shed:
         shed = False

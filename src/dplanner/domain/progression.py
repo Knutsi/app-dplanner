@@ -127,9 +127,16 @@ def progression(
 
     frontier = [step for step in pending if not outstanding(step)]
     ready_ids = {step.id for step in frontier}
+    # The reverse edges, built once: asking the library per visit would scan the project
+    # for every step of every ready step's cone.
+    dependents: dict[StepId, list[StepId]] = {step.id: [] for step in project.steps}
+    for step in project.steps:
+        for target in step.edges.get("requires", []):
+            if target in dependents:
+                dependents[target].append(step.id)
     ready = tuple(
         sorted(
-            (Launchable(step, _unlocks(library, project, step, status)) for step in frontier),
+            (Launchable(step, _unlocks(dependents, step, status)) for step in frontier),
             key=lambda launchable: -launchable.unlocks,  # Stable: ties keep project order.
         )
     )
@@ -157,8 +164,7 @@ def progression(
 
 
 def _unlocks(
-    library: Library,
-    project: Project,
+    dependents: dict[StepId, list[StepId]],
     step: Step,
     status: dict[StepId, str],
 ) -> int:
@@ -172,11 +178,11 @@ def _unlocks(
     seen: set[StepId] = set()
 
     def visit(step_id: StepId) -> None:
-        for dependent in library.dependents(step_id):
-            if dependent.id in seen or project.step(dependent.id) is None:
+        for dependent in dependents.get(step_id, ()):
+            if dependent in seen:
                 continue
-            seen.add(dependent.id)
-            visit(dependent.id)
+            seen.add(dependent)
+            visit(dependent)
 
     visit(step.id)
     return sum(1 for found in seen if status.get(found) != DONE)
