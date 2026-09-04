@@ -45,7 +45,9 @@ def test_every_registered_activity_opens(session, make_project):
     services.tabs.open("project", project.id)
     services.tabs.open("order", project.id)
     services.tabs.open("llm_calls")
-    assert len(services.tabs.activities()) >= 3
+    services.tabs.open("telemetry")
+    assert len(services.tabs.activities()) >= 4
+
     for activity in services.tabs.activities():
         assert activity.widget is not None
         activity.on_activated()

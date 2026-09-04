@@ -851,6 +851,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         DebugModule(
             DebugDeps(
                 llm=services.llm,
+                telemetry=services.telemetry,
+
                 actions=services.actions,
                 tabs=services.tabs,
                 context=services.context,

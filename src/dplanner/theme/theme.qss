@@ -460,6 +460,35 @@ QSplitter::handle:vertical:pressed {
     font-weight: bold;
 }
 
+/* The debug tabs' tables (LLM Calls, Telemetry): the order table's look, since a table of
+   quiet lines is a table of quiet lines whatever it lists; the detail well under each is
+   a text well. */
+#LLMCallsTable, #TelemetryTable {
+    background-color: $BG_BASE;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
+    color: $TEXT_PRIMARY;
+}
+
+#LLMCallsTable::item, #TelemetryTable::item {
+    padding: 4px 8px;
+}
+
+#LLMCallsTable::item:selected, #TelemetryTable::item:selected {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_PRIMARY;
+}
+
+#LLMCallsTable QHeaderView::section, #TelemetryTable QHeaderView::section {
+    background-color: $BG_BASE;
+    color: $TEXT_SECONDARY;
+    border: none;
+    border-bottom: 1px solid $BORDER;
+    padding: 6px 8px;
+    font-weight: bold;
+}
+
+
 /* The estimate quick-picks: the sizes a step usually is, as one-tap buttons under the day
    box. The quiet bordered look, with the accent only on the one matching the current value —
    DESIGN.md's checked state, and never the surface's primary action. */
