@@ -444,9 +444,12 @@ root, stop and look for the registry or capability you have not found yet.
   bug — an extent recomputed from the items moved under every node drag, and the canvas
   appeared to pan away under it. A constant cannot. The scroll bars are hidden with it (a
   handle a two-hundredth of its groove says nothing true) and the minimap orients instead.
-  **The wheel zooms and Space drags the plane** — `PanMode` claims every press and scrolls
-  the hidden bars by the pointer's travel itself, never Qt's `ScrollHandDrag`, which hands a
-  press to the card under it and moved the card while Space was held.
+  The wheel scrolls and Ctrl+wheel zooms. **Space drags the plane, wherever the press
+  lands** — `PanMode` claims every press and scrolls the hidden bars by the pointer's travel
+  itself, never Qt's `ScrollHandDrag`, which hands a press to the card under it and moved
+  the card while Space was held — **and with Space held the arrows and `hjkl` page it**, a
+  third of the viewport at a time, a tenth with Shift, claimed in the mode so the same keys
+  stop selecting steps while the hand is on the plane.
 - **A painter never trusts `option.palette`.** Qt fills `QStyleOptionGraphicsItem.palette`
   once, when the scene is created, and never refreshes it, so every canvas item kept the
   colours of whatever theme its tab opened in. `items.live_palette()` is the only source of

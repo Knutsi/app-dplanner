@@ -1022,16 +1022,16 @@ def test_a_press_on_a_card_pans_while_space_is_held(app, services, project, tab)
     assert modes(tab).current().name == IDLE
 
 
-def test_the_wheel_zooms_the_canvas(app, services, project, tab):
-    """A canvas is looked at, not read down: the bare wheel zooms, and a fine-grained wheel's
-    fractions of a notch add up to a step rather than each zooming one."""
+def test_the_wheel_scrolls_and_ctrl_wheel_zooms(app, services, project, tab):
+    """The hidden scroll bars are still scroll bars: the bare wheel moves the plane, and
+    Ctrl turns the same wheel into the canvas's own zoom."""
     from PySide6.QtCore import QPoint
     from PySide6.QtGui import QWheelEvent
 
     canvas_view = view(tab)
     viewport = canvas_view.viewport()
 
-    def wheel(units):
+    def wheel(units, modifiers=Qt.KeyboardModifier.NoModifier):
         at = QPointF(viewport.rect().center())
         app.sendEvent(
             viewport,
@@ -1041,22 +1041,44 @@ def test_the_wheel_zooms_the_canvas(app, services, project, tab):
                 QPoint(),
                 QPoint(0, units),
                 Qt.MouseButton.NoButton,
-                Qt.KeyboardModifier.NoModifier,
+                modifiers,
                 Qt.ScrollPhase.NoScrollPhase,
                 False,
             ),
         )
 
-    before = canvas_view._zoom
-    wheel(120)
-    assert canvas_view._zoom > before
+    zoom, scrolled = canvas_view._zoom, canvas_view.verticalScrollBar().value()
     wheel(-120)
-    assert canvas_view._zoom == pytest.approx(before)
-    wheel(40)
-    wheel(40)
-    assert canvas_view._zoom == pytest.approx(before)  # Two thirds of a notch: not yet.
-    wheel(40)
-    assert canvas_view._zoom > before
+    assert canvas_view._zoom == zoom
+    assert canvas_view.verticalScrollBar().value() > scrolled
+    wheel(120, Qt.KeyboardModifier.ControlModifier)
+    assert canvas_view._zoom > zoom
+
+
+def test_with_space_held_the_keys_page_the_plane(app, services, project, tab):
+    """The arrows and hjkl move the view a third of the viewport, a tenth with Shift — and
+    while the hand is on the plane they stop selecting steps."""
+    from dplanner.modules.project_editor.modes import PAN_NUDGE, PAN_PAGE
+
+    canvas_view = view(tab)
+    across, down = canvas_view.horizontalScrollBar(), canvas_view.verticalScrollBar()
+    scene(tab).select_step(project.steps[0].id)  # Opens the step panel, which narrows the view.
+    press_key(app, tab, Qt.Key.Key_Space)
+    width, height = canvas_view.viewport().width(), canvas_view.viewport().height()
+
+    x, y = across.value(), down.value()
+    press_key(app, tab, Qt.Key.Key_Right)
+    assert across.value() == x + round(width * PAN_PAGE)
+    press_key(app, tab, Qt.Key.Key_H, Qt.KeyboardModifier.ShiftModifier)
+    assert across.value() == x + round(width * PAN_PAGE) - round(width * PAN_NUDGE)
+    press_key(app, tab, Qt.Key.Key_J)
+    assert down.value() == y + round(height * PAN_PAGE)
+    press_key(app, tab, Qt.Key.Key_Up, Qt.KeyboardModifier.ShiftModifier)
+    assert down.value() == y + round(height * PAN_PAGE) - round(height * PAN_NUDGE)
+    assert scene(tab).selection().steps == (project.steps[0].id,)  # hjkl did not select.
+
+    release_key(app, tab, Qt.Key.Key_Space)
+    assert modes(tab).current().name == IDLE
 
 
 def test_connect_mode_shows_every_handle_and_pan_hides_them(app, services, project, tab):
@@ -1718,7 +1740,7 @@ def placement_of(services, step_id):
 
 def test_dragging_the_right_edge_widens_the_card_as_one_undo_step(app, services, project, tab):
     step = project.steps[0]
-    body = body_of(tab, step.id)  # (40, 40, 220, 112) in the automatic layout
+    body = body_of(tab, step.id)  # (40, 40, 220, 76) in the automatic layout
     grip = QPointF(body.right() - 2.0, body.center().y() + 30.0)  # In the band, off the handle.
 
     drag(app, tab, grip, grip + QPointF(100.0, 0.0))
@@ -1745,7 +1767,8 @@ def test_dragging_a_corner_moves_the_seat_with_the_edge(app, services, project, 
     drag(app, tab, grip, grip + QPointF(-40.0, -24.0))
 
     entry = placement_of(services, step.id)
-    assert (entry["x"], entry["y"], entry["w"], entry["h"]) == (0.0, 16.0, 260.0, 136.0)
+    # The far corner stays at (260, 40 + NODE_H); the near one lands on the grid at (0, 16).
+    assert (entry["x"], entry["y"], entry["w"], entry["h"]) == (0.0, 16.0, 260.0, NODE_H + 24.0)
     assert services.undo.undo_text() == "Resize Step"
 
 
@@ -1825,7 +1848,7 @@ def test_the_frame_names_its_edges_and_corners(services, project, tab):
     node = scene(tab)._nodes[project.steps[0].id]
     body = node.body_scene_rect()
     assert node.edge_at(QPointF(body.left() + 2.0, body.center().y())) == "left"
-    assert node.edge_at(QPointF(body.right() + 4.0, body.center().y() + 40.0)) == "right"
+    assert node.edge_at(QPointF(body.right() + 4.0, body.center().y() + 20.0)) == "right"
     assert node.edge_at(QPointF(body.center().x(), body.top() - 3.0)) == "top"
     assert node.edge_at(QPointF(body.center().x(), body.bottom() + 3.0)) == "bottom"
     assert node.edge_at(QPointF(body.left() - 1.0, body.top() - 1.0)) == "top-left"
@@ -1920,7 +1943,7 @@ def ink_in_corner(tab, step_id) -> int:
     """How far the card's bottom-right corner departs from its own fill, rendered over the
     theme's base: the stat's text pulls a pixel far from it, an empty corner stays flat.
     The card is rendered over the theme's own ground, since its ink is the theme's."""
-    from dplanner.modules.project_editor.renderers import PADDING
+    from dplanner.modules.project_editor.renderers import PAD_Y, PADDING
 
     node = scene(tab)._nodes[step_id]
     body = node.body_scene_rect()
@@ -1931,11 +1954,11 @@ def ink_in_corner(tab, step_id) -> int:
     scene(tab).render(painter, QRectF(image.rect()), body)
     painter.end()
     fill = image.pixelColor(int(PADDING) + 4, height // 2)
-    line = int(PADDING) + 18
+    line = int(PAD_Y) + 18
     return int(
         max(
             abs(image.pixelColor(x, y).lightness() - fill.lightness())
-            for y in range(height - line, height - int(PADDING))
+            for y in range(height - line, height - int(PAD_Y))
             for x in range(width - 70, width - int(PADDING))
         )
     )

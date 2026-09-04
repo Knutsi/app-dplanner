@@ -81,8 +81,8 @@ A step on the graph is a card on a table, and the canvas is drawn to say so.
   one — the lift, not a colour, is what marks it (see *Colour* below). The fill is opaque:
   the ground never shows through a card.
 - **The title is the card**: two points larger than the chrome, normal weight, wrapping onto
-  as many lines as the card has room for above its detail line. A card can be dragged larger
-  by any edge or corner to show more of a long name; the default footprint fits three lines.
+  as many lines as the card has room for above its bottom line. A card can be dragged larger
+  by any edge or corner to show more of a long name; the default footprint fits two lines.
 - **The bottom line is a number, never a sentence**: the estimate at the right in full ink,
   bold only where the number is the point of the card (a milestone's days and date), with
   the PR pill and the branch glyph beside it. Every aspect a card wears is a medallion, a

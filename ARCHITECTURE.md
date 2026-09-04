@@ -970,13 +970,14 @@ went away with it too: this scene is never smaller than a viewport. The rule gen
 this canvas: **a scrollable area's extent must not be a function of what the user is moving.**
 
 **The scroll bars go.** On an extent like that a scroll bar is a nub that says nothing true
-about where you are, so both are `ScrollBarAlwaysOff` — and still there, because they are
-what a pan moves. **The wheel zooms** rather than scrolls: a canvas is looked at, not read
-down, and the two ways across the plane are holding Space and dragging, and the minimap.
-`PanMode` claims every press while Space is held and scrolls the bars by the pointer's
-travel itself — Qt's `ScrollHandDrag` hands a press to the item under it first, so a press
-on a card moved the card, which is the one thing a hand holding Space does not mean. What
-replaces the bars is `minimap.py`, anchored in the canvas's lower-left corner: the
+about where you are, so both are `ScrollBarAlwaysOff` — and still there, so the wheel still
+scrolls (Ctrl+wheel zooms) and a pan has something to move. `PanMode` claims every press
+while Space is held and scrolls the bars by the pointer's travel itself — Qt's
+`ScrollHandDrag` hands a press to the item under it first, so a press on a card moved the
+card, which is the one thing a hand holding Space does not mean — and with Space held the
+arrows and `hjkl` page the plane a third of the viewport that way, a tenth with Shift,
+claimed in the mode so the keymap's movement verbs stand down while the hand is on the
+plane. What replaces the bars is `minimap.py`, anchored in the canvas's lower-left corner: the
 graph small, the viewport as a frame on it, and a click to go anywhere. It is *given* node
 rectangles rather than reaching for a scene, so it imports nothing from the module around it
 and cannot outlive what it draws; `GraphView` pushes on `QGraphicsScene.changed` and on every

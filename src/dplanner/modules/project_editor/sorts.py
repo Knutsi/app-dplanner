@@ -9,7 +9,7 @@ graph always lands the same way (the ``ordering.py`` convention). And every sort
 arrangement without touching an algorithm.
 
 The gaps are chosen so the default node lands on round pitches: ``NODE_W + H_GAP`` is the
-300-point column pitch, ``NODE_H + V_GAP`` the 160-point row.
+300-point column pitch, ``NODE_H + V_GAP`` the 120-point row.
 
 **Qt-free** — ``dplanner layout sort`` runs these where no graphics stack exists.
 """
@@ -27,7 +27,7 @@ type DaysFor = Callable[[Step], float | None]
 
 ORIGIN = 40.0
 H_GAP = 80.0
-V_GAP = 48.0  # NODE_H + V_GAP = the 160-point row pitch; NODE_H moves owe a look here.
+V_GAP = 44.0  # NODE_H + V_GAP = the 120-point row pitch; NODE_H moves owe a look here.
 # The backward lean of a fishbone rib: how far left of its attachment a rib begins.
 RIB_DX = 60.0
 # One working day of timeline, in canvas points.

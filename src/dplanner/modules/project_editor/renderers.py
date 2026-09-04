@@ -48,7 +48,10 @@ from dplanner.theme.tones import (
 )
 
 RADIUS = 8.0  # = theme.tokens.RADIUS_MD, matched by eye rather than import: this is a painter.
+# DESIGN.md's row of rich content: 12 across, 8 down. The vertical 8 is what lets two lines of
+# the larger title sit over the bottom line inside the default height.
 PADDING = 12.0
+PAD_Y = 8.0
 LINE_GAP = 4.0
 
 # The title is the card's reason to exist, so it is set larger than the chrome around it —
@@ -277,7 +280,7 @@ def paint_node(
     paint_marks(painter, palette, body, state)
     if accent.chip_text:
         paint_ring(painter, body, accent.chip_tone, state.ring_phase)
-    inner = body.adjusted(PADDING, PADDING, -PADDING, -PADDING)
+    inner = body.adjusted(PADDING, PAD_Y, -PADDING, -PAD_Y)
     detail = bool(accent.stat_text or accent.pill_text or accent.branch)
     reserved = painter.fontMetrics().height() + LINE_GAP if detail else 0.0
     paint_title(painter, inner, title, text_colour, accent.muted, reserved)

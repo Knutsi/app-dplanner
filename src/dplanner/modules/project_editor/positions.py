@@ -38,10 +38,10 @@ DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 GRID = 8.0
 
 # A node's footprint. It lives here rather than in items.py so the Qt-free sort algorithms
-# can default to it; the canvas imports it back. Sized for three lines of title over one line
+# can default to it; the canvas imports it back. Sized for a two-line title over one line
 # of detail; pairs with sorts' gaps to keep round pitches — a change here owes one there.
 NODE_W = 220.0
-NODE_H = 112.0
+NODE_H = 76.0
 # No card smaller than this on either side: room for a row of medallions across the top
 # and for one line of title over the detail line. Both on the grid, so a card resized down
 # to its minimum still sits on it.

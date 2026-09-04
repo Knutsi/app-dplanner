@@ -81,6 +81,21 @@ HINTS_BY_MODE = {
     LASSO: RenderHints(handles="hidden"),
 }
 
+# With Space held, an arrow or a vim key moves the view by this share of the viewport in
+# that direction — a page — and with Shift by the smaller one — a nudge.
+PAN_PAGE = 1 / 3
+PAN_NUDGE = 1 / 10
+PAN_KEYS: dict[int, tuple[int, int]] = {
+    Qt.Key.Key_Left: (-1, 0),
+    Qt.Key.Key_H: (-1, 0),
+    Qt.Key.Key_Right: (1, 0),
+    Qt.Key.Key_L: (1, 0),
+    Qt.Key.Key_Up: (0, -1),
+    Qt.Key.Key_K: (0, -1),
+    Qt.Key.Key_Down: (0, 1),
+    Qt.Key.Key_J: (0, 1),
+}
+
 # The cursor a card's edge or corner shows, keyed by what ``StepNodeItem.edge_at`` answers.
 RESIZE_CURSORS = {
     "left": Qt.CursorShape.SizeHorCursor,
@@ -439,13 +454,17 @@ class ConnectMode(_LinkingMode):
 
 
 class PanMode(ModeBase):
-    """Hold space and drag the plane, wherever the press lands.
+    """Hold space and drag the plane, wherever the press lands — or step it with the keys.
 
     It claims every press and moves the viewport itself, by the pointer's travel in device
     pixels through the hidden scroll bars. Not Qt's ``ScrollHandDrag``: that hands a press
     to the item under it first, so a press on a card moved the card — the one thing a hand
     holding Space does not mean. The seat of the plane is taken at the press, so the point
     grabbed stays under the pointer however far the drag goes.
+
+    With Space held the arrows and ``hjkl`` page the view a third of the viewport that way,
+    a tenth with Shift. They are claimed here, before the canvas keymap sees them, so the
+    same keys stop selecting steps for as long as the hand is on the plane.
     """
 
     name = PAN
@@ -484,6 +503,17 @@ class PanMode(ModeBase):
 
     def double_click(self, event: CanvasEvent) -> bool:
         return True  # A hand holding Space is panning, not making steps.
+
+    def key_press(self, key: CanvasKey) -> bool:
+        direction = PAN_KEYS.get(key.key)
+        if direction is None:
+            return False
+        view = self.deps.view
+        share = PAN_NUDGE if key.modifiers & Qt.KeyboardModifier.ShiftModifier else PAN_PAGE
+        across, down = view.horizontalScrollBar(), view.verticalScrollBar()
+        across.setValue(across.value() + round(direction[0] * view.viewport().width() * share))
+        down.setValue(down.value() + round(direction[1] * view.viewport().height() * share))
+        return True
 
 
 class RegionCreateMode(ModeBase):
