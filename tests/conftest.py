@@ -15,6 +15,14 @@ import os
 # setdefault rather than a plain assignment so a developer can export QT_QPA_PLATFORM=xcb
 # (or cocoa) to watch the tests drive a real window.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# A headless run takes no desktop theme either. A shell that presets QT_QPA_PLATFORMTHEME=gtk3
+# (Omarchy does) has every worker initialise GTK — eight threads, a live connection to the
+# compositor, DBus and dconf — and an offscreen window then becomes active one round of
+# events later than a test that just gave a field focus expects, so a focus-dependent test
+# passed one evening and failed every run the next morning. CLAUDE.md's *Checks* has the
+# episode. The suite must not depend on the desktop's state.
+if os.environ["QT_QPA_PLATFORM"] == "offscreen":
+    os.environ["QT_QPA_PLATFORMTHEME"] = ""
 
 import pytest
 
@@ -134,6 +142,14 @@ def _collect_qt_garbage():
     ``session.close()`` dispatches every pending delete globally, which is exactly the
     cross-test object lifetime this fixture exists to prevent.
 
+    The clipboard is cleared here too, for the same reason. A ``QMimeData`` a test's copy
+    handed to the clipboard is C++-owned with its Python wrapper kept alive, and under the
+    offscreen platform Qt keeps it in a global static that libc destroys *after* the
+    interpreter is gone — the worker then segfaulted at exit, after reporting green, on
+    every run that drew a clipboard test (2026-09-03). Clearing while Python is alive
+    deletes it under a live interpreter, and keeps one test's copy out of the next one's
+    paste. A real platform owns its clipboard through the application and never hits this.
+
     When a worker still dies with SIGSEGV in ``gc_collect -> subtype_dealloc -> ~QWidget``,
     the test it is reported against is only whichever one that worker was running —
     ``CLAUDE.md``'s *Checks* section has the diagnosis recipe. One such crash (2026-09-01,
@@ -146,6 +162,10 @@ def _collect_qt_garbage():
     from PySide6.QtCore import QCoreApplication, QEvent
 
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    if QCoreApplication.instance() is not None:
+        from PySide6.QtGui import QGuiApplication
+
+        QGuiApplication.clipboard().clear()
     gc.collect()
 
 
