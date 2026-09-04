@@ -61,9 +61,14 @@ uv run mypy            # strict type checking, whole tree
 
 On a machine whose shell already presets `QT_QPA_PLATFORM` (Arch with a tiling WM, for
 instance), the `setdefault` in `tests/conftest.py` does not kick in and a bare `pytest`
-opens real windows all over the workspace. Always prefix it.
+opens real windows all over the workspace. Always prefix it. The same shell usually presets
+`QT_QPA_PLATFORMTHEME=gtk3`, which `conftest.py` blanks for an offscreen run: with it every
+worker initialises GTK — eight threads and a live compositor connection — and an offscreen
+window becomes active one event round late, so a focus-dependent test
+(`test_the_editor_ignores_the_echo_of_its_own_write_while_editing`) passed one evening and
+failed every run the next morning. A headless suite must not depend on the desktop's state.
 
-The suite runs on every core (`-n auto` in `pyproject.toml`) — about **two minutes** for the
+The suite runs on every core (`-n auto` in `pyproject.toml`) — about **half a minute** for the
 whole thing, so run the whole thing; there is nothing to be saved by not. Two flags are worth
 knowing while working:
 
@@ -96,6 +101,16 @@ says so in one line, where faulthandler shows four Python frames and a symbol
 depends on its width implements `heightForWidth` and lets the layout ask; it never resizes
 itself in `resizeEvent`.** `time_estimates/months.py` is the worked example, and its
 regression test sweeps a scroll area across every width that could flip the scrollbar.
+
+**A worker that segfaults after reporting green is dying at exit, not in a test.** The
+2026-09-03 cores — two per full run, "Process crashed: python3.13" on the desktop, the
+suite itself green — were libc `exit` running a Qt static destructor over a Python-made
+`QMimeData` a copy test had handed the clipboard: under the *offscreen* platform Qt keeps
+the clipboard's data in a global static that dies after the interpreter, and shiboken's
+destroy hook then calls into a finalized Python. `coredumpctl info` shows it in one look:
+`exit` at the bottom of the stack and no test frame anywhere. `tests/conftest.py`'s
+`_collect_qt_garbage` clears the clipboard after every test for exactly this; a real
+platform owns its clipboard through the application and never hits it.
 
 **A pytest worker dying with SIGSEGV names an innocent test.** The suite has crashed this
 way before (2026-09-01, roughly one run in three): the test reported is whichever one that
