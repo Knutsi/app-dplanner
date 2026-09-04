@@ -1996,3 +1996,18 @@ turn came (every builder test) raised the notice's `QMessageBox` over a deleted 
 `test_builder.py::test_a_closed_session_leaves_nothing_of_its_build_behind`, on all three
 baseline runs of this pass. **The rule.** A zero-timer that touches a widget names that
 widget as its context; CLAUDE.md already says so for views, and modules are no exception.
+
+## 16. From the spec-coverage pass
+
+### `theme/cards.py` — the card primitives, out of the canvas module (new)
+
+**What.** `Shadow`, `RESTING_SHADOW`/`LIFTED_SHADOW`, `paint_shadow`, `over`, `title_font`,
+`title_lines` and the card metrics (`RADIUS`, `PADDING`, `PAD_Y`, `LINE_GAP`,
+`TITLE_POINTS`, `LIFT`, `SECONDARY_ALPHA`, `FILL_ALPHA`, `SELECTED_BORDER_W`,
+`SELECTED_FILL_GAIN`) moved verbatim from `modules/project_editor/renderers.py` into
+`theme/`, beside the tones and glyphs they were already painted with. **Why.** A second
+surface paints cards — the coverage view's four columns — and modules never import each
+other, so the shared half had to live in a layer both may reach. `renderers.py` keeps
+everything that is the graph's own (ports, marks, rings, badges, `PAINT_MARGIN`) and
+composes from here. **Upstream?** Yes: a template with a canvas will paint cards elsewhere
+sooner or later, and `theme/` is where a painter's vocabulary belongs.

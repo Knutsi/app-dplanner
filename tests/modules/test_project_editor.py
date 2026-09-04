@@ -25,16 +25,15 @@ from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snapped
 from dplanner.modules.project_editor.renderers import (
     BADGE_INSET,
-    FILL_ALPHA,
     ICON_D,
     ICON_GAP,
-    LIFT,
     PAINT_MARGIN,
     medallion_end,
 )
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef
 from dplanner.modules.step_properties.module import PANEL_ID as STEP_PANEL_ID
 from dplanner.theme import apply_theme
+from dplanner.theme.cards import FILL_ALPHA, LIFT
 from dplanner.theme.themes import DARK, DEFAULT, LIGHT
 
 
@@ -766,7 +765,7 @@ def painted_node(tab, step_id, background: str) -> QColor:
 def test_a_title_wraps_at_a_word_and_the_overflow_elides(app):
     from PySide6.QtGui import QFont, QFontMetrics
 
-    from dplanner.modules.project_editor.renderers import title_lines
+    from dplanner.theme.cards import title_lines
 
     metrics = QFontMetrics(QFont())
     short = title_lines(metrics, "Ship it", 10_000.0)
@@ -865,7 +864,7 @@ def test_selecting_a_node_deepens_the_fill_it_already_had(themed, services, proj
     translucent, so shadow rings left beneath would darken it and a picked step would read
     as a hole rather than as a card off the table — which is what the first cut did.
     """
-    from dplanner.modules.project_editor.renderers import SELECTED_FILL_GAIN
+    from dplanner.theme.cards import SELECTED_FILL_GAIN
 
     apply_theme(themed, theme)
     step = project.steps[0]
@@ -903,7 +902,7 @@ def test_a_lifted_node_sits_over_its_neighbours(services, project, tab):
 def test_the_bounding_rect_covers_everything_a_node_paints(services, project, tab):
     """Constant, selected or not: a rect that grew on selection would invalidate the wrong
     region and leave the shadow behind when the selection moved on."""
-    from dplanner.modules.project_editor.renderers import LIFT, LIFTED_SHADOW
+    from dplanner.theme.cards import LIFT, LIFTED_SHADOW
 
     node = scene(tab)._nodes[project.steps[0].id]
     plain = node.boundingRect()
@@ -1912,7 +1911,7 @@ def test_a_press_on_the_body_still_drags_the_card(app, services, project, tab):
 def test_the_title_face_is_larger_than_the_chrome(app):
     from PySide6.QtGui import QFont
 
-    from dplanner.modules.project_editor.renderers import TITLE_POINTS, title_font
+    from dplanner.theme.cards import TITLE_POINTS, title_font
 
     base = QFont()
     base.setPointSizeF(10.0)
@@ -1922,7 +1921,7 @@ def test_the_title_face_is_larger_than_the_chrome(app):
 def test_a_title_takes_as_many_lines_as_the_card_has_room_for(app):
     from PySide6.QtGui import QFont, QFontMetrics
 
-    from dplanner.modules.project_editor.renderers import title_lines
+    from dplanner.theme.cards import title_lines
 
     metrics = QFontMetrics(QFont())
     title = "Rebuild the deployment pipeline for the beta environment before the launch"
@@ -1943,7 +1942,7 @@ def ink_in_corner(tab, step_id) -> int:
     """How far the card's bottom-right corner departs from its own fill, rendered over the
     theme's base: the stat's text pulls a pixel far from it, an empty corner stays flat.
     The card is rendered over the theme's own ground, since its ink is the theme's."""
-    from dplanner.modules.project_editor.renderers import PAD_Y, PADDING
+    from dplanner.theme.cards import PAD_Y, PADDING
 
     node = scene(tab)._nodes[step_id]
     body = node.body_scene_rect()
