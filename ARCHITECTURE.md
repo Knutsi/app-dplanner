@@ -1308,11 +1308,12 @@ times. In the test suite, which builds a whole application per test, each discar
 28 top-level widgets and about 2,700 objects behind, permanently.
 
 That would be merely untidy if nothing walked the result. `tests/conftest.py` collects cyclic
-garbage after every test — it has to, or Python's GC frees PySide wrappers mid Qt event
-dispatch in some later test and the suite gets a SIGSEGV that moves whenever anything else
-changes. A full collection costs what the live object graph costs. So the leak made every test
-pay for every test before it, and a suite that should be linear was quadratic: early tests ran
-in about 0.45 s, tests two thirds of the way through took over ten seconds each, and
+garbage after every test — it has to: `framework/gc_policy.py` switches Python's automatic
+collector off (left to itself it frees PySide wrappers on a worker thread or mid Qt event
+dispatch, and the SIGSEGV moves whenever anything else changes), so the boundary is where the
+suite's cycles die. A full collection costs what the live object graph costs. So the leak made
+every test pay for every test before it, and a suite that should be linear was quadratic: early
+tests ran in about 0.45 s, tests two thirds of the way through took over ten seconds each, and
 `tests/modules` alone took 25 minutes. With the one line restored it takes 4m36s.
 
 **`deleteLater` and not simply dropping the reference**, because `discard_build` is called with

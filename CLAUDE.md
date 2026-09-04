@@ -157,6 +157,28 @@ widget of its own disposes it with `deleteLater` (the conftest dispatches it bef
 collecting), so the tree dies under Qt's rules and never inside the collector.
 `NOTES-FOR-APPFRAME.md` §14 has the shiboken references.
 
+**Why that crash moved with the test count, and what stops it now.** The collector clears
+garbage in its list order, and a full collection walks generation 0 before generation 1:
+a young collection landing between a layout's wrapper and its items' wrappers puts the
+items ahead of the layout, and `gc.collect(0)` at that spot makes the double delete
+deterministic — `scripts/layout_item_double_delete.py` (`plain` dies in `~QBoxLayout`,
+`guard` survives, `order` prints the listing). `framework/gc_policy.py` closes it from the
+framework side: every QObject wrapper gets a finalizer that invalidates its C++-created
+children before any wrapper is cleared (PEP 442 runs all finalizers of a cycle first);
+automatic collection is off and collections run from a GUI-thread timer at safe points,
+never on a worker thread or inside an event handler; and the conftest installs both for
+every test. The layout rules above stay as hygiene. **Never construct a `QLayoutItem` in
+Python** (`addStretch`/`addSpacing` instead): that is the one shape the finalizer cannot
+see. **A worker thread never holds the last reference to a Qt object**: shiboken deletes
+a Python-owned QObject on whatever thread drops that reference, and `TaskRunner` hands
+what its worker carried back to the GUI thread to be dropped on the next turn — any
+hand-written thread-plus-signal goes through it. **The amplifier for this whole family:**
+`MALLOC_PERTURB_=165 QT_QPA_PLATFORM=offscreen uv run pytest -q` (macOS:
+`MallocScribble=1`) poisons freed memory so a use-after-free faults at the first bad
+access instead of somewhere random; the committed `TaskRunner` before this pass died 3 of
+3 under it in a 3000-round stress. `NOTES-FOR-APPFRAME.md` §15 has the sources and the
+backtraces.
+
 The layering rules below are enforced by `tests/test_architecture.py`, which runs with the
 normal suite. **If it fails, fix the dependency direction — don't loosen the test.** Every
 rule has a supported way to get what the shortcut wanted: a capability protocol, a typed

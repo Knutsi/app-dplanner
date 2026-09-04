@@ -133,10 +133,12 @@ def make_project(services, library_repo):
 def _collect_qt_garbage():
     """Collect cyclic garbage at a safe point after each test.
 
-    Left to its own schedule, Python's GC can free PySide wrappers mid Qt event dispatch in
-    a later test — ``QObject::property`` on a half-destroyed object, a flaky SIGSEGV whose
-    location shifts with any allocation change anywhere in the suite. Collecting between
-    tests, while no Qt code is on the stack, keeps destruction deterministic.
+    The application switches Python's automatic collector off and collects from a
+    GUI-thread timer instead (framework/gc_policy.py has the crashes this avoids: a wrapper
+    freed on a worker thread, or mid-dispatch on the GUI thread, deletes its C++ object
+    there). The suite pumps events by hand, so that timer rarely gets to run here; cycles
+    die in this fixture instead — after pytest-qt has closed and deleted the test's
+    widgets, with no Qt code on the stack.
 
     A collection costs what the live object graph costs, so this line is only cheap while
     every test actually releases what it built — which is ``AppSession.close``'s job, and
@@ -164,8 +166,17 @@ def _collect_qt_garbage():
     rewritten before it ever shipped; the next (2026-09-04, deterministic for one worker's
     four tests) was root-caused with ``scripts/gc_catalog.py``: a ``QLayoutItem`` wrapper
     cleared before its layout — CLAUDE.md's *A QLayoutItem wrapper is a double delete
-    waiting for a gc pass*.
+    waiting for a gc pass*. The policy that closes that one is installed below for every
+    test that has an application, not only the ones built through the ``app`` fixture, so
+    no test in a worker runs ahead of it.
     """
+    from PySide6.QtCore import QCoreApplication
+
+    application = QCoreApplication.instance()
+    if application is not None:
+        from dplanner.framework.gc_policy import install_gc_policy
+
+        install_gc_policy(application)
     yield
     import gc
 
