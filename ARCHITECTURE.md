@@ -2082,21 +2082,36 @@ decisions worth writing down:
   over the project's start, which is only the default. Both writes — the date and the
   colour — live under this module's id on the *milestone's* step, `estimation`'s
   project-plus-step precedent; `FORMAT.md` has the shape.
-- **Colour follows the sequence unless somebody chose.** Eight hues dealt in order, from
-  a palette stepped until every adjacent pair stays apart under the three common
-  colour-vision deficiencies on both themes (the dataviz validator, not an eye); an override
-  pins one milestone without renumbering the rest. The first hue is the report's old tint,
-  so a project without milestones looks as it did. The calendar, the settable list and the
-  landing list share the hex through `schedule.py` and never store a `QColor`, for the
+- **Colour is a place on one map, unless somebody chose.** The first cut dealt eight
+  distinct hues in order, and the first real project showed why that reads as chaos: a
+  roadmap is a *sequence*, and eight unrelated hues say nothing about order. So the
+  project picks a **colour map** — the legible interior of a published perceptual map
+  (viridis, mako, rocket, …; `schedule.py`'s `PALETTES`), stored under the module's id
+  on the project node beside the focus factor, absent for the default — and `shades`
+  deals the milestones evenly along it, centred, so two milestones sit a quarter and
+  three quarters in and eight fill it. Dealing by count means adding a milestone
+  re-shades the others; that is accepted, because the shade's meaning is *place in the
+  sequence*, which is exactly what changed. An override still pins one milestone without
+  renumbering the rest, and the swatch's menu offers the map's own shades first so an
+  override usually stays in the family. A project without milestones is one stretch in
+  the report's own blue (`WHOLE_COLOR`), as it always was. The calendar and the list
+  share the hex through `schedule.py` and never store a `QColor`, for the
   palette-snapshot reason in *The palette a painter is handed is a snapshot*.
 - **The page is split at a seam, and the calendar takes the width.** What you set on the
-  left — focus, the staffing picker, the milestones with their dates and colours — and
-  what it answers on the right — the calendar, then the landings. The months view is the
-  one drawing on the page that is not fixed-size: months across follow the width, cells
-  grow with it, the last row fills out. Picking a milestone in either list emphasises its
-  stretch in the calendar and fades the rest, which is how "the work leading up to it" is
-  shown without a word. There is no headline and no explainer: the landing list's last
-  row *is* the answer, and every number's meaning is in a tooltip.
+  left — focus, the staffing picker — and what it answers on the right — the colour map
+  and the month arrows on one strip, the calendar, then the milestones. The seam starts
+  off-centre: the left holds nothing wider than the staffing grid, so the calendar gets
+  the rest. The milestones were once two lists, the settable
+  one on the left and the landing one on the right, painted alike so a reader could cross
+  between them; the first real project showed nobody wants to cross. **One list now, one
+  row per stretch, the date you set and the date it lands on the same line** — the one
+  place on the page where a control sits on the answering side, and worth the exception
+  because the answer is what you set the date *against*. The months view is the one
+  drawing on the page that is not fixed-size: months across follow the width, cells grow
+  with it, the last row fills out. Picking a milestone in the list emphasises its stretch
+  in the calendar and fades the rest, which is how "the work leading up to it" is shown
+  without a word. There is no headline and no explainer: the list's last row *is* the
+  answer, and every number's meaning is in a tooltip.
 - **A plan that cannot be dated says so.** The model refuses to create a cycle, but every
   walk here guards against one a hand-edited file carries — and until now guarded
   *silently*, placing the looped steps at depth zero and dating a plan that has no order.

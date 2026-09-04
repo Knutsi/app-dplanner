@@ -48,7 +48,13 @@ def test_segments_reproduce_the_text_exactly_and_name_their_origins():
     )
     assert "".join(segment.text for segment in assembled.segments) == assembled.text
     assert [segment.origin for segment in assembled.segments] == [
-        "header", "protocol", "project", "context", "instruction", "inherited", "protocol",
+        "header",
+        "protocol",
+        "project",
+        "context",
+        "instruction",
+        "inherited",
+        "protocol",
     ]
 
 
@@ -198,7 +204,7 @@ def test_no_worktree_slug_means_no_git_lines(tmp_path):
 
 def test_a_command_without_the_placeholder_still_gets_the_prompt(tmp_path):
     script = prepare("p", tmp_path, agent_command="my-agent", platform="linux").script.read_text()
-    assert "\nmy-agent \"$(cat" in script
+    assert '\nmy-agent "$(cat' in script
 
 
 def test_the_presets_cover_the_known_agents():
@@ -275,16 +281,24 @@ def test_a_settings_template_wins_outright(tmp_path):
 
 def test_inside_tmux_a_new_window_is_the_default(tmp_path):
     command = resolve_command(
-        "", fake_files(tmp_path), Path("/work"), platform="linux",
-        which=lambda _name: None, env={"TMUX": "/tmp/tmux-1000/default,42,0"},
+        "",
+        fake_files(tmp_path),
+        Path("/work"),
+        platform="linux",
+        which=lambda _name: None,
+        env={"TMUX": "/tmp/tmux-1000/default,42,0"},
     )
     assert command is not None and command[:2] == ["tmux", "new-window"]
 
 
 def test_the_first_terminal_found_wins(tmp_path):
     command = resolve_command(
-        "", fake_files(tmp_path), Path("/work"), platform="linux",
-        which=lambda name: "/usr/bin/kitty" if name == "kitty" else None, env={},
+        "",
+        fake_files(tmp_path),
+        Path("/work"),
+        platform="linux",
+        which=lambda name: "/usr/bin/kitty" if name == "kitty" else None,
+        env={},
     )
     assert command is not None and command[0] == "kitty"
 
@@ -293,8 +307,13 @@ def test_macos_opens_terminal_app(tmp_path):
     """The platform's own default terminal, whatever else is installed: Automatic
     behaves the way the machine does, and the dropdown is where Ghostty or iTerm is."""
     command = resolve_command(
-        "", fake_files(tmp_path), Path("/work"), platform="darwin",
-        which=lambda _name: None, env={}, app_exists=lambda _name: True,
+        "",
+        fake_files(tmp_path),
+        Path("/work"),
+        platform="darwin",
+        which=lambda _name: None,
+        env={},
+        app_exists=lambda _name: True,
     )
     assert command is not None and command[:3] == ["open", "-a", "Terminal"]
 
@@ -303,7 +322,10 @@ def test_the_terminal_table_is_one_per_platform_and_probes_installs():
     from dplanner.modules.step_agent_instruction.launcher import is_installed, terminals_for
 
     assert [p.label for p in terminals_for("darwin")] == [
-        "tmux (new window)", "Terminal", "iTerm", "Ghostty",
+        "tmux (new window)",
+        "Terminal",
+        "iTerm",
+        "Ghostty",
     ]
     assert [p.id for p in terminals_for("win32")] == ["wt", "cmd", "ghostty-win"]
     assert terminals_for("linux")[0].id == "tmux" and "ghostty" in [
@@ -332,7 +354,14 @@ def test_a_template_never_puts_a_windows_path_through_shlex(tmp_path):
     template = 'wt -d {workdir} cmd /k {script} --title "{title}"'
     command = resolve_command(template, files, Path(r"C:\work"), platform="win32")
     assert command == [
-        "wt", "-d", r"C:\work", "cmd", "/k", r"C:\Users\me\run.cmd", "--title", "dplanner: Deploy",
+        "wt",
+        "-d",
+        r"C:\work",
+        "cmd",
+        "/k",
+        r"C:\Users\me\run.cmd",
+        "--title",
+        "dplanner: Deploy",
     ]
 
 
@@ -342,16 +371,24 @@ def test_an_unusable_template_answers_none(tmp_path):
 
 def test_windows_prefers_windows_terminal(tmp_path):
     command = resolve_command(
-        "", fake_files(tmp_path), Path("C:/work"), platform="win32",
-        which=lambda name: "wt" if name == "wt" else None, env={},
+        "",
+        fake_files(tmp_path),
+        Path("C:/work"),
+        platform="win32",
+        which=lambda name: "wt" if name == "wt" else None,
+        env={},
     )
     assert command is not None and command[0] == "wt"
 
 
 def test_nothing_found_answers_none_not_an_error(tmp_path):
     command = resolve_command(
-        "", fake_files(tmp_path), Path("/work"), platform="linux",
-        which=lambda _name: None, env={},
+        "",
+        fake_files(tmp_path),
+        Path("/work"),
+        platform="linux",
+        which=lambda _name: None,
+        env={},
     )
     assert command is None
 
@@ -373,9 +410,7 @@ def step(services, make_project):
 def select(services, step):
     from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 
-    services.context.set_scope(
-        SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),)
-    )
+    services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))
 
 
 def test_without_the_aspect_the_action_is_greyed_with_the_reason(services, step):
@@ -451,9 +486,7 @@ def test_each_projects_own_repository_root_is_the_workdir(
 
 def _agent_section(services):
     spec = next(
-        s
-        for s in services.inspector_sections.sections()
-        if s.id == "step_agent_instruction.tab"
+        s for s in services.inspector_sections.sections() if s.id == "step_agent_instruction.tab"
     )
     return spec.factory()
 
@@ -517,6 +550,89 @@ def test_the_button_runs_the_same_action(services, step, monkeypatch):
     section.dispose()
 
 
+@pytest.fixture
+def prerequisite(services, step):
+    """``step`` now waits on "Prepare", and is briefed."""
+    from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand
+    from dplanner.domain.model import Step
+
+    project = services.document.project_of(step.id)
+    prepare = Step(title="Prepare")
+    AddNodeCommand(project.id, prepare).redo(services.document)
+    SetEdgesCommand(step.id, "requires", [prepare.id]).redo(services.document)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    return prepare
+
+
+def _fake_terminal(monkeypatch):
+    calls: list[list[str]] = []
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append(cmd))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+    return calls
+
+
+def _record_boxes(monkeypatch, *, click):
+    """Every QMessageBox shown, recorded instead of blocking; ``click`` names the role of
+    the button the person presses, or None for Escape."""
+    from PySide6.QtWidgets import QMessageBox
+
+    shown = []
+
+    def fake_exec(self):
+        shown.append((self.windowTitle(), self.text(), self.informativeText()))
+        return 0
+
+    def clicked(self):
+        return next((b for b in self.buttons() if self.buttonRole(b) == click), None)
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    monkeypatch.setattr(QMessageBox, "clickedButton", clicked)
+    return shown
+
+
+def test_running_on_an_unfinished_prerequisite_asks_first_and_cancel_launches_nothing(
+    services, step, prerequisite, monkeypatch
+):
+    """The graph gates launching: the box names the steps not done and their statuses,
+    and Cancel — the default — spawns no shell."""
+    calls = _fake_terminal(monkeypatch)
+    boxes = _record_boxes(monkeypatch, click=None)
+    select(services, step)
+    services.actions.run("agent.run", services.context.current())
+    assert calls == []
+    ((title, text, detail),) = boxes
+    assert title == "Run Agent"
+    assert "waits on 1 step not done yet" in text
+    assert "Prepare — pending" in detail
+
+
+def test_run_anyway_launches_over_an_unfinished_prerequisite(
+    services, step, prerequisite, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    calls = _fake_terminal(monkeypatch)
+    boxes = _record_boxes(monkeypatch, click=QMessageBox.ButtonRole.AcceptRole)
+    select(services, step)
+    services.actions.run("agent.run", services.context.current())
+    assert len(boxes) == 1
+    assert calls == [["fake-term"]]
+
+
+def test_done_prerequisites_launch_without_asking(services, step, prerequisite, monkeypatch):
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as write_status
+
+    services.undo.push(SetModuleDataCommand(prerequisite.id, STATUS_ID, write_status("done")))
+    calls = _fake_terminal(monkeypatch)
+    boxes = _record_boxes(monkeypatch, click=None)
+    select(services, step)
+    services.actions.run("agent.run", services.context.current())
+    assert boxes == []
+    assert calls == [["fake-term"]]
+
+
 def test_running_spawns_a_terminal_in_the_projects_repo_root(
     services, step, library_repo, monkeypatch
 ):
@@ -525,9 +641,7 @@ def test_running_spawns_a_terminal_in_the_projects_repo_root(
 
     calls: list[tuple[list[str], Path]] = []
     monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append((cmd, cwd)))
-    monkeypatch.setattr(
-        launcher, "resolve_command", lambda *a, **k: ["fake-term", "-e", "run.sh"]
-    )
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term", "-e", "run.sh"])
     services.actions.run("agent.run", services.context.current())
     ((command, cwd),) = calls
     assert command[0] == "fake-term"

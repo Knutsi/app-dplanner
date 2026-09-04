@@ -20,10 +20,11 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QMessageBox, QWidget
 
 from dplanner.core.fsio import slugify
 from dplanner.domain.model import Library, Node, Step, StepId
+from dplanner.domain.progression import DONE
 from dplanner.domain.store import Conflict, FilesFor
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -87,6 +88,11 @@ def _no_record(_step_id: StepId, _files: launcher.LaunchFiles) -> None:
     return None
 
 
+def _all_done(_step: Step) -> str:
+    """A build with nobody to ask about status: nothing is unfinished, nothing warns."""
+    return DONE
+
+
 def _our_version(node: Node, entry: str) -> str:
     """The window's version of one entry, in the shape the file on disk has."""
     if entry == "meta":
@@ -134,6 +140,10 @@ class StepAgentInstructionDeps:
     # Insert from Assets…: a modal picker over the node's project's catalog, composed by
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], "list[Payload]"] | None = None
+    # What a step's status claims, through the status aspect's Qt-free reader — the
+    # progression board's seam. Run Agent asks before launching on a step whose
+    # prerequisites do not all read done; this module never learns the vocabulary's shape.
+    status_for: Callable[[Step], str] = field(default=_all_done)
 
 
 class StepAgentInstructionModule:
@@ -335,6 +345,13 @@ class StepAgentInstructionModule:
         if step is None:
             return
         deps = self._deps
+        unfinished = [
+            required
+            for required in deps.library.requires(step.id)
+            if deps.status_for(required) != DONE
+        ]
+        if unfinished and not self._confirm_unfinished(step, unfinished):
+            return
         run_dir = launcher.new_run_dir()
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
@@ -344,6 +361,29 @@ class StepAgentInstructionModule:
         if not spawned:
             # No shell was started, so nothing is stamped: the fallback hands over the prompt.
             PromptFallbackDialog(assembled.text, str(prepared.prompt_file), deps.parent).exec()
+
+    def _confirm_unfinished(self, step: Step, unfinished: Sequence[Step]) -> bool:
+        """The graph gates launching: an agent briefed on a step whose prerequisites are
+        not done works without what they were to produce. Say which, and ask — the
+        person may know the work landed without the status being recorded."""
+        deps = self._deps
+        box = QMessageBox(deps.parent)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Run Agent")
+        count = f"{len(unfinished)} step{'s' if len(unfinished) != 1 else ''}"
+        box.setText(f"“{step.title or 'Untitled step'}” waits on {count} not done yet.")
+        listed = "\n".join(
+            f"• {required.title or 'Untitled step'} — {deps.status_for(required)}"
+            for required in unfinished
+        )
+        box.setInformativeText(
+            f"{listed}\n\nThe agent would start without what those steps produce. Run it anyway?"
+        )
+        run_anyway = box.addButton("Run Anyway", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        box.exec()
+        return box.clickedButton() is run_anyway
 
     def _launch(
         self, step: Step, text: str, run_dir: Path, worktree: str

@@ -261,7 +261,7 @@ src/dplanner/
 │   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── progression/         the execution board — what can be launched now — and `dplanner progression show`
-│   ├── time_estimates/      the staffing matrix, the milestones in sequence and the calendar they date — `dplanner schedule matrix`, `schedule milestone`
+│   ├── time_estimates/      the staffing matrix, the milestones in sequence and the calendar they date — `dplanner schedule matrix`, `schedule palette`, `schedule milestone`
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
 │   │                        and page rendering; editor.py: the in-app markdown editor)

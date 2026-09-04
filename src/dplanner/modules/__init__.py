@@ -717,6 +717,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 step_id, str(files.shell_file), str(files.exit_file)
             ),
             pick_assets=pick_assets,
+            # Run Agent asks before launching on a step whose prerequisites are not
+            # done — the same status reader the progression board's frontier uses.
+            status_for=step_status,
         )
     )
 

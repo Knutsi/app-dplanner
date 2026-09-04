@@ -42,7 +42,8 @@ from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
     Cell,
     read_efficiency,
-    write_efficiency,
+    read_palette,
+    write_project,
 )
 
 # Secondary text as opacity rather than a theme colour — DESIGN.md exception #1, the same
@@ -64,7 +65,7 @@ TINT_MAX_ALPHA = 88
 
 # Tile geometry: 4-point-scale gaps doing the separating (never borders), mark-spec
 # rounding, and a hit target comfortably past the 24 px minimum.
-TILE_WIDTH = 84
+TILE_WIDTH = 72
 TILE_HEIGHT = 40
 TILE_GAP = 4
 TILE_RADIUS = 4
@@ -130,8 +131,8 @@ class FocusBar(QWidget):
     def _commit(self) -> None:
         if self._loading or not self._product.has(self._project_id):
             return
-        entry = write_efficiency(self.percent.value() / 100)
         project = self._product.project(self._project_id)
+        entry = write_project(self.percent.value() / 100, read_palette(project).id)
         if entry == project.module_data.get(MODULE_ID, {}):
             return
         self._undo.push(

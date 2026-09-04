@@ -31,7 +31,7 @@ CHIP_GAP = 8
 
 MAX_DAYS = 999.0
 
-# The sizes a step usually is. A quarter day is one agent task (about 90 minutes with a
+# The sizes a step usually is. A quarter day is one agent task (about two hours with a
 # human in the loop), half a day is where most small human work sits, and the top of the
 # range is where precision stops being real, so the scale opens fine and coarsens.
 QUICK_DAYS = (
@@ -87,7 +87,7 @@ class EstimateInput(QWidget):
             chip.setCheckable(True)
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
             chip.setToolTip(
-                "0.25 days — one agent task, about 90 minutes with a human in the loop"
+                "0.25 days — one agent task, about two hours with a human in the loop"
                 if value == 0.25
                 else f"{value:g} days"
             )

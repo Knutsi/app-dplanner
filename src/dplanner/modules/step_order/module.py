@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Protocol
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QFileDialog, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, ProjectId, StepId
 from dplanner.domain.ordering import Placed, placed
@@ -62,6 +62,7 @@ ORDER_KIND = "order"
 PANEL_MARGIN = 16
 CAPTION_GAP = 6
 BLOCK_GAP = 12
+SWITCH_GAP = 16
 
 
 class StartBar(Protocol):
@@ -164,6 +165,22 @@ class OrderActivity(EntityActivity):
             layout.addWidget(self.start_bar.widget)
             layout.addSpacing(BLOCK_GAP)
 
+        # Two perspectives on one order: the work steps, the features, or both — the
+        # milestones are the fixed points either way, so unticking both leaves the roadmap.
+        switches = QWidget(page)
+        switch_row = QHBoxLayout(switches)
+        switch_row.setContentsMargins(0, 0, 0, 0)
+        switch_row.setSpacing(SWITCH_GAP)
+        self.show_steps = QCheckBox("Steps", switches)
+        self.show_features = QCheckBox("Features", switches)
+        for switch in (self.show_steps, self.show_features):
+            switch.setChecked(True)
+            switch.toggled.connect(self._on_kinds)
+            switch_row.addWidget(switch)
+        switch_row.addStretch(1)
+        layout.addWidget(switches)
+        layout.addSpacing(CAPTION_GAP)
+
         self.table = OrderTable(
             wave_label, deps.step_aspects, deps.milestone_label, deps.step_icons, page
         )
@@ -218,6 +235,11 @@ class OrderActivity(EntityActivity):
             return  # The project was deleted; the tab is about to close.
         order = placed(self._product, self._project())
         self.table.show_order(self._deps.step_schedule(self.project_id, order))
+
+    def _on_kinds(self) -> None:
+        self.table.show_kinds(
+            steps=self.show_steps.isChecked(), features=self.show_features.isChecked()
+        )
 
     def _publish(self, step_id: StepId | None) -> None:
         nodes = () if step_id is None else (ContextNode(selection_uri("step", step_id)),)

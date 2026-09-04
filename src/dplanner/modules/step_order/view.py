@@ -4,6 +4,13 @@ A table rather than a nested list, because the thing being shown *is* a sorted s
 the first thing you want from one is a position. The wave rides along as a column: two steps
 sharing a wave can be started together, and the first wave is the answer to "what now".
 
+Every row wears the glyph of what it is — a tag for a milestone, the layer stack for a
+feature, a card for a work step — and the host can *narrow* the table to the steps or to
+the features: the rows the other kind occupies are hidden, never removed, so the numbering,
+the accumulated days and the milestone rules still read as the whole order. A milestone
+is never hidden; with only the milestones and the features showing, the table is the
+roadmap — what each milestone adds.
+
 The schedule columns come from ``domain/schedule.py`` and are rendered with its own
 formatter, so this table and ``dplanner schedule show`` cannot express one number two ways.
 
@@ -28,7 +35,7 @@ from PySide6.QtWidgets import (
 from dplanner.domain.model import StepId
 from dplanner.domain.schedule import Scheduled, format_date, format_days
 from dplanner.modules.step_order.export import since_milestone
-from dplanner.theme.icons import spark_icon, tag_icon
+from dplanner.theme.icons import layers_icon, step_icon, tag_icon
 
 COLUMNS = ("#", "Step", "Wave", "Estimate", "Accumulated", "Since milestone", "Date", "")
 TITLE_COLUMN = 1
@@ -52,9 +59,11 @@ MILESTONE_ROLE = int(Qt.ItemDataRole.UserRole) + 2
 ROW_HEIGHT = 28
 MILESTONE_ROW_EXTRA = 8
 
-# A milestone's own answers grow a point instead of going bold: emphasis without the weight
-# a bold row puts on a table of mostly-quiet lines.
-MILESTONE_POINT_INCREMENT = 1.0
+# What a row is, read off the kind vocabulary: a milestone is always shown, a feature and a
+# work step each follow their own switch on the host.
+KIND_MILESTONE = "milestone"
+KIND_FEATURE = "feature"
+KIND_STEP = "step"
 
 # The milestone row's marks: the canvas badge's purple family, low-alpha so it reads on every
 # theme (DESIGN.md exception #2). The rule closes the block of work that lands in it.
@@ -68,6 +77,14 @@ MILESTONE_ICON_INK = QColor(150, 130, 220)
 SECONDARY_ALPHA = 160
 
 _RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+
+
+def _kind(kinds: tuple[str, ...], milestone: bool) -> str:
+    """Which switch a row follows. A milestone answers to none; a feature that is also a
+    milestone is a milestone first, the way its icon leads with the tag."""
+    if milestone or "tag" in kinds:
+        return KIND_MILESTONE
+    return KIND_FEATURE if "layers" in kinds else KIND_STEP
 
 
 class _MilestoneRowDelegate(QStyledItemDelegate):
@@ -113,6 +130,8 @@ class OrderTable(QTableWidget):
         self._step_aspects = step_aspects
         self._milestone_label = milestone_label
         self._step_icons = step_icons
+        self._kinds: list[str] = []  # One per row, in row order.
+        self._shown = {KIND_STEP: True, KIND_FEATURE: True}
         self.setItemDelegate(_MilestoneRowDelegate(self))
 
         self.setHorizontalHeaderLabels(list(COLUMNS))
@@ -141,6 +160,7 @@ class OrderTable(QTableWidget):
         selected = self.selected_step()
         spans = since_milestone(order, self._milestone_label)
         self.setRowCount(len(order))
+        self._kinds = []
         for row, scheduled in enumerate(order):
             place = scheduled.place
             span = spans.get(place.step.id)
@@ -155,13 +175,15 @@ class OrderTable(QTableWidget):
                 " · ".join(self._step_aspects(place.step.id)),
             )
             milestone = self._milestone_label(place.step.id)
+            kinds = self._step_icons(place.step.id)
+            self._kinds.append(_kind(kinds, bool(milestone)))
             for column, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 item.setData(STEP_ROLE, place.step.id)
                 item.setData(MILESTONE_ROLE, milestone)
-                # A milestone's own answers — its name, the span it closes, its date — read a
-                # point larger at full strength; the foreground is deliberately not set, so
-                # it stays the palette's and live.
+                # A milestone's own answers — its name, the span it closes, its date — read
+                # bold at full strength, so a glance down the column finds the milestones;
+                # the foreground is deliberately not set, so it stays the palette's and live.
                 highlighted = bool(milestone) and column in (
                     TITLE_COLUMN,
                     SINCE_MILESTONE_COLUMN,
@@ -173,13 +195,10 @@ class OrderTable(QTableWidget):
                     item.setForeground(faded)
                 if highlighted:
                     font = item.font()
-                    if font.pointSizeF() > 0:
-                        font.setPointSizeF(font.pointSizeF() + MILESTONE_POINT_INCREMENT)
+                    font.setBold(True)
                     item.setFont(font)
                 if column == TITLE_COLUMN:
-                    icon = self._title_icon(self._step_icons(place.step.id))
-                    if icon is not None:
-                        item.setIcon(icon)
+                    item.setIcon(self._title_icon(kinds))
                 if column in NUMERIC_COLUMNS:
                     item.setTextAlignment(_RIGHT)
                 self.setItem(row, column, item)
@@ -190,23 +209,37 @@ class OrderTable(QTableWidget):
         self.setColumnHidden(DATE_COLUMN, undated)
         self.setColumnHidden(SINCE_MILESTONE_COLUMN, undated or not spans)
         self.resizeColumnToContents(TITLE_COLUMN)
+        self._apply_filter()
         if selected is not None:
             self.select_step(selected)
 
-    def _title_icon(self, kinds: tuple[str, ...]) -> QIcon | None:
-        """The first kind's glyph, in the canvas medallions' vocabulary; a plain step has none.
+    def show_kinds(self, *, steps: bool, features: bool) -> None:
+        """Narrow the table to the work steps, the features, both or — with neither — the
+        milestones alone. Rows hide rather than leave, so the order stays whole."""
+        self._shown = {KIND_STEP: steps, KIND_FEATURE: features}
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        for row, kind in enumerate(self._kinds):
+            self.setRowHidden(row, not self._shown.get(kind, True))
+
+    def kind_at(self, row: int) -> str:
+        return self._kinds[row]
+
+    def _title_icon(self, kinds: tuple[str, ...]) -> QIcon:
+        """What the row is, in the canvas medallions' vocabulary: the tag for a milestone,
+        the layer stack for a feature, the card for a work step.
 
         One icon per row: a step that is several things at once leads with the rarer claim
         ("tag" sorts first), and the trailing aspects column still says the rest.
         """
-        for kind in kinds:
-            if kind == "tag":
-                return tag_icon(MILESTONE_ICON_INK)
-            if kind == "spark":
-                faded = QColor(self.palette().text().color())
-                faded.setAlpha(SECONDARY_ALPHA)
-                return spark_icon(faded)
-        return None
+        faded = QColor(self.palette().text().color())
+        faded.setAlpha(SECONDARY_ALPHA)
+        if "tag" in kinds:
+            return tag_icon(MILESTONE_ICON_INK)
+        if "layers" in kinds:
+            return layers_icon(faded)
+        return step_icon(faded)
 
     def step_at(self, row: int) -> StepId | None:
         item = self.item(row, 0)

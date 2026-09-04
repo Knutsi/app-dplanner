@@ -14,9 +14,9 @@ height. The window of months runs from the month before the work starts, covers 
 six, grows to keep the last landing in view (capped — a multi-year plan keeps its dates in
 the list rather than a wall of months), and rounds up to fill its last row.
 
-Every colour but the milestone hues comes from the palette at paint time; the hues are the
-same constants the lists beside it use (``schedule.py``'s ``PALETTE``), so the calendar and
-the lists read as one report. Hovering a day answers precisely — which stretch, which
+Every colour but the milestone shades comes from the palette at paint time; the shades are
+the ones the list under it wears (``schedule.py``'s ``phase_colors``), so the calendar and
+the list read as one report. Hovering a day answers precisely — which stretch, which
 working day of how many, a weekend, a landing — so the calendar itself stays wordless.
 """
 

@@ -108,11 +108,12 @@ def test_a_release_row_is_marked_and_keeps_its_name(services, project, tab):
         table.item(release_row, column).data(MILESTONE_ROLE) == "MVP"
         for column in range(table.columnCount())
     )
-    # Emphasis by size, not weight — DESIGN.md's Tables: bold shouts in a quiet table.
+    # The one weight in the table — DESIGN.md's Tables: a milestone is a fixed point, found
+    # by a glance down the column.
     title = table.item(release_row, TITLE_COLUMN).font()
     plain = table.item(0, TITLE_COLUMN).font()
-    assert not title.bold()
-    assert title.pointSizeF() > plain.pointSizeF()
+    assert title.bold() and not plain.bold()
+    assert title.pointSizeF() == plain.pointSizeF()
     assert "MVP" in table.item(release_row, ASPECTS_COLUMN).text()
     assert isinstance(table.itemDelegate(), _MilestoneRowDelegate)
 
@@ -127,8 +128,8 @@ def test_a_release_date_is_highlighted(services, project, tab):
     from PySide6.QtCore import Qt
 
     item = tab.table.item(3, DATE_COLUMN)
-    assert item.font().pointSizeF() > tab.table.item(0, TITLE_COLUMN).font().pointSizeF()
-    assert not item.font().bold()
+    assert item.font().bold()
+    assert not tab.table.item(0, DATE_COLUMN).font().bold()
     # No faded brush was set: the date keeps the palette's full-strength, live foreground.
     assert item.data(Qt.ItemDataRole.ForegroundRole) is None
 
@@ -185,22 +186,60 @@ def test_the_since_milestone_column_waits_for_a_release_and_an_estimate(services
     assert not tab.table.isColumnHidden(SINCE_MILESTONE_COLUMN)
 
 
-def test_the_title_column_wears_the_step_kind_icons(services, project, tab):
-    """The canvas medallions' vocabulary, read off the same wiring: a milestone wears the tag,
-    a step with an agent instruction the spark, a plain step nothing."""
+@pytest.fixture
+def mixed(services, project):
+    """A a plain step, B a feature, C an agent step, D the milestone they land in."""
     from dplanner.domain.commands import EditTextCommand
     from dplanner.domain.model import TextEdit
+    from dplanner.modules.feature.aspect import write as write_feature
     from dplanner.modules.step_milestone.aspect import write
 
-    services.undo.push(SetModuleDataCommand(project.steps[3].id, "step_milestone", write("MVP")))
-    services.undo.push(
-        EditTextCommand(TextEdit(project.steps[0].id, "step_agent_instruction", 0, "", "Do it."))
-    )
+    _a, b, c, d = project.steps
+    services.undo.push(SetModuleDataCommand(b.id, "feature", write_feature("f1")))
+    services.undo.push(EditTextCommand(TextEdit(c.id, "step_agent_instruction", 0, "", "Do it.")))
+    services.undo.push(SetModuleDataCommand(d.id, "step_milestone", write("MVP")))
+    return project
+
+
+def test_every_row_wears_the_glyph_of_what_it_is(services, mixed, tab):
+    """The canvas medallions' vocabulary, read off the same wiring: a milestone wears the
+    tag, a feature the layer stack, and a work step — agent or not — the card, so steps and
+    features tell apart at a glance."""
+    from dplanner.modules.step_order.view import KIND_FEATURE, KIND_MILESTONE, KIND_STEP
 
     table = tab.table
-    assert not table.item(3, TITLE_COLUMN).icon().isNull()
-    assert not table.item(0, TITLE_COLUMN).icon().isNull()
-    assert table.item(1, TITLE_COLUMN).icon().isNull()
+    assert [table.kind_at(row) for row in range(4)] == [
+        KIND_STEP,
+        KIND_FEATURE,
+        KIND_STEP,
+        KIND_MILESTONE,
+    ]
+    assert all(not table.item(row, TITLE_COLUMN).icon().isNull() for row in range(4))
+    images = [table.item(row, TITLE_COLUMN).icon().pixmap(16).toImage() for row in range(4)]
+    assert images[0] == images[2]  # both work steps
+    assert images[0] != images[1] != images[3]
+
+
+def test_the_switches_narrow_the_order_to_steps_or_features_and_keep_the_milestones(
+    services, mixed, tab
+):
+    """Two perspectives on one order: rows hide rather than leave, so the numbering and
+    the accumulated days still read as the whole — and a milestone is never hidden."""
+
+    def shown():
+        return [tab.table.item(row, 1).text() for row in range(4) if not tab.table.isRowHidden(row)]
+
+    assert shown() == ["A", "B", "C", "D"]
+    tab.show_steps.setChecked(False)
+    assert shown() == ["B", "D"]
+    tab.show_features.setChecked(False)
+    assert shown() == ["D"]
+    tab.show_steps.setChecked(True)
+    assert shown() == ["A", "C", "D"]
+    assert [tab.table.item(row, 0).text() for row in range(4)] == ["1", "2", "3", "4"]
+    # A rebuild keeps the perspective.
+    services.undo.push(SetEdgesCommand(mixed.steps[2].id, "requires", []))
+    assert shown() == ["A", "C", "D"]
 
 
 def test_there_is_no_date_column_until_something_is_estimated(services, project, tab):

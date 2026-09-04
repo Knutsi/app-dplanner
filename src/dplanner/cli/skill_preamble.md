@@ -175,10 +175,23 @@ a fragment behind it. Two things worth knowing:
 ## Estimating agent work
 
 With a human in the loop — reviewing the plan, answering questions, checking the result —
-an agent step runs at roughly **90 minutes per task** in its `## Approach` list. So count
-the tasks: one task is a quarter day (`--days 0.25`, the ¼ chip in the window), three are
-about half a day, five or six fill one. A step whose list runs past six tasks is usually
-two steps — split it rather than inflating the estimate.
+an agent task takes about **2 hours per task** in its `## Approach` list, coding and the
+work around it together. So count the tasks: one task is a quarter day (`--days 0.25`,
+the ¼ chip in the window), two are half a day, four fill one. Estimate the step at what
+its tasks add up to rather than inflating or rounding it.
+
+## Cutting agent steps
+
+An agent step is one run: one terminal, one branch, one review when it lands. Every step
+costs the user a launch and a review, so the plan pays for a step boundary in time — and
+an agent works best on one coherent batch of related changes, where the second task
+already has the first one's context. So, **unless the project's topology says otherwise,
+lump similar work into one large step**: the five endpoints of one API, the three views
+that share a layout, the migrations and the model they serve. Cut a step only where the
+graph needs a boundary — a real dependency another step waits on, a feature step that
+gathers the work, a check or a review the topology asks for, or work that belongs to a
+different person or agent. A plan of many quarter-day steps is a plan of many launches;
+a plan of a few well-batched days is what an agent and its reviewer both prefer.
 
 ## Linking honestly
 

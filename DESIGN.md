@@ -190,5 +190,9 @@ text that re-lays out on resize, and a selection state that recolours both lines
 - **Column headers are left-aligned**, whatever the column holds
   (`header.setDefaultAlignment`, not Qt's centred default). Numeric *cells* still
   right-align so their digits line up; the header reads from the left with everything else.
-- A row emphasised over its neighbours (the order table's release rows) grows a point
-  rather than going bold — weight in a table of quiet lines shouts.
+- A row that is a **fixed point** among its neighbours (the order table's milestone rows)
+  goes bold, and is the one weight in the table: a glance down a column of quiet lines
+  finds the milestones without reading. Emphasis for any other reason is size or colour,
+  never a second bold.
+- A table of mixed kinds gives every row the glyph of what it is (the tag, the layer stack,
+  the card), so a reader never has to infer a kind from a column further right.

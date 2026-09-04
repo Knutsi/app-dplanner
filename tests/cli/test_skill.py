@@ -73,11 +73,20 @@ def test_the_skill_teaches_two_part_descriptions(files):
     assert "agent set <step> --clear" in skill
 
 
-def test_the_skill_prices_an_agent_task_at_ninety_minutes(files):
+def test_the_skill_prices_an_agent_task_at_two_hours(files):
     skill = files[SKILL_FILE]
     assert "## Estimating agent work" in skill
-    assert "90 minutes per task" in skill
+    assert "2 hours per task" in skill
     assert "--days 0.25" in skill
+
+
+def test_the_skill_asks_for_batched_agent_steps_unless_the_topology_says_otherwise(files):
+    """What the first real project taught: a step is a launch and a review, so similar
+    work belongs in one large step — and the topology is the one thing that overrides."""
+    prose = " ".join(files[SKILL_FILE].split())
+    assert "## Cutting agent steps" in files[SKILL_FILE]
+    assert "unless the project's topology says otherwise" in prose
+    assert "lump similar work into one large step" in prose
 
 
 def test_the_skill_states_the_argument_shape_and_idempotency_rules(files):
