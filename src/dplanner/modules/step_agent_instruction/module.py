@@ -34,6 +34,7 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.aspect_toggle import aspect_toggle, focused_step
 from dplanner.framework.context import Context, ContextService
+from dplanner.framework.debounce import DebounceService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.settings_registry import (
@@ -109,6 +110,7 @@ class StepAgentInstructionDeps:
     sections: InspectorSectionRegistry
     actions: ActionRegistry
     context: ContextService  # The Agent tab's buttons evaluate their verbs against it.
+    debounce: DebounceService
     settings_sections: SettingsSectionRegistry
     status: StatusHost
     parent: QWidget
@@ -159,6 +161,7 @@ class StepAgentInstructionModule:
                 deps.library,
                 deps.undo,
                 PLACEHOLDER,
+                debounce=deps.debounce,
                 prompt_parts=parts_for,
                 prompt_sections=sections_for,
                 read_asset=deps.read_asset,

@@ -15,6 +15,7 @@ from dplanner.domain.model import Library, NodeId, ProjectId
 from dplanner.domain.store import ProjectProblem
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextService
+from dplanner.framework.debounce import DebounceService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
@@ -34,6 +35,7 @@ class ProjectsDeps:
     library: Library
     actions: ActionRegistry
     context: ContextService
+    debounce: DebounceService
     undo: UndoService[Library]
     segments: IndexSegmentRegistry
     theme: ThemeService
@@ -75,6 +77,7 @@ class ProjectsModule:
                 theme=deps.theme,
                 entries=deps.entries,
                 problems=deps.problems,
+                debounce=deps.debounce,
             )
 
         deps.segments.register(

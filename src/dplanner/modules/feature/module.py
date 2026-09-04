@@ -25,6 +25,7 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.aspect_toggle import focused_step
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+from dplanner.framework.debounce import DebounceService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.theme_service import ThemeService
@@ -65,6 +66,7 @@ class FeatureDeps:
     sections: InspectorSectionRegistry
     files: FilesFor
     theme: ThemeService
+    debounce: DebounceService | None = None
     parent: QWidget | None = None
     # The spec documents a record's source can name — the editor's dropdown. Spec's
     # business, handed in so this module never learns how documents are stored.
@@ -118,7 +120,9 @@ class FeatureModule:
             PanelSpec(
                 id=PANEL_ID,
                 title="Features",
-                factory=lambda: FeaturesPanel(deps.library, deps.actions, deps.theme),
+                factory=lambda: FeaturesPanel(
+                    deps.library, deps.actions, deps.theme, debounce=deps.debounce
+                ),
                 area=PanelArea.LEFT,
                 order=20,
             )

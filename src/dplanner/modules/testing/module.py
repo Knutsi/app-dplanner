@@ -38,6 +38,7 @@ from dplanner.framework.context import (
     ContextService,
     selection_uri,
 )
+from dplanner.framework.debounce import DebounceService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
@@ -79,6 +80,7 @@ class TestsDeps:
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
+    debounce: DebounceService
     sections: InspectorSectionRegistry
     segments: IndexSegmentRegistry
     theme: ThemeService
@@ -152,7 +154,9 @@ class TestsModule:
                 id=f"{MODULE_ID}.covers",
                 label="Covers",
                 order=35,  # Beside the Tests tab; a step can carry both.
-                factory=lambda: CoversSection(deps.library, deps.scopes, self._open_scope),
+                factory=lambda: CoversSection(
+                    deps.library, deps.scopes, self._open_scope, debounce=deps.debounce
+                ),
                 shown_for=lambda step_id: (
                     self._step(step_id) is not None
                     and kind_of(deps.scopes, deps.library.step(step_id or "")) is not None

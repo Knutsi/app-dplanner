@@ -142,27 +142,3 @@ def test_attach_to_pool_lands_in_the_project_area(services, project, step, monke
     (name,) = [f"assets/{found}" for found in area.names("assets")]
     assert area.read_bytes(name) == PNG
     assert activity.list.count() == 1
-
-
-def test_a_burst_of_edits_rebuilds_the_catalog_once(services, project, step, monkeypatch):
-    """With immediate mode off — the window's regime — a run of pushes is one walk over the
-    file areas, after the quiet spell or when the service settles it."""
-    from dplanner.domain.commands import SetFieldCommand
-    from dplanner.modules.project_assets.activity import AssetsActivity
-
-    rebuilds = []
-    original = AssetsActivity._refresh
-
-    def counted(self):
-        rebuilds.append(1)
-        original(self)
-
-    monkeypatch.setattr(AssetsActivity, "_refresh", counted)
-    services.debounce.set_immediate(False)
-    open_tab(services, project)
-    assert rebuilds == [1]  # Built once, synchronously.
-    for title in ("one", "two", "three"):
-        services.undo.push(SetFieldCommand(step.id, "title", title))
-    assert rebuilds == [1]  # Pending, not run: nothing rebuilds per keystroke.
-    services.debounce.flush_all()
-    assert rebuilds == [1, 1]

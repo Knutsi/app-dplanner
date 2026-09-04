@@ -161,6 +161,7 @@ def test_a_build_without_an_agent_has_no_button_at_all(services, project):
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
+            debounce=services.debounce,
         ),
         project.id,
     )

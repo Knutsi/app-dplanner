@@ -52,6 +52,7 @@ from dplanner.framework.context import (
     entity_uri,
     selection_uri,
 )
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.tabs import TabHost
@@ -139,6 +140,7 @@ class ProjectEditorDeps:
     parent: QWidget
     panels: PanelRegistry
     theme: ThemeService
+    debounce: DebounceService
     # Where a step's attachments live, for a copy to carry them.
     files: FilesFor
     # What the aspect modules have to say about a step, one short phrase each.
@@ -207,13 +209,16 @@ class ProjectActivity(EntityActivity):
         self._scene.region_resized.connect(self._on_region_resized)
         self._view.modes.changed.connect(lambda _name: self._publish_activity())
 
+        # Once per event-loop turn, not once per signal: a paste of forty steps is forty
+        # signals and one sync, and a typed title still lands on the node as it is typed.
+        self._sync_soon = Debounced(self._sync, 0, parent=self._page, service=deps.debounce)
         self._unsubscribes = [
             # Connected first, so a typing burst is sealed before the canvas re-syncs.
             self._product.structure_changed.connect(self._on_structure),
             # Every change inside this project, and none outside it. Prose reaches the
             # node too — the spark glyph and the subtitle's summaries read module_text —
             # and sync diffs before repainting, so a keystroke that changes neither is free.
-            follow_project(self._product, self.project_id, self._sync),
+            follow_project(self._product, self.project_id, self._sync_soon.trigger),
         ]
         self._sync()
 
@@ -239,10 +244,12 @@ class ProjectActivity(EntityActivity):
 
     def select_step(self, step_id: StepId) -> None:
         """Select one step on the canvas — how another view reveals something here."""
+        self._sync_soon.flush()  # A step born this turn has its node only once synced.
         self._scene.select_step(step_id)
 
     def select_steps(self, step_ids: list[StepId]) -> None:
         """Replace the selection with these steps — Select All's way in."""
+        self._sync_soon.flush()
         self._scene.select_steps(step_ids)
 
     def set_mode(self, name: str, on: bool) -> None:
@@ -281,6 +288,7 @@ class ProjectActivity(EntityActivity):
         self._deps.undo.break_coalescing()
 
     def close(self) -> None:
+        self._sync_soon.cancel()
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
@@ -434,6 +442,7 @@ class ProjectActivity(EntityActivity):
         rather than one hiding another. The double-click lands here too — it pointed at a
         spot in exactly the same sense.
         """
+        self._sync_soon.flush()  # The nodes exist only once the deferred sync has run.
         self._scene.select_steps(step_ids)
         point = self._view.last_click
         if point is not None:

@@ -217,6 +217,8 @@ def _follow(
         if isinstance(node_id, str) and within(node_id):
             changed()
 
+    # The journal names a slot for what it wraps: the view, not this plumbing.
+    on_change.__wrapped__ = changed  # type: ignore[attr-defined]
     chosen = (
         signals
         if signals is not None

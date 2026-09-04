@@ -40,6 +40,7 @@ from dplanner.framework.context import (
     entity_uri,
     selection_uri,
 )
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.modules.feature.aspect import MODULE_ID
@@ -167,10 +168,14 @@ class FeaturesPanel(QWidget):
         actions: ActionRegistry,
         theme: ThemeService,
         parent: QWidget | None = None,
+        *,
+        debounce: DebounceService | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("InspectorPanel")
         self._library = library
+        # After a quiet spell, not per signal: the list is rebuilt with painted icons.
+        self._refresh_soon = Debounced(self._refresh, parent=self, service=debounce)
         self._actions = actions
         self._theme = theme
         self._project_id: NodeId | None = None
@@ -326,9 +331,9 @@ class FeaturesPanel(QWidget):
 
     def _on_module_data(self, _node_id: NodeId, module_id: str, _origin: object) -> None:
         if module_id == MODULE_ID:
-            self._refresh()
+            self._refresh_soon.trigger()
 
     def _on_project_change(self, node_id: NodeId, *_rest: object) -> None:
         """A step added, removed or retitled — in the project on show, or not at all."""
         if self._project_id is not None and self._library.belongs_to(node_id, self._project_id):
-            self._refresh()
+            self._refresh_soon.trigger()

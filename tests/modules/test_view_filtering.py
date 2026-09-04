@@ -28,7 +28,6 @@ VIEWS = [
     pytest.param(testing.TESTS_KIND, testing.TestsActivity, "_refresh", id="tests"),
     pytest.param(DOCS_KIND, DocsActivity, "_refresh", id="docs"),
     pytest.param(ASSETS_KIND, AssetsActivity, "_refresh", id="assets"),
-
 ]
 
 
@@ -60,4 +59,29 @@ def test_a_change_in_another_project_does_not_rebuild_the_tab(
     services.undo.push(SetFieldCommand(other.steps[0].id, "title", "Renamed elsewhere"))
     assert len(rebuilds) == before
     services.undo.push(SetFieldCommand(mine.steps[0].id, "title", "Renamed here"))
+    assert len(rebuilds) == before + 1
+
+
+@pytest.mark.parametrize(("kind", "activity_type", "method"), VIEWS)
+def test_a_burst_of_edits_rebuilds_the_tab_once(
+    services, two_projects, monkeypatch, kind, activity_type, method
+):
+    """With immediate mode off — the window's regime — a run of pushes is one rebuild,
+    after the quiet spell or when the service settles it, never one per keystroke."""
+    mine, _other = two_projects
+    rebuilds = []
+    original = getattr(activity_type, method)
+
+    def counted(self, *args, **kwargs):
+        rebuilds.append(self)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(activity_type, method, counted)
+    services.debounce.set_immediate(False)
+    services.tabs.open(kind, mine.id)
+    before = len(rebuilds)  # Built once, synchronously.
+    for title in ("one", "two", "three"):
+        services.undo.push(SetFieldCommand(mine.steps[0].id, "title", title))
+    assert len(rebuilds) == before  # Pending, not run.
+    services.debounce.flush_all()
     assert len(rebuilds) == before + 1

@@ -43,6 +43,7 @@ from dplanner.framework.context import (
     activity_uri,
     selection_uri,
 )
+from dplanner.framework.debounce import Debounced
 from dplanner.framework.module_data_section import PANEL_MARGIN
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import covered, project_tests
@@ -247,12 +248,14 @@ class TestsActivity(EntityActivity):
         table.cellActivated.connect(self._on_activated)
 
         library = self._library
+        # After a quiet spell, not per signal: the table is rebuilt row by row.
+        self._refresh_soon = Debounced(self._refresh, parent=self.page, service=deps.debounce)
         self._unsubscribes = [
             # This project only, and no prose: tests are records, titles are fields.
             follow_project(
                 library,
                 self.project_id,
-                self._refresh,
+                self._refresh_soon.trigger,
                 signals=(
                     library.structure_changed,
                     library.edges_changed,

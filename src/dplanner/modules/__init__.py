@@ -475,6 +475,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     project_editor = ProjectEditorModule(
         ProjectEditorDeps(
             library=library,
+            debounce=services.debounce,
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
@@ -532,6 +533,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     progression = ProgressionModule(
         ProgressionDeps(
             library=library,
+            debounce=services.debounce,
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
@@ -561,6 +563,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     time_estimates = TimeEstimatesModule(
         TimeEstimatesDeps(
             library=library,
+            debounce=services.debounce,
             undo=services.undo,
             actions=services.actions,
             context=services.context,
@@ -598,7 +601,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
             sources=asset_sources,
         )
     )
-
 
     def pick_assets(node_id: str) -> "list[Payload]":
         """Insert from Assets…: the picker over the node's project's whole catalog.
@@ -659,6 +661,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     step_order = StepOrderModule(
         StepOrderDeps(
             library=library,
+            debounce=services.debounce,
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
@@ -709,6 +712,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     agent_instruction = StepAgentInstructionModule(
         StepAgentInstructionDeps(
             library=library,
+            debounce=services.debounce,
             undo=services.undo,
             sections=services.inspector_sections,
             actions=services.actions,
@@ -856,6 +860,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ProjectsModule(
             ProjectsDeps(
                 library=library,
+                debounce=services.debounce,
                 actions=services.actions,
                 context=services.context,
                 undo=services.undo,
@@ -972,6 +977,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         DocsModule(
             DocsDeps(
                 library=library,
+                debounce=services.debounce,
                 undo=services.undo,
                 actions=services.actions,
                 sections=services.inspector_sections,
@@ -1030,6 +1036,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         FeatureModule(
             FeatureDeps(
                 library=library,
+                debounce=services.debounce,
                 undo=services.undo,
                 actions=services.actions,
                 panels=services.panels,
@@ -1043,6 +1050,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         TestsModule(
             TestsDeps(
                 library=library,
+                debounce=services.debounce,
                 undo=services.undo,
                 actions=services.actions,
                 context=services.context,
@@ -1582,7 +1590,6 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         # over here so a test can point the same verbs at a file of its own.
         *telemetry_commands(journal=journal_path(), crash_log=crash_log_path()),
         *aspect_commands(specs),
-
         # Each module exports what "missing" means for its own aspect; the list order is
         # the report order — the graph's integrity first, then authoring, then the spec.
         *lint_commands(

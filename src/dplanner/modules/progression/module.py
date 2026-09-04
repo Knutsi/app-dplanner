@@ -46,6 +46,7 @@ from dplanner.framework.context import (
     activity_uri,
     selection_uri,
 )
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.widgets import centered_column
 from dplanner.modules.progression.view import BOARD_MAX_WIDTH, ProgressionBoard, RunControl
@@ -76,6 +77,7 @@ class ProgressionDeps:
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
+    debounce: DebounceService
     # The stored status claims, as answers. Wired by the composition root from the status
     # aspect's Qt-free reader; the honest default is a build where nothing is claimed.
     status_for: Callable[[Step], str] = field(default=_pending)
@@ -133,12 +135,14 @@ class ProgressionActivity(EntityActivity):
 
         self._widget = page
         library = self._product
+        # After a quiet spell, not per signal: every card is rebuilt.
+        self._refresh_soon = Debounced(self._refresh, parent=page, service=deps.debounce)
         self._unsubscribes = [
             # This project only, and no prose: the board reads statuses and titles.
             follow_project(
                 library,
                 self.project_id,
-                self._refresh,
+                self._refresh_soon.trigger,
                 signals=(
                     library.structure_changed,
                     library.edges_changed,

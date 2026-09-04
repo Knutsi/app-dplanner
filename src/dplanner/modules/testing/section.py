@@ -47,6 +47,7 @@ from dplanner.domain.scope import ScopeKind, cone, kind_of, leaders, stops_for
 from dplanner.domain.store import FilesFor
 from dplanner.framework.activity import follow_target
 from dplanner.framework.cards import CARD_PADDING, STACK_SPACING
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.module_data_section import FIELD_GAP, PANEL_MARGIN
 from dplanner.framework.prose_section import ProseSection
@@ -585,8 +586,11 @@ class CoversSection(_TestListSection):
         library: Library,
         scopes: tuple[ScopeKind, ...],
         open_in_tests: Callable[[StepId], None],
+        *,
+        debounce: DebounceService | None = None,
     ) -> None:
         super().__init__(library, COVERS_NOTE)
+
         self._scopes = scopes
         self._open_in_tests = open_in_tests
 
@@ -622,12 +626,14 @@ class CoversSection(_TestListSection):
         row.addWidget(self.open_button)
         self.outer.addLayout(row)
 
+        # After a quiet spell, not per signal: the lane is rebuilt from a cone walk.
+        self._refresh_soon = Debounced(self._refresh, parent=self, service=debounce)
         self._unsubscribes = [
             # What a collector gathers is read off its own project; no prose is involved.
             follow_target(
                 library,
                 lambda: self._target_id,
-                self._refresh,
+                self._refresh_soon.trigger,
                 signals=(
                     library.module_data_changed,
                     library.edges_changed,

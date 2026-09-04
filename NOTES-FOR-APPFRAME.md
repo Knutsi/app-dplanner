@@ -1747,7 +1747,10 @@ own `belongs_to(node_id, project_id)` over the node each signal names (the paren
 structure change, the step of an edge or text edit, the node of a field or module-data
 write). `follow_target(library, target_of, changed, …)` is the same for a panel section
 whose step moves under it. `follow_entity_tabs.retitle` retitles only the tab whose entity
-the field signal names.
+the field signal names. The closure the signal sees carries `__wrapped__`, so the journal
+names the view's method rather than the plumbing — without it every view's cost landed
+under one `_follow.<locals>.on_change` line, which the first measurement showed.
+
 
 **Why.** Seven modules carried the same unfiltered `lambda *_: self._refresh()` on every
 signal, so a rename in one project rebuilt every other project's tabs. The filter is one

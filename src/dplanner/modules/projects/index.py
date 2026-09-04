@@ -27,6 +27,7 @@ from dplanner.domain.store import ProjectProblem
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextNode, ContextService, selection_uri
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.index_panel import (
     expansion_of,
     restore_expansion,
@@ -80,8 +81,12 @@ class ProjectsSegment:
         theme: ThemeService,
         entries: tuple[ProjectEntry, ...] = (),
         problems: Callable[[], list[ProjectProblem]] = list,
+        debounce: DebounceService | None = None,
     ) -> None:
         self._root = root
+        # After a quiet spell, not per signal: the whole folder is redrawn. No Qt parent —
+        # a segment is not a widget — so the service's cancel_all is what disarms it.
+        self._rebuild_soon = Debounced(self.rebuild, parent=None, service=debounce)
         self._library = library
         self._problems = problems
         self._context = context
@@ -101,11 +106,11 @@ class ProjectsSegment:
 
     def _on_structure(self, parent_id: NodeId, *_rest: object) -> None:
         if parent_id == self._library.id:
-            self.rebuild()
+            self._rebuild_soon.trigger()
 
     def _on_field(self, node_id: NodeId, *_rest: object) -> None:
         if self._library.has(node_id) and isinstance(self._library.node(node_id), Project):
-            self.rebuild()
+            self._rebuild_soon.trigger()
 
     # -- what the panel asks for ---------------------------------------------------------------
 

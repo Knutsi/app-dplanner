@@ -40,6 +40,7 @@ from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionState
 from dplanner.framework.activity import follow_target
 from dplanner.framework.asset_gallery import AssetGallery
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.prose_edit import ProseEdit
 from dplanner.framework.prose_section import ProseSection
@@ -160,11 +161,13 @@ class AgentSection(QWidget):
         read_asset: Callable[[str], bytes | None] | None = None,
         assembled: Callable[[StepId], AssembledPrompt] | None = None,
         pick_assets: Callable[[str], list[Payload]] | None = None,
+        debounce: DebounceService | None = None,
     ) -> None:
         super().__init__()
         self._product = library
         self._undo = undo
         self._pick_assets = pick_assets
+
         self._prompt_parts = prompt_parts
         self._prompt_sections = prompt_sections
         self._read_asset = read_asset
@@ -332,13 +335,15 @@ class AgentSection(QWidget):
         self.project_edit.textChanged.connect(self._refresh_summaries)
         self.project_edit.textChanged.connect(self._mark_prompt_stale)
 
+        # After a quiet spell, not per keystroke: the inherited context lists directories.
+        self._derive_soon = Debounced(self._refresh_derived, parent=self, service=debounce)
         self._unsubscribes = [
             # Inherited context is read off the step's own project — a keystroke in any
             # other project's prose is nothing to recompute (and re-list from disk) for.
             follow_target(
                 library,
                 lambda: self._step_id,
-                self._refresh_derived,
+                self._derive_soon.trigger,
                 signals=(library.text_edited, library.module_data_changed, library.edges_changed),
             ),
         ]
