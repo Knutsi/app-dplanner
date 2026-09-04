@@ -9,8 +9,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget
 
-from dplanner.modules.project_editor.items import live_palette
-from dplanner.modules.project_editor.positions import GRID
+from dplanner.modules.project_editor.items import live_palette, snapped_point
 from dplanner.modules.project_editor.regions import TITLE_STRIP_H
 from dplanner.modules.project_editor.renderers import PADDING, SECONDARY_ALPHA
 
@@ -114,7 +113,7 @@ class RegionItem(QGraphicsItem):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and isinstance(
             value, QPointF
         ):
-            return QPointF(round(value.x() / GRID) * GRID, round(value.y() / GRID) * GRID)
+            return snapped_point(self.scene(), value)
         return super().itemChange(change, value)  # type: ignore[arg-type]
 
     # -- paint -----------------------------------------------------------------------------------

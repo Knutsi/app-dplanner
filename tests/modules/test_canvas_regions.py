@@ -31,12 +31,14 @@ def test_write_and_read_round_trip_in_creation_order():
     assert read_regions(project) == [first, second]
 
 
-def test_rects_snap_and_are_stored_as_floats():
+def test_rects_are_stored_as_whole_unit_floats():
+    """Snapping to the grid is the canvas gesture's; what reaches disk is rounded to the
+    unit, as a float — a ``region add --rect`` stores the rect it was given."""
     _library, project = build()
-    entry = write_regions(project, [Region("r1", "DB", 11.0, 3.0, 101.0, 55.0)])
+    entry = write_regions(project, [Region("r1", "DB", 11.4, 3.0, 101.0, 55.6)])
     stored = entry["regions"][0]
-    assert (stored["x"], stored["y"]) == (8.0, 0.0)
-    assert (stored["w"], stored["h"]) == (104.0, 56.0)
+    assert (stored["x"], stored["y"]) == (11.0, 3.0)
+    assert (stored["w"], stored["h"]) == (101.0, 56.0)
     assert all(isinstance(stored[key], float) for key in ("x", "y", "w", "h"))
 
 
@@ -69,17 +71,13 @@ def test_writing_regions_carries_the_layouts_untouched():
     library.set_module_data(
         project.id, MODULE_ID, write_layouts(project, {"Plan": LayoutSnapshot()})
     )
-    set_regions_command(project, [new_region("DB", 0.0, 0.0, 100.0, 100.0)], "Add").redo(
-        library
-    )
+    set_regions_command(project, [new_region("DB", 0.0, 0.0, 100.0, 100.0)], "Add").redo(library)
     entry = project.module_data[MODULE_ID]
     assert "layouts" in entry and "regions" in entry
 
 
 def test_deleting_the_last_region_leaves_no_file_behind():
     library, project = build()
-    set_regions_command(project, [new_region("DB", 0.0, 0.0, 100.0, 100.0)], "Add").redo(
-        library
-    )
+    set_regions_command(project, [new_region("DB", 0.0, 0.0, 100.0, 100.0)], "Add").redo(library)
     set_regions_command(project, [], "Delete Region").redo(library)
     assert MODULE_ID not in project.module_data

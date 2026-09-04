@@ -127,11 +127,20 @@ class AssetGallery(QWidget):
         self._names: list[str] = []
         self._columns = 0
 
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(ITEM_GAP)
+
+        # The row joins the column *before* it is filled. A parentless QHBoxLayout given a
+        # widget and a stretch first leaves a QWidgetItem and a QSpacerItem wrapper alive on
+        # the Python side — the double-delete shape the boundary collector crashed on
+        # (CLAUDE.md's *A QLayoutItem wrapper is a double delete waiting for a gc pass*).
+        attach_row = QHBoxLayout()
+        column.addLayout(attach_row)
+        attach_row.setSpacing(ITEM_GAP)
         self.attach_button = QPushButton("Attach…", self)
         self.attach_button.clicked.connect(self._attach)
         self.attach_button.setVisible(editable)
-        attach_row = QHBoxLayout()
-        attach_row.setSpacing(ITEM_GAP)
         attach_row.addWidget(self.attach_button)
         attach_row.addStretch(1)
 
@@ -139,17 +148,12 @@ class AssetGallery(QWidget):
         self.note.setObjectName("InspectorNote")
         self.note.setWordWrap(True)
         self.note.hide()
+        column.addWidget(self.note)
 
         self._grid_host = QWidget(self)
         self._grid = QGridLayout(self._grid_host)
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setSpacing(ITEM_GAP)
-
-        column = QVBoxLayout(self)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(ITEM_GAP)
-        column.addLayout(attach_row)
-        column.addWidget(self.note)
         column.addWidget(self._grid_host)
 
     def set_area(self, area_for: AreaFor | None) -> None:

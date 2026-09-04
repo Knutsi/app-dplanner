@@ -17,6 +17,11 @@ Three rules keep it small:
 - **A mode asks the model.** Whether a link is legal is ``Library.link_refusal`` under the
   cursor, reached through :class:`Canvas`. There is no second reachability rule in here.
 
+A mode that drags something the canvas draws — a region by its body, a region or a card by
+its frame — is a :class:`GestureMode`: it holds what it moves so a sync leaves the geometry
+alone, Escape puts everything back, and the release reports and pops. A new one says what
+it holds, how to restore it, and what the release means, and inherits the rest.
+
 :class:`Canvas` is the whole of a mode's power over the canvas, which is why it is written
 out rather than inferred from passing the scene around: a mode can be driven in a test by
 anything that satisfies it, and a new mode cannot quietly grow a reach nobody sanctioned.
@@ -27,17 +32,17 @@ outgrows a screen, not when the file does.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
 from PySide6.QtGui import QPainterPath
 from PySide6.QtWidgets import QGraphicsView
 
 from dplanner.core.signals import Signal
 from dplanner.domain.model import StepId
 from dplanner.modules.project_editor.items import HANDLE_GRAB, StepNodeItem
-from dplanner.modules.project_editor.positions import centred_on
+from dplanner.modules.project_editor.positions import MIN_NODE_H, MIN_NODE_W, centred_on
 from dplanner.modules.project_editor.region_items import REGION_RADIUS, RegionItem
 from dplanner.modules.project_editor.regions import MIN_REGION
 from dplanner.modules.project_editor.renderers import RenderHints
@@ -54,6 +59,7 @@ LINK_DRAG = "link-drag"
 REGION_CREATE = "region-create"
 REGION_DRAG = "region-drag"
 REGION_RESIZE = "region-resize"
+NODE_RESIZE = "node-resize"
 LASSO = "lasso"
 
 
@@ -71,7 +77,35 @@ HINTS_BY_MODE = {
     REGION_CREATE: RenderHints(handles="hidden"),
     REGION_DRAG: RenderHints(handles="hidden"),
     REGION_RESIZE: RenderHints(handles="hidden"),
+    NODE_RESIZE: RenderHints(handles="hidden"),
     LASSO: RenderHints(handles="hidden"),
+}
+
+# With Space held, an arrow or a vim key moves the view by this share of the viewport in
+# that direction — a page — and with Shift by the smaller one — a nudge.
+PAN_PAGE = 1 / 3
+PAN_NUDGE = 1 / 10
+PAN_KEYS: dict[int, tuple[int, int]] = {
+    Qt.Key.Key_Left: (-1, 0),
+    Qt.Key.Key_H: (-1, 0),
+    Qt.Key.Key_Right: (1, 0),
+    Qt.Key.Key_L: (1, 0),
+    Qt.Key.Key_Up: (0, -1),
+    Qt.Key.Key_K: (0, -1),
+    Qt.Key.Key_Down: (0, 1),
+    Qt.Key.Key_J: (0, 1),
+}
+
+# The cursor a card's edge or corner shows, keyed by what ``StepNodeItem.edge_at`` answers.
+RESIZE_CURSORS = {
+    "left": Qt.CursorShape.SizeHorCursor,
+    "right": Qt.CursorShape.SizeHorCursor,
+    "top": Qt.CursorShape.SizeVerCursor,
+    "bottom": Qt.CursorShape.SizeVerCursor,
+    "top-left": Qt.CursorShape.SizeFDiagCursor,
+    "bottom-right": Qt.CursorShape.SizeFDiagCursor,
+    "top-right": Qt.CursorShape.SizeBDiagCursor,
+    "bottom-left": Qt.CursorShape.SizeBDiagCursor,
 }
 
 
@@ -80,9 +114,14 @@ HINTS_BY_MODE = {
 
 @dataclass(frozen=True)
 class CanvasEvent:
-    """A mouse event in scene coordinates, with the widget left out on purpose."""
+    """A mouse event in scene coordinates, with the widget left out on purpose.
+
+    ``view_pos`` is the same point in the viewport's device pixels — what a pan needs,
+    since it moves the viewport by the pointer's travel and the scene slides under it.
+    """
 
     scene_pos: QPointF
+    view_pos: QPointF = field(default_factory=QPointF)
     button: Qt.MouseButton = Qt.MouseButton.NoButton
     buttons: Qt.MouseButton = Qt.MouseButton.NoButton
     modifiers: Qt.KeyboardModifier = Qt.KeyboardModifier.NoModifier
@@ -105,6 +144,8 @@ class Canvas(Protocol):
     # Regions that finished moving, with the steps they carried — one gesture, one emission.
     regions_moved: Signal[list[tuple[str, float, float]], list[tuple[StepId, float, float]]]
     region_resized: Signal[str, float, float, float, float]
+    # A card that finished resizing: its new seat and size, since an edge may have moved.
+    node_resized: Signal[StepId, float, float, float, float]
 
     def node_at(self, scene_pos: QPointF) -> StepNodeItem | None: ...
 
@@ -139,9 +180,15 @@ class Canvas(Protocol):
 
     def hide_outline(self) -> None: ...
 
-    def hold_region(self, region_id: str, step_ids: set[StepId]) -> None: ...
+    # A coordinate on the grid while Snap to Grid is on, else itself: what every gesture
+    # that produces a position or a size runs its numbers through.
+    def snap(self, value: float) -> float: ...
 
-    def release_region(self) -> None: ...
+    # A mode owns this region's geometry — and these steps' — until it releases: the
+    # scene's sync leaves them where the gesture has them.
+    def hold(self, region_id: str | None, step_ids: set[StepId]) -> None: ...
+
+    def release(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -407,25 +454,66 @@ class ConnectMode(_LinkingMode):
 
 
 class PanMode(ModeBase):
-    """Hold space and drag, the way every canvas application does it.
+    """Hold space and drag the plane, wherever the press lands — or step it with the keys.
 
-    Qt's own ``ScrollHandDrag`` does the scrolling, so every hook here declines: the events
-    fall through to the view, which pans instead of forwarding them to the scene. Leaving is
-    what this mode is *for* — restoring the drag mode and the cursor is why it is an object.
+    It claims every press and moves the viewport itself, by the pointer's travel in device
+    pixels through the hidden scroll bars. Not Qt's ``ScrollHandDrag``: that hands a press
+    to the item under it first, so a press on a card moved the card — the one thing a hand
+    holding Space does not mean. The seat of the plane is taken at the press, so the point
+    grabbed stays under the pointer however far the drag goes.
+
+    With Space held the arrows and ``hjkl`` page the view a third of the viewport that way,
+    a tenth with Shift. They are claimed here, before the canvas keymap sees them, so the
+    same keys stop selecting steps for as long as the hand is on the plane.
     """
 
     name = PAN
 
     def __init__(self, deps: CanvasDeps) -> None:
         super().__init__(deps)
-        self._was = QGraphicsView.DragMode.RubberBandDrag
+        self._grab: QPointF | None = None
+        self._seat = (0, 0)
 
     def enter(self) -> None:
-        self._was = self.deps.view.dragMode()
-        self.deps.view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.deps.view.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
 
     def exit(self) -> None:
-        self.deps.view.setDragMode(self._was)
+        self.deps.view.viewport().unsetCursor()
+
+    def mouse_press(self, event: CanvasEvent) -> bool:
+        if event.button == Qt.MouseButton.LeftButton:
+            view = self.deps.view
+            self._grab = event.view_pos
+            self._seat = (view.horizontalScrollBar().value(), view.verticalScrollBar().value())
+            view.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+        return True
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        if self._grab is not None:
+            view = self.deps.view
+            travel = event.view_pos - self._grab
+            view.horizontalScrollBar().setValue(round(self._seat[0] - travel.x()))
+            view.verticalScrollBar().setValue(round(self._seat[1] - travel.y()))
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        self._grab = None
+        self.deps.view.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
+        return True
+
+    def double_click(self, event: CanvasEvent) -> bool:
+        return True  # A hand holding Space is panning, not making steps.
+
+    def key_press(self, key: CanvasKey) -> bool:
+        direction = PAN_KEYS.get(key.key)
+        if direction is None:
+            return False
+        view = self.deps.view
+        share = PAN_NUDGE if key.modifiers & Qt.KeyboardModifier.ShiftModifier else PAN_PAGE
+        across, down = view.horizontalScrollBar(), view.verticalScrollBar()
+        across.setValue(across.value() + round(direction[0] * view.viewport().width() * share))
+        down.setValue(down.value() + round(direction[1] * view.viewport().height() * share))
+        return True
 
 
 class RegionCreateMode(ModeBase):
@@ -446,14 +534,16 @@ class RegionCreateMode(ModeBase):
         self.deps.canvas.hide_outline()
 
     def mouse_press(self, event: CanvasEvent) -> bool:
-        self._anchor = event.scene_pos
+        self._anchor = self._snapped(event.scene_pos)
         return True
 
     def mouse_move(self, event: CanvasEvent) -> bool:
         if self._anchor is not None:
             outline = QPainterPath()
             outline.addRoundedRect(
-                QRectF(self._anchor, event.scene_pos).normalized(), REGION_RADIUS, REGION_RADIUS
+                QRectF(self._anchor, self._snapped(event.scene_pos)).normalized(),
+                REGION_RADIUS,
+                REGION_RADIUS,
             )
             self.deps.canvas.aim_outline(outline)
         return True
@@ -461,7 +551,7 @@ class RegionCreateMode(ModeBase):
     def mouse_release(self, event: CanvasEvent) -> bool:
         if self._anchor is None:
             return True
-        rect = QRectF(self._anchor, event.scene_pos).normalized()
+        rect = QRectF(self._anchor, self._snapped(event.scene_pos)).normalized()
         self._anchor = None
         self.deps.canvas.hide_outline()
         if rect.width() >= MIN_REGION and rect.height() >= MIN_REGION:
@@ -475,8 +565,54 @@ class RegionCreateMode(ModeBase):
     def double_click(self, event: CanvasEvent) -> bool:
         return True  # No step-creating double clicks while drawing regions.
 
+    def _snapped(self, point: QPointF) -> QPointF:
+        snap = self.deps.canvas.snap
+        return QPointF(snap(point.x()), snap(point.y()))
 
-class RegionDragMode(ModeBase):
+
+class GestureMode(ModeBase):
+    """A mode that lives for one drag of something the canvas draws.
+
+    It holds what it moves, so a sync from the model — an agent's write, an undo — leaves
+    that geometry alone until the release; Escape puts everything back where the press
+    found it; and the release reports what happened and pops. A subclass says what it
+    holds, how to put it back, what the pointer looks like meanwhile, and what the release
+    means — the region drag, the region resize and the card resize are the three.
+    """
+
+    # The viewport's cursor while the gesture lasts; None leaves it alone.
+    cursor: Qt.CursorShape | None = None
+
+    def held(self) -> tuple[str | None, set[StepId]]:
+        """The region and the steps whose geometry this gesture owns."""
+        return None, set()
+
+    def restore(self) -> None:
+        """Put everything back where the press found it — Escape's half of the gesture."""
+
+    def enter(self) -> None:
+        self.deps.canvas.hold(*self.held())
+        if self.cursor is not None:
+            self.deps.view.viewport().setCursor(self.cursor)
+
+    def exit(self) -> None:
+        if self.cursor is not None:
+            self.deps.view.viewport().unsetCursor()
+        self.deps.canvas.release()
+
+    def key_press(self, key: CanvasKey) -> bool:
+        if key.key == Qt.Key.Key_Escape:
+            self.restore()
+            self.pop()
+            return True
+        return False
+
+    def pop(self) -> None:
+        if self.stack is not None:
+            self.stack.pop()
+
+
+class RegionDragMode(GestureMode):
     """A region grabbed by its body: the frame moves, and so do the steps inside it.
 
     Which steps ride along is decided **at the press** — centres inside the rect — and held
@@ -491,23 +627,18 @@ class RegionDragMode(ModeBase):
         self._region = region
         self._offset = grab - region.pos()
         self._start = region.pos()
-        self._carried: dict[StepId, QPointF] = {}
+        self._carried = {node.step_id: node.pos() for node in deps.canvas.nodes_inside(region)}
 
-    def enter(self) -> None:
-        canvas = self.deps.canvas
-        self._carried = {node.step_id: node.pos() for node in canvas.nodes_inside(self._region)}
-        canvas.hold_region(self._region.region_id, set(self._carried))
+    def held(self) -> tuple[str | None, set[StepId]]:
+        return self._region.region_id, set(self._carried)
 
-    def exit(self) -> None:
-        self.deps.canvas.release_region()
+    def restore(self) -> None:
+        self._region.setPos(self._start)
+        self._place_carried(QPointF(0.0, 0.0))
 
     def mouse_move(self, event: CanvasEvent) -> bool:
         self._region.setPos(event.scene_pos - self._offset)
-        delta = self._region.pos() - self._start
-        for step_id, was in self._carried.items():
-            node = self.deps.canvas.node(step_id)
-            if node is not None:
-                node.setPos(was + delta)
+        self._place_carried(self._region.pos() - self._start)
         return True
 
     def mouse_release(self, event: CanvasEvent) -> bool:
@@ -522,46 +653,37 @@ class RegionDragMode(ModeBase):
             canvas.regions_moved.emit([(self._region.region_id, at.x(), at.y())], carried)
         else:
             canvas.select_region(self._region.region_id)
-        self._pop()
+        self.pop()
         return True
 
-    def key_press(self, key: CanvasKey) -> bool:
-        if key.key == Qt.Key.Key_Escape:
-            self._region.setPos(self._start)
-            for step_id, was in self._carried.items():
-                node = self.deps.canvas.node(step_id)
-                if node is not None:
-                    node.setPos(was)
-            self._pop()
-            return True
-        return False
-
-    def _pop(self) -> None:
-        if self.stack is not None:
-            self.stack.pop()
+    def _place_carried(self, delta: QPointF) -> None:
+        for step_id, was in self._carried.items():
+            node = self.deps.canvas.node(step_id)
+            if node is not None:
+                node.setPos(was + delta)
 
 
-class RegionResizeMode(ModeBase):
+class RegionResizeMode(GestureMode):
     """A region grabbed by its corner grip. Lives for one resize; Esc puts it back."""
 
     name = REGION_RESIZE
+    cursor = Qt.CursorShape.SizeFDiagCursor
 
     def __init__(self, deps: CanvasDeps, region: RegionItem) -> None:
         super().__init__(deps)
         self._region = region
         self._was = region.size()
 
-    def enter(self) -> None:
-        self.deps.canvas.hold_region(self._region.region_id, set())
-        self.deps.view.viewport().setCursor(Qt.CursorShape.SizeFDiagCursor)
+    def held(self) -> tuple[str | None, set[StepId]]:
+        return self._region.region_id, set()
 
-    def exit(self) -> None:
-        self.deps.view.viewport().unsetCursor()
-        self.deps.canvas.release_region()
+    def restore(self) -> None:
+        self._region.set_rect(*self._was)
 
     def mouse_move(self, event: CanvasEvent) -> bool:
+        snap = self.deps.canvas.snap
         local = event.scene_pos - self._region.pos()
-        self._region.set_rect(max(MIN_REGION, local.x()), max(MIN_REGION, local.y()))
+        self._region.set_rect(max(MIN_REGION, snap(local.x())), max(MIN_REGION, snap(local.y())))
         return True
 
     def mouse_release(self, event: CanvasEvent) -> bool:
@@ -569,19 +691,59 @@ class RegionResizeMode(ModeBase):
         if (w, h) != self._was:
             at = self._region.pos()
             self.deps.canvas.region_resized.emit(self._region.region_id, at.x(), at.y(), w, h)
-        self._pop()
+        self.pop()
         return True
 
-    def key_press(self, key: CanvasKey) -> bool:
-        if key.key == Qt.Key.Key_Escape:
-            self._region.set_rect(*self._was)
-            self._pop()
-            return True
-        return False
 
-    def _pop(self) -> None:
-        if self.stack is not None:
-            self.stack.pop()
+class NodeResizeMode(GestureMode):
+    """A card grabbed by an edge or a corner. Lives for one resize; Esc puts it back.
+
+    The edge under the pointer is what moves and the opposite one stays put, so a card
+    grows the way a window does — from the left, its seat moves with it. Each moved edge
+    snaps while Snap to Grid is on, and no side goes below its minimum: the far edge is
+    the limit, never the pointer.
+    """
+
+    name = NODE_RESIZE
+
+    def __init__(self, deps: CanvasDeps, node: StepNodeItem, edge: str) -> None:
+        super().__init__(deps)
+        self._node = node
+        self._parts = edge.split("-")
+        self.cursor = RESIZE_CURSORS[edge]
+        self._was_pos = node.pos()
+        self._was_size = node.size()
+        self._seat = QRectF(node.pos(), QSizeF(*node.size()))
+
+    def held(self) -> tuple[str | None, set[StepId]]:
+        return None, {self._node.step_id}
+
+    def restore(self) -> None:
+        self._node.set_size(*self._was_size)
+        self._node.setPos(self._was_pos)
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        snap = self.deps.canvas.snap
+        rect = QRectF(self._seat)
+        x, y = snap(event.scene_pos.x()), snap(event.scene_pos.y())
+        if "left" in self._parts:
+            rect.setLeft(min(x, rect.right() - MIN_NODE_W))
+        elif "right" in self._parts:
+            rect.setRight(max(x, rect.left() + MIN_NODE_W))
+        if "top" in self._parts:
+            rect.setTop(min(y, rect.bottom() - MIN_NODE_H))
+        elif "bottom" in self._parts:
+            rect.setBottom(max(y, rect.top() + MIN_NODE_H))
+        self._node.set_size(rect.width(), rect.height())
+        self._node.setPos(rect.topLeft())
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        at, (w, h) = self._node.pos(), self._node.size()
+        if at != self._was_pos or (w, h) != self._was_size:
+            self.deps.canvas.node_resized.emit(self._node.step_id, at.x(), at.y(), w, h)
+        self.pop()
+        return True
 
 
 class LassoMode(ModeBase):
@@ -649,7 +811,8 @@ class LassoMode(ModeBase):
 
 
 class IdleMode(ModeBase):
-    """The base. Qt does selection, rubber banding and node dragging; this catches the rest."""
+    """The base. Qt does selection, rubber banding and node dragging; this catches the rest:
+    a press on a card's link handle, on its frame, or on a region's body or grip."""
 
     name = IDLE
 
@@ -661,6 +824,10 @@ class IdleMode(ModeBase):
                 self.stack.push(LinkDragMode(self.deps, node.step_id))
             return True
         if node is not None:
+            edge = node.edge_at(event.scene_pos)
+            if edge and event.button == Qt.MouseButton.LeftButton and self.stack is not None:
+                self.stack.push(NodeResizeMode(self.deps, node, edge))
+                return True
             return False
         region = self.deps.canvas.region_at(event.scene_pos)
         if region is not None and self.stack is not None:
@@ -673,6 +840,23 @@ class IdleMode(ModeBase):
             if region.is_over_body(event.scene_pos):
                 self.stack.push(RegionDragMode(self.deps, region, event.scene_pos))
                 return True
+        return False
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        """Cursor feedback only — the event still falls through to Qt, which hovers and
+        drags. A card's frame shows the resize arrows so the gesture can be found; the
+        handle wins its corner of the right edge, as it does on the press."""
+        if event.buttons == Qt.MouseButton.NoButton:
+            node = self.deps.canvas.node_at(event.scene_pos)
+            edge = ""
+            if node is not None and not node.is_over_handle(event.scene_pos):
+                edge = node.edge_at(event.scene_pos)
+            viewport = self.deps.view.viewport()
+            if edge:
+                if viewport.cursor().shape() != RESIZE_CURSORS[edge]:
+                    viewport.setCursor(RESIZE_CURSORS[edge])
+            elif viewport.testAttribute(Qt.WidgetAttribute.WA_SetCursor):
+                viewport.unsetCursor()
         return False
 
     def double_click(self, event: CanvasEvent) -> bool:

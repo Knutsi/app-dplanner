@@ -73,6 +73,25 @@ well is `$BG_BASE`, and the canvas already is.
 - It is a child of the *view*, never of the viewport: a `QGraphicsView` pans by scrolling its
   viewport, and that carries the viewport's children away with the pixels.
 
+## Cards on the canvas
+
+A step on the graph is a card on a table, and the canvas is drawn to say so.
+
+- **Every card rests on a shadow**, faint, and a picked card lifts two pixels over a deeper
+  one — the lift, not a colour, is what marks it (see *Colour* below). The fill is opaque:
+  the ground never shows through a card.
+- **The title is the card**: two points larger than the chrome, normal weight, wrapping onto
+  as many lines as the card has room for above its bottom line. A card can be dragged larger
+  by any edge or corner to show more of a long name; the default footprint fits two lines.
+- **The bottom line is a number, never a sentence**: the estimate at the right in full ink,
+  bold only where the number is the point of the card (a milestone's days and date), with
+  the PR pill and the branch glyph beside it. Every aspect a card wears is a medallion, a
+  badge, a bar or a pill; none is repeated as a phrase.
+- **The ground is quiet.** The default is a dot at every grid crossing, at an alpha that
+  keeps a card's resting shadow the darkest thing on the plane; lines, crosses and plain are
+  offered beside it, and the pitch coarsens as the graph zooms out so the ground never turns
+  to noise. What is drawn is always a coarsening of what a drag snaps to.
+
 ## Cards
 
 The one sanctioned box. A panel that hosts *independent features contributed by different

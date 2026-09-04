@@ -44,7 +44,7 @@ from dplanner.domain.model import EDGE_KINDS, Library, NodeId, Project, Step, St
 from dplanner.domain.store import FilesFor
 from dplanner.modules.project_editor.placement import below, positions
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
-from dplanner.modules.project_editor.positions import write_position
+from dplanner.modules.project_editor.positions import node_size, read_size, write_position
 
 # The clipboard format. A vendor type, so nothing but this application ever mistakes the
 # payload for text — the titles travel beside it as ``text/plain`` for pasting elsewhere.
@@ -226,10 +226,11 @@ def paste(
         clone.module_data = copy.deepcopy(c.module_data)
         clone.module_text = dict(c.module_text)
         if anchor is None:
-            x, y = below(c.x, c.y)
+            x, y = below(c.x, c.y, node_size(clone)[1])
         else:
             x, y = anchor[0] + c.x - left, anchor[1] + c.y - top
-        clone.module_data[POSITION_KEY] = write_position(x, y)
+        # The copy keeps the size its original was given, like every other stored fact.
+        clone.module_data[POSITION_KEY] = write_position(x, y, read_size(clone))
         clones.append(clone)
     for policy in policies:
         policy(project, clones)

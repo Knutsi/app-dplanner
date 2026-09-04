@@ -44,10 +44,11 @@ def positions(library: Library, project: Project) -> dict[StepId, tuple[float, f
     return {step.id: stored[step.id] or automatic[step.id] for step in project.steps}
 
 
-def below(x: float, y: float) -> tuple[float, float]:
+def below(x: float, y: float, height: float = NODE_H) -> tuple[float, float]:
     """One row down from a point: where a second node dropped at the same spot goes.
 
     The automatic layout's own row pitch, so steps stacked by pressing New twice line up
     with steps the layout would have arranged — and two of them never land on one another.
+    ``height`` is the card already at the point, when it is taller than the default.
     """
-    return (x, y + NODE_H + V_GAP)
+    return (x, y + height + V_GAP)

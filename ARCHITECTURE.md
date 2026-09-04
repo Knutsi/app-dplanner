@@ -905,6 +905,13 @@ canvas through a typed callback on their own `Deps`. Where a node *is* is still 
 model — `layout.positions()` answers it — so "the nearest node to the right" is a pure function
 and only the last step, telling the canvas what to select, needs a window.
 
+**A gesture that drags something the canvas draws is a `GestureMode`.** The region drag,
+the region resize and the card resize each hold what they move (so a sync from the model
+leaves that geometry alone until the release), put it back on Escape, and report on the
+release before popping — three modes, one skeleton. The base owns the hold, the cursor, the
+Escape and the pop; a subclass says what it holds, how to restore it, and what the release
+means. The third copy of the skeleton was the moment to write the base, not the first.
+
 The lasso is the mode that shows the stack paying for itself. A rubber band is a box and a
 cluster on a busy canvas rarely is, so `LassoMode` claims the press, grows a path under the
 cursor, and on release asks the scene which cards the outline *touches* — the node's body
@@ -964,7 +971,13 @@ this canvas: **a scrollable area's extent must not be a function of what the use
 
 **The scroll bars go.** On an extent like that a scroll bar is a nub that says nothing true
 about where you are, so both are `ScrollBarAlwaysOff` — and still there, so the wheel still
-scrolls. What replaces them is `minimap.py`, anchored in the canvas's lower-left corner: the
+scrolls (Ctrl+wheel zooms) and a pan has something to move. `PanMode` claims every press
+while Space is held and scrolls the bars by the pointer's travel itself — Qt's
+`ScrollHandDrag` hands a press to the item under it first, so a press on a card moved the
+card, which is the one thing a hand holding Space does not mean — and with Space held the
+arrows and `hjkl` page the plane a third of the viewport that way, a tenth with Shift,
+claimed in the mode so the keymap's movement verbs stand down while the hand is on the
+plane. What replaces the bars is `minimap.py`, anchored in the canvas's lower-left corner: the
 graph small, the viewport as a frame on it, and a click to go anywhere. It is *given* node
 rectangles rather than reaching for a scene, so it imports nothing from the module around it
 and cannot outlive what it draws; `GraphView` pushes on `QGraphicsScene.changed` and on every
@@ -978,10 +991,14 @@ And it is parented to the view rather than to the viewport, because `QGraphicsVi
 node with none. Three decisions sit behind three short functions.
 
 **They are a preference, not a fact about the project.** Whether the graph's ends are lit
-says nothing about the plan, so the value never reaches the project directory — it is one
-`Marks` on the editor module, written to `user_config` and pushed to every open canvas the
-way a mode's `RenderHints` are fanned out. That is also why a tab opened later wears them:
-the module hands its current marks to every activity it builds.
+says nothing about the plan, so the value never reaches the project directory — it is the
+`marks` of the one `Look` on the editor module (`look.py`: marks, the background under the
+graph, Snap to Grid), written to `user_config` and pushed to every open canvas the way a
+mode's `RenderHints` are fanned out. That is also why a tab opened later wears them: the
+module hands its current look to every activity it builds. One value rather than one per
+preference, because the plumbing — a key, a setter, a fan-out, a pair of callbacks on the
+verbs — was the same for each, and the second copy of it (the ground beside the marks) was
+the signal to fold them: the next preference is a field on `Look`, not a third copy.
 
 **What a socket has connected is derived every sync.** `marks.ports()` reads the edges whose
 both ends are in the project — exactly the edges the canvas draws — and the activity puts the
@@ -1041,24 +1058,95 @@ take away. A gain on the node's own fill preserves every one of them, and reads 
 dark alike — the fill is ink over the canvas, so *more* of it means more contrast in either
 direction.
 
-The shadow is **clipped to the ground around the card**, not painted under it. A node's fill
-is translucent by design (`FILL_ALPHA` ink over the canvas), so rings left underneath darken
-the fill itself, and a selected step reads as a hole rather than as a card off the table.
-That was a real bug in the first cut of this: on a light theme the selected node came out a
-flat dark grey and nothing about the code looked wrong. Its weight is deliberately slight for
-the same reason — the rings composite, so the first alpha that looked right in isolation
-landed twice as dark under the card, and on a light theme's paper that reads as a hole again
-even when it is correctly clipped. The border and the gained fill are what say "this one";
-the shadow only has to lift the card off the table. It is caught now by the same test
-that checks the fill gain — a body can only come out at exactly the gained alpha over the
-ground if nothing at all is painted underneath it.
+**Every card rests on a shadow, and the fill is opaque.** The first cut painted the fill
+translucent (`FILL_ALPHA` ink over the canvas) and clipped the shadow to the ground around
+the card, because rings left underneath darkened the fill itself and a selected step read as
+a hole rather than as a card off the table — on a light theme the selected node came out a
+flat dark grey and nothing about the code looked wrong. The grid ground made the same point
+again from the other side: dots showing through every card read as a stain. So
+`renderers.over()` blends the tint over the palette's window colour and paints the result
+opaque — exactly the colour the tint would have had over bare canvas, on any theme, with
+nothing underneath able to change it. The clip went with it, and with it the reason a
+*resting* shadow could not exist: every card now sits on a faint one (`RESTING_SHADOW`) and
+a selected card's is deeper and wider (`LIFTED_SHADOW`), which with the lift is what says
+"this one is up". Both are deliberately slight — the rings composite, so the first alpha
+that looked right in isolation landed twice as dark, and on a light theme's paper that reads
+as a hole. The border and the gained fill are what say "this one"; a shadow only has to seat
+the card. The fill-gain test still guards it: a body can only come out at exactly the gained
+tint over the ground if the fill is opaque, or nothing at all is painted underneath it.
 
 One number ties it together: `PAINT_MARGIN` in `renderers.py` is the furthest any decoration
 reaches out of the body — handle, badge, medallion, chip, lift, shadow — and
-`StepNodeItem.boundingRect`
-is exactly that, *constant whether or not the node is selected*. A rect that grew on selection
-would invalidate the wrong region, and the shadow would be left on the canvas when the
-selection moved on.
+`StepNodeItem.boundingRect` is exactly that, *constant whether or not the node is
+selected*. A rect that grew on selection would invalidate the wrong region, and the shadow
+would be left on the canvas when the selection moved on. `shape()` is a different question —
+the card and its resize band — because the bounding rect reaches that margin out on every
+side for paint, and a click beside a card is a click on the plane.
+
+### A card's size is the step's, and a layout never says how big
+
+A card can be dragged wider or taller by any edge or corner, and three decisions sit behind
+the one gesture.
+
+**The size is stored beside the position, and absence is the default.** `{"x", "y"}` gains
+`"w"` and `"h"` only for a card somebody resized (`positions.write_position`), so a project
+of untouched cards never learns the keys exist — `FORMAT.md`'s absence rule — and a card
+resized back to the default drops them again. It rides in the same per-step entry because a
+resize is the same kind of fact as a move: presentation, one file, one diff. It is
+deliberately **not** part of a named layout: a layout says where cards sit, and applying one
+must leave a card somebody enlarged as it was. Every position write therefore carries the
+size back in — a move, a sort, an applied layout, a paste — which is what
+`write_position(x, y, size)` and `position_commands(project, …)` are for.
+
+**Every painter takes the body it is handed.** `renderers.py` measures from a `body` rect
+and the only fixed numbers left are paddings, radii and how far the decorations reach; the
+sorts already spaced by a `size_for` function, which now defaults to `positions.node_size`
+— so a large card keeps its room in every arrangement without an algorithm learning about
+sizes. What a taller card buys is *title*: the name is set two points larger than the chrome
+and wraps onto as many lines as the card has room for above its bottom line, only the last
+one eliding. The bottom line holds the estimate — the one number a step answers with — at
+the right in full ink, then the PR pill and the branch glyph, and nothing in words: the
+aspects' phrases that once filled it as a subtitle were saying what the medallions, the
+badge, the bar and the pill already wear, and a card that repeats itself is a card that is
+harder to read.
+
+**The gesture is a mode, and the hit shape is the card.** `NodeResizeMode` is
+`RegionResizeMode`'s shape with eight grips instead of one: a band `GRAB_IN` inside the
+border and `EDGE_REACH` outside it, both bands at once being a corner, and the link handle
+winning its corner of the right edge as it does on the press. The edge under the pointer
+moves, the far edge is the limit (never below `MIN_NODE_W` by `MIN_NODE_H`), and the card is
+held for the gesture so a sync from the model leaves it alone. One `Resize Step` command
+writes seat and size together, because dragging the left edge moves both and undo must take
+both back. The pointer's resize arrows are the gesture's only announcement, shown by
+`IdleMode` on mouse moves with no button down — the one mode that can start a resize is the
+one that says where.
+
+### The ground is a preference; snapping belongs to the gesture
+
+*View ▸ Background* (plain, dots, lines, crosses) and *View ▸ Snap to Grid* are two fields
+of the same per-user `Look` the marks live on (`look.py`), so they are kept, fanned out and
+read by their toggles exactly as the marks are — the view draws the background
+(`ground.py` paints it by name), the scene answers `snap()` — and a tab opened later wears
+them. The background is the theme menu's shape: one choice of several, exactly one checked.
+
+**What snaps is the gesture, never the write.** Before this the grid was invisible and every
+coordinate was rounded to it on its way to disk, which would have made a snap *toggle* mean
+nothing: a drag with snapping off would still have landed on the grid the moment the store
+wrote it. So `positions.snapped(value)` rounds to a whole unit — short JSON, and still the
+float every number on disk owes — and only the canvas passes `GRID`, only while snapping is
+on, through the scene's one `snap()`: a node or region drag (`itemChange`), a resize, a
+region being dragged out, and the seat of a placed step (a double-click, New, a paste, a
+drop). A CLI verb has no gesture and stores what it was given; a sort's output is what the
+algorithm computed, and the layered ones land on round pitches by construction.
+
+**What is drawn is a coarsening of what snaps.** The ground shows every `pitch_for(zoom)`-th
+line of the snap grid — the smallest power-of-two multiple of `GRID` that keeps the marks
+`MIN_SCREEN_PITCH` device pixels apart — so a card's corner is always on a line the ground
+*could* show, and zooming in reveals the finer ones rather than a grid that drifts against
+the cards. Cosmetic pens keep a dot two device pixels and a line one at any zoom: the ground
+is a texture, not a drawing that scales with the graph. Its ink is the palette's text at a
+low alpha (DESIGN.md exception #1), read at paint time from the view's own palette so a
+theme switch repaints it with the graph.
 
 ## Two writers, one folder
 

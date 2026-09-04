@@ -21,7 +21,7 @@ dragging for free, because the scene never sees it.
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QMimeData, QPointF, QRectF, Qt, QTimer
+from PySide6.QtCore import QMimeData, QPointF, QRect, QRectF, Qt, QTimer
 from PySide6.QtGui import (
     QDragEnterEvent,
     QDragMoveEvent,
@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
 from dplanner.core.signals import Signal
 from dplanner.domain.model import StepId
 from dplanner.framework.widgets import install_ctrl_wheel_zoom
+from dplanner.modules.project_editor.ground import paint_ground
 from dplanner.modules.project_editor.items import (
     EdgeItem,
     LinkPreviewItem,
@@ -50,6 +51,7 @@ from dplanner.modules.project_editor.items import (
     StepNodeItem,
 )
 from dplanner.modules.project_editor.keymap import bound_actions
+from dplanner.modules.project_editor.look import DEFAULT_BACKGROUND
 from dplanner.modules.project_editor.marks import Marks
 from dplanner.modules.project_editor.minimap import Minimap
 from dplanner.modules.project_editor.modes import (
@@ -61,6 +63,7 @@ from dplanner.modules.project_editor.modes import (
     ModeStack,
     PanMode,
 )
+from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snapped
 from dplanner.modules.project_editor.region_items import RegionItem
 from dplanner.modules.project_editor.regions import Region
 from dplanner.modules.project_editor.renderers import RING_STEP, NodeAccent, RenderHints
@@ -88,11 +91,11 @@ CANVAS_EXTENT = 100_000.0
 class NodeSpec:
     step_id: StepId
     title: str
-    subtitle: str
     x: float
     y: float
     accent: NodeAccent = field(default_factory=NodeAccent)
     ports: tuple[bool, bool] = (False, False)  # (something arrives, something leaves).
+    size: tuple[float, float] = (NODE_W, NODE_H)  # The card's footprint, stored or default.
 
 
 class GraphScene(QGraphicsScene):
@@ -103,6 +106,8 @@ class GraphScene(QGraphicsScene):
         self._link_refusal = link_refusal
         self._hints = RenderHints()
         self._marks = Marks()
+        # Whether gestures land on the grid — the user's setting, pushed by the module.
+        self._snap = True
         self._nodes: dict[StepId, StepNodeItem] = {}
         self._edges: dict[EdgeRef, EdgeItem] = {}
         self._regions: dict[str, RegionItem] = {}
@@ -142,6 +147,9 @@ class GraphScene(QGraphicsScene):
             list[tuple[str, float, float]], list[tuple[StepId, float, float]]
         ] = Signal()
         self.region_resized: Signal[str, float, float, float, float] = Signal()
+        # A card that finished resizing: seat and size together, since an edge may have
+        # moved the seat — one gesture, one command.
+        self.node_resized: Signal[StepId, float, float, float, float] = Signal()
 
         self.selectionChanged.connect(self._on_selection)
 
@@ -165,13 +173,14 @@ class GraphScene(QGraphicsScene):
                 item.set_render_hints(self._hints)  # A node born mid-mode dresses for it.
                 item.set_marks(self._marks)
                 self.addItem(item)
-            item.set_text(spec.title, spec.subtitle)
+            item.set_title(spec.title)
             item.set_accent(spec.accent)
             item.set_ports(spec.ports)
-            # A node being dragged owns its position until the gesture ends. The model is
-            # authoritative everywhere else — including when the CLI writes mid-drag.
+            # A node being dragged or resized owns its geometry until the gesture ends. The
+            # model is authoritative everywhere else — including when the CLI writes mid-drag.
             if spec.step_id not in self._press_at and spec.step_id not in self._held_steps:
                 item.setPos(spec.x, spec.y)
+                item.set_size(*spec.size)
         for gone_node in set(self._nodes) - wanted:
             self.removeItem(self._nodes.pop(gone_node))
         self._settle_ring_timer()
@@ -223,8 +232,9 @@ class GraphScene(QGraphicsScene):
                 edge.follow()
 
     def node_rects(self) -> list[QRectF]:
-        """Where every node sits, for anything that draws the graph small."""
-        return [item.sceneBoundingRect() for item in self._nodes.values()]
+        """Where every card sits — the bodies, not the bounding rects with their margins
+        for shadow and stat — for anything that draws or frames the graph."""
+        return [item.body_scene_rect() for item in self._nodes.values()]
 
     def region_rects(self) -> list[QRectF]:
         """Where every region sits — the faint outlines behind the minimap's dots."""
@@ -315,6 +325,15 @@ class GraphScene(QGraphicsScene):
         for item in self._nodes.values():
             item.set_marks(marks)
 
+    def set_snap(self, on: bool) -> None:
+        """Whether gestures land on the grid from now on. Nothing already placed moves."""
+        self._snap = on
+
+    def snap(self, value: float) -> float:
+        """A coordinate as a gesture should land it: on the grid while snapping, else as it
+        is. Items and modes both run their numbers through this one door."""
+        return snapped(value, GRID) if self._snap else value
+
     def nodes_touching(self, path: QPainterPath) -> list[StepNodeItem]:
         """The steps whose card the outline touches — what a lasso picks.
 
@@ -338,9 +357,7 @@ class GraphScene(QGraphicsScene):
         w, h = region.size()
         rect = QRectF(origin.x(), origin.y(), w, h)
         return [
-            node
-            for node in self._nodes.values()
-            if rect.contains(node.sceneBoundingRect().center())
+            node for node in self._nodes.values() if rect.contains(node.body_scene_rect().center())
         ]
 
     def aim_outline(self, path: QPainterPath) -> None:
@@ -350,12 +367,12 @@ class GraphScene(QGraphicsScene):
     def hide_outline(self) -> None:
         self._outline.hide()
 
-    def hold_region(self, region_id: str, step_ids: set[StepId]) -> None:
+    def hold(self, region_id: str | None, step_ids: set[StepId]) -> None:
         """A mode owns this region's geometry — and these steps' — until it releases."""
         self._held_region = region_id
         self._held_steps = step_ids
 
-    def release_region(self) -> None:
+    def release(self) -> None:
         self._held_region = None
         self._held_steps = set()
 
@@ -427,7 +444,8 @@ class GraphView(QGraphicsView):
     **It looks onto a plane, so it has no scroll bars.** On a scrollable area whose extent is
     two hundred viewports across, a scroll bar is a nub that says nothing true about where
     you are; the minimap in the corner says it instead, and the wheel still scrolls because
-    a hidden scroll bar is still a scroll bar.
+    a hidden scroll bar is still a scroll bar. Ctrl+wheel zooms; holding Space and dragging,
+    or Space with the arrows or ``hjkl``, moves the plane by hand.
     """
 
     def __init__(
@@ -458,6 +476,8 @@ class GraphView(QGraphicsView):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._zoom = 1.0
         self._framed = False
+        # What lies under the graph — the user's look, pushed by the activity like the marks.
+        self._background = DEFAULT_BACKGROUND
         # The application's View ▸ Zoom is font size; a canvas zooms itself.
         install_ctrl_wheel_zoom(self, self.zoom_by)
         self.minimap = Minimap(self)
@@ -488,6 +508,7 @@ class GraphView(QGraphicsView):
     def _event_of(self, event: QMouseEvent) -> CanvasEvent:
         return CanvasEvent(
             scene_pos=self.mapToScene(event.position().toPoint()),
+            view_pos=event.position(),
             button=event.button(),
             buttons=event.buttons(),
             modifiers=event.modifiers(),
@@ -583,6 +604,20 @@ class GraphView(QGraphicsView):
         return bound_actions(key.key, key.modifiers)
 
     # -- looking at it -------------------------------------------------------------------------
+
+    def set_background(self, name: str) -> None:
+        """Change what is drawn under the graph — a ``look.BACKGROUNDS`` name. Snapping is
+        the scene's half of the same look; the activity pushes both."""
+        if name != self._background:
+            self._background = name
+            self.viewport().update()
+
+    def drawBackground(self, painter: QPainter, rect: QRectF | QRect) -> None:  # noqa: N802
+        # The plain ground first (the stylesheet's colour), then the grid over it. The
+        # palette is the view's own, read now, so a theme switch repaints the grid with the
+        # graph — the same rule as items.live_palette.
+        super().drawBackground(painter, rect)
+        paint_ground(painter, QRectF(rect), self.palette(), self._background, self._zoom)
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)

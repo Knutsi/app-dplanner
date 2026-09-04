@@ -57,6 +57,7 @@ HEADLESS_FILES = (
     "sorts.py",
     "regions.py",
     "marks.py",
+    "look.py",
     "schedule.py",
     "collect.py",
     "runs.py",

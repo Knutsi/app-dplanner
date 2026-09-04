@@ -5,15 +5,13 @@ context, and the window's panels — this module's project form, somebody else's
 follow from there. So the graph does not host anything, and there is one detail panel in the
 window however many projects are open side by side.
 
-Four seams keep this module from knowing about anything else in the application:
+Three seams keep this module from knowing about anything else in the application:
 
 - **The panel is anchored, not hosted.** ``register()`` puts :class:`ProjectPanel` in an area
   through ``deps.panels``; nothing here knows what else is in that area, and nothing there
   knows this exists.
 - **The index opens projects through a callback** it is given, and never learns what an
   activity is.
-- **What a node's second line says** comes from ``step_aspects``, supplied by the composition
-  root from whatever aspect modules registered.
 - **The toolbar names verbs it does not own** — the app shell's undo pair, the order module's
   ``order.open`` — and reaches them through the registry alone. See ``canvas_toolbar.py``.
 
@@ -21,9 +19,10 @@ Four seams keep this module from knowing about anything else in the application:
 ``steps.connect`` can decide whether it is checked from the context alone. That is the whole
 mechanism behind the toolbar's mode switch, and why there is no other one.
 
-**The marks are the module's**, read from the per-user store once and pushed to every open
-canvas when they change — a way of looking at graphs, not a fact about one project, so a tab
-opened later wears the same marks and a second window would too.
+**The look is the module's** — the marks, the background under the graph and whether
+gestures snap to its grid, one ``Look`` (``look.py``) — read from the per-user store once and
+pushed to every open canvas when it changes: a way of looking at graphs, not a fact about
+one project, so a tab opened later wears the same look and a second window would too.
 """
 
 from collections.abc import Callable, Sequence
@@ -69,7 +68,8 @@ from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpe
 from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
-from dplanner.modules.project_editor.marks import Marks, ports
+from dplanner.modules.project_editor.look import Look
+from dplanner.modules.project_editor.marks import ports
 from dplanner.modules.project_editor.modes import (
     CONNECT,
     LASSO,
@@ -83,7 +83,13 @@ from dplanner.modules.project_editor.modes import (
 )
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
 from dplanner.modules.project_editor.placement import below, positions
-from dplanner.modules.project_editor.positions import DATA_FORMAT, centred_on, write_position
+from dplanner.modules.project_editor.positions import (
+    DATA_FORMAT,
+    centred_on,
+    node_size,
+    read_size,
+    write_position,
+)
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.project_panel import ProjectPanel
 from dplanner.modules.project_editor.region_verbs import RegionVerbs
@@ -106,8 +112,8 @@ MODULE_ID = "project_editor"
 # project, and every `tabs.open("project", …)` in the application keeps working.
 PROJECT_KIND = "project"
 PANEL_ID = f"{MODULE_ID}.project"
-# The per-user key the marks are kept under — see marks.py.
-MARKS_KEY = "marks"
+# The per-user key the look is kept under — see look.py.
+LOOK_KEY = "look"
 
 # The modes a verb can switch on by name. Every other mode is a gesture that starts itself.
 SWITCHABLE_MODES: dict[str, Callable[[CanvasDeps], ModeBase]] = {
@@ -115,10 +121,6 @@ SWITCHABLE_MODES: dict[str, Callable[[CanvasDeps], ModeBase]] = {
     LASSO: LassoMode,
     REGION_CREATE: RegionCreateMode,
 }
-
-
-def _no_aspects(_step_id: StepId) -> list[str]:
-    return []
 
 
 def _no_accents(_project_id: str) -> dict[StepId, NodeAccent]:
@@ -143,8 +145,6 @@ class ProjectEditorDeps:
     debounce: DebounceService
     # Where a step's attachments live, for a copy to carry them.
     files: FilesFor
-    # What the aspect modules have to say about a step, one short phrase each.
-    step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
     # How every step of a project should look beyond its text — muted, badged — in the
     # canvas's own vocabulary, so the editor never learns which aspects mean what. One call
     # per sync: the answer for a milestone comes from a schedule walk, and the walk is the
@@ -174,7 +174,7 @@ class ProjectActivity(EntityActivity):
         project_id: NodeId,
         verbs: StepVerbs,
         layout_verbs: LayoutVerbs,
-        marks: Marks | None = None,
+        look: Look | None = None,
     ) -> None:
         # Only the pane the user is in may write to the selection scope: a background one
         # re-syncing its canvas — when a step is deleted, say — would otherwise clobber
@@ -187,7 +187,6 @@ class ProjectActivity(EntityActivity):
         self.project_id = project_id
 
         self._scene = GraphScene(self._link_refusal)
-        self._scene.set_marks(marks or Marks())
         self._view = GraphView(
             self._scene,
             base_mode=IdleMode,
@@ -196,6 +195,7 @@ class ProjectActivity(EntityActivity):
             accepts=self._accepts_drop,
             dropped=self._on_drop,
         )
+        self.set_look(look or Look())  # Before the first sync: a node born dresses for it.
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
         self._page, self._toolbar = self._build_page()
@@ -207,6 +207,7 @@ class ProjectActivity(EntityActivity):
         self._scene.region_create_requested.connect(self._on_region_create)
         self._scene.regions_moved.connect(self._on_regions_moved)
         self._scene.region_resized.connect(self._on_region_resized)
+        self._scene.node_resized.connect(self._on_node_resized)
         self._view.modes.changed.connect(lambda _name: self._publish_activity())
 
         # Once per event-loop turn, not once per signal: a paste of forty steps is forty
@@ -216,8 +217,8 @@ class ProjectActivity(EntityActivity):
             # Connected first, so a typing burst is sealed before the canvas re-syncs.
             self._product.structure_changed.connect(self._on_structure),
             # Every change inside this project, and none outside it. Prose reaches the
-            # node too — the spark glyph and the subtitle's summaries read module_text —
-            # and sync diffs before repainting, so a keystroke that changes neither is free.
+            # node too — the spark glyph reads module_text — and sync diffs before
+            # repainting, so a keystroke that changes nothing it shows is free.
             follow_project(self._product, self.project_id, self._sync_soon.trigger),
         ]
         self._sync()
@@ -260,9 +261,12 @@ class ProjectActivity(EntityActivity):
         elif self._view.modes.current().name == name:
             self._view.modes.pop()
 
-    def set_marks(self, marks: Marks) -> None:
-        """The user changed which marks are on; every canvas hears it, this one here."""
-        self._scene.set_marks(marks)
+    def set_look(self, look: Look) -> None:
+        """The user changed how graphs look; every canvas hears it, this one here. The
+        marks and the snapping are the scene's, the background the view's."""
+        self._scene.set_marks(look.marks)
+        self._scene.set_snap(look.snap)
+        self._view.set_background(look.background)
 
     def frame(self) -> None:
         self._view.frame_content()
@@ -340,11 +344,11 @@ class ProjectActivity(EntityActivity):
             NodeSpec(
                 step_id=step.id,
                 title=step.title or "Untitled step",
-                subtitle=" · ".join(self._deps.step_aspects(step.id)),
                 x=placed[step.id][0],
                 y=placed[step.id][1],
                 accent=accents.get(step.id) or NodeAccent(),
                 ports=connected[step.id],
+                size=node_size(step),
             )
             for step in project.steps
         ]
@@ -404,9 +408,30 @@ class ProjectActivity(EntityActivity):
         self.publish_selection(nodes)
 
     def _move_command(self, step_id: StepId, x: float, y: float) -> Command:
+        # The card's size rides along: a move rewrites the whole entry, and must not shrink
+        # a card somebody made larger.
+        size = read_size(self._product.step(step_id))
         return SetModuleDataCommand(
-            step_id, POSITION_KEY, write_position(x, y), view_origin=self, label="Move Step"
+            step_id, POSITION_KEY, write_position(x, y, size), view_origin=self, label="Move Step"
         )
+
+    def _snapped(self, x: float, y: float) -> tuple[float, float]:
+        """A seat as the user's Snap to Grid setting would land it — for the gestures that
+        place a card at a point rather than dragging one: a double-click, New, a paste, a
+        drop. A drag snaps itself as it goes; this is the same rule for a point."""
+        return self._scene.snap(x), self._scene.snap(y)
+
+    def _on_node_resized(self, step_id: StepId, x: float, y: float, w: float, h: float) -> None:
+        self._deps.undo.push(
+            SetModuleDataCommand(
+                step_id,
+                POSITION_KEY,
+                write_position(x, y, (w, h)),
+                view_origin=self,
+                label="Resize Step",
+            )
+        )
+        self._deps.undo.break_coalescing()
 
     def _on_nodes_moved(self, moved: list[tuple[StepId, float, float]]) -> None:
         commands = [self._move_command(step_id, x, y) for step_id, x, y in moved]
@@ -431,7 +456,7 @@ class ProjectActivity(EntityActivity):
 
     def _on_create(self, x: float, y: float) -> None:
         """Double-click on empty space: the same creation New runs, at the point."""
-        self._verbs.create(self.project_id, NEW_STEP_TITLE, at=(x, y))
+        self._verbs.create(self.project_id, NEW_STEP_TITLE, at=self._snapped(x, y))
 
     def note_placed(self, step_ids: list[StepId]) -> None:
         """Steps were just placed on this canvas — born here, or pasted.
@@ -461,7 +486,7 @@ class ProjectActivity(EntityActivity):
         for drop in self._deps.drops:
             if not mime.hasFormat(drop.mime_type):
                 continue
-            at = centred_on(scene_pos.x(), scene_pos.y())
+            at = self._snapped(*centred_on(scene_pos.x(), scene_pos.y()))
             try:
                 placed = drop.place(self.project_id, bytes(mime.data(drop.mime_type).data()), at)
             except CliError as error:
@@ -488,7 +513,7 @@ class ProjectActivity(EntityActivity):
         freshly opened tab placing a node under the ambient layout's first slot.
         """
         point = self._view.last_click
-        return None if point is None else centred_on(point.x(), point.y())
+        return None if point is None else self._snapped(*centred_on(point.x(), point.y()))
 
     def _on_region_create(self, x: float, y: float, w: float, h: float) -> None:
         project = self._project()
@@ -567,7 +592,7 @@ class ProjectEditorModule:
 
     def __init__(self, deps: ProjectEditorDeps) -> None:
         self._deps = deps
-        self._marks = Marks.from_json(get_global(MODULE_ID, MARKS_KEY))
+        self._look = Look.from_json(get_global(MODULE_ID, LOOK_KEY))
         self._verbs = StepVerbs(
             library=deps.library,
             undo=deps.undo,
@@ -606,8 +631,8 @@ class ProjectEditorModule:
             select_steps=self._select_steps,
             set_mode=self._set_mode,
             frame=self._frame,
-            marks=lambda: self._marks,
-            set_mark=self._set_mark,
+            look=lambda: self._look,
+            set_look=self._set_look,
         )
         self._region_verbs = RegionVerbs(
             library=deps.library,
@@ -654,7 +679,7 @@ class ProjectEditorModule:
 
         def factory(target: str | None) -> ProjectActivity:
             assert target is not None
-            return ProjectActivity(deps, target, self._verbs, self._layout_verbs, self._marks)
+            return ProjectActivity(deps, target, self._verbs, self._layout_verbs, self._look)
 
         deps.tabs.register_factory(PROJECT_KIND, factory)
         # Order 10: above the step panel, because a project is what a step is part of.
@@ -715,12 +740,12 @@ class ProjectEditorModule:
         if current is not None:
             current.set_mode(name, on)
 
-    def _set_mark(self, name: str, on: bool) -> None:
-        """Flip one mark for every canvas, now and later, and let the toggles re-ask."""
-        self._marks = self._marks.with_(name, on)
-        set_global(MODULE_ID, MARKS_KEY, self._marks.to_json())
+    def _set_look(self, look: Look) -> None:
+        """Change how every canvas looks, now and later, and let the toggles re-ask."""
+        self._look = look
+        set_global(MODULE_ID, LOOK_KEY, look.to_json())
         for activity in self._activities():
-            activity.set_marks(self._marks)
+            activity.set_look(look)
         self._deps.context.refresh()
 
     def _select_steps(self, step_ids: list[StepId]) -> None:

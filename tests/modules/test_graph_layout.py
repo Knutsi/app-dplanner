@@ -14,7 +14,9 @@ from dplanner.modules.project_editor.positions import (
     GRID,
     NODE_H,
     NODE_W,
+    node_size,
     read_position,
+    snapped,
     write_position,
 )
 from dplanner.modules.project_editor.sorts import (
@@ -23,7 +25,6 @@ from dplanner.modules.project_editor.sorts import (
     layered_down,
     layered_flow,
     most_connected,
-    node_size,
     radial,
     spine,
     timeline,
@@ -98,12 +99,61 @@ def test_a_fully_placed_project_never_computes_the_automatic_layout(monkeypatch)
     assert placed[project.steps[2].id] == (16.0, 0.0)
 
 
-def test_positions_snap_and_are_stored_as_floats():
-    """FORMAT.md's numeric rule: an int would write as 8 where a reloaded float writes 8.0."""
-    entry = write_position(11.0, 3.0)
-    assert entry["x"] == 8.0 and entry["y"] == 0.0
+def test_positions_are_stored_as_whole_unit_floats():
+    """FORMAT.md's numeric rule: an int would write as 8 where a reloaded float writes 8.0.
+    Snapping to the grid is the gesture's business, never the write's — a CLI verb stores
+    what it was given, to the unit."""
+    entry = write_position(11.4, 3.6)
+    assert entry["x"] == 11.0 and entry["y"] == 4.0
     assert isinstance(entry["x"], float)
-    assert GRID == 8.0
+    assert GRID == 8.0 and snapped(11.0, GRID) == 8.0
+
+
+def test_a_size_is_stored_beside_the_position_and_absence_is_the_default():
+    """Only a card somebody resized carries ``w`` and ``h``; a card at the default footprint
+    stores none, so a project of untouched cards never learns the keys exist."""
+    from dplanner.modules.project_editor.positions import MIN_NODE_H, MIN_NODE_W, read_size
+
+    library, project = build()
+    step = project.steps[0]
+    assert read_size(step) is None
+    assert node_size(step) == (NODE_W, NODE_H)
+
+    entry = write_position(8.0, 16.0, (300.4, 160.0))
+    assert (entry["w"], entry["h"]) == (300.0, 160.0)
+    assert isinstance(entry["w"], float)
+    library.set_module_data(step.id, "project_editor", entry)
+    assert read_size(step) == (300.0, 160.0) and node_size(step) == (300.0, 160.0)
+
+    assert "w" not in write_position(8.0, 16.0, (NODE_W, NODE_H))
+    assert "w" not in write_position(8.0, 16.0, None)
+    small = write_position(0.0, 0.0, (10.0, 10.0))
+    assert (small["w"], small["h"]) == (MIN_NODE_W, MIN_NODE_H)
+    library.set_module_data(step.id, "project_editor", {"x": 1.0, "y": 2.0, "w": "wide", "h": 5})
+    assert read_size(step) is None and read_position(step) == (1.0, 2.0)
+
+
+def test_the_sorts_space_by_the_size_a_card_was_given():
+    """``size_for`` defaults to the stored footprint, so a card dragged larger keeps its
+    room in every arrangement without any algorithm learning about sizes."""
+    library, project, steps = braided()
+    library.set_module_data(
+        steps["c"].id, "project_editor", write_position(0.0, 0.0, (400.0, 300.0))
+    )
+    by_id = {step.id: step for step in project.steps}
+    # Radial's rings are a fixed pitch and it is not size-aware today, as the battery above
+    # already says; the four that space by size keep a large card clear of its neighbours.
+    for sort in (layered_flow, layered_down, spine, timeline):
+        placed = sort(library, project)
+        assert_no_overlap(placed, size_for=node_size, steps_by_id=by_id)
+
+
+def test_one_row_below_a_tall_card_clears_it():
+    from dplanner.modules.project_editor.placement import below
+    from dplanner.modules.project_editor.sorts import V_GAP
+
+    assert below(40.0, 40.0) == (40.0, 40.0 + NODE_H + V_GAP)
+    assert below(40.0, 40.0, 300.0) == (40.0, 40.0 + 300.0 + V_GAP)
 
 
 def test_an_unreadable_position_reads_as_absent():

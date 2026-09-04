@@ -147,8 +147,15 @@ or `QSpacerItem` cleared before its layout deletes an item the C++ layout still 
 `QObject` in the same position survives it — `~QObject` unregisters from its parent —
 which is why only layout items bite. **Never read a layout back**: keep your own list of
 what you put in it (`StatusColumn._held`, `MilestoneList._rows`) and read that; `takeAt`
-in a loop that drops the wrapper each turn is fine. `NOTES-FOR-APPFRAME.md` §14 has the
-shiboken references.
+in a loop that drops the wrapper each turn is fine. **And add a child layout to its parent
+before filling it**: a parentless `QHBoxLayout()` given `addWidget` and `addStretch` first
+leaves a `QWidgetItem` and a `QSpacerItem` wrapper alive on the Python side (none when
+`addLayout` comes first), which is what the 2026-09-04 evening crash rode on — a worker
+dying in the boundary collector on `test_asset_gallery.py`, whose bare `AssetGallery` had
+exactly those two beside it in `gc_catalog`'s listing. A test that builds a top-level
+widget of its own disposes it with `deleteLater` (the conftest dispatches it before
+collecting), so the tree dies under Qt's rules and never inside the collector.
+`NOTES-FOR-APPFRAME.md` §14 has the shiboken references.
 
 The layering rules below are enforced by `tests/test_architecture.py`, which runs with the
 normal suite. **If it fails, fix the dependency direction — don't loosen the test.** Every
@@ -402,8 +409,11 @@ root, stop and look for the registry or capability you have not found yet.
   keymap and then to Qt, which is why `IdleMode` is nine lines and why a mode that claims a
   press suppresses node dragging without a flag anywhere. A mode still only *reports* — the
   activity turns its signals into commands. The current mode is published into the context, so
-  a mode-switch action's `checked` stays a pure function of it. `ARCHITECTURE.md`'s *Who owns
-  the canvas's input* has the reasoning; add a behaviour as a mode, never as a field.
+  a mode-switch action's `checked` stays a pure function of it. A mode that drags something
+  the canvas draws — a region, a card's frame — is a `GestureMode`: it says what it holds, how
+  to restore it on Escape and what the release means, and inherits the rest.
+  `ARCHITECTURE.md`'s *Who owns the canvas's input* has the reasoning; add a behaviour as a
+  mode, never as a field.
 - **A canvas key names action ids; it is never an `ActionSpec.shortcut`.** A bare `h` on a
   menu-bar QAction fires application-wide and eats a keystroke in the step editor. Bind it in
   `modules/project_editor/keymap.py`, where a key names the verbs it means in order and the
@@ -420,8 +430,9 @@ root, stop and look for the registry or capability you have not found yet.
   `CompositeCommand` of per-`(waiter, kind)` replacements — Unlink, `steps.isolate` and
   `dplanner step isolate` all build from those two, so the surfaces cannot drift.
 - **Marks are a way of looking, remembered per user.** Starts, Ends and Orphans
-  (`project_editor/marks.py`, Qt-free) are one `Marks` value on the module, written to
-  `user_config` and fanned to every scene like `RenderHints`; a tab opened later wears them.
+  (`project_editor/marks.py`, Qt-free) are the `marks` of the module's one `Look`
+  (`look.py`, with the background and Snap to Grid beside them), written to `user_config`
+  and fanned to every scene like `RenderHints`; a tab opened later wears them.
   Which sockets a node has connected is `marks.ports()` over the drawn edges, derived every
   sync. The toggles' `checked` reads the module and the module calls `context.refresh()` —
   the theme-toggle pattern, deliberately not an edge on the activity node, because a
@@ -433,6 +444,12 @@ root, stop and look for the registry or capability you have not found yet.
   bug — an extent recomputed from the items moved under every node drag, and the canvas
   appeared to pan away under it. A constant cannot. The scroll bars are hidden with it (a
   handle a two-hundredth of its groove says nothing true) and the minimap orients instead.
+  The wheel scrolls and Ctrl+wheel zooms. **Space drags the plane, wherever the press
+  lands** — `PanMode` claims every press and scrolls the hidden bars by the pointer's travel
+  itself, never Qt's `ScrollHandDrag`, which hands a press to the card under it and moved
+  the card while Space was held — **and with Space held the arrows and `hjkl` page it**, a
+  third of the viewport at a time, a tenth with Shift, claimed in the mode so the same keys
+  stop selecting steps while the hand is on the plane.
 - **A painter never trusts `option.palette`.** Qt fills `QStyleOptionGraphicsItem.palette`
   once, when the scene is created, and never refreshes it, so every canvas item kept the
   colours of whatever theme its tab opened in. `items.live_palette()` is the only source of
@@ -591,14 +608,38 @@ root, stop and look for the registry or capability you have not found yet.
   change, so a colour baked into one goes stale; that is the same trap as `option.palette`.
   Every Type toggle carries the glyph its node's medallion wears (`theme/icons.py`'s
   `GLYPH_ICONS` vocabulary), so the Type submenu, the aspect bar and the node agree.
-- **A picked node is lifted, not recoloured.** Selection thickens the border to the accent,
-  *gains* whatever fill the node already had (so a picked milestone is still purple), lifts
-  the card two pixels over a soft shadow — faint, and clipped to the ground around it rather
-  than under it, since the fill is translucent — and claims a Z of its own. The rings
-  composite, so the shadow's alpha buys twice what it looks like. `PAINT_MARGIN` is the one
-  number every decoration is measured against and `boundingRect` is exactly it, **constant
-  whether or not the node is selected**. `ARCHITECTURE.md`'s *A picked node is lifted, not
+- **A picked node is lifted, not recoloured — and every card rests on a shadow.** Selection
+  thickens the border to the accent, *gains* whatever fill the node already had (so a picked
+  milestone is still purple), lifts the card two pixels over a deeper shadow than the faint
+  one every card sits on, and claims a Z of its own. The fill is painted **opaque** —
+  `renderers.over()` blends the tint over the palette's window colour — so nothing under a
+  card shows through it: not the shadow, not the ground's grid, not a region's wash. The
+  rings composite, so a shadow's alpha buys twice what it looks like. `PAINT_MARGIN` is the
+  one number every decoration is measured against and `boundingRect` is exactly it,
+  **constant whether or not the node is selected**; `shape()` is the card and its resize
+  band, never the bounding rect. `ARCHITECTURE.md`'s *A picked node is lifted, not
   recoloured* has the reasoning.
+- **A card's size is the step's, stored beside its position; absence is the default
+  footprint.** Drag an edge or a corner (`NodeResizeMode`; the band is `GRAB_IN` inside the
+  border and `EDGE_REACH` outside it, and `IdleMode` shows the arrows over it) and one
+  `Resize Step` command writes `x, y, w, h`; a move carries the size back in
+  (`write_position(x, y, size)`), a paste keeps it, and every sort and layout spaces by
+  `positions.node_size` and never changes one. Every painter takes the body rect it is
+  handed — nothing measures from `NODE_W` — the title wraps onto as many lines as the card
+  has room for, and the bottom line holds the estimate at the right in full ink and nothing
+  in words: every aspect a card wears is a medallion, a badge, a bar or a pill, never a
+  phrase. `ARCHITECTURE.md`'s *A card's size is the step's* has the reasoning.
+- **The look is one per-user value, and snapping is the gesture's, never the write's.**
+  `project_editor/look.py`: the marks, the background under the graph (plain, dots, lines,
+  crosses — painted by `ground.py`) and *Snap to Grid* are one `Look`, kept under one key,
+  pushed to every canvas by one setter, and read by every toggle in `canvas_verbs.py`; the
+  next preference is a field there, never a third copy of that plumbing. While snapping is
+  on, a drag, a resize, a region and a placed step land on `GRID` through the scene's one
+  `snap()`; what reaches disk is `snapped(value)` — a whole unit, as a float — so a CLI
+  verb stores what it was given and a sort what it computed. The drawn pitch is
+  `pitch_for(zoom)`, a power-of-two multiple of `GRID` kept a readable distance apart on
+  screen, so the ground is always a coarsening of what snaps. `ARCHITECTURE.md`'s *The
+  ground is a preference; snapping belongs to the gesture* has the reasoning.
 - **Derived facts are computed, never stored** — the topological order in
   `domain/ordering.py` is the reference, and `domain/schedule.py` is the same walk carrying
   estimates. Storing one means it can disagree with what it came from, and the CLI is what

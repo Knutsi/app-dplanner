@@ -184,6 +184,9 @@ def test_a_build_without_an_agent_has_no_button_at_all(services, project):
     )
     assert all(card.run_button is None for card in activity.board.ready.cards())
     activity.close()
+    # Built bare, so no tab host will delete the page: a top-level widget left to the
+    # boundary collector dies inside it, which is how a worker segfaulted on this test.
+    activity.widget.deleteLater()
 
 
 def test_the_tab_is_titled_for_its_project_and_follows_a_rename(services, project, tab):

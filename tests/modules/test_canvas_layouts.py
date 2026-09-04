@@ -41,12 +41,12 @@ def test_save_and_read_round_trip():
     assert set(snap.steps) == {step.id for step in project.steps}
 
 
-def test_layout_coordinates_are_snapped_floats():
+def test_layout_coordinates_are_whole_unit_floats():
     """FORMAT.md's numeric rule, one level up: the snapshot stores what a move would."""
     _library, project = build()
-    entry = write_layouts(project, {"P": LayoutSnapshot(steps={"s": (11.0, 3.0)})})
+    entry = write_layouts(project, {"P": LayoutSnapshot(steps={"s": (11.4, 3.0)})})
     stored = entry["layouts"]["P"]["steps"]["s"]
-    assert stored == [8.0, 0.0]
+    assert stored == [11.0, 3.0]
     assert all(isinstance(value, float) for value in stored)
 
 

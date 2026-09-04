@@ -220,8 +220,10 @@ project — `{"runs": [{"id": "R100", "label": "…", "opened": …, "tests": [i
 cannot change meaning when the graph does, and a **missing result reads as pending** — the
 absence rule again, so a run over two hundred tests writes two hundred ids and no statuses.
 `project_editor` is another instance: a position
-beside each step, and the named layouts and regions beside the project
-(`{"layouts": {...}, "regions": [...]}`, coordinates as grid-snapped floats). `feature` is
+beside each step — `{"x": 40.0, "y": 160.0}`, plus `"w"` and `"h"` only for a card somebody
+resized — and the named layouts and regions beside the project (`{"layouts": {...},
+"regions": [...]}`, coordinates as whole-unit floats: a canvas gesture snaps to the grid, a
+write never does). `feature` is
 the fifth: the **catalogue** beside the project — `{"features": [{"id": "f1", "title": "…",
 "description": "…", "source": {"document": "auth-spec", "quote": "…", "page": 4},
 "images": ["assets/<sha16>.png"]}]}`, every key but `id` and `title` omitted when empty —
@@ -297,7 +299,8 @@ the format, the migration pass migrates each shelved entry with its module's own
 files in a module's area are left where they are — they were never undoable, and the
 shelved prose still links them. `dplanner … clear` shelves the same way the toggle does.
 
-**Not every module entry is an aspect.** The graph editor stores each node's position as
+**Not every module entry is an aspect.** The graph editor stores each node's position — and,
+for a card somebody resized, its size, absent for the default footprint — as
 `modules/project_editor.json` beside the step, and it is deliberately *not* an `AspectSpec`:
 an aspect is a fact about the work that an agent may want to write, and a layout is
 presentation. It is per step rather than one map on the project so that moving a node is a
