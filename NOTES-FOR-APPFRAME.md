@@ -1884,12 +1884,3 @@ deleted by `discard_build()` before any collection — the risk is only a bare w
 the collector — and worth a sweep upstream rather than one here.
 
 **Upstream?** Yes: the rule, the reproducer, and the fixture shape.
-
-### `framework/widgets.py` — `install_ctrl_wheel_zoom` removed
-
-**What.** The Ctrl+wheel event filter and its installer are gone. The graph canvas was the
-only caller, and a canvas now zooms on the bare wheel in its own `wheelEvent` — a canvas is
-looked at, not read down, and the plane is moved by holding Space and dragging, or by the
-minimap. No text editor here routes Ctrl+wheel anywhere.
-
-**Upstream?** Only if the template's editors want a Ctrl+wheel zoom; nothing here did.

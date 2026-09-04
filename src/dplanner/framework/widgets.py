@@ -6,8 +6,12 @@ feature would otherwise reimplement slightly differently: a confirmation whose d
 a helper that only one feature uses belongs in that feature.
 """
 
-from PySide6.QtGui import QTextBlockFormat, QTextCursor
+from collections.abc import Callable
+
+from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtGui import QTextBlockFormat, QTextCursor, QWheelEvent
 from PySide6.QtWidgets import (
+    QAbstractScrollArea,
     QHBoxLayout,
     QMessageBox,
     QPlainTextEdit,
@@ -59,3 +63,30 @@ def centered_column(content: QWidget, max_width: int) -> QWidget:
     layout.addWidget(content, stretch=100)
     layout.addStretch(1)
     return wrapper
+
+
+class _CtrlWheelFilter(QObject):
+    def __init__(self, viewport: QWidget, on_steps: Callable[[int], None]) -> None:
+        super().__init__(viewport)
+        self._on_steps = on_steps
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt override
+        if (
+            isinstance(event, QWheelEvent)
+            and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):
+            delta = event.angleDelta().y()
+            if delta:
+                self._on_steps(1 if delta > 0 else -1)
+            return True  # Consumed — also suppresses the editor's built-in zoom.
+        return super().eventFilter(obj, event)
+
+
+def install_ctrl_wheel_zoom(editor: QAbstractScrollArea, on_steps: Callable[[int], None]) -> None:
+    """Route Ctrl+wheel on ``editor`` to ``on_steps(±1)``.
+
+    Wheel events land on the viewport of a scroll area, so the filter lives there; it is
+    parented to the viewport and needs no further bookkeeping.
+    """
+    viewport = editor.viewport()
+    viewport.installEventFilter(_CtrlWheelFilter(viewport, on_steps))
