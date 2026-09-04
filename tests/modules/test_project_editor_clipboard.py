@@ -158,6 +158,19 @@ def test_a_block_keeps_its_arrangement_and_lands_on_the_anchor(library):
     assert read_position(copy_second) == (1240.0, 576.0)
 
 
+def test_a_copy_keeps_the_size_its_original_was_given(library):
+    from dplanner.modules.project_editor.positions import read_size
+
+    first = steps_of(library)[0]
+    library.set_module_data(first.id, "project_editor", write_position(40.0, 40.0, (300.0, 160.0)))
+    command, [copy] = paste(
+        library, library.projects[0].id, clip(library, no_files, (), [first.id]), anchor=None
+    )
+    command.redo(library)
+    assert read_size(copy) == (300.0, 160.0)
+    assert read_position(copy) == below(40.0, 40.0, 160.0)  # One row below a *tall* card.
+
+
 def test_without_an_anchor_each_copy_lands_one_row_below_its_original(library):
     first = steps_of(library)[0]
     first.module_data["project_editor"] = write_position(160.0, 240.0)

@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.model import StepId
 from dplanner.modules.project_editor.marks import Marks
-from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W
+from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.modules.project_editor.renderers import (
     INVALID_TINT,
     PAINT_MARGIN,
@@ -41,6 +41,13 @@ from dplanner.modules.project_editor.selection import EdgeRef
 # How far a press may land from the handle's centre and still mean it.
 HANDLE_GRAB = 12.0
 
+# The resize band round a card's border: this far inside it, and EDGE_REACH outside. A press
+# in the band grabs that edge — both bands at once grab the corner — and a press further in
+# drags the card, the way a window's frame works. EDGE_REACH is also the item's hit shape:
+# the outer half of the band, and the link handle that sticks out of the right edge.
+GRAB_IN = 6.0
+EDGE_REACH = 8.0
+
 # The outline preview's wash: the same faint ink a region's body wears.
 OUTLINE_FILL_ALPHA = 10
 
@@ -48,6 +55,19 @@ OUTLINE_FILL_ALPHA = 10
 # so its shape() is the stroked path at this width — comfortably a target, still narrow
 # enough that two edges through the same gap stay tellable apart.
 EDGE_GRAB = 14.0
+
+
+def snapped_point(scene: object, point: QPointF) -> QPointF:
+    """``point`` on the grid if the scene it is in is snapping, else itself.
+
+    Asked of the scene by duck type, as ``reflow_edges`` is: an item cannot import the
+    scene that imports it, and a scene that has no opinion (a bare ``QGraphicsScene`` in a
+    test) snaps nothing.
+    """
+    snap = getattr(scene, "snap", None)
+    if snap is None:
+        return point
+    return QPointF(snap(point.x()), snap(point.y()))
 
 
 def live_palette(item: QGraphicsItem) -> QPalette:
@@ -63,11 +83,16 @@ def live_palette(item: QGraphicsItem) -> QPalette:
 
 
 class StepNodeItem(QGraphicsItem):
-    """One step. Movable and selectable; Qt does the dragging."""
+    """One step. Movable and selectable; Qt does the dragging.
+
+    Its size is the card's own — pushed by the scene from what the step stored, or the
+    default footprint — and every rect below is measured from it, never from ``NODE_W``.
+    """
 
     def __init__(self, step_id: StepId) -> None:
         super().__init__()
         self.step_id = step_id
+        self._size = (NODE_W, NODE_H)
         self._title = ""
         self._subtitle = ""
         self._link_state = ""
@@ -86,6 +111,20 @@ class StepNodeItem(QGraphicsItem):
         if (title, subtitle) != (self._title, self._subtitle):
             self._title, self._subtitle = title, subtitle
             self.update()
+
+    def set_size(self, w: float, h: float) -> None:
+        """Resize the card. Geometry changes, so Qt is told before the rect moves, and the
+        edges touching it are redrawn — a resize moves their anchors like a drag does."""
+        if (w, h) != self._size:
+            self.prepareGeometryChange()
+            self._size = (w, h)
+            self.update()
+            scene = self.scene()
+            if scene is not None and hasattr(scene, "reflow_edges"):
+                scene.reflow_edges(self.step_id)
+
+    def size(self) -> tuple[float, float]:
+        return self._size
 
     def set_accent(self, accent: NodeAccent) -> None:
         if accent != self._accent:
@@ -127,41 +166,64 @@ class StepNodeItem(QGraphicsItem):
             self._marks = marks
             self.update()
 
+    def body_rect(self) -> QRectF:
+        """The card, in its own coordinates: the rect every painter measures from."""
+        return QRectF(0.0, 0.0, self._size[0], self._size[1])
+
     def handle_scene_pos(self) -> QPointF:
-        return self.mapToScene(QPointF(NODE_W, NODE_H / 2))
+        return self.mapToScene(QPointF(self._size[0], self._size[1] / 2))
 
     def body_scene_rect(self) -> QRectF:
         """The card itself, in scene coordinates — what a lasso has to touch. Not the
         bounding rect, which reaches ``PAINT_MARGIN`` further out on every side."""
-        return self.mapRectToScene(QRectF(0.0, 0.0, NODE_W, NODE_H))
+        return self.mapRectToScene(self.body_rect())
 
     def is_over_handle(self, scene_pos: QPointF) -> bool:
         delta = scene_pos - self.handle_scene_pos()
         return bool(delta.manhattanLength() <= HANDLE_GRAB)
 
+    def edge_at(self, scene_pos: QPointF) -> str:
+        """Which part of the frame a point grabs: "left", "bottom-right", … or "" for the
+        body and for anywhere off the card. The band is ``GRAB_IN`` inside the border and
+        ``EDGE_REACH`` outside it; a point in two bands at once is at a corner."""
+        local = self.mapFromScene(scene_pos)
+        w, h = self._size
+        reach = QRectF(-EDGE_REACH, -EDGE_REACH, w + 2 * EDGE_REACH, h + 2 * EDGE_REACH)
+        if not reach.contains(local):
+            return ""
+        across = "left" if local.x() <= GRAB_IN else "right" if local.x() >= w - GRAB_IN else ""
+        down = "top" if local.y() <= GRAB_IN else "bottom" if local.y() >= h - GRAB_IN else ""
+        return "-".join(part for part in (down, across) if part)
+
     def anchor_toward(self, other: QPointF) -> QPointF:
         """Where an edge should touch this node: the near edge, not the centre."""
-        centre = self.mapToScene(QPointF(NODE_W / 2, NODE_H / 2))
-        return self.mapToScene(QPointF(NODE_W if other.x() >= centre.x() else 0.0, NODE_H / 2))
+        w, h = self._size
+        centre = self.mapToScene(QPointF(w / 2, h / 2))
+        return self.mapToScene(QPointF(w if other.x() >= centre.x() else 0.0, h / 2))
+
+    def shape(self) -> QPainterPath:
+        # What a press, a hover and a rubber band hit: the card and the outer half of its
+        # resize band — not the bounding rect, which reaches PAINT_MARGIN further out to
+        # hold the shadow and the stat line, and would make empty canvas beside a card
+        # select it.
+        path = QPainterPath()
+        path.addRect(self.body_rect().adjusted(-EDGE_REACH, -EDGE_REACH, EDGE_REACH, EDGE_REACH))
+        return path
 
     def boundingRect(self) -> QRectF:  # noqa: N802 - Qt override
         # Constant, whatever the accent or the selection: PAINT_MARGIN is the furthest any
         # decoration reaches out of the body, worked out where they are drawn. Constant
         # matters — a rect that grew on selection would invalidate the wrong region and
         # leave the shadow behind when the selection moved on.
-        return QRectF(
-            -PAINT_MARGIN,
-            -PAINT_MARGIN,
-            NODE_W + 2 * PAINT_MARGIN,
-            NODE_H + 2 * PAINT_MARGIN,
-        )
+        return self.body_rect().adjusted(-PAINT_MARGIN, -PAINT_MARGIN, PAINT_MARGIN, PAINT_MARGIN)
 
     def itemChange(self, change: object, value: object) -> object:  # noqa: N802 - Qt override
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and isinstance(
             value, QPointF
         ):
-            # Snap while dragging, so what the user sees is what gets stored.
-            return QPointF(round(value.x() / GRID) * GRID, round(value.y() / GRID) * GRID)
+            # Snap while dragging, so what the user sees is what gets stored. Whether to
+            # is the scene's to say: it holds the user's Snap to Grid setting.
+            return snapped_point(self.scene(), value)
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             # A lifted node sits over its neighbours, shadow and all. Nodes are all at 0
             # otherwise, where the stacking order is whichever sync happened to add last.
@@ -182,6 +244,7 @@ class StepNodeItem(QGraphicsItem):
         paint_node(
             painter,
             live_palette(self),
+            self.body_rect(),
             self._title,
             self._subtitle,
             self._accent,

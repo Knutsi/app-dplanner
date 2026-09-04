@@ -96,9 +96,7 @@ def test_a_done_feature_reads_finished(services, project, tab):
 
 def test_an_estimate_is_the_steps_stat_not_subtitle_text(services, project, tab):
     step = project.steps[0]
-    services.undo.push(
-        SetModuleDataCommand(step.id, "estimation", {"days": 3.0, "format": 1})
-    )
+    services.undo.push(SetModuleDataCommand(step.id, "estimation", {"days": 3.0, "format": 1}))
     accent = node(tab, step)._accent
     assert accent.stat_text == "3d"
     assert accent.stat_strong is False
@@ -120,9 +118,7 @@ def test_a_release_stat_is_the_accumulated_days_and_date(services, project, tab)
 def test_in_progress_gets_a_busy_bar_and_leaves_the_subtitle(services, project, tab):
     """The bar wears the status now, so the subtitle must not say it again."""
     step = project.steps[0]
-    services.undo.push(
-        SetModuleDataCommand(step.id, status.MODULE_ID, status.write("in-progress"))
-    )
+    services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("in-progress")))
     accent = node(tab, step)._accent
     assert accent.bar_tone == "busy"
     assert accent.muted is False
@@ -153,9 +149,7 @@ def test_an_instructed_step_wears_the_spark_medallion(services, project, tab):
 )
 def test_agent_run_states_become_chips(services, project, tab, state, chip_text, chip_tone):
     step = project.steps[0]
-    services.undo.push(
-        SetModuleDataCommand(step.id, agent_run.MODULE_ID, agent_run.write(state))
-    )
+    services.undo.push(SetModuleDataCommand(step.id, agent_run.MODULE_ID, agent_run.write(state)))
     accent = node(tab, step)._accent
     assert (accent.chip_text, accent.chip_tone) == (chip_text, chip_tone)
 
@@ -210,7 +204,8 @@ def test_the_ring_is_painted_outside_the_body_and_moves_with_the_phase(app):
         image.fill(0)
         painter = QPainter(image)
         painter.translate(margin, margin)
-        paint_node(painter, QPalette(), "T", "", accent, NodeState(ring_phase=phase))
+        body = QRectF(0, 0, NODE_W, NODE_H)
+        paint_node(painter, QPalette(), body, "T", "", accent, NodeState(ring_phase=phase))
         painter.end()
         row = int(-RING_GAP) + margin
         columns = range(margin + 20, margin + int(NODE_W) - 20)

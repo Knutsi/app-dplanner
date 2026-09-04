@@ -11,7 +11,8 @@ already uses.
 as an edge on the activity node, so a mode button's ``checked`` is a pure function of the
 context. A mark is a per-user preference that outlives any tab, so its ``checked`` reads the
 module's value and the module asks the context to refresh when it changes — the same shape
-the theme and panel toggles use, deliberately not a second thing published per tab.
+the theme and panel toggles use, deliberately not a second thing published per tab. The
+ground — Snap to Grid and the Background submenu — is a mark in that sense too.
 
 Both families are ``ActionSpec``s, and that is the point of putting these here at all. The
 canvas keymap binds keys to action ids, so a movement key runs the same object the menu and
@@ -39,6 +40,7 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.context import Context
+from dplanner.modules.project_editor.grid import BACKGROUNDS, Ground
 from dplanner.modules.project_editor.marks import MARK_NAMES, Marks
 from dplanner.modules.project_editor.modes import CONNECT, LASSO, mode_uri
 from dplanner.modules.project_editor.placement import positions
@@ -72,6 +74,9 @@ class CanvasVerbs:
     # The user's marks, and the switch for one of them by name (marks.MARK_NAMES).
     marks: Callable[[], Marks]
     set_mark: Callable[[str, bool], None]
+    # The user's ground — background and snapping — and the setter for the whole value.
+    ground: Callable[[], Ground]
+    set_ground: Callable[[Ground], None]
 
     def register_into(self, actions: ActionRegistry) -> None:
         for spec in self._specs():
@@ -176,6 +181,31 @@ class CanvasVerbs:
                     )
                 )
             ],
+            ActionSpec(
+                id="canvas.snap",
+                label="Snap to &Grid",
+                menu="View",
+                group="canvas",
+                # After the Mark submenu: the ground's two entries close the canvas group.
+                order=90,
+                tip="Land a dragged, resized or newly placed card on the grid",
+                state=self._snap_state,
+                run=self._snap_toggle,
+            ),
+            *[
+                ActionSpec(
+                    id=f"canvas.ground_{name}",
+                    label=label,
+                    menu="View",
+                    group="canvas",
+                    submenu="Background",
+                    order=100 + 10 * index,
+                    tip=tip,
+                    state=self._ground_state(name),
+                    run=self._ground_pick(name),
+                )
+                for index, (name, (label, tip)) in enumerate(BACKGROUNDS.items())
+            ],
         ]
 
     # -- state ---------------------------------------------------------------------------------
@@ -215,6 +245,26 @@ class CanvasVerbs:
     def _mark_toggle(self, name: str) -> Callable[[Context], None]:
         def run(_context: Context) -> None:
             self.set_mark(name, not self.marks().is_on(name))
+
+        return run
+
+    def _snap_state(self, _context: Context) -> ActionState:
+        return ActionState(checked=self.ground().snap)
+
+    def _snap_toggle(self, _context: Context) -> None:
+        self.set_ground(self.ground().with_snap(not self.ground().snap))
+
+    def _ground_state(self, name: str) -> Callable[[Context], ActionState]:
+        """One choice of several, so exactly one entry is checked — the theme menu's shape."""
+
+        def state(_context: Context) -> ActionState:
+            return ActionState(checked=self.ground().background == name)
+
+        return state
+
+    def _ground_pick(self, name: str) -> Callable[[Context], None]:
+        def run(_context: Context) -> None:
+            self.set_ground(self.ground().with_background(name))
 
         return run
 

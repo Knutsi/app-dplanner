@@ -9,6 +9,10 @@ The vocabulary is the canvas's own. :class:`NodeAccent` never names an aspect ("
 "merged") — the composition root translates aspects into tones and texts, the same seam
 ``step_aspects`` uses for the subtitle. :class:`RenderHints` is the mode's voice: the mode
 stack announces, the scene fans out, and no item ever reads which mode is current.
+
+**The body is handed in, never assumed.** A card is whatever size the user made it, so
+every helper measures from the ``body`` rect it is given and the only fixed numbers here
+are paddings, radii and the reach of the decorations round the edge.
 """
 
 from dataclasses import dataclass, field
@@ -26,7 +30,6 @@ from PySide6.QtGui import (
 )
 
 from dplanner.modules.project_editor.marks import Marks
-from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.theme.icons import (
     paint_beaker_glyph,
     paint_layers_glyph,
@@ -48,22 +51,40 @@ RADIUS = 8.0  # = theme.tokens.RADIUS_MD, matched by eye rather than import: thi
 PADDING = 12.0
 LINE_GAP = 4.0
 
-# A selected node is *lifted*: it draws this far up from where it sits, over a soft shadow
+# The title is the card's reason to exist, so it is set larger than the chrome around it —
+# this many points over the application font — and wraps onto as many lines as the card
+# has room for above its detail line; only the last one elides.
+TITLE_POINTS = 2.0
+
+# A selected node is *lifted*: it draws this far up from where it sits, over a deeper shadow
 # left behind at the seat. Two pixels is the whole effect — enough that the eye reads a card
 # picked up off the table, small enough that nothing appears to have moved. The edges still
 # meet the seat, which is what keeps the graph from twitching as the selection travels.
 LIFT = 2.0
-# The shadow under it: concentric rounded rects, each fainter and wider than the last, since
-# a QPainter has no blur. Constant black at low alpha, like every other semantic tint here
-# (DESIGN.md exception #2) — it darkens the ground under the card on any theme.
+
+
+@dataclass(frozen=True)
+class Shadow:
+    """A soft shadow: concentric rounded rects, each fainter and wider than the last, since
+    a QPainter has no blur. Constant black at low alpha, like every other semantic tint
+    here (DESIGN.md exception #2) — it darkens the ground under the card on any theme.
+
+    ``alpha`` is the innermost ring's; the outer ones fade from it, and the rings
+    composite, so what lands at the card's edge is roughly twice this."""
+
+    drop: float  # How far below the seat the shadow falls.
+    spread: float  # How far the softest ring reaches past the body.
+    alpha: int
+
+
 SHADOW_LAYERS = 4
-SHADOW_SPREAD = 5.0  # How far the softest ring reaches past the body.
-SHADOW_DROP = 4.0  # How far below the seat the shadow falls.
-# The innermost ring's alpha; the outer ones fade from it, and the rings composite, so what
-# lands under the card is roughly twice this. Kept faint on purpose: the border and the
-# deepened fill are what say "this one", and the shadow only has to lift the card off the
-# table. At 30 it read as a hole punched in a light theme's paper.
-SHADOW_ALPHA = 12
+# Every card rests on a faint shadow, so the graph reads as cards on a table rather than
+# outlines on a plane; a selected card's is deeper and wider, which with the lift is what
+# says "this one is up". Both kept faint on purpose: the border and the fill are what
+# identify a card, and the shadow only has to seat it. At 30 the lifted one read as a hole
+# punched in a light theme's paper.
+RESTING_SHADOW = Shadow(drop=2.0, spread=3.0, alpha=6)
+LIFTED_SHADOW = Shadow(drop=4.0, spread=5.0, alpha=12)
 
 # The link handle: a dot on the node's right edge. Dragging from it means "then", so an
 # edge always runs left to right and its direction cannot be read the wrong way round.
@@ -144,10 +165,19 @@ PILL_FILL_ALPHA = 46
 GLYPH_SIZE = 9.0
 GLYPH_GAP = 5.0
 
+# The stat — the one number a step answers with, its estimate — is written *under* the card,
+# right-aligned to its edge, like a caption: a number inside the body competed with the
+# title for the same corner, and a number under the card reads at a glance as the card's
+# size in time. STAT_GAP is the air between the border and the text; STAT_ROOM is what the
+# item reserves below the body for it, and is deliberately a constant rather than a font
+# metric, since the bounding rect must not change with the font the painter arrives with.
+STAT_GAP = 5.0
+STAT_ROOM = 24.0
+
 # How far paint reaches outside the body, in every direction: the link handle (grown by
-# connect mode's emphasis), a badge's or a medallion's rise, a chip's fall, the lift, and the
-# shadow. It is what ``StepNodeItem.boundingRect`` is made of, so a new decoration is measured
-# here or it is clipped there.
+# connect mode's emphasis), a badge's or a medallion's rise, a chip's fall, the lift, the
+# shadow, and the stat line under the card. It is what ``StepNodeItem.boundingRect`` is made
+# of, so a new decoration is measured here or it is clipped there.
 PAINT_MARGIN = max(
     HANDLE_R + 4.0,
     MARK_R + 1.0,
@@ -155,7 +185,8 @@ PAINT_MARGIN = max(
     ICON_D / 2 + 1.0 + LIFT,
     CHIP_H / 2 + 1.0,
     RING_GAP + RING_W + 1.0 + LIFT,
-    SHADOW_DROP + SHADOW_SPREAD + 1.0,
+    LIFTED_SHADOW.drop + LIFTED_SHADOW.spread + 1.0,
+    STAT_ROOM + 1.0,
 )
 
 BAR_TONES = {"good": VALID_TINT, "busy": BUSY_TINT, "bad": INVALID_TINT}
@@ -193,8 +224,8 @@ class NodeAccent:
     # machine guidance here), "beaker" (this step keeps tests), "shield" (a check: it
     # stands for everything behind it passing).
     icons: tuple[str, ...] = ()
-    stat_text: str = ""  # The one number a step answers with — full ink, never faded.
-    stat_strong: bool = False  # Bold the stat: this node's number is the point of it.
+    stat_text: str = ""  # The one number a step answers with, written under the card.
+    stat_strong: bool = False  # Bold the stat, in full ink: this node's number is the point.
 
 
 @dataclass(frozen=True)
@@ -228,27 +259,29 @@ class NodeState:
 def paint_node(
     painter: QPainter,
     palette: QPalette,
+    body: QRectF,
     title: str,
     subtitle: str,
     accent: NodeAccent,
     state: NodeState,
 ) -> None:
-    """The default node: body, two text lines, edge decorations, and the link handle.
+    """The default node: body, title over a detail line, edge decorations, the link handle,
+    and the stat under the card.
 
-    A selected node is drawn :data:`LIFT` above its seat with a shadow left at it, so the
-    whole composition — badge, chip, medallions, handle — travels together. The shadow is
-    painted first and *unlifted*: it is the ground, not part of the card.
+    Every card rests on a shadow; a selected one is drawn :data:`LIFT` above its seat over
+    a deeper shadow, so the whole composition — badge, chip, medallions, handle, stat —
+    travels together. The shadow is painted first and *unlifted*: it is the ground, not
+    part of the card.
     """
-    body = QRectF(0, 0, NODE_W, NODE_H)
     text_colour = QColor(palette.text().color())
     if accent.muted:
         text_colour.setAlpha(MUTED_TEXT_ALPHA)
     faded = QColor(palette.text().color())
     faded.setAlpha(MUTED_SECONDARY_ALPHA if accent.muted else SECONDARY_ALPHA)
 
+    paint_shadow(painter, body, LIFTED_SHADOW if state.selected else RESTING_SHADOW)
+    painter.save()
     if state.selected:
-        paint_shadow(painter, body)
-        painter.save()
         painter.translate(0.0, -LIFT)
 
     paint_body(painter, palette, body, accent, state)
@@ -256,50 +289,57 @@ def paint_node(
     if accent.chip_text:
         paint_ring(painter, body, accent.chip_tone, state.ring_phase)
     inner = body.adjusted(PADDING, PADDING, -PADDING, -PADDING)
-    paint_title(painter, inner, title, text_colour, accent.muted)
-    paint_detail_line(painter, inner, subtitle, accent, text_colour, faded)
+    detail = bool(subtitle or accent.pill_text or accent.branch)
+    reserved = painter.fontMetrics().height() + LINE_GAP if detail else 0.0
+    paint_title(painter, inner, title, text_colour, accent.muted, reserved)
+    if detail:
+        paint_detail_line(painter, inner, subtitle, accent, text_colour, faded)
     paint_icon_medallions(painter, palette, accent.icons)
     if accent.badge:
-        paint_badge(
-            painter, palette, accent.badge, NODE_W - BADGE_INSET - medallion_end(accent.icons)
-        )
+        paint_badge(painter, palette, body, accent.badge, medallion_end(accent.icons))
     if accent.chip_text:
-        paint_chip(painter, palette, accent.chip_text, accent.chip_tone)
-    paint_handle(painter, palette, state)
-    if state.selected:
-        painter.restore()
+        paint_chip(painter, palette, body, accent.chip_text, accent.chip_tone)
+    if accent.stat_text:
+        paint_stat(painter, body, accent, text_colour, faded)
+    paint_handle(painter, palette, body, state)
+    painter.restore()
 
 
-def paint_shadow(painter: QPainter, body: QRectF) -> None:
-    """The soft dark ground a lifted node casts: rings of black, each wider and fainter.
+def paint_shadow(painter: QPainter, body: QRectF, shadow: Shadow) -> None:
+    """The soft dark ground a card casts: rings of black, each wider and fainter.
 
-    Widest first so the tight, darkest ring lands on top; a QPainter has no blur, and four
-    rings at these alphas are indistinguishable from one at the sizes a node is drawn.
-
-    **Clipped to the ground around the card**, because a node's fill is translucent: rings
-    left under it would darken the fill itself and a selected step would read as a hole
-    rather than as a card off the table.
+    Widest first so the tight, darkest ring lands on top; at the sizes a node is drawn,
+    four rings at these alphas are indistinguishable from one blurred one. The body's fill
+    is opaque (see :func:`paint_body`), so nothing painted here shows through the card.
     """
-    card = QPainterPath()
-    card.addRoundedRect(body.translated(0.0, -LIFT), RADIUS, RADIUS)
-    ground = QPainterPath()
-    ground.addRect(
-        body.adjusted(
-            -SHADOW_SPREAD, -SHADOW_SPREAD - LIFT, SHADOW_SPREAD, SHADOW_SPREAD + SHADOW_DROP
-        )
-    )
     painter.save()
-    painter.setClipPath(ground.subtracted(card))
     painter.setPen(Qt.PenStyle.NoPen)
     for layer in range(SHADOW_LAYERS, 0, -1):
-        spread = SHADOW_SPREAD * layer / SHADOW_LAYERS
-        painter.setBrush(QColor(0, 0, 0, round(SHADOW_ALPHA / layer)))
+        spread = shadow.spread * layer / SHADOW_LAYERS
+        painter.setBrush(QColor(0, 0, 0, round(shadow.alpha / layer)))
         painter.drawRoundedRect(
-            body.adjusted(-spread, -spread + SHADOW_DROP, spread, spread + SHADOW_DROP),
+            body.adjusted(-spread, -spread + shadow.drop, spread, spread + shadow.drop),
             RADIUS + spread,
             RADIUS + spread,
         )
     painter.restore()
+
+
+def over(ground: QColor, ink: QColor) -> QColor:
+    """``ink`` composited over ``ground`` — the opaque colour a translucent tint lands as.
+
+    A card's fill is *designed* as ink over the canvas (``FILL_ALPHA``, a kind's tone), but
+    it is painted opaque: the ground under a card is a grid, a region's wash or a
+    neighbour's shadow, and a card that lets any of those show through reads as a stain
+    rather than a card. Blending here gives exactly the colour the tint would have had
+    over bare canvas, on any theme, with nothing underneath able to change it.
+    """
+    share = ink.alphaF()
+    return QColor(
+        round(ground.red() * (1 - share) + ink.red() * share),
+        round(ground.green() * (1 - share) + ink.green() * share),
+        round(ground.blue() * (1 - share) + ink.blue() * share),
+    )
 
 
 def paint_body(
@@ -316,10 +356,10 @@ def paint_body(
     muted = accent.muted
     toned = BODY_TONES.get(accent.body_tone)
     if toned is not None:
-        fill = QColor(toned[0])
+        tint = QColor(toned[0])
     else:
-        fill = QColor(palette.text().color())
-        fill.setAlpha(MUTED_FILL_ALPHA if muted else FILL_ALPHA)
+        tint = QColor(palette.text().color())
+        tint.setAlpha(MUTED_FILL_ALPHA if muted else FILL_ALPHA)
     border = QColor(palette.highlight().color())
     width = SELECTED_BORDER_W if state.selected else (2.0 if state.link_state else 1.0)
     if state.link_state == "valid":
@@ -334,9 +374,9 @@ def paint_body(
             border = QColor(palette.text().color())
             border.setAlpha(MUTED_BORDER_ALPHA if muted else 90)
     if state.selected:
-        fill.setAlpha(min(255, round(fill.alpha() * SELECTED_FILL_GAIN)))
+        tint.setAlpha(min(255, round(tint.alpha() * SELECTED_FILL_GAIN)))
     painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(fill)
+    painter.setBrush(over(palette.window().color(), tint))
     painter.drawRoundedRect(body, RADIUS, RADIUS)
     painter.setBrush(Qt.BrushStyle.NoBrush)
     painter.setPen(QPen(border, width))
@@ -378,30 +418,57 @@ def paint_status_bar(painter: QPainter, body: QRectF, tone: str) -> None:
     painter.restore()
 
 
-def title_lines(metrics: QFontMetrics | QFontMetricsF, title: str, width: float) -> list[str]:
-    """The title wrapped onto at most two lines, the second elided.
+def title_font(base: QFont) -> QFont:
+    """The card's title face: the painter's font, :data:`TITLE_POINTS` larger."""
+    font = QFont(base)
+    if font.pointSizeF() > 0:
+        font.setPointSizeF(font.pointSizeF() + TITLE_POINTS)
+    else:  # A pixel-sized font has no point size to grow; a point is about 1.33 px.
+        font.setPixelSize(font.pixelSize() + round(TITLE_POINTS * 4 / 3))
+    return font
+
+
+def title_lines(
+    metrics: QFontMetrics | QFontMetricsF, title: str, width: float, max_lines: int = 2
+) -> list[str]:
+    """The title wrapped onto at most ``max_lines`` lines, the last one elided.
 
     Word-accumulation, so a name breaks where a person would break it; a single word too
     wide for a line is left to the elision. Pure, so it can be tested without a painter.
     """
     if metrics.horizontalAdvance(title) <= width:
         return [title]
+    lines: list[str] = []
+    line = ""
     words = title.split()
-    first = ""
     for index, word in enumerate(words):
-        attempt = f"{first} {word}".strip()
-        if first and metrics.horizontalAdvance(attempt) > width:
-            rest = " ".join(words[index:])
-            return [first, metrics.elidedText(rest, Qt.TextElideMode.ElideRight, int(width))]
-        first = attempt
-    return [metrics.elidedText(title, Qt.TextElideMode.ElideRight, int(width))]
+        attempt = f"{line} {word}".strip()
+        if line and metrics.horizontalAdvance(attempt) > width:
+            if len(lines) == max_lines - 1:
+                rest = " ".join([line, *words[index:]])
+                return [*lines, metrics.elidedText(rest, Qt.TextElideMode.ElideRight, int(width))]
+            lines.append(line)
+            line = word
+        else:
+            line = attempt
+    return [*lines, metrics.elidedText(line, Qt.TextElideMode.ElideRight, int(width))]
 
 
 def paint_title(
-    painter: QPainter, inner: QRectF, title: str, text_colour: QColor, muted: bool
+    painter: QPainter,
+    inner: QRectF,
+    title: str,
+    text_colour: QColor,
+    muted: bool,
+    reserved: float,
 ) -> None:
-    """Up to two lines of name, so most steps read in full."""
+    """The name, in the title face, on as many lines as fit above the ``reserved`` height
+    the detail line keeps for itself — so a card dragged taller shows more of a long name,
+    and most names read in full at the default size."""
+    base = painter.font()
+    painter.setFont(title_font(base))
     metrics = painter.fontMetrics()
+    max_lines = max(1, int((inner.height() - reserved) // metrics.height()))
     title_left = inner.left()
     painter.setPen(text_colour)
     if muted:
@@ -414,12 +481,13 @@ def paint_title(
         )
         title_left += metrics.horizontalAdvance(check + " ")
     width = inner.right() - title_left
-    for row, line in enumerate(title_lines(metrics, title, width)):
+    for row, line in enumerate(title_lines(metrics, title, width, max_lines)):
         painter.drawText(
             QRectF(title_left, inner.top() + row * metrics.height(), width, metrics.height()),
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
             line,
         )
+    painter.setFont(base)
 
 
 def paint_detail_line(
@@ -430,20 +498,13 @@ def paint_detail_line(
     text_colour: QColor,
     faded: QColor,
 ) -> None:
-    """The bottom line: subtitle on the left; stat, pill and branch glyph right-aligned.
+    """The bottom line: subtitle on the left; pill and branch glyph right-aligned.
 
-    Anchored to the node's bottom, so a one-line title just leaves air above it. The
-    decorations take their width first so the subtitle's elision stays honest, and the
-    stat — the one number the step answers with — is the rightmost and the only full-ink
-    text on the line.
+    Anchored to the node's bottom, so a short title just leaves air above it. The
+    decorations take their width first so the subtitle's elision stays honest.
     """
     metrics = painter.fontMetrics()
     line_top = inner.bottom() - metrics.height()
-    stat_font = QFont(painter.font())
-    stat_font.setBold(accent.stat_strong)
-    stat_w = (
-        QFontMetricsF(stat_font).horizontalAdvance(accent.stat_text) if accent.stat_text else 0.0
-    )
     pill_font = QFont(painter.font())
     pill_font.setPointSizeF(max(6.0, pill_font.pointSizeF() - 1))
     pill_w = (
@@ -452,7 +513,7 @@ def paint_detail_line(
         else 0.0
     )
     glyph_w = GLYPH_SIZE if accent.branch else 0.0
-    parts = [w for w in (stat_w, pill_w, glyph_w) if w]
+    parts = [w for w in (pill_w, glyph_w) if w]
     reserved = sum(parts) + GLYPH_GAP * max(0, len(parts) - 1) + (PILL_MARGIN if parts else 0.0)
 
     if subtitle:
@@ -464,17 +525,6 @@ def paint_detail_line(
             metrics.elidedText(subtitle, Qt.TextElideMode.ElideRight, int(width)),
         )
     right = inner.right()
-    if stat_w:
-        painter.save()
-        painter.setFont(stat_font)
-        painter.setPen(text_colour)
-        painter.drawText(
-            QRectF(right - stat_w, line_top, stat_w, metrics.height()),
-            int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
-            accent.stat_text,
-        )
-        painter.restore()
-        right -= stat_w + GLYPH_GAP
     if pill_w:
         pill = QRectF(right - pill_w, line_top + (metrics.height() - PILL_H) / 2, pill_w, PILL_H)
         tone = {"good": VALID_TINT, "bad": INVALID_TINT}.get(accent.pill_tone)
@@ -496,25 +546,52 @@ def paint_detail_line(
         )
 
 
-def paint_badge(painter: QPainter, palette: QPalette, text: str, room: float) -> None:
+def paint_stat(
+    painter: QPainter, body: QRectF, accent: NodeAccent, text_colour: QColor, faded: QColor
+) -> None:
+    """The stat under the card, right-aligned to its edge — a caption rather than content.
+
+    Secondary ink for a plain step's estimate, so a graph of numbers stays a graph of
+    names; full ink and bold for a node whose number is the point of it (a milestone's
+    accumulated days and date).
+    """
+    painter.save()
+    font = QFont(painter.font())
+    font.setBold(accent.stat_strong)
+    painter.setFont(font)
+    metrics = painter.fontMetrics()
+    painter.setPen(text_colour if accent.stat_strong else faded)
+    painter.drawText(
+        QRectF(body.left(), body.bottom() + STAT_GAP, body.width(), metrics.height()),
+        int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop),
+        accent.stat_text,
+    )
+    painter.restore()
+
+
+def paint_badge(painter: QPainter, palette: QPalette, body: QRectF, text: str, room: float) -> None:
     """A pill on the top edge, right end: the milestone label, sitting on the border.
 
     It rises half its height above the node, which is why it must stay inside the item's
     ``PAINT_MARGIN`` — and the chip on the bottom edge owes the same inequality.
 
-    ``room`` is what the medallion row on the other end of the edge leaves it. The label is
-    elided to whichever is less, that or the fraction of the node a badge may claim: a step
-    wearing every aspect and a long milestone name has to give way somewhere, and it is the
-    name that can be read from the panel.
+    ``room`` is where the medallion row on the other end of the edge leaves off. The label
+    is elided to whichever is less, what is left of the edge or the fraction of the node a
+    badge may claim: a step wearing every aspect and a long milestone name has to give way
+    somewhere, and it is the name that can be read from the panel. A card too narrow to
+    give the label any room at all wears no badge rather than an empty pill.
     """
+    budget = int(min(body.width() * 0.6, body.width() - BADGE_INSET - room))
+    if budget <= 0:
+        return
     font = painter.font()
     small = painter.font()
     small.setPointSizeF(max(6.0, font.pointSizeF() - 2.0))
     painter.setFont(small)
     metrics = painter.fontMetrics()
-    shown = metrics.elidedText(text, Qt.TextElideMode.ElideRight, int(min(NODE_W * 0.6, room)))
+    shown = metrics.elidedText(text, Qt.TextElideMode.ElideRight, budget)
     width = metrics.horizontalAdvance(shown) + 2 * BADGE_PAD
-    pill = QRectF(NODE_W - BADGE_INSET - width, -BADGE_H / 2, width, BADGE_H)
+    pill = QRectF(body.right() - BADGE_INSET - width, -BADGE_H / 2, width, BADGE_H)
     painter.setBrush(BADGE_TINT)
     painter.setPen(QPen(BADGE_BORDER, 1.0))
     painter.drawRoundedRect(pill, BADGE_H / 2, BADGE_H / 2)
@@ -540,16 +617,16 @@ def paint_ring(painter: QPainter, body: QRectF, tone: str, phase: float) -> None
     painter.drawRoundedRect(ring, RADIUS + RING_GAP, RADIUS + RING_GAP)
 
 
-def paint_chip(painter: QPainter, palette: QPalette, text: str, tone: str) -> None:
+def paint_chip(painter: QPainter, palette: QPalette, body: QRectF, text: str, tone: str) -> None:
     """A pill on the bottom edge, left end: the badge's mirror, worn by a live agent run."""
     font = painter.font()
     small = painter.font()
     small.setPointSizeF(max(6.0, font.pointSizeF() - 2.0))
     painter.setFont(small)
     metrics = painter.fontMetrics()
-    shown = metrics.elidedText(text, Qt.TextElideMode.ElideRight, int(NODE_W * 0.5))
+    shown = metrics.elidedText(text, Qt.TextElideMode.ElideRight, int(body.width() * 0.5))
     width = metrics.horizontalAdvance(shown) + 2 * BADGE_PAD
-    pill = QRectF(BADGE_INSET, NODE_H - CHIP_H / 2, width, CHIP_H)
+    pill = QRectF(BADGE_INSET, body.bottom() - CHIP_H / 2, width, CHIP_H)
     ink = QColor(palette.text().color())
     faded_ink = QColor(ink)
     faded_ink.setAlpha(SECONDARY_ALPHA)
@@ -600,7 +677,7 @@ def paint_icon_medallions(painter: QPainter, palette: QPalette, icons: tuple[str
         x += ICON_D + ICON_GAP
 
 
-def paint_handle(painter: QPainter, palette: QPalette, state: NodeState) -> None:
+def paint_handle(painter: QPainter, palette: QPalette, body: QRectF, state: NodeState) -> None:
     """The link dot on the right edge — what the hints say the mode wants of it.
 
     "hidden" paints none, whatever the cursor does. "hover" (idle) paints the hovered
@@ -610,7 +687,7 @@ def paint_handle(painter: QPainter, palette: QPalette, state: NodeState) -> None
     hints = state.hints
     if hints.handles == "hidden":
         return
-    centre = QPointF(NODE_W, NODE_H / 2)
+    centre = QPointF(body.right(), body.center().y())
     active = state.hovered or bool(state.link_state)
     if active:
         painter.setBrush(QColor(palette.highlight().color()))

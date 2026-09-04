@@ -591,14 +591,36 @@ root, stop and look for the registry or capability you have not found yet.
   change, so a colour baked into one goes stale; that is the same trap as `option.palette`.
   Every Type toggle carries the glyph its node's medallion wears (`theme/icons.py`'s
   `GLYPH_ICONS` vocabulary), so the Type submenu, the aspect bar and the node agree.
-- **A picked node is lifted, not recoloured.** Selection thickens the border to the accent,
-  *gains* whatever fill the node already had (so a picked milestone is still purple), lifts
-  the card two pixels over a soft shadow — faint, and clipped to the ground around it rather
-  than under it, since the fill is translucent — and claims a Z of its own. The rings
-  composite, so the shadow's alpha buys twice what it looks like. `PAINT_MARGIN` is the one
-  number every decoration is measured against and `boundingRect` is exactly it, **constant
-  whether or not the node is selected**. `ARCHITECTURE.md`'s *A picked node is lifted, not
+- **A picked node is lifted, not recoloured — and every card rests on a shadow.** Selection
+  thickens the border to the accent, *gains* whatever fill the node already had (so a picked
+  milestone is still purple), lifts the card two pixels over a deeper shadow than the faint
+  one every card sits on, and claims a Z of its own. The fill is painted **opaque** —
+  `renderers.over()` blends the tint over the palette's window colour — so nothing under a
+  card shows through it: not the shadow, not the ground's grid, not a region's wash. The
+  rings composite, so a shadow's alpha buys twice what it looks like. `PAINT_MARGIN` is the
+  one number every decoration is measured against and `boundingRect` is exactly it,
+  **constant whether or not the node is selected**; `shape()` is the card and its resize
+  band, never the bounding rect. `ARCHITECTURE.md`'s *A picked node is lifted, not
   recoloured* has the reasoning.
+- **A card's size is the step's, stored beside its position; absence is the default
+  footprint.** Drag an edge or a corner (`NodeResizeMode`; the band is `GRAB_IN` inside the
+  border and `EDGE_REACH` outside it, and `IdleMode` shows the arrows over it) and one
+  `Resize Step` command writes `x, y, w, h`; a move carries the size back in
+  (`write_position(x, y, size)`), a paste keeps it, and every sort and layout spaces by
+  `positions.node_size` and never changes one. Every painter takes the body rect it is
+  handed — nothing measures from `NODE_W` — the title wraps onto as many lines as the card
+  has room for, and the estimate is written *under* the card as its caption.
+  `ARCHITECTURE.md`'s *A card's size is the step's* has the reasoning.
+- **The ground is a way of looking, and snapping is the gesture's, never the write's.**
+  `project_editor/grid.py`: the background under the graph (plain, dots, lines, crosses) and
+  *Snap to Grid* are one per-user `Ground` value, kept and fanned out exactly like the marks
+  (View ▸ Background, View ▸ Snap to Grid). While snapping is on, a drag, a resize, a
+  region and a placed step land on `GRID` through the scene's one `snap()`; what reaches
+  disk is `snapped(value)` — a whole unit, as a float — so a CLI verb stores what it was
+  given and a sort what it computed. The drawn pitch is `pitch_for(zoom)`, a power-of-two
+  multiple of `GRID` kept a readable distance apart on screen, so the ground is always a
+  coarsening of what snaps. `ARCHITECTURE.md`'s *The ground is a preference; snapping
+  belongs to the gesture* has the reasoning.
 - **Derived facts are computed, never stored** — the topological order in
   `domain/ordering.py` is the reference, and `domain/schedule.py` is the same walk carrying
   estimates. Storing one means it can disagree with what it came from, and the CLI is what

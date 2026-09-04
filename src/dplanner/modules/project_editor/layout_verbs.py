@@ -253,10 +253,10 @@ class LayoutVerbs:
 
     # -- the sorts -----------------------------------------------------------------------------
 
-    def _run_sort(self, label: str, placed: dict[StepId, Point]) -> None:
+    def _run_sort(self, project: Project, label: str, placed: dict[StepId, Point]) -> None:
         if not placed:
             return
-        self.undo.push(CompositeCommand(label, position_commands(placed, label)))
+        self.undo.push(CompositeCommand(label, position_commands(project, placed, label)))
         self.undo.break_coalescing()
         self.status(f"Sorted: {label}")
 
@@ -264,26 +264,26 @@ class LayoutVerbs:
         project = self._project()
         if project is None:
             return
-        self._run_sort("Layered Flow", layered_flow(self.library, project))
+        self._run_sort(project, "Layered Flow", layered_flow(self.library, project))
 
     def _sort_down(self, _context: Context) -> None:
         project = self._project()
         if project is None:
             return
-        self._run_sort("Layered Down", layered_down(self.library, project))
+        self._run_sort(project, "Layered Down", layered_down(self.library, project))
 
     def _sort_spine(self, _context: Context) -> None:
         project = self._project()
         if project is None:
             return
-        self._run_sort("Spine Layout", spine(self.library, project))
+        self._run_sort(project, "Spine Layout", spine(self.library, project))
 
     def _sort_timeline(self, _context: Context) -> None:
         project = self._project()
         if project is None:
             return
         placed = timeline(self.library, project, days_for=self.days_for)
-        self._run_sort("Timeline Layout", placed)
+        self._run_sort(project, "Timeline Layout", placed)
 
     def _sort_radial(self, context: Context) -> None:
         project = self._project()
@@ -291,7 +291,7 @@ class LayoutVerbs:
             return
         chosen = context.selected_entities("step")
         center = chosen[0] if len(chosen) == 1 else None
-        self._run_sort("Radial Layout", radial(self.library, project, center=center))
+        self._run_sort(project, "Radial Layout", radial(self.library, project, center=center))
 
     # -- run -----------------------------------------------------------------------------------
 

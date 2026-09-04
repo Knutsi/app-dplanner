@@ -27,6 +27,7 @@ from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import (
     MODULE_ID,
     entry_with,
+    read_size,
     snapped,
     write_position,
 )
@@ -106,12 +107,21 @@ def is_current(library: Library, project: Project, name: str) -> bool:
 
 
 def position_commands(
-    placed: dict[StepId, Point], label: str, view_origin: object = None
+    project: Project, placed: dict[StepId, Point], label: str, view_origin: object = None
 ) -> list[Command]:
-    """One position write per step — the shared tail of apply and every auto-sort."""
+    """One position write per step — the shared tail of apply and every auto-sort.
+
+    Each write carries the card's own size: a layout says where a card sits, never how
+    big it is, so applying one — or sorting — leaves a card somebody enlarged as it was.
+    """
+    sizes = {step.id: read_size(step) for step in project.steps}
     return [
         SetModuleDataCommand(
-            step_id, MODULE_ID, write_position(x, y), view_origin=view_origin, label=label
+            step_id,
+            MODULE_ID,
+            write_position(x, y, sizes.get(step_id)),
+            view_origin=view_origin,
+            label=label,
         )
         for step_id, (x, y) in placed.items()
     ]
@@ -125,7 +135,7 @@ def apply_layout_commands(
     snap = read_layouts(project)[name]
     label = f'Apply Layout "{name}"'
     placed = {step.id: snap.steps[step.id] for step in project.steps if step.id in snap.steps}
-    commands = position_commands(placed, label, view_origin=view_origin)
+    commands = position_commands(project, placed, label, view_origin=view_origin)
     regions = _region_update_command(project, snap, label, view_origin=view_origin)
     if regions is not None:
         commands.append(regions)

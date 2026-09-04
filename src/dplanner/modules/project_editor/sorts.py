@@ -4,11 +4,12 @@ Every sort returns a position for every step and writes nothing — persisting t
 the caller's gesture, pushed through the undo stack like any drag. Every sort is
 **deterministic**: fixed sweep counts, and every tie broken by project order, so the same
 graph always lands the same way (the ``ordering.py`` convention). And every sort is
-**size-aware** through ``size_for``, so when nodes grow beyond one fixed footprint — a step
-kind that packs more inside itself — the spacing follows without touching an algorithm.
+**size-aware** through ``size_for``, which defaults to the card's stored size
+(``positions.node_size``) — so a card somebody dragged larger keeps its room in every
+arrangement without touching an algorithm.
 
 The gaps are chosen so the default node lands on round pitches: ``NODE_W + H_GAP`` is the
-300-point column pitch, ``NODE_H + V_GAP`` the 120-point row.
+300-point column pitch, ``NODE_H + V_GAP`` the 160-point row.
 
 **Qt-free** — ``dplanner layout sort`` runs these where no graphics stack exists.
 """
@@ -18,7 +19,7 @@ from math import cos, sin, tau
 
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import depths
-from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+from dplanner.modules.project_editor.positions import node_size
 
 type Point = tuple[float, float]
 type SizeFor = Callable[[Step], tuple[float, float]]
@@ -26,18 +27,13 @@ type DaysFor = Callable[[Step], float | None]
 
 ORIGIN = 40.0
 H_GAP = 80.0
-V_GAP = 44.0  # NODE_H + V_GAP = the 120-point row pitch; NODE_H moves owe a look here.
+V_GAP = 48.0  # NODE_H + V_GAP = the 160-point row pitch; NODE_H moves owe a look here.
 # The backward lean of a fishbone rib: how far left of its attachment a rib begins.
 RIB_DX = 60.0
 # One working day of timeline, in canvas points.
 DAY_PX = 60.0
 # The base distance between radial rings; a crowded ring pushes further out.
 RING_GAP = 220.0
-
-
-def node_size(_step: Step) -> tuple[float, float]:
-    """The default footprint — today every node is the same size."""
-    return (NODE_W, NODE_H)
 
 
 # -- layered -----------------------------------------------------------------------------------

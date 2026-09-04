@@ -28,7 +28,7 @@ from dplanner.modules.project_editor.named_layouts import (
     snapshot,
 )
 from dplanner.modules.project_editor.placement import positions
-from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+from dplanner.modules.project_editor.positions import node_size
 from dplanner.modules.project_editor.regions import (
     TITLE_STRIP_H,
     Region,
@@ -119,7 +119,7 @@ def commands(
             "timeline": lambda: timeline(context.library, project, days_for=days_for),
             "radial": lambda: radial(context.library, project, center=center),
         }[args.algorithm]()
-        moves: list[Command] = position_commands(placed, label=f"Sort {args.algorithm}")
+        moves: list[Command] = position_commands(project, placed, label=f"Sort {args.algorithm}")
         for command in moves:
             context.apply(command)
         context.report(
@@ -391,7 +391,7 @@ def _region_row(
     inside = [
         {"id": step.id, "title": step.title}
         for step in project.steps
-        if region.contains_centre(*placed[step.id], NODE_W, NODE_H)
+        if region.contains_centre(*placed[step.id], *node_size(step))
     ]
     return {
         "id": region.id,
@@ -463,8 +463,8 @@ def _wrap_rect(
     ys = [placed[step.id][1] for step in chosen]
     left = min(xs) - WRAP_PAD
     top = min(ys) - WRAP_PAD_TOP
-    right = max(xs) + NODE_W + WRAP_PAD
-    bottom = max(ys) + NODE_H + WRAP_PAD
+    right = max(placed[step.id][0] + node_size(step)[0] for step in chosen) + WRAP_PAD
+    bottom = max(placed[step.id][1] + node_size(step)[1] for step in chosen) + WRAP_PAD
     return left, top, right - left, bottom - top
 
 

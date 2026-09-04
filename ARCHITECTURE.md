@@ -1041,24 +1041,94 @@ take away. A gain on the node's own fill preserves every one of them, and reads 
 dark alike — the fill is ink over the canvas, so *more* of it means more contrast in either
 direction.
 
-The shadow is **clipped to the ground around the card**, not painted under it. A node's fill
-is translucent by design (`FILL_ALPHA` ink over the canvas), so rings left underneath darken
-the fill itself, and a selected step reads as a hole rather than as a card off the table.
-That was a real bug in the first cut of this: on a light theme the selected node came out a
-flat dark grey and nothing about the code looked wrong. Its weight is deliberately slight for
-the same reason — the rings composite, so the first alpha that looked right in isolation
-landed twice as dark under the card, and on a light theme's paper that reads as a hole again
-even when it is correctly clipped. The border and the gained fill are what say "this one";
-the shadow only has to lift the card off the table. It is caught now by the same test
-that checks the fill gain — a body can only come out at exactly the gained alpha over the
-ground if nothing at all is painted underneath it.
+**Every card rests on a shadow, and the fill is opaque.** The first cut painted the fill
+translucent (`FILL_ALPHA` ink over the canvas) and clipped the shadow to the ground around
+the card, because rings left underneath darkened the fill itself and a selected step read as
+a hole rather than as a card off the table — on a light theme the selected node came out a
+flat dark grey and nothing about the code looked wrong. The grid ground made the same point
+again from the other side: dots showing through every card read as a stain. So
+`renderers.over()` blends the tint over the palette's window colour and paints the result
+opaque — exactly the colour the tint would have had over bare canvas, on any theme, with
+nothing underneath able to change it. The clip went with it, and with it the reason a
+*resting* shadow could not exist: every card now sits on a faint one (`RESTING_SHADOW`) and
+a selected card's is deeper and wider (`LIFTED_SHADOW`), which with the lift is what says
+"this one is up". Both are deliberately slight — the rings composite, so the first alpha
+that looked right in isolation landed twice as dark, and on a light theme's paper that reads
+as a hole. The border and the gained fill are what say "this one"; a shadow only has to seat
+the card. The fill-gain test still guards it: a body can only come out at exactly the gained
+tint over the ground if the fill is opaque, or nothing at all is painted underneath it.
 
 One number ties it together: `PAINT_MARGIN` in `renderers.py` is the furthest any decoration
-reaches out of the body — handle, badge, medallion, chip, lift, shadow — and
-`StepNodeItem.boundingRect`
-is exactly that, *constant whether or not the node is selected*. A rect that grew on selection
-would invalidate the wrong region, and the shadow would be left on the canvas when the
-selection moved on.
+reaches out of the body — handle, badge, medallion, chip, lift, shadow, and the stat line
+under the card — and `StepNodeItem.boundingRect` is exactly that, *constant whether or not
+the node is selected*. A rect that grew on selection would invalidate the wrong region, and
+the shadow would be left on the canvas when the selection moved on. `shape()` is a different
+question — the card and its resize band — because the bounding rect also holds the stat
+line, and a click under a card is a click on the plane.
+
+### A card's size is the step's, and a layout never says how big
+
+A card can be dragged wider or taller by any edge or corner, and three decisions sit behind
+the one gesture.
+
+**The size is stored beside the position, and absence is the default.** `{"x", "y"}` gains
+`"w"` and `"h"` only for a card somebody resized (`positions.write_position`), so a project
+of untouched cards never learns the keys exist — `FORMAT.md`'s absence rule — and a card
+resized back to the default drops them again. It rides in the same per-step entry because a
+resize is the same kind of fact as a move: presentation, one file, one diff. It is
+deliberately **not** part of a named layout: a layout says where cards sit, and applying one
+must leave a card somebody enlarged as it was. Every position write therefore carries the
+size back in — a move, a sort, an applied layout, a paste — which is what
+`write_position(x, y, size)` and `position_commands(project, …)` are for.
+
+**Every painter takes the body it is handed.** `renderers.py` measures from a `body` rect
+and the only fixed numbers left are paddings, radii and how far the decorations reach; the
+sorts already spaced by a `size_for` function, which now defaults to `positions.node_size`
+— so a large card keeps its room in every arrangement without an algorithm learning about
+sizes. What a taller card buys is *title*: the name is set two points larger than the chrome
+and wraps onto as many lines as the card has room for above its detail line, only the last
+one eliding. And the estimate — the one number a step answers with — is written *under* the
+card, right-aligned to its edge, as a caption rather than content: inside the body it
+competed with the title for the same corner, and under the card it reads at a glance as the
+card's size in time.
+
+**The gesture is a mode, and the hit shape is the card.** `NodeResizeMode` is
+`RegionResizeMode`'s shape with eight grips instead of one: a band `GRAB_IN` inside the
+border and `EDGE_REACH` outside it, both bands at once being a corner, and the link handle
+winning its corner of the right edge as it does on the press. The edge under the pointer
+moves, the far edge is the limit (never below `MIN_NODE_W` by `MIN_NODE_H`), and the card is
+held for the gesture so a sync from the model leaves it alone. One `Resize Step` command
+writes seat and size together, because dragging the left edge moves both and undo must take
+both back. The pointer's resize arrows are the gesture's only announcement, shown by
+`IdleMode` on mouse moves with no button down — the one mode that can start a resize is the
+one that says where.
+
+### The ground is a preference; snapping belongs to the gesture
+
+*View ▸ Background* (plain, dots, lines, crosses) and *View ▸ Snap to Grid* are one per-user
+`Ground` value (`grid.py`), kept in `user_config` and fanned to every open canvas the way the
+marks are — the view draws the background, the scene answers `snap()` — and a tab opened
+later wears it. The background is the theme menu's shape: one choice of several, exactly one
+checked.
+
+**What snaps is the gesture, never the write.** Before this the grid was invisible and every
+coordinate was rounded to it on its way to disk, which would have made a snap *toggle* mean
+nothing: a drag with snapping off would still have landed on the grid the moment the store
+wrote it. So `positions.snapped(value)` rounds to a whole unit — short JSON, and still the
+float every number on disk owes — and only the canvas passes `GRID`, only while snapping is
+on, through the scene's one `snap()`: a node or region drag (`itemChange`), a resize, a
+region being dragged out, and the seat of a placed step (a double-click, New, a paste, a
+drop). A CLI verb has no gesture and stores what it was given; a sort's output is what the
+algorithm computed, and the layered ones land on round pitches by construction.
+
+**What is drawn is a coarsening of what snaps.** The ground shows every `pitch_for(zoom)`-th
+line of the snap grid — the smallest power-of-two multiple of `GRID` that keeps the marks
+`MIN_SCREEN_PITCH` device pixels apart — so a card's corner is always on a line the ground
+*could* show, and zooming in reveals the finer ones rather than a grid that drifts against
+the cards. Cosmetic pens keep a dot two device pixels and a line one at any zoom: the ground
+is a texture, not a drawing that scales with the graph. Its ink is the palette's text at a
+low alpha (DESIGN.md exception #1), read at paint time from the view's own palette so a
+theme switch repaints it with the graph.
 
 ## Two writers, one folder
 

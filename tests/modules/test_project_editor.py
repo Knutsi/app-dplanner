@@ -23,7 +23,7 @@ from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION
 from dplanner.modules.project_editor.modes import CONNECT, IDLE, LASSO, PAN, REGION_CREATE
 from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
-from dplanner.modules.project_editor.positions import NODE_H, NODE_W, snapped
+from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snapped
 from dplanner.modules.project_editor.renderers import (
     BADGE_INSET,
     FILL_ALPHA,
@@ -403,9 +403,12 @@ def test_a_new_step_lands_where_the_canvas_was_last_clicked(services, project, t
     silence_details(monkeypatch)
     services.actions.run("steps.new", services.context.current())
     entry = project.steps[-1].module_data["project_editor"]
-    # Centred on the click, then snapped to the grid every stored position lands on: the
+    # Centred on the click, then snapped to the grid (Snap to Grid is on by default): the
     # node appears under the cursor rather than with its corner there.
-    assert (entry["x"], entry["y"]) == (snapped(400.0 - NODE_W / 2), snapped(200.0 - NODE_H / 2))
+    assert (entry["x"], entry["y"]) == (
+        snapped(400.0 - NODE_W / 2, GRID),
+        snapped(200.0 - NODE_H / 2, GRID),
+    )
 
 
 def test_a_right_click_counts_as_the_click_new_places_at(services, project, tab, monkeypatch):
@@ -424,7 +427,10 @@ def test_a_right_click_counts_as_the_click_new_places_at(services, project, tab,
     silence_details(monkeypatch)
     services.actions.run("steps.new", services.context.current())
     entry = project.steps[-1].module_data["project_editor"]
-    assert (entry["x"], entry["y"]) == (snapped(560.0 - NODE_W / 2), snapped(320.0 - NODE_H / 2))
+    assert (entry["x"], entry["y"]) == (
+        snapped(560.0 - NODE_W / 2, GRID),
+        snapped(320.0 - NODE_H / 2, GRID),
+    )
 
 
 def test_a_canvas_nobody_clicked_leaves_the_node_to_the_ambient_layout(
@@ -456,7 +462,7 @@ def test_two_new_steps_in_a_row_do_not_land_on_one_another(services, project, ta
     services.actions.run("steps.new", services.context.current())
 
     first, second = (step.module_data["project_editor"] for step in project.steps[-2:])
-    assert (second["x"], second["y"]) == (first["x"], snapped(first["y"] + NODE_H + V_GAP))
+    assert (second["x"], second["y"]) == (first["x"], snapped(first["y"] + NODE_H + V_GAP, GRID))
 
 
 def test_a_double_click_moves_the_point_on_too(app, services, project, tab, monkeypatch):
@@ -873,13 +879,15 @@ def test_selecting_a_node_deepens_the_fill_it_already_had(themed, services, proj
     assert abs(body.blue() - wanted.blue()) <= 2
 
 
-def test_a_selected_node_casts_a_shadow_on_the_ground_it_left(services, project, tab):
-    """The lift reads because the seat darkens under it. Rendered over white, where a
-    low-alpha black actually says something."""
+def test_every_card_rests_on_a_shadow_and_a_selected_one_casts_a_deeper_one(services, project, tab):
+    """A card on the table darkens the ground just under it; the lift reads because the
+    picked card's seat darkens more. Rendered over white, where a low-alpha black actually
+    says something."""
     step = project.steps[0]
-    assert painted_under(tab, step.id, "white") == QColor("white")
+    resting = painted_under(tab, step.id, "white").lightness()
+    assert resting < QColor("white").lightness()
     scene(tab).select_step(step.id)
-    assert painted_under(tab, step.id, "white").lightness() < QColor("white").lightness()
+    assert painted_under(tab, step.id, "white").lightness() < resting
 
 
 def test_a_lifted_node_sits_over_its_neighbours(services, project, tab):
@@ -896,17 +904,14 @@ def test_a_lifted_node_sits_over_its_neighbours(services, project, tab):
 def test_the_bounding_rect_covers_everything_a_node_paints(services, project, tab):
     """Constant, selected or not: a rect that grew on selection would invalidate the wrong
     region and leave the shadow behind when the selection moved on."""
-    from dplanner.modules.project_editor.renderers import (
-        LIFT,
-        SHADOW_DROP,
-        SHADOW_SPREAD,
-    )
+    from dplanner.modules.project_editor.renderers import LIFT, LIFTED_SHADOW, STAT_ROOM
 
     node = scene(tab)._nodes[project.steps[0].id]
     plain = node.boundingRect()
     node.setSelected(True)
     assert node.boundingRect() == plain
-    assert plain.bottom() >= NODE_H + SHADOW_DROP + SHADOW_SPREAD
+    assert plain.bottom() >= NODE_H + LIFTED_SHADOW.drop + LIFTED_SHADOW.spread
+    assert plain.bottom() >= NODE_H + STAT_ROOM
     assert plain.top() <= -LIFT
 
 
@@ -1305,7 +1310,7 @@ def test_dragging_out_a_region_is_one_undo_step(app, services, project, tab):
 
 
 def test_a_body_drag_carries_the_steps_whose_centres_lie_inside(app, services, project, tab):
-    first, second = project.steps  # at (40, 40) and (40, 160) in the automatic layout
+    first, second = project.steps  # at (40, 40) and (40, 200) in the automatic layout
     region = add_region(services, project, 0.0, 0.0, 300.0, 120.0)  # first inside, second out
 
     drag(app, tab, QPointF(280.0, 80.0), QPointF(440.0, 240.0))  # body: off node, off strip
@@ -1633,6 +1638,387 @@ def test_a_medallion_stays_inside_the_item_that_paints_it():
     assert ICON_D / 2 + 1.0 + LIFT <= PAINT_MARGIN
 
 
+# -- a card is resizable -----------------------------------------------------------------------
+#
+# The frame is a band round the border (GRAB_IN inside, EDGE_REACH outside); a press on it
+# grabs that edge, both bands at a corner grab the corner, and the body inside still drags.
+
+
+def body_of(tab, step_id):
+    return scene(tab)._nodes[step_id].body_scene_rect()
+
+
+def placement_of(services, step_id):
+    return services.document.step(step_id).module_data["project_editor"]
+
+
+def test_dragging_the_right_edge_widens_the_card_as_one_undo_step(app, services, project, tab):
+    step = project.steps[0]
+    body = body_of(tab, step.id)  # (40, 40, 220, 112) in the automatic layout
+    grip = QPointF(body.right() - 2.0, body.center().y() + 30.0)  # In the band, off the handle.
+
+    drag(app, tab, grip, grip + QPointF(100.0, 0.0))
+
+    entry = placement_of(services, step.id)
+    assert (entry["x"], entry["y"]) == (40.0, 40.0)
+    assert (entry["w"], entry["h"]) == (320.0, NODE_H)  # 358 snapped up to the 8-grid.
+    assert services.undo.undo_text() == "Resize Step"
+    assert view(tab).modes.current().name == IDLE
+    assert scene(tab)._nodes[step.id].size() == (320.0, NODE_H)
+
+    services.undo.undo()
+    assert "project_editor" not in services.document.step(step.id).module_data
+    assert scene(tab)._nodes[step.id].size() == (NODE_W, NODE_H)  # The model's echo lands.
+
+
+def test_dragging_a_corner_moves_the_seat_with_the_edge(app, services, project, tab):
+    """From the top-left the far corner stays put, so the card grows *and* moves — one
+    command carrying both, or undo would have to know which half to take back."""
+    step = project.steps[0]
+    body = body_of(tab, step.id)
+    grip = QPointF(body.left() - 2.0, body.top() - 2.0)
+
+    drag(app, tab, grip, grip + QPointF(-40.0, -24.0))
+
+    entry = placement_of(services, step.id)
+    assert (entry["x"], entry["y"], entry["w"], entry["h"]) == (0.0, 16.0, 260.0, 136.0)
+    assert services.undo.undo_text() == "Resize Step"
+
+
+def test_a_card_never_shrinks_below_its_minimum(app, services, project, tab):
+    from dplanner.modules.project_editor.positions import MIN_NODE_H, MIN_NODE_W
+
+    step = project.steps[0]
+    body = body_of(tab, step.id)
+    grip = QPointF(body.right() - 2.0, body.bottom() - 2.0)
+
+    drag(app, tab, grip, QPointF(body.left() - 300.0, body.top() - 300.0))
+
+    entry = placement_of(services, step.id)
+    assert (entry["w"], entry["h"]) == (MIN_NODE_W, MIN_NODE_H)
+    assert (entry["x"], entry["y"]) == (40.0, 40.0)  # The far corner is the limit.
+
+
+def test_escape_puts_a_half_resized_card_back(app, services, project, tab):
+    step = project.steps[0]
+    node = scene(tab)._nodes[step.id]
+    body = body_of(tab, step.id)
+    grip = QPointF(body.right() - 2.0, body.center().y() + 30.0)
+    send(app, tab, QEvent.Type.MouseButtonPress, grip)
+    send(app, tab, QEvent.Type.MouseMove, grip + QPointF(100.0, 0.0))
+    assert node.size() == (320.0, NODE_H)
+    assert view(tab).modes.current().name == "node-resize"
+
+    press_key(app, tab, Qt.Key.Key_Escape)
+
+    assert node.size() == (NODE_W, NODE_H)
+    assert view(tab).modes.current().name == IDLE
+    assert "project_editor" not in services.document.step(step.id).module_data
+
+
+def test_a_stored_size_reaches_the_card_and_its_anchors(services, project, tab):
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.project_editor.positions import write_position
+
+    step = project.steps[0]
+    services.undo.push(
+        SetModuleDataCommand(step.id, "project_editor", write_position(40.0, 40.0, (300.0, 160.0)))
+    )
+    node = scene(tab)._nodes[step.id]
+    assert node.size() == (300.0, 160.0)
+    assert node.handle_scene_pos() == QPointF(340.0, 120.0)
+    assert node.body_scene_rect() == QRectF(40.0, 40.0, 300.0, 160.0)
+
+
+def test_a_move_keeps_the_size_a_card_was_given(services, project, tab):
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.project_editor.positions import read_size, write_position
+
+    step = project.steps[0]
+    services.undo.push(
+        SetModuleDataCommand(step.id, "project_editor", write_position(40.0, 40.0, (300.0, 160.0)))
+    )
+    scene(tab).nodes_moved.emit([(step.id, 200.0, 120.0)])
+    assert read_size(services.document.step(step.id)) == (300.0, 160.0)
+    assert placement_of(services, step.id)["x"] == 200.0
+
+
+def test_the_hit_shape_is_the_card_and_its_band_not_the_stat_line(services, project, tab):
+    """A press under the card — where its estimate is written — is a press on empty
+    canvas; a press a few pixels outside the border still belongs to the card, so the
+    frame can be grabbed from either side of the line."""
+    from dplanner.modules.project_editor.items import EDGE_REACH
+
+    step = project.steps[0]
+    body = body_of(tab, step.id)
+    canvas = scene(tab)
+    assert canvas.node_at(QPointF(body.center().x(), body.bottom() + EDGE_REACH + 8.0)) is None
+    grabbed = canvas.node_at(QPointF(body.right() + EDGE_REACH - 1.0, body.center().y() + 30.0))
+    assert grabbed is not None and grabbed.step_id == step.id
+
+
+def test_the_frame_names_its_edges_and_corners(services, project, tab):
+    node = scene(tab)._nodes[project.steps[0].id]
+    body = node.body_scene_rect()
+    assert node.edge_at(QPointF(body.left() + 2.0, body.center().y())) == "left"
+    assert node.edge_at(QPointF(body.right() + 4.0, body.center().y() + 40.0)) == "right"
+    assert node.edge_at(QPointF(body.center().x(), body.top() - 3.0)) == "top"
+    assert node.edge_at(QPointF(body.center().x(), body.bottom() + 3.0)) == "bottom"
+    assert node.edge_at(QPointF(body.left() - 1.0, body.top() - 1.0)) == "top-left"
+    assert node.edge_at(QPointF(body.right() + 1.0, body.bottom() + 1.0)) == "bottom-right"
+    assert node.edge_at(QPointF(body.right() + 1.0, body.top() - 1.0)) == "top-right"
+    assert node.edge_at(QPointF(body.left() - 1.0, body.bottom() + 1.0)) == "bottom-left"
+    assert node.edge_at(body.center()) == ""
+    assert node.edge_at(QPointF(body.center().x(), body.bottom() + 40.0)) == ""
+
+
+def test_the_pointer_says_where_a_card_can_be_grabbed(app, services, project, tab):
+    """The resize arrows over the frame are the gesture's only announcement, so they have
+    to be there — and gone again over the body, where a press drags."""
+    step = project.steps[0]
+    body = body_of(tab, step.id)
+    viewport = view(tab).viewport()
+
+    send(
+        app,
+        tab,
+        QEvent.Type.MouseMove,
+        QPointF(body.right() - 2.0, body.center().y() + 30.0),
+        Qt.MouseButton.NoButton,
+    )
+    assert viewport.cursor().shape() == Qt.CursorShape.SizeHorCursor
+    send(
+        app,
+        tab,
+        QEvent.Type.MouseMove,
+        QPointF(body.left() - 1.0, body.top() - 1.0),
+        Qt.MouseButton.NoButton,
+    )
+    assert viewport.cursor().shape() == Qt.CursorShape.SizeFDiagCursor
+    send(app, tab, QEvent.Type.MouseMove, body.center(), Qt.MouseButton.NoButton)
+    assert viewport.cursor().shape() == Qt.CursorShape.ArrowCursor
+    # The handle wins its corner of the right edge: a press there links, never resizes.
+    send(
+        app,
+        tab,
+        QEvent.Type.MouseMove,
+        scene(tab)._nodes[step.id].handle_scene_pos(),
+        Qt.MouseButton.NoButton,
+    )
+    assert viewport.cursor().shape() == Qt.CursorShape.ArrowCursor
+
+
+def test_a_press_on_the_body_still_drags_the_card(app, services, project, tab):
+    step = project.steps[0]
+    node = scene(tab)._nodes[step.id]
+    start = centre_of(node)
+    send(app, tab, QEvent.Type.MouseButtonPress, start)
+    assert view(tab).modes.current().name == IDLE  # Nothing claimed it; Qt has the drag.
+    node.setPos(node.pos() + QPointF(64, 32))
+    send(app, tab, QEvent.Type.MouseButtonRelease, start, Qt.MouseButton.NoButton)
+    assert services.undo.undo_text() == "Move Step"
+
+
+# -- the card's face: title, stat, shadow ---------------------------------------------------------
+
+
+def test_the_title_face_is_larger_than_the_chrome(app):
+    from PySide6.QtGui import QFont
+
+    from dplanner.modules.project_editor.renderers import TITLE_POINTS, title_font
+
+    base = QFont()
+    base.setPointSizeF(10.0)
+    assert title_font(base).pointSizeF() == 10.0 + TITLE_POINTS
+
+
+def test_a_title_takes_as_many_lines_as_the_card_has_room_for(app):
+    from PySide6.QtGui import QFont, QFontMetrics
+
+    from dplanner.modules.project_editor.renderers import title_lines
+
+    metrics = QFontMetrics(QFont())
+    title = "Rebuild the deployment pipeline for the beta environment before the launch"
+    width = metrics.horizontalAdvance("Rebuild the deployment") + 2.0
+    three = title_lines(metrics, title, width, max_lines=3)
+    assert (
+        len(three) == 3
+        and three[0] == "Rebuild the deployment"
+        and three[1] == "pipeline for the beta"
+    )
+    assert three[2].startswith("environment")
+    assert metrics.horizontalAdvance(three[2]) <= width
+    one = title_lines(metrics, title, width, max_lines=1)
+    assert len(one) == 1 and one[0].startswith("Rebuild the") and one[0].endswith("…")
+
+
+def ink_under(tab, step_id) -> int:
+    """How far the stat line's band under a card departs from bare ground, rendered over
+    the theme's own base: text pulls a pixel far from it, and the resting shadow ends above
+    the band. The theme's ink is what the stat is written in, so white paper would hide a
+    dark theme's near-white text."""
+    from dplanner.modules.project_editor.renderers import STAT_GAP, STAT_ROOM
+
+    node = scene(tab)._nodes[step_id]
+    body = node.body_scene_rect()
+    ground = scene(tab).palette().window().color()
+    margin = int(PAINT_MARGIN)
+    width, height = int(body.width() + 2 * margin), int(body.height() + 2 * margin)
+    image = QImage(width, height, QImage.Format.Format_ARGB32)
+    image.fill(ground)
+    painter = QPainter(image)
+    scene(tab).render(
+        painter,
+        QRectF(image.rect()),
+        QRectF(body.topLeft() - QPointF(margin, margin), QSizeF(width, height)),
+    )
+    painter.end()
+    top = margin + int(body.height() + STAT_GAP) + 3
+    bottom = margin + int(body.height() + STAT_ROOM)
+    return int(
+        max(
+            abs(image.pixelColor(x, y).lightness() - ground.lightness())
+            for y in range(top, bottom)
+            for x in range(margin + int(body.width() / 2), margin + int(body.width()))
+        )
+    )
+
+
+def test_the_estimate_is_written_under_the_card(services, project, tab):
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATE_ID
+    from dplanner.modules.estimation.aspect import write as estimate
+
+    step = project.steps[0]
+    assert ink_under(tab, step.id) < 8  # Nothing under an unestimated card.
+    services.undo.push(SetModuleDataCommand(step.id, ESTIMATE_ID, estimate(3.0)))
+    assert scene(tab)._nodes[step.id]._accent.stat_text == "3d"
+    assert ink_under(tab, step.id) > 60
+
+
+def test_the_stat_line_stays_inside_what_the_item_paints():
+    from dplanner.modules.project_editor.renderers import STAT_GAP, STAT_ROOM
+
+    assert STAT_GAP < STAT_ROOM <= PAINT_MARGIN
+
+
+# -- the ground: what is drawn under the graph, and whether gestures snap to it -----------------
+
+
+def ground_of(services):
+    from dplanner.framework.user_config import get_global
+    from dplanner.modules.project_editor.grid import Ground
+    from dplanner.modules.project_editor.module import GROUND_KEY, MODULE_ID
+
+    return Ground.from_json(get_global(MODULE_ID, GROUND_KEY))
+
+
+def test_the_background_is_one_choice_of_several_remembered_per_user(
+    services, project, tab, make_project
+):
+    context = services.context.current()
+    assert state(services, "canvas.ground_dots", context).checked is True
+    assert state(services, "canvas.ground_lines", context).checked is False
+
+    services.actions.run("canvas.ground_lines", context)
+
+    context = services.context.current()
+    assert state(services, "canvas.ground_lines", context).checked is True
+    assert state(services, "canvas.ground_dots", context).checked is False
+    assert ground_of(services).background == "lines"
+    assert view(tab)._ground.background == "lines"
+    other = services.tabs.open("project", make_project("Later").id)
+    assert other._view._ground.background == "lines"
+
+
+def test_snap_to_grid_is_a_toggle_every_canvas_follows(services, project, tab, make_project):
+    context = services.context.current()
+    assert state(services, "canvas.snap", context).checked is True
+    assert scene(tab)._snap is True
+
+    services.actions.run("canvas.snap", context)
+
+    assert state(services, "canvas.snap", services.context.current()).checked is False
+    assert ground_of(services).snap is False
+    assert scene(tab)._snap is False
+    other = services.tabs.open("project", make_project("Later").id)
+    assert other._scene._snap is False
+
+
+def test_with_snapping_off_a_card_lands_where_it_was_left(app, services, project, tab):
+    """Snapping is the gesture's: off, a drag stores whole units and nothing rounds them
+    up to the grid on the way to disk."""
+    services.actions.run("canvas.snap", services.context.current())
+    step = project.steps[0]
+    node = scene(tab)._nodes[step.id]
+    start = centre_of(node)
+    send(app, tab, QEvent.Type.MouseButtonPress, start)
+    node.setPos(node.pos() + QPointF(37.0, 13.0))
+    send(app, tab, QEvent.Type.MouseButtonRelease, start, Qt.MouseButton.NoButton)
+
+    entry = placement_of(services, step.id)
+    assert (entry["x"], entry["y"]) == (77.0, 53.0)
+
+    body = body_of(tab, step.id)
+    grip = QPointF(body.right() - 2.0, body.center().y() + 30.0)
+    drag(app, tab, grip, grip + QPointF(37.0, 0.0))
+    assert abs(placement_of(services, step.id)["w"] - 255.0) <= 1.0
+
+
+def test_with_snapping_off_new_lands_exactly_under_the_click(services, project, tab, monkeypatch):
+    services.actions.run("canvas.snap", services.context.current())
+    tab._view.note_click(QPointF(403.0, 201.0))
+    silence_details(monkeypatch)
+    services.actions.run("steps.new", services.context.current())
+    entry = project.steps[-1].module_data["project_editor"]
+    assert (entry["x"], entry["y"]) == (403.0 - NODE_W / 2, 201.0 - NODE_H / 2)
+
+
+def ground_pixel(tab, background: str, scene_point: QPointF) -> QColor:
+    """The colour the view paints at a point of the plane under this background — through
+    the viewport's own paint event, which is where ``drawBackground`` runs."""
+    from dplanner.modules.project_editor.grid import Ground
+
+    canvas_view = view(tab)
+    canvas_view.set_ground(Ground(background=background))
+    image = canvas_view.viewport().grab().toImage()
+    at = canvas_view.mapFromScene(scene_point)
+    assert image.rect().contains(at), "the probe point is off the viewport"
+    return QColor(image.pixelColor(at.x(), at.y()))
+
+
+def a_grid_crossing_on_bare_ground(tab, pitch: float) -> QPointF:
+    """A crossing of the grid that is on screen and under no card: the one nearest the
+    viewport's top-left corner, or its bottom-right when a card covers that."""
+    canvas_view = view(tab)
+    shown = canvas_view.mapToScene(canvas_view.viewport().rect()).boundingRect()
+    cards = [
+        node.body_scene_rect().adjusted(-24, -24, 24, 24) for node in scene(tab)._nodes.values()
+    ]
+    for corner in (shown.topLeft() + QPointF(20, 20), shown.bottomRight() - QPointF(20, 20)):
+        point = QPointF((corner.x() // pitch + 1) * pitch, (corner.y() // pitch + 1) * pitch)
+        if not any(card.contains(point) for card in cards):
+            return point
+    raise AssertionError("no bare grid crossing on screen")
+
+
+def test_the_grid_is_painted_on_the_ground_and_only_when_asked(app, services, project, tab):
+    """A dot lands on every 32nd unit at 1:1 (the grid's pitch for that zoom): a crossing
+    is a dot under Dots, and bare ground under Plain — and so is the plane between."""
+    from dplanner.modules.project_editor.grid import pitch_for
+
+    pitch = pitch_for(view(tab)._zoom)
+    assert pitch == 32.0
+    crossing = a_grid_crossing_on_bare_ground(tab, pitch)
+    between = crossing + QPointF(pitch / 2, pitch / 2)
+    bare = ground_pixel(tab, "none", crossing)
+    assert ground_pixel(tab, "none", between) == bare
+    assert ground_pixel(tab, "dots", crossing) != bare
+    assert ground_pixel(tab, "dots", between) == bare
+    assert ground_pixel(tab, "lines", crossing + QPointF(0.0, pitch / 2)) != bare  # On a line.
+    assert ground_pixel(tab, "crosses", crossing) != bare
+
+
 # -- the Edit menu: cut, copy, paste, duplicate --------------------------------------------------
 #
 # The clipboard is the process's, so these read it back through Qt; what a clip holds and how
@@ -1683,8 +2069,8 @@ def test_paste_is_one_undo_step_that_lands_at_the_click_and_selects_the_copies(
     assert services.undo.undo_text() == "Paste 2 Steps"
     assert set(scene(tab).selection().steps) == {copy_first.id, copy_second.id}
     placed = [step.module_data["project_editor"] for step in (copy_first, copy_second)]
-    assert min(p["x"] for p in placed) == snapped(900.0 - NODE_W / 2)
-    assert min(p["y"] for p in placed) == snapped(700.0 - NODE_H / 2)
+    assert min(p["x"] for p in placed) == snapped(900.0 - NODE_W / 2, GRID)
+    assert min(p["y"] for p in placed) == snapped(700.0 - NODE_H / 2, GRID)
     services.undo.undo()
     assert [s.id for s in project.steps] == [first.id, second.id]
 
