@@ -29,11 +29,19 @@ def auto_positions(library: Library, project: Project) -> dict[StepId, tuple[flo
 
 
 def positions(library: Library, project: Project) -> dict[StepId, tuple[float, float]]:
-    """Where every node goes: what was stored, falling back to the automatic layout."""
+    """Where every node goes: what was stored, falling back to the automatic layout.
+
+    The layout is computed only when some step needs it. Every canvas sync asks this
+    question, and a settled plan — every step dragged or sorted into place — used to pay a
+    whole layered flow per keystroke for an answer it then discarded step by step.
+    """
     from dplanner.modules.project_editor.positions import read_position
 
+    stored = {step.id: read_position(step) for step in project.steps}
+    if all(stored.values()):
+        return {step_id: position for step_id, position in stored.items() if position is not None}
     automatic = auto_positions(library, project)
-    return {step.id: (read_position(step) or automatic[step.id]) for step in project.steps}
+    return {step.id: stored[step.id] or automatic[step.id] for step in project.steps}
 
 
 def below(x: float, y: float) -> tuple[float, float]:

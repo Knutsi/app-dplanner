@@ -128,11 +128,27 @@ QT_QPA_PLATFORM=offscreen uv run pytest -q --dist loadfile   # green while --dis
 
 **To prove it is not your change**, replace your new test files with the same number of
 `def test_x(): assert True` stubs and rerun; if it still crashes, only the test count
-mattered. **To find the poisoning test without a crash**, run one pass with a
-`gc.DEBUG_SAVEALL` plugin that catalogs each test's QObject-bearing garbage — under
-SAVEALL nothing is freed, so the run cannot crash and the catalog is complete. Two shapes
-to suspect in the culprit: a parentless `QObject` connected to its own method, and a
-long-lived plain-Python signal holding a widget's bound method.
+mattered. **To find the poisoning object without a crash**, run the crashing worker's tests
+(`pytest -v` under `-n` says which worker ran what) single-threaded under
+`scripts/gc_catalog.py`, a `gc.DEBUG_SAVEALL` plugin: nothing is freed, so the run cannot
+crash, and it prints each test's Qt wrappers **in the order the collector would have cleared
+them** — the order that decides which side of a wrapper dies first. Three shapes to
+suspect: a `QLayoutItem` wrapper (below), a parentless `QObject` connected to its own
+method, and a long-lived plain-Python signal holding a widget's bound method.
+
+**A `QLayoutItem` wrapper is a double delete waiting for a gc pass.** The 2026-09-04
+crash — `~QBoxLayout` calling through a null vtable, deterministic for one worker's four
+tests, and moving with any allocation elsewhere in the build — was `layout.itemAt(i)` in a
+view's read-back (`cards()`). PySide parents the returned wrapper to the layout's wrapper,
+so it lives as long as the layout does; when a cycle holding both is collected, shiboken's
+`tp_clear` hands every wrapper it clears **ownership back** (`removeParent(self)` in
+`SbkObject_tp_clear`) before invalidating that wrapper's own children, so a `QWidgetItem`
+or `QSpacerItem` cleared before its layout deletes an item the C++ layout still holds. A
+`QObject` in the same position survives it — `~QObject` unregisters from its parent —
+which is why only layout items bite. **Never read a layout back**: keep your own list of
+what you put in it (`StatusColumn._held`, `MilestoneList._rows`) and read that; `takeAt`
+in a loop that drops the wrapper each turn is fine. `NOTES-FOR-APPFRAME.md` §14 has the
+shiboken references.
 
 The layering rules below are enforced by `tests/test_architecture.py`, which runs with the
 normal suite. **If it fails, fix the dependency direction — don't loosen the test.** Every
@@ -426,6 +442,47 @@ root, stop and look for the registry or capability you have not found yet.
 - **Work may leave the GUI thread; mutation may not.** `core.signals.Signal` is synchronous
   and has no thread affinity, so the model is only ever changed on the GUI thread. Anything
   computed off it returns through `TaskRunner`, the one place that uses real Qt signals.
+- **A view of one project hears that project's changes, and a rebuild is coalesced.** A tab
+  subscribes through `follow_project(library, project_id, changed)` (`framework/activity.py`;
+  `follow_target` for a panel section whose step moves), which asks the model's
+  `belongs_to` about the node each signal names — a rename in project B is nothing for
+  project A's table to redraw for. What it calls is a `Debounced` (`framework/debounce.py`):
+  `trigger()` restarts a single-shot timer, so a burst runs the rebuild once, over the latest
+  state, and nothing queues — the canvas at 0 ms (once per event-loop turn, so a title still
+  lands on its node as it is typed), tables and lists after `SETTLE_MS` (300 ms), the Time tab
+  after 500 ms. **Tests run in immediate mode**: the `session` fixture sets
+  `services.debounce.set_immediate(True)`, so every trigger runs inline and a test asserts on
+  a view the line after a push exactly as before; the deferred path is tested once with real
+  timers and once per view by switching it off and calling `flush_all()`. Never
+  `qtbot.wait` for a rebuild. Never move a derivation to a worker thread for speed: it is
+  pure Python competing for the GIL, and a thread alive at teardown is the suite's SIGSEGV
+  shape — `ARCHITECTURE.md`'s *A view refresh is coalesced, and hears one project* has the
+  measurements (67 ms → 0.3 ms of synchronous work per keystroke with seven tabs open).
+- **Every action, command and slow slot is a span, and the journal is how you find out
+  why.** `core/telemetry.py` is one process-wide journal, like `logging`: `ActionRegistry.run`
+  (every presenter's one path — the menu bar's QAction goes through it too), `UndoService`'s
+  push/undo/redo, `TaskService.finish`, autosave's flush, the disk poll, the session's
+  open/reload/refresh, each CLI run and each `Debounced` run are spans; `Signal.emit` times
+  every slot and journals one over `SLOW_MS` (20 ms) by `Class.method (file:line)`, nested
+  under the action or command it ran inside. Failures arrive through logging — `install()`
+  puts a handler on the root logger, so every `logger.exception` is a `failure` span with its
+  traceback — which is also why **the test suite fails on a slot that raised**
+  (`tests/conftest.py`; mark a test that means to with `raises_in_a_slot`). *Debug ▸
+  Telemetry* and `dplanner telemetry show --slow 50` / `--failures` are the two readers of
+  the one file under `config_dir()/telemetry/` (`FORMAT.md`). Measure with it before
+  guessing: `uv run python scripts/measure_edit_cost.py --deferred` builds the application
+  over a synthetic project, pushes bursts of edits and prints what each view paid — it is
+  how the delays above were chosen, and the number to quote before changing one.
+
+- **A hang is sampled and a crash leaves a stack.** `framework/diagnostics.py`, started from
+  `app.main` and nowhere deeper: a 100 ms heartbeat, and a daemon thread that samples the
+  GUI thread's stack when the beat is 250 ms late and opens a `stall` span saying what it
+  interrupted ("stall 1.2 s during action steps.delete"); `sys.excepthook`,
+  `threading.excepthook` and Qt's message handler chained into `failure` spans;
+  `faulthandler` on `crash.log` beside the journal; a `session` start and end record, so a
+  session without an end is visible afterwards. Never start any of it from the builder — a
+  test build has no event loop, and pytest owns the hooks while a test runs.
+
 - **There is no Save-file action.** Autosave writes 1.5 s after the last change; *Save*
   means recording a version: **one commit per dirty repository, scoped to that repository's
   project directories** — several projects in one repo save as one commit, and the user's

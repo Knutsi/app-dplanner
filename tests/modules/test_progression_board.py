@@ -43,6 +43,23 @@ def test_with_nothing_done_only_the_frontier_is_ready(services, project, tab):
     assert tab.board.header.percent.text() == "0%"
 
 
+def test_reading_the_board_back_never_wraps_a_layout_item(monkeypatch, services, project, tab):
+    """A QLayoutItem wrapper is a double delete waiting for a gc pass (CLAUDE.md's crash
+    notes): the column keeps its own list of what it laid out and reads that, never the
+    layout — including across a rebuild, which is what ``clear()`` used ``takeAt`` for."""
+    from PySide6.QtWidgets import QLayout
+
+    def refuse(_layout, _index):
+        raise AssertionError("itemAt() hands out a QLayoutItem wrapper; read the list instead")
+
+    monkeypatch.setattr(QLayout, "itemAt", refuse)
+    monkeypatch.setattr(QLayout, "takeAt", refuse)
+    a, _b, _c, _d = project.steps
+    set_status(services, a, "done")
+    assert tab.board.ready.titles() == ["B", "C"]
+    assert tab.board.ready.cards()[0].title.text() == "B"
+
+
 def test_the_board_follows_a_status_change_and_its_undo(services, project, tab):
     """Nothing is stored: a status write moves the cards, and undo moves them back."""
     a, b, _c, _d = project.steps
@@ -161,6 +178,7 @@ def test_a_build_without_an_agent_has_no_button_at_all(services, project):
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
+            debounce=services.debounce,
         ),
         project.id,
     )

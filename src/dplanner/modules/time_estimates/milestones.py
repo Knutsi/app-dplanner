@@ -358,6 +358,10 @@ class MilestoneList(QWidget):
             self._layout.insertWidget(index, row)
             row.load(entry)
             row.set_selected(entry.step_id == selected)
+        # Kept in layout order, so ``keys`` reads the dict and never the layout: a
+        # QLayoutItem wrapper ``itemAt()`` hands out is a double delete waiting for a gc
+        # pass (CLAUDE.md's crash notes).
+        self._rows = {entry.step_id: self._rows[entry.step_id] for entry in entries}
         self.empty.setVisible(not entries)
 
     def row(self, step_id: StepId) -> MilestoneRow:
@@ -365,13 +369,8 @@ class MilestoneList(QWidget):
 
     @property
     def keys(self) -> tuple[StepId, ...]:
-        keys: list[StepId] = []
-        for index in range(self._layout.count()):
-            item = self._layout.itemAt(index)
-            widget = item.widget() if item is not None else None
-            if isinstance(widget, MilestoneRow):
-                keys.append(widget.key)
-        return tuple(keys)
+        """Top to bottom, as laid out."""
+        return tuple(self._rows)
 
 
 class LandingRow(_Row):

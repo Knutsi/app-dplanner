@@ -207,23 +207,30 @@ def default_modules(services: "AppServices") -> list["Module"]:
         summaries = aspect_summaries(skip)
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
 
-    def milestone_stat(step: "Step") -> str:
-        """What a milestone answers with: the schedule's accumulated days and landing date.
+    def milestone_stats(project: "Project") -> dict[str, str]:
+        """What each milestone answers with: the schedule's accumulated days and landing
+        date at its row — the same pair the order table's milestone row highlights.
 
-        A milestone closes the block of work above it, so its number is the walk's total at
-        that row — the same pair the order table's milestone row highlights. Falls back to
-        nothing when the project carries no estimates at all.
+        A milestone closes the block of work above it, so its number is the walk's total
+        at that row. One walk per project rather than one per milestone, because a canvas
+        sync asks for every milestone at once and the order is the same for all of them.
+        A milestone the project cannot date is absent; so is every step when nothing is a
+        milestone, which costs the sync no walk at all.
         """
-        project = library.project_of(step.id)
-        order = placed(library, project)
-        for scheduled in step_schedule(project.id, order):
-            if scheduled.place.step.id == step.id:
-                if scheduled.finish is not None:
-                    return f"{format_days(scheduled.accumulated)} · {format_date(scheduled.finish)}"
-                if scheduled.accumulated:
-                    return format_days(scheduled.accumulated)
-                break
-        return ""
+        if not any(milestone_read(step) for step in project.steps):
+            return {}
+        stats: dict[str, str] = {}
+        for scheduled in step_schedule(project.id, placed(library, project)):
+            step = scheduled.place.step
+            if not milestone_read(step):
+                continue
+            if scheduled.finish is not None:
+                stats[step.id] = (
+                    f"{format_days(scheduled.accumulated)} · {format_date(scheduled.finish)}"
+                )
+            elif scheduled.accumulated:
+                stats[step.id] = format_days(scheduled.accumulated)
+        return stats
 
     def step_type_icons(step: "Step") -> tuple[str, ...]:
         """What kind of thing a step is, in the medallion vocabulary the canvas painted
@@ -277,8 +284,16 @@ def default_modules(services: "AppServices") -> list["Module"]:
             )
         )
 
-    def step_accent(step_id: str) -> "NodeAccent":
+    def step_accents(project_id: str) -> "dict[str, NodeAccent]":
+        """How every step of a project looks on the canvas — one call per canvas sync, so
+        the schedule behind the milestone stats is walked once for all of them."""
+        project = library.project(project_id)
+        stats = milestone_stats(project)
+        return {step.id: step_accent(step, stats.get(step.id, "")) for step in project.steps}
+
+    def step_accent(step: "Step", milestone_stat: str) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
+
 
         A done step is muted with a green body — finished work recedes into a colour the
         eye can skip; in-progress and blocked wear busy and bad bars; a milestone is a
@@ -290,8 +305,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         step's stat is its own estimate. Everything worn here is skipped from the canvas
         subtitle below, so nothing is said twice.
         """
-        step = library.step(step_id)
         refs = github_read(step)
+
         pill = ""
         if refs is not None and refs.has_pr():
             pill = pr_label(refs)
@@ -305,7 +320,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         status = step_status(step)
         milestone = milestone_read(step)
         if milestone:
-            stat = milestone_stat(step)
+            stat = milestone_stat
         else:
             days = estimated_days(step)
             stat = format_days(days) if days is not None else ""
@@ -460,6 +475,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     project_editor = ProjectEditorModule(
         ProjectEditorDeps(
             library=library,
+            debounce=services.debounce,
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
@@ -486,7 +502,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                     ESTIMATION_ID,
                 },
             ),
-            step_accent=step_accent,
+            step_accents=step_accents,
             # The timeline sort reads a step's length through this seam; estimation owns it.
             days_for=estimated_days,
             # The project panel renders whatever registered a card here — the project-level
@@ -517,6 +533,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     progression = ProgressionModule(
         ProgressionDeps(
             library=library,
+            debounce=services.debounce,
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
@@ -546,6 +563,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     time_estimates = TimeEstimatesModule(
         TimeEstimatesDeps(
             library=library,
+            debounce=services.debounce,
             undo=services.undo,
             actions=services.actions,
             context=services.context,
@@ -578,6 +596,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             tabs=services.tabs,
             undo=services.undo,
             parent=services.window,
+            debounce=services.debounce,
             files=store.files,
             sources=asset_sources,
         )
@@ -642,6 +661,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     step_order = StepOrderModule(
         StepOrderDeps(
             library=library,
+            debounce=services.debounce,
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
@@ -692,6 +712,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     agent_instruction = StepAgentInstructionModule(
         StepAgentInstructionDeps(
             library=library,
+            debounce=services.debounce,
             undo=services.undo,
             sections=services.inspector_sections,
             actions=services.actions,
@@ -727,6 +748,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 tabs=services.tabs,
                 theme=services.theme,
                 undo=services.undo,
+                debounce=services.debounce,
                 zoom=services.zoom,
                 window=services.window,
                 # Registered before any panel exists, which is why it listens to the registry
@@ -830,6 +852,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         DebugModule(
             DebugDeps(
                 llm=services.llm,
+                telemetry=services.telemetry,
                 actions=services.actions,
                 tabs=services.tabs,
                 context=services.context,
@@ -839,6 +862,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ProjectsModule(
             ProjectsDeps(
                 library=library,
+                debounce=services.debounce,
                 actions=services.actions,
                 context=services.context,
                 undo=services.undo,
@@ -950,11 +974,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
         # Run Agent, built above the list; the library watcher borrows its launcher.
         agent_instruction,
         # The shells Run Agent above spawns, and the canvas reads the aspect through
-        # step_accent above.
+        # step_accents above.
         agent_runs,
         DocsModule(
             DocsDeps(
                 library=library,
+                debounce=services.debounce,
                 undo=services.undo,
                 actions=services.actions,
                 sections=services.inspector_sections,
@@ -1013,6 +1038,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         FeatureModule(
             FeatureDeps(
                 library=library,
+                debounce=services.debounce,
                 undo=services.undo,
                 actions=services.actions,
                 panels=services.panels,
@@ -1026,6 +1052,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         TestsModule(
             TestsDeps(
                 library=library,
+                debounce=services.debounce,
                 undo=services.undo,
                 actions=services.actions,
                 context=services.context,
@@ -1460,7 +1487,9 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.cli.scopes import commands as scope_commands
     from dplanner.cli.scopes import lint_checks as scope_lint
     from dplanner.cli.skill import commands as skill_commands
+    from dplanner.cli.telemetry import commands as telemetry_commands
     from dplanner.core.config_dir import config_dir
+    from dplanner.core.telemetry import crash_log_path, journal_path
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
@@ -1559,6 +1588,9 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
             milestone_label=milestone_read,
         ),
         *github_cli.commands(),
+        # The journal both surfaces write, read back: the paths are the process's, handed
+        # over here so a test can point the same verbs at a file of its own.
+        *telemetry_commands(journal=journal_path(), crash_log=crash_log_path()),
         *aspect_commands(specs),
         # Each module exports what "missing" means for its own aspect; the list order is
         # the report order — the graph's integrity first, then authoring, then the spec.

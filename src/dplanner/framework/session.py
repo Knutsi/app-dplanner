@@ -32,6 +32,7 @@ from PySide6.QtWidgets import QMessageBox, QWidget
 from dplanner.core.formats import UnsupportedFormatError
 from dplanner.core.repository import RepositoryFactory
 from dplanner.core.storage.provider import StorageError
+from dplanner.core.telemetry import current
 from dplanner.domain.store import Adoption
 from dplanner.framework.action_registry import MenuStructure
 from dplanner.framework.builder import AppBuilder, ModuleFactory, SeedFactory
@@ -104,6 +105,7 @@ def discard_build(window: AppWindow | None, services: AppServices | None) -> Non
         window.deleteLater()
     if services is not None:
         services.autosave.stop()
+        services.debounce.cancel_all()  # A pending refresh of a discarded build is a stale draw.
 
 
 def show_startup_failure(failure: OpenFailure) -> None:
@@ -186,6 +188,12 @@ class AppSession:
         that replaced the document wholesale (a branch switch, a pull): the undo entries
         then describe another tree, and are cleared once anything was actually taken.
         """
+        with current().span("session", "refresh") as span:
+            result = self._refresh(forget_history=forget_history)
+            span.detail["rebuilt"] = result.rebuilt
+            return result
+
+    def _refresh(self, *, forget_history: bool) -> RefreshResult:
         services = self.services
         if services is None:
             return RefreshResult(rebuilt=self.reload())
@@ -200,6 +208,11 @@ class AppSession:
         return RefreshResult(rebuilt=False, adoption=adoption)
 
     def _open(self, library_path: Path, progress: Callable[[str], None] | None = None) -> bool:
+        # The largest single stall the application has, so it is a span of its own.
+        telemetry = current()
+        span = telemetry.begin(
+            "session", "reload" if self.window is not None else "open", library=str(library_path)
+        )
         try:
             builder = (
                 AppBuilder()
@@ -214,6 +227,7 @@ class AppSession:
                 builder = builder.with_seed(self._seed)
             window, services = builder.build()
         except (ValueError, OSError, StorageError) as error:
+            telemetry.end(span, error=error)
             self._report(describe_open_error(error, library_path))
             return False
 
@@ -235,6 +249,7 @@ class AppSession:
             # Only on a replacement: the new build's store owns these directories now, and
             # the old one answering for them would be a stale write waiting to happen.
             old_services.repo.close()
+        telemetry.end(span)
         return True
 
     def close(self) -> None:

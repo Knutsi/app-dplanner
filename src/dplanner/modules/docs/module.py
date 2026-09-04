@@ -43,6 +43,7 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import Context, ContextService
+from dplanner.framework.debounce import DebounceService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.llm import LLMMessage, LLMTimeoutError
@@ -99,6 +100,7 @@ class DocsDeps:
     actions: ActionRegistry
     sections: InspectorSectionRegistry
     context: ContextService
+    debounce: DebounceService
     tabs: TabHost
     segments: IndexSegmentRegistry
     theme: ThemeService

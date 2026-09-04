@@ -1693,3 +1693,161 @@ a flag nothing reset would have fired a spurious rebuild after the next Save. Th
 form: **any state a module let the rebuild garbage-collect is state it now has to reset
 itself.** Worth a look at every module that reads `SessionControl` when a reload path is
 replaced by an in-place one.
+
+## 14. From the telemetry-and-coalescing pass
+
+The window was choppy on edits, and nothing in the framework could say why: every model
+signal fanned out synchronously to every view, no view filtered by project, and no span
+anywhere was timed. This pass gave the framework a journal, timed the seams it already
+owns, and taught a view of one project to hear that project alone. Each change below is a
+divergence from the template; every one is generic.
+
+### `core/telemetry.py` — the journal, and `Signal.emit` timing its slots (new)
+
+**What.** A Qt-free `Telemetry` — a ring of the last 2000 `Span`s plus an append-only
+JSONL file under `config_dir()/telemetry/` — installed once per process like `logging`
+(`install()`/`current()`; the default instance writes nothing, which is what every test
+sees). `Signal.__init__` grew an optional `name` and `Signal.emit` times each slot: one
+over `SLOW_MS` becomes a `slot` span named `Class.method (file:line)` (`describe_slot`,
+which follows `__wrapped__` so a closure between the signal and the view names the
+view). A raising slot is still logged, and the logging handler `install()` puts on the
+root logger turns that — and every other `logger.exception`/`warning` in the tree — into
+a `failure` span with its traceback, so no call site learned anything.
+
+**Why it is the framework's.** `Signal.emit` is the one place a change's cost per listener
+can be read, and the framework's own services are the seams worth timing:
+`ActionRegistry.run` (an `action` span — every presenter goes through it now, see below),
+`UndoService.push/undo/redo` (`command` spans: typing never passes through an action),
+`TaskService.finish` (`task`), `AutosaveService.flush_now` (`autosave` — disk I/O on the
+GUI thread), `WorkspaceWatcher._check` (`poll`), `AppSession._open`/`refresh` (`session`,
+the largest stall the application has). `AppServices.telemetry` is the handle a module or
+a test reads it through; the entry point installs the file-backed instance for both
+surfaces, so a CLI run's row lands beside the window's in one file.
+
+**Upstream?** Yes, whole. The trap worth stating with it: a handler on the root logger
+swallows Python's last-resort stderr output, so `install()` adds a stream handler when
+the root has none — the console keeps saying what it said.
+
+### `framework/menubar.py` — a triggered entry runs through `ActionRegistry.run`
+
+**What.** The bar's QAction called `spec.run(context)` directly, the one presenter that
+did; it now calls `self._registry.run(sid, context)` like the pop-ups, the toolbar, the
+palette and the aspect bar. Side effect, and a correct one: the state gate is re-asked at
+trigger time rather than as of the last refresh.
+
+**Why.** One path is one span site and one gate. Wrapping every spec at registration
+(`dataclasses.replace` before `registered.emit`) would also have worked and was rejected
+as the wrong cut: a per-spec closure to cover one caller.
+
+### `framework/activity.py` — `follow_project` and `follow_target`; `retitle` names its entity
+
+**What.** `follow_project(library, project_id, changed, *, signals=None)` connects a
+callback to the model's signals — all five, or the ones named — filtered by the model's
+own `belongs_to(node_id, project_id)` over the node each signal names (the parent of a
+structure change, the step of an edge or text edit, the node of a field or module-data
+write). `follow_target(library, target_of, changed, …)` is the same for a panel section
+whose step moves under it. `follow_entity_tabs.retitle` retitles only the tab whose entity
+the field signal names. The closure the signal sees carries `__wrapped__`, so the journal
+names the view's method rather than the plumbing — without it every view's cost landed
+under one `_follow.<locals>.on_change` line, which the first measurement showed.
+
+
+**Why.** Seven modules carried the same unfiltered `lambda *_: self._refresh()` on every
+signal, so a rename in one project rebuilt every other project's tabs. The filter is one
+function beside `follow_entity_tabs`, which is the same shape (feature-blind upkeep
+every entity tab was copying). The `Library` import into `framework/` follows
+`module_data_section.py`'s precedent.
+
+**Upstream?** The pair belongs beside `follow_entity_tabs` wherever that goes. The
+`belongs_to` question is the model's; the template's model would answer it over its
+own parent index the same way.
+
+### `framework/debounce.py` — coalesced refreshes, and the service that settles them (new)
+
+**What.** `Debounced(action, delay_ms, *, parent, service)`: `trigger()` restarts a
+single-shot `QTimer`, so a burst runs the action once, after the quiet spell, over the
+latest state; `flush()`, `cancel()`, `pending()`. A zero delay is "once this event-loop
+turn is over". Each run is a `refresh` span in the journal named for the view's method
+(the trigger carries `__wrapped__`), with how many triggers it folded — the number that
+says whether coalescing earned its place. `DebounceService` on `AppServices` holds every
+live one (a `WeakSet`, `shiboken6.isValid`-guarded) for `flush_all`/`cancel_all`, and
+carries the **immediate** switch: `trigger()` runs inline. `discard_build` cancels them
+all; the test suite's `session` fixture sets immediate.
+
+**Why.** `AutosaveService` and the assets tab each hand-rolled the same timer, and every
+other tab rebuilt synchronously on every signal — a paste of forty steps forty times, a
+typed sentence once per keystroke. The first cut generalised `AutosaveService`; it was not
+folded in, because autosave's timer also nests `pause()` and its flush is a transaction,
+not a redraw — two policies in one class would have been the entropy the rule warns of.
+
+**The part worth carrying up whole is immediate mode.** A suite that asserts on views
+synchronously — every generated application's will — cannot adopt deferred rebuilds by
+sprinkling `qtbot.wait` over a hundred tests; a per-build switch the fixture flips makes
+the conversion cost zero test churn, and the deferred path is then tested exactly once
+with real timers.
+
+### `framework/diagnostics.py` — a stall watchdog, chained failure hooks, a crash log (new)
+
+**What.** `StallWatchdog`: a 100 ms heartbeat `QTimer` on the GUI thread and a daemon
+thread that, when the beat is older than 250 ms, samples the GUI thread's stack through
+`sys._current_frames()` and opens a `stall` span carrying the sample and the spans open
+on that thread, sampling again every 500 ms until the next beat closes it with the real
+duration; with a crash log handle it also re-arms `faulthandler.dump_traceback_later`
+every beat, so a hang that never releases the GIL still gets its stacks dumped by
+faulthandler's own C thread. `capture_failures()` chains `sys.excepthook`,
+`threading.excepthook` and `qInstallMessageHandler` into `failure` spans and returns the
+undo; `open_crash_log()` is `faulthandler.enable` on `crash.log` beside the journal;
+`session_started`/`session_ended` write the journal's session header and footer. All of
+it is called from `app.main` and from nowhere deeper.
+
+**Why nowhere deeper.** A test build has no event loop, so a heartbeat there reads as one
+long stall; pytest-qt swaps `sys.excepthook` per test and pytest's thread plugin wraps
+`threading.excepthook`, so a chain installed by the builder would be bypassed or would
+fail tests that exercise a raising slot. The entry point is the one place that knows it
+is the real application.
+
+**Qt facts worth stating with it.** PySide6 prints a slot's or a virtual's uncaught
+exception through `PyErr_Print`, which calls `sys.excepthook` and carries on — so a chained
+hook sees them. Installing a Qt message handler *replaces* the default one, so the console
+line is the handler's to print; forgetting that silences every Qt warning. A modal dialog
+runs a nested event loop, so the heartbeat keeps beating through one and a dialog never
+reads as a stall. `sys._current_frames()` from another thread is safe: it takes the GIL and
+snapshots each thread's current frame.
+
+**Upstream?** Yes, whole — with the journal it reports into.
+
+### `framework/cards.py` — `CardStack.cards()` removed: never read a layout back
+
+**What.** `CardStack.cards()` iterated `layout.itemAt(i)`; nothing called it, and it is
+gone. The same read-back in two module views (`progression`'s `StatusColumn.cards()`,
+`time_estimates`' `MilestoneList.keys`) now reads a list the view keeps itself, and a
+test on each pins the rule by making `QLayout.itemAt` raise.
+
+**Why — the crash.** 2026-09-04: one xdist worker died with SIGSEGV in the boundary
+`gc.collect()`, deterministic for its four tests, gone with `-n0`, and it appeared when
+an unrelated `Debounced` was added to the app shell — which only moved objects in the
+collector's list. gdb: `~QBoxLayout` → `delete item` through a null vtable, an item freed
+twice. `scripts/gc_catalog.py` (a `gc.DEBUG_SAVEALL` plugin, now checked in) showed the
+`QWidgetItem`/`QSpacerItem` wrappers *before* their layout in the collector's order.
+
+**The shiboken mechanics** (6.11.2, `libshiboken/basewrapper.cpp`). `SbkObject_tp_clear`
+calls `Shiboken::Object::removeParent(self)` — whose default `giveOwnershipBack = true`
+sets `hasOwnership` on the wrapper being cleared — and only then
+`_destroyParentInfo(self, true)`, which *invalidates* that wrapper's own children. So in a
+collected cycle, whichever wrapper is cleared first owns its C++ object from then on; its
+children are made safe, its C++ owner is not told. PySide's glue for `QLayout::itemAt`
+(`addownership-item-at` → `addLayoutOwnership` → `Shiboken::Object::setParent(layout,
+item)`) makes every item wrapper such a child of the layout wrapper. A `QObject` in that
+position is harmless — `~QObject` removes itself from its C++ parent — but
+`~QLayoutItem` tells nobody, and `~QBoxLayout` deletes the item again. `takeAt` is
+annotated `parent action="remove"` and its item is the caller's to delete, so a loop that
+drops the wrapper each turn is correct. The order the collector clears a cycle in is not
+allocation order once earlier collections have rescued and re-appended objects, which is
+why the crash moved with an unrelated change and why the natural minimal reproducer does
+not crash: the layout wrapper is cleared first there and invalidates its items.
+
+**Upstream?** The rule, yes: a generated application's views will read a layout back the
+first time somebody writes a test for one. A `framework/` helper cannot make it safe —
+nothing short of `shiboken6.invalidate` un-parents the wrapper from Python, and that is
+the magic the rule exists to avoid — so the answer is the list the view keeps. The
+plugin is worth carrying up whole.

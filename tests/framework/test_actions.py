@@ -2,6 +2,7 @@
 
 import pytest
 
+from dplanner.core.telemetry import current
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -90,3 +91,27 @@ def test_a_standard_key_expands_to_every_platform_binding(app):
 def test_the_default_state_is_enabled(registry):
     registry.register(spec("a"))
     assert registry.spec("a").state(Context({})) == ENABLED
+
+
+# -- every run is a span -------------------------------------------------------------------------
+
+
+def test_running_an_action_is_timed(registry):
+    current().clear()
+    registry.register(spec("a", run=lambda _c: None))
+    registry.run("a", Context({}))
+    (span,) = [span for span in current().recent() if span.kind == "action"]
+    assert span.name == "a" and span.ok and span.duration_ms is not None
+
+
+def test_a_raising_action_is_recorded_and_re_raised(registry):
+    current().clear()
+
+    def explode(_context):
+        raise RuntimeError("no such step")
+
+    registry.register(spec("a", run=explode))
+    with pytest.raises(RuntimeError, match="no such step"):
+        registry.run("a", Context({}))
+    (span,) = [span for span in current().recent() if span.kind == "action"]
+    assert span.ok is False and span.error_type == "RuntimeError"

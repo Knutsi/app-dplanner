@@ -49,7 +49,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import EntityActivity, follow_entity_tabs
+from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -59,6 +59,7 @@ from dplanner.framework.context import (
     activity_uri,
     selection_uri,
 )
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
 from dplanner.modules.time_estimates.milestones import (
@@ -82,6 +83,7 @@ from dplanner.modules.time_estimates.schedule import (
 from dplanner.modules.time_estimates.view import FocusBar, MatrixView
 
 TIME_KIND = "time"
+REFRESH_DELAY_MS = 500
 
 PANEL_MARGIN = 16
 CAPTION_GAP = 6
@@ -103,6 +105,7 @@ class TimeEstimatesDeps:
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
+    debounce: DebounceService
     # Estimates, agent-ness and milestones through the aspects' Qt-free readers — the
     # matrix never learns what any of them is stored as.
     days_for: Callable[[Step], float | None]
@@ -224,15 +227,18 @@ class TimeEstimatesActivity(EntityActivity):
         self.split.setSizes([HALF, HALF])
         self._widget = self.split
 
+        # After a quiet spell, not per signal: a refresh is two dozen schedule simulations
+        # and a re-render of the matrix, the months and the milestones — the heaviest
+        # reaction in the application, so its delay is the longest.
+        self._refresh_soon = Debounced(
+            self._refresh, REFRESH_DELAY_MS, parent=self.split, service=deps.debounce
+        )
         self._unsubscribes = [
-            self._product.structure_changed.connect(lambda *_a: self._refresh()),
-            self._product.edges_changed.connect(lambda *_a: self._refresh()),
-            self._product.module_data_changed.connect(lambda *_a: self._refresh()),
-            # A separate agent instruction is prose, and carrying one marks the step as
-            # agent work — so a text edit can move a step between pools.
-            self._product.text_edited.connect(lambda *_a: self._refresh()),
-            # A milestone's label and a step's title are what the lists print.
-            self._product.field_changed.connect(lambda *_a: self._refresh()),
+            # Every signal, this project only: a separate agent instruction is prose, and
+            # carrying one marks the step as agent work — so a text edit can move a step
+            # between pools — and a milestone's label and a step's title are what the
+            # lists print.
+            follow_project(self._product, self.project_id, self._refresh_soon.trigger),
         ]
         self._refresh()
 

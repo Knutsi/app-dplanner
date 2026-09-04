@@ -82,13 +82,15 @@ def cone(
     """
     reached: set[StepId] = set()
     stopped: set[StepId] = set()
+    ids = {step.id for step in project.steps}  # Once per walk: Project.step() is a scan.
 
     def visit(current: StepId) -> None:
         for target in library.requires(current):
             if target.id in reached or target.id in stopped:
                 continue
-            if project.step(target.id) is None:
+            if target.id not in ids:
                 continue
+
             if stops_at is not None and stops_at(target):
                 stopped.add(target.id)
                 continue

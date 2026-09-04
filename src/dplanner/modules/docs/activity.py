@@ -40,8 +40,9 @@ from PySide6.QtWidgets import (
 from dplanner.domain.model import Project, Step, StepId
 from dplanner.domain.scope import gatherers, kind_of
 from dplanner.domain.store import ModuleFileArea
-from dplanner.framework.activity import EntityActivity
+from dplanner.framework.activity import EntityActivity, follow_project
 from dplanner.framework.context import ContextNode, Uri, activity_uri, selection_uri
+from dplanner.framework.debounce import Debounced
 from dplanner.framework.markdown_view import MarkdownView
 from dplanner.framework.module_data_section import PANEL_MARGIN
 from dplanner.modules.docs.aspect import MODULE_ID, read
@@ -118,12 +119,11 @@ class DocsActivity(EntityActivity):
         self.page.group_box.currentIndexChanged.connect(self._on_group_changed)
         self.page.list.currentRowChanged.connect(self._on_row_changed)
 
+        # After a quiet spell, not per signal: a refresh walks a cone per collector.
+        self._refresh_soon = Debounced(self._refresh, parent=self.page, service=deps.debounce)
         self._unsubscribes = [
-            self._library.structure_changed.connect(lambda *_a: self._refresh()),
-            self._library.edges_changed.connect(lambda *_a: self._refresh()),
-            self._library.field_changed.connect(lambda *_a: self._refresh()),
-            self._library.module_data_changed.connect(lambda *_a: self._refresh()),
-            self._library.text_edited.connect(lambda *_a: self._refresh()),
+            # Every signal, this project only — a fragment is prose, so text edits count.
+            follow_project(self._library, self.project_id, self._refresh_soon.trigger),
         ]
         self._refresh()
 

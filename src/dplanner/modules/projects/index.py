@@ -22,11 +22,12 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem
 
-from dplanner.domain.model import Library, NodeId
+from dplanner.domain.model import Library, NodeId, Project
 from dplanner.domain.store import ProjectProblem
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextNode, ContextService, selection_uri
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.index_panel import (
     expansion_of,
     restore_expansion,
@@ -80,8 +81,12 @@ class ProjectsSegment:
         theme: ThemeService,
         entries: tuple[ProjectEntry, ...] = (),
         problems: Callable[[], list[ProjectProblem]] = list,
+        debounce: DebounceService | None = None,
     ) -> None:
         self._root = root
+        # After a quiet spell, not per signal: the whole folder is redrawn. No Qt parent —
+        # a segment is not a widget — so the service's cancel_all is what disarms it.
+        self._rebuild_soon = Debounced(self.rebuild, parent=None, service=debounce)
         self._library = library
         self._problems = problems
         self._context = context
@@ -89,13 +94,23 @@ class ProjectsSegment:
         self._theme = theme
         self._entries = tuple(sorted(entries, key=lambda entry: (entry.order, entry.id)))
         self._unsubscribe = [
-            library.structure_changed.connect(lambda *_args: self.rebuild()),
-            library.field_changed.connect(lambda *_args: self.rebuild()),
+            # The tree lists projects, never steps: only the library's own membership and
+            # a project's own fields can change what it shows.
+            library.structure_changed.connect(self._on_structure),
+            library.field_changed.connect(self._on_field),
             # Row icons are painted in the theme's ink, and only the segment knows which
             # rows carry one — the panel's re-tint hook covers folder roots alone.
             theme.changed.connect(lambda *_args: self.rebuild()),
         ]
         self.rebuild()
+
+    def _on_structure(self, parent_id: NodeId, *_rest: object) -> None:
+        if parent_id == self._library.id:
+            self._rebuild_soon.trigger()
+
+    def _on_field(self, node_id: NodeId, *_rest: object) -> None:
+        if self._library.has(node_id) and isinstance(self._library.node(node_id), Project):
+            self._rebuild_soon.trigger()
 
     # -- what the panel asks for ---------------------------------------------------------------
 

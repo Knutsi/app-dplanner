@@ -67,6 +67,7 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "runs" is the Agent List — the live shells this window launched, a data child menu
     # rebuilt on open — above "agent", the agent-facing setup (the skill, the CLI).
     "Tools": ("runs", "agent"),
-    "Debug": ("llm",),
+    "Debug": ("llm", "telemetry"),
+
     "Help": ("about",),
 }

@@ -40,7 +40,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import EntityActivity, follow_entity_tabs
+from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -50,6 +50,7 @@ from dplanner.framework.context import (
     activity_uri,
     selection_uri,
 )
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.tabs import TabHost
 from dplanner.modules.step_order.cli import wave_label
 from dplanner.modules.step_order.export import order_rows, write_csv
@@ -108,6 +109,7 @@ class StepOrderDeps:
     actions: ActionRegistry
     context: ContextService
     parent: QWidget  # The CSV export's file dialog needs a window to parent on.
+    debounce: DebounceService
     tabs: TabHost
     # What the aspect modules have to say about a step, one short phrase each.
     step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
@@ -172,14 +174,12 @@ class OrderActivity(EntityActivity):
         layout.addWidget(self.table, 1)
 
         self._widget = page
+        # After a quiet spell, not per signal: the table is rebuilt row by row.
+        self._refresh_soon = Debounced(self._refresh, parent=page, service=deps.debounce)
         self._unsubscribes = [
-            self._product.structure_changed.connect(lambda *_a: self._refresh()),
-            self._product.edges_changed.connect(lambda *_a: self._refresh()),
-            self._product.field_changed.connect(lambda *_a: self._refresh()),
-            self._product.module_data_changed.connect(lambda *_a: self._refresh()),
-            # The title column's kind icons read prose presence (an agent instruction), so
-            # a text edit can change what a row wears.
-            self._product.text_edited.connect(lambda *_a: self._refresh()),
+            # Every signal, this project only. The title column's kind icons read prose
+            # presence (an agent instruction), so a text edit can change what a row wears.
+            follow_project(self._product, self.project_id, self._refresh_soon.trigger),
         ]
         self._refresh()
 

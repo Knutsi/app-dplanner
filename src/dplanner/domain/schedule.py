@@ -422,9 +422,10 @@ def critical_path(
         own = days_for(step) or 0.0
         waiting = step.edges.get("requires", [])
         resolved = sorted(
-            (target for target in waiting if project.step(target) is not None),
+            (target for target in waiting if target in order),
             key=lambda target: order[target],
         )
+
         best: StepId | None = None
         upstream = 0.0
         for target in resolved:

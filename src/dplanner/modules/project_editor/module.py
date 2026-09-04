@@ -42,7 +42,7 @@ from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
-from dplanner.framework.activity import EntityActivity, follow_entity_tabs
+from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
     ContextNode,
@@ -52,6 +52,7 @@ from dplanner.framework.context import (
     entity_uri,
     selection_uri,
 )
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.tabs import TabHost
@@ -120,8 +121,8 @@ def _no_aspects(_step_id: StepId) -> list[str]:
     return []
 
 
-def _no_accent(_step_id: StepId) -> NodeAccent:
-    return NodeAccent()
+def _no_accents(_project_id: str) -> dict[StepId, NodeAccent]:
+    return {}
 
 
 def _no_days(_step: Step) -> float | None:
@@ -139,13 +140,17 @@ class ProjectEditorDeps:
     parent: QWidget
     panels: PanelRegistry
     theme: ThemeService
+    debounce: DebounceService
     # Where a step's attachments live, for a copy to carry them.
     files: FilesFor
     # What the aspect modules have to say about a step, one short phrase each.
     step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
-    # How a step should look beyond its text — muted, badged — in the canvas's own
-    # vocabulary, so the editor never learns which aspects mean what.
-    step_accent: Callable[[StepId], NodeAccent] = field(default=_no_accent)
+    # How every step of a project should look beyond its text — muted, badged — in the
+    # canvas's own vocabulary, so the editor never learns which aspects mean what. One call
+    # per sync: the answer for a milestone comes from a schedule walk, and the walk is the
+    # same for every step in the project.
+    step_accents: Callable[[str], dict[StepId, NodeAccent]] = field(default=_no_accents)
+
     # How long a step takes, from whichever module owns estimates — the timeline sort reads
     # time through this, the same seam domain/schedule.py uses one level down.
     days_for: Callable[[Step], float | None] = field(default=_no_days)
@@ -204,15 +209,16 @@ class ProjectActivity(EntityActivity):
         self._scene.region_resized.connect(self._on_region_resized)
         self._view.modes.changed.connect(lambda _name: self._publish_activity())
 
+        # Once per event-loop turn, not once per signal: a paste of forty steps is forty
+        # signals and one sync, and a typed title still lands on the node as it is typed.
+        self._sync_soon = Debounced(self._sync, 0, parent=self._page, service=deps.debounce)
         self._unsubscribes = [
+            # Connected first, so a typing burst is sealed before the canvas re-syncs.
             self._product.structure_changed.connect(self._on_structure),
-            self._product.edges_changed.connect(lambda *_a: self._sync()),
-            self._product.field_changed.connect(self._on_field),
-            self._product.module_data_changed.connect(self._on_module_data),
-            # Prose reaches the node too — the spark glyph and the subtitle's summaries
-            # read module_text — and sync diffs before repainting, so a keystroke that
-            # changes neither is free.
-            self._product.text_edited.connect(lambda *_a: self._sync()),
+            # Every change inside this project, and none outside it. Prose reaches the
+            # node too — the spark glyph and the subtitle's summaries read module_text —
+            # and sync diffs before repainting, so a keystroke that changes neither is free.
+            follow_project(self._product, self.project_id, self._sync_soon.trigger),
         ]
         self._sync()
 
@@ -238,10 +244,12 @@ class ProjectActivity(EntityActivity):
 
     def select_step(self, step_id: StepId) -> None:
         """Select one step on the canvas — how another view reveals something here."""
+        self._sync_soon.flush()  # A step born this turn has its node only once synced.
         self._scene.select_step(step_id)
 
     def select_steps(self, step_ids: list[StepId]) -> None:
         """Replace the selection with these steps — Select All's way in."""
+        self._sync_soon.flush()
         self._scene.select_steps(step_ids)
 
     def set_mode(self, name: str, on: bool) -> None:
@@ -280,6 +288,7 @@ class ProjectActivity(EntityActivity):
         self._deps.undo.break_coalescing()
 
     def close(self) -> None:
+        self._sync_soon.cancel()
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
@@ -326,6 +335,7 @@ class ProjectActivity(EntityActivity):
         project = self._project()
         placed = positions(self._product, project)
         connected = ports(project.steps)
+        accents = self._deps.step_accents(project.id)
         nodes = [
             NodeSpec(
                 step_id=step.id,
@@ -333,7 +343,7 @@ class ProjectActivity(EntityActivity):
                 subtitle=" · ".join(self._deps.step_aspects(step.id)),
                 x=placed[step.id][0],
                 y=placed[step.id][1],
-                accent=self._deps.step_accent(step.id),
+                accent=accents.get(step.id) or NodeAccent(),
                 ports=connected[step.id],
             )
             for step in project.steps
@@ -346,19 +356,12 @@ class ProjectActivity(EntityActivity):
         ]
         self._scene.sync(nodes, edges, read_regions(project))
 
-    def _on_structure(self, _parent_id: NodeId, _origin: object = None) -> None:
-        if not self._product.has(self.project_id):
+    def _on_structure(self, parent_id: NodeId, _origin: object = None) -> None:
+        if not self._product.belongs_to(parent_id, self.project_id):
             return
         if self._scene.selected_step() is not None:
             # A step that has gone ends a typing burst: the next edit is about something else.
             self._deps.undo.break_coalescing()
-        self._sync()
-
-    def _on_field(self, _node_id: NodeId, _field_name: str, _origin: object) -> None:
-        self._sync()
-
-    def _on_module_data(self, _node_id: NodeId, _module_id: str, _origin: object) -> None:
-        self._sync()
 
     # -- gestures become commands ----------------------------------------------------------------
 
@@ -439,6 +442,7 @@ class ProjectActivity(EntityActivity):
         rather than one hiding another. The double-click lands here too — it pointed at a
         spot in exactly the same sense.
         """
+        self._sync_soon.flush()  # The nodes exist only once the deferred sync has run.
         self._scene.select_steps(step_ids)
         point = self._view.last_click
         if point is not None:

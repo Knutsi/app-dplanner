@@ -13,7 +13,7 @@ undoable, confirmed in those words).
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QModelIndex, QRect, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QModelIndex, QRect, QSize, Qt, QUrl
 from PySide6.QtGui import (
     QDesktopServices,
     QGuiApplication,
@@ -44,7 +44,7 @@ from PySide6.QtWidgets import (
 from dplanner.domain.assets import AssetEntry, AssetLocation, attach, catalog, prunable
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import NodeId
-from dplanner.framework.activity import EntityActivity
+from dplanner.framework.activity import EntityActivity, follow_project
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -53,6 +53,7 @@ from dplanner.framework.context import (
     activity_uri,
     selection_uri,
 )
+from dplanner.framework.debounce import Debounced
 from dplanner.framework.image_preview import ImagePreviewDialog
 from dplanner.framework.widgets import confirm
 from dplanner.modules.project_assets.cli import MODULE_ID, read_titles, write_titles
@@ -76,7 +77,6 @@ PREVIEW_MAX = 260  # The detail pane's picture, bounded; click for the real ligh
 
 # `text_edited` fires per keystroke and a catalog rescan per keystroke is waste; one
 # single-shot timer coalesces every model signal into one refresh per pause.
-REFRESH_DELAY_MS = 300
 
 NAME_ROLE = int(Qt.ItemDataRole.UserRole) + 1  # The entry's content name.
 DETAIL_ROLE = int(Qt.ItemDataRole.UserRole) + 2  # The row's second line.
@@ -262,15 +262,23 @@ class AssetsActivity(EntityActivity):
 
         self._widget = page
         # Parented to the page: a discarded build deletes the widget tree, and a pending
-        # tick on an orphan timer would fire into deleted labels afterwards.
-        self._refresh_timer = QTimer(page, interval=REFRESH_DELAY_MS, singleShot=True)
-        self._refresh_timer.timeout.connect(self._refresh)
+        # tick on an orphan timer would fire into deleted labels afterwards. Coalesced,
+        # because a catalog walk lists directories: a burst of edits costs one.
+        self._refresh_soon = Debounced(self._refresh, parent=page, service=deps.debounce)
         library = deps.library
         self._unsubscribes = [
-            library.module_data_changed.connect(lambda *_a: self._schedule_refresh()),
-            library.text_edited.connect(lambda *_a: self._schedule_refresh()),
-            library.structure_changed.connect(lambda *_a: self._schedule_refresh()),
-            library.field_changed.connect(lambda *_a: self._schedule_refresh()),
+            # This project only; links are not files, so edges are left out.
+            follow_project(
+                library,
+                self.project_id,
+                self._refresh_soon.trigger,
+                signals=(
+                    library.module_data_changed,
+                    library.text_edited,
+                    library.structure_changed,
+                    library.field_changed,
+                ),
+            ),
         ]
         self._refresh()
 
@@ -294,17 +302,15 @@ class AssetsActivity(EntityActivity):
         self._on_selection()
 
     def close(self) -> None:
-        self._refresh_timer.stop()
+        self._refresh_soon.cancel()
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
 
     # -- the catalog, rendered -----------------------------------------------------------------
 
-    def _schedule_refresh(self) -> None:
-        self._refresh_timer.start()
-
     def _refresh(self) -> None:
+
         library = self._deps.library
         if not library.has(self.project_id):
             return  # The project was deleted; the tab is about to close.

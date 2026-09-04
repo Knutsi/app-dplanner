@@ -36,7 +36,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import EntityActivity, follow_entity_tabs
+from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -46,6 +46,7 @@ from dplanner.framework.context import (
     activity_uri,
     selection_uri,
 )
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.widgets import centered_column
 from dplanner.modules.progression.view import BOARD_MAX_WIDTH, ProgressionBoard, RunControl
@@ -76,6 +77,7 @@ class ProgressionDeps:
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
+    debounce: DebounceService
     # The stored status claims, as answers. Wired by the composition root from the status
     # aspect's Qt-free reader; the honest default is a build where nothing is claimed.
     status_for: Callable[[Step], str] = field(default=_pending)
@@ -132,11 +134,22 @@ class ProgressionActivity(EntityActivity):
         outer.addWidget(centered_column(content, BOARD_MAX_WIDTH))
 
         self._widget = page
+        library = self._product
+        # After a quiet spell, not per signal: every card is rebuilt.
+        self._refresh_soon = Debounced(self._refresh, parent=page, service=deps.debounce)
         self._unsubscribes = [
-            self._product.structure_changed.connect(lambda *_a: self._refresh()),
-            self._product.edges_changed.connect(lambda *_a: self._refresh()),
-            self._product.field_changed.connect(lambda *_a: self._refresh()),
-            self._product.module_data_changed.connect(lambda *_a: self._refresh()),
+            # This project only, and no prose: the board reads statuses and titles.
+            follow_project(
+                library,
+                self.project_id,
+                self._refresh_soon.trigger,
+                signals=(
+                    library.structure_changed,
+                    library.edges_changed,
+                    library.field_changed,
+                    library.module_data_changed,
+                ),
+            ),
         ]
         self._refresh()
 

@@ -101,13 +101,3 @@ class CardStack(QScrollArea):
     def add_card(self, card: ToolCard) -> None:
         # The trailing stretch stays last because every insert lands before it.
         self._layout.insertWidget(self._layout.count() - 1, card)
-
-    def cards(self) -> list[ToolCard]:
-        """Top to bottom, as laid out."""
-        found: list[ToolCard] = []
-        for i in range(self._layout.count()):
-            item = self._layout.itemAt(i)
-            widget = item.widget() if item is not None else None
-            if isinstance(widget, ToolCard):
-                found.append(widget)
-        return found

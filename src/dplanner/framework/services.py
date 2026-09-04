@@ -19,9 +19,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from dplanner.core.repository import Repository
+from dplanner.core.telemetry import Telemetry
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import ContextService
+from dplanner.framework.debounce import DebounceService
 from dplanner.framework.index_panel import IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
@@ -64,6 +66,10 @@ class AppServices:
     # -- editing -------------------------------------------------------------------------------
     undo: UndoService[Any]
     autosave: AutosaveService
+    # Every coalesced view refresh in this build (``framework/debounce.py``): a view
+    # registers its Debounced here so a test can settle them all and a discarded build
+    # can drop them all.
+    debounce: DebounceService
 
     # -- surfaces modules contribute to --------------------------------------------------------
     index_segments: IndexSegmentRegistry
@@ -82,6 +88,10 @@ class AppServices:
     llm_providers: LLMProviderRegistry
     llm: LLMService
     switcher: SessionControl
+    # The process's journal (``core/telemetry.py``): what ran and how long it took. One
+    # per process rather than per build, because the signals that feed it belong to no
+    # build — this is the handle a module or a test reads it through.
+    telemetry: Telemetry
 
     # The feature modules themselves, in registration order. Not for modules — they never
     # see this bundle — but so a test can reach any part of the running application, which

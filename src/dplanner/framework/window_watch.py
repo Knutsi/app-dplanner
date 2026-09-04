@@ -18,6 +18,7 @@ from typing import Protocol, runtime_checkable
 from PySide6.QtCore import QObject, QTimer
 
 from dplanner.core.signals import Signal
+from dplanner.core.telemetry import current
 from dplanner.domain.store import Adoption, Conflict
 
 # Slow enough to be free, quick enough that a person who alt-tabs back from an agent does
@@ -58,5 +59,9 @@ class WorkspaceWatcher(QObject):
         # No guard for this window's own pending writes: a flush re-stamps the record as
         # it writes, so what this window did never reads as somebody else's, and an entry
         # both sides changed is the store's per-entry conflict, not the watcher's business.
-        if self._repo.changed_underneath():
+        # Timed: a walk over every plan file, on the GUI thread, every two seconds — a
+        # slow one shows up as a poll span, a quick one is not kept.
+        with current().span("poll", "workspace"):
+            changed = self._repo.changed_underneath()
+        if changed:
             self.changed.emit()

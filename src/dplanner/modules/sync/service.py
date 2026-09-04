@@ -17,6 +17,7 @@ race a checkout that is rewriting the same files.
 """
 
 import logging
+import time
 from collections.abc import Callable, Sequence
 from typing import Protocol, runtime_checkable
 
@@ -32,6 +33,9 @@ from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 
 logger = logging.getLogger(__name__)
+
+# How long the status bar's branch label trusts its last answer from git.
+BRANCH_CACHE_S = 1.0
 
 
 @runtime_checkable
@@ -65,6 +69,7 @@ class SyncService(QObject):
         super().__init__(parent)
         self._repos = repos
         self._groups: list[RepoGroup] = []
+        self._branches: dict[int, tuple[float, str]] = {}  # id(group) → (asked at, branch).
         self._unsubscribes: list[Callable[[], None]] = []
         self.dirty = False
         self.dirty_file_count = 0
@@ -90,6 +95,7 @@ class SyncService(QObject):
             unsubscribe()
         self._unsubscribes.clear()
         self._groups = [group for group in self._repos() if isinstance(group, RepoGroup)]
+        self._branches.clear()
         for group in self._groups:
             self._unsubscribes.append(group.dirty_changed.connect(self._recount))
             self._unsubscribes.append(group.worktree_changed.connect(self.worktree_changed.emit))
@@ -108,12 +114,26 @@ class SyncService(QObject):
 
     def refresh(self) -> None:
         """Re-read every repository's local state. No network, so it runs after every flush."""
+        self._branches.clear()
         for group in self._groups:
             group.refresh_dirty()
         self._recount()
 
     def branch_of(self, group: RepoGroup) -> str:
-        return group.current_branch()
+        """The group's current branch, remembered for a second.
+
+        The status bar's label asks on every context change — twice per keystroke, the
+        journal showed — and the answer is a git subprocess. A branch changes through an
+        operation here (which refreshes, clearing this) or under the running application
+        (which the watcher takes in, and a second's staleness on a label is nothing).
+        """
+        now = time.monotonic()
+        cached = self._branches.get(id(group))
+        if cached is not None and now - cached[0] < BRANCH_CACHE_S:
+            return cached[1]
+        branch = group.current_branch()
+        self._branches[id(group)] = (now, branch)
+        return branch
 
     def _recount(self, *_args: object) -> None:
         dirty = any(group.is_dirty() for group in self._groups)

@@ -2401,3 +2401,138 @@ the topology as `text.spec`, and `topology.missing` lint catches one without.
 The test suite's shared registry runs behind a gate with no record file — one that refuses
 nothing and writes nothing — so no test ever writes the real per-user file and every CLI test
 adds steps freely; the gate itself is exercised over a record under `tmp_path`.
+
+## A view refresh is coalesced, and hears one project
+
+The window was choppy on edits, and the reason was structural rather than any one slow
+function. Every model signal is delivered synchronously (`core/signals.py`), inside the
+command that caused it, inside `UndoService.push`; every open tab rebuilt itself completely
+on every signal; and no tab asked which project the signal was about. One keystroke in a
+description therefore ran the canvas's full automatic layout (even with every node placed),
+a topological sort and a schedule walk *per milestone step*, twenty-four schedule
+simulations for the Time tab, a fresh `QTableWidget` for the order, every card of the
+progression board, the docs and tests tables, and a directory listing for the Agent tab's
+inherited context — for every open project, not only the one being edited — and then
+re-evaluated all ninety-nine action states. Measured headless over an eighty-step project
+with seven tabs open, that was **67 ms of synchronous work per keystroke**.
+
+Four decisions, in the order they were applied, each measured with the journal below:
+
+**The derivations stop scanning, and the canvas computes once per sync.** `Project.step()`
+is a linear scan and every graph walk asked it once per edge; a set of ids per walk made
+`depths`, `cone`, `progression` and the critical path linear again. `positions()` runs the
+automatic layout only when some step lacks a stored one — on a settled plan, never — and the
+accent seam became `step_accents(project_id)`, one dict per sync with one schedule walk for
+every milestone, where `milestone_stat(step)` had walked it per milestone. Nothing about
+these needed a timer; they were simply wrong, and the journal is what made them visible.
+
+**A view of one project hears that project.** `follow_project(library, project_id,
+changed)` in `framework/activity.py` asks the model's own `belongs_to` about the node each
+signal names — the parent of a structure change, the step of an edge or a text edit, the
+node of a field or module-data write — and `follow_target` does the same for a panel
+section whose step moves under it. It sits beside `follow_entity_tabs` because it is the
+same shape: feature-blind upkeep that seven modules had copied by hand. The filter is a
+question for the model rather than for the view because a view that reads the parent index
+itself is a second implementation of "which project is this node in", and there was
+already one.
+
+**A burst is one rebuild, and the newest state wins.** `framework/debounce.py` is the
+timer `AutosaveService` and the assets tab had each hand-rolled: `Debounced.trigger()`
+restarts a single-shot `QTimer`, so within a burst the older triggers never run, at most
+one run is pending per view, and nothing queues. That is the answer to "does a new update
+cancel the old one": it does not cancel it, it *replaces* it, because until the timer fires
+there was nothing to cancel. Zero delay means "once this event-loop turn is over" — the
+canvas uses it, so a composite command's forty signals become one sync and a typed title
+still lands on its node as it is typed. A real delay means "after a quiet spell": 300 ms
+for a table, a list or a board (the assets tab's number, below what reads as lag on a
+rebuild nobody is waiting for), 500 ms for the Time tab, whose refresh is the heaviest
+reaction in the application. After the conversion the same harness measured **5 ms of
+synchronous work per keystroke**; the Time tab rebuilt once per burst (26 ms) instead of
+ten times, the order table once (12 ms), the assets catalog once (15 ms). What was left was
+the context refresh — every action's state, every toolbar and every panel re-asked — which
+the app shell ran inline on every undo push; it is now the same 0 ms `Debounced` as the
+canvas (`poke_context`), and the synchronous cost of a keystroke is **0.3 ms**, with the
+canvas sync (8 ms) and the context refresh (3 ms) following once per event-loop turn.
+
+**Why not a worker thread.** The off-thread design was drawn up — a derivation with a
+generation counter, applying through a queued Qt signal, dropping any result a newer
+request had superseded — and it is sound: the model is mutated only on the GUI thread, a
+mutation and its signals and the handler's re-request all run in one synchronous turn, and
+a queued apply cannot land before that turn ends. It was not built, for three reasons that
+hold whatever the numbers say. The derivations are pure Python, so a worker competes for
+the GIL and total CPU is unchanged; coalescing, not parallelism, is what removes the
+N-times-per-burst cost. A worker still running when a build is discarded emits on a deleted
+`QObject` — the exact widget-lifetime hazard the suite's SIGSEGV notes describe, in a suite
+that builds hundreds of applications per process. And "an exception mid-read is a
+superseded result" swallows real bugs. The one place a thread honestly helps is disk I/O,
+and there the cheaper fix is a cache: the branch label's `git` query, asked twice per
+keystroke, is remembered for a second. The disk poll (8 ms every two seconds at eighty
+steps) and the minimap refresh (0.1 ms) were measured and left alone; a `poll` span appears
+in the journal the day a slow disk makes the first one matter.
+
+**Tests run in immediate mode, and that is the whole test strategy.** About a hundred and
+fifty tests assert on a view the line after they push a command, and a deferred rebuild
+would fail every one of them for no finding. `DebounceService` carries one switch, set by
+the suite's `session` fixture: `trigger()` runs the action inline, which is exactly the
+behaviour every view had before it was coalesced. The deferred path is tested once with
+real timers (`tests/framework/test_debounce.py`) and once per converted view by switching
+immediate mode off, pushing three times, and asserting one rebuild after `flush_all()`.
+Sprinkling `qtbot.wait` over a hundred tests was the alternative, and it would have made
+every one of them slower and none of them more honest.
+
+## The journal: what ran, how long it took, and why it hung
+
+Nothing in the application timed anything, configured logging, or caught a crash. A slot
+that raised was logged through Python's last-resort handler and gone; a hang was a story
+told afterwards. `core/telemetry.py` is the answer, and three decisions shape it.
+
+**One journal per process, like `logging`.** `Signal.emit` is where a model change turns
+into every view's work, synchronously, so it is where that work is measured — and it is
+`core/`, with no service to be handed. So there is one `current()` instance: a default
+that keeps a ring buffer and writes nothing, which every test sees, and the file-backed
+one the entry point installs for both surfaces. The hot path is two `perf_counter` calls
+per slot and an append under a lock per span; a slot under `SLOW_MS` is timed and
+forgotten. `AppServices.telemetry` is the handle a module reads it through, never a way to
+build a second one.
+
+**Two stores, one policy, and failures through logging.** The ring holds the last two
+thousand spans of every kind but a quick poll; the JSONL file under `config_dir()/telemetry/`
+gets what is worth reading back after the fact — every `failure`, `stall`, `session` and
+`cli` span, and anything that took `SLOW_MS` or longer — one `write()` per line, so the
+window and a CLI run append to the same file and their rows interleave into one timeline,
+which is how an agent lines its `status set` up against the window's `session refresh` a
+second later. Failures are not caught at each site: `install()` puts a handler on the root
+logger, and every `logger.exception` already in the tree — a raising slot, a failed task, a
+refused open — becomes a `failure` span with its traceback and its parent. That handler
+would silence the console (a root handler means no last-resort output), so `install()`
+adds a stream handler when the root has none. The same fact is what lets the test suite
+fail on a slot that raised: a collector on the root logger for the duration of each test,
+and an opt-out marker for the two tests that raise in a slot on purpose. It caught its
+first bug the day it landed — a callback the appshell still invoked by its old name, which
+`Signal.emit` had been swallowing under every test that exercised a tab switch.
+
+**A stall is sampled from another thread, and none of it lives in the builder.**
+`framework/diagnostics.py`'s watchdog beats a 100 ms `QTimer` on the GUI thread; a daemon
+thread that finds the beat 250 ms late samples the GUI thread's stack through
+`sys._current_frames()` — which takes the GIL and snapshots each thread's frame, so a stall
+inside C++ is sampled when the GIL is next released and shows the Python frame that made
+the call — and opens a `stall` span carrying the sample and whatever spans were open on
+that thread: "stall 1.2 s during action steps.delete", with the frames. A modal dialog
+runs a nested event loop, so the beat continues through one and a dialog never reads as a
+stall. With the crash log open, every beat re-arms `faulthandler.dump_traceback_later`, so
+a hang that never releases the GIL still gets its stacks dumped by faulthandler's own C
+thread. `sys.excepthook`, `threading.excepthook` and Qt's message handler are chained into
+`failure` spans (PySide prints a slot's exception through `PyErr_Print`, which calls the
+hook; installing a Qt message handler replaces the default one, so the console line is ours
+to print); `faulthandler.enable` writes a native crash's Python stack to `crash.log`
+beside the journal; a `session` start and end record bracket a run, so a session with no
+end is visible afterwards. All of it starts in `app.main` and nowhere deeper, because a
+test build has no event loop for a heartbeat to beat in, and pytest owns the hooks while
+a test runs — the builder installing any of it would read as one long stall or bypass the
+suite's own capture.
+
+The readers are deliberately two: *Debug ▸ Telemetry* polls the ring once a second while
+it is current (spans arrive from worker threads and the watchdog's thread, so polling is
+what keeps every widget touch on the GUI thread), and `dplanner telemetry show` reads the
+file — `--slow 50` for what took long, `--failures` for tracebacks and the crash log's tail,
+`--json` for an agent. The generated skill points an agent at it before it reports a hang.

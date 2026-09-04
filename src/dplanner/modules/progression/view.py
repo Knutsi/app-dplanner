@@ -287,6 +287,7 @@ class StatusColumn(QFrame):
         self._rows.setContentsMargins(0, 0, 0, 0)
         self._rows.setSpacing(ROW_GAP)
         self._rows.addStretch(1)
+        self._held: list[QWidget] = []  # What add() laid out, top to bottom.
         scroll.setWidget(content)
         # The page paints the background; the viewport's default Base fill would hide it.
         scroll.viewport().setAutoFillBackground(False)
@@ -294,14 +295,15 @@ class StatusColumn(QFrame):
         layout.addWidget(scroll, 1)
 
     def clear(self) -> None:
-        while self._rows.count() > 1:  # The trailing stretch stays.
-            item = self._rows.takeAt(0)
-            widget = item.widget() if item is not None else None
-            if widget is not None:
-                widget.deleteLater()
+        for widget in self._held:
+            self._rows.removeWidget(widget)
+            widget.hide()
+            widget.deleteLater()
+        self._held.clear()
 
     def add(self, widget: QWidget) -> None:
-        self._rows.insertWidget(self._rows.count() - 1, widget)
+        self._rows.insertWidget(self._rows.count() - 1, widget)  # Before the trailing stretch.
+        self._held.append(widget)
 
     def say(self, words: str) -> None:
         """The empty state: a section empty for now says so rather than vanishing."""
@@ -311,13 +313,9 @@ class StatusColumn(QFrame):
         self.add(note)
 
     def cards(self) -> list[StepCard]:
-        found: list[StepCard] = []
-        for index in range(self._rows.count()):
-            item = self._rows.itemAt(index)
-            widget = item.widget() if item is not None else None
-            if isinstance(widget, StepCard):
-                found.append(widget)
-        return found
+        # The list, never the layout: a QLayoutItem wrapper ``itemAt()`` hands out is a
+        # double delete waiting for a gc pass (CLAUDE.md's crash notes).
+        return [widget for widget in self._held if isinstance(widget, StepCard)]
 
     def titles(self) -> list[str]:
         return [card.title.text() for card in self.cards()]

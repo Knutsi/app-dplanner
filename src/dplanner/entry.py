@@ -10,6 +10,7 @@ toolkit it does not use — and works on a machine that has none.
 
 import sys
 
+from dplanner.core.telemetry import Telemetry, install, journal_path
 from dplanner.modules import default_cli_commands, default_module_formats
 
 # Options that take a value, so the value is not mistaken for a command word. Both entry
@@ -55,7 +56,11 @@ def looks_like_a_verb(argv: list[str]) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if looks_like_a_verb(arguments):
+    verb = looks_like_a_verb(arguments)
+    # The journal is the process's, so it is installed here — before either surface —
+    # and both write to the same file: a CLI run's row lands beside the window's.
+    install(Telemetry(journal_path(), surface="cli" if verb else "window"))
+    if verb:
         from dplanner.cli.command import CliRegistry
         from dplanner.cli.main import run
 

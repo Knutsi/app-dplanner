@@ -194,16 +194,17 @@ class Library(Node):
         self._parent: dict[NodeId, NodeId] = {}
 
         # One signal per kind of change, each carrying the origin that caused it.
-        self.field_changed: Signal[NodeId, str, Origin] = Signal()
-        self.text_edited: Signal[TextEdit, Origin] = Signal()
-        self.edges_changed: Signal[StepId, Origin] = Signal()
+        self.field_changed: Signal[NodeId, str, Origin] = Signal("field_changed")
+        self.text_edited: Signal[TextEdit, Origin] = Signal("text_edited")
+        self.edges_changed: Signal[StepId, Origin] = Signal("edges_changed")
+
         # The changed parent's id, and who changed it. Every signal here carries an origin,
         # with no exception: a view that adds a node is as entitled to recognise its own echo
         # as one that renames it, and a convention with one hole is one nobody can rely on.
-        self.structure_changed: Signal[NodeId, Origin] = Signal()
-        self.module_data_changed: Signal[NodeId, str, Origin] = Signal()
+        self.structure_changed: Signal[NodeId, Origin] = Signal("structure_changed")
+        self.module_data_changed: Signal[NodeId, str, Origin] = Signal("module_data_changed")
         # (owner id, aspect) — the framework's autosave debounces this.
-        self.dirty: Signal[str, str] = Signal()
+        self.dirty: Signal[str, str] = Signal("dirty")
 
     def __repr__(self) -> str:
         return f"Library({len(self.projects)} projects)"
@@ -258,6 +259,13 @@ class Library(Node):
         if not isinstance(parent, Project):
             raise KeyError(f"{step_id} is not a step in this library")
         return parent
+
+    def belongs_to(self, node_id: NodeId, project_id: ProjectId) -> bool:
+        """Whether a change to ``node_id`` is a change to ``project_id`` — the node is the
+        project itself or one of its steps. What a view of one project asks before it
+        rebuilds: a signal names a node anywhere in the library, and a rename in another
+        project is nothing to redraw for. Unknown ids answer False, as a removed step's would."""
+        return node_id == project_id or self._parent.get(node_id) == project_id
 
     # -- fields --------------------------------------------------------------------------------
 
@@ -410,12 +418,11 @@ class Library(Node):
                 projects.append(project)
         found: list[tuple[StepId, str, StepId]] = []
         for project in projects:
+            ids = {step.id for step in project.steps}
             for waiter in project.steps:
                 for kind, sources in waiter.edges.items():
                     for source in sources:
-                        if (waiter.id in chosen) != (source in chosen) and project.step(
-                            source
-                        ) is not None:
+                        if (waiter.id in chosen) != (source in chosen) and source in ids:
                             found.append((waiter.id, kind, source))
         return found
 

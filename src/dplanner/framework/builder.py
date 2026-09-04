@@ -32,6 +32,7 @@ from PySide6.QtWidgets import QApplication
 
 from dplanner.core.module_data import migrate_module_data
 from dplanner.core.repository import RepositoryFactory
+from dplanner.core.telemetry import current as current_telemetry
 from dplanner.domain.shelf import DATA_FORMAT as SHELF_FORMAT
 from dplanner.domain.shelf import migrate_shelved
 from dplanner.framework.action_registry import ActionRegistry, MenuStructure
@@ -42,6 +43,7 @@ from dplanner.framework.context import (
     ContextNode,
     ContextService,
 )
+from dplanner.framework.debounce import DebounceService
 from dplanner.framework.index_panel import IndexPanel, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
@@ -146,6 +148,8 @@ class AppBuilder:
         actions = ActionRegistry(menus)
         undo: UndoService[Any] = UndoService(document)
         autosave = AutosaveService(repo.dirty, repo)
+        debounce = DebounceService()
+
         tabs = TabHost(context)
 
         # 3 — the shell -------------------------------------------------------------------
@@ -201,6 +205,7 @@ class AppBuilder:
             window=window,
             undo=undo,
             autosave=autosave,
+            debounce=debounce,
             index_segments=index_segments,
             panels=panels,
             inspector_sections=InspectorSectionRegistry(),
@@ -213,6 +218,7 @@ class AppBuilder:
             llm_providers=llm_providers,
             llm=LLMService(llm_providers),
             switcher=session,
+            telemetry=current_telemetry(),
         )
 
         # Index folder glyphs follow the theme's secondary text colour.

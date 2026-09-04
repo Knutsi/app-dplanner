@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.scope import gatherers, kind_of
 from dplanner.framework.action_menu import build_menu
-from dplanner.framework.activity import ActivityBase, EntityActivity
+from dplanner.framework.activity import ActivityBase, EntityActivity, follow_project
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
     SCOPE_SELECTION,
@@ -43,6 +43,7 @@ from dplanner.framework.context import (
     activity_uri,
     selection_uri,
 )
+from dplanner.framework.debounce import Debounced
 from dplanner.framework.module_data_section import PANEL_MARGIN
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import covered, project_tests
@@ -246,11 +247,22 @@ class TestsActivity(EntityActivity):
         table.itemSelectionChanged.connect(self._on_selection)
         table.cellActivated.connect(self._on_activated)
 
+        library = self._library
+        # After a quiet spell, not per signal: the table is rebuilt row by row.
+        self._refresh_soon = Debounced(self._refresh, parent=self.page, service=deps.debounce)
         self._unsubscribes = [
-            self._library.structure_changed.connect(lambda *_a: self._refresh()),
-            self._library.edges_changed.connect(lambda *_a: self._refresh()),
-            self._library.field_changed.connect(lambda *_a: self._refresh()),
-            self._library.module_data_changed.connect(lambda *_a: self._refresh()),
+            # This project only, and no prose: tests are records, titles are fields.
+            follow_project(
+                library,
+                self.project_id,
+                self._refresh_soon.trigger,
+                signals=(
+                    library.structure_changed,
+                    library.edges_changed,
+                    library.field_changed,
+                    library.module_data_changed,
+                ),
+            ),
         ]
         self._refresh()
 

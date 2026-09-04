@@ -45,7 +45,21 @@ def test_a_step_knows_which_project_it_is_in(library):
     assert library.parent_of(library.id) is None
 
 
+def test_a_change_belongs_to_the_project_it_is_in(library):
+    """What a view of one project asks before redrawing for a signal naming any node."""
+    project = find(library, "Discovery")
+    step = find(library, "Review")
+    other = Project(title="Other")
+    library.add_child(library.id, other)
+    assert library.belongs_to(step.id, project.id)
+    assert library.belongs_to(project.id, project.id)  # The project's own fields count.
+    assert not library.belongs_to(step.id, other.id)
+    assert not library.belongs_to(other.id, project.id)
+    assert not library.belongs_to("gone", project.id)  # A removed step is nobody's.
+
+
 def test_asking_for_the_wrong_kind_is_an_error(library):
+
     project = find(library, "Discovery")
     with pytest.raises(KeyError):
         library.step(project.id)

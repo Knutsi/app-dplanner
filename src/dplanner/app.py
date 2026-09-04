@@ -10,16 +10,25 @@ may import the composition root (:mod:`dplanner.modules`) and nothing deeper —
 a module subpackage from here is a layering violation the architecture test refuses.
 """
 
+import faulthandler
 import sys
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import QApplication
 
+from dplanner.core.telemetry import crash_log_path, current
 from dplanner.domain.library_file import resolve_library_path
 from dplanner.domain.seed import create_library
 from dplanner.domain.store import LibraryStore
 from dplanner.framework.action_registry import MenuStructure
+from dplanner.framework.diagnostics import (
+    StallWatchdog,
+    capture_failures,
+    open_crash_log,
+    session_ended,
+    session_started,
+)
 from dplanner.framework.session import AppSession
 from dplanner.framework.splash import StartupSplash
 from dplanner.framework.theme_service import saved_theme
@@ -85,10 +94,32 @@ def main(argv: list[str] | None = None) -> int:
 
     app = build_application(args)
 
-    session = new_session()
-    if not open_at_startup(session, library_path):
-        return 0
-    return app.exec()
+    # The diagnostics live here and nowhere deeper: a test build has no event loop for a
+    # heartbeat to beat in, and pytest owns the exception hooks while a test runs.
+    telemetry = current()
+    crash_log = open_crash_log(crash_log_path())
+    restore_hooks = capture_failures(telemetry)
+    watchdog = StallWatchdog(app, telemetry=telemetry, dump_to=crash_log)
+    session_started(telemetry, library=library_path, version=APP_VERSION)
+    code = 1
+    try:
+        session = new_session()
+        if open_at_startup(session, library_path):
+            # Only once the window is up: the build itself blocks the GUI thread behind the
+            # splash for as long as it takes, and the session's "open" span already says so.
+            watchdog.start()
+            code = app.exec()
+        else:
+            code = 0
+    finally:
+        watchdog.stop()
+        restore_hooks()
+        session_ended(telemetry, exit_code=code)
+        telemetry.close()
+        if crash_log is not None:
+            faulthandler.disable()
+            crash_log.close()
+    return code
 
 
 def new_session() -> AppSession:
