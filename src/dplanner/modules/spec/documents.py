@@ -34,13 +34,14 @@ from dplanner.domain.assets import (
 from dplanner.domain.ids import next_id
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor, ModuleFileArea
+from dplanner.modules.spec.anchors import Anchor, anchor_in
 from dplanner.modules.spec.aspect import (
     DATA_FORMAT,
     MODULE_ID,
     SpecAttachment,
     read_attachments,
 )
-from dplanner.modules.spec.pdf import find_quote_pages, text_blob_name
+from dplanner.modules.spec.pdf import text_blob_name
 from dplanner.modules.spec.pdf import text_layer as extract_text_layer
 
 DOCUMENTS_DIR = "documents"
@@ -485,19 +486,70 @@ def document_text(area: ModuleFileArea, document: SpecDocument) -> str | None:
         return None
 
 
-def quote_anchors(text: str, quote: str, kind: str) -> tuple[bool, list[int]]:
-    """Whether a quote appears in a document's text, and on which pages for a PDF —
-    every page, because the same sentence can recur and ``--page`` naming any
-    occurrence is right.
+def document_digest(document: SpecDocument) -> str:
+    """The document as it is now: the content-addressed stem of its blob. A feature's
+    source stamps this when it is read, and a later read compares — the same shape as a
+    compiled document's digest, and nothing new is hashed."""
+    return PurePosixPath(document.file).stem
 
-    One implementation for ``feature add`` and ``project lint``, so the quote that passed
-    can never be the one lint flags — or the other way round.
+
+def stamped_text(area: ModuleFileArea, document: SpecDocument, digest: str) -> str | None:
+    """The text of ``document`` as it was at ``digest`` — still on disk, since blobs are
+    content-addressed and never pruned (a session's own churn aside) — or None."""
+    blob = f"{DOCUMENTS_DIR}/{digest}{PurePosixPath(document.file).suffix}"
+    try:
+        if document.kind == KIND_PDF:
+            return layer_from(area, document, blob)
+        return blob_bytes(area, document, blob).decode("utf-8")
+    except CliError:
+        return None
+
+
+# (document name, quote, the digest it was read against — "" for never stamped).
+type SourceRef = tuple[str, str, str]
+
+
+def anchor_sources(files: FilesFor, project: Project, sources: Sequence[SourceRef]) -> list[Anchor]:
+    """One :class:`Anchor` per source, judged against the documents as they are now.
+
+    The spec module's one answer to "does this passage still anchor, and where?", handed
+    to the feature module and the coverage view by the composition root. Batched so a
+    document is read once for every feature citing it, and a superseded version once for
+    every source stamped with it. A never-flushed project has no directory and reads as
+    *missing* throughout — a warning, never a refusal, is every caller's rule.
     """
-    if kind == KIND_PDF:
-        pages = find_quote_pages(text, quote)
-        return bool(pages), pages
-    normalized = " ".join(quote.lower().split())
-    return normalized in " ".join(text.lower().split()), []
+    documents = {doc.name: doc for doc in read_index(project).documents}
+    try:
+        area: ModuleFileArea | None = files(project.id, MODULE_ID)
+    except KeyError:
+        area = None
+    texts: dict[str, str | None] = {}
+    olds: dict[tuple[str, str], str | None] = {}
+    anchors = []
+    for name, quote, read_at in sources:
+        document = documents.get(name)
+        if document is None or area is None:
+            anchors.append(Anchor("missing"))
+            continue
+        if name not in texts:
+            texts[name] = document_text(area, document)
+        digest = document_digest(document)
+        old: str | None = None
+        if read_at and read_at != digest:
+            if (name, read_at) not in olds:
+                olds[name, read_at] = stamped_text(area, document, read_at)
+            old = olds[name, read_at]
+        anchors.append(
+            anchor_in(
+                texts[name],
+                document.kind,
+                quote,
+                digest=digest,
+                stamped=read_at,
+                stamped_text=old,
+            )
+        )
+    return anchors
 
 
 def layer_from(area: ModuleFileArea, document: SpecDocument, blob: str) -> str:

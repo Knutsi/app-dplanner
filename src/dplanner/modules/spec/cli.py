@@ -29,6 +29,7 @@ from dplanner.core.text_diff import diff_hunks
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor
+from dplanner.modules.spec.anchors import Anchor
 from dplanner.modules.spec.aspect import (
     MODULE_ID,
     TOPOLOGY_LABEL,
@@ -40,17 +41,16 @@ from dplanner.modules.spec.aspect import (
 from dplanner.modules.spec.documents import (
     KIND_PDF,
     SpecDocument,
+    anchor_sources,
     attach_asset,
     binary_refusal,
     blob_bytes,
     copied_to_step,
     default_name,
-    document_text,
     import_document,
     layer_from,
     matching_documents,
     new_document,
-    quote_anchors,
     read_index,
     record_asset,
     remove_document,
@@ -109,28 +109,20 @@ def anchor_quote(
     files: FilesFor, project: Project, document_name: str, quote: str
 ) -> tuple[bool | None, list[int]]:
     """(was the quote found in the document, on which pages). ``(None, [])`` when there
-    is nothing to check: no quote, no such document, or a PDF whose text cannot be read.
-
-    The spec module's one answer to "does this passage anchor?", handed to the feature
-    module by the composition root so ``feature add`` and lint check a source the same
-    way ``spec mark`` once did. A warning, never a refusal, is the caller's rule: PDF
-    extraction loses ligatures and hyphenation, and a check that failed on rendering
-    noise would teach people to stop quoting.
-    """
+    is nothing to check: no quote, no such document, or a PDF whose text cannot be read."""
     if not quote:
         return None, []
-    documents = {doc.name: doc for doc in read_index(project).documents}
-    document = documents.get(document_name)
-    if document is None:
+    anchor = anchor_source(files, project, document_name, quote, "")
+    if anchor.state == "missing":
         return None, []
-    try:
-        area = files(project.id, MODULE_ID)
-    except KeyError:
-        return None, []  # A never-flushed project has no documents to check against.
-    text = document_text(area, document)
-    if text is None:
-        return None, []
-    return quote_anchors(text, quote, document.kind)
+    return anchor.found, list(anchor.pages)
+
+
+def anchor_source(
+    files: FilesFor, project: Project, document_name: str, quote: str, stamped: str
+) -> Anchor:
+    """One source judged against its document as it is now — see :func:`anchor_sources`."""
+    return anchor_sources(files, project, [(document_name, quote, stamped)])[0]
 
 
 def document_names(project: Project) -> list[str]:

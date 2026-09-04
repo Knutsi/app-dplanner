@@ -63,6 +63,8 @@ HEADLESS_FILES = (
     "runs.py",
     "terminal.py",
     "documents.py",
+    "anchors.py",
+    "catalogue.py",
     "handoff.py",
     "prompt.py",
     "membership.py",
