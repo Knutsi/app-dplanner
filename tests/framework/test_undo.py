@@ -2,6 +2,7 @@
 
 import pytest
 
+from dplanner.core.telemetry import current
 from dplanner.framework.undo import UndoService
 
 
@@ -182,3 +183,17 @@ def test_clearing_forgets_everything_and_announces_itself(document):
     assert not undo.can_undo() and not undo.can_redo()
     assert document == [1]  # Forgetting the history is not undoing it.
     assert len(heard) == 2
+
+
+def test_every_application_is_a_command_span(document):
+    current().clear()
+    undo = UndoService(document)
+    undo.push(Append(1))
+    undo.undo()
+    undo.redo()
+    spans = [span for span in current().recent() if span.kind == "command"]
+    assert [(span.name, span.detail["verb"]) for span in spans] == [
+        ("Append", "push"),
+        ("Append", "undo"),
+        ("Append", "redo"),
+    ]

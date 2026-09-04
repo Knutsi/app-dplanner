@@ -27,6 +27,7 @@ from datetime import datetime
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.signals import Signal
+from dplanner.core.telemetry import current
 
 # Estimate-driven fractions stop just short of full so a task that overruns its estimate
 # shows as "almost there", never as falsely complete.
@@ -76,7 +77,9 @@ class TaskService:
     """The active and lingering-finished tasks, plus duration memory for estimates."""
 
     def __init__(self) -> None:
-        self.changed: Signal[()] = Signal()  # A task started, progressed, or finished.
+        # A task started, progressed, or finished.
+        self.changed: Signal[()] = Signal("tasks.changed")
+
         self._active: dict[int, Task] = {}
         self._finished: dict[int, Task] = {}
         self._durations: dict[str, float] = {}
@@ -124,9 +127,19 @@ class TaskService:
         task.duration = task.elapsed()
         task.error = error
         task.timed_out = timed_out
+        current().record(
+            "task",
+            task.label,
+            duration_ms=task.duration * 1000.0,
+            error_message=error,
+            key=task.key,
+            timed_out=timed_out,
+            cancelled=task.cancel_requested,
+        )
         if error is None and not task.cancel_requested and not timed_out:
             # Cancelled, failed or timed-out runs must not poison the duration memory.
             self._durations[task.key] = task.duration
+
         if task.keep_finished:
             self._finished[task.task_id] = task
         self.changed.emit()

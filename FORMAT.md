@@ -25,6 +25,8 @@ Four places, and the choice is not stylistic:
 |---|---|---|---|
 | The project directory | content, and anything a collaborator should see | your model, or `module_data` / `module_text` / a module file area | yes — it is in the files, and in the commits |
 | Per user, per machine (Qt-free) | what the CLI must also read: the project library | `core/config_dir.py` + `domain/library_file.py` | no — it is a list of *this machine's* paths |
+| Per user, per machine (Qt-free) | what happened and how long it took: the telemetry journal, and a native crash's stack | `core/telemetry.py` under `config_dir()/telemetry/` — see *The telemetry journal* | no — it is this machine's diagnostics |
+
 | Per user, per machine (GUI only) | preferences: panel layout, model choices, agent command | `framework/user_config.py`'s `get_global` (QSettings) | no |
 | Per user, per machine, per library | where the user left off: open index folders, open tabs | `framework/user_config.py`'s `get_scoped`, under `library_scope(path)` | no |
 | The OS keychain | credentials, API keys | `framework/secrets_store.py` | no, and never on disk |
@@ -62,7 +64,32 @@ value both halves need, the library file, lives in the Qt-free config directory.
   *unavailable* row in the panel rather than a refusal, and keeps its place in the file
   across rewrites.
 
+## The telemetry journal
+
+`config_dir()/telemetry/journal.jsonl` is what both surfaces write and what `dplanner
+telemetry show` reads: one JSON object per line, appended and never rewritten, rotated to
+`journal.1.jsonl` past 5 MB by whichever process finds it that size. A line is a *span* —
+something that happened and how long it took:
+
+```json
+{"id": 41, "t": 1788500000.12, "kind": "action", "name": "steps.link", "ms": 38.4,
+ "ok": true, "pid": 4242, "thread": "MainThread", "surface": "window", "parent": null,
+ "detail": {}}
+```
+
+`kind` is one of `action`, `command`, `slot`, `task`, `autosave`, `poll`, `session`,
+`stall`, `cli`, `failure`; `parent` is the id of the span this one ran inside, on the same
+thread and in the same process; `t` is the wall clock at the start, which is what lines a
+CLI run up against the window's rows; a span that is not `ok` carries an `error` object
+(`type`, `message`, `traceback`). Only what is worth reading back reaches the file: every
+`failure`, `stall`, `session` and `cli` span, and anything that took `SLOW_MS` (20 ms) or
+longer; the rest lives in the window's ring buffer. `crash.log` beside it is
+`faulthandler`'s: the Python stack at a native crash, appended to. Neither is versioned
+or migrated — a reader tolerates unknown keys and a torn last line, and `dplanner
+telemetry clear` is the only maintenance.
+
 ## The project format
+
 
 A project is one directory **inside a git repository**, one directory per node below it,
 nested exactly like the model:

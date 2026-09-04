@@ -16,11 +16,13 @@ from argparse import (
     RawDescriptionHelpFormatter,
 )
 from collections.abc import Sequence
+from pathlib import Path
 from typing import TextIO
 
 from dplanner.cli.command import CliCommand, CliContext, CliError, CliRegistry
 from dplanner.cli.discovery import find_current_project, find_library, open_library
 from dplanner.core.module_data import ModuleDataFormat
+from dplanner.core.telemetry import current
 from dplanner.domain.library_file import LIBRARY_ENV
 from dplanner.identity import APP_NAME, APP_VERSION
 
@@ -129,20 +131,43 @@ def run(
     out: TextIO | None = None,
     err: TextIO | None = None,
 ) -> int:
-    """Parse, open the library if the verb needs one, and run it."""
+    """Parse, open the library if the verb needs one, and run it.
+
+    The run is one ``cli`` span in the journal: the words, where it ran, how it ended. A
+    refusal (``CliError``) is a run that ended with exit 1 and a reason, not a failure;
+    anything else that escapes is a bug, journaled with its traceback and re-raised so it
+    still prints — a bug that printed like a usage error would never get reported.
+    """
     out = out if out is not None else sys.stdout
     err = err if err is not None else sys.stderr
     args: Namespace = build_tree(registry)[0].parse_args(list(argv))
     command: CliCommand = args._command
+    telemetry = current()
+    span = telemetry.begin(
+        "cli",
+        command.id,
+        argv=list(argv),
+        cwd=str(Path.cwd()),
+
+        library=args.library,
+        project=args.project_scope,
+    )
     try:
         if not command.needs_library:
-            return command.run(CliContext(out=out, as_json=args.as_json), args)
-        path = find_library(args.library)
-        with open_library(path, formats, out, as_json=args.as_json) as context:
-            context.current = find_current_project(
-                context.library, context.store, args.project_scope
-            )
-            return command.run(context, args)
+            code = command.run(CliContext(out=out, as_json=args.as_json), args)
+        else:
+            path = find_library(args.library)
+            with open_library(path, formats, out, as_json=args.as_json) as context:
+                context.current = find_current_project(
+                    context.library, context.store, args.project_scope
+                )
+                code = command.run(context, args)
     except CliError as error:
         print(f"{PROG}: {error}", file=err)
+        telemetry.end(span, exit_code=1, refused=str(error))
         return 1
+    except BaseException as error:
+        telemetry.end(span, error=error)
+        raise
+    telemetry.end(span, exit_code=code)
+    return code

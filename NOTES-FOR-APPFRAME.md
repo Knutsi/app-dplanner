@@ -1693,3 +1693,68 @@ a flag nothing reset would have fired a spurious rebuild after the next Save. Th
 form: **any state a module let the rebuild garbage-collect is state it now has to reset
 itself.** Worth a look at every module that reads `SessionControl` when a reload path is
 replaced by an in-place one.
+
+## 14. From the telemetry-and-coalescing pass
+
+The window was choppy on edits, and nothing in the framework could say why: every model
+signal fanned out synchronously to every view, no view filtered by project, and no span
+anywhere was timed. This pass gave the framework a journal, timed the seams it already
+owns, and taught a view of one project to hear that project alone. Each change below is a
+divergence from the template; every one is generic.
+
+### `core/telemetry.py` — the journal, and `Signal.emit` timing its slots (new)
+
+**What.** A Qt-free `Telemetry` — a ring of the last 2000 `Span`s plus an append-only
+JSONL file under `config_dir()/telemetry/` — installed once per process like `logging`
+(`install()`/`current()`; the default instance writes nothing, which is what every test
+sees). `Signal.__init__` grew an optional `name` and `Signal.emit` times each slot: one
+over `SLOW_MS` becomes a `slot` span named `Class.method (file:line)` (`describe_slot`,
+which follows `__wrapped__` so a closure between the signal and the view names the
+view). A raising slot is still logged, and the logging handler `install()` puts on the
+root logger turns that — and every other `logger.exception`/`warning` in the tree — into
+a `failure` span with its traceback, so no call site learned anything.
+
+**Why it is the framework's.** `Signal.emit` is the one place a change's cost per listener
+can be read, and the framework's own services are the seams worth timing:
+`ActionRegistry.run` (an `action` span — every presenter goes through it now, see below),
+`UndoService.push/undo/redo` (`command` spans: typing never passes through an action),
+`TaskService.finish` (`task`), `AutosaveService.flush_now` (`autosave` — disk I/O on the
+GUI thread), `WorkspaceWatcher._check` (`poll`), `AppSession._open`/`refresh` (`session`,
+the largest stall the application has). `AppServices.telemetry` is the handle a module or
+a test reads it through; the entry point installs the file-backed instance for both
+surfaces, so a CLI run's row lands beside the window's in one file.
+
+**Upstream?** Yes, whole. The trap worth stating with it: a handler on the root logger
+swallows Python's last-resort stderr output, so `install()` adds a stream handler when
+the root has none — the console keeps saying what it said.
+
+### `framework/menubar.py` — a triggered entry runs through `ActionRegistry.run`
+
+**What.** The bar's QAction called `spec.run(context)` directly, the one presenter that
+did; it now calls `self._registry.run(sid, context)` like the pop-ups, the toolbar, the
+palette and the aspect bar. Side effect, and a correct one: the state gate is re-asked at
+trigger time rather than as of the last refresh.
+
+**Why.** One path is one span site and one gate. Wrapping every spec at registration
+(`dataclasses.replace` before `registered.emit`) would also have worked and was rejected
+as the wrong cut: a per-spec closure to cover one caller.
+
+### `framework/activity.py` — `follow_project` and `follow_target`; `retitle` names its entity
+
+**What.** `follow_project(library, project_id, changed, *, signals=None)` connects a
+callback to the model's signals — all five, or the ones named — filtered by the model's
+own `belongs_to(node_id, project_id)` over the node each signal names (the parent of a
+structure change, the step of an edge or text edit, the node of a field or module-data
+write). `follow_target(library, target_of, changed, …)` is the same for a panel section
+whose step moves under it. `follow_entity_tabs.retitle` retitles only the tab whose entity
+the field signal names.
+
+**Why.** Seven modules carried the same unfiltered `lambda *_: self._refresh()` on every
+signal, so a rename in one project rebuilt every other project's tabs. The filter is one
+function beside `follow_entity_tabs`, which is the same shape (feature-blind upkeep
+every entity tab was copying). The `Library` import into `framework/` follows
+`module_data_section.py`'s precedent.
+
+**Upstream?** The pair belongs beside `follow_entity_tabs` wherever that goes. The
+`belongs_to` question is the model's; the template's model would answer it over its
+own parent index the same way.

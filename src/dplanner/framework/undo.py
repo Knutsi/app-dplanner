@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from typing import Protocol
 
 from dplanner.core.signals import Signal
+from dplanner.core.telemetry import current
 
 
 class Command[DocT](Protocol):
@@ -68,15 +69,20 @@ class UndoService[DocT]:
         self._applied = 0  # Commands 0.._applied-1 are applied; the rest are redoable.
         self._top_sealed = False
         self._gesture: list[Command[DocT]] | None = None
-        self.changed: Signal[()] = Signal()
+        self.changed: Signal[()] = Signal("undo.changed")
 
     def push(self, command: Command[DocT]) -> None:
-        """Apply ``command`` and record it, merging into the top command when allowed."""
-        command.redo(self._document)
-        if self._gesture is not None:
-            self._gesture.append(command)  # Placed as one step when the gesture ends.
-            return
-        self._place(command)
+        """Apply ``command`` and record it, merging into the top command when allowed.
+
+        Timed as a ``command`` span: typing never passes through an action, so this is
+        where a keystroke's whole cost — the mutation and every view's reaction — is read.
+        """
+        with current().span("command", command.text(), verb="push"):
+            command.redo(self._document)
+            if self._gesture is not None:
+                self._gesture.append(command)  # Placed as one step when the gesture ends.
+                return
+            self._place(command)
 
     @contextmanager
     def gesture(self, label: str) -> Iterator[None]:
@@ -135,26 +141,30 @@ class UndoService[DocT]:
     def undo(self) -> None:
         if not self.can_undo():
             return
-        try:
-            self._stack[self._applied - 1].undo(self._document)
-        except (KeyError, ValueError):
-            self._drop_from(self._applied - 1)
-            return
-        self._applied -= 1
-        self._top_sealed = True  # Typing after an undo must never merge into old history.
-        self.changed.emit()
+        command = self._stack[self._applied - 1]
+        with current().span("command", command.text(), verb="undo"):
+            try:
+                command.undo(self._document)
+            except (KeyError, ValueError):
+                self._drop_from(self._applied - 1)
+                return
+            self._applied -= 1
+            self._top_sealed = True  # Typing after an undo must never merge into old history.
+            self.changed.emit()
 
     def redo(self) -> None:
         if not self.can_redo():
             return
-        try:
-            self._stack[self._applied].redo(self._document)
-        except (KeyError, ValueError):
-            self._drop_from(self._applied)
-            return
-        self._applied += 1
-        self._top_sealed = True
-        self.changed.emit()
+        command = self._stack[self._applied]
+        with current().span("command", command.text(), verb="redo"):
+            try:
+                command.redo(self._document)
+            except (KeyError, ValueError):
+                self._drop_from(self._applied)
+                return
+            self._applied += 1
+            self._top_sealed = True
+            self.changed.emit()
 
     def _drop_from(self, index: int) -> None:
         """The document refused a command: it names what is no longer there — a step

@@ -194,16 +194,17 @@ class Library(Node):
         self._parent: dict[NodeId, NodeId] = {}
 
         # One signal per kind of change, each carrying the origin that caused it.
-        self.field_changed: Signal[NodeId, str, Origin] = Signal()
-        self.text_edited: Signal[TextEdit, Origin] = Signal()
-        self.edges_changed: Signal[StepId, Origin] = Signal()
+        self.field_changed: Signal[NodeId, str, Origin] = Signal("field_changed")
+        self.text_edited: Signal[TextEdit, Origin] = Signal("text_edited")
+        self.edges_changed: Signal[StepId, Origin] = Signal("edges_changed")
+
         # The changed parent's id, and who changed it. Every signal here carries an origin,
         # with no exception: a view that adds a node is as entitled to recognise its own echo
         # as one that renames it, and a convention with one hole is one nobody can rely on.
-        self.structure_changed: Signal[NodeId, Origin] = Signal()
-        self.module_data_changed: Signal[NodeId, str, Origin] = Signal()
+        self.structure_changed: Signal[NodeId, Origin] = Signal("structure_changed")
+        self.module_data_changed: Signal[NodeId, str, Origin] = Signal("module_data_changed")
         # (owner id, aspect) — the framework's autosave debounces this.
-        self.dirty: Signal[str, str] = Signal()
+        self.dirty: Signal[str, str] = Signal("dirty")
 
     def __repr__(self) -> str:
         return f"Library({len(self.projects)} projects)"

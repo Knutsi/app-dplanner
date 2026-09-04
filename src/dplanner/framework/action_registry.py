@@ -24,6 +24,7 @@ from PySide6.QtGui import QColor, QIcon, QKeySequence
 from PySide6.QtWidgets import QMenu
 
 from dplanner.core.signals import Signal
+from dplanner.core.telemetry import current
 from dplanner.framework.context import Context
 
 
@@ -216,8 +217,14 @@ class ActionRegistry:
         return result
 
     def run(self, action_id: str, context: Context) -> None:
-        """Run by id, honouring the state gate — the programmatic path used by tests."""
+        """Run by id, honouring the state gate.
+
+        The one path every presenter takes — menu bar, pop-ups, toolbar, palette, aspect
+        bar, keymap and tests alike — which is what makes it the place an action is timed:
+        the span is the verb's whole cost, every view's reaction to it included.
+        """
         spec = self._specs[action_id]
         state = spec.state(context)
         if state.visible and state.enabled:
-            spec.run(context)
+            with current().span("action", action_id):
+                spec.run(context)

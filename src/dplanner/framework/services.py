@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from dplanner.core.repository import Repository
+from dplanner.core.telemetry import Telemetry
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import ContextService
@@ -82,6 +83,10 @@ class AppServices:
     llm_providers: LLMProviderRegistry
     llm: LLMService
     switcher: SessionControl
+    # The process's journal (``core/telemetry.py``): what ran and how long it took. One
+    # per process rather than per build, because the signals that feed it belong to no
+    # build — this is the handle a module or a test reads it through.
+    telemetry: Telemetry
 
     # The feature modules themselves, in registration order. Not for modules — they never
     # see this bundle — but so a test can reach any part of the running application, which

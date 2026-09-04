@@ -30,6 +30,7 @@ from PySide6.QtCore import QTimer
 
 from dplanner.core.repository import DirtyMark, Persister
 from dplanner.core.signals import Signal
+from dplanner.core.telemetry import current
 
 FLUSH_DELAY_MS = 1500
 
@@ -84,11 +85,16 @@ class AutosaveService:
             return
         dirty, self._dirty = self._dirty, set()
         self._timer.stop()
+        # A span, because this is disk I/O on the GUI thread: how long a flush takes is
+        # exactly what the journal is for.
+        span = current().begin("autosave", "flush", marks=len(dirty))
         try:
             self._persister.flush(dirty)
         except Exception as error:
+            current().end(span, error=error)
             self._dirty |= dirty
             self.pause()
             self.failed.emit(error)
             return
+        current().end(span)
         self.flushed.emit()

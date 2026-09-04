@@ -11,6 +11,7 @@ from typing import NamedTuple
 import pytest
 from PySide6.QtWidgets import QMainWindow
 
+from dplanner.core.telemetry import current
 from dplanner.framework.action_registry import (
     ActionRegistry,
     ActionSpec,
@@ -43,7 +44,7 @@ class Bar(NamedTuple):
     context: ContextService
 
 
-def build(app, specs=SPECS, states=None) -> Bar:
+def build(app, specs=SPECS, states=None, runs=None) -> Bar:
     """A menu bar over these specs."""
     registry = ActionRegistry(MENUS)
     for action_id, group, submenu, order in specs:
@@ -56,8 +57,10 @@ def build(app, specs=SPECS, states=None) -> Bar:
                 submenu=submenu,
                 order=order,
                 state=(states or {}).get(action_id, lambda _c: ActionState()),
+                run=(runs or {}).get(action_id, lambda _c: None),
             )
         )
+
     window = QMainWindow()
     context = ContextService()
     return Bar(window, DynamicMenuBar(window, registry, context), registry, context)
@@ -174,3 +177,24 @@ def test_a_data_menu_is_validated_and_deduplicated_like_any_spec(app):
         registry.register_data_menu(
             DataMenuSpec(id="other", menu="Nope", group="result", title="R", fill=lambda _m: None)
         )
+
+
+def test_a_triggered_entry_runs_through_the_registry_gate(app):
+    """The bar's QAction is one presenter among several, so it takes the same path they
+    do: ``ActionRegistry.run``, which re-asks the state at trigger time. A state that
+    changed since the bar last refreshed is honoured, and the run is timed like any other."""
+    allowed = [True]
+    ran = []
+    bar = build(
+        app,
+        states={"rename": lambda _c: ActionState(enabled=allowed[0])},
+        runs={"rename": lambda _c: ran.append("rename")},
+    )
+    current().clear()
+    bar.menubar.action("rename").trigger()
+    assert ran == ["rename"]
+    assert [span.name for span in current().recent() if span.kind == "action"] == ["rename"]
+
+    allowed[0] = False  # Nothing re-emits the context, so the QAction still looks enabled.
+    bar.menubar.action("rename").trigger()
+    assert ran == ["rename"]

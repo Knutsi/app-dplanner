@@ -32,6 +32,7 @@ from PySide6.QtWidgets import QApplication
 
 from dplanner.core.module_data import migrate_module_data
 from dplanner.core.repository import RepositoryFactory
+from dplanner.core.telemetry import current as current_telemetry
 from dplanner.domain.shelf import DATA_FORMAT as SHELF_FORMAT
 from dplanner.domain.shelf import migrate_shelved
 from dplanner.framework.action_registry import ActionRegistry, MenuStructure
@@ -213,6 +214,7 @@ class AppBuilder:
             llm_providers=llm_providers,
             llm=LLMService(llm_providers),
             switcher=session,
+            telemetry=current_telemetry(),
         )
 
         # Index folder glyphs follow the theme's secondary text colour.

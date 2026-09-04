@@ -86,7 +86,10 @@ class DynamicMenuBar:
         # Defensive: menu roles would relocate items into the macOS application menu if the
         # native menu bar were ever re-enabled. Pinning NoRole keeps placement predictable.
         action.setMenuRole(QAction.MenuRole.NoRole)
-        action.triggered.connect(lambda _checked=False, s=spec: s.run(self._context.current()))
+        # Through the registry, like every other presenter: one gate, one timed span.
+        action.triggered.connect(
+            lambda _checked=False, sid=spec.id: self._registry.run(sid, self._context.current())
+        )
 
         menu = self._menus[spec.menu]
         key = self._registry.menus.sort_key(spec)

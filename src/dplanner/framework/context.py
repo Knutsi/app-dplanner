@@ -153,7 +153,7 @@ class ContextService:
 
     def __init__(self) -> None:
         self._scopes: dict[str, tuple[ContextNode, ...]] = {}
-        self.changed: Signal[Context] = Signal()
+        self.changed: Signal[Context] = Signal("context.changed")
 
     def current(self) -> Context:
         return Context(dict(self._scopes))
