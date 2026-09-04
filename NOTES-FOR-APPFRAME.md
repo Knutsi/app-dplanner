@@ -1785,3 +1785,33 @@ synchronously — every generated application's will — cannot adopt deferred r
 sprinkling `qtbot.wait` over a hundred tests; a per-build switch the fixture flips makes
 the conversion cost zero test churn, and the deferred path is then tested exactly once
 with real timers.
+
+### `framework/diagnostics.py` — a stall watchdog, chained failure hooks, a crash log (new)
+
+**What.** `StallWatchdog`: a 100 ms heartbeat `QTimer` on the GUI thread and a daemon
+thread that, when the beat is older than 250 ms, samples the GUI thread's stack through
+`sys._current_frames()` and opens a `stall` span carrying the sample and the spans open
+on that thread, sampling again every 500 ms until the next beat closes it with the real
+duration; with a crash log handle it also re-arms `faulthandler.dump_traceback_later`
+every beat, so a hang that never releases the GIL still gets its stacks dumped by
+faulthandler's own C thread. `capture_failures()` chains `sys.excepthook`,
+`threading.excepthook` and `qInstallMessageHandler` into `failure` spans and returns the
+undo; `open_crash_log()` is `faulthandler.enable` on `crash.log` beside the journal;
+`session_started`/`session_ended` write the journal's session header and footer. All of
+it is called from `app.main` and from nowhere deeper.
+
+**Why nowhere deeper.** A test build has no event loop, so a heartbeat there reads as one
+long stall; pytest-qt swaps `sys.excepthook` per test and pytest's thread plugin wraps
+`threading.excepthook`, so a chain installed by the builder would be bypassed or would
+fail tests that exercise a raising slot. The entry point is the one place that knows it
+is the real application.
+
+**Qt facts worth stating with it.** PySide6 prints a slot's or a virtual's uncaught
+exception through `PyErr_Print`, which calls `sys.excepthook` and carries on — so a chained
+hook sees them. Installing a Qt message handler *replaces* the default one, so the console
+line is the handler's to print; forgetting that silences every Qt warning. A modal dialog
+runs a nested event loop, so the heartbeat keeps beating through one and a dialog never
+reads as a stall. `sys._current_frames()` from another thread is safe: it takes the GIL and
+snapshots each thread's current frame.
+
+**Upstream?** Yes, whole — with the journal it reports into.
