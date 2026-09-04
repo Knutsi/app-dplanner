@@ -120,8 +120,8 @@ def _no_aspects(_step_id: StepId) -> list[str]:
     return []
 
 
-def _no_accent(_step_id: StepId) -> NodeAccent:
-    return NodeAccent()
+def _no_accents(_project_id: str) -> dict[StepId, NodeAccent]:
+    return {}
 
 
 def _no_days(_step: Step) -> float | None:
@@ -143,9 +143,12 @@ class ProjectEditorDeps:
     files: FilesFor
     # What the aspect modules have to say about a step, one short phrase each.
     step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
-    # How a step should look beyond its text — muted, badged — in the canvas's own
-    # vocabulary, so the editor never learns which aspects mean what.
-    step_accent: Callable[[StepId], NodeAccent] = field(default=_no_accent)
+    # How every step of a project should look beyond its text — muted, badged — in the
+    # canvas's own vocabulary, so the editor never learns which aspects mean what. One call
+    # per sync: the answer for a milestone comes from a schedule walk, and the walk is the
+    # same for every step in the project.
+    step_accents: Callable[[str], dict[StepId, NodeAccent]] = field(default=_no_accents)
+
     # How long a step takes, from whichever module owns estimates — the timeline sort reads
     # time through this, the same seam domain/schedule.py uses one level down.
     days_for: Callable[[Step], float | None] = field(default=_no_days)
@@ -326,6 +329,7 @@ class ProjectActivity(EntityActivity):
         project = self._project()
         placed = positions(self._product, project)
         connected = ports(project.steps)
+        accents = self._deps.step_accents(project.id)
         nodes = [
             NodeSpec(
                 step_id=step.id,
@@ -333,7 +337,7 @@ class ProjectActivity(EntityActivity):
                 subtitle=" · ".join(self._deps.step_aspects(step.id)),
                 x=placed[step.id][0],
                 y=placed[step.id][1],
-                accent=self._deps.step_accent(step.id),
+                accent=accents.get(step.id) or NodeAccent(),
                 ports=connected[step.id],
             )
             for step in project.steps

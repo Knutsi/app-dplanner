@@ -84,6 +84,20 @@ def test_a_stored_position_wins_over_the_automatic_one():
     )
 
 
+def test_a_fully_placed_project_never_computes_the_automatic_layout(monkeypatch):
+    """Every canvas sync asks for positions; a settled plan must not pay a layout for it."""
+    library, project = build()
+    for index, step in enumerate(project.steps):
+        library.set_module_data(step.id, "project_editor", write_position(8.0 * index, 0.0))
+
+    def refuse(*_args):
+        raise AssertionError("the automatic layout was computed for a fully placed project")
+
+    monkeypatch.setattr("dplanner.modules.project_editor.placement.auto_positions", refuse)
+    placed = positions(library, project)
+    assert placed[project.steps[2].id] == (16.0, 0.0)
+
+
 def test_positions_snap_and_are_stored_as_floats():
     """FORMAT.md's numeric rule: an int would write as 8 where a reloaded float writes 8.0."""
     entry = write_position(11.0, 3.0)
@@ -119,9 +133,7 @@ def braided(flip_edges=False):
 
     def link(waiter, sources):
         ordered = list(reversed(sources)) if flip_edges else sources
-        SetEdgesCommand(steps[waiter].id, "requires", [steps[s].id for s in ordered]).redo(
-            library
-        )
+        SetEdgesCommand(steps[waiter].id, "requires", [steps[s].id for s in ordered]).redo(library)
 
     link("c", ["b"])
     link("d", ["a"])
