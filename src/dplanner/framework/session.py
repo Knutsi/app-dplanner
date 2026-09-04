@@ -105,6 +105,7 @@ def discard_build(window: AppWindow | None, services: AppServices | None) -> Non
         window.deleteLater()
     if services is not None:
         services.autosave.stop()
+        services.debounce.cancel_all()  # A pending refresh of a discarded build is a stale draw.
 
 
 def show_startup_failure(failure: OpenFailure) -> None:

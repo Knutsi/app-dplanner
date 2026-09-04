@@ -43,6 +43,7 @@ from dplanner.framework.context import (
     ContextNode,
     ContextService,
 )
+from dplanner.framework.debounce import DebounceService
 from dplanner.framework.index_panel import IndexPanel, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
@@ -147,6 +148,8 @@ class AppBuilder:
         actions = ActionRegistry(menus)
         undo: UndoService[Any] = UndoService(document)
         autosave = AutosaveService(repo.dirty, repo)
+        debounce = DebounceService()
+
         tabs = TabHost(context)
 
         # 3 — the shell -------------------------------------------------------------------
@@ -202,6 +205,7 @@ class AppBuilder:
             window=window,
             undo=undo,
             autosave=autosave,
+            debounce=debounce,
             index_segments=index_segments,
             panels=panels,
             inspector_sections=InspectorSectionRegistry(),

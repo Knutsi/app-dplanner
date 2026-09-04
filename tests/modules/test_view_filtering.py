@@ -27,7 +27,8 @@ VIEWS = [
     pytest.param(PROGRESSION_KIND, ProgressionActivity, "_refresh", id="progression"),
     pytest.param(testing.TESTS_KIND, testing.TestsActivity, "_refresh", id="tests"),
     pytest.param(DOCS_KIND, DocsActivity, "_refresh", id="docs"),
-    pytest.param(ASSETS_KIND, AssetsActivity, "_schedule_refresh", id="assets"),
+    pytest.param(ASSETS_KIND, AssetsActivity, "_refresh", id="assets"),
+
 ]
 
 

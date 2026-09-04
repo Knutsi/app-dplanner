@@ -1758,3 +1758,27 @@ every entity tab was copying). The `Library` import into `framework/` follows
 **Upstream?** The pair belongs beside `follow_entity_tabs` wherever that goes. The
 `belongs_to` question is the model's; the template's model would answer it over its
 own parent index the same way.
+
+### `framework/debounce.py` — coalesced refreshes, and the service that settles them (new)
+
+**What.** `Debounced(action, delay_ms, *, parent, service)`: `trigger()` restarts a
+single-shot `QTimer`, so a burst runs the action once, after the quiet spell, over the
+latest state; `flush()`, `cancel()`, `pending()`. A zero delay is "once this event-loop
+turn is over". Each run is a `refresh` span in the journal named for the view's method
+(the trigger carries `__wrapped__`), with how many triggers it folded — the number that
+says whether coalescing earned its place. `DebounceService` on `AppServices` holds every
+live one (a `WeakSet`, `shiboken6.isValid`-guarded) for `flush_all`/`cancel_all`, and
+carries the **immediate** switch: `trigger()` runs inline. `discard_build` cancels them
+all; the test suite's `session` fixture sets immediate.
+
+**Why.** `AutosaveService` and the assets tab each hand-rolled the same timer, and every
+other tab rebuilt synchronously on every signal — a paste of forty steps forty times, a
+typed sentence once per keystroke. The first cut generalised `AutosaveService`; it was not
+folded in, because autosave's timer also nests `pause()` and its flush is a transaction,
+not a redraw — two policies in one class would have been the entropy the rule warns of.
+
+**The part worth carrying up whole is immediate mode.** A suite that asserts on views
+synchronously — every generated application's will — cannot adopt deferred rebuilds by
+sprinkling `qtbot.wait` over a hundred tests; a per-build switch the fixture flips makes
+the conversion cost zero test churn, and the deferred path is then tested exactly once
+with real timers.

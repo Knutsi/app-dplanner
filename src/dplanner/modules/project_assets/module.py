@@ -16,6 +16,7 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.context import Context, ContextService
+from dplanner.framework.debounce import DebounceService
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
 from dplanner.modules.project_assets.activity import ASSETS_KIND, AssetsActivity
@@ -30,7 +31,9 @@ class ProjectAssetsDeps:
     tabs: TabHost
     undo: UndoService[Library]
     parent: QWidget
+    debounce: DebounceService
     # The store's file lookup — every module's areas, because the catalog is a union.
+
     # Wired by the composition root, which is the only place that knows the concrete store.
     files: FilesFor
     # Every module's slice of the catalog — the same tuple the CLI reports read.

@@ -593,10 +593,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
             tabs=services.tabs,
             undo=services.undo,
             parent=services.window,
+            debounce=services.debounce,
             files=store.files,
             sources=asset_sources,
         )
     )
+
 
     def pick_assets(node_id: str) -> "list[Payload]":
         """Insert from Assets…: the picker over the node's project's whole catalog.

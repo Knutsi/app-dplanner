@@ -23,6 +23,7 @@ from dplanner.core.telemetry import Telemetry
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import ContextService
+from dplanner.framework.debounce import DebounceService
 from dplanner.framework.index_panel import IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
@@ -65,6 +66,10 @@ class AppServices:
     # -- editing -------------------------------------------------------------------------------
     undo: UndoService[Any]
     autosave: AutosaveService
+    # Every coalesced view refresh in this build (``framework/debounce.py``): a view
+    # registers its Debounced here so a test can settle them all and a discarded build
+    # can drop them all.
+    debounce: DebounceService
 
     # -- surfaces modules contribute to --------------------------------------------------------
     index_segments: IndexSegmentRegistry

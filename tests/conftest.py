@@ -82,7 +82,14 @@ def session(app, library_file):
     """
     session = new_session()
     assert session.open_initial(library_file)
+    assert session.services is not None
+    # Every coalesced view refresh runs inline: a test asserts on a view the line after it
+    # pushes a command, which is the behaviour every view had before it was coalesced. The
+    # deferred path is tested once, in tests/framework/test_debounce.py, and once per
+    # converted view by switching this off.
+    session.services.debounce.set_immediate(True)
     yield session
+
     session.close()
 
 
