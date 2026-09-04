@@ -329,7 +329,10 @@ then authored `step add`s.
   the project's current topology on this machine. Read it once per session, and again
   after `topology set`; it costs one command and it is the shape of everything you add.
 - **Exit 1 with one line on stderr** means something you can fix. A traceback means a bug in
-  DPlanner; report it rather than working around it.
+  DPlanner; report it rather than working around it — `dplanner telemetry show --failures`
+  has its record, beside the window's own failures, and `telemetry show --slow 50` says
+  what took long in either. Read it before reporting a hang or a crash.
+
 - **Nothing is written when a command fails.** A run is a transaction.
 - **Someone else may be writing too.** If a command says a project changed on disk, a
   window or another run wrote to it. Run the command again — you will be working from what

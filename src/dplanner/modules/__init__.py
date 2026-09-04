@@ -1475,7 +1475,9 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.cli.scopes import commands as scope_commands
     from dplanner.cli.scopes import lint_checks as scope_lint
     from dplanner.cli.skill import commands as skill_commands
+    from dplanner.cli.telemetry import commands as telemetry_commands
     from dplanner.core.config_dir import config_dir
+    from dplanner.core.telemetry import crash_log_path, journal_path
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
@@ -1574,7 +1576,11 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
             milestone_label=milestone_read,
         ),
         *github_cli.commands(),
+        # The journal both surfaces write, read back: the paths are the process's, handed
+        # over here so a test can point the same verbs at a file of its own.
+        *telemetry_commands(journal=journal_path(), crash_log=crash_log_path()),
         *aspect_commands(specs),
+
         # Each module exports what "missing" means for its own aspect; the list order is
         # the report order — the graph's integrity first, then authoring, then the spec.
         *lint_commands(
