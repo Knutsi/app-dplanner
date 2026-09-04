@@ -120,6 +120,7 @@ class ProgressHeader(QWidget):
         layout.setSpacing(ROW_GAP)
 
         top = QHBoxLayout()
+        layout.addLayout(top)  # Joined before it is filled: no layout-item wrappers survive.
         top.setSpacing(ROW_GAP)
         self.percent = QLabel("0%", self)
         font = QFont(self.percent.font())
@@ -131,7 +132,6 @@ class ProgressHeader(QWidget):
         self.summary.setObjectName("InspectorNote")
         top.addWidget(self.summary, 0, Qt.AlignmentFlag.AlignBaseline)
         top.addStretch(1)
-        layout.addLayout(top)
 
         self.bar = SegmentedBar(self)
         layout.addWidget(self.bar)
@@ -234,9 +234,9 @@ class StepCard(QFrame):
             self.run_button.setToolTip(run.reason)
             self.run_button.clicked.connect(run.run)
             holder = QHBoxLayout()
+            layout.addLayout(holder)  # Joined before it is filled, as every row here is.
             holder.addWidget(self.run_button)
             holder.addStretch(1)
-            layout.addLayout(holder)
 
     def select(self) -> None:
         """Make this card's step the selection — the click's meaning, callable by name."""
@@ -347,13 +347,13 @@ class ProgressionBoard(QWidget):
         layout.addWidget(self.header)
 
         columns = QHBoxLayout()
+        layout.addLayout(columns, 1)  # Joined before it is filled, as every row here is.
         columns.setSpacing(COLUMN_GAP)
         self.running = StatusColumn("Running", self)
         self.ready = StatusColumn("Ready", self)
         self.upcoming = StatusColumn("Up next", self)
         for column in (self.running, self.ready, self.upcoming):
             columns.addWidget(column, 1)
-        layout.addLayout(columns, 1)
 
     def show_progress(self, progress: Progression, weighted: tuple[float, float] | None) -> None:
         self.header.show_progress(progress, weighted)
