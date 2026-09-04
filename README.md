@@ -158,6 +158,8 @@ src/dplanner/
 ├── menus.py               the menu bar's shape, including the Project menu
 ├── app.py                 bootstrap: QApplication, the session, the first open
 ├── entry.py               the one `dplanner` command: a window, or a verb
+├── scripts/measure_edit_cost.py   what an edit costs the GUI thread, measured headless through the journal
+├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
 │   ├── storage/             three providers behind one protocol: folder, git, GitHub
@@ -165,6 +167,8 @@ src/dplanner/
 │   ├── formats.py           the format-migration engine
 │   ├── module_data.py       per-module JSON, its versions and takeovers
 │   ├── png.py               RGB buffer → PNG bytes, stdlib only, deterministic
+│   ├── telemetry.py         the journal both surfaces write: spans, a ring, a JSON-lines file
+
 │   ├── signals.py  fsio.py  text_diff.py
 │
 ├── domain/                ── the planner itself. Qt-free.
@@ -193,7 +197,9 @@ src/dplanner/
 │   ├── lint.py              `lint` — every module's checks over the library, one report
 │   ├── scopes.py            `scope show` — what a check, feature or milestone gathers
 │   ├── authoring.py         `step add` — one verb, each module contributing its flags
+│   ├── telemetry.py         `telemetry show|path|clear` — the journal, read back
 │   └── skill.py             the agent skill, generated from the registry
+
 │
 ├── framework/             ── from the template, and evolved here. The Qt machinery.
 │   ├── panels.py            the window's left/right/bottom areas, and what modules anchor there
@@ -209,7 +215,10 @@ src/dplanner/
 │   ├── asset_picker.py      a modal picker over named files — Insert from Assets…'s dialog
 │   ├── image_preview.py     the modal lightbox the gallery (and anyone) opens
 │   ├── window_watch.py      noticing, and taking in, another writer's changes to the library
+│   ├── debounce.py          a coalesced refresh: a burst runs once, and tests run it inline
+│   ├── diagnostics.py       the stall watchdog, the failure hooks, the crash log — app.main's
 │   └── …                    registries, actions, tabs, undo, autosave, tasks, LLM
+
 │
 ├── modules/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application

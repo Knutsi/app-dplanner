@@ -40,6 +40,10 @@ testpaths = ["tests"]
 # QApplication needs anyway (only one may exist per process, and it cannot be recreated).
 # Add `-n0` for a single-threaded run when a failure needs readable output or a debugger.
 addopts = "-ra --strict-markers --strict-config -n auto"
+markers = [
+    "raises_in_a_slot: the test raises inside a signal slot on purpose (see conftest.py)",
+]
+
 # The repository root, so a test file can share helpers with a sibling (tests/cli/spec_helpers.py)
 # under the same dotted name mypy resolves.
 pythonpath = ["."]

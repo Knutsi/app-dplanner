@@ -145,7 +145,10 @@ def _collect_qt_garbage():
     the test it is reported against is only whichever one that worker was running —
     ``CLAUDE.md``'s *Checks* section has the diagnosis recipe. One such crash (2026-09-01,
     roughly one full run in three) turned out to ride on working-tree module code that was
-    rewritten before it ever shipped; on the committed tree it has not reproduced since.
+    rewritten before it ever shipped; the next (2026-09-04, deterministic for one worker's
+    four tests) was root-caused with ``scripts/gc_catalog.py``: a ``QLayoutItem`` wrapper
+    cleared before its layout — CLAUDE.md's *A QLayoutItem wrapper is a double delete
+    waiting for a gc pass*.
     """
     yield
     import gc
@@ -278,3 +281,35 @@ def cli_stdin(registry, workspace, cli_library):
         return out.getvalue() + err.getvalue()
 
     return invoke
+
+
+@pytest.fixture(autouse=True)
+def _no_swallowed_slot_errors(request):
+    """A listener that raises is logged and skipped by ``Signal.emit`` — right for the
+    running application, where a broken view must not abort the model change that woke it,
+    and wrong for a test, where the swallowed traceback is exactly the failure being looked
+    for. So every test fails on one, unless it says it means to raise in a slot
+    (``@pytest.mark.raises_in_a_slot``)."""
+    import logging
+
+    class Collect(logging.Handler):
+        def __init__(self) -> None:
+            super().__init__(level=logging.ERROR)
+            self.failures: list[str] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            # Formatted now, not at teardown: the record names the slot by repr, and a
+            # bound method of a widget the teardown has since deleted cannot be repr'd.
+            if record.name == "dplanner.core.signals":
+                self.failures.append(self.format(record))
+
+    collector = Collect()
+    logging.getLogger().addHandler(collector)
+    try:
+        yield
+    finally:
+        logging.getLogger().removeHandler(collector)
+    if collector.failures and request.node.get_closest_marker("raises_in_a_slot") is None:
+        pytest.fail(
+            "a signal slot raised and Signal.emit swallowed it:\n" + "\n".join(collector.failures)
+        )

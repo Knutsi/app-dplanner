@@ -211,6 +211,7 @@ class Telemetry:
         name: str,
         *,
         duration_ms: float = 0.0,
+        ok: bool = True,
         error: BaseException | None = None,
         error_message: str | None = None,
         traceback_text: str | None = None,
@@ -231,6 +232,7 @@ class Telemetry:
             pid=self.pid,
             parent=self._current_id(),
             duration_ms=duration_ms,
+            ok=ok,
             detail=dict(detail),
         )
         if error is not None:
@@ -254,10 +256,11 @@ class Telemetry:
         **detail: Any,
     ) -> Span:
         """Something went wrong and nothing timed it — an uncaught exception, a Qt warning,
-        a log record at WARNING or above."""
-        span = self.record("failure", name, error=error, traceback_text=traceback_text, **detail)
-        span.ok = False
-        return span
+        a log record at WARNING or above. Marked failed before it is recorded, so the file
+        line says so too."""
+        return self.record(
+            "failure", name, ok=False, error=error, traceback_text=traceback_text, **detail
+        )
 
     # -- reading -------------------------------------------------------------------------------
 

@@ -748,6 +748,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 tabs=services.tabs,
                 theme=services.theme,
                 undo=services.undo,
+                debounce=services.debounce,
                 zoom=services.zoom,
                 window=services.window,
                 # Registered before any panel exists, which is why it listens to the registry
@@ -852,7 +853,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
             DebugDeps(
                 llm=services.llm,
                 telemetry=services.telemetry,
-
                 actions=services.actions,
                 tabs=services.tabs,
                 context=services.context,

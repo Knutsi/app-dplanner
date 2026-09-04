@@ -248,3 +248,12 @@ def test_a_wrapper_is_named_for_what_it_wraps():
 def test_a_span_round_trips_through_its_record():
     span = Span(1, "cli", "step add", 5.0, "MainThread", "cli", 42, duration_ms=3.5, ok=True)
     assert Span.from_record(span.to_record()) == span
+
+
+def test_a_failure_without_an_exception_is_written_failed(tmp_path):
+    """A Qt warning or a plain log warning has no exception to mark the span by; the
+    record must still say failed on disk, not only in the ring."""
+    path = tmp_path / "journal.jsonl"
+    Telemetry(path).failure("Qt: QPainter::begin", category="qt")
+    (written,) = read_journal(path)
+    assert written.ok is False and written.detail == {"category": "qt"}

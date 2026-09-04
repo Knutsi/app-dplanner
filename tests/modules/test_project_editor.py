@@ -19,7 +19,7 @@ from dplanner.domain.commands import (
     SetEdgesCommand,
     SetFieldCommand,
 )
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION
 from dplanner.modules.project_editor.modes import CONNECT, IDLE, LASSO, PAN, REGION_CREATE
 from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
@@ -212,12 +212,13 @@ def test_deselecting_returns_the_area_to_the_project_form(services, project, tab
     assert project_panel(services).current_project_id() == project.id
 
 
-def test_two_panes_share_one_detail_panel(services, project, tab):
+def test_two_panes_share_one_detail_panel(services, project, tab, make_project):
     """The reason the panel is the window's. Two projects side by side is two canvases and
     one editor — and the editor shows whichever pane the user is in, because only that pane
     may publish a selection."""
-    other = Project(title="Build")
-    AddNodeCommand(services.document.id, other).redo(services.document)
+    # A real project, on disk: the step panel's GitHub section asks the store where the
+    # shown step's project lives, and an in-memory project has no answer for it.
+    other = make_project("Build")
     AddNodeCommand(other.id, Step(title="Ship it")).redo(services.document)
     second = services.tabs.open("project", other.id)
     services.tabs.move_current_right()

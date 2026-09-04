@@ -329,3 +329,26 @@ def test_switch_branch_takes_the_checkout_in_place(session, services, make_proje
     services.autosave.flush_now()  # Autosave resumed with the tree in the model.
     meta = json.loads((services.repo.project_dir(project.id) / "project.dproj").read_text())
     assert meta["summary"] == "back on main"
+
+
+def test_the_branch_label_asks_git_once_a_second(services, make_project, monkeypatch):
+    """The label refreshes on every context change — twice per keystroke — and the answer
+    is a subprocess; remembered for a second, an operation (which refreshes) still clears it."""
+    from dplanner.core.storage.git import GitStorage
+
+    make_project("Discovery")
+    service = sync_service(services)
+    (group,) = service.groups()
+    asked = []
+    original = GitStorage.current_branch
+
+    def counted(self):
+        asked.append(1)
+        return original(self)
+
+    monkeypatch.setattr(GitStorage, "current_branch", counted)
+
+    first = service.branch_of(group)
+    assert service.branch_of(group) == first and len(asked) == 1
+    service.refresh()  # What every operation ends with: the next ask is fresh.
+    assert service.branch_of(group) == first and len(asked) == 2

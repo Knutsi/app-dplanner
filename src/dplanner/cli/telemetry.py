@@ -44,7 +44,8 @@ def commands(*, journal: Path, crash_log: Path) -> list[CliCommand]:
         parser.add_argument(
             "--failures",
             action="store_true",
-            help="only what went wrong, with tracebacks — and the crash log's tail, if any",
+            help="only what went wrong — failures with their tracebacks, stalls with their "
+            "stack samples — and the crash log's tail, if any",
         )
 
     def run_show(context: CliContext, args: Namespace) -> int:
@@ -54,7 +55,7 @@ def commands(*, journal: Path, crash_log: Path) -> list[CliCommand]:
         if args.slow is not None:
             spans = [span for span in spans if (span.duration_ms or 0.0) >= args.slow]
         if args.failures:
-            spans = [span for span in spans if not span.ok]
+            spans = [span for span in spans if not span.ok or span.kind == "stall"]
         if args.last:
             spans = spans[-args.last :]
         crash = crash_tail(crash_log) if args.failures else ""

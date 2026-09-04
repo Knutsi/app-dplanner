@@ -1815,3 +1815,39 @@ reads as a stall. `sys._current_frames()` from another thread is safe: it takes 
 snapshots each thread's current frame.
 
 **Upstream?** Yes, whole — with the journal it reports into.
+
+### `framework/cards.py` — `CardStack.cards()` removed: never read a layout back
+
+**What.** `CardStack.cards()` iterated `layout.itemAt(i)`; nothing called it, and it is
+gone. The same read-back in two module views (`progression`'s `StatusColumn.cards()`,
+`time_estimates`' `MilestoneList.keys`) now reads a list the view keeps itself, and a
+test on each pins the rule by making `QLayout.itemAt` raise.
+
+**Why — the crash.** 2026-09-04: one xdist worker died with SIGSEGV in the boundary
+`gc.collect()`, deterministic for its four tests, gone with `-n0`, and it appeared when
+an unrelated `Debounced` was added to the app shell — which only moved objects in the
+collector's list. gdb: `~QBoxLayout` → `delete item` through a null vtable, an item freed
+twice. `scripts/gc_catalog.py` (a `gc.DEBUG_SAVEALL` plugin, now checked in) showed the
+`QWidgetItem`/`QSpacerItem` wrappers *before* their layout in the collector's order.
+
+**The shiboken mechanics** (6.11.2, `libshiboken/basewrapper.cpp`). `SbkObject_tp_clear`
+calls `Shiboken::Object::removeParent(self)` — whose default `giveOwnershipBack = true`
+sets `hasOwnership` on the wrapper being cleared — and only then
+`_destroyParentInfo(self, true)`, which *invalidates* that wrapper's own children. So in a
+collected cycle, whichever wrapper is cleared first owns its C++ object from then on; its
+children are made safe, its C++ owner is not told. PySide's glue for `QLayout::itemAt`
+(`addownership-item-at` → `addLayoutOwnership` → `Shiboken::Object::setParent(layout,
+item)`) makes every item wrapper such a child of the layout wrapper. A `QObject` in that
+position is harmless — `~QObject` removes itself from its C++ parent — but
+`~QLayoutItem` tells nobody, and `~QBoxLayout` deletes the item again. `takeAt` is
+annotated `parent action="remove"` and its item is the caller's to delete, so a loop that
+drops the wrapper each turn is correct. The order the collector clears a cycle in is not
+allocation order once earlier collections have rescued and re-appended objects, which is
+why the crash moved with an unrelated change and why the natural minimal reproducer does
+not crash: the layout wrapper is cleared first there and invalidates its items.
+
+**Upstream?** The rule, yes: a generated application's views will read a layout back the
+first time somebody writes a test for one. A `framework/` helper cannot make it safe —
+nothing short of `shiboken6.invalidate` un-parents the wrapper from Python, and that is
+the magic the rule exists to avoid — so the answer is the list the view keeps. The
+plugin is worth carrying up whole.

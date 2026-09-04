@@ -41,6 +41,7 @@ def test_a_slot_may_disconnect_during_emission():
     assert seen == ["once", "after", "after"]
 
 
+@pytest.mark.raises_in_a_slot
 def test_a_raising_slot_does_not_starve_the_others(caplog):
     """A broken listener must not abort the mutation that triggered the signal."""
     seen = []
@@ -83,6 +84,7 @@ def test_a_slow_slot_is_journaled_by_name_and_signal(journal):
     assert span.name.startswith("_View.refresh (test_signals.py:")
 
 
+@pytest.mark.raises_in_a_slot
 def test_a_raising_slot_is_journaled_as_a_failure(journal):
     signal: Signal[()] = Signal()
 

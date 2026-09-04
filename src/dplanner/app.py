@@ -101,11 +101,16 @@ def main(argv: list[str] | None = None) -> int:
     restore_hooks = capture_failures(telemetry)
     watchdog = StallWatchdog(app, telemetry=telemetry, dump_to=crash_log)
     session_started(telemetry, library=library_path, version=APP_VERSION)
-    watchdog.start()
     code = 1
     try:
         session = new_session()
-        code = app.exec() if open_at_startup(session, library_path) else 0
+        if open_at_startup(session, library_path):
+            # Only once the window is up: the build itself blocks the GUI thread behind the
+            # splash for as long as it takes, and the session's "open" span already says so.
+            watchdog.start()
+            code = app.exec()
+        else:
+            code = 0
     finally:
         watchdog.stop()
         restore_hooks()

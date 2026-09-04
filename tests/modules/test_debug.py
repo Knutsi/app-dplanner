@@ -32,10 +32,11 @@ def test_the_menu_opens_the_tab(services):
 
 
 def test_rows_are_newest_first_with_kind_duration_and_outcome(services, journal):
+    activity = services.tabs.open(TELEMETRY_KIND)
+    journal.clear()  # Opening the tab may itself journal a slow slot; the rows are ours.
     journal.record("action", "steps.new", duration_ms=3.0)
     journal.record("command", "Add Step", duration_ms=45.0)
     journal.record("cli", "step add", exit_code=1, refused="no such project")
-    activity = services.tabs.open(TELEMETRY_KIND)
     activity.refresh()
     assert rows(activity) == [
         ("cli", "step add", "0.0 ms", "exit 1"),
@@ -45,11 +46,12 @@ def test_rows_are_newest_first_with_kind_duration_and_outcome(services, journal)
 
 
 def test_the_switches_narrow_to_slow_and_to_failures(services, journal):
+    activity = services.tabs.open(TELEMETRY_KIND)
+    journal.clear()
     journal.record("action", "quick", duration_ms=1.0)
     journal.record("action", "slow", duration_ms=80.0)
     journal.failure("broken", RuntimeError("boom"))
     journal.record("stall", "MainThread", duration_ms=400.0, samples=["File x.py, in sleep"])
-    activity = services.tabs.open(TELEMETRY_KIND)
     activity.slow_only.setChecked(True)
     assert [row[1] for row in rows(activity)] == ["MainThread", "slow"]
     activity.slow_only.setChecked(False)
@@ -61,13 +63,14 @@ def test_the_switches_narrow_to_slow_and_to_failures(services, journal):
 
 
 def test_selecting_a_row_shows_the_span_in_full(services, journal):
+    activity = services.tabs.open(TELEMETRY_KIND)
+    journal.clear()
     with journal.span("action", "steps.link", steps=2):
         journal.record("slot", "OrderActivity._refresh", duration_ms=30.0)
     try:
         raise ValueError("bad link")
     except ValueError as error:
         journal.failure("uncaught: ValueError", error)
-    activity = services.tabs.open(TELEMETRY_KIND)
     activity.refresh()
     activity.tree.topLevelItem(1).setSelected(True)  # The action: its child ran inside it.
     text = activity.detail.toPlainText()
@@ -94,8 +97,9 @@ def test_a_stall_renders_its_samples_and_what_it_interrupted(journal):
 
 
 def test_the_selection_survives_a_refresh(services, journal):
-    journal.record("action", "first", duration_ms=1.0)
     activity = services.tabs.open(TELEMETRY_KIND)
+    journal.clear()
+    journal.record("action", "first", duration_ms=1.0)
     activity.refresh()
     activity.tree.topLevelItem(0).setSelected(True)
     journal.record("action", "second", duration_ms=1.0)

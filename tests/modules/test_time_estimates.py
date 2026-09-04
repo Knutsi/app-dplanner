@@ -404,6 +404,24 @@ def test_removing_a_milestone_step_takes_its_row_with_it(services, staged):
     assert [label for label, _when, _days in _landings(tab)] == ["v1", "Remaining work"]
 
 
+def test_the_milestone_rows_are_never_read_back_out_of_the_layout(monkeypatch, services, staged):
+    """A QLayoutItem wrapper is a double delete waiting for a gc pass (CLAUDE.md's crash
+    notes): ``keys`` reads the list's own dict, kept in layout order through a reorder."""
+    from PySide6.QtWidgets import QLayout
+
+    def refuse(_layout, _index):
+        raise AssertionError("itemAt() hands out a QLayoutItem wrapper; read the dict instead")
+
+    monkeypatch.setattr(QLayout, "itemAt", refuse)
+    tab = services.tabs.open("time", staged.id)
+    read, draft, _docs, ship = staged.steps
+    assert tab.milestones.keys == (draft.id, ship.id)
+    # Ship now precedes draft in the graph, so its row moves up — and keys says so.
+    services.undo.push(SetEdgesCommand(ship.id, "requires", [read.id]))
+    services.undo.push(SetEdgesCommand(draft.id, "requires", [ship.id]))
+    assert tab.milestones.keys == (ship.id, draft.id)
+
+
 def test_without_milestones_the_list_says_where_to_make_one(tab):
     assert tab.milestones.empty.isVisibleTo(tab.widget)
     assert "Step ▸ Type ▸ Milestone" in tab.milestones.empty.text()
