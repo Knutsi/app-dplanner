@@ -5,15 +5,13 @@ context, and the window's panels — this module's project form, somebody else's
 follow from there. So the graph does not host anything, and there is one detail panel in the
 window however many projects are open side by side.
 
-Four seams keep this module from knowing about anything else in the application:
+Three seams keep this module from knowing about anything else in the application:
 
 - **The panel is anchored, not hosted.** ``register()`` puts :class:`ProjectPanel` in an area
   through ``deps.panels``; nothing here knows what else is in that area, and nothing there
   knows this exists.
 - **The index opens projects through a callback** it is given, and never learns what an
   activity is.
-- **What a node's second line says** comes from ``step_aspects``, supplied by the composition
-  root from whatever aspect modules registered.
 - **The toolbar names verbs it does not own** — the app shell's undo pair, the order module's
   ``order.open`` — and reaches them through the registry alone. See ``canvas_toolbar.py``.
 
@@ -125,10 +123,6 @@ SWITCHABLE_MODES: dict[str, Callable[[CanvasDeps], ModeBase]] = {
 }
 
 
-def _no_aspects(_step_id: StepId) -> list[str]:
-    return []
-
-
 def _no_accents(_project_id: str) -> dict[StepId, NodeAccent]:
     return {}
 
@@ -151,8 +145,6 @@ class ProjectEditorDeps:
     debounce: DebounceService
     # Where a step's attachments live, for a copy to carry them.
     files: FilesFor
-    # What the aspect modules have to say about a step, one short phrase each.
-    step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
     # How every step of a project should look beyond its text — muted, badged — in the
     # canvas's own vocabulary, so the editor never learns which aspects mean what. One call
     # per sync: the answer for a milestone comes from a schedule walk, and the walk is the
@@ -225,8 +217,8 @@ class ProjectActivity(EntityActivity):
             # Connected first, so a typing burst is sealed before the canvas re-syncs.
             self._product.structure_changed.connect(self._on_structure),
             # Every change inside this project, and none outside it. Prose reaches the
-            # node too — the spark glyph and the subtitle's summaries read module_text —
-            # and sync diffs before repainting, so a keystroke that changes neither is free.
+            # node too — the spark glyph reads module_text — and sync diffs before
+            # repainting, so a keystroke that changes nothing it shows is free.
             follow_project(self._product, self.project_id, self._sync_soon.trigger),
         ]
         self._sync()
@@ -352,7 +344,6 @@ class ProjectActivity(EntityActivity):
             NodeSpec(
                 step_id=step.id,
                 title=step.title or "Untitled step",
-                subtitle=" · ".join(self._deps.step_aspects(step.id)),
                 x=placed[step.id][0],
                 y=placed[step.id][1],
                 accent=accents.get(step.id) or NodeAccent(),

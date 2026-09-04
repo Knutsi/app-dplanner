@@ -94,7 +94,6 @@ class StepNodeItem(QGraphicsItem):
         self.step_id = step_id
         self._size = (NODE_W, NODE_H)
         self._title = ""
-        self._subtitle = ""
         self._link_state = ""
         self._accent = NodeAccent()
         self._hints = RenderHints()
@@ -107,9 +106,9 @@ class StepNodeItem(QGraphicsItem):
         self.setAcceptHoverEvents(True)
         self._hovered = False
 
-    def set_text(self, title: str, subtitle: str) -> None:
-        if (title, subtitle) != (self._title, self._subtitle):
-            self._title, self._subtitle = title, subtitle
+    def set_title(self, title: str) -> None:
+        if title != self._title:
+            self._title = title
             self.update()
 
     def set_size(self, w: float, h: float) -> None:
@@ -246,7 +245,6 @@ class StepNodeItem(QGraphicsItem):
             live_palette(self),
             self.body_rect(),
             self._title,
-            self._subtitle,
             self._accent,
             NodeState(
                 selected=self.isSelected(),

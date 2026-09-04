@@ -32,7 +32,7 @@ outgrows a screen, not when the file does.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
@@ -99,9 +99,14 @@ RESIZE_CURSORS = {
 
 @dataclass(frozen=True)
 class CanvasEvent:
-    """A mouse event in scene coordinates, with the widget left out on purpose."""
+    """A mouse event in scene coordinates, with the widget left out on purpose.
+
+    ``view_pos`` is the same point in the viewport's device pixels — what a pan needs,
+    since it moves the viewport by the pointer's travel and the scene slides under it.
+    """
 
     scene_pos: QPointF
+    view_pos: QPointF = field(default_factory=QPointF)
     button: Qt.MouseButton = Qt.MouseButton.NoButton
     buttons: Qt.MouseButton = Qt.MouseButton.NoButton
     modifiers: Qt.KeyboardModifier = Qt.KeyboardModifier.NoModifier
@@ -434,25 +439,51 @@ class ConnectMode(_LinkingMode):
 
 
 class PanMode(ModeBase):
-    """Hold space and drag, the way every canvas application does it.
+    """Hold space and drag the plane, wherever the press lands.
 
-    Qt's own ``ScrollHandDrag`` does the scrolling, so every hook here declines: the events
-    fall through to the view, which pans instead of forwarding them to the scene. Leaving is
-    what this mode is *for* — restoring the drag mode and the cursor is why it is an object.
+    It claims every press and moves the viewport itself, by the pointer's travel in device
+    pixels through the hidden scroll bars. Not Qt's ``ScrollHandDrag``: that hands a press
+    to the item under it first, so a press on a card moved the card — the one thing a hand
+    holding Space does not mean. The seat of the plane is taken at the press, so the point
+    grabbed stays under the pointer however far the drag goes.
     """
 
     name = PAN
 
     def __init__(self, deps: CanvasDeps) -> None:
         super().__init__(deps)
-        self._was = QGraphicsView.DragMode.RubberBandDrag
+        self._grab: QPointF | None = None
+        self._seat = (0, 0)
 
     def enter(self) -> None:
-        self._was = self.deps.view.dragMode()
-        self.deps.view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.deps.view.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
 
     def exit(self) -> None:
-        self.deps.view.setDragMode(self._was)
+        self.deps.view.viewport().unsetCursor()
+
+    def mouse_press(self, event: CanvasEvent) -> bool:
+        if event.button == Qt.MouseButton.LeftButton:
+            view = self.deps.view
+            self._grab = event.view_pos
+            self._seat = (view.horizontalScrollBar().value(), view.verticalScrollBar().value())
+            view.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+        return True
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        if self._grab is not None:
+            view = self.deps.view
+            travel = event.view_pos - self._grab
+            view.horizontalScrollBar().setValue(round(self._seat[0] - travel.x()))
+            view.verticalScrollBar().setValue(round(self._seat[1] - travel.y()))
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        self._grab = None
+        self.deps.view.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
+        return True
+
+    def double_click(self, event: CanvasEvent) -> bool:
+        return True  # A hand holding Space is panning, not making steps.
 
 
 class RegionCreateMode(ModeBase):

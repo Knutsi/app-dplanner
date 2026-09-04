@@ -165,19 +165,10 @@ PILL_FILL_ALPHA = 46
 GLYPH_SIZE = 9.0
 GLYPH_GAP = 5.0
 
-# The stat — the one number a step answers with, its estimate — is written *under* the card,
-# right-aligned to its edge, like a caption: a number inside the body competed with the
-# title for the same corner, and a number under the card reads at a glance as the card's
-# size in time. STAT_GAP is the air between the border and the text; STAT_ROOM is what the
-# item reserves below the body for it, and is deliberately a constant rather than a font
-# metric, since the bounding rect must not change with the font the painter arrives with.
-STAT_GAP = 5.0
-STAT_ROOM = 24.0
-
 # How far paint reaches outside the body, in every direction: the link handle (grown by
-# connect mode's emphasis), a badge's or a medallion's rise, a chip's fall, the lift, the
-# shadow, and the stat line under the card. It is what ``StepNodeItem.boundingRect`` is made
-# of, so a new decoration is measured here or it is clipped there.
+# connect mode's emphasis), a badge's or a medallion's rise, a chip's fall, the lift and the
+# shadow. It is what ``StepNodeItem.boundingRect`` is made of, so a new decoration is
+# measured here or it is clipped there.
 PAINT_MARGIN = max(
     HANDLE_R + 4.0,
     MARK_R + 1.0,
@@ -186,7 +177,6 @@ PAINT_MARGIN = max(
     CHIP_H / 2 + 1.0,
     RING_GAP + RING_W + 1.0 + LIFT,
     LIFTED_SHADOW.drop + LIFTED_SHADOW.spread + 1.0,
-    STAT_ROOM + 1.0,
 )
 
 BAR_TONES = {"good": VALID_TINT, "busy": BUSY_TINT, "bad": INVALID_TINT}
@@ -224,8 +214,8 @@ class NodeAccent:
     # machine guidance here), "beaker" (this step keeps tests), "shield" (a check: it
     # stands for everything behind it passing).
     icons: tuple[str, ...] = ()
-    stat_text: str = ""  # The one number a step answers with, written under the card.
-    stat_strong: bool = False  # Bold the stat, in full ink: this node's number is the point.
+    stat_text: str = ""  # The one number a step answers with — full ink, never faded.
+    stat_strong: bool = False  # Bold the stat: this node's number is the point of it.
 
 
 @dataclass(frozen=True)
@@ -261,17 +251,16 @@ def paint_node(
     palette: QPalette,
     body: QRectF,
     title: str,
-    subtitle: str,
     accent: NodeAccent,
     state: NodeState,
 ) -> None:
-    """The default node: body, title over a detail line, edge decorations, the link handle,
-    and the stat under the card.
+    """The default node: body, the title over a bottom line of stat, pill and glyph, the
+    edge decorations, and the link handle.
 
     Every card rests on a shadow; a selected one is drawn :data:`LIFT` above its seat over
-    a deeper shadow, so the whole composition — badge, chip, medallions, handle, stat —
-    travels together. The shadow is painted first and *unlifted*: it is the ground, not
-    part of the card.
+    a deeper shadow, so the whole composition — badge, chip, medallions, handle — travels
+    together. The shadow is painted first and *unlifted*: it is the ground, not part of
+    the card.
     """
     text_colour = QColor(palette.text().color())
     if accent.muted:
@@ -289,18 +278,16 @@ def paint_node(
     if accent.chip_text:
         paint_ring(painter, body, accent.chip_tone, state.ring_phase)
     inner = body.adjusted(PADDING, PADDING, -PADDING, -PADDING)
-    detail = bool(subtitle or accent.pill_text or accent.branch)
+    detail = bool(accent.stat_text or accent.pill_text or accent.branch)
     reserved = painter.fontMetrics().height() + LINE_GAP if detail else 0.0
     paint_title(painter, inner, title, text_colour, accent.muted, reserved)
     if detail:
-        paint_detail_line(painter, inner, subtitle, accent, text_colour, faded)
+        paint_detail_line(painter, inner, accent, text_colour, faded)
     paint_icon_medallions(painter, palette, accent.icons)
     if accent.badge:
         paint_badge(painter, palette, body, accent.badge, medallion_end(accent.icons))
     if accent.chip_text:
         paint_chip(painter, palette, body, accent.chip_text, accent.chip_tone)
-    if accent.stat_text:
-        paint_stat(painter, body, accent, text_colour, faded)
     paint_handle(painter, palette, body, state)
     painter.restore()
 
@@ -493,18 +480,34 @@ def paint_title(
 def paint_detail_line(
     painter: QPainter,
     inner: QRectF,
-    subtitle: str,
     accent: NodeAccent,
     text_colour: QColor,
     faded: QColor,
 ) -> None:
-    """The bottom line: subtitle on the left; pill and branch glyph right-aligned.
+    """The bottom line, right-aligned: the stat, then the pill, then the branch glyph.
 
-    Anchored to the node's bottom, so a short title just leaves air above it. The
-    decorations take their width first so the subtitle's elision stays honest.
+    Anchored to the node's bottom, so a short title just leaves air above it. The stat —
+    the one number the step answers with — is the rightmost and the only full-ink text on
+    the line; nothing on it is a sentence, since every aspect the card wears is a
+    medallion, a badge, a bar or a pill already.
     """
     metrics = painter.fontMetrics()
     line_top = inner.bottom() - metrics.height()
+    right = inner.right()
+    if accent.stat_text:
+        stat_font = QFont(painter.font())
+        stat_font.setBold(accent.stat_strong)
+        stat_w = QFontMetricsF(stat_font).horizontalAdvance(accent.stat_text)
+        painter.save()
+        painter.setFont(stat_font)
+        painter.setPen(text_colour)
+        painter.drawText(
+            QRectF(right - stat_w, line_top, stat_w, metrics.height()),
+            int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
+            accent.stat_text,
+        )
+        painter.restore()
+        right -= stat_w + GLYPH_GAP
     pill_font = QFont(painter.font())
     pill_font.setPointSizeF(max(6.0, pill_font.pointSizeF() - 1))
     pill_w = (
@@ -512,19 +515,6 @@ def paint_detail_line(
         if accent.pill_text
         else 0.0
     )
-    glyph_w = GLYPH_SIZE if accent.branch else 0.0
-    parts = [w for w in (pill_w, glyph_w) if w]
-    reserved = sum(parts) + GLYPH_GAP * max(0, len(parts) - 1) + (PILL_MARGIN if parts else 0.0)
-
-    if subtitle:
-        painter.setPen(faded)
-        width = inner.width() - reserved
-        painter.drawText(
-            QRectF(inner.left(), line_top, width, metrics.height()),
-            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-            metrics.elidedText(subtitle, Qt.TextElideMode.ElideRight, int(width)),
-        )
-    right = inner.right()
     if pill_w:
         pill = QRectF(right - pill_w, line_top + (metrics.height() - PILL_H) / 2, pill_w, PILL_H)
         tone = {"good": VALID_TINT, "bad": INVALID_TINT}.get(accent.pill_tone)
@@ -544,29 +534,6 @@ def paint_detail_line(
         paint_branch_glyph(
             painter, QRectF(right - GLYPH_SIZE, glyph_top, GLYPH_SIZE, GLYPH_SIZE), faded
         )
-
-
-def paint_stat(
-    painter: QPainter, body: QRectF, accent: NodeAccent, text_colour: QColor, faded: QColor
-) -> None:
-    """The stat under the card, right-aligned to its edge — a caption rather than content.
-
-    Secondary ink for a plain step's estimate, so a graph of numbers stays a graph of
-    names; full ink and bold for a node whose number is the point of it (a milestone's
-    accumulated days and date).
-    """
-    painter.save()
-    font = QFont(painter.font())
-    font.setBold(accent.stat_strong)
-    painter.setFont(font)
-    metrics = painter.fontMetrics()
-    painter.setPen(text_colour if accent.stat_strong else faded)
-    painter.drawText(
-        QRectF(body.left(), body.bottom() + STAT_GAP, body.width(), metrics.height()),
-        int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop),
-        accent.stat_text,
-    )
-    painter.restore()
 
 
 def paint_badge(painter: QPainter, palette: QPalette, body: QRectF, text: str, room: float) -> None:

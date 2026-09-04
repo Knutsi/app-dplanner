@@ -444,6 +444,9 @@ root, stop and look for the registry or capability you have not found yet.
   bug — an extent recomputed from the items moved under every node drag, and the canvas
   appeared to pan away under it. A constant cannot. The scroll bars are hidden with it (a
   handle a two-hundredth of its groove says nothing true) and the minimap orients instead.
+  **The wheel zooms and Space drags the plane** — `PanMode` claims every press and scrolls
+  the hidden bars by the pointer's travel itself, never Qt's `ScrollHandDrag`, which hands a
+  press to the card under it and moved the card while Space was held.
 - **A painter never trusts `option.palette`.** Qt fills `QStyleOptionGraphicsItem.palette`
   once, when the scene is created, and never refreshes it, so every canvas item kept the
   colours of whatever theme its tab opened in. `items.live_palette()` is the only source of
@@ -620,8 +623,9 @@ root, stop and look for the registry or capability you have not found yet.
   (`write_position(x, y, size)`), a paste keeps it, and every sort and layout spaces by
   `positions.node_size` and never changes one. Every painter takes the body rect it is
   handed — nothing measures from `NODE_W` — the title wraps onto as many lines as the card
-  has room for, and the estimate is written *under* the card as its caption.
-  `ARCHITECTURE.md`'s *A card's size is the step's* has the reasoning.
+  has room for, and the bottom line holds the estimate at the right in full ink and nothing
+  in words: every aspect a card wears is a medallion, a badge, a bar or a pill, never a
+  phrase. `ARCHITECTURE.md`'s *A card's size is the step's* has the reasoning.
 - **The look is one per-user value, and snapping is the gesture's, never the write's.**
   `project_editor/look.py`: the marks, the background under the graph (plain, dots, lines,
   crosses — painted by `ground.py`) and *Snap to Grid* are one `Look`, kept under one key,

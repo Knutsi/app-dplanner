@@ -31,6 +31,7 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QResizeEvent,
+    QWheelEvent,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -42,7 +43,6 @@ from PySide6.QtWidgets import (
 
 from dplanner.core.signals import Signal
 from dplanner.domain.model import StepId
-from dplanner.framework.widgets import install_ctrl_wheel_zoom
 from dplanner.modules.project_editor.ground import paint_ground
 from dplanner.modules.project_editor.items import (
     EdgeItem,
@@ -80,6 +80,9 @@ ZOOM_MAX = 2.5
 ZOOM_READABLE = 0.75
 FRAME_PADDING = 40.0
 ZOOM_STEP = 1.15
+# One wheel notch, in the eighths of a degree Qt reports; a fine-grained wheel or a trackpad
+# sends fractions of it, which accumulate to a step rather than each zooming a whole one.
+WHEEL_NOTCH = 120.0
 # The canvas is a plane, not a page: the scrollable area is this far out in every direction
 # from the origin and never moves, so panning stops nowhere anybody will reach and no graph
 # can change where the edges are. Large enough to be unbounded in practice, small enough
@@ -91,7 +94,6 @@ CANVAS_EXTENT = 100_000.0
 class NodeSpec:
     step_id: StepId
     title: str
-    subtitle: str
     x: float
     y: float
     accent: NodeAccent = field(default_factory=NodeAccent)
@@ -174,7 +176,7 @@ class GraphScene(QGraphicsScene):
                 item.set_render_hints(self._hints)  # A node born mid-mode dresses for it.
                 item.set_marks(self._marks)
                 self.addItem(item)
-            item.set_text(spec.title, spec.subtitle)
+            item.set_title(spec.title)
             item.set_accent(spec.accent)
             item.set_ports(spec.ports)
             # A node being dragged or resized owns its geometry until the gesture ends. The
@@ -444,8 +446,9 @@ class GraphView(QGraphicsView):
 
     **It looks onto a plane, so it has no scroll bars.** On a scrollable area whose extent is
     two hundred viewports across, a scroll bar is a nub that says nothing true about where
-    you are; the minimap in the corner says it instead, and the wheel still scrolls because
-    a hidden scroll bar is still a scroll bar.
+    you are; the minimap in the corner says it instead. **The wheel zooms** — a canvas is
+    looked at, not read down — and the plane is moved by holding Space and dragging, or by
+    clicking the minimap; the hidden scroll bars are still what those move.
     """
 
     def __init__(
@@ -476,10 +479,9 @@ class GraphView(QGraphicsView):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._zoom = 1.0
         self._framed = False
+        self._wheel_carry = 0.0
         # What lies under the graph — the user's look, pushed by the activity like the marks.
         self._background = DEFAULT_BACKGROUND
-        # The application's View ▸ Zoom is font size; a canvas zooms itself.
-        install_ctrl_wheel_zoom(self, self.zoom_by)
         self.minimap = Minimap(self)
         scene.changed.connect(self._on_scene_changed)
         # The plane is centred on the origin and the automatic layout starts there, so this
@@ -508,10 +510,21 @@ class GraphView(QGraphicsView):
     def _event_of(self, event: QMouseEvent) -> CanvasEvent:
         return CanvasEvent(
             scene_pos=self.mapToScene(event.position().toPoint()),
+            view_pos=event.position(),
             button=event.button(),
             buttons=event.buttons(),
             modifiers=event.modifiers(),
         )
+
+    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802 - Qt override
+        # The application's View ▸ Zoom is font size; a canvas zooms itself, on the bare
+        # wheel, about the point under the pointer (the transformation anchor above).
+        self._wheel_carry += event.angleDelta().y()
+        steps = int(self._wheel_carry / WHEEL_NOTCH)
+        if steps:
+            self._wheel_carry -= steps * WHEEL_NOTCH
+            self.zoom_by(steps)
+        event.accept()
 
     def note_click(self, scene_pos: QPointF) -> None:
         """Remember a point as the last one pointed at — also called for a context menu

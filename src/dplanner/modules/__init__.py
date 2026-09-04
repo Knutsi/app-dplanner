@@ -85,7 +85,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
         read_catalogue,
     )
     from dplanner.modules.feature.module import FeatureDeps, FeatureModule
-    from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.github.module import GithubDeps, GithubModule
@@ -119,7 +118,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
     )
-    from dplanner.modules.step_agent_run.aspect import MODULE_ID as AGENT_RUN_ID
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
     from dplanner.modules.step_check.aspect import read as check_read
@@ -132,7 +130,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
     from dplanner.modules.step_description.section import SeparateInstructionLink
     from dplanner.modules.step_handoff.module import StepHandoffDeps, StepHandoffModule
-    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
     from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_milestone.module import StepMilestoneDeps, StepMilestoneModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
@@ -140,7 +137,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepPropertiesDeps,
         StepPropertiesModule,
     )
-    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
@@ -302,8 +298,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         a shipped milestone reads finished, and the tag still says what it was); an agent
         instruction is the spark medallion; a PR is a pill with its state as a tone and a
         branch the fork glyph; a live agent run is the chip on the bottom edge; a plain
-        step's stat is its own estimate. Everything worn here is skipped from the canvas
-        subtitle below, so nothing is said twice.
+        step's stat is its own estimate. The card says nothing in words beyond its title:
+        every aspect it wears is one of these, never a phrase.
         """
         refs = github_read(step)
 
@@ -487,21 +483,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
             files=store.files,
             file_modules=tuple(source.id for source in _asset_sources()),
             paste_policies=_paste_policies(),
-            # A node's second line: whatever the aspects have to say about that step. The
-            # milestone and GitHub phrases are skipped because the accent already wears them
-            # — the badge the label, the pill and glyph the PR and branch.
-            # The accent wears all of these, so the subtitle must not say them again.
-            step_aspects=lambda step_id: step_aspects(
-                step_id,
-                skip={
-                    MILESTONE_ID,
-                    GITHUB_ID,
-                    STATUS_ID,
-                    AGENT_INSTRUCTION_ID,
-                    AGENT_RUN_ID,
-                    ESTIMATION_ID,
-                },
-            ),
             step_accents=step_accents,
             # The timeline sort reads a step's length through this seam; estimation owns it.
             days_for=estimated_days,
@@ -674,7 +655,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             step_schedule=step_schedule,
             start_bar=estimation.create_start_bar,
             # A milestone row wears a rule and a tint; the name itself stays in the
-            # trailing aspects column, which is why MILESTONE_ID is not skipped here.
+            # trailing aspects column, which is why the milestone is not skipped here.
             milestone_label=lambda step_id: milestone_read(library.step(step_id)),
             # The same kind vocabulary the canvas medallions wear, one translation.
             step_icons=lambda step_id: step_type_icons(library.step(step_id)),

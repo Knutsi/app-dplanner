@@ -83,9 +83,10 @@ A step on the graph is a card on a table, and the canvas is drawn to say so.
 - **The title is the card**: two points larger than the chrome, normal weight, wrapping onto
   as many lines as the card has room for above its detail line. A card can be dragged larger
   by any edge or corner to show more of a long name; the default footprint fits three lines.
-- **The estimate is a caption, not content**: written under the card, right-aligned to its
-  edge, at the secondary alpha — full ink and bold only where the number is the point of the
-  card (a milestone's days and date). Nothing else is written outside the body.
+- **The bottom line is a number, never a sentence**: the estimate at the right in full ink,
+  bold only where the number is the point of the card (a milestone's days and date), with
+  the PR pill and the branch glyph beside it. Every aspect a card wears is a medallion, a
+  badge, a bar or a pill; none is repeated as a phrase.
 - **The ground is quiet.** The default is a dot at every grid crossing, at an alpha that
   keeps a card's resting shadow the darkest thing on the plane; lines, crosses and plain are
   offered beside it, and the pitch coarsens as the graph zooms out so the ground never turns

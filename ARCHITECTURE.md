@@ -970,8 +970,13 @@ went away with it too: this scene is never smaller than a viewport. The rule gen
 this canvas: **a scrollable area's extent must not be a function of what the user is moving.**
 
 **The scroll bars go.** On an extent like that a scroll bar is a nub that says nothing true
-about where you are, so both are `ScrollBarAlwaysOff` — and still there, so the wheel still
-scrolls. What replaces them is `minimap.py`, anchored in the canvas's lower-left corner: the
+about where you are, so both are `ScrollBarAlwaysOff` — and still there, because they are
+what a pan moves. **The wheel zooms** rather than scrolls: a canvas is looked at, not read
+down, and the two ways across the plane are holding Space and dragging, and the minimap.
+`PanMode` claims every press while Space is held and scrolls the bars by the pointer's
+travel itself — Qt's `ScrollHandDrag` hands a press to the item under it first, so a press
+on a card moved the card, which is the one thing a hand holding Space does not mean. What
+replaces the bars is `minimap.py`, anchored in the canvas's lower-left corner: the
 graph small, the viewport as a frame on it, and a click to go anywhere. It is *given* node
 rectangles rather than reaching for a scene, so it imports nothing from the module around it
 and cannot outlive what it draws; `GraphView` pushes on `QGraphicsScene.changed` and on every
@@ -1070,12 +1075,12 @@ the card. The fill-gain test still guards it: a body can only come out at exactl
 tint over the ground if the fill is opaque, or nothing at all is painted underneath it.
 
 One number ties it together: `PAINT_MARGIN` in `renderers.py` is the furthest any decoration
-reaches out of the body — handle, badge, medallion, chip, lift, shadow, and the stat line
-under the card — and `StepNodeItem.boundingRect` is exactly that, *constant whether or not
-the node is selected*. A rect that grew on selection would invalidate the wrong region, and
-the shadow would be left on the canvas when the selection moved on. `shape()` is a different
-question — the card and its resize band — because the bounding rect also holds the stat
-line, and a click under a card is a click on the plane.
+reaches out of the body — handle, badge, medallion, chip, lift, shadow — and
+`StepNodeItem.boundingRect` is exactly that, *constant whether or not the node is
+selected*. A rect that grew on selection would invalidate the wrong region, and the shadow
+would be left on the canvas when the selection moved on. `shape()` is a different question —
+the card and its resize band — because the bounding rect reaches that margin out on every
+side for paint, and a click beside a card is a click on the plane.
 
 ### A card's size is the step's, and a layout never says how big
 
@@ -1097,11 +1102,12 @@ and the only fixed numbers left are paddings, radii and how far the decorations 
 sorts already spaced by a `size_for` function, which now defaults to `positions.node_size`
 — so a large card keeps its room in every arrangement without an algorithm learning about
 sizes. What a taller card buys is *title*: the name is set two points larger than the chrome
-and wraps onto as many lines as the card has room for above its detail line, only the last
-one eliding. And the estimate — the one number a step answers with — is written *under* the
-card, right-aligned to its edge, as a caption rather than content: inside the body it
-competed with the title for the same corner, and under the card it reads at a glance as the
-card's size in time.
+and wraps onto as many lines as the card has room for above its bottom line, only the last
+one eliding. The bottom line holds the estimate — the one number a step answers with — at
+the right in full ink, then the PR pill and the branch glyph, and nothing in words: the
+aspects' phrases that once filled it as a subtitle were saying what the medallions, the
+badge, the bar and the pill already wear, and a card that repeats itself is a card that is
+harder to read.
 
 **The gesture is a mode, and the hit shape is the card.** `NodeResizeMode` is
 `RegionResizeMode`'s shape with eight grips instead of one: a band `GRAB_IN` inside the

@@ -11,7 +11,6 @@ which is the point: however many projects are open, there is one of each.
 import pytest
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSizeF, Qt
 from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter
-from PySide6.QtWidgets import QGraphicsView
 
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -904,14 +903,13 @@ def test_a_lifted_node_sits_over_its_neighbours(services, project, tab):
 def test_the_bounding_rect_covers_everything_a_node_paints(services, project, tab):
     """Constant, selected or not: a rect that grew on selection would invalidate the wrong
     region and leave the shadow behind when the selection moved on."""
-    from dplanner.modules.project_editor.renderers import LIFT, LIFTED_SHADOW, STAT_ROOM
+    from dplanner.modules.project_editor.renderers import LIFT, LIFTED_SHADOW
 
     node = scene(tab)._nodes[project.steps[0].id]
     plain = node.boundingRect()
     node.setSelected(True)
     assert node.boundingRect() == plain
     assert plain.bottom() >= NODE_H + LIFTED_SHADOW.drop + LIFTED_SHADOW.spread
-    assert plain.bottom() >= NODE_H + STAT_ROOM
     assert plain.top() <= -LIFT
 
 
@@ -986,11 +984,79 @@ def test_the_base_mode_never_pops(services, project, tab):
 def test_space_pans_while_it_is_held(app, services, project, tab):
     press_key(app, tab, Qt.Key.Key_Space)
     assert modes(tab).current().name == PAN
-    assert view(tab).dragMode() == QGraphicsView.DragMode.ScrollHandDrag
+    assert view(tab).viewport().cursor().shape() == Qt.CursorShape.OpenHandCursor
 
     release_key(app, tab, Qt.Key.Key_Space)
     assert modes(tab).current().name == IDLE
-    assert view(tab).dragMode() == QGraphicsView.DragMode.RubberBandDrag
+    assert view(tab).viewport().cursor().shape() == Qt.CursorShape.ArrowCursor
+
+
+def test_a_press_on_a_card_pans_while_space_is_held(app, services, project, tab):
+    """A hand holding Space is panning, wherever it lands — Qt's own hand drag gave a press
+    on a card to the card, which moved instead of the plane."""
+    step = project.steps[0]
+    node = scene(tab)._nodes[step.id]
+    seat = node.pos()
+    canvas_view = view(tab)
+    bars = canvas_view.horizontalScrollBar(), canvas_view.verticalScrollBar()
+    was = (bars[0].value(), bars[1].value())
+    press_key(app, tab, Qt.Key.Key_Space)
+
+    start = centre_of(node)
+    send(app, tab, QEvent.Type.MouseButtonPress, start)
+    assert canvas_view.viewport().cursor().shape() == Qt.CursorShape.ClosedHandCursor
+    send(app, tab, QEvent.Type.MouseMove, start + QPointF(-120.0, -80.0))
+    send(
+        app,
+        tab,
+        QEvent.Type.MouseButtonRelease,
+        start + QPointF(-120.0, -80.0),
+        Qt.MouseButton.NoButton,
+    )
+
+    assert node.pos() == seat
+    assert services.undo.undo_text() != "Move Step"
+    assert (bars[0].value(), bars[1].value()) == (was[0] + 120, was[1] + 80)
+    assert canvas_view.viewport().cursor().shape() == Qt.CursorShape.OpenHandCursor
+    release_key(app, tab, Qt.Key.Key_Space)
+    assert modes(tab).current().name == IDLE
+
+
+def test_the_wheel_zooms_the_canvas(app, services, project, tab):
+    """A canvas is looked at, not read down: the bare wheel zooms, and a fine-grained wheel's
+    fractions of a notch add up to a step rather than each zooming one."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QWheelEvent
+
+    canvas_view = view(tab)
+    viewport = canvas_view.viewport()
+
+    def wheel(units):
+        at = QPointF(viewport.rect().center())
+        app.sendEvent(
+            viewport,
+            QWheelEvent(
+                at,
+                QPointF(viewport.mapToGlobal(at.toPoint())),
+                QPoint(),
+                QPoint(0, units),
+                Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+                Qt.ScrollPhase.NoScrollPhase,
+                False,
+            ),
+        )
+
+    before = canvas_view._zoom
+    wheel(120)
+    assert canvas_view._zoom > before
+    wheel(-120)
+    assert canvas_view._zoom == pytest.approx(before)
+    wheel(40)
+    wheel(40)
+    assert canvas_view._zoom == pytest.approx(before)  # Two thirds of a notch: not yet.
+    wheel(40)
+    assert canvas_view._zoom > before
 
 
 def test_connect_mode_shows_every_handle_and_pan_hides_them(app, services, project, tab):
@@ -1850,54 +1916,41 @@ def test_a_title_takes_as_many_lines_as_the_card_has_room_for(app):
     assert len(one) == 1 and one[0].startswith("Rebuild the") and one[0].endswith("…")
 
 
-def ink_under(tab, step_id) -> int:
-    """How far the stat line's band under a card departs from bare ground, rendered over
-    the theme's own base: text pulls a pixel far from it, and the resting shadow ends above
-    the band. The theme's ink is what the stat is written in, so white paper would hide a
-    dark theme's near-white text."""
-    from dplanner.modules.project_editor.renderers import STAT_GAP, STAT_ROOM
+def ink_in_corner(tab, step_id) -> int:
+    """How far the card's bottom-right corner departs from its own fill, rendered over the
+    theme's base: the stat's text pulls a pixel far from it, an empty corner stays flat.
+    The card is rendered over the theme's own ground, since its ink is the theme's."""
+    from dplanner.modules.project_editor.renderers import PADDING
 
     node = scene(tab)._nodes[step_id]
     body = node.body_scene_rect()
-    ground = scene(tab).palette().window().color()
-    margin = int(PAINT_MARGIN)
-    width, height = int(body.width() + 2 * margin), int(body.height() + 2 * margin)
+    width, height = int(body.width()), int(body.height())
     image = QImage(width, height, QImage.Format.Format_ARGB32)
-    image.fill(ground)
+    image.fill(scene(tab).palette().window().color())
     painter = QPainter(image)
-    scene(tab).render(
-        painter,
-        QRectF(image.rect()),
-        QRectF(body.topLeft() - QPointF(margin, margin), QSizeF(width, height)),
-    )
+    scene(tab).render(painter, QRectF(image.rect()), body)
     painter.end()
-    top = margin + int(body.height() + STAT_GAP) + 3
-    bottom = margin + int(body.height() + STAT_ROOM)
+    fill = image.pixelColor(int(PADDING) + 4, height // 2)
+    line = int(PADDING) + 18
     return int(
         max(
-            abs(image.pixelColor(x, y).lightness() - ground.lightness())
-            for y in range(top, bottom)
-            for x in range(margin + int(body.width() / 2), margin + int(body.width()))
+            abs(image.pixelColor(x, y).lightness() - fill.lightness())
+            for y in range(height - line, height - int(PADDING))
+            for x in range(width - 70, width - int(PADDING))
         )
     )
 
 
-def test_the_estimate_is_written_under_the_card(services, project, tab):
+def test_the_estimate_sits_inside_the_card_at_the_bottom_right(services, project, tab):
     from dplanner.domain.commands import SetModuleDataCommand
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATE_ID
     from dplanner.modules.estimation.aspect import write as estimate
 
     step = project.steps[0]
-    assert ink_under(tab, step.id) < 8  # Nothing under an unestimated card.
+    assert ink_in_corner(tab, step.id) < 8  # An unestimated card has an empty corner.
     services.undo.push(SetModuleDataCommand(step.id, ESTIMATE_ID, estimate(3.0)))
     assert scene(tab)._nodes[step.id]._accent.stat_text == "3d"
-    assert ink_under(tab, step.id) > 60
-
-
-def test_the_stat_line_stays_inside_what_the_item_paints():
-    from dplanner.modules.project_editor.renderers import STAT_GAP, STAT_ROOM
-
-    assert STAT_GAP < STAT_ROOM <= PAINT_MARGIN
+    assert ink_in_corner(tab, step.id) > 60
 
 
 # -- the ground: what is drawn under the graph, and whether gestures snap to it -----------------
