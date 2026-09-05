@@ -96,8 +96,12 @@ LABELLED_SHARES = (0.0, 0.5, 1.0)
 # A milestone's line and its name: the line at this alpha, the name in the full shade.
 MARK_LINE_ALPHA = 150
 MARK_LABEL_GAP = 4
-# A gap the plan leaves empty: the plan's colour pulled this far toward the surface.
+# A gap the plan leaves empty: the plan's colour pulled this far toward the surface, in
+# dots. The pattern is in pen widths: a dash short enough for the round caps to make a
+# dot of it, then a gap that stays a gap after the caps take a width of it — Qt's own
+# DotLine under round caps reads as a solid line with a texture.
 IDLE_SURFACE_ALPHA = 120
+DOT_PATTERN = (0.1, 3.0)
 
 Point = tuple[date, float]
 Tick = tuple[date, str]
@@ -509,6 +513,17 @@ class ProgressChart(QWidget):
         self._draw_path(painter, path, color, style)
 
     @staticmethod
+    def _pen(color: QColor, style: Qt.PenStyle = Qt.PenStyle.SolidLine) -> QPen:
+        """A series line: 2 px, round-capped, dashed or dotted as the style says."""
+        pen = QPen(color, LINE_WIDTH)
+        pen.setStyle(style)
+        if style == Qt.PenStyle.DotLine:
+            pen.setDashPattern(list(DOT_PATTERN))
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        return pen
+
+    @staticmethod
     def _draw_path(
         painter: QPainter,
         path: QPainterPath,
@@ -517,11 +532,7 @@ class ProgressChart(QWidget):
     ) -> None:
         if path.isEmpty():
             return
-        pen = QPen(color, LINE_WIDTH)
-        pen.setStyle(style)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen)
+        painter.setPen(ProgressChart._pen(color, style))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)
 
@@ -550,9 +561,7 @@ class ProgressChart(QWidget):
             y = row * metrics.height() + metrics.height() / 2
             for label, kind in entries:
                 color, style = keys[kind]
-                pen = QPen(color, LINE_WIDTH)
-                pen.setStyle(style)
-                painter.setPen(pen)
+                painter.setPen(self._pen(color, style))
                 painter.drawLine(QPointF(x, y), QPointF(x + LEGEND_KEY, y))
                 x += LEGEND_KEY + LEGEND_GAP
                 painter.setPen(secondary)
