@@ -1341,6 +1341,34 @@ read as "another writer" and reload the window. So `LibraryStore._snapshot` walk
 `PLAN_ENTRIES` — `project.dproj`, `modules/`, `steps/` — which is exactly the set a flush
 could overwrite, and therefore the only set the question is about.
 
+### A branch switched underneath the window is taken in, and said
+
+The window's own Switch Branch takes the tree in and drops the history (above). A switch
+made *outside* it — `git checkout` in a terminal, an agent whose step runs in the checkout
+itself — used to arrive as nothing in particular: the workspace watcher adopted whatever
+plan files differed, "Took 3 changes from outside DPlanner" flashed in the status bar,
+the branch label stayed stale until the next context change, and every edit from then on
+was autosaved onto a branch nobody had named. An agent's feedback put it plainly: *a
+window should warn when the checkout's branch changes underneath the plan.*
+
+So the sync module polls. Every repository's branch is asked of git directly — not
+through the service's second-long cache, since seeing a change is the point of asking —
+at the workspace watcher's cadence (`framework/window_watch.POLL_MS`), one cadence for
+"did something change underneath", and compared with the branch this window last saw. A
+difference is handled exactly as the window's own switch is: `_take_worktree` reads the
+tree into the model and, when anything was taken, clears the undo history and resumes
+autosave; then a modal names the repository and both branches, once per switch. Three
+things keep it honest. The poll stands down while an operation of the module's own is
+running, and every such operation re-baselines when it ends — New Branch, Switch Branch,
+a pull — so only a switch from outside is ever reported. A membership change re-baselines
+too, since a project that just arrived was not "underneath" anything. And the history is
+dropped by the refresh's own rule — only when something was actually taken — so a switch
+the watcher's tick happened to adopt first keeps the stack, and the model's refusal of an
+entry that no longer applies is what covers it (*The undo history survives an agent's
+edits*, above). The cost is one `git branch --show-current` per repository every two
+seconds on the GUI thread, a few milliseconds; `refresh_dirty` already pays the same
+after every flush.
+
 ### Storage operations that rewrite the working tree are synchronous
 
 CLAUDE.md's rule says blocking work runs through `TaskRunner`, and the sync module's own

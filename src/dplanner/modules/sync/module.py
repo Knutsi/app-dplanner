@@ -12,6 +12,16 @@ reason in the label — until a project is focused.
 
 Membership changes at runtime (File ▸ New/Open Project), so the service re-pulls its
 repository groups whenever the library's structure changes.
+
+**A branch switched underneath the window is taken in, and said.** A checkout is one
+``git checkout`` in a terminal away, or an agent working in the checkout itself, and the
+plan on screen is then another branch's without anything having said so — and autosave
+writes the next edit to it. So every repository's branch is asked at the workspace
+watcher's cadence and compared with the one this window last saw: a switch it did not
+make is taken the way its own switch is (``_take_worktree``: the tree into the model, the
+undo history dropped when anything was taken) and then warned about, naming the
+repository and both branches. The window's own operations re-baseline when they end, so
+only a switch from outside is ever reported.
 """
 
 from collections.abc import Callable, Sequence
@@ -35,6 +45,7 @@ from dplanner.framework.session import SessionControl
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.window import StatusHost, UnsavedChangesHost
+from dplanner.framework.window_watch import POLL_MS
 from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
 from dplanner.modules.sync.service import RepoGroup, SyncService
 from dplanner.modules.sync.view import DiffDialog, IconLabel, UnsavedChangesButton
@@ -71,6 +82,8 @@ class SyncModule:
         self._deps = deps
         self.service: SyncService | None = None
         self._worktree_changed = False
+        # The branch each repository was on when this window last looked, by group.
+        self._known_branches: dict[int, str] = {}
 
     def register(self) -> None:
         deps = self._deps
@@ -133,6 +146,7 @@ class SyncModule:
                 return
             deps.autosave.resume()
             service.refresh()
+            self._check_branches(service, warn=False)  # An operation of ours just ended.
 
         service.busy_changed.connect(on_busy_changed)
         service.notice.connect(lambda text: deps.status.show_status(text, 5000))
@@ -171,6 +185,14 @@ class SyncModule:
         service.refresh()
         refresh_label()
 
+        # The checkout can change under the window — a terminal, an agent working in it.
+        # Asked at the workspace watcher's cadence, so a switch is noticed as its files are.
+        self._check_branches(service, warn=False)
+        branch_poll = QTimer(deps.parent)
+        branch_poll.setInterval(POLL_MS)
+        branch_poll.timeout.connect(lambda: self._check_branches(service))
+        branch_poll.start()
+
     # -- labels --------------------------------------------------------------------------------
 
     def _library_label(self) -> str:
@@ -194,6 +216,50 @@ class SyncModule:
     def _on_membership(self, service: SyncService) -> None:
         service.rewire()
         service.refresh()
+        self._check_branches(service, warn=False)  # New groups: nothing was "underneath".
+
+    # -- the checkout, watched -----------------------------------------------------------------
+
+    def _check_branches(self, service: SyncService, *, warn: bool = True) -> None:
+        """One tick: every repository's branch against the one this window last saw.
+
+        ``warn=False`` takes the current branches as the baseline — at start, after a
+        membership change and after an operation of ours, none of which happened
+        underneath anybody. A tick during an operation stands down: the tree is moving on
+        purpose, and the operation re-baselines when it ends. The branch is asked of git
+        directly rather than through the service's second-long cache, because seeing a
+        change is the whole point of asking.
+        """
+        if service.is_busy():
+            return
+        switched: list[tuple[RepoGroup, str, str]] = []
+        for group in service.groups():
+            branch = group.current_branch()
+            known = self._known_branches.get(id(group))
+            self._known_branches[id(group)] = branch
+            if warn and known is not None and branch != known:
+                switched.append((group, known, branch))
+        if switched:
+            self._branch_switched_underneath(switched)
+
+    def _branch_switched_underneath(self, switched: Sequence[tuple[RepoGroup, str, str]]) -> None:
+        """A checkout this window did not make: take the tree the way its own switch is
+        taken, then say so — the plan on screen is another branch's now, and autosave
+        writes the next edit to it."""
+        deps = self._deps
+        deps.autosave.pause()  # _take_worktree resumes, as after a switch of our own.
+        self._take_worktree()
+        deps.context.refresh()  # The branch label follows the focused project.
+        lines = [f"{group.label}: {was} → {now}" for group, was, now in switched]
+        deps.status.show_status("Branch switched outside DPlanner — " + "; ".join(lines), 8000)
+        QMessageBox.warning(
+            deps.parent,
+            "Branch changed",
+            "The checkout switched branches outside DPlanner:\n\n"
+            + "\n".join(f"• {line}" for line in lines)
+            + "\n\nThe plan shown is now the one on the new branch, and so is every edit"
+            " from here on. If an agent is working in this checkout, it did this.",
+        )
 
     # -- quitting ------------------------------------------------------------------------------
 
@@ -382,3 +448,5 @@ class SyncModule:
         deps.autosave.resume()
         if self.service is not None:
             self.service.refresh()
+            # Whatever branch the tree is on now is the window's own doing: the baseline.
+            self._check_branches(self.service, warn=False)

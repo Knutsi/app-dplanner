@@ -11,7 +11,7 @@ import json
 import subprocess
 
 import pytest
-from PySide6.QtWidgets import QInputDialog
+from PySide6.QtWidgets import QInputDialog, QMessageBox
 
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import SetFieldCommand
@@ -352,3 +352,101 @@ def test_the_branch_label_asks_git_once_a_second(services, make_project, monkeyp
     assert service.branch_of(group) == first and len(asked) == 1
     service.refresh()  # What every operation ends with: the next ask is fresh.
     assert service.branch_of(group) == first and len(asked) == 2
+
+
+# -- a branch switched underneath ---------------------------------------------------------------
+
+
+def switch_outside(services, project, *args):
+    """A git command in the project's repository, the way a terminal or an agent runs it."""
+    subprocess.run(
+        ["git", "-C", str(services.repo.project_dir(project.id)), *args],
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_a_branch_switched_outside_the_window_is_taken_and_said(
+    services, make_project, monkeypatch
+):
+    """`git checkout` in a terminal, or an agent working in the checkout: the plan on
+    screen becomes another branch's. The poll takes the tree the way the window's own
+    switch is taken — history dropped, autosave running again — and says which
+    repository went from what to what, once."""
+    project = make_project("Discovery")
+    edit_and_flush(services, project)
+    select_project(services, project)
+    service = sync_service(services)
+    (group,) = service.groups()
+    service.save_sync("on main")
+    main = service.branch_of(group)
+    module = sync_module(services)
+    services.undo.push(SetFieldCommand(project.id, "title", "Renamed on main"))
+    services.autosave.flush_now()
+    service.save_sync("renamed")
+
+    switch_outside(services, project, "checkout", "-q", "-b", "feature")
+    meta_path = services.repo.project_dir(project.id) / "project.dproj"
+    meta = json.loads(meta_path.read_text())
+    meta["summary"] = "written on feature"
+    meta_path.write_text(json.dumps(meta, indent=2))
+    switch_outside(services, project, "commit", "-q", "-am", "on feature")
+
+    said = []
+
+    def warned(_parent, title, text):
+        said.append((title, text))
+
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
+    module._check_branches(service)
+
+    assert len(said) == 1 and said[0][0] == "Branch changed"
+    assert f"{group.label}: {main} → feature" in said[0][1]
+    assert service.branch_of(group) == "feature"
+    assert services.document.projects[0].summary == "written on feature"  # Taken in place.
+    assert not services.undo.can_undo()  # The history described the other branch.
+    module._check_branches(service)
+    assert len(said) == 1  # Once per switch, not once per tick.
+
+    services.document.set_field(project.id, "summary", "edited on feature")
+    services.autosave.flush_now()  # Autosave resumed with the new tree in the model.
+    assert json.loads(meta_path.read_text())["summary"] == "edited on feature"
+
+
+def test_the_windows_own_switch_is_not_reported(session, services, make_project, monkeypatch):
+    project = make_project("Discovery")
+    edit_and_flush(services, project)
+    select_project(services, project)
+    service = sync_service(services)
+    service.save_sync("on main")
+    module = sync_module(services)
+    said = []
+
+    def warned(*args):
+        said.append(args)
+
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *_a, **_k: ("feature", True)))
+    services.actions.run("sync.new_branch", services.context.current())
+    module._check_branches(service)
+    assert said == []
+    (group,) = service.groups()
+    assert service.branch_of(group) == "feature"
+
+
+def test_the_poll_stands_down_while_an_operation_runs(services, make_project, monkeypatch):
+    project = make_project("Discovery")
+    edit_and_flush(services, project)
+    service = sync_service(services)
+    module = sync_module(services)
+    monkeypatch.setattr(service, "is_busy", lambda: True)
+    asked = []
+    from dplanner.core.storage.git import GitStorage
+
+    def counted(_self):
+        asked.append(1)
+        return "x"
+
+    monkeypatch.setattr(GitStorage, "current_branch", counted)
+    module._check_branches(service)
+    assert asked == []

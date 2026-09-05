@@ -561,6 +561,15 @@ root, stop and look for the registry or capability you have not found yet.
   read as foreign. Branch switch and pull go through the same `SessionControl.refresh`,
   clearing undo history (theirs describes another tree). `ARCHITECTURE.md`'s *Adopting the
   other writer's changes in place* has the reasoning.
+- **A branch switched underneath the window is taken in, and said.** The sync module
+  asks every repository's branch at the workspace watcher's cadence (`POLL_MS`) and
+  compares it with the one this window last saw; a switch it did not make — a terminal's
+  `git checkout`, an agent working in the checkout with its worktree off — goes through
+  the same `_take_worktree` as the window's own switch (tree into the model, undo history
+  dropped when anything was taken, autosave resumed) and then a warning names the
+  repository and both branches. The window's own operations re-baseline when they end,
+  so only a switch from outside is ever reported. `ARCHITECTURE.md`'s *A branch switched
+  underneath the window* has the reasoning.
 - **Reloading the library is a full rebuild — and the fallback, not the rule.**
   `SessionControl.refresh()` adopts; `reload()` is what it falls back to when the store
   cannot read what it found (a pending format migration, a failure halfway), and what *File
