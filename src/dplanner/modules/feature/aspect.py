@@ -39,8 +39,31 @@ def _from_step_feature(retired: dict[str, Any], existing: dict[str, Any]) -> dic
     return dict(existing) if existing else dict(retired)
 
 
+def _to_format_2(data: dict[str, Any]) -> dict[str, Any]:
+    """A record cites N passages: its one ``source`` becomes a one-element ``sources``.
+
+    Beside a step the same id is a marker and passes through untouched — one module id,
+    two shapes, and the migration owes both a thought (FORMAT.md). A migrated passage
+    carries no ``digest``, so it is judged by its match alone rather than read as behind.
+    """
+    rows = data.get("features")
+    if not isinstance(rows, list):
+        return dict(data)
+    migrated = []
+    for row in rows:
+        if isinstance(row, dict) and "source" in row:
+            row = dict(row)
+            source = row.pop("source")
+            if isinstance(source, dict):
+                row["sources"] = [source]
+        migrated.append(row)
+    return {**data, "features": migrated}
+
+
 DATA_FORMAT = ModuleDataFormat(
     MODULE_ID,
+    2,
+    (_to_format_2,),
     takeovers=(Takeover(retired=RETIRED_STEP_FEATURE, convert=_from_step_feature),),
 )
 

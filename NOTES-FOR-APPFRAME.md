@@ -1997,7 +1997,35 @@ turn came (every builder test) raised the notice's `QMessageBox` over a deleted 
 baseline runs of this pass. **The rule.** A zero-timer that touches a widget names that
 widget as its context; CLAUDE.md already says so for views, and modules are no exception.
 
-## 16. From the multi-agent worktree pass
+## 16. From the spec-coverage pass
+
+### `theme/cards.py` — the card primitives, out of the canvas module (new)
+
+**What.** `Shadow`, `RESTING_SHADOW`/`LIFTED_SHADOW`, `paint_shadow`, `over`, `title_font`,
+`title_lines` and the card metrics (`RADIUS`, `PADDING`, `PAD_Y`, `LINE_GAP`,
+`TITLE_POINTS`, `LIFT`, `SECONDARY_ALPHA`, `FILL_ALPHA`, `SELECTED_BORDER_W`,
+`SELECTED_FILL_GAIN`) moved verbatim from `modules/project_editor/renderers.py` into
+`theme/`, beside the tones and glyphs they were already painted with. **Why.** A second
+surface paints cards — the coverage view's four columns — and modules never import each
+other, so the shared half had to live in a layer both may reach. `renderers.py` keeps
+everything that is the graph's own (ports, marks, rings, badges, `PAINT_MARGIN`) and
+composes from here. **Upstream?** Yes: a template with a canvas will paint cards elsewhere
+sooner or later, and `theme/` is where a painter's vocabulary belongs.
+
+### `framework/inspector.py` — `FocusableExtension`, an optional answer to "show this thing of yours"
+
+**What.** A second, `runtime_checkable` protocol beside `InspectorExtension`:
+`focus_entity(kind, entity_id) -> bool`. A section that holds addressable things — the
+Tests tab a test, the Feature tab a record — implements it; the host (`StepPanel.focus`)
+asks each visible section in turn and brings forward the first that answers True. **Why.**
+A jump from the coverage view names a *test*, not a step, and `steps.details` should land
+on it. The kinds are the selection scope's own (`"test"`, `"feature"`), so a caller
+synthesises a context carrying the step and the thing and no verb grew a parameter; a
+section with nothing addressable implements nothing and is never asked. **Upstream?** Yes —
+the protocol and `StepPanel.focus` together; it is the general "open the detail panel on a
+sub-item" every inspector eventually wants.
+
+## 17. From the multi-agent worktree pass
 
 ### `core/storage/git.py` — `main_checkout(root)` beside `find_repo_root` (new)
 

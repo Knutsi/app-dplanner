@@ -170,6 +170,7 @@ src/dplanner/
 │   ├── png.py               RGB buffer → PNG bytes, stdlib only, deterministic
 │   ├── telemetry.py         the journal both surfaces write: spans, a ring, a JSON-lines file
 
+│   ├── anchors.py           where a quoted passage sits in a document: exact, fuzzy or lost, and behind when the text moved on
 │   ├── signals.py  fsio.py  text_diff.py
 │
 ├── domain/                ── the planner itself. Qt-free.
@@ -254,9 +255,10 @@ src/dplanner/
 │   │                        the status-bar button and the Agents browser are `view.py`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
-│   ├── feature/             the project's feature catalogue (catalogue.py) and the step that
-│   │                        realises each: the Features panel and its drag onto the canvas, the
-│   │                        Feature tab, the Type ▸ Feature toggle, `dplanner feature`
+│   ├── feature/             the project's feature catalogue (catalogue.py: records and the
+│   │                        passages each cites) and the step that realises each: the Features
+│   │                        panel and its drag onto the canvas, the Feature tab, the Type ▸
+│   │                        Feature toggle, `dplanner feature` (cite, uncite, reanchor)
 │   ├── step_check/          a step that gathers every test it waits on — the Type ▸ Check toggle
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, the project's Tests tab and the library-wide roll call
@@ -269,6 +271,9 @@ src/dplanner/
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
 │   │                        and page rendering; editor.py: the in-app markdown editor)
+│   ├── coverage/            the spec and what became of it: passages → features → milestones →
+│   │                        tests and docs (trace.py, one derived picture), the Coverage tab's
+│   │                        four lanes (scene.py), and `dplanner coverage show|spec|review`
 │   ├── project_assets/      every asset a project carries and what uses each — the Assets
 │   │                        tab, the pool, display titles, and `dplanner asset`
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
@@ -277,8 +282,9 @@ src/dplanner/
 │   ├── appshell/  sync/  settings/  taskcenter/  debug/
 │   └── llm/  llm_openai/  llm_anthropic/
 │
-└── theme/                 22 themes, the palette, a chrome-only stylesheet, the glyphs, and tones.py —
-                           the semantic colours a node body and a kind button share
+└── theme/                 22 themes, the palette, a chrome-only stylesheet, the glyphs, tones.py —
+                           the semantic colours a node body and a kind button share — and cards.py,
+                           the card primitives the canvas and the coverage view both paint with
 ```
 
 ## Where it came from

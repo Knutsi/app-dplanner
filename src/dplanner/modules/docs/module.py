@@ -91,6 +91,8 @@ COMPILE_ACTION = "docs.compile"
 BUSY_REASON = "Another job is running — wait for it to finish"
 NOTHING_REASON = "Nothing to compile — no step behind this one carries documentation"
 NOT_COLLECTOR_REASON = "Compile Docs — only a feature, milestone or check compiles one"
+OPEN_STEP_ACTION = "docs.open_step"
+NO_DOCS_REASON = "Show Docs — this step carries no documentation and gathers none"
 
 
 @dataclass(frozen=True)
@@ -221,6 +223,23 @@ class DocsModule:
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
         self._deps.tabs.open(DOCS_KIND, project_id, preview=preview)
 
+    def open_collector(self, project_id: NodeId, step_id: StepId) -> None:
+        """The Docs tab, on the group that is ``step_id``'s."""
+        activity = self._deps.tabs.open(DOCS_KIND, project_id)
+        if isinstance(activity, DocsActivity):
+            activity.show_collector(step_id)
+
+    def has_docs(self, step_id: StepId) -> bool:
+        """Whether the Docs tab has anything to show for this step: a document of its
+        own to compile or compiled, or a fragment some collector gathers."""
+        library = self._deps.library
+        if not library.has(step_id):
+            return False
+        step = library.step(step_id)
+        if self._collects(step_id):
+            return bool(self._sources(step_id)) or bool(read_compiled(step))
+        return enabled(step)
+
     def _activity(self, target: str | None) -> DocsActivity:
         assert target is not None
         return DocsActivity(self._deps, target, self._link())
@@ -279,7 +298,29 @@ class DocsModule:
                 state=self._action_state,
                 run=lambda context: self.compile_step(self._focused_id(context)),
             ),
+            ActionSpec(
+                id=OPEN_STEP_ACTION,
+                label="Show &Docs",
+                menu="Step",
+                group="open",
+                order=80,
+                tip="Open the Docs tab on this step's document, or the one gathering its note",
+                state=self._open_step_state,
+                run=self._open_step,
+            ),
         ]
+
+    def _open_step_state(self, context: Context) -> ActionState:
+        step_id = self._focused_id(context)
+        if not step_id or not self.has_docs(step_id):
+            return ActionState(enabled=False, label=NO_DOCS_REASON)
+        return ActionState()
+
+    def _open_step(self, context: Context) -> None:
+        step_id = self._focused_id(context)
+        if step_id and self._deps.library.has(step_id):
+            project = self._deps.library.project_of(step_id)
+            self.open_collector(project.id, step_id)
 
     # -- compiling -------------------------------------------------------------------------
 

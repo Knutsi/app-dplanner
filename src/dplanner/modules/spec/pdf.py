@@ -1,7 +1,7 @@
 """Reading PDFs for the spec workflow: a text layer, and a page rendered to an image.
 
 The text layer is what makes a PDF a first-class spec document — ``spec show`` prints it,
-``spec mark`` validates quotes against it, ``spec diff`` diffs it — and a rendered page is
+a feature's quote anchors in it, ``spec diff`` diffs it — and a rendered page is
 how a figure reaches the agent working a step. Pages are joined with a marker line so the
 layer stays greppable and splittable; a page number in this module is always 1-based, the
 number a person sees in a PDF viewer.
@@ -13,6 +13,7 @@ registry-build time through ``cli.py``, and loading pdfium's native library woul
 
 import re
 from pathlib import PurePosixPath
+from typing import Any
 
 from dplanner.core.png import encode_rgb
 
@@ -63,25 +64,26 @@ def split_pages(layer: str) -> list[str]:
     return pages
 
 
-def find_quote_pages(layer: str, quote: str) -> list[int]:
-    """Every 1-based page a quote appears on — the same sentence can recur, and a
-    ``--page`` naming any occurrence is right, not a mismatch.
+def quote_boxes(page: Any, quote: str) -> list[tuple[float, float, float, float]]:
+    """Where ``quote`` is printed on a pdfium page: ``(left, bottom, right, top)`` boxes in
+    PDF points, origin at the page's bottom-left — the viewer flips them.
 
-    Whitespace- and case-normalized, because PDF text extraction rewraps lines and loses
-    ligatures — an anchor that failed on a line break would make validation noise.
+    pdfium's search is exact, so a quote that only anchors whitespace-normalised is
+    retried on its first line, and a quote it cannot find at all gives no boxes — the
+    viewer then shows the page and nothing more, which is honest.
     """
-    needle = _normalized(quote)
-    if not needle:
-        return []
-    return [
-        number
-        for number, page in enumerate(split_pages(layer), start=1)
-        if needle in _normalized(page)
-    ]
-
-
-def _normalized(text: str) -> str:
-    return " ".join(text.lower().split())
+    textpage = page.get_textpage()
+    for needle in (" ".join(quote.split()), quote.strip().splitlines()[0] if quote.strip() else ""):
+        if not needle:
+            continue
+        searcher = textpage.search(needle, match_case=False)
+        hit = searcher.get_next()
+        if hit is None:
+            continue
+        index, count = hit
+        rects = textpage.count_rects(index, count)
+        return [textpage.get_rect(number) for number in range(rects)]
+    return []
 
 
 def render_page(data: bytes, page_number: int, scale: float) -> bytes:
