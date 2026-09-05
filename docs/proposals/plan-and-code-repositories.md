@@ -300,59 +300,7 @@ already uses — and a rebase that does conflict aborts and says so. This change
 `GitHubStorage.pull` and `push` (an entry for `NOTES-FOR-APPFRAME.md`), and it is safe
 precisely because separation guarantees the repository contains no code.
 
-**Phase 2, later: the plan repository as a library root.** With the index in
-place, a library entry can name a plan repository root instead of a project —
-`{"root": "/home/b/plans"}` — expanded at load into the projects its index lists, and
-re-expanded when the index changes on disk (a `git pull` that brought a colleague's new
-project). Membership then travels with the repository: nobody re-runs `library add`, the
-panel order is the committed order, and "the library" becomes "the plan repositories I
-have cloned". It is additive — a bare project path keeps working — and it is a membership
-refactor (`library_file`, `LibraryStore.load`/`attach`/`_adopt_library_file`, the Projects
-panel's unavailable rows), which is why it is sequenced after the separation rather than
-bundled with it.
 
-### Git first, and what a backend would add
-
-Everything above is collaboration *through git*: the plan repository is the shared
-workspace, and a change reaches a colleague when one side pushes and the other pulls. What
-git cannot give is *liveness* — a change seen as it is typed, presence, two people inside
-one spec paragraph at once. A backend is what adds that. It sits on top of git-based
-sharing rather than replacing it, and the separation is the prerequisite for both, because
-a repository can only be synced aggressively when it holds nothing but plans.
-
-The ladder, simplest first:
-
-| Option | What it is | When a colleague's change is seen | Both edit the same entry | What has to run |
-|---|---|---|---|---|
-| Phase 1 only | Everyone clones the plan repository and runs one `library add` on it | After a Save on one side and a pull on the other | The conflict dialog that exists today, per entry | Nothing new |
-| Phase 2 | A cloned plan repository *is* the library; new projects appear after a pull | The same, and nobody maintains a project list | The same | Nothing new |
-| Auto-sync | The window pulls on a timer and pushes after every Save | Within a minute or two, adopted in place with caret and undo kept | The same, plus a rebase that stops and says so when git cannot merge | Nothing new |
-| Sync backend | A small service that syncs the plan repository and pings open windows | Within seconds | The same | A server, or GitHub webhooks |
-| Co-editing backend | A service holding live documents with CRDT text | As it is typed, with presence | Merged character by character, no dialog | A server, auth, an offline story, and a CLI that talks to it |
-
-What each step costs and buys:
-
-- **Phase 1 already lets several people work on one project.** The window takes a
-  colleague's edits into the live model entry by entry after a pull
-  (`adopt_outside_changes`), and a disagreement on the same entry goes to the conflict
-  dialog. The one real gap is a Save refused because somebody pushed first, which
-  rebase-before-push closes.
-- **Phase 2 is only bookkeeping.** It removes the step where each person tells their
-  library which projects exist; it changes nothing about how edits flow.
-- **Auto-sync is the cheap route to live updates on the graph.** A timer and two git calls
-  on a repository that holds only plans. Latency is a minute, not a second, and the history
-  fills with small commits, which a plans-only repository can afford.
-- **A backend is a different product decision.** Files in git are what make agents,
-  offline work, plan history and the review of a plan through a pull request possible. A
-  sync backend keeps all of that and adds speed. A co-editing backend gives up files as the
-  source of truth, and the CLI would speak to a service instead of a directory. The text
-  model already stores prose as positional edits (`TextEdit`), the shape live co-editing
-  builds on, but it is not conflict-free by itself.
-
-So the recommendation is Phase 1 with the index and `library add` over a plan repository,
-plus rebase-before-push, and then a pause: Phase 2, auto-sync and either backend all build
-on that without undoing it, and the choice between them is better made after a team has
-used the separated setup for a few weeks.
 
 ## Alternatives weighed
 
@@ -495,12 +443,70 @@ In the order that keeps every step green and shippable on its own:
 6. **Save that rebases** — `GitHubStorage.pull` and `push` rebase, for a repository that
    holds only plans.
 
-Phase 2 — plan repository roots as library entries — is parked: it builds on all of the
-above and is picked up once a team has used the separated setup for a while.
+Phase 2 — plan repository roots as library entries — is parked; see *Parked for later*.
 
 Steps 1 to 3 are what stops the drift for an agent-driven team; step 4 is what makes it
 usable from the window. By the skill's own yardstick (four tasks to a day) steps 1 to 3 are
 about a day each and step 4 about two; the numbers are a shape, not a promise.
+
+## Parked for later: collaboration beyond git
+
+*Kept so the thinking is not lost. Nothing in this section is part of the first round;*
+*it builds on the separation above and is picked up once a team has used it for a while.*
+
+**Phase 2: the plan repository as a library root.** With the index in
+place, a library entry can name a plan repository root instead of a project —
+`{"root": "/home/b/plans"}` — expanded at load into the projects its index lists, and
+re-expanded when the index changes on disk (a `git pull` that brought a colleague's new
+project). Membership then travels with the repository: nobody re-runs `library add`, the
+panel order is the committed order, and "the library" becomes "the plan repositories I
+have cloned". It is additive — a bare project path keeps working — and it is a membership
+refactor (`library_file`, `LibraryStore.load`/`attach`/`_adopt_library_file`, the Projects
+panel's unavailable rows), which is why it is sequenced after the separation rather than
+bundled with it.
+
+### Git first, and what a backend would add
+
+Everything above is collaboration *through git*: the plan repository is the shared
+workspace, and a change reaches a colleague when one side pushes and the other pulls. What
+git cannot give is *liveness* — a change seen as it is typed, presence, two people inside
+one spec paragraph at once. A backend is what adds that. It sits on top of git-based
+sharing rather than replacing it, and the separation is the prerequisite for both, because
+a repository can only be synced aggressively when it holds nothing but plans.
+
+The ladder, simplest first:
+
+| Option | What it is | When a colleague's change is seen | Both edit the same entry | What has to run |
+|---|---|---|---|---|
+| Phase 1 only | Everyone clones the plan repository and runs one `library add` on it | After a Save on one side and a pull on the other | The conflict dialog that exists today, per entry | Nothing new |
+| Phase 2 | A cloned plan repository *is* the library; new projects appear after a pull | The same, and nobody maintains a project list | The same | Nothing new |
+| Auto-sync | The window pulls on a timer and pushes after every Save | Within a minute or two, adopted in place with caret and undo kept | The same, plus a rebase that stops and says so when git cannot merge | Nothing new |
+| Sync backend | A small service that syncs the plan repository and pings open windows | Within seconds | The same | A server, or GitHub webhooks |
+| Co-editing backend | A service holding live documents with CRDT text | As it is typed, with presence | Merged character by character, no dialog | A server, auth, an offline story, and a CLI that talks to it |
+
+What each step costs and buys:
+
+- **Phase 1 already lets several people work on one project.** The window takes a
+  colleague's edits into the live model entry by entry after a pull
+  (`adopt_outside_changes`), and a disagreement on the same entry goes to the conflict
+  dialog. The one real gap is a Save refused because somebody pushed first, which
+  rebase-before-push closes.
+- **Phase 2 is only bookkeeping.** It removes the step where each person tells their
+  library which projects exist; it changes nothing about how edits flow.
+- **Auto-sync is the cheap route to live updates on the graph.** A timer and two git calls
+  on a repository that holds only plans. Latency is a minute, not a second, and the history
+  fills with small commits, which a plans-only repository can afford.
+- **A backend is a different product decision.** Files in git are what make agents,
+  offline work, plan history and the review of a plan through a pull request possible. A
+  sync backend keeps all of that and adds speed. A co-editing backend gives up files as the
+  source of truth, and the CLI would speak to a service instead of a directory. The text
+  model already stores prose as positional edits (`TextEdit`), the shape live co-editing
+  builds on, but it is not conflict-free by itself.
+
+So the recommendation is Phase 1 with the index and `library add` over a plan repository,
+plus rebase-before-push, and then a pause: Phase 2, auto-sync and either backend all build
+on that without undoing it, and the choice between them is better made after a team has
+used the separated setup for a few weeks.
 
 ## Open questions
 
