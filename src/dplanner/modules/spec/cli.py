@@ -6,8 +6,9 @@ markdown *and* PDFs — import extracts a PDF's text layer, and ``--page`` narro
 page; ``path`` still hands over the original file), ``render`` a page into an image and
 ``attach-to-step`` it so a figure travels with the step's briefing, and — when the spec is
 replaced — ``diff`` what changed (PDFs diff by their text layers). What the spec *asks for*
-is read into features (``dplanner feature add``), whose quotes this module checks through
-:func:`anchor_quote`, handed across by the composition root.
+is read into features (``dplanner feature add``, ``feature cite``), whose quotes this module
+anchors through :func:`~dplanner.modules.spec.documents.anchor_sources`, handed across by
+the composition root.
 
 The **topology** is the project's prose beside the documents: ``topology set`` writes it
 and ``topology show`` prints it — and records that it was read, which is what the gate in
@@ -25,11 +26,11 @@ from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.gate import digest
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, project_arg, step_arg
+from dplanner.core.anchors import Anchor
 from dplanner.core.text_diff import diff_hunks
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor
-from dplanner.modules.spec.anchors import Anchor
 from dplanner.modules.spec.aspect import (
     MODULE_ID,
     TOPOLOGY_LABEL,
@@ -41,12 +42,12 @@ from dplanner.modules.spec.aspect import (
 from dplanner.modules.spec.documents import (
     KIND_PDF,
     SpecDocument,
-    anchor_sources,
     attach_asset,
     binary_refusal,
     blob_bytes,
     copied_to_step,
     default_name,
+    document_digest,
     import_document,
     layer_from,
     matching_documents,
@@ -56,6 +57,7 @@ from dplanner.modules.spec.documents import (
     remove_document,
     write_index,
 )
+from dplanner.modules.spec.documents import anchor_sources as anchor_sources
 from dplanner.modules.spec.pdf import render_page, split_pages
 
 
@@ -105,19 +107,6 @@ def lint_checks() -> list[LintCheck]:
     return [topology_missing]
 
 
-def anchor_quote(
-    files: FilesFor, project: Project, document_name: str, quote: str
-) -> tuple[bool | None, list[int]]:
-    """(was the quote found in the document, on which pages). ``(None, [])`` when there
-    is nothing to check: no quote, no such document, or a PDF whose text cannot be read."""
-    if not quote:
-        return None, []
-    anchor = anchor_source(files, project, document_name, quote, "")
-    if anchor.state == "missing":
-        return None, []
-    return anchor.found, list(anchor.pages)
-
-
 def anchor_source(
     files: FilesFor, project: Project, document_name: str, quote: str, stamped: str
 ) -> Anchor:
@@ -128,6 +117,13 @@ def anchor_source(
 def document_names(project: Project) -> list[str]:
     """The names a feature's source may point at — the editor's dropdown."""
     return [doc.name for doc in read_index(project).documents]
+
+
+def digest_of(project: Project, document_name: str) -> str:
+    """The document's digest as it is now — what the feature editor stamps a passage
+    with; ``""`` for a name the index does not hold."""
+    document = next((d for d in read_index(project).documents if d.name == document_name), None)
+    return document_digest(document) if document is not None else ""
 
 
 def commands(*, note_read: Callable[[str, str], None]) -> list[CliCommand]:

@@ -53,6 +53,10 @@ from dplanner.theme.icons import layers_icon
 PANEL_ID = f"{MODULE_ID}.panel"
 
 
+def _no_digest(_project_id: NodeId, _document: str) -> str:
+    return ""
+
+
 def _no_documents(_project_id: NodeId) -> list[str]:
     return []
 
@@ -71,6 +75,9 @@ class FeatureDeps:
     # The spec documents a record's source can name — the editor's dropdown. Spec's
     # business, handed in so this module never learns how documents are stored.
     documents_of: Callable[[NodeId], list[str]] = _no_documents
+    # (project id, document name) → the document's digest now — what a passage edited in
+    # the editor is stamped with, so the spec module's read-time judgement has a base.
+    digest_of: Callable[[NodeId, str], str] = _no_digest
 
 
 class FeatureModule:
@@ -105,7 +112,12 @@ class FeatureModule:
                 label=SPEC.label,
                 order=45,
                 factory=lambda: FeatureSection(
-                    deps.library, deps.undo, deps.files, deps.documents_of, self.register_step
+                    deps.library,
+                    deps.undo,
+                    deps.files,
+                    deps.documents_of,
+                    self.register_step,
+                    digest_of=deps.digest_of,
                 ),
                 shown_for=lambda step_id: (
                     step_id is not None
@@ -235,6 +247,7 @@ class FeatureModule:
             project_id,
             record.id,
             parent=self._deps.parent,
+            digest_of=self._deps.digest_of,
         )
         dialog.exec()
         dialog.dispose()

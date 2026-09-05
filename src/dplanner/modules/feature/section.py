@@ -13,7 +13,7 @@ from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.undo import UndoService
 from dplanner.modules.feature.aspect import read
-from dplanner.modules.feature.editor import FeatureEditor
+from dplanner.modules.feature.editor import DigestOf, FeatureEditor
 
 # DESIGN.md: side panels get 16 px outer margins.
 PANEL_MARGIN = 16
@@ -30,13 +30,15 @@ class FeatureSection(QWidget):
         files: FilesFor,
         documents_of: Callable[[NodeId], list[str]],
         register: Callable[[StepId], None],
+        *,
+        digest_of: DigestOf | None = None,
     ) -> None:
         super().__init__()
         self._library = library
         self._register = register
         self._step_id: StepId | None = None
 
-        self.editor = FeatureEditor(library, undo, files, documents_of, self)
+        self.editor = FeatureEditor(library, undo, files, documents_of, self, digest_of=digest_of)
         self.unregistered = QWidget(self)
         column = QVBoxLayout(self.unregistered)
         column.setContentsMargins(0, 0, 0, 0)

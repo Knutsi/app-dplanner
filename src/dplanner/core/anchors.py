@@ -20,7 +20,9 @@ quote is untouched between the two versions; otherwise it is *behind* — the pa
 there, but what surrounds it moved, and somebody should read it again. That comparison
 is what keeps a typo fixed in §9 from flagging every citation in the document.
 
-Everything here is pure text; ``documents.py`` reads the blobs and hands the strings in.
+Everything here is pure text; the spec module reads the blobs and hands the strings in,
+and the feature and coverage modules read the verdicts — which is why it lives in ``core``
+beside ``text_diff.py`` rather than in any one of them.
 """
 
 from collections.abc import Sequence
@@ -32,9 +34,13 @@ from dplanner.core.text_diff import diff_hunks
 
 type AnchorState = Literal["anchored", "behind", "drifted", "lost", "missing"]
 
-# The shortest run of normalised text two versions must share before a fuzzy match is
-# even attempted — below this, any two sentences of English "match".
-SEED_MIN = 12
+# The shortest quote worth matching fuzzily — below this, any two sentences of English
+# "match" — and what seeds the search: a word this long, the few rarest of them, and at
+# most this many places to try.
+FUZZY_MIN = 12
+SEED_WORD = 4
+SEED_WORDS = 3
+SEEDS_AT_MOST = 60
 # How similar a reworded passage must be to be offered as the drifted candidate.
 DRIFT_RATIO = 0.6
 # How far either end of the fuzzy window is tried out from its seeded place, as a share
@@ -127,38 +133,53 @@ def fuzzy_locate(text: str, quote: str) -> tuple[int, int, float] | None:
     """The raw span of the passage most like ``quote``, and how alike it is — None when
     nothing in ``text`` reaches :data:`DRIFT_RATIO`.
 
-    The longest run the two share seeds the window: a reworded sentence keeps most of
-    its words, so the run says where the passage is and the quote's length says how big
-    it is. Each end is then tried a little either side of that guess, and the best ratio
-    wins — cheap, since every ratio is over a string the size of the quote.
+    The quote's rarest words say where to look: a reworded sentence keeps most of its
+    nouns, so every place one of them occurs seeds a window the size of the quote, each
+    end is tried a little either side of that guess, and the best ratio wins. Cheap,
+    since every ratio is over a string the size of the quote, and a few rare words seed
+    only a handful of windows even in a long document.
     """
     needle, _ = normalised(quote)
     haystack, back = normalised(text)
-    if len(needle) < SEED_MIN or not haystack:
+    if len(needle) < FUZZY_MIN or not haystack:
         return None
-    seed = SequenceMatcher(None, haystack, needle, autojunk=False).find_longest_match(
-        0, len(haystack), 0, len(needle)
-    )
-    if seed.size < SEED_MIN:
-        return None
-    guess_start = seed.a - seed.b
-    guess_end = guess_start + len(needle)
     play = max(1, round(len(needle) * WINDOW_PLAY))
     steps = (-play, -play // 2, 0, play // 2, play)
     best: tuple[float, int, int] | None = None
-    for start_delta in steps:
-        start = _word_edge(haystack, guess_start + start_delta)
-        for end_delta in steps:
-            end = _word_edge(haystack, guess_end + end_delta)
-            if end <= start:
-                continue
-            ratio = SequenceMatcher(None, haystack[start:end], needle, autojunk=False).ratio()
-            if best is None or ratio > best[0]:
-                best = (ratio, start, end)
+    for guess in _seeds(haystack, needle):
+        for start_delta in steps:
+            start = _word_edge(haystack, guess + start_delta)
+            for end_delta in steps:
+                end = _word_edge(haystack, guess + len(needle) + end_delta)
+                if end <= start:
+                    continue
+                ratio = SequenceMatcher(None, haystack[start:end], needle, autojunk=False).ratio()
+                if best is None or ratio > best[0]:
+                    best = (ratio, start, end)
     if best is None or best[0] < DRIFT_RATIO:
         return None
     ratio, start, end = best
-    return back[start], back[end - 1] + 1, ratio
+    raw_start, raw_end = back[start], back[end - 1] + 1
+    # A window never runs on into the next paragraph: the passage is one paragraph's.
+    paragraph_end = text.find("\n\n", raw_start)
+    if 0 <= paragraph_end < raw_end:
+        raw_end = paragraph_end
+    return raw_start, raw_end, ratio
+
+
+def _seeds(haystack: str, needle: str) -> list[int]:
+    """Where a window might start: every occurrence of the quote's rarest long words,
+    shifted back by where the word sits in the quote."""
+    words = {word for word in needle.split() if len(word) >= SEED_WORD}
+    rarest = sorted(words, key=lambda word: (haystack.count(word), word))[:SEED_WORDS]
+    seeds: list[int] = []
+    for word in rarest:
+        offset = needle.find(word)
+        found = haystack.find(word)
+        while found >= 0 and len(seeds) < SEEDS_AT_MOST:
+            seeds.append(found - offset)
+            found = haystack.find(word, found + 1)
+    return sorted(set(seeds))
 
 
 def _word_edge(text: str, index: int) -> int:
@@ -254,6 +275,9 @@ def anchor_in(
     """
     if text is None:
         return Anchor("missing", digest=digest)
+    if not quote.strip():
+        # A citation of the document as a whole: nothing to find, nothing to lose.
+        return Anchor("anchored", digest=digest)
     hit = locate(text, quote)
     if hit is not None:
         start, end = hit

@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from dplanner.framework.mime_files import Payload
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
+    from dplanner.modules.feature.catalogue import FeatureSource
     from dplanner.modules.project_editor.clipboard import PastePolicy
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
 
@@ -105,6 +106,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.reopen_tabs.module import ReopenTabsDeps, ReopenTabsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
+    from dplanner.modules.spec.cli import digest_of as spec_digest_of
     from dplanner.modules.spec.cli import document_names as spec_document_names
     from dplanner.modules.spec.module import SpecDeps, SpecModule
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_INSTRUCTION_ID
@@ -1031,6 +1033,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 theme=services.theme,
                 parent=services.window,
                 documents_of=lambda project_id: spec_document_names(library.project(project_id)),
+                digest_of=lambda project_id, name: spec_digest_of(
+                    library.project(project_id), name
+                ),
             )
         ),
         TestsModule(
@@ -1135,6 +1140,11 @@ def _handoff_parts(
     ]
 
 
+def _passage_place(source: "FeatureSource") -> str:
+    page = f" p.{source.page}" if source.page is not None else ""
+    return f"{source.document}{page}"
+
+
 def _briefing_sections(
     library: "Library", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
 ) -> "list[PromptPart]":
@@ -1175,12 +1185,13 @@ def _briefing_sections(
             # independently); the briefing says so rather than pretending otherwise.
             return [f"- {record_id} (no longer in the feature catalogue)"]
         where = ""
-        if record.source is not None:
-            page = f" p.{record.source.page}" if record.source.page is not None else ""
-            where = f", from {record.source.document}{page}"
+        if len(record.sources) == 1:
+            where = f", from {_passage_place(record.sources[0])}"
         lines = [f"- **{record.title}** ({record.id}{where})"]
-        if record.source is not None:
-            lines += [f"  > {quoted}" for quoted in record.source.quote.splitlines()]
+        for source in record.sources:
+            if len(record.sources) > 1:
+                lines.append(f"  from {_passage_place(source)}:")
+            lines += [f"  > {quoted}" for quoted in source.quote.splitlines()]
         return lines
 
     realised = feature_read(step)
@@ -1537,9 +1548,10 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         *agent_state_cli.commands(),
         *status_cli.commands(),
         *milestone_cli.commands(),
-        # A feature's source quote is checked against the spec document the way a
-        # requirement's once was; the check is the spec module's, handed across here.
-        *feature_cli.commands(anchor=spec_cli.anchor_quote),
+        # A feature's passages are anchored in the spec documents by the spec module's
+        # one derivation, handed across here — `feature add`, `cite`, `reanchor` and lint
+        # all judge a quote the same way.
+        *feature_cli.commands(anchor=spec_cli.anchor_sources),
         *handoff_cli.commands(),
         *testing_cli.commands(),
         *check_cli.commands(),
@@ -1588,7 +1600,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
                 *agent_cli.lint_checks(described=lambda step: bool(description_read(step))),
                 *estimation_cli.lint_checks(),
                 *spec_cli.lint_checks(),
-                *feature_cli.lint_checks(anchor=spec_cli.anchor_quote),
+                *feature_cli.lint_checks(anchor=spec_cli.anchor_sources),
                 *testing_cli.lint_checks(),
                 # A step's *own* tests are a different question from what it gathers;
                 # testing's Qt-free reader answers it, handed over rather than imported.

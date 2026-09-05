@@ -1,6 +1,6 @@
 """Where a quote sits in a document, judged again on every read — the pure text half."""
 
-from dplanner.modules.spec.anchors import (
+from dplanner.core.anchors import (
     Anchor,
     anchor_in,
     blocks,

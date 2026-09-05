@@ -21,6 +21,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from dplanner.cli.command import CliError
+from dplanner.core.anchors import Anchor, anchor_in
 from dplanner.core.fsio import slugify
 from dplanner.core.module_data import stamped
 from dplanner.domain.assets import (
@@ -34,7 +35,6 @@ from dplanner.domain.assets import (
 from dplanner.domain.ids import next_id
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor, ModuleFileArea
-from dplanner.modules.spec.anchors import Anchor, anchor_in
 from dplanner.modules.spec.aspect import (
     DATA_FORMAT,
     MODULE_ID,
