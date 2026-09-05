@@ -2473,6 +2473,71 @@ retired `step_feature` module wrote is not minted into a record at open: a per-e
 converter cannot see the project, so it passes through and reads as *unregistered* — still a
 feature to the graph, named by lint, registered by the first `feature set`.
 
+## A citation is a quote and a digest; its place is derived
+
+A feature record says where in the spec it was read from, and the coverage view draws a
+line from that passage to the feature. Two questions decided the shape: what to store,
+and what happens when the spec changes underneath.
+
+**A passage is stored as its quote, never as an offset.** The in-app editor flushes a new
+blob on every pause in typing and `dplanner spec import` replaces a document with no
+window running; an offset would be wrong within the hour, and a stored "found" would be
+wrong the moment the file was replaced. So the quote is the anchor and `core/anchors.py`
+finds it again on every read, exactly as the topological order is computed and not
+written down. The match is exact first (case and whitespace aside, through an index map
+that hands back raw offsets — what a viewer washes), then **fuzzy**: the quote's rarest
+words seed windows the size of the quote, each end is tried a little either side, and the
+best `SequenceMatcher` ratio wins if it reaches `DRIFT_RATIO`. That is the sentence
+somebody reworded, offered back as the *drifted* candidate `feature reanchor
+--accept-drift` takes. Nothing reaching the ratio is *lost*. The word-seeded search was
+chosen over the longest-common-run seed it replaced because a heavily reworded sentence
+keeps its nouns and little else.
+
+**A passage carries the digest of the document it was read against**, the content-addressed
+stem of the blob, so nothing new is hashed — `docs_compiled`'s digest for the same reason:
+"did the spec move on since this was read" is a comparison, never a flag. But a
+comparison alone would flag every citation in a document when somebody fixed a typo in
+its last section. So *behind* is refined: the stamped blob is still on disk (blobs are
+content-addressed and never pruned but for a session's own churn), and `diff_hunks`
+between it and the current text says whether any change landed in the paragraph holding
+the quote. Untouched is *anchored*; touched is *behind*; a stamp whose blob is gone is
+*behind*, conservatively; no stamp — a passage migrated from format 1 — is judged by the
+match alone, so an old project opens into no warnings. `feature reanchor` re-stamps what
+still anchors, and lint names the three states with the verb that resolves each.
+
+**Uncovered text is how new spec content surfaces, with no change tracking at all.**
+`core/anchors.py::blocks` reads a document as paragraphs under their heading path; a
+paragraph is covered when an anchored passage overlaps it. New text is simply uncovered
+text, and `dplanner coverage spec <doc> --uncovered` is the agent's inbox after any
+change — and the retrofit for a project that predates citations. It is a report, not a
+lint, because it is perpetual by nature: a spec is never wholly claimed.
+
+**The trace is one derived picture with two readers, and its path rule is feature
+membership.** `modules/coverage/trace.py` arranges what four modules own — passages
+(spec), records (feature), the gathering milestone and the tests in a cone (the graph and
+testing), the compiled document's state (docs) — into four columns and links between
+neighbours, reading each through a callable the composition root hands in
+(`_coverage_trace`), so the coverage module imports no other module and the picture
+cannot disagree with the verbs. Every item carries the features it serves: a passage the
+features citing it, a feature itself, a milestone the features it gathers, a test the
+feature whose cone holds its step (two features → both, honestly), a milestone's own docs
+card all its features. What lights up on a pick is then one set intersection: a feature
+lights exactly its chain, a milestone everything behind it, a passage two features cite
+both — no case per kind. A milestone also carries a token of its own, so work it holds
+directly belongs to it and to nothing else. The alternative — walking links upstream and
+downstream — would have needed a rule per column pair to keep one feature's tests from
+lighting another's, and it would have been wrong the first time a step sat in two cones.
+
+**Four lanes, each scrolling on its own, and links only in the gutters.** The tab is one
+scene: a lane is a clipped column with its own offset and a thumb only while it
+overflows, a link runs from one lane's edge to the next at the height of the cards it
+joins, and a card scrolled out of view carries its end past the gutter's clip, so the
+line is cut at the gutter rather than drawn over a caption. A pick scrolls every lane
+but the one it landed in — the card under the pointer stays under the pointer. Cards
+paint with the primitives the canvas paints with (`theme/cards.py`, moved there so two
+modules can share them without importing each other), and every colour is read from the
+scene's palette at paint time, so a theme switch costs nothing.
+
 ## The topology is read before the graph is edited
 
 A project's **topology** is its own account of how its graph is shaped: what counts as a

@@ -45,8 +45,8 @@ class FeatureSection(QWidget):
         column.setSpacing(FIELD_GAP)
         note = QLabel(
             "This step is a feature with no record in the project's catalogue — it was "
-            "marked before features had one. Register it to give it a title, a source "
-            "in the spec and images.",
+            "marked before features had one. Register it to give it a title, the "
+            "passages it was read from and images.",
             self.unregistered,
         )
         note.setObjectName("InspectorNote")

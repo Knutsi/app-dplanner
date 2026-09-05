@@ -848,6 +848,23 @@ root, stop and look for the registry or capability you have not found yet.
   features it *flows into* (`scope.gatherers`); it carries no link of its own.
   `ARCHITECTURE.md`'s *A feature is a record, and a feature step is its instance* has the
   reasoning.
+- **A citation is a quote and a digest; its place is derived, and the trace is feature
+  membership.** A feature cites N passages (`FeatureSource`: document, quote, page,
+  digest — catalogue format 2), maintained by `feature cite`/`uncite`/`reanchor` and the
+  editor's passage list. Nothing stores where a quote sits: `core/anchors.py` finds it
+  again on every read — exact, then fuzzy (seeded by the quote's rarest words, kept at
+  `DRIFT_RATIO`), then lost — and a stamped passage in a document that changed since is
+  *behind* only when the diff touched its paragraph. `coverage/trace.py` arranges
+  passages → features → milestones → tests and docs from every module's Qt-free half
+  (assembled in the root's `_coverage_trace`), and **the path rule is feature
+  membership**: every item carries the features it serves, so what lights up on a pick
+  is one set intersection with no case per kind. `dplanner coverage show|spec|review`
+  print it; the Coverage tab draws it as four lanes with links in the gutters; the Specs
+  tab washes passages (`show_passages`) and offers *Cited*, *Coverage* and *Cite…*;
+  `steps.details` lands on a test or a feature through `FocusableExtension`. Uncovered
+  text is a report (`coverage spec --uncovered`), never a lint; it is also how an old
+  project is retrofitted. `ARCHITECTURE.md`'s *A citation is a quote and a digest* has
+  the reasoning.
 - **The topology is read before the graph is edited.** A project's topology (`dplanner
   topology set|show`; the Specs tab's pinned first row; `modules/spec.md`) says how its
   graph is shaped, and every CLI verb that reshapes a graph declares `edits_graph` on its

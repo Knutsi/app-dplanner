@@ -26,7 +26,6 @@ from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.gate import digest
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, project_arg, step_arg
-from dplanner.core.anchors import Anchor
 from dplanner.core.text_diff import diff_hunks
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
@@ -105,13 +104,6 @@ def lint_checks() -> list[LintCheck]:
         ]
 
     return [topology_missing]
-
-
-def anchor_source(
-    files: FilesFor, project: Project, document_name: str, quote: str, stamped: str
-) -> Anchor:
-    """One source judged against its document as it is now — see :func:`anchor_sources`."""
-    return anchor_sources(files, project, [(document_name, quote, stamped)])[0]
 
 
 def document_names(project: Project) -> list[str]:
