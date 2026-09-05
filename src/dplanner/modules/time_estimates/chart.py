@@ -9,8 +9,9 @@ between two marks on the 100 % line. What **actually** landed is a solid line in
 a dot at today. The x axis is time from the earlier of the two plans' starts to the later
 of their landings; the y axis is the share landed, by steps or by estimated days — the
 host's toggle. Three series share the plot, so a legend sits in a band above it, where no
-line can cross the words; the rest is tooltips, the calendar's rule: hovering answers
-with the date and all three shares.
+line can cross the words — wrapping onto a second row, and the plot moving down, when
+the width is short; the rest is tooltips, the calendar's rule: hovering answers with the
+date and all three shares.
 
 **The baseline is painted over the plan, opaque.** A plan that has not changed since the
 basis has a baseline that coincides with it, and a translucent dash of the same hue under
@@ -25,6 +26,14 @@ mark, so the marks are every day, every Monday or every month's first — the fi
 whose labels fit the width (:func:`axis_ticks`) — with a hairline up from each and a
 hairline every quarter of the share, a grid a whisper of the ink; the first mark of a new
 year carries the year. Two labels at the ends of the span were not a scale.
+
+**Milestones stand on the chart, and a gap the plan leaves empty is dotted.** Each
+milestone is a hairline in its own shade where the plan now lands it, named at the top
+of the plot on whichever side has room — the marks a reader was placing the curve
+against in their head. Where a milestone's own start date holds its work back past the
+previous landing, the plan line is flat (``progress.expected`` puts a knot where work
+resumes) and drawn dotted, pulled toward the surface: no work is planned there, and a
+solid slope across the gap would have said the opposite.
 
 Every colour but the milestone's shade comes from the palette at paint time — the axes
 and the actual line in ink, gridlines a whisper of it — and the marks keep the chart
@@ -84,9 +93,15 @@ PAD_DAYS = 1
 # The horizontal grid: a hairline every quarter, a label at the ends and the middle.
 GRID_SHARES = (0.0, 0.25, 0.5, 0.75, 1.0)
 LABELLED_SHARES = (0.0, 0.5, 1.0)
+# A milestone's line and its name: the line at this alpha, the name in the full shade.
+MARK_LINE_ALPHA = 150
+MARK_LABEL_GAP = 4
+# A gap the plan leaves empty: the plan's colour pulled this far toward the surface.
+IDLE_SURFACE_ALPHA = 120
 
 Point = tuple[date, float]
 Tick = tuple[date, str]
+Mark = tuple[date, str, QColor]
 
 
 @dataclass(frozen=True)
@@ -104,6 +119,10 @@ class ChartData:
     finish: date | None = None
     baseline_finish: date | None = None
     by_days: bool = False
+    # Each milestone's expected landing, its label and its shade.
+    marks: tuple[Mark, ...] = ()
+    # The spans the plan leaves empty, from a landing to the day work resumes.
+    idle: tuple[tuple[date, date], ...] = ()
 
 
 def _share_at(points: tuple[Point, ...], when: date) -> float | None:
@@ -240,6 +259,8 @@ class ProgressChart(QWidget):
         planned = _share_at(data.expected, when)
         if planned is not None:
             lines.append(f"plan now: {planned:.0%} {unit}")
+        if any(start < when < end for start, end in data.idle):
+            lines.append("no work planned")
         landed = _share_at(data.actual, when)
         if landed is not None and when <= data.today:
             lines.append(f"actual: {landed:.0%} {unit}")
@@ -250,8 +271,37 @@ class ProgressChart(QWidget):
     def _left_gutter(self) -> float:
         return self.fontMetrics().horizontalAdvance("100%") + 2 * LABEL_GAP
 
+    def _legend_entries(self) -> list[tuple[str, str]]:
+        """The legend's labels and what each keys — baseline, plan, actual, idle."""
+        data = self._data
+        if data is None:
+            return []
+        entries: list[tuple[str, str]] = []
+        if data.baseline and data.baseline_day is not None:
+            when = format_date(data.baseline_day, today=data.today)
+            entries.append((f"Plan at {when}", "baseline"))
+        entries += [("Plan now" if data.baseline else "Plan", "plan"), ("Actual", "actual")]
+        if data.idle:
+            entries.append(("No work planned", "idle"))
+        return entries
+
+    def _legend_rows(self) -> list[list[tuple[str, str]]]:
+        """The entries wrapped into rows the width holds — one, usually."""
+        metrics = self.fontMetrics()
+        room = self.width() - self._left_gutter() - RIGHT_INSET
+        rows: list[list[tuple[str, str]]] = [[]]
+        used = 0.0
+        for label, kind in self._legend_entries():
+            width = LEGEND_KEY + LEGEND_GAP + metrics.horizontalAdvance(label) + LEGEND_SPACING
+            if rows[-1] and used + width > room:
+                rows.append([])
+                used = 0.0
+            rows[-1].append((label, kind))
+            used += width
+        return rows
+
     def _top_inset(self) -> float:
-        return self.fontMetrics().height() + LEGEND_BAND_GAP
+        return len(self._legend_rows()) * self.fontMetrics().height() + LEGEND_BAND_GAP
 
     def _plot(self) -> QRectF:
         left, top = self._left_gutter(), self._top_inset()
@@ -300,6 +350,8 @@ class ProgressChart(QWidget):
             x = self._x(data.today)
             painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
 
+        self._draw_marks(painter, plot, data)
+
         # The change in the plan: the wash between the baseline and the plan now.
         if len(data.baseline) >= 2 and len(data.expected) >= 2:
             band = QPainterPath(self._point(data.expected[0]))
@@ -314,8 +366,10 @@ class ProgressChart(QWidget):
             painter.setBrush(wash)
             painter.drawPath(band)
 
-        # The plan now, in the milestone's colour; its landing as a filled mark.
-        self._draw_line(painter, data.expected, data.color)
+        # The plan now, in the milestone's colour — dotted across a gap it leaves empty —
+        # and its landing as a filled mark.
+        idle_shade = self._idle_shade(data.color, surface)
+        self._draw_plan(painter, data, idle_shade)
         if data.finish is not None:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(data.color)
@@ -347,8 +401,14 @@ class ProgressChart(QWidget):
             painter.setBrush(ink)
             painter.drawEllipse(centre, MARKER / 2, MARKER / 2)
 
-        self._draw_legend(painter, plot, data, ink, faded, secondary)
+        self._draw_legend(painter, plot, data, ink, faded, idle_shade, secondary)
         painter.end()
+
+    @staticmethod
+    def _idle_shade(color: QColor, surface: QColor) -> QColor:
+        pull = QColor(surface)
+        pull.setAlpha(IDLE_SURFACE_ALPHA)
+        return over(color, pull)
 
     @staticmethod
     def _baseline_shade(color: QColor, ink: QColor) -> QColor:
@@ -395,6 +455,45 @@ class ProgressChart(QWidget):
     def _point(self, point: Point) -> QPointF:
         return QPointF(self._x(point[0]), self._y(point[1]))
 
+    def _draw_marks(self, painter: QPainter, plot: QRectF, data: ChartData) -> None:
+        """Each milestone: a hairline in its shade where the plan lands it, named at the
+        top of the plot — to the right of the line, or to the left when the right has
+        no room."""
+        metrics = painter.fontMetrics()
+        placed: list[QRectF] = []
+        for when, label, color in data.marks:
+            line = QColor(color)
+            line.setAlpha(MARK_LINE_ALPHA)
+            painter.setPen(QPen(line, 1.0))
+            x = self._x(when)
+            painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
+            width = metrics.horizontalAdvance(label) + 2
+            left = x + MARK_LABEL_GAP
+            if left + width > plot.right():
+                left = x - MARK_LABEL_GAP - width
+            box = QRectF(left, plot.top() + MARK_LABEL_GAP, width, metrics.height())
+            # Two milestones a few days apart: the second name steps down a line.
+            while any(box.intersects(other) for other in placed):
+                box.translate(0.0, metrics.height())
+            placed.append(box)
+            painter.setPen(color)
+            painter.drawText(box, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
+
+    def _draw_plan(self, painter: QPainter, data: ChartData, idle_shade: QColor) -> None:
+        """The plan now as two paths: solid where work is planned, dotted in the paler
+        shade across a span the plan leaves empty."""
+        work, gap = QPainterPath(), QPainterPath()
+        current: QPainterPath | None = None
+        for start, end in pairwise(data.expected):
+            empty = any(since <= start[0] and end[0] <= until for since, until in data.idle)
+            path = gap if empty else work
+            if path is not current:
+                path.moveTo(self._point(start))
+                current = path
+            path.lineTo(self._point(end))
+        self._draw_path(painter, work, data.color)
+        self._draw_path(painter, gap, idle_shade, Qt.PenStyle.DotLine)
+
     def _draw_line(
         self,
         painter: QPainter,
@@ -407,6 +506,17 @@ class ProgressChart(QWidget):
         path = QPainterPath(self._point(points[0]))
         for point in points[1:]:
             path.lineTo(self._point(point))
+        self._draw_path(painter, path, color, style)
+
+    @staticmethod
+    def _draw_path(
+        painter: QPainter,
+        path: QPainterPath,
+        color: QColor,
+        style: Qt.PenStyle = Qt.PenStyle.SolidLine,
+    ) -> None:
+        if path.isEmpty():
+            return
         pen = QPen(color, LINE_WIDTH)
         pen.setStyle(style)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
@@ -422,34 +532,41 @@ class ProgressChart(QWidget):
         data: ChartData,
         ink: QColor,
         faded: QColor,
+        idle_shade: QColor,
         secondary: QColor,
     ) -> None:
         """Three series, so a legend: short line keys and the words, in the band above
-        the plot, where no line can cross them."""
+        the plot, where no line can cross them — and the dotted key, when the plan
+        leaves a span empty. Wrapped into rows when the width is short."""
         metrics = painter.fontMetrics()
-        entries: list[tuple[str, QColor, Qt.PenStyle]] = []
-        if data.baseline and data.baseline_day is not None:
-            when = format_date(data.baseline_day, today=data.today)
-            entries.append((f"Plan at {when}", faded, Qt.PenStyle.DashLine))
-        entries += [
-            ("Plan now" if data.baseline else "Plan", data.color, Qt.PenStyle.SolidLine),
-            ("Actual", ink, Qt.PenStyle.SolidLine),
-        ]
-        x = plot.left()
-        y = metrics.height() / 2
-        for label, color, style in entries:
-            pen = QPen(color, LINE_WIDTH)
-            pen.setStyle(style)
-            painter.setPen(pen)
-            painter.drawLine(QPointF(x, y), QPointF(x + LEGEND_KEY, y))
-            x += LEGEND_KEY + LEGEND_GAP
-            painter.setPen(secondary)
-            painter.drawText(
-                QRectF(x, 0.0, metrics.horizontalAdvance(label) + 2, metrics.height()),
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                label,
-            )
-            x += metrics.horizontalAdvance(label) + LEGEND_SPACING
+        keys: dict[str, tuple[QColor, Qt.PenStyle]] = {
+            "baseline": (faded, Qt.PenStyle.DashLine),
+            "plan": (data.color, Qt.PenStyle.SolidLine),
+            "actual": (ink, Qt.PenStyle.SolidLine),
+            "idle": (idle_shade, Qt.PenStyle.DotLine),
+        }
+        for row, entries in enumerate(self._legend_rows()):
+            x = plot.left()
+            y = row * metrics.height() + metrics.height() / 2
+            for label, kind in entries:
+                color, style = keys[kind]
+                pen = QPen(color, LINE_WIDTH)
+                pen.setStyle(style)
+                painter.setPen(pen)
+                painter.drawLine(QPointF(x, y), QPointF(x + LEGEND_KEY, y))
+                x += LEGEND_KEY + LEGEND_GAP
+                painter.setPen(secondary)
+                painter.drawText(
+                    QRectF(
+                        x,
+                        row * metrics.height(),
+                        metrics.horizontalAdvance(label) + 2,
+                        metrics.height(),
+                    ),
+                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                    label,
+                )
+                x += metrics.horizontalAdvance(label) + LEGEND_SPACING
 
     # -- input -----------------------------------------------------------------------------------
 

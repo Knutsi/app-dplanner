@@ -303,3 +303,36 @@ def test_recording_writes_only_when_the_day_says_something_new(plan):
     next_day = snapshot(plan, finished=("A", "B"), today=date(2026, 9, 8))
     assert recorded([first, later], next_day) == [first, later, next_day]
     assert recorded([first, later, next_day], next_day) is None
+
+
+def test_a_milestone_whose_start_is_later_opens_a_gap_the_plan_holds_flat(plan):
+    """D's own start date holds its stretch back past B's landing: the span is idle, each
+    milestone is marked where it lands, and the expected line holds flat from B's landing
+    to the day work resumes. A weekend between two stretches is not a gap."""
+    from dplanner.modules.time_estimates.progress import idle, marks
+
+    library, project = plan
+    later = date(2026, 9, 21)
+    now = take(
+        library,
+        project,
+        days_for,
+        is_agent,
+        done("A", "B"),
+        humans=1,
+        agents=1,
+        start=MONDAY,
+        efficiency=1.0,
+        is_milestone=milestones("B", "D"),
+        start_for=lambda step: later if step.title == "D" else None,
+        today=date(2026, 9, 10),
+    )
+    assert now is not None
+    b, d = key_of(plan, "B"), key_of(plan, "D")
+    assert idle(now, None) == [(date(2026, 9, 9), later)]
+    assert idle(now, b) == []
+    assert [milestone for _, milestone in marks(now, None)] == [b, d]
+    assert marks(now, b) == [(date(2026, 9, 9), b)]
+    curve = expected(now, None, by_days=False)
+    assert (date(2026, 9, 9), 0.5) in curve and (later, 0.5) in curve
+    assert idle(snapshot(plan), None) == []

@@ -80,3 +80,64 @@ def test_a_baseline_the_plan_still_agrees_with_shows_as_dashes_on_the_line(app):
     assert len(alone) == 1
     assert len(together) >= 2
     chart.deleteLater()
+
+
+def test_milestones_are_marked_and_a_gap_the_plan_leaves_empty_is_dotted(app):
+    """A hairline in the milestone's shade where the plan lands it; across a span with no
+    work planned the plan line is dotted, and the tooltip says so."""
+    first, landed, resume, last = (
+        date(2026, 9, 1),
+        date(2026, 9, 8),
+        date(2026, 9, 15),
+        date(2026, 10, 1),
+    )
+    plan = ((first, 0.0), (landed, 0.5), (resume, 0.5), (last, 1.0))
+    blue, violet = QColor("#4a7fd6"), QColor("#8e6fd8")
+    chart = ProgressChart()
+    chart.resize(900, CHART_HEIGHT)
+    chart.show_data(
+        ChartData(
+            "All work",
+            blue,
+            first,
+            expected=plan,
+            finish=last,
+            marks=((landed, "v1", violet), (last, "v2", blue)),
+            idle=((landed, resume),),
+        )
+    )
+    image = chart.grab().toImage()
+    y = round(chart._y(0.5))
+    x0, x1 = round(chart._x(landed)) + 12, round(chart._x(resume)) - 12
+    assert len({image.pixelColor(x, y).name() for x in range(x0, x1)}) >= 2  # Dots and ground.
+    assert "no work planned" in chart.tooltip_at(date(2026, 9, 10))
+    assert "no work planned" not in chart.tooltip_at(date(2026, 9, 20))
+    x, between = round(chart._x(landed)), round(chart._y(0.375))  # Between two gridlines.
+    assert image.pixelColor(x, between).name() != image.pixelColor(x + 6, between).name()
+    chart.deleteLater()
+
+
+def test_a_short_width_wraps_the_legend_and_moves_the_plot_down(app):
+    """Four keys do not fit a narrow chart on one row: the legend wraps, and the plot
+    starts below both rows rather than under the second."""
+    first, last = date(2026, 9, 1), date(2026, 10, 1)
+    plan = ((first, 0.0), (last, 1.0))
+    chart = ProgressChart()
+    chart.resize(900, CHART_HEIGHT)
+    chart.show_data(
+        ChartData(
+            "All work",
+            QColor("#4a7fd6"),
+            first,
+            expected=plan,
+            baseline=plan,
+            baseline_day=first,
+            idle=((date(2026, 9, 10), date(2026, 9, 14)),),
+        )
+    )
+    assert len(chart._legend_rows()) == 1
+    wide = chart._plot().top()
+    chart.resize(420, CHART_HEIGHT)
+    assert len(chart._legend_rows()) == 2
+    assert chart._plot().top() >= wide + chart.fontMetrics().height()
+    chart.deleteLater()

@@ -38,7 +38,8 @@ read this.
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
+from itertools import pairwise
 from typing import Any
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
@@ -49,6 +50,7 @@ from dplanner.domain.schedule import (
     Phase,
     format_date,
     format_days,
+    next_working_day,
     phases,
     working_days_between,
 )
@@ -270,18 +272,50 @@ def tally(
 # -- the curves ---------------------------------------------------------------------------------
 
 
-def expected(snapshot: Snapshot, key: str | None, *, by_days: bool) -> list[tuple[date, float]]:
-    """The plan's promise for the scope as the snapshot recorded it: the share landed by
-    each date, from the stretches' landing knots, 0 at the first start and 1 at the
-    scope's landing. Cumulative through the stretch ``key`` closes — every stretch for
-    None; empty for a scope the snapshot never knew or one with nothing to be a share of."""
-    if not snapshot.has(key):
-        return []
+def _through(snapshot: Snapshot, key: str | None) -> list[Stretch]:
+    """The stretches through the one ``key`` closes — every stretch for None."""
     chosen: list[Stretch] = []
     for stretch in snapshot.stretches:
         chosen.append(stretch)
         if stretch.key == key:
             break
+    return chosen
+
+
+def marks(snapshot: Snapshot, key: str | None) -> list[tuple[date, str]]:
+    """Where each milestone through ``key`` was expected to land, with its key. The
+    remainder after the last milestone is no milestone and has no mark."""
+    return [
+        (stretch.finish, stretch.key)
+        for stretch in _through(snapshot, key)
+        if stretch.key and stretch.finish is not None
+    ]
+
+
+def idle(snapshot: Snapshot, key: str | None) -> list[tuple[date, date]]:
+    """The spans the plan leaves empty through the stretch ``key`` closes: from one
+    stretch's landing to the next stretch's start, when a milestone's own start date
+    holds its work back past the working day after the previous one lands. A weekend
+    between two stretches is not a gap."""
+    spans: list[tuple[date, date]] = []
+    for previous, following in pairwise(_through(snapshot, key)):
+        if previous.finish is None:
+            continue
+        if following.start > next_working_day(previous.finish + timedelta(days=1)):
+            spans.append((previous.finish, following.start))
+    return spans
+
+
+def expected(snapshot: Snapshot, key: str | None, *, by_days: bool) -> list[tuple[date, float]]:
+    """The plan's promise for the scope as the snapshot recorded it: the share landed by
+    each date, from the stretches' landing knots, 0 at the first start and 1 at the
+    scope's landing. Cumulative through the stretch ``key`` closes — every stretch for
+    None; empty for a scope the snapshot never knew or one with nothing to be a share of.
+    Across a gap the plan leaves empty (:func:`idle`) the line holds flat to the day
+    work resumes, so a chart can draw the gap as what it is rather than a slope."""
+    if not snapshot.has(key):
+        return []
+    chosen = _through(snapshot, key)
     whole = sum(
         landing.days if by_days else landing.steps
         for stretch in chosen
@@ -294,11 +328,15 @@ def expected(snapshot: Snapshot, key: str | None, *, by_days: bool) -> list[tupl
         for landing in stretch.landings:
             amount = landing.days if by_days else landing.steps
             landed[landing.day] = landed.get(landing.day, 0.0) + amount
+    resumes = {start for _finish, start in idle(snapshot, key)}
     points = [(chosen[0].start, 0.0)]
     running = 0.0
-    for when in sorted(landed):
-        running += landed[when]
-        points.append((when, min(running / whole, 1.0)))
+    for when in sorted(landed.keys() | resumes):
+        if when in resumes:
+            points.append((when, points[-1][1]))
+        if when in landed:
+            running += landed[when]
+            points.append((when, min(running / whole, 1.0)))
     return points
 
 

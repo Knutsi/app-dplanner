@@ -74,7 +74,7 @@ from dplanner.framework.context import (
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
-from dplanner.modules.time_estimates.chart import ChartData, ProgressChart
+from dplanner.modules.time_estimates.chart import ChartData, Mark, ProgressChart
 from dplanner.modules.time_estimates.milestones import (
     DATE_FORMAT,
     MilestoneEntry,
@@ -95,7 +95,9 @@ from dplanner.modules.time_estimates.progress import (
     delta,
     delta_words,
     expected,
+    idle,
     landings,
+    marks,
     read_history,
     tally,
 )
@@ -669,6 +671,17 @@ class TimeEstimatesActivity(EntityActivity):
             why = "\n".join(changes.lines(self._deps.step_key))
         self.delta_figure.setText(said)
         self.delta_figure.setToolTip(why)
+        # Every milestone through the scope, where the plan lands it, in its shade.
+        shade_of = {
+            phase.milestone.id: (self._label(phase, stretches), shade)
+            for phase, shade in stretches
+            if phase.milestone is not None
+        }
+        marked: list[Mark] = []
+        for when, milestone in marks(now, key):
+            if milestone in shade_of:
+                name, shade = shade_of[milestone]
+                marked.append((when, name, shade))
         self.chart.show_data(
             ChartData(
                 label=label,
@@ -681,6 +694,8 @@ class TimeEstimatesActivity(EntityActivity):
                 finish=now.landing(key),
                 baseline_finish=then.landing(key) if then is not None else None,
                 by_days=self._by_days,
+                marks=tuple(marked),
+                idle=tuple(idle(now, key)),
             )
         )
 

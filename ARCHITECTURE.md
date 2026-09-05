@@ -2475,7 +2475,14 @@ decisions carry it:
   fact. The axis is marked at calendar boundaries (`chart.axis_ticks`: every day,
   every Monday or every month's first, the finest whose labels fit the width) because
   a reader places a point by the nearest mark; two labels at the ends of the span were
-  not a scale. The figure
+  not a scale. Milestones stand on the chart as hairlines in their shades where the
+  plan lands them, named at the top — the marks a reader was placing the curve against
+  in their head — and a span the plan leaves empty (a milestone's own start date holding
+  its work back past the previous landing) is dotted and pulled toward the surface, with
+  a knot in the expected line at the day work resumes so the gap is flat rather than a
+  slope through days nothing is planned for. `progress.marks` and `progress.idle`
+  derive both from the snapshot's stretches, so `progress show` prints the same gaps.
+  The figure
   under the caption says the delta in words — steps and days added, the landing shifted
   in working days — and its tip names **why**: the steps born after the baseline's day
   (the model's `created` stamp) and the estimates changed after it. That second list

@@ -872,7 +872,9 @@ root, stop and look for the registry or capability you have not found yet.
   unchanged since the basis reads as two lines in one place, not one — the plan now
   solid, the band between them as the change since, and what actually landed in ink,
   on an axis marked at days, Mondays or month firsts (`axis_ticks`) over a hairline
-  grid. The delta figure (`delta`, `delta_words`) says
+  grid; each milestone stands on it as a named hairline where the plan lands it, and
+  a span a milestone's own start date leaves empty is flat and dotted (`progress.marks`,
+  `progress.idle` — the same two `progress show` prints). The delta figure (`delta`, `delta_words`) says
   what was added and how the landing moved **since the baseline's recorded day**, and
   `changes_since` names the steps born and the estimates changed after that day — the
   step's `created` stamp and the estimate aspect's own history (`estimation`'s

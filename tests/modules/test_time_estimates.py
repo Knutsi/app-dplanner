@@ -750,3 +750,24 @@ def test_the_delta_tip_names_what_moved_the_plan(services, staged):
         "added since 1 September: S5",
         f"re-estimated since 1 September: S1 2d → 3d on {format_date(date.today())}",
     ]
+
+
+def test_the_chart_marks_the_milestones_and_dots_a_gap_the_plan_leaves_empty(services, staged, tab):
+    """v1 and v2 stand on the chart where they land; giving v2 a start date a week past
+    v1's landing leaves the days between empty, and the chart says so."""
+    from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
+    from dplanner.modules.time_estimates.schedule import write_milestone
+
+    data = tab.chart._data
+    assert [(when, label) for when, label, _ in data.marks] == [
+        (date(2026, 9, 16), "v1"),
+        (date(2026, 9, 23), "v2"),
+    ]
+    assert data.idle == ()
+    ship = staged.steps[3]
+    services.undo.push(
+        SetModuleDataCommand(ship.id, TIME_ID, write_milestone(date(2026, 9, 24), None))
+    )
+    data = tab.chart._data
+    assert data.idle == ((date(2026, 9, 16), date(2026, 9, 24)),)
+    assert "no work planned" in tab.chart.tooltip_at(date(2026, 9, 21))

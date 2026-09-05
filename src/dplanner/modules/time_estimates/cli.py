@@ -47,6 +47,7 @@ from dplanner.modules.time_estimates.progress import (
     delta,
     delta_words,
     expected,
+    idle,
     read_history,
     recorded,
     take,
@@ -666,6 +667,10 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
                 "by_steps": reached.share(by_days=False),
                 "by_days": reached.share(by_days=True),
                 "finish": landing.isoformat() if landing else "",
+                "idle": [
+                    {"from": since.isoformat(), "to": until.isoformat()}
+                    for since, until in idle(now, key)
+                ],
                 "expected": _curve(expected(now, key, by_days=False)),
                 "actual": _curve(actual(history, now, key, by_days=False)),
                 "baseline": None
@@ -688,7 +693,14 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
                 },
             }
         )
-        lines.append(_progress_line(label, reached, landing, then, moved))
+        line = _progress_line(label, reached, landing, then, moved)
+        gaps = idle(now, key)
+        if gaps:
+            line += "; no work planned " + ", ".join(
+                f"{format_date(since, today=today)} to {format_date(until, today=today)}"
+                for since, until in gaps
+            )
+        lines.append(line)
     data = {
         "project": project.id,
         "day": today.isoformat(),
