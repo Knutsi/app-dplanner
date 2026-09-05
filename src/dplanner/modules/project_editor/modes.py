@@ -18,9 +18,10 @@ Three rules keep it small:
   cursor, reached through :class:`Canvas`. There is no second reachability rule in here.
 
 A mode that drags something the canvas draws — a region by its body, a region or a card by
-its frame — is a :class:`GestureMode`: it holds what it moves so a sync leaves the geometry
-alone, Escape puts everything back, and the release reports and pops. A new one says what
-it holds, how to restore it, and what the release means, and inherits the rest.
+its frame, every card on one side of a cut — is a :class:`GestureMode`: it holds what it
+moves so a sync leaves the geometry alone, Escape puts everything back, and the release
+reports and pops. A new one says what it holds, how to restore it, and what the release
+means, and inherits the rest.
 
 :class:`Canvas` is the whole of a mode's power over the canvas, which is why it is written
 out rather than inferred from passing the scene around: a mode can be driven in a test by
@@ -61,6 +62,15 @@ REGION_DRAG = "region-drag"
 REGION_RESIZE = "region-resize"
 NODE_RESIZE = "node-resize"
 LASSO = "lasso"
+DIVIDE_VERTICAL = "divide-vertical"
+DIVIDE_HORIZONTAL = "divide-horizontal"
+
+# The divide modes by the line they cut with: a vertical line parts left from right and
+# pushes along x; a horizontal one parts top from bottom and pushes along y.
+DIVIDE_NAMES: dict[Qt.Orientation, str] = {
+    Qt.Orientation.Vertical: DIVIDE_VERTICAL,
+    Qt.Orientation.Horizontal: DIVIDE_HORIZONTAL,
+}
 
 
 def mode_uri(name: str) -> str:
@@ -69,8 +79,8 @@ def mode_uri(name: str) -> str:
 
 # What each mode wants every node to show, fanned out by the scene when the stack changes.
 # Kept beside the mode names so a new mode decides its look in the same breath. Connect
-# shows every handle — each is a target; pan, lasso and the region modes hide them — their
-# presses do not link. Anything unlisted gets the default (idle's hover-only handle).
+# shows every handle — each is a target; pan, lasso, divide and the region modes hide them —
+# their presses do not link. Anything unlisted gets the default (idle's hover-only handle).
 HINTS_BY_MODE = {
     CONNECT: RenderHints(handles="always"),
     PAN: RenderHints(handles="hidden"),
@@ -79,6 +89,8 @@ HINTS_BY_MODE = {
     REGION_RESIZE: RenderHints(handles="hidden"),
     NODE_RESIZE: RenderHints(handles="hidden"),
     LASSO: RenderHints(handles="hidden"),
+    DIVIDE_VERTICAL: RenderHints(handles="hidden"),
+    DIVIDE_HORIZONTAL: RenderHints(handles="hidden"),
 }
 
 # With Space held, an arrow or a vim key moves the view by this share of the viewport in
@@ -106,6 +118,13 @@ RESIZE_CURSORS = {
     "bottom-right": Qt.CursorShape.SizeFDiagCursor,
     "top-right": Qt.CursorShape.SizeBDiagCursor,
     "bottom-left": Qt.CursorShape.SizeBDiagCursor,
+}
+
+# The cursor over a divide line: the splitter's, since that is the gesture — a vertical
+# line is pushed left or right, a horizontal one up or down.
+DIVIDE_CURSORS = {
+    Qt.Orientation.Vertical: Qt.CursorShape.SplitHCursor,
+    Qt.Orientation.Horizontal: Qt.CursorShape.SplitVCursor,
 }
 
 
@@ -146,10 +165,15 @@ class Canvas(Protocol):
     region_resized: Signal[str, float, float, float, float]
     # A card that finished resizing: its new seat and size, since an edge may have moved.
     node_resized: Signal[StepId, float, float, float, float]
+    # The cards a divide pushed, at their new seats — one gesture, one emission.
+    graph_divided: Signal[list[tuple[StepId, float, float]]]
 
     def node_at(self, scene_pos: QPointF) -> StepNodeItem | None: ...
 
     def node(self, step_id: StepId) -> StepNodeItem | None: ...
+
+    # Every card on the canvas — what a divide parts into two sides.
+    def nodes(self) -> list[StepNodeItem]: ...
 
     def select_step(self, step_id: StepId | None) -> None: ...
 
@@ -577,7 +601,8 @@ class GestureMode(ModeBase):
     that geometry alone until the release; Escape puts everything back where the press
     found it; and the release reports what happened and pops. A subclass says what it
     holds, how to put it back, what the pointer looks like meanwhile, and what the release
-    means — the region drag, the region resize and the card resize are the three.
+    means — the region drag, the region resize, the card resize and the divide's drag are
+    the four.
     """
 
     # The viewport's cursor while the gesture lasts; None leaves it alone.
@@ -808,6 +833,167 @@ class LassoMode(ModeBase):
             self.deps.canvas.hide_outline()
             return True
         return False  # Nothing pending: the canvas pops the mode instead.
+
+
+def _along(orientation: Qt.Orientation, point: QPointF) -> float:
+    """The coordinate a divide works in: x across a vertical line, y across a horizontal."""
+    return point.x() if orientation == Qt.Orientation.Vertical else point.y()
+
+
+def divide_band(
+    orientation: Qt.Orientation, cut: float, delta: float, visible: QRectF
+) -> QPainterPath:
+    """The outline a divide shows: the cut, and the room opened beside it.
+
+    A rectangle from the cut to where the drag has reached, spanning the visible canvas the
+    other way — edge to edge — so before a press it is a line under the cursor, and during
+    the drag it is the band of new space, the width the far side has been pushed.
+    """
+    low, high = min(cut, cut + delta), max(cut, cut + delta)
+    path = QPainterPath()
+    if orientation == Qt.Orientation.Vertical:
+        path.addRect(QRectF(low, visible.top(), high - low, visible.height()))
+    else:
+        path.addRect(QRectF(visible.left(), low, visible.width(), high - low))
+    return path
+
+
+class DivideMode(ModeBase):
+    """Cut the graph along a line and push one side away, to make room in the middle.
+
+    A line lies under the cursor from edge to edge — vertical or horizontal, the mode's
+    choice — and a press fixes it there and hands over to :class:`DivideDragMode`, which
+    takes this mode's place: one divide ends the mode, like one lasso ends that one, and
+    Escape mid-drag leaves the way it leaves a resize. Before the press Escape leaves too;
+    the canvas pops the mode, since nothing here is pending.
+    """
+
+    def __init__(self, deps: CanvasDeps, orientation: Qt.Orientation) -> None:
+        super().__init__(deps)
+        self._orientation = orientation
+        self.name = DIVIDE_NAMES[orientation]
+
+    def enter(self) -> None:
+        self.deps.view.viewport().setCursor(DIVIDE_CURSORS[self._orientation])
+        way = "left or right" if self._orientation == Qt.Orientation.Vertical else "up or down"
+        self.deps.status(
+            f"Divide: press to place the cut, drag {way} to push that side. Esc leaves."
+        )
+
+    def exit(self) -> None:
+        self.deps.view.viewport().unsetCursor()
+        self.deps.canvas.hide_outline()
+
+    def mouse_press(self, event: CanvasEvent) -> bool:
+        if event.button == Qt.MouseButton.LeftButton and self.stack is not None:
+            cut = _along(self._orientation, event.scene_pos)
+            stack = self.stack
+            stack.pop()  # This mode is done; the drag is the rest of the gesture.
+            stack.push(DivideDragMode(self.deps, self._orientation, cut))
+        return True
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        cut = _along(self._orientation, event.scene_pos)
+        self.deps.canvas.aim_outline(
+            divide_band(self._orientation, cut, 0.0, visible_scene_rect(self.deps.view))
+        )
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        return True
+
+    def double_click(self, event: CanvasEvent) -> bool:
+        return True  # No step-creating double clicks while placing a cut.
+
+
+class DivideDragMode(GestureMode):
+    """The drag half of a divide: every card on the side dragged towards moves with the
+    pointer, by the distance dragged along the cut's axis.
+
+    Which side a card is on is decided **at the press** by its centre and held for the
+    gesture, so a drag that comes back past the cut flips cleanly: the far side returns
+    and the near side goes. Every card is held, both sides, since either may move before
+    the release. The band drawn beside the cut is the room being made, and it snaps as a
+    drag does, so cards on the grid stay on it.
+    """
+
+    def __init__(self, deps: CanvasDeps, orientation: Qt.Orientation, cut: float) -> None:
+        super().__init__(deps)
+        self._orientation = orientation
+        self.name = DIVIDE_NAMES[orientation]
+        self.cursor = DIVIDE_CURSORS[orientation]
+        self._cut = cut
+        self._delta = 0.0
+        self._was = {node.step_id: node.pos() for node in deps.canvas.nodes()}
+        self._beyond = {
+            node.step_id
+            for node in deps.canvas.nodes()
+            if _along(orientation, node.body_scene_rect().center()) > cut
+        }
+
+    def held(self) -> tuple[str | None, set[StepId]]:
+        return None, set(self._was)
+
+    def restore(self) -> None:
+        self._place(0.0)
+
+    def enter(self) -> None:
+        super().enter()
+        self._aim()
+
+    def exit(self) -> None:
+        super().exit()
+        self.deps.canvas.hide_outline()
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        self._delta = self.deps.canvas.snap(_along(self._orientation, event.scene_pos) - self._cut)
+        self._place(self._delta)
+        self._aim()
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        moved: list[tuple[StepId, float, float]] = []
+        for step_id in self._pushed(self._delta):
+            node = self.deps.canvas.node(step_id)
+            if node is not None:
+                moved.append((step_id, node.pos().x(), node.pos().y()))
+        if moved:
+            self.deps.canvas.graph_divided.emit(moved)
+        self.pop()
+        return True
+
+    def _pushed(self, delta: float) -> set[StepId]:
+        """The side the drag has reached towards: beyond the cut for a positive delta,
+        before it for a negative one, neither while the pointer sits on the cut."""
+        if delta > 0:
+            return self._beyond
+        if delta < 0:
+            return set(self._was) - self._beyond
+        return set()
+
+    def _place(self, delta: float) -> None:
+        pushed = self._pushed(delta)
+        shift = (
+            QPointF(delta, 0.0)
+            if self._orientation == Qt.Orientation.Vertical
+            else QPointF(0.0, delta)
+        )
+        for step_id, was in self._was.items():
+            node = self.deps.canvas.node(step_id)
+            if node is not None:
+                node.setPos(was + shift if step_id in pushed else was)
+
+    def _aim(self) -> None:
+        self.deps.canvas.aim_outline(
+            divide_band(
+                self._orientation, self._cut, self._delta, visible_scene_rect(self.deps.view)
+            )
+        )
+
+
+def visible_scene_rect(view: QGraphicsView) -> QRectF:
+    """The part of the plane the viewport shows — what "edge to edge" means to a mode."""
+    return view.mapToScene(view.viewport().rect()).boundingRect()
 
 
 class IdleMode(ModeBase):
