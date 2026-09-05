@@ -6,8 +6,9 @@ markdown *and* PDFs — import extracts a PDF's text layer, and ``--page`` narro
 page; ``path`` still hands over the original file), ``render`` a page into an image and
 ``attach-to-step`` it so a figure travels with the step's briefing, and — when the spec is
 replaced — ``diff`` what changed (PDFs diff by their text layers). What the spec *asks for*
-is read into features (``dplanner feature add``), whose quotes this module checks through
-:func:`anchor_quote`, handed across by the composition root.
+is read into features (``dplanner feature add``, ``feature cite``), whose quotes this module
+anchors through :func:`~dplanner.modules.spec.documents.anchor_sources`, handed across by
+the composition root.
 
 The **topology** is the project's prose beside the documents: ``topology set`` writes it
 and ``topology show`` prints it — and records that it was read, which is what the gate in
@@ -45,17 +46,17 @@ from dplanner.modules.spec.documents import (
     blob_bytes,
     copied_to_step,
     default_name,
-    document_text,
+    document_digest,
     import_document,
     layer_from,
     matching_documents,
     new_document,
-    quote_anchors,
     read_index,
     record_asset,
     remove_document,
     write_index,
 )
+from dplanner.modules.spec.documents import anchor_sources as anchor_sources
 from dplanner.modules.spec.pdf import render_page, split_pages
 
 
@@ -105,37 +106,16 @@ def lint_checks() -> list[LintCheck]:
     return [topology_missing]
 
 
-def anchor_quote(
-    files: FilesFor, project: Project, document_name: str, quote: str
-) -> tuple[bool | None, list[int]]:
-    """(was the quote found in the document, on which pages). ``(None, [])`` when there
-    is nothing to check: no quote, no such document, or a PDF whose text cannot be read.
-
-    The spec module's one answer to "does this passage anchor?", handed to the feature
-    module by the composition root so ``feature add`` and lint check a source the same
-    way ``spec mark`` once did. A warning, never a refusal, is the caller's rule: PDF
-    extraction loses ligatures and hyphenation, and a check that failed on rendering
-    noise would teach people to stop quoting.
-    """
-    if not quote:
-        return None, []
-    documents = {doc.name: doc for doc in read_index(project).documents}
-    document = documents.get(document_name)
-    if document is None:
-        return None, []
-    try:
-        area = files(project.id, MODULE_ID)
-    except KeyError:
-        return None, []  # A never-flushed project has no documents to check against.
-    text = document_text(area, document)
-    if text is None:
-        return None, []
-    return quote_anchors(text, quote, document.kind)
-
-
 def document_names(project: Project) -> list[str]:
     """The names a feature's source may point at — the editor's dropdown."""
     return [doc.name for doc in read_index(project).documents]
+
+
+def digest_of(project: Project, document_name: str) -> str:
+    """The document's digest as it is now — what the feature editor stamps a passage
+    with; ``""`` for a name the index does not hold."""
+    document = next((d for d in read_index(project).documents if d.name == document_name), None)
+    return document_digest(document) if document is not None else ""
 
 
 def commands(*, note_read: Callable[[str, str], None]) -> list[CliCommand]:

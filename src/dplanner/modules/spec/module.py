@@ -5,7 +5,7 @@ Order" — so the index tree's right-click, the menu bar and the palette all spe
 verbs, and the Specs entry row under a project renders that same menu.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +35,9 @@ from dplanner.framework.widgets import confirm
 from dplanner.modules.spec.activity import (
     DOCUMENT_ENTITY,
     SPECS_KIND,
+    Cite,
+    OpenCoverage,
+    PassagesOf,
     SpecsActivity,
 )
 from dplanner.modules.spec.aspect import DATA_FORMAT, MODULE_ID, read_attachments
@@ -67,6 +70,12 @@ class SpecDeps:
     files: Callable[[NodeId], ModuleFileArea]
     # The step panel's Details tab — where a step's attached figures are shown.
     details: InspectorSectionRegistry
+    # The feature side, handed across by the composition root: which passages of a
+    # document features cite (the Cited wash), how to show one in the coverage view, and
+    # how to cite a selection. None hides the button — the capability is absent.
+    passages_of: PassagesOf | None = None
+    open_coverage: OpenCoverage | None = None
+    cite: Cite | None = None
 
 
 class SpecModule:
@@ -78,6 +87,15 @@ class SpecModule:
 
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
         self._deps.tabs.open(SPECS_KIND, project_id, preview=preview)
+
+    def show_passages(
+        self, project_id: NodeId, document: str, quotes: Sequence[str], focus: str = ""
+    ) -> None:
+        """Open the Specs tab on ``document`` with ``quotes`` washed and ``focus`` in
+        view — the landing for a jump from the coverage view or from a step."""
+        activity = self._deps.tabs.open(SPECS_KIND, project_id)
+        assert isinstance(activity, SpecsActivity)
+        activity.show_passages(document, quotes, focus)
 
     def register(self) -> None:
         deps = self._deps
@@ -92,6 +110,9 @@ class SpecModule:
                 deps.theme,
                 deps.undo,
                 target,
+                passages_of=deps.passages_of,
+                open_coverage=deps.open_coverage,
+                cite=deps.cite,
             )
 
         deps.tabs.register_factory(SPECS_KIND, factory)

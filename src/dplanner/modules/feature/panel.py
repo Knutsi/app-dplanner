@@ -52,7 +52,7 @@ from dplanner.modules.feature.catalogue import (
     read_catalogue,
     summary_line,
 )
-from dplanner.modules.feature.editor import FeatureEditor
+from dplanner.modules.feature.editor import DigestOf, FeatureEditor
 from dplanner.theme.icons import edit_icon, graph_icon, layers_icon, plus_icon, trash_icon
 
 # The selection-URI kind the panel's own context carries: "<project id>:<feature id>".
@@ -137,13 +137,15 @@ class FeatureDialog(QDialog):
         project_id: NodeId,
         feature_id: str,
         parent: QWidget | None = None,
+        *,
+        digest_of: DigestOf | None = None,
     ) -> None:
         super().__init__(parent)
         record = next(
             (r for r in read_catalogue(library.project(project_id)) if r.id == feature_id), None
         )
         self.setWindowTitle(f"Feature {feature_id}" + (f" — {record.title}" if record else ""))
-        self.editor = FeatureEditor(library, undo, files, documents_of, self)
+        self.editor = FeatureEditor(library, undo, files, documents_of, self, digest_of=digest_of)
         self.editor.show_record(project_id, feature_id)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
         buttons.rejected.connect(self.reject)

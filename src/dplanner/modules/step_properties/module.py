@@ -42,6 +42,9 @@ from dplanner.modules.step_properties.name import NameBlock
 from dplanner.modules.step_properties.panel import StepPanel
 
 MODULE_ID = "step_properties"
+# The kinds a details dialog can be asked to land on, beside the step itself.
+FOCUS_KINDS = ("test", "feature")
+
 PANEL_ID = f"{MODULE_ID}.step"
 NAME_BLOCK_ID = f"{MODULE_ID}.name"
 
@@ -142,6 +145,13 @@ class StepPropertiesModule:
             step_id=step_id,
             parent=self._deps.parent,
         )
+        # A jump that named one of the step's own things — a test, a feature — lands on
+        # it: the kinds are the selection scope's, so a caller synthesises a context with
+        # the step and the thing, and no verb needs a parameter.
+        for kind in FOCUS_KINDS:
+            entity_id = context.selected_entity(kind)
+            if entity_id is not None and dialog.panel.focus(kind, entity_id):
+                break
         dialog.exec()
         dialog.dispose()
 

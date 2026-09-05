@@ -76,6 +76,20 @@ def typewriter_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
+def coverage_icon(color: str | QColor) -> QIcon:
+    """Three dots joined by a line — a passage, a feature, what became of it."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.4))
+    painter.drawLine(QPointF(3.5, 12.5), QPointF(8.0, 8.0))
+    painter.drawLine(QPointF(8.0, 8.0), QPointF(12.5, 3.5))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(color))
+    for centre in (QPointF(3.5, 12.5), QPointF(8.0, 8.0), QPointF(12.5, 3.5)):
+        painter.drawEllipse(centre, 2.2, 2.2)
+    painter.end()
+    return QIcon(pixmap)
+
+
 def read_icon(color: str | QColor) -> QIcon:
     """An open book: reading mode."""
     pixmap, painter = _canvas()

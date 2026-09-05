@@ -17,7 +17,7 @@ no two surfaces can disagree about what a feature is.
 
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
 from dplanner.cli.command import CliError
@@ -44,11 +44,17 @@ FEATURE_MIME = "application/x-dplanner-feature"
 
 @dataclass(frozen=True)
 class FeatureSource:
-    """Where in a spec a feature was read: the document, the passage, the page."""
+    """One passage a feature was read from: the document, the quote, the page — and the
+    document's digest at the time, so a later read can tell whether the spec moved on.
+
+    The quote is the anchor; where it sits is derived on every read (``core/anchors.py``).
+    ``digest`` is ``""`` for a passage cited before stamps existed, which is judged by its
+    match alone rather than read as behind."""
 
     document: str
     quote: str = ""
     page: int | None = None
+    digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -56,7 +62,7 @@ class FeatureRecord:
     id: str  # "f1", "f2", … — what every verb and every marker addresses.
     title: str
     description: str = ""  # Markdown, a string in the record: a project holds N of these.
-    source: FeatureSource | None = None
+    sources: tuple[FeatureSource, ...] = ()  # The passages it was read from, in cite order.
     images: tuple[str, ...] = ()  # assets/<sha16><suffix> in the *project's* feature area.
 
 
@@ -71,7 +77,7 @@ def read_catalogue(project: Project) -> list[FeatureRecord]:
             id=row["id"],
             title=row.get("title", ""),
             description=row.get("description", "") or "",
-            source=_source(row.get("source")),
+            sources=_sources(row.get("sources")),
             images=tuple(name for name in row.get("images", ()) if isinstance(name, str)),
         )
         for row in raw
@@ -79,15 +85,24 @@ def read_catalogue(project: Project) -> list[FeatureRecord]:
     ]
 
 
-def _source(value: Any) -> FeatureSource | None:
-    if not isinstance(value, dict) or not isinstance(value.get("document"), str):
-        return None
-    page = value.get("page")
-    return FeatureSource(
-        document=value["document"],
-        quote=value.get("quote", "") or "",
-        page=page if isinstance(page, int) and not isinstance(page, bool) else None,
-    )
+def _sources(value: Any) -> tuple[FeatureSource, ...]:
+    if not isinstance(value, list):
+        return ()
+    found = []
+    for raw in value:
+        if not isinstance(raw, dict) or not isinstance(raw.get("document"), str):
+            continue
+        page = raw.get("page")
+        digest = raw.get("digest")
+        found.append(
+            FeatureSource(
+                document=raw["document"],
+                quote=raw.get("quote", "") or "",
+                page=page if isinstance(page, int) and not isinstance(page, bool) else None,
+                digest=digest if isinstance(digest, str) else "",
+            )
+        )
+    return tuple(found)
 
 
 def write_catalogue(records: Sequence[FeatureRecord]) -> dict[str, Any]:
@@ -99,12 +114,16 @@ def write_catalogue(records: Sequence[FeatureRecord]) -> dict[str, Any]:
         row: dict[str, Any] = {"id": record.id, "title": record.title}
         if record.description:
             row["description"] = record.description
-        if record.source is not None:
-            row["source"] = {
-                "document": record.source.document,
-                **({"quote": record.source.quote} if record.source.quote else {}),
-                **({"page": record.source.page} if record.source.page is not None else {}),
-            }
+        if record.sources:
+            row["sources"] = [
+                {
+                    "document": source.document,
+                    **({"quote": source.quote} if source.quote else {}),
+                    **({"page": source.page} if source.page is not None else {}),
+                    **({"digest": source.digest} if source.digest else {}),
+                }
+                for source in record.sources
+            ]
         if record.images:
             row["images"] = list(record.images)
         rows.append(row)
@@ -253,16 +272,30 @@ def asset_source() -> AssetSource:
 def summary_line(record: FeatureRecord, instance: Step | None) -> str:
     """One row for ``feature list`` and the panel's secondary line, worded once."""
     placed = f"placed: {instance.title!r}" if instance is not None else "not placed"
-    if record.source is None:
+    if not record.sources:
         return placed
-    page = f" p.{record.source.page}" if record.source.page is not None else ""
-    return f"{placed} · {record.source.document}{page}"
+    first = record.sources[0]
+    page = f" p.{first.page}" if first.page is not None else ""
+    more = f" +{len(record.sources) - 1}" if len(record.sources) > 1 else ""
+    return f"{placed} · {first.document}{page}{more}"
 
 
-def replaced_source(
-    record: FeatureRecord, document: str, quote: str, page: int | None
-) -> FeatureRecord:
-    return replace(record, source=FeatureSource(document=document, quote=quote, page=page))
+def same_passage(source: FeatureSource, document: str, quote: str) -> bool:
+    """Whether ``source`` already cites this passage — the document, and the quote case
+    and whitespace aside, the way it is anchored."""
+    return source.document == document and _flat(source.quote) == _flat(quote)
+
+
+def _flat(quote: str) -> str:
+    return " ".join(quote.lower().split())
+
+
+def cited_at(record: FeatureRecord, document: str, quote: str) -> int | None:
+    """The index of the passage ``record`` already cites, or None."""
+    return next(
+        (i for i, source in enumerate(record.sources) if same_passage(source, document, quote)),
+        None,
+    )
 
 
 def registration(project: Project, step: Step) -> list[Command]:

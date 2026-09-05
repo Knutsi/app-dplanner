@@ -8,9 +8,10 @@ half, so neither module learns the other's name.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from PySide6.QtWidgets import QInputDialog, QWidget
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import QInputDialog, QMenu, QWidget
 
 from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, StepId
@@ -34,10 +35,13 @@ from dplanner.framework.widgets import confirm
 from dplanner.modules.feature.aspect import MODULE_ID, RECORD_KEY, SPEC, read
 from dplanner.modules.feature.catalogue import (
     FeatureRecord,
+    FeatureSource,
+    cited_at,
     instance_of,
     next_feature_id,
     read_catalogue,
     registration,
+    with_record,
     without_record,
     write_catalogue,
 )
@@ -51,6 +55,10 @@ from dplanner.modules.feature.section import FeatureSection
 from dplanner.theme.icons import layers_icon
 
 PANEL_ID = f"{MODULE_ID}.panel"
+
+
+def _no_digest(_project_id: NodeId, _document: str) -> str:
+    return ""
 
 
 def _no_documents(_project_id: NodeId) -> list[str]:
@@ -71,6 +79,9 @@ class FeatureDeps:
     # The spec documents a record's source can name — the editor's dropdown. Spec's
     # business, handed in so this module never learns how documents are stored.
     documents_of: Callable[[NodeId], list[str]] = _no_documents
+    # (project id, document name) → the document's digest now — what a passage edited in
+    # the editor is stamped with, so the spec module's read-time judgement has a base.
+    digest_of: Callable[[NodeId, str], str] = _no_digest
 
 
 class FeatureModule:
@@ -105,7 +116,12 @@ class FeatureModule:
                 label=SPEC.label,
                 order=45,
                 factory=lambda: FeatureSection(
-                    deps.library, deps.undo, deps.files, deps.documents_of, self.register_step
+                    deps.library,
+                    deps.undo,
+                    deps.files,
+                    deps.documents_of,
+                    self.register_step,
+                    digest_of=deps.digest_of,
                 ),
                 shown_for=lambda step_id: (
                     step_id is not None
@@ -222,6 +238,64 @@ class FeatureModule:
             )
         )
 
+    def cite_passage(self, project_id: NodeId, document: str, quote: str, page: int | None) -> None:
+        """Cite ``quote`` of ``document`` as a feature's passage — the window's half of
+        ``feature cite`` and ``feature add --quote``: a menu of the project's features
+        under the cursor, and *New feature…* to mint one titled on the spot."""
+        menu = self.cite_menu(project_id, document, quote, page)
+        menu.exec(QCursor.pos())
+        menu.deleteLater()
+
+    def cite_menu(self, project_id: NodeId, document: str, quote: str, page: int | None) -> QMenu:
+        """The picker behind :meth:`cite_passage`, built without showing it: one entry
+        per record and *New feature…*, each writing one command when triggered."""
+        library = self._deps.library
+        records = read_catalogue(library.project(project_id)) if library.has(project_id) else []
+        menu = QMenu(self._deps.parent)
+
+        def cite(record: FeatureRecord | None) -> None:
+            self._cite_into(project_id, records, record, document, quote, page)
+
+        for known in records:
+            action = menu.addAction(f"{known.id}  {known.title}")
+            action.triggered.connect(lambda _checked=False, record=known: cite(record))
+        if records:
+            menu.addSeparator()
+        fresh = menu.addAction("New feature…")
+        fresh.triggered.connect(lambda _checked=False: cite(None))
+        return menu
+
+    def _cite_into(
+        self,
+        project_id: NodeId,
+        records: list[FeatureRecord],
+        record: FeatureRecord | None,
+        document: str,
+        quote: str,
+        page: int | None,
+    ) -> None:
+        """One command: the passage appended to ``record`` — minted first, titled by the
+        person, when it is None — stamped with the document as it is now."""
+        if record is None:
+            title, accepted = QInputDialog.getText(self._deps.parent, "New Feature", "Title:")
+            if not accepted or not title.strip():
+                return
+            record = FeatureRecord(id=next_feature_id(records), title=title.strip())
+            records = [*records, record]
+        if cited_at(record, document, quote) is not None:
+            return
+        digest = self._deps.digest_of(project_id, document)
+        source = FeatureSource(document=document, quote=quote, page=page, digest=digest)
+        updated = replace(record, sources=(*record.sources, source))
+        self._deps.undo.push(
+            SetModuleDataCommand(
+                project_id,
+                MODULE_ID,
+                write_catalogue(with_record(records, updated)),
+                label="Cite Passage",
+            )
+        )
+
     def _edit(self, context: Context) -> None:
         picked = self._picked(context)
         if picked is None:
@@ -235,6 +309,7 @@ class FeatureModule:
             project_id,
             record.id,
             parent=self._deps.parent,
+            digest_of=self._deps.digest_of,
         )
         dialog.exec()
         dialog.dispose()

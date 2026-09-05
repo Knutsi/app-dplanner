@@ -267,8 +267,13 @@ and the workflow runs from import to steps an agent can execute *in isolation*:
    sentence appears on several pages, `--page` records the occurrence you mean — any page
    the quote anchors on is accepted, another warns and names them. Add `--strict` when a quote that does
    not anchor should stop you rather than warn; `--describe-file` for what the feature is
-   in a person's words; `--image` for a mock-up. The catalogue is the durable trace of
-   your reading — the next agent starts from `feature list`, not from scratch.
+   in a person's words; `--image` for a mock-up. A feature is often described in more than
+   one place: `feature cite <project> f1 --document <doc> --quote '…'` adds a second
+   passage, `feature uncite` takes one away. Every passage is stamped with the document
+   as it was when you read it, which is what lets step 9 say what changed. The catalogue
+   is the durable trace of your reading — the next agent starts from `feature list`, not
+   from scratch — and **`dplanner coverage spec <project> <doc> --uncovered`** lists the
+   paragraphs no feature was read from yet: read it before you call the reading done.
 5. **Render the figures once.** `spec render <project> <doc> --page N` turns a page into
    an image asset (`spec assets` lists them); one rendered page can serve several steps,
    and `feature attach <project> f1 <path>` puts one on a feature.
@@ -290,16 +295,27 @@ and the workflow runs from import to steps an agent can execute *in isolation*:
    agent will receive — read it and ask whether it is enough to work from.
 8. **Run `dplanner project lint <project>` before handing the plan over.** It lists every
    step missing a description or estimate, every agent step with nothing to brief it,
-   every feature no step realises (and any realised twice), every quote that no longer
-   anchors after a spec change, a project with no topology, and every description image
+   every feature no step realises (and any realised twice), every passage that drifted or
+   was lost since the spec changed (and every one whose paragraph changed around it), a project with no topology, and every description image
    reference that resolves to nothing — each with the verb that fixes it — and exits 1
    until the plan is complete. Hand over clean.
-9. **When the spec changes**, import it again, then `spec diff <project> <doc>` to see what
-   moved (PDFs diff by their text layers), and `feature list <project> --document <doc>
-   --json` to find the features read from it and the steps that realise them. `feature
-   edit` the records the diff actually touches (`--quote` re-anchors them), add or
-   remove features, adjust the work behind them — and if the *shape* changed, `topology
-   set` it, `topology show` it, and say what you changed.
+9. **When the spec changes**, import it again, then run the loop:
+   `spec diff <project> <doc>` to see what moved (PDFs diff by their text layers);
+   **`coverage review <project>`** for every passage that no longer simply anchors — *behind*
+   (the paragraph around it changed: re-read it), *drifted* (reworded: `feature reanchor
+   <project> <f> --accept-drift` takes the new text), *lost* (gone: `feature cite` the
+   passage as it reads now, or `reanchor --drop-lost`) — each with its verb; `feature
+   reanchor <project> --all` once you have read what changed, to re-stamp the rest;
+   **`coverage spec <project> <doc> --uncovered`** for what the new text says that nobody
+   cites yet — cite it into a feature, or `feature add` one; then adjust the work behind
+   the features that changed, and if the *shape* changed, `topology set` it, `topology
+   show` it, and say what you changed. `coverage show <project>` prints the whole trace
+   — spec → features → milestones → tests and docs — to check the plan still answers the
+   spec end to end.
+10. **On a project that predates citations** — features with no passage, a spec nobody
+   cites — `coverage review` lists them as *unsourced* and *uncited*; retrofit the
+   references with `feature cite` from `coverage spec --uncovered`, and `feature reanchor
+   --all` stamps what was cited before stamps existed.
 
 ## Recording your work on GitHub
 
@@ -336,8 +352,9 @@ then authored `step add`s.
   its project itself — from the working directory or `--project` — never as a second
   positional.
 - **Already clear is success.** State-clearing verbs (`status clear`, `estimate clear`,
-  `milestone clear`, `feature clear`, `ticket clear`, `handoff clear`, `github clear`,
-  `agent off`, `agent set --clear`) exit 0 when there is nothing to clear — safe to batch.
+  `milestone clear`, `feature clear`, `feature uncite`, `ticket clear`, `handoff clear`,
+  `github clear`, `agent off`, `agent set --clear`) exit 0 when there is nothing to clear —
+  safe to batch; so does `feature cite` of a passage already cited.
 - **A verb marked *reads the topology first*** refuses until `topology show` has printed
   the project's current topology on this machine. Read it once per session, and again
   after `topology set`; it costs one command and it is the shape of everything you add.

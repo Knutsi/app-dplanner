@@ -225,11 +225,18 @@ resized — and the named layouts and regions beside the project (`{"layouts": {
 "regions": [...]}`, coordinates as whole-unit floats: a canvas gesture snaps to the grid, a
 write never does). `feature` is
 the fifth: the **catalogue** beside the project — `{"features": [{"id": "f1", "title": "…",
-"description": "…", "source": {"document": "auth-spec", "quote": "…", "page": 4},
-"images": ["assets/<sha16>.png"]}]}`, every key but `id` and `title` omitted when empty —
-and beside a step only `{"feature": "f1"}`, the id of the record it realises. The record is
-stored because a feature nobody has placed yet is a fact the graph cannot derive; what a
-placed one *gathers* is never stored. `spec` spans three ways: the document index beside
+"description": "…", "sources": [{"document": "auth-spec", "quote": "…", "page": 4,
+"digest": "<sha16>"}], "images": ["assets/<sha16>.png"]}]}` (format 2; format 1 held one
+`source`, wrapped into the list at open), every key but `id` and `title` omitted when
+empty — and beside a step only `{"feature": "f1"}`, the id of the record it realises. The
+record is stored because a feature nobody has placed yet is a fact the graph cannot
+derive; what a placed one *gathers* is never stored. **A passage is a quote and a digest,
+never an offset.** Where the quote sits is found again on every read (`core/anchors.py`:
+exact, then fuzzy, then lost), because an offset goes stale on every keystroke of the
+in-app editor and `spec import` replaces a document with no window running to notice.
+`digest` is the content-addressed stem of the document blob the passage was read against
+— the same shape as `docs_compiled`'s — so "the spec moved on since this was read" is a
+comparison, and a passage read before stamps existed (`""`) is judged by its match alone. `spec` spans three ways: the document index beside
 the project, the figures beside a step, and the project's **topology** — how its graph is
 shaped — as `modules/spec.md`, the project's one prose document under that id.
 `step_agent_instruction` does the same with prose: the

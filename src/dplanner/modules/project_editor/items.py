@@ -29,7 +29,6 @@ from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.modules.project_editor.renderers import (
     INVALID_TINT,
     PAINT_MARGIN,
-    SECONDARY_ALPHA,
     VALID_TINT,
     NodeAccent,
     NodeState,
@@ -37,6 +36,7 @@ from dplanner.modules.project_editor.renderers import (
     paint_node,
 )
 from dplanner.modules.project_editor.selection import EdgeRef
+from dplanner.theme.cards import SECONDARY_ALPHA
 
 # How far a press may land from the handle's centre and still mean it.
 HANDLE_GRAB = 12.0

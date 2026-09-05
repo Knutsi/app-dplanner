@@ -92,6 +92,19 @@ A step on the graph is a card on a table, and the canvas is drawn to say so.
   offered beside it, and the pitch coarsens as the graph zooms out so the ground never turns
   to noise. What is drawn is always a coarsening of what a drag snaps to.
 
+## Lanes joined by lines
+
+A report of several columns whose rows relate — the coverage view's spec, features,
+milestones, tests — draws each column as a **lane** (`$BG_ELEVATED`, 1 px `$BORDER`,
+`RADIUS_MD`, a bold secondary caption inside its top) with the cards stacked inside and
+the connections as curves in the **gutters** between lanes, never across a lane. A lane
+scrolls on its own — the wheel over it, a 4 px thumb at its right edge that exists only
+while it overflows — and the view itself never scrolls. Picking a card lights its path
+and dims everything else to about a third; the picked lane never moves, every other lane
+brings its first lit card into view. A card's state is a mark at its top-right corner —
+a hollow accent ring for *behind*, a filled accent dot for *drifted*, green for *ok*, red
+for *failed* or *lost*, a faint ring for *pending* — never a word.
+
 ## Cards
 
 The one sanctioned box. A panel that hosts *independent features contributed by different

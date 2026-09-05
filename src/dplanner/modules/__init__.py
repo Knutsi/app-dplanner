@@ -36,10 +36,12 @@ if TYPE_CHECKING:
     from dplanner.domain.ordering import Placed
     from dplanner.domain.schedule import Scheduled
     from dplanner.domain.scope import ScopeKind
-    from dplanner.domain.store import ModuleFileArea
+    from dplanner.domain.store import FilesFor, ModuleFileArea
     from dplanner.framework.mime_files import Payload
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
+    from dplanner.modules.coverage.trace import Trace
+    from dplanner.modules.feature.catalogue import FeatureSource
     from dplanner.modules.project_editor.clipboard import PastePolicy
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
 
@@ -64,10 +66,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.domain.model import Library, TextEdit
     from dplanner.domain.ordering import placed
     from dplanner.domain.schedule import format_date, format_days, schedule
+    from dplanner.domain.scope import gatherers
     from dplanner.domain.store import LibraryStore
     from dplanner.framework.aspect_bar import AspectTemplate
+    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
     from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
+    from dplanner.modules.coverage.activity import CoverageDeps
+    from dplanner.modules.coverage.module import CoverageModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
@@ -77,6 +83,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.estimation.schedule import start_of, write_start
     from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
     from dplanner.modules.feature.aspect import is_feature
+    from dplanner.modules.feature.aspect import read as feature_read
     from dplanner.modules.feature.aspect import write as feature_write
     from dplanner.modules.feature.catalogue import (
         FEATURE_MIME,
@@ -85,6 +92,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         read_catalogue,
     )
     from dplanner.modules.feature.module import FeatureDeps, FeatureModule
+    from dplanner.modules.feature.panel import panel_context
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.github.module import GithubDeps, GithubModule
@@ -105,6 +113,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.reopen_tabs.module import ReopenTabsDeps, ReopenTabsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
+    from dplanner.modules.spec.cli import digest_of as spec_digest_of
     from dplanner.modules.spec.cli import document_names as spec_document_names
     from dplanner.modules.spec.module import SpecDeps, SpecModule
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_INSTRUCTION_ID
@@ -143,10 +152,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
     from dplanner.modules.testing.aspect import enabled as test_enabled
+    from dplanner.modules.testing.aspect import read as tests_read
     from dplanner.modules.testing.module import TestsDeps, TestsModule
     from dplanner.modules.time_estimates.module import TimeEstimatesDeps, TimeEstimatesModule
     from dplanner.theme.icons import (
         clock_icon,
+        coverage_icon,
         gauge_icon,
         graph_icon,
         image_icon,
@@ -493,6 +504,85 @@ def default_modules(services: "AppServices") -> list["Module"]:
             drops=(CanvasDrop(FEATURE_MIME, place_feature),),
         )
     )
+    # Constructed before the list because the Specs tab reads the catalogue's passages
+    # through it and cites a selection into it — the feature side of one seam.
+    feature = FeatureModule(
+        FeatureDeps(
+            library=library,
+            debounce=services.debounce,
+            undo=services.undo,
+            actions=services.actions,
+            panels=services.panels,
+            sections=services.inspector_sections,
+            files=store.files,
+            theme=services.theme,
+            parent=services.window,
+            documents_of=lambda project_id: spec_document_names(library.project(project_id)),
+            digest_of=lambda project_id, name: spec_digest_of(library.project(project_id), name),
+        )
+    )
+
+    # Constructed before the list because the projects index opens it and the Specs tab
+    # jumps into it. Its picture is every module's Qt-free half read once (_coverage_trace);
+    # the surfaces a double-click reaches arrive as callables, and the Specs tab's is
+    # resolved lazily because the two modules point at each other.
+    def _step_passages(step_id: str) -> list[tuple[str, str]]:
+        """The passages a step reaches: its own record's, or its gathering features'."""
+        if not library.has(step_id):
+            return []
+        step = library.step(step_id)
+        project = library.project_of(step_id)
+        records = {record.id: record for record in read_catalogue(project)}
+        named = [feature_read(step)] if feature_read(step) else []
+        if not named:
+            owners = gatherers(
+                library,
+                project,
+                carried_by=is_feature,
+                stops_at=lambda other: is_feature(other) or bool(milestone_read(other)),
+            ).get(step_id, ())
+            named = [feature_read(project.step(owner) or step) or "" for owner in owners]
+        return [
+            (source.document, source.quote)
+            for record_id in named
+            if record_id in records
+            for source in records[record_id].sources
+            if source.quote
+        ]
+
+    coverage = CoverageModule(
+        CoverageDeps(
+            library=library,
+            actions=services.actions,
+            context=services.context,
+            tabs=services.tabs,
+            debounce=services.debounce,
+            files=store.files,
+            trace_of=_coverage_trace,
+            parent=services.window,
+            show_passages=lambda *args: spec.show_passages(*args),
+            open_docs=lambda _project_id, step_id: services.actions.run(
+                "docs.open_step",
+                Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)}),
+            ),
+            open_feature=lambda project_id, feature_id: services.actions.run(
+                "feature.edit", panel_context(project_id, feature_id)
+            ),
+            feature_of=lambda step_id: (
+                feature_read(library.step(step_id)) or None if library.has(step_id) else None
+            ),
+            is_milestone=lambda step_id: (
+                bool(milestone_read(library.step(step_id))) if library.has(step_id) else False
+            ),
+            tests_of=lambda step_id: (
+                [test.id for test in tests_read(library.step(step_id))]
+                if library.has(step_id)
+                else []
+            ),
+            passages_of=_step_passages,
+        )
+    )
+
     # Constructed before the list because the projects index opens Specs through it — the
     # same seam as open_project, one level down.
     spec = SpecModule(
@@ -506,6 +596,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
             parent=services.window,
             files=lambda node_id: store.files(node_id, SPEC_ID),
             details=services.step_details,
+            passages_of=lambda project_id, document: [
+                source.quote
+                for record in read_catalogue(library.project(project_id))
+                for source in record.sources
+                if source.document == document and source.quote
+            ],
+            cite=feature.cite_passage,
+            open_coverage=coverage.show_passage,
         )
     )
     # Constructed before the list because the projects index opens the board through it.
@@ -891,6 +989,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
                         order=20,
                     ),
                     ProjectEntry(
+                        id="coverage",
+                        label="Coverage",
+                        open=coverage.open,
+                        open_preview=lambda pid: coverage.open(pid, preview=True),
+                        icon=coverage_icon,
+                        menu="Project",
+                        order=22,
+                    ),
+                    ProjectEntry(
                         id="assets",
                         label="Assets",
                         open=project_assets.open,
@@ -921,6 +1028,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             )
         ),
         spec,
+        coverage,
         project_assets,
         # -- the step aspects --------------------------------------------------------------
         # Each registers one tab into the step detail panel — or, for the estimate and
@@ -1019,20 +1127,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         # A feature is a record in the project's catalogue and, once placed, the step that
         # realises it; it gathers the work behind it, stopping at the previous feature.
         # The Covers tab that shows what it gathers is still the tests module's.
-        FeatureModule(
-            FeatureDeps(
-                library=library,
-                debounce=services.debounce,
-                undo=services.undo,
-                actions=services.actions,
-                panels=services.panels,
-                sections=services.inspector_sections,
-                files=store.files,
-                theme=services.theme,
-                parent=services.window,
-                documents_of=lambda project_id: spec_document_names(library.project(project_id)),
-            )
-        ),
+        feature,
         TestsModule(
             TestsDeps(
                 library=library,
@@ -1135,6 +1230,11 @@ def _handoff_parts(
     ]
 
 
+def _passage_place(source: "FeatureSource") -> str:
+    page = f" p.{source.page}" if source.page is not None else ""
+    return f"{source.document}{page}"
+
+
 def _briefing_sections(
     library: "Library", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
 ) -> "list[PromptPart]":
@@ -1175,12 +1275,13 @@ def _briefing_sections(
             # independently); the briefing says so rather than pretending otherwise.
             return [f"- {record_id} (no longer in the feature catalogue)"]
         where = ""
-        if record.source is not None:
-            page = f" p.{record.source.page}" if record.source.page is not None else ""
-            where = f", from {record.source.document}{page}"
+        if len(record.sources) == 1:
+            where = f", from {_passage_place(record.sources[0])}"
         lines = [f"- **{record.title}** ({record.id}{where})"]
-        if record.source is not None:
-            lines += [f"  > {quoted}" for quoted in record.source.quote.splitlines()]
+        for source in record.sources:
+            if len(record.sources) > 1:
+                lines.append(f"  from {_passage_place(source)}:")
+            lines += [f"  > {quoted}" for quoted in source.quote.splitlines()]
         return lines
 
     realised = feature_read(step)
@@ -1383,6 +1484,112 @@ def _scope_kinds(
     )
 
 
+def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -> "Trace":
+    """The coverage picture: spec passages → features → milestones → tests and docs.
+
+    The one place the spec, the feature catalogue, the collectors, the tests and the docs
+    meet; each answers through its own Qt-free reader and ``coverage/trace.py`` only
+    arranges them. Derived on every read, like everything the graph could contradict.
+    """
+    from dplanner.modules.coverage.trace import (
+        Citation,
+        Document,
+        Feature,
+        Readers,
+        TestRow,
+        build,
+    )
+    from dplanner.modules.docs.aspect import read as docs_read
+    from dplanner.modules.docs.collect import sources_for
+    from dplanner.modules.docs.collect import state_of as docs_state
+    from dplanner.modules.feature.aspect import is_feature
+    from dplanner.modules.feature.catalogue import instance_of, read_catalogue
+    from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
+    from dplanner.modules.spec.cli import anchor_sources
+    from dplanner.modules.spec.documents import document_text, read_index
+    from dplanner.modules.step_check.aspect import read as check_read
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.modules.testing.aspect import covered
+    from dplanner.modules.testing.runs import latest_results
+    from dplanner.modules.testing.runs import read as read_runs
+
+    scopes = _scope_kinds(check_read, is_feature, milestone_read)
+
+    def features(library: "Library", project: "Project", files: "FilesFor") -> list[Feature]:
+        records = read_catalogue(project)
+        refs = [(s.document, s.quote, s.digest) for r in records for s in r.sources]
+        anchors = iter(anchor_sources(files, project, refs))
+        found = []
+        for record in records:
+            instance = instance_of(project, record.id)
+            citations = tuple(
+                Citation(s.document, s.quote, s.page, next(anchors)) for s in record.sources
+            )
+            found.append(
+                Feature(
+                    record.id,
+                    record.title,
+                    instance.id if instance is not None else None,
+                    citations,
+                )
+            )
+        return found
+
+    def documents(project: "Project", files: "FilesFor") -> list[Document]:
+        try:
+            area = files(project.id, SPEC_ID)
+        except KeyError:
+            area = None
+        return [
+            Document(doc.name, doc.kind, document_text(area, doc) if area is not None else None)
+            for doc in read_index(project).documents
+        ]
+
+    def tests(
+        library: "Library",
+        project: "Project",
+        step_id: str,
+        stops_at: "Callable[[Step], bool] | None",
+    ) -> list[TestRow]:
+        return [
+            TestRow(test.id, test.title, step.id, step.title)
+            for step, test in covered(library, project, step_id, stops_at=stops_at)
+        ]
+
+    def results(project: "Project") -> dict[str, str]:
+        outcomes = latest_results(read_runs(project))
+        return {test_id: outcome.result.status for test_id, outcome in outcomes.items()}
+
+    def docs(library: "Library", project: "Project", step_id: str) -> str:
+        step = project.step(step_id)
+        if step is None:
+            return ""
+        state = docs_state(scopes, library, project, step_id)
+        if state != "never":
+            return state
+        # Never compiled, but there is something to compile — or a note of its own.
+        has_notes = bool(docs_read(step)) or bool(sources_for(scopes, library, project, step_id))
+        return "never" if has_notes else ""
+
+    return build(
+        Readers(
+            features=features,
+            documents=documents,
+            is_feature=is_feature,
+            is_milestone=lambda step: bool(milestone_read(step)),
+            milestone_label=milestone_read,
+            is_done=lambda step: step_status(step) == "done",
+            tests=tests,
+            results=results,
+            docs=docs,
+        ),
+        library,
+        project,
+        files,
+    )
+
+
 def _covered_tests(
     library: "Library",
     project: "Project",
@@ -1474,6 +1681,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.cli.telemetry import commands as telemetry_commands
     from dplanner.core.config_dir import config_dir
     from dplanner.core.telemetry import crash_log_path, journal_path
+    from dplanner.modules.coverage import cli as coverage_cli
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
@@ -1537,9 +1745,10 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         *agent_state_cli.commands(),
         *status_cli.commands(),
         *milestone_cli.commands(),
-        # A feature's source quote is checked against the spec document the way a
-        # requirement's once was; the check is the spec module's, handed across here.
-        *feature_cli.commands(anchor=spec_cli.anchor_quote),
+        # A feature's passages are anchored in the spec documents by the spec module's
+        # one derivation, handed across here — `feature add`, `cite`, `reanchor` and lint
+        # all judge a quote the same way.
+        *feature_cli.commands(anchor=spec_cli.anchor_sources),
         *handoff_cli.commands(),
         *testing_cli.commands(),
         *check_cli.commands(),
@@ -1547,6 +1756,9 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         # rather than one per aspect. The kinds and the coverage walk arrive as arguments,
         # so cli/scopes.py imports no module and no module imports it.
         *scope_commands(kinds=scopes, covered_by=_covered_tests),
+        # The coverage picture is every module's Qt-free half read once and arranged;
+        # assembled here, so neither the verbs nor the tab import any of them.
+        *coverage_cli.commands(trace_of=_coverage_trace),
         # The asset catalog is the same shape one level down: every file-carrying module
         # exports an asset_source(), the reports live in cli/assets.py, and the browser
         # module's own writes (attach, name) stay in its cli.py — the `scope` split.
@@ -1588,7 +1800,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
                 *agent_cli.lint_checks(described=lambda step: bool(description_read(step))),
                 *estimation_cli.lint_checks(),
                 *spec_cli.lint_checks(),
-                *feature_cli.lint_checks(anchor=spec_cli.anchor_quote),
+                *feature_cli.lint_checks(anchor=spec_cli.anchor_sources),
                 *testing_cli.lint_checks(),
                 # A step's *own* tests are a different question from what it gathers;
                 # testing's Qt-free reader answers it, handed over rather than imported.

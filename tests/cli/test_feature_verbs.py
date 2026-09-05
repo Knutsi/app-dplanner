@@ -34,7 +34,7 @@ def test_add_mints_ids_and_list_says_what_is_placed(cli, project, workspace):
         ("f2", "Dark mode", None),
     ]
     entry = json.loads(next(workspace.glob("*/modules/feature.json")).read_text())
-    assert entry["format"] == 1 and [row["id"] for row in entry["features"]] == ["f1", "f2"]
+    assert entry["format"] == 2 and [row["id"] for row in entry["features"]] == ["f1", "f2"]
     text = cli("feature", "list", project)
     assert "f1   Bulk import  — not placed" in text
 
@@ -110,7 +110,9 @@ def test_add_finds_the_quote_and_records_its_page(cli, project, tmp_path):
             "--json",
         )
     )
-    assert report["source"] == {"document": "s", "quote": "MUST be hashed", "page": 2}
+    [passage] = report["sources"]
+    assert (passage["document"], passage["quote"], passage["page"]) == ("s", "MUST be hashed", 2)
+    assert passage["anchoring"] == "anchored" and len(passage["digest"]) == 16
     assert "s p.2" in cli("feature", "list", project)
 
 
@@ -127,7 +129,7 @@ def test_a_page_that_disagrees_with_the_quote_warns_but_is_kept(cli, project, tm
         "feature", "add", project, "Rule", "--document", "s", "--quote", "The rule", "--page", "1"
     )
     assert "not found on page 1 — it anchors on 2" in out
-    assert data(cli("feature", "show", project, "f1", "--json"))["source"]["page"] == 1
+    assert data(cli("feature", "show", project, "f1", "--json"))["sources"][0]["page"] == 1
 
 
 def test_a_quote_on_several_pages_accepts_any_of_them_as_page(cli, project, tmp_path):
@@ -137,10 +139,10 @@ def test_a_quote_on_several_pages_accepts_any_of_them_as_page(cli, project, tmp_
         "feature", "add", project, "Rule", "--document", "s", "--quote", "The rule", "--page", "2"
     )
     assert "warning" not in out
-    assert data(cli("feature", "show", project, "f1", "--json"))["source"]["page"] == 2
+    assert data(cli("feature", "show", project, "f1", "--json"))["sources"][0]["page"] == 2
     # Unnamed, the first occurrence is recorded.
     cli("feature", "add", project, "Again", "--document", "s", "--quote", "The rule")
-    assert data(cli("feature", "show", project, "f2", "--json"))["source"]["page"] == 1
+    assert data(cli("feature", "show", project, "f2", "--json"))["sources"][0]["page"] == 1
 
 
 def test_strict_refuses_a_quote_that_does_not_anchor(cli, project, tmp_path):
@@ -181,7 +183,7 @@ def test_quotes_are_validated_against_prose_documents_too(cli, project, tmp_path
             "--json",
         )
     )
-    assert report["source"]["page"] is None and "warning" not in report
+    assert report["sources"][0]["page"] is None and "warning" not in report
 
 
 def test_a_quote_needs_a_document(cli, project):
@@ -199,11 +201,65 @@ def test_list_filters_by_document(cli, project, tmp_path):
     assert [row["title"] for row in listed] == ["From T"]
 
 
-def test_edit_can_forget_the_source(cli, project, tmp_path):
-    cli("spec", "import", project, source(tmp_path, "s.md", "# S"))
-    cli("feature", "add", project, "Rule", "--document", "s")
-    cli("feature", "edit", project, "f1", "--clear-source")
-    assert data(cli("feature", "show", project, "f1", "--json"))["source"] is None
+def test_cite_adds_passages_and_uncite_takes_them_away(cli, project, tmp_path):
+    cli("spec", "import", project, source(tmp_path, "s.md", "The rule is here.\n\nAnd there."))
+    cli("feature", "add", project, "Rule", "--document", "s", "--quote", "rule is here")
+    out = cli("feature", "cite", project, "f1", "--document", "s", "--quote", "And there")
+    assert "cites 2 passages" in out
+    # The same passage again, however it is spaced or cased, is not a third.
+    assert "already cites" in cli(
+        "feature", "cite", project, "f1", "--document", "s", "--quote", "and  THERE"
+    )
+    shown = data(cli("feature", "show", project, "f1", "--json"))
+    assert [row["quote"] for row in shown["sources"]] == ["rule is here", "And there"]
+    assert "s +1" in cli("feature", "list", project)
+    assert "> And there" in cli("feature", "show", project, "f1")
+    assert "1 passage removed" in cli(
+        "feature", "uncite", project, "f1", "--document", "s", "--quote", "And there"
+    )
+    assert "nothing to remove" in cli(
+        "feature", "uncite", project, "f1", "--document", "s", "--quote", "And there"
+    )
+    cli("feature", "uncite", project, "f1", "--all")
+    assert data(cli("feature", "show", project, "f1", "--json"))["sources"] == []
+    assert "--all" in cli("feature", "uncite", project, "f1", expect=1)
+
+
+def test_a_migrated_catalogue_keeps_its_one_passage_unstamped(cli, project, workspace, tmp_path):
+    """Format 1 stored one ``source`` per record; it becomes a one-element ``sources``
+    with no digest, judged by its match alone — an old project opens into no warnings."""
+    cli("spec", "import", project, source(tmp_path, "s.md", "The rule is here."))
+    catalogue = next(workspace.glob("*/modules")) / "feature.json"
+    catalogue.write_text(
+        json.dumps(
+            {
+                "format": 1,
+                "features": [
+                    {
+                        "id": "f1",
+                        "title": "Rule",
+                        "source": {"document": "s", "quote": "rule is here"},
+                    },
+                    {"id": "f2", "title": "By hand"},
+                ],
+            }
+        )
+    )
+    shown = data(cli("feature", "show", project, "f1", "--json"))
+    assert shown["sources"] == [
+        {
+            "document": "s",
+            "quote": "rule is here",
+            "page": None,
+            "digest": "",
+            "anchoring": "anchored",
+        }
+    ]
+    assert data(cli("feature", "show", project, "f2", "--json"))["sources"] == []
+    assert json.loads(catalogue.read_text())["format"] == 2
+    report = data(cli("project", "lint", project, "--json", expect=1))
+    assert not any(check.startswith("feature.quote") for check in checks_in(report))
+    assert "feature.spec-changed" not in checks_in(report)
 
 
 # -- images ------------------------------------------------------------------------------------
@@ -358,28 +414,118 @@ def test_lint_tracks_the_placement_lifecycle(cli, project, workspace):
     assert "feature.dangling" in checks_in(report)
 
 
-def test_a_replaced_document_exposes_quotes_that_no_longer_anchor(cli, project, tmp_path):
+def test_a_replaced_document_grades_every_passage_and_reanchor_catches_up(cli, project, tmp_path):
     def doc(name, text):
         return source(tmp_path, name, text)
 
-    cli("spec", "import", project, doc("s.md", "The rule is argon2id."), "--name", "s")
+    spec = (
+        "# Auth\n\nThe rule is argon2id, and every hash MUST be salted.\n\n"
+        "Logins are logged with the operator's name.\n\n"
+        "Sessions expire after an hour of silence.\n\nPasswords rotate every ninety days.\n"
+    )
+    cli("spec", "import", project, doc("s.md", spec), "--name", "s")
     cli("feature", "add", project, "Hashing", "--document", "s", "--quote", "argon2id")
+    cli("feature", "add", project, "Logging", "--document", "s", "--quote", "Logins are logged")
+    cli(
+        "feature",
+        "add",
+        project,
+        "Sessions",
+        "--document",
+        "s",
+        "--quote",
+        "Sessions expire after an hour of silence",
+    )
+    cli(
+        "feature",
+        "add",
+        project,
+        "Rotation",
+        "--document",
+        "s",
+        "--quote",
+        "rotate every ninety days",
+    )
     cli("feature", "add", project, "Quoteless", "--document", "s")
     report = data(cli("project", "lint", project, "--json", expect=1))
-    assert "feature.quote-unanchored" not in checks_in(report)
+    assert not any(check.startswith("feature.") and "quote" in check for check in checks_in(report))
 
-    cli("spec", "import", project, doc("s2.md", "The rule is scrypt now."), "--name", "s")
+    # argon2id → scrypt (lost); the logging paragraph gains a clause (behind); the session
+    # sentence is reworded (drifted); the rotation paragraph is untouched (anchored).
+    changed = (
+        spec.replace("argon2id", "scrypt")
+        .replace("operator's name.", "operator's name and address.")
+        .replace(
+            "Sessions expire after an hour of silence",
+            "Sessions time out after sixty minutes of silence",
+        )
+    )
+    cli("spec", "import", project, doc("s2.md", changed), "--name", "s")
+    listed = {
+        row["feature"]: row["sources"][0]["anchoring"]
+        for row in data(cli("feature", "list", project, "--json"))["features"]
+    }
+    assert listed == {
+        "f1": "lost",
+        "f2": "behind",
+        "f3": "drifted",
+        "f4": "anchored",
+        "f5": "anchored",
+    }
     report = data(cli("project", "lint", project, "--json", expect=1))
-    flagged = [row for row in report["findings"] if row["check"] == "feature.quote-unanchored"]
-    # Only the quoted feature is flagged; a quoteless one has nothing to drift.
-    assert [row["subject"] for row in flagged] == ["f1"]
-    assert "feature edit" in flagged[0]["message"]
+    by_check = {
+        row["check"]: row for row in report["findings"] if row["check"].startswith("feature.")
+    }
+    assert by_check["feature.quote-unanchored"]["subject"] == "f1"
+    assert by_check["feature.spec-changed"]["subject"] == "f2"
+    assert by_check["feature.quote-drifted"]["subject"] == "f3"
+    assert "time out after sixty minutes" in by_check["feature.quote-drifted"]["message"]
+    assert "now reads:" in cli("feature", "show", project, "f3")
+
+    # A dry run says what would happen and writes nothing.
+    dry = data(cli("feature", "reanchor", project, "--all", "--dry-run", "--json"))
+    assert dry["dry_run"] and {row["feature"]: row["action"] for row in dry["passages"]} == {
+        "f1": "kept",
+        "f2": "stamped",
+        "f3": "kept",
+        "f4": "stamped",
+        "f5": "stamped",
+    }
+    assert (
+        data(cli("feature", "show", project, "f2", "--json"))["sources"][0]["anchoring"] == "behind"
+    )
+
+    out = cli("feature", "reanchor", project, "--all", "--accept-drift")
+    assert "1 lost" in out and "--drop-lost" in out
+    listed = {
+        row["feature"]: row["sources"][0]["anchoring"]
+        for row in data(cli("feature", "list", project, "--json"))["features"]
+    }
+    assert listed == {
+        "f1": "lost",
+        "f2": "anchored",
+        "f3": "anchored",
+        "f4": "anchored",
+        "f5": "anchored",
+    }
+    assert data(cli("feature", "show", project, "f3", "--json"))["sources"][0]["quote"] == (
+        "Sessions time out after sixty minutes of silence."
+    )
+    cli("feature", "reanchor", project, "f1", "--drop-lost")
+    assert data(cli("feature", "show", project, "f1", "--json"))["sources"] == []
+    report = data(cli("project", "lint", project, "--json", expect=1))
+    assert not any(
+        "quote" in check or check == "feature.spec-changed" for check in checks_in(report)
+    )
 
     # A removed document cannot refute a quote: the source stays, unchecked.
     cli("spec", "remove", project, "s")
     report = data(cli("project", "lint", project, "--json", expect=1))
     assert "feature.quote-unanchored" not in checks_in(report)
-    assert data(cli("feature", "show", project, "f1", "--json"))["source"]["document"] == "s"
+    assert (
+        data(cli("feature", "show", project, "f2", "--json"))["sources"][0]["anchoring"]
+        == "missing"
+    )
 
 
 def test_export_and_import_carry_the_catalogue_and_the_topology(cli, cli_stdin, project):

@@ -13,7 +13,7 @@ from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.undo import UndoService
 from dplanner.modules.feature.aspect import read
-from dplanner.modules.feature.editor import FeatureEditor
+from dplanner.modules.feature.editor import DigestOf, FeatureEditor
 
 # DESIGN.md: side panels get 16 px outer margins.
 PANEL_MARGIN = 16
@@ -30,21 +30,23 @@ class FeatureSection(QWidget):
         files: FilesFor,
         documents_of: Callable[[NodeId], list[str]],
         register: Callable[[StepId], None],
+        *,
+        digest_of: DigestOf | None = None,
     ) -> None:
         super().__init__()
         self._library = library
         self._register = register
         self._step_id: StepId | None = None
 
-        self.editor = FeatureEditor(library, undo, files, documents_of, self)
+        self.editor = FeatureEditor(library, undo, files, documents_of, self, digest_of=digest_of)
         self.unregistered = QWidget(self)
         column = QVBoxLayout(self.unregistered)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(FIELD_GAP)
         note = QLabel(
             "This step is a feature with no record in the project's catalogue — it was "
-            "marked before features had one. Register it to give it a title, a source "
-            "in the spec and images.",
+            "marked before features had one. Register it to give it a title, the "
+            "passages it was read from and images.",
             self.unregistered,
         )
         note.setObjectName("InspectorNote")
@@ -72,6 +74,12 @@ class FeatureSection(QWidget):
     def show_target(self, target_id: str | None) -> None:
         self._step_id = target_id
         self._retarget()
+
+    def focus_entity(self, kind: str, entity_id: str) -> bool:
+        """The Feature tab answers for the record this step realises."""
+        if kind != "feature" or self._step_id is None or not self._library.has(self._step_id):
+            return False
+        return read(self._library.step(self._step_id)) == entity_id
 
     def dispose(self) -> None:
         self._unsubscribe()

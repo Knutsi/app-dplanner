@@ -46,7 +46,7 @@ def test_the_marker_names_the_record():
     step.module_data[MODULE_ID] = write("f3")
     assert read(step) == "f3" and is_feature(step)
     assert summary(step) == "feature f3"
-    assert step.module_data[MODULE_ID] == {"feature": "f3", "format": 1}
+    assert step.module_data[MODULE_ID] == {"feature": "f3", "format": 2}
 
 
 def test_a_retired_marker_reads_as_unregistered():
@@ -73,22 +73,44 @@ def test_the_catalogue_round_trips_and_omits_what_is_empty():
             "f2",
             "Dark mode",
             description="Night.",
-            source=FeatureSource("spec", "must be dark", 4),
+            sources=(
+                FeatureSource("spec", "must be dark", 4, "abcdef0123456789"),
+                FeatureSource("spec"),
+            ),
             images=("assets/abc.png",),
         ),
     ]
     entry = write_catalogue(records)
     assert entry["features"][0] == {"id": "f1", "title": "Bulk import"}
-    assert entry["features"][1]["source"] == {
-        "document": "spec",
-        "quote": "must be dark",
-        "page": 4,
-    }
+    assert entry["features"][1]["sources"] == [
+        {"document": "spec", "quote": "must be dark", "page": 4, "digest": "abcdef0123456789"},
+        {"document": "spec"},
+    ]
+    assert entry["format"] == 2
     project = Project(title="P")
     project.module_data[MODULE_ID] = json.loads(json.dumps(entry))
     assert read_catalogue(project) == records
     assert write_catalogue([]) == {}
     assert next_feature_id(records) == "f3"
+
+
+def test_format_1_wraps_the_one_source_and_leaves_a_step_marker_alone():
+    from dplanner.core.module_data import migrated
+    from dplanner.modules.feature.aspect import DATA_FORMAT
+
+    old = {
+        "format": 1,
+        "features": [
+            {"id": "f1", "title": "A", "source": {"document": "spec", "quote": "q", "page": 2}},
+            {"id": "f2", "title": "B"},
+        ],
+    }
+    new = migrated(old, DATA_FORMAT)
+    assert new is not None and new["format"] == 2
+    assert new["features"][0]["sources"] == [{"document": "spec", "quote": "q", "page": 2}]
+    assert "source" not in new["features"][0] and "sources" not in new["features"][1]
+    marker = migrated({"feature": "f1", "format": 1}, DATA_FORMAT)
+    assert marker is not None and marker["feature"] == "f1" and marker["format"] == 2
 
 
 def bare_project():

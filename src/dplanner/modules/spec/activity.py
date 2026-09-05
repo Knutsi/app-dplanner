@@ -6,12 +6,12 @@ same functions the CLI answers with, and every change arrives back through the m
 ``module_data_changed`` — the tab never assumes it caused what it sees.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QColor, QIcon, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -20,12 +20,14 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QStackedWidget,
+    QTextEdit,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from dplanner.cli.command import CliError
+from dplanner.core.anchors import locate
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Library, NodeId, Project, TextEdit
@@ -92,6 +94,19 @@ STRIP_MARGIN = 8  # DESIGN.md's 4-point scale: a toolbar strip breathes at 8.
 
 NAME_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 
+# A cited passage is washed in the accent at low alpha — DESIGN.md's exception #2 — and
+# the one somebody jumped to a little stronger, so the eye lands on it among the others.
+WASH_ALPHA = 60
+FOCUS_ALPHA = 110
+
+# (project, document) → the passages features cite from it; (project, document, quote)
+# → show that passage in the coverage view; (project, document, quote, page) → cite the
+# selection. All three are other modules' business and arrive from the composition root;
+# None means the capability is absent from this build and its button is hidden.
+type PassagesOf = Callable[[NodeId, str], Sequence[str]]
+type OpenCoverage = Callable[[NodeId, str, str], None]
+type Cite = Callable[[NodeId, str, str, int | None], None]
+
 # The pinned first row: the project's own account of how its graph is shaped. Not a
 # document — it is the project's prose under this module's id, edited in place through
 # the prose stack rather than through a document session, and never a selected
@@ -117,9 +132,20 @@ class SpecsActivity(EntityActivity):
         theme: ThemeService,
         undo: UndoService[Library],
         project_id: NodeId,
+        *,
+        passages_of: PassagesOf | None = None,
+        open_coverage: OpenCoverage | None = None,
+        cite: Cite | None = None,
     ) -> None:
         super().__init__(context, "project", project_id)
         self._product = library
+        self._passages_of = passages_of
+        self._open_coverage = open_coverage
+        self._cite = cite
+        # What is lit: the document, its quotes, the focused one — and whether the wash is
+        # every citation of the document (the Cited toggle) or a jump's few.
+        self._lit: tuple[str, tuple[str, ...], str] | None = None
+        self._cited_spans: list[tuple[int, int, str]] | None = None  # Lazily, per text.
         self._context = context
         self._actions = actions
         self._files = files
@@ -171,7 +197,11 @@ class SpecsActivity(EntityActivity):
         self.list.currentItemChanged.connect(lambda *_a: self._on_selection())
         side_layout.addWidget(self.list, 1)
 
-        self._views = QStackedWidget(splitter)
+        reader = QWidget(splitter)
+        reader_layout = QVBoxLayout(reader)
+        reader_layout.setContentsMargins(0, 0, 0, 0)
+        reader_layout.setSpacing(0)
+        self._views = QStackedWidget(reader)
         self._notice = QLabel(self._views)
         self._notice.setObjectName("InspectorNote")
         self._notice.setWordWrap(True)
@@ -188,9 +218,16 @@ class SpecsActivity(EntityActivity):
         self._views.addWidget(self._pdf)
         self._views.addWidget(self._editor_page)
         self._views.addWidget(self._topology_page)
+        self._editor.cursorPositionChanged.connect(self._refresh_strip)
+        self._editor.selectionChanged.connect(self._refresh_strip)
+        self._editor.textChanged.connect(self._forget_spans)
+        self._text.selectionChanged.connect(self._refresh_strip)
+        self._text.cursorPositionChanged.connect(self._refresh_strip)
+        reader_layout.addWidget(self._build_document_strip(reader))
+        reader_layout.addWidget(self._views, 1)
 
         splitter.addWidget(side)
-        splitter.addWidget(self._views)
+        splitter.addWidget(reader)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 3)
         layout.addWidget(splitter, 1)
@@ -240,6 +277,9 @@ class SpecsActivity(EntityActivity):
 
     def close(self) -> None:
         self.end_session()
+        # A parentless timer outlives the widget; a flush after `deleteLater` would reach
+        # a deleted editor.
+        self._flush_timer.stop()
         self.topology.dispose()
         self.toolbar.dispose()
         for unsubscribe in self._unsubscribes:
@@ -272,6 +312,7 @@ class SpecsActivity(EntityActivity):
         self._session_last = document
         self._session_blobs = set()
         self._editor.open_markdown(area, body)
+        self._forget_spans()
         # Qt normalises the markdown it writes; say so up front when it would matter,
         # rather than letting the first save silently reformat an imported document.
         self._editor_note.setVisible(self._editor.body().strip() != body.strip())
@@ -477,8 +518,11 @@ class SpecsActivity(EntityActivity):
         self._topology_chosen = self._current_name() == TOPOLOGY_ROW and self.list.count() > 1
         if self.is_editing and self._current_name() != self._editing:
             self.end_session()
+        if self._lit is not None and self._lit[0] != self._current_name():
+            self._lit = None
         if not self.is_editing:
             self._show_current()  # Which opens a session when the row is markdown.
+        self._apply_wash()
         self._publish_selection()
 
     def _publish_selection(self) -> None:
@@ -575,6 +619,184 @@ class SpecsActivity(EntityActivity):
         self._shown = None
         self._notice.setText(message)
         self._views.setCurrentWidget(self._notice)
+
+    # -- cited passages: the wash, the strip, and the two jumps ------------------------------
+    # The document strip sits above whatever is shown — the editor, a PDF, plain text — and
+    # is the document's own chrome: *Cited* washes every passage a feature was read from,
+    # *Show in Coverage* and *Cite…* cross to the feature side, and the count says what
+    # is lit. It goes off screen on the topology row, which cites nothing.
+
+    def show_passages(self, document: str, quotes: Sequence[str], focus: str = "") -> None:
+        """Open ``document`` washed at ``quotes``, scrolled to ``focus`` — what a jump
+        from the coverage view or a step's *Show Spec Passage* lands on."""
+        self.select_document(document)
+        if self._current_name() != document:
+            return
+        self._lit = (document, tuple(quotes), focus)
+        self.cited.setChecked(False)
+        self._apply_wash()
+
+    def clear_passages(self) -> None:
+        self._lit = None
+        self.cited.setChecked(False)
+        self._apply_wash()
+
+    def lit_passages(self) -> tuple[str, ...]:
+        """The quotes washed right now — a test's and the strip's one reading."""
+        return self._lit[1] if self._lit is not None else ()
+
+    def _build_document_strip(self, parent: QWidget) -> QWidget:
+        strip = QWidget(parent)
+        strip.setObjectName("EditorToolbar")
+        row = QHBoxLayout(strip)
+        row.setContentsMargins(STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN)
+        row.setSpacing(6)
+        self.cited = _tool_button(
+            "Cited", "Wash every passage a feature was read from", self._toggle_cited
+        )
+        self.cited.setCheckable(True)
+        row.addWidget(self.cited)
+        self.to_coverage = _tool_button(
+            "Coverage", "Show the passage under the caret in the coverage view", self._jump
+        )
+        self.to_coverage.setVisible(self._open_coverage is not None)
+        row.addWidget(self.to_coverage)
+        self.cite_button = _tool_button(
+            "Cite…", "Cite the selection as a feature's passage", self._cite_selection
+        )
+        self.cite_button.setVisible(self._cite is not None)
+        row.addWidget(self.cite_button)
+        self.lit_note = QLabel(strip)
+        self.lit_note.setObjectName("InspectorNote")
+        row.addWidget(self.lit_note)
+        row.addStretch(1)
+        self.clear_button = _tool_button("Clear", "Clear the washed passages", self.clear_passages)
+        row.addWidget(self.clear_button)
+        self._strip = strip
+        return strip
+
+    def _toggle_cited(self) -> None:
+        if self.cited.isChecked():
+            name = self._current_name()
+            quotes = self._document_passages()
+            self._lit = (name, quotes, "") if name is not None else None
+        else:
+            self._lit = None
+        self._apply_wash()
+
+    def _document_passages(self) -> tuple[str, ...]:
+        name = self._current_name()
+        if self._passages_of is None or name is None or name == TOPOLOGY_ROW:
+            return ()
+        return tuple(self._passages_of(self.project_id, name))
+
+    def _forget_spans(self) -> None:
+        self._cited_spans = None
+        self._refresh_strip()
+
+    def _spans(self) -> list[tuple[int, int, str]]:
+        """Where each cited passage sits in the shown text — computed once per text."""
+        if self._cited_spans is None:
+            well = self._text_well()
+            found: list[tuple[int, int, str]] = []
+            if well is not None:
+                plain = well.document().toPlainText()
+                for quote in self._document_passages():
+                    span = locate(plain, quote)
+                    if span is not None:
+                        found.append((span[0], span[1], quote))
+            self._cited_spans = found
+        return self._cited_spans
+
+    def _text_well(self) -> QTextEdit | None:
+        shown = self._views.currentWidget()
+        if shown is self._editor_page:
+            return self._editor
+        if shown is self._text:
+            return self._text
+        return None
+
+    def _passage_under_caret(self) -> str | None:
+        well = self._text_well()
+        if well is None:
+            return None
+        at = well.textCursor().position()
+        return next((quote for start, end, quote in self._spans() if start <= at <= end), None)
+
+    def _refresh_strip(self) -> None:
+        name = self._current_name()
+        on_document = (
+            name is not None and name != TOPOLOGY_ROW and self._current_document() is not None
+        )
+        self._strip.setVisible(on_document)
+        if not on_document:
+            return
+        well = self._text_well()
+        self.to_coverage.setEnabled(self._passage_under_caret() is not None)
+        self.cite_button.setEnabled(well is not None and well.textCursor().hasSelection())
+        lit = self._lit[1] if self._lit is not None else ()
+        self.clear_button.setVisible(bool(lit))
+        count = len(lit)
+        self.lit_note.setText(f"{count} passage{'' if count == 1 else 's'} lit" if lit else "")
+
+    def _apply_wash(self) -> None:
+        """Paint the lit passages onto whatever shows the document, and scroll to the
+        focused one. Selections are cursor-anchored, so they follow edits."""
+        quotes = self._lit[1] if self._lit is not None else ()
+        focus = self._lit[2] if self._lit is not None else ""
+        well = self._text_well()
+        if well is not None:
+            plain = well.document().toPlainText()
+            selections = []
+            landing: int | None = None
+            for quote in quotes:
+                span = locate(plain, quote)
+                if span is None:
+                    continue
+                is_focus = bool(focus) and quote == focus
+                cursor = QTextCursor(well.document())
+                cursor.setPosition(span[0])
+                cursor.setPosition(span[1], QTextCursor.MoveMode.KeepAnchor)
+                wash = QColor(well.palette().highlight().color())
+                wash.setAlpha(FOCUS_ALPHA if is_focus else WASH_ALPHA)
+                fmt = QTextCharFormat()
+                fmt.setBackground(wash)
+                selection = QTextEdit.ExtraSelection()
+                selection.cursor = cursor
+                selection.format = fmt
+                selections.append(selection)
+                if is_focus:
+                    landing = span[0]
+            well.setExtraSelections(selections)
+            if landing is not None:
+                cursor = QTextCursor(well.document())
+                cursor.setPosition(landing)
+                well.setTextCursor(cursor)
+                well.ensureCursorVisible()
+        elif self._views.currentWidget() is self._pdf:
+            if quotes:
+                self._pdf.show_quotes(quotes, focus)
+            else:
+                self._pdf.clear_quotes()
+        self._refresh_strip()
+
+    def _jump(self) -> None:
+        quote = self._passage_under_caret()
+        name = self._current_name()
+        if quote is None or name is None or self._open_coverage is None:
+            return
+        self._open_coverage(self.project_id, name, quote)
+
+    def _cite_selection(self) -> None:
+        well = self._text_well()
+        name = self._current_name()
+        if well is None or name is None or self._cite is None:
+            return
+        quote = well.textCursor().selectedText().replace("\u2029", "\n").strip()
+        if not quote:
+            return
+        self._cite(self.project_id, name, quote, None)
+        self._forget_spans()
 
 
 def _tool_button(face: str, tip: str, handler: Callable[[], None]) -> QToolButton:
