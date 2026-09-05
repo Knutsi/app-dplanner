@@ -448,6 +448,10 @@ def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_pat
         "AI_AGENT": "claude-code/agent",
         "TRACEPARENT": "00-abc-def-01",
         "CLAUDE_CODE_REMOTE_SESSION_ID": "s1",  # By the rule, not the list.
+        # 2.1.258 also sets these three: the parent's inter-session bridge. By the rule.
+        "CLAUDE_CODE_MESSAGING_SOCKET": "/run/user/1000/claude/bridge.sock",
+        "CLAUDE_CODE_MESSAGING_TOKEN": "t0ken",
+        "CLAUDE_CODE_BRIDGE_SESSION_ID": "b1",
         "CLAUDE_CONFIG_DIR": "/home/me/.claude",
         "CLAUDE_CODE_USE_BEDROCK": "1",
         "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000",

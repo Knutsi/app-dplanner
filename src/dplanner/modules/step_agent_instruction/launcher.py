@@ -588,9 +588,11 @@ def _fill(template: str, values: Mapping[str, str]) -> list[str] | None:
 # the child-session flag that turns transcript persistence off, its pid, the effort, the
 # agent flag) and the ones it scrubs itself before starting a session that must stand on
 # its own (its exec path, the trace id) — read off the 2.1 binary, not guessed — plus
-# whatever names a session, a parent or a child under the same prefix. Not the whole
-# prefix: CLAUDE_CONFIG_DIR and CLAUDE_CODE_USE_BEDROCK are the person's configuration,
-# and an agent launched without them cannot sign in.
+# whatever names a session, a parent, a child or the messaging bridge under the same
+# prefix: a 2.1.258 shell also carries CLAUDE_CODE_MESSAGING_SOCKET and _TOKEN, the
+# parent's inter-session bridge, and a bridge session id. Not the whole prefix:
+# CLAUDE_CONFIG_DIR and CLAUDE_CODE_USE_BEDROCK are the person's configuration, and an
+# agent launched without them cannot sign in.
 SESSION_MARKERS = (
     "CLAUDECODE",
     "CLAUDE_CODE_ENTRYPOINT",
@@ -603,7 +605,7 @@ SESSION_MARKERS = (
     "TRACEPARENT",
 )
 SESSION_MARKER_PREFIX = "CLAUDE_CODE_"
-SESSION_MARKER_WORDS = ("SESSION", "PARENT", "CHILD")
+SESSION_MARKER_WORDS = ("SESSION", "PARENT", "CHILD", "MESSAGING")
 
 
 def is_session_marker(name: str) -> bool:
