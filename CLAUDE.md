@@ -101,6 +101,10 @@ says so in one line, where faulthandler shows four Python frames and a symbol
 depends on its width implements `heightForWidth` and lets the layout ask; it never resizes
 itself in `resizeEvent`.** `time_estimates/months.py` is the worked example, and its
 regression test sweeps a scroll area across every width that could flip the scrollbar.
+**Its `minimumSizeHint` is the least it can ever need — one row — never its `sizeHint`**:
+a resizable scroll area sizes its page to the minimum, and a minimum computed at the
+*minimum width* (every month in one column) made the Time tab scroll over empty space
+in any window.
 
 **A worker that segfaults after reporting green is dying at exit, not in a test.** The
 2026-09-03 cores — two per full run, "Process crashed: python3.13" on the desktop, the
@@ -864,8 +868,11 @@ root, stop and look for the registry or capability you have not found yet.
   plan as recorded on the basis day** — the project's start, or the day picked beside
   the chart / `progress show --basis` — the last row on or before it (the earliest row
   for a project older than its history), drawn exactly from its knots; the chart
-  (`chart.py`) draws it dashed, the plan now solid, the band between them as the change
-  since, and what actually landed in ink. The delta figure (`delta`, `delta_words`) says
+  (`chart.py`) draws it dashed **over** the plan now, opaque and paler — so a plan
+  unchanged since the basis reads as two lines in one place, not one — the plan now
+  solid, the band between them as the change since, and what actually landed in ink,
+  on an axis marked at days, Mondays or month firsts (`axis_ticks`) over a hairline
+  grid. The delta figure (`delta`, `delta_words`) says
   what was added and how the landing moved **since the baseline's recorded day**, and
   `changes_since` names the steps born and the estimates changed after that day — the
   step's `created` stamp and the estimate aspect's own history (`estimation`'s

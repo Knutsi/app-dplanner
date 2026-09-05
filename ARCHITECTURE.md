@@ -2466,7 +2466,16 @@ decisions carry it:
   chart (`progress show --basis`) — chosen as the last row on or before the basis, or
   the earliest row for a project older than its history, and the chart draws it dashed,
   the plan now solid, and the change since as a wash between them; a landing that moved
-  is the gap between the hollow mark and the filled one on the 100 % line. The figure
+  is the gap between the hollow mark and the filled one on the 100 % line. The baseline
+  is painted *last*, in a paler shade mixed opaque: a plan unchanged since the basis
+  has a baseline that coincides with it, and a translucent dash of the same hue under
+  the solid line was invisible — the first cut showed one line under a caption saying
+  *unchanged*, and the reader took the other for a line that had failed to draw.
+  Dashes riding on the solid line say *two lines in the same place*, which is the
+  fact. The axis is marked at calendar boundaries (`chart.axis_ticks`: every day,
+  every Monday or every month's first, the finest whose labels fit the width) because
+  a reader places a point by the nearest mark; two labels at the ends of the span were
+  not a scale. The figure
   under the caption says the delta in words — steps and days added, the landing shifted
   in working days — and its tip names **why**: the steps born after the baseline's day
   (the model's `created` stamp) and the estimates changed after it. That second list

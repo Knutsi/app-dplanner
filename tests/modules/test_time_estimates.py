@@ -573,6 +573,25 @@ def test_each_row_says_how_much_of_the_work_through_it_has_landed(services, stag
     assert [row.progress.text() for row in tab.milestones.rows] == ["100%", "57%"]
 
 
+def test_the_right_half_is_no_taller_than_its_content(services, staged, tab, app):
+    """The right half scrolled over empty space: the calendar's minimum was its height as
+    one narrow column — every month stacked — and a resizable scroll area sizes its page
+    to the minimum. One row is the least the calendar can need; the rest is asked through
+    heightForWidth at the real width."""
+    months = tab.months
+    assert months.minimumSizeHint().height() < months.heightForWidth(months.minimumWidth())
+    window = services.window
+    window.resize(1400, 900)
+    window.show()
+    app.processEvents()
+    right = tab.split.widget(1)
+    page = right.widget()
+    needed = (
+        page.heightForWidth(page.width()) if page.hasHeightForWidth() else page.sizeHint().height()
+    )
+    assert page.height() <= max(right.viewport().height(), needed)
+
+
 def test_the_chart_follows_the_picked_milestone_and_the_measure(services, staged):
     from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
     from dplanner.modules.step_status.aspect import write as write_status
