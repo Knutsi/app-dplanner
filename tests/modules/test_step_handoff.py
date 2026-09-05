@@ -95,7 +95,7 @@ def test_the_text_rendering_names_the_source_step():
     library, steps = build({"A": [], "B": ["A"]})
     note(library, steps["A"], "Keys are in the vault.")
     text = inherited_text(inherited(library, steps["B"], _no_files))
-    assert 'From A:' in text and "Keys are in the vault." in text
+    assert "From A:" in text and "Keys are in the vault." in text
     assert inherited_text([]) == "Nothing handed forward yet."
 
 

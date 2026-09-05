@@ -24,17 +24,13 @@ def step(services, make_project):
 
 
 def select(services, step):
-    services.context.set_scope(
-        SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),)
-    )
+    services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))
 
 
 @pytest.fixture
 def section(services, step):
     spec = next(
-        s
-        for s in services.inspector_sections.sections()
-        if s.id == "step_agent_instruction.tab"
+        s for s in services.inspector_sections.sections() if s.id == "step_agent_instruction.tab"
     )
     section = spec.factory()
     yield section
@@ -251,9 +247,7 @@ def test_the_card_and_the_tab_edit_one_field_over_one_undo_stack(services, step,
 
 
 def test_the_card_registers_into_detail_cards(services):
-    assert any(
-        s.id == "step_agent_instruction.card" for s in services.detail_cards.sections()
-    )
+    assert any(s.id == "step_agent_instruction.card" for s in services.detail_cards.sections())
 
 
 def test_typing_in_the_panels_card_survives_context_republishes(services, step):

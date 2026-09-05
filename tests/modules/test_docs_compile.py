@@ -269,8 +269,7 @@ def view(services, project):
 def rows(view):
     listing = view.page.list
     return [
-        (listing.item(i).text(), listing.item(i).data(MARK_ROLE))
-        for i in range(listing.count())
+        (listing.item(i).text(), listing.item(i).data(MARK_ROLE)) for i in range(listing.count())
     ]
 
 

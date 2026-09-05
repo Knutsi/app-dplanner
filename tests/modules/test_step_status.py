@@ -95,9 +95,7 @@ def step(services, make_project):
 
 
 def select(services, step):
-    services.context.set_scope(
-        SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),)
-    )
+    services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))
 
 
 def test_the_actions_exist_one_per_state(services):

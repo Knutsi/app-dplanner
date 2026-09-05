@@ -154,7 +154,7 @@ def test_the_window_title_is_the_library_file_stem(services, library_file):
 
 
 def test_the_default_library_titles_the_window_plain(app, library_file, monkeypatch):
-    """"DPlanner" *is* the user's planner; only an alternative library needs pointing out."""
+    """ "DPlanner" *is* the user's planner; only an alternative library needs pointing out."""
     from dplanner.app import new_session
 
     monkeypatch.setattr(library_module, "default_library_path", lambda: library_file)

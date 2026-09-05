@@ -59,6 +59,8 @@ HEADLESS_FILES = (
     "marks.py",
     "look.py",
     "schedule.py",
+    "progress.py",
+    "log.py",
     "collect.py",
     "runs.py",
     "terminal.py",

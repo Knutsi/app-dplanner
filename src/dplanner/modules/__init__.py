@@ -74,9 +74,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.coverage.activity import CoverageDeps
     from dplanner.modules.coverage.module import CoverageModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
+    from dplanner.modules.decisions.module import DecisionsDeps, DecisionsModule
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
     from dplanner.modules.estimation.aspect import read as estimated_days
+    from dplanner.modules.estimation.aspect import read_history as estimate_history
     from dplanner.modules.estimation.aspect import write as estimate_write
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.estimation.schedule import start_of, write_start
@@ -154,7 +156,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.testing.aspect import enabled as test_enabled
     from dplanner.modules.testing.aspect import read as tests_read
     from dplanner.modules.testing.module import TestsDeps, TestsModule
-    from dplanner.modules.time_estimates.module import TimeEstimatesDeps, TimeEstimatesModule
+    from dplanner.modules.time_estimates.module import (
+        ProgressHistoryModule,
+        TimeEstimatesDeps,
+        TimeEstimatesModule,
+    )
     from dplanner.theme.icons import (
         clock_icon,
         coverage_icon,
@@ -654,6 +660,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
             days_for=estimated_days,
             is_agent=agent_enabled,
             milestone_label=milestone_read,
+            # What "landed" means: the status aspect's word, the progression board's seam.
+            status_for=step_status,
+            # What each estimate was before, and the key a row prints: the change report
+            # behind the chart's delta.
+            estimate_history=estimate_history,
+            step_key=_step_key,
             start_of=lambda project_id: start_of(library.project(project_id)),
             # Clicking the calendar re-dates the plan: one undoable write of the
             # estimation module's own entry, composed here so neither module imports
@@ -663,6 +675,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                     project_id, ESTIMATION_ID, write_start(when), label="Set Start Date"
                 )
             ),
+            parent=services.window,
         )
     )
     # Constructed before the list for the same reason — its index row opens the tab. The
@@ -1103,6 +1116,18 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         # Declares the compiled-document format only; DocsModule and the CLI write it.
         DocsCompiledModule(),
+        # Its project-level card: the decisions the project made, which every briefing
+        # carries. Before project_editor, whose panel is built from the cards registered
+        # by then; the key rule is the root's, handed over like every row's.
+        DecisionsModule(
+            DecisionsDeps(
+                library=library,
+                undo=services.undo,
+                cards=services.detail_cards,
+                parent=services.window,
+                step_key=_step_key,
+            )
+        ),
         StepHandoffModule(
             StepHandoffDeps(
                 actions=services.actions,
@@ -1172,6 +1197,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         step_order,
         progression,
         time_estimates,
+        # Declares the progress history's format only; the recorder above writes it.
+        ProgressHistoryModule(),
         InstallModule(
             InstallDeps(
                 actions=services.actions,
@@ -1348,15 +1375,40 @@ def _briefing_project_sections(
     library: "Library", step: "Step", _files: "Callable[[str, str], ModuleFileArea]"
 ) -> "list[PromptPart]":
     """The project's own facts as briefing sections: its topology — how the graph is
-    shaped, which every step is read against. Root prose for the same reason as the
-    step's sections: it names another module's vocabulary."""
+    shaped, which every step is read against — and the decisions still in force. Root
+    prose for the same reason as the step's sections: it names other modules' vocabulary."""
+    from dplanner.modules.decisions.log import read_log, standing
     from dplanner.modules.spec.aspect import read_topology
     from dplanner.modules.step_agent_instruction.prompt import PromptPart
 
-    topology = read_topology(library.project_of(step.id))
-    if not topology.strip():
-        return []
-    return [PromptPart(heading="Topology — how this project's graph is shaped", body=topology)]
+    project = library.project_of(step.id)
+    sections: list[PromptPart] = []
+    topology = read_topology(project)
+    if topology.strip():
+        sections.append(
+            PromptPart(heading="Topology — how this project's graph is shaped", body=topology)
+        )
+    # The decisions still in force, so an agent builds on what was settled rather than
+    # re-deciding it; a superseded one is history and stays out of the briefing.
+    decided = standing(read_log(project))
+    if decided:
+        lines = []
+        for record in decided:
+            where = project.step(record.step) if record.step else None
+            facts = [record.made] if record.made else []
+            if where is not None:
+                facts.append(f"on {_step_key(where) or where.title}")
+            when = f" ({', '.join(facts)})" if facts else ""
+            lines.append(f"- **{record.id} {record.title}**{when}")
+            lines += [f"  {line}" if line else "" for line in record.body.rstrip().splitlines()]
+        sections.append(
+            PromptPart(
+                heading="Decisions so far — build on these; record a new one with "
+                "`dplanner decision add`",
+                body="\n".join(lines),
+            )
+        )
+    return sections
 
 
 def _briefing_instruction(
@@ -1773,9 +1825,11 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.core.config_dir import config_dir
     from dplanner.core.telemetry import crash_log_path, journal_path
     from dplanner.modules.coverage import cli as coverage_cli
+    from dplanner.modules.decisions import cli as decision_cli
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
+    from dplanner.modules.estimation.aspect import read_history as estimate_history
     from dplanner.modules.estimation.schedule import start_of
     from dplanner.modules.feature import cli as feature_cli
     from dplanner.modules.feature.aspect import is_feature
@@ -1873,10 +1927,18 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         *time_cli.commands(
             days_for=estimated_days,
             is_agent=agent_marked,
+            status_for=step_status,
             start_of=start_of,
             milestone_label=milestone_read,
+            # What each estimate was before, for the change report — and the key every
+            # row prints, the one rule.
+            estimate_history=estimate_history,
+            key_of=_step_key,
         ),
         *github_cli.commands(),
+        # A decision names the step it was made on by id and prints it by key — the
+        # same rule every row prints, handed over rather than imported.
+        *decision_cli.commands(key_of=_step_key),
         # The journal both surfaces write, read back: the paths are the process's, handed
         # over here so a test can point the same verbs at a file of its own.
         *telemetry_commands(journal=journal_path(), crash_log=crash_log_path()),
@@ -1997,8 +2059,10 @@ def default_module_formats() -> list[ModuleDataFormat]:
     format missing here is data the CLI silently declines to bring forward.
     """
     from dplanner.domain import shelf
+    from dplanner.modules.decisions import log as decisions
     from dplanner.modules.project_assets import cli as project_assets
     from dplanner.modules.project_editor import positions
+    from dplanner.modules.time_estimates import progress as time_progress
     from dplanner.modules.time_estimates import schedule as time_schedule
 
     # The aspects, plus the module data that is not an aspect: the graph's node positions,
@@ -2006,10 +2070,14 @@ def default_module_formats() -> list[ModuleDataFormat]:
     # list from aspect_specs() alone would silently omit them. A project's start date
     # needs no entry: it rides on the estimation aspect's format, which is the same module
     # writing under the same id on another node.
-    # The shelf is the fourth: the domain's own, holding turned-off aspects' data.
+    # The shelf is the fourth: the domain's own, holding turned-off aspects' data. The
+    # decision log and the progress history are the fifth and sixth — project records
+    # no step aspect declares.
     return [spec.data_format for spec in aspect_specs()] + [
         positions.DATA_FORMAT,
         time_schedule.DATA_FORMAT,
+        time_progress.DATA_FORMAT,
         project_assets.DATA_FORMAT,
         shelf.DATA_FORMAT,
+        decisions.DATA_FORMAT,
     ]

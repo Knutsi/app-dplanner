@@ -21,7 +21,7 @@ given through a signal, the picker reports a palette id, and the hosting page tu
 into the undoable command — the contract every input here keeps.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from PySide6.QtCore import QDate, QLocale, QPointF, QRectF, QSize, Qt, Signal
@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
 from dplanner.domain.model import StepId
 from dplanner.domain.schedule import format_date, format_days
 from dplanner.framework.cards import card_rule
+from dplanner.modules.time_estimates.progress import Tally
 from dplanner.modules.time_estimates.schedule import (
     PALETTES,
     SWATCH_SHADES,
@@ -97,10 +98,31 @@ class MilestoneEntry:
     days: float
     steps: int
     asked: date | None  # A date asked for that the sequence could not keep.
+    # What has landed toward this milestone — everything through its stretch — and
+    # which measure the row's percentage reads.
+    landed: Tally = field(default_factory=Tally)
+    by_days: bool = False
 
     @property
     def is_milestone(self) -> bool:
         return bool(self.key)
+
+    @property
+    def share(self) -> float | None:
+        return self.landed.share(self.by_days)
+
+
+def percent(share: float | None) -> str:
+    return "—" if share is None else f"{share:.0%}"
+
+
+def landed_words(landed: Tally) -> str:
+    """The percentage's tooltip: both measures in full, so the row's one number never
+    has to say which it is."""
+    return (
+        f"{landed.done} of {landed.steps} steps done · "
+        f"{format_days(landed.done_days)} of {format_days(landed.days)} estimated"
+    )
 
 
 def dot_icon(color: QColor) -> QIcon:
@@ -316,6 +338,10 @@ class MilestoneRow(QWidget):
         self.days = _secondary("", self)
         self.days.setMinimumWidth(days_width)
         self.days.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        # How much of the work through this milestone has landed.
+        self.progress = QLabel(self)
+        self.progress.setMinimumWidth(days_width)
+        self.progress.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         words = QVBoxLayout()
         words.setContentsMargins(0, 0, 0, 0)
@@ -332,6 +358,7 @@ class MilestoneRow(QWidget):
         row.addWidget(self.begin)
         row.addWidget(self.when)
         row.addWidget(self.days)
+        row.addWidget(self.progress)
 
     def load(self, entry: MilestoneEntry, found: Palette) -> None:
         self._loading = True
@@ -355,6 +382,8 @@ class MilestoneRow(QWidget):
                 self.date.setDate(QDate(entry.start.year, entry.start.month, entry.start.day))
             self.when.setText(format_date(entry.finish) if entry.finish else "—")
             self.days.setText(format_days(entry.days))
+            self.progress.setText(percent(entry.share))
+            self.progress.setToolTip(landed_words(entry.landed))
             steps = f"{entry.steps} step{'s' if entry.steps != 1 else ''}"
             tip = (
                 f"{steps} — nothing estimated, so no date"
@@ -440,6 +469,7 @@ class MilestoneList(QWidget):
         self.total_rule = card_rule(self.total)
         self.total_when = QLabel(self.total)
         self.total_days = _secondary("", self.total)
+        self.total_progress = QLabel(self.total)
         total_row = QHBoxLayout()
         total_row.setContentsMargins(ROW_PAD_H, ROW_PAD_V, ROW_PAD_H, ROW_PAD_V)
         total_row.setSpacing(COLUMN_GAP)
@@ -447,6 +477,7 @@ class MilestoneList(QWidget):
         total_row.addWidget(_secondary("All work", self.total), 1)
         total_row.addWidget(self.total_when)
         total_row.addWidget(self.total_days)
+        total_row.addWidget(self.total_progress)
         total_layout = QVBoxLayout(self.total)
         total_layout.setContentsMargins(0, 0, 0, 0)
         total_layout.setSpacing(0)
@@ -463,6 +494,7 @@ class MilestoneList(QWidget):
         found: Palette,
         finish: date | None,
         days: float,
+        share: float | None = None,
     ) -> None:
         wanted = {entry.key for entry in entries}
         for key in tuple(self._rows):
@@ -499,6 +531,11 @@ class MilestoneList(QWidget):
         self.total_when.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.total_days.setMinimumWidth(days_width)
         self.total_days.setText(format_days(days))
+        self.total_progress.setMinimumWidth(days_width)
+        self.total_progress.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.total_progress.setText(percent(share))
         self.empty.setVisible(not any(entry.is_milestone for entry in entries))
 
     def row(self, step_id: StepId) -> MilestoneRow:

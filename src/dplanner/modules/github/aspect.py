@@ -112,6 +112,21 @@ def pr_label(refs: GithubRefs) -> str:
     return f"PR #{refs.pr_number}" if refs.pr_number is not None else "PR"
 
 
+def pr_url(refs: GithubRefs, repo: str | None) -> str:
+    """Where the PR is on the web: the recorded URL, else built from the repository and
+    the number — "" when neither can say."""
+    if refs.pr_url:
+        return refs.pr_url
+    if refs.pr_number is not None and repo:
+        return f"https://github.com/{repo}/pull/{refs.pr_number}"
+    return ""
+
+
+def branch_url(refs: GithubRefs, repo: str | None) -> str:
+    """Where the branch is on the web — "" without a branch or a GitHub repository."""
+    return f"https://github.com/{repo}/tree/{refs.branch}" if refs.branch and repo else ""
+
+
 def summary(step: Step) -> str:
     """One short phrase for a step's row, or "" when there is nothing to say."""
     refs = read(step)

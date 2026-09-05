@@ -17,9 +17,7 @@ def test_a_verbs_second_menu_placement_is_not_listed_twice(app):
     registry = ActionRegistry(MENUS)
     registry.register(ActionSpec(id="a.open", label="Open &Thing", menu="File", group="open"))
     registry.register(
-        ActionSpec(
-            id="a.open_here", label="Open &Thing", menu="File", group="open", palette=False
-        )
+        ActionSpec(id="a.open_here", label="Open &Thing", menu="File", group="open", palette=False)
     )
 
     parent = QWidget()  # Kept alive: the palette is parented to it and dies with it.

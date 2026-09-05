@@ -14,6 +14,7 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Step, TextEdit
+from dplanner.domain.schedule import format_date
 from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
 from dplanner.modules.estimation.aspect import write as write_days
 from dplanner.modules.estimation.schedule import write_start
@@ -518,3 +519,255 @@ def test_a_stepless_project_says_so_instead_of_a_grid_of_zeros(services, make_pr
 
 def test_the_tab_titles_itself_after_the_project(tab):
     assert tab.title == "Discovery — Time Estimates"
+
+
+# -- the team, and progress against the plan -------------------------------------------------
+
+
+def test_clicking_a_tile_stores_the_team_and_the_tab_restores_it(services, project, tab):
+    """The team is the project's staffing assumption, the focus factor's twin: one
+    undoable write, and a tab opened later selects it."""
+    tab.matrix.select(2, 3)
+    assert project.module_data[MODULE_ID] == {"team": [2, 3], "format": 1}
+    assert services.undo.undo_text() == "Choose Team"
+    services.tabs.close_activity(tab)
+    again = services.tabs.open("time", project.id)
+    assert again.matrix.selection == (2, 3)
+    services.undo.undo()
+    assert MODULE_ID not in project.module_data
+    assert again.matrix.selection == (1, 1)  # the smallest team is the default
+
+
+def test_a_stored_team_the_collapsed_grid_cannot_show_selects_its_nearest_seat(services, project):
+    """Without agent steps the agent columns collapse; a stored 2 + 3 lands on 2 + 1 and
+    a click there writes what the grid shows."""
+    library = services.document
+    _read, _draft, docs = project.steps
+    SetModuleDataCommand(docs.id, AGENT_ID, {}).redo(library)
+    SetModuleDataCommand(project.id, MODULE_ID, {"team": [2, 3], "format": 1}).redo(library)
+    tab = services.tabs.open("time", project.id)
+    assert tab.matrix.agent_counts == (1,) and tab.matrix.selection == (2, 1)
+    assert project.module_data[MODULE_ID] == {"team": [2, 3], "format": 1}  # a sync is not a click
+    tab.matrix.select(3, 1)
+    assert project.module_data[MODULE_ID] == {"team": [3, 1], "format": 1}
+
+
+def test_each_row_says_how_much_of_the_work_through_it_has_landed(services, staged):
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as write_status
+
+    library = services.document
+    read, draft, _docs, ship = staged.steps
+    tab = services.tabs.open("time", staged.id)
+    assert [row.progress.text() for row in tab.milestones.rows] == ["0%", "0%"]
+    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
+    assert [row.progress.text() for row in tab.milestones.rows] == ["50%", "25%"]
+    assert tab.milestones.row(ship.id).progress.toolTip() == (
+        "1 of 4 steps done · 2d of 7d estimated"
+    )
+    assert tab.milestones.total_progress.text() == "25%"
+    tab.days_button.click()  # by estimated days: 2 of 4, then 2 of 7
+    assert tab.by_days
+    assert [row.progress.text() for row in tab.milestones.rows] == ["50%", "29%"]
+    SetModuleDataCommand(draft.id, STATUS_ID, write_status("done")).redo(library)
+    assert [row.progress.text() for row in tab.milestones.rows] == ["100%", "57%"]
+
+
+def test_the_right_half_is_no_taller_than_its_content(services, staged, tab, app):
+    """The right half scrolled over empty space: the calendar's minimum was its height as
+    one narrow column — every month stacked — and a resizable scroll area sizes its page
+    to the minimum. One row is the least the calendar can need; the rest is asked through
+    heightForWidth at the real width."""
+    months = tab.months
+    assert months.minimumSizeHint().height() < months.heightForWidth(months.minimumWidth())
+    window = services.window
+    window.resize(1400, 900)
+    window.show()
+    app.processEvents()
+    right = tab.split.widget(1)
+    page = right.widget()
+    needed = (
+        page.heightForWidth(page.width()) if page.hasHeightForWidth() else page.sizeHint().height()
+    )
+    assert page.height() <= max(right.viewport().height(), needed)
+
+
+def test_the_chart_follows_the_picked_milestone_and_the_measure(services, staged):
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as write_status
+
+    read, draft, _docs, _ship = staged.steps
+    tab = services.tabs.open("time", staged.id)
+    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
+    assert tab.progress_caption.text() == "Progress, all work"
+    assert tab.progress_figure.text() == "25% of steps · 29% of days"
+    data = tab.chart._data
+    assert data.label == "All work" and data.finish == date(2026, 9, 23)
+    assert data.expected[0] == (date(2026, 9, 7), 0.0)
+    assert data.expected[-1] == (date(2026, 9, 23), 1.0)
+    assert data.actual[-1] == (date.today(), 0.25)
+    tab.milestones.row(draft.id).picked.emit(draft.id)
+    assert tab.progress_caption.text() == "Progress toward v1"
+    assert tab.progress_figure.text() == "50% of steps · 50% of days"
+    data = tab.chart._data
+    assert data.finish == date(2026, 9, 16) and data.color.name() == shades(PALETTES[0], 2)[0]
+    assert data.expected == (
+        (date(2026, 9, 7), 0.0),
+        (date(2026, 9, 10), 0.5),
+        (date(2026, 9, 16), 1.0),
+    )
+    tab.days_button.click()
+    assert tab.chart._data.by_days and tab.chart._data.actual[-1] == (date.today(), 0.5)
+    assert "plan now: 50% of days" in tab.chart.tooltip_at(date(2026, 9, 10))
+    assert "actual: 50% of days" in tab.chart.tooltip_at(date.today())
+    assert tab.chart.tooltip_at(date(2026, 9, 16)).startswith("16 September")
+    assert tab.chart.span[0] <= date(2026, 9, 7) and tab.chart.span[1] >= date(2026, 9, 16)
+
+
+def test_the_recorder_writes_the_day_once_off_the_undo_stack(services, staged):
+    """A settled change records the day's row — once, replaced within the day, never
+    when nothing changed — and Ctrl+Z undoes the status, not the record."""
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as write_status
+    from dplanner.modules.time_estimates.progress import HISTORY_ID, read_history
+
+    read, _draft, _docs, _ship = staged.steps
+    (row,) = read_history(staged)  # the window opened on the plan and recorded it
+    assert row.day == date.today() and row.toward(None).done == 0
+    before = services.undo.undo_text()
+    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
+    (row,) = read_history(staged)
+    assert row.toward(None).done == 1
+    assert services.undo.undo_text() != before  # the status is the undo step, the record is not
+    services.undo.undo()
+    assert STATUS_ID not in read.module_data
+    (row,) = read_history(staged)
+    assert row.toward(None).done == 0  # the record follows the plan, on the same day
+    services.undo.redo()
+    assert read_history(staged)[0].toward(None).done == 1
+    entry = staged.module_data[HISTORY_ID]
+    assert entry["format"] == 1 and len(entry["days"]) == 1
+
+
+def test_the_chart_compares_against_the_plan_at_the_basis_and_says_what_moved(services, staged):
+    """The baseline is the plan as recorded on the basis day — the start unless picked —
+    and the delta figure says how the scope moved since, with the reasons in its tip."""
+    from dplanner.modules.time_estimates.progress import (
+        HISTORY_ID,
+        Landing,
+        Snapshot,
+        Stretch,
+        Tally,
+        write_history,
+    )
+
+    library = services.document
+    _read, draft, _docs, ship = staged.steps
+    old = Snapshot(
+        date(2026, 9, 1),
+        (
+            Stretch(
+                draft.id,
+                Tally(2, 0, 4.0, 0.0),
+                date(2026, 9, 7),
+                date(2026, 9, 14),
+                (Landing(date(2026, 9, 9), 1, 2.0), Landing(date(2026, 9, 14), 1, 2.0)),
+            ),
+            Stretch(
+                ship.id,
+                Tally(1, 0, 2.0, 0.0),
+                date(2026, 9, 15),
+                date(2026, 9, 18),
+                (Landing(date(2026, 9, 18), 1, 2.0),),
+            ),
+        ),
+    )
+    SetModuleDataCommand(staged.id, HISTORY_ID, write_history([old])).redo(library)
+    tab = services.tabs.open("time", staged.id)
+    assert tab.basis_day == date(2026, 9, 7)  # the project's start
+    assert not tab.basis_reset.isVisibleTo(tab.widget)
+    # The recorder has since written today's row too; pick the 1st to compare against it
+    # whatever today is.
+    tab.basis.setDate(QDate(2026, 9, 1))
+    assert tab.basis_day == date(2026, 9, 1) and tab.basis_reset.isVisibleTo(tab.widget)
+    data = tab.chart._data
+    assert data.baseline_day == date(2026, 9, 1) and data.baseline_finish == date(2026, 9, 18)
+    assert data.baseline[0] == (date(2026, 9, 7), 0.0) and data.baseline[-1] == (
+        date(2026, 9, 18),
+        1.0,
+    )
+    assert data.finish == date(2026, 9, 23)
+    assert tab.delta_figure.text() == (
+        "since 1 September: +1 step, +1d, lands 3 working days later (was 18 September)"
+    )
+    assert "plan at 1 September" in tab.chart.tooltip_at(date(2026, 9, 10))
+    assert "plan now" in tab.chart.tooltip_at(date(2026, 9, 10))
+    # A basis after every record compares against the last one — today's own.
+    tab.basis.setDate(QDate(2030, 1, 1))
+    assert tab.chart._data.baseline_day == date.today()
+    assert tab.delta_figure.text() == f"unchanged since {format_date(date.today())}"
+    tab.basis_reset.click()
+    assert tab.basis_day == date(2026, 9, 7) and not tab.basis_reset.isVisibleTo(tab.widget)
+
+
+def test_the_delta_tip_names_what_moved_the_plan(services, staged):
+    """Against an earlier day's record, the tip lists the steps born and the estimates
+    changed since — the reasons behind the figure."""
+    from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION
+    from dplanner.modules.estimation.aspect import write as write_days_with
+    from dplanner.modules.time_estimates.progress import (
+        HISTORY_ID,
+        Snapshot,
+        Stretch,
+        Tally,
+        write_history,
+    )
+
+    library = services.document
+    read, draft, _docs, ship = staged.steps
+    for step in staged.steps:  # born before the record they are compared against
+        step.created = "2026-08-30T09:00:00+00:00"
+    old = Snapshot(
+        date(2026, 9, 1),
+        (
+            Stretch(draft.id, Tally(2, 0, 4.0, 0.0), date(2026, 9, 7), date(2026, 9, 16)),
+            Stretch(ship.id, Tally(2, 0, 3.0, 0.0), date(2026, 9, 17), date(2026, 9, 23)),
+        ),
+    )
+    SetModuleDataCommand(staged.id, HISTORY_ID, write_history([old])).redo(library)
+    tab = services.tabs.open("time", staged.id)
+    tab.basis.setDate(QDate(2026, 9, 1))
+    assert tab.delta_figure.text() == "unchanged since 1 September"
+    assert tab.delta_figure.toolTip() == ""
+    services.undo.push(
+        SetModuleDataCommand(
+            read.id, ESTIMATION, write_days_with(3.0, previous=read.module_data[ESTIMATION])
+        )
+    )
+    AddNodeCommand(staged.id, Step(title="Polish")).redo(library)
+    assert tab.delta_figure.text().startswith("since 1 September: +1 step, +1d")
+    assert tab.delta_figure.toolTip().splitlines() == [
+        "added since 1 September: S5",
+        f"re-estimated since 1 September: S1 2d → 3d on {format_date(date.today())}",
+    ]
+
+
+def test_the_chart_marks_the_milestones_and_dots_a_gap_the_plan_leaves_empty(services, staged, tab):
+    """v1 and v2 stand on the chart where they land; giving v2 a start date a week past
+    v1's landing leaves the days between empty, and the chart says so."""
+    from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
+    from dplanner.modules.time_estimates.schedule import write_milestone
+
+    data = tab.chart._data
+    assert [(when, label) for when, label, _ in data.marks] == [
+        (date(2026, 9, 16), "v1"),
+        (date(2026, 9, 23), "v2"),
+    ]
+    assert data.idle == ()
+    ship = staged.steps[3]
+    services.undo.push(
+        SetModuleDataCommand(ship.id, TIME_ID, write_milestone(date(2026, 9, 24), None))
+    )
+    data = tab.chart._data
+    assert data.idle == ((date(2026, 9, 16), date(2026, 9, 24)),)
+    assert "no work planned" in tab.chart.tooltip_at(date(2026, 9, 21))

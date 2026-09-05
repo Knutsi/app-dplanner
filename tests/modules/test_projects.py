@@ -53,8 +53,7 @@ def test_the_folder_shows_projects_and_not_their_steps(services, project):
     assert root.text(0) == "Projects"
     assert root.child(0).text(0) == "Discovery"
     kinds = {
-        root.child(0).child(i).data(0, index.KIND_ROLE)
-        for i in range(root.child(0).childCount())
+        root.child(0).child(i).data(0, index.KIND_ROLE) for i in range(root.child(0).childCount())
     }
     assert "step" not in kinds and kinds <= {"entry"}
 
@@ -116,9 +115,7 @@ def test_activating_a_project_folds_rather_than_opens(services, project):
 def test_the_steps_entry_opens_the_project_tab(services, project):
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
     row = panel.tree.topLevelItem(0).child(0)
-    steps = next(
-        row.child(i) for i in range(row.childCount()) if row.child(i).text(0) == "Steps"
-    )
+    steps = next(row.child(i) for i in range(row.childCount()) if row.child(i).text(0) == "Steps")
     panel.tree.itemActivated.emit(steps, 0)
     assert [a.title for a in services.tabs.activities()] == ["Discovery"]
 

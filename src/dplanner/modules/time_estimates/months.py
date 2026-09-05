@@ -247,7 +247,12 @@ class MonthsView(QWidget):
         return QSize(width, self.heightForWidth(width))
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
-        return self.sizeHint()
+        """The least it can need: one row of months at the smallest cell, at the minimum
+        width. Not ``sizeHint``: a resizable scroll area takes the minimum as the floor
+        of the page it sizes, and the height at the *minimum* width — every month in one
+        column — made the Time tab scroll over empty space. The real height is the
+        layout's to ask for, through ``heightForWidth``."""
+        return QSize(self.minimumWidth(), self._height_for(CELL_MIN, 1))
 
     def _relayout(self) -> None:
         """Take the columns and cell the current width affords; the height is the layout's

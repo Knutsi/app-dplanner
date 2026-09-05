@@ -151,8 +151,9 @@ def push_estimate(
     origin: object,
 ) -> None:
     """The one commit path: no-op when unchanged, one undoable command otherwise."""
-    entry = write(days)
-    if entry == library.step(step_id).module_data.get(MODULE_ID, {}):
+    previous = library.step(step_id).module_data.get(MODULE_ID, {})
+    entry = write(days, previous=previous)
+    if entry == previous:
         return
     undo.push(
         SetModuleDataCommand(step_id, MODULE_ID, entry, view_origin=origin, label="Set Estimate")
