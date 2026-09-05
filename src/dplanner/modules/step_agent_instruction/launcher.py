@@ -48,7 +48,13 @@ over as an argument, the whole briefing was every agent's command line — and o
 ``pkill -f "Web.Host"``, aimed at its own dev server, matched the words of every other
 agent's briefing and killed four of them mid-task. A command line that carries only a
 path cannot be matched by anything the project is about; it also stays under the
-platform's argument limit and readable in ``ps``.
+platform's argument limit and readable in ``ps``. The run directory is outside the
+checkout, and Claude Code asks before reading outside its working directories, so the
+preset hands it over as one (``--add-dir {run_dir}``) and the read asks nothing. The
+flag takes a list, so it sits before another option and never before ``{prompt}``,
+which it would swallow. :func:`new_run_dir` resolves the path: the permission check
+compares a file's resolved path, and macOS's ``/var`` is a symlink where Windows's
+Temp is often a short name.
 
 **The agent is a top-level session.** :func:`spawn` hands the terminal an environment
 with the session markers an agent CLI sets in its shells taken out
@@ -56,11 +62,12 @@ with the session markers an agent CLI sets in its shells taken out
 *child* of the session that set them — no transcript of its own, ended when the parent's
 turn ends — which is how a DPlanner started from an agent's shell took every agent it
 launched down with it. ``entry.py`` refuses to open a window from such a shell; the scrub
-is the second line, for a window that got its environment some other way. User
-configuration under the same prefix (``CLAUDE_CONFIG_DIR``, ``CLAUDE_CODE_USE_BEDROCK``)
-is the person's, not a session's, and stays. The Claude preset also names the run's
-session (``--session-id``, minted per launch): the id is what ``claude --resume`` takes,
-so an agent that died can be picked up where it stopped.
+is the second line, for a window that got its environment some other way. The list is
+what Claude Code itself sets per shell and scrubs before a standalone session
+(``SESSION_MARKERS``); user configuration under the same prefix (``CLAUDE_CONFIG_DIR``,
+``CLAUDE_CODE_USE_BEDROCK``) is the person's, not a session's, and stays. The Claude
+preset also names the run's session (``--session-id``, minted per launch): the id is what
+``claude --resume`` takes, so an agent that died can be picked up where it stopped.
 
 **A worktree is prepared by the script, and a worktree that cannot be prepared stops the
 run.** When the step asks for one (its agent aspect's ``worktree``, on by default), the
@@ -146,12 +153,16 @@ def branch_name(name: str) -> str:
 class AgentPreset:
     id: str
     label: str
-    # The command the wrapper runs; {prompt} becomes the opening line (quoted) and
-    # {session} the run's session id.
+    # The command the wrapper runs; {prompt} becomes the opening line (quoted),
+    # {session} the run's session id and {run_dir} the run's directory (quoted).
     command: str
     # How a run of this agent is picked up again, over the same {session}; "" when the
     # agent has no way to name a session up front.
     resume: str = ""
+    # The command texts earlier versions shipped for this preset. The settings store the
+    # picked preset's *text*, so a machine that picked it before the command changed
+    # holds the old one: read as this preset, it runs the current command and resumes.
+    superseded: tuple[str, ...] = ()
 
 
 # The dropdown's rows, first is the default. Every command opens an *interactive* session
@@ -161,14 +172,31 @@ PRESETS: tuple[AgentPreset, ...] = (
     AgentPreset(
         "claude",
         "Claude Code",
-        "claude --permission-mode plan --session-id {session} {prompt}",
+        # The run directory is an additional working directory, so reading the briefing
+        # asks nothing. `--add-dir` takes a list: an option follows it, never {prompt}.
+        "claude --add-dir {run_dir} --permission-mode plan --session-id {session} {prompt}",
         resume="claude --resume {session}",
+        superseded=(
+            "claude --permission-mode plan --session-id {session} {prompt}",
+            "claude --permission-mode plan {prompt}",
+            "claude --permission-mode plan",
+        ),
     ),
     AgentPreset("codex", "Codex", "codex {prompt}"),
     AgentPreset("opencode", "OpenCode", "opencode --prompt {prompt}"),
 )
 
 DEFAULT_AGENT_COMMAND = PRESETS[0].command
+
+
+def current_command(agent_command: str) -> str:
+    """The command a stored setting means: a text a preset shipped earlier is that
+    preset's current command, and blank is the default."""
+    command = agent_command.strip() or DEFAULT_AGENT_COMMAND
+    for preset in PRESETS:
+        if command in preset.superseded:
+            return preset.command
+    return command
 
 
 def resume_command(agent_command: str, session: str) -> str:
@@ -178,7 +206,7 @@ def resume_command(agent_command: str, session: str) -> str:
     an agent whose resume syntax nothing here knows, and a hint that guesses is worse
     than none.
     """
-    command = agent_command.strip() or DEFAULT_AGENT_COMMAND
+    command = current_command(agent_command)
     preset = next((preset for preset in PRESETS if preset.command == command), None)
     if preset is None or not preset.resume or "{session}" not in command:
         return ""
@@ -285,8 +313,13 @@ class LaunchFiles:
 
 
 def new_run_dir() -> Path:
-    """A fresh per-run directory for the prompt, the wrapper and any staged assets."""
-    return Path(tempfile.mkdtemp(prefix="dplanner-agent-"))
+    """A fresh per-run directory for the prompt, the wrapper and any staged assets.
+
+    Resolved, because the agent is handed it as an additional directory and the
+    permission check compares a file's resolved path: macOS's temp directory sits under
+    ``/var``, a symlink to ``/private/var``, and Windows's Temp is often a short name.
+    """
+    return Path(tempfile.mkdtemp(prefix="dplanner-agent-")).resolve()
 
 
 def stage_assets(
@@ -315,13 +348,17 @@ def stage_assets(
     return staged
 
 
-def _agent_line(agent_command: str, prompt_expansion: str, session: str) -> str:
-    """The command with the opening prompt and the session substituted; the prompt is
-    appended when no placeholder names it."""
-    command = agent_command.strip() or DEFAULT_AGENT_COMMAND
+def _agent_line(agent_command: str, prompt_expansion: str, session: str, run_dir: str) -> str:
+    """The command with the opening prompt, the session and the run directory
+    substituted; the prompt is appended when no placeholder names it."""
+    command = current_command(agent_command)
     if "{prompt}" not in command:
         command += " {prompt}"
-    return command.replace("{prompt}", prompt_expansion).replace("{session}", session)
+    return (
+        command.replace("{prompt}", prompt_expansion)
+        .replace("{session}", session)
+        .replace("{run_dir}", run_dir)
+    )
 
 
 def window_title(step_title: str) -> str:
@@ -419,7 +456,12 @@ def _posix_script(files: LaunchFiles, workdir: Path, agent_command: str, worktre
     if resume:
         lines.append(f'printf \'resume=cd "%s" && {resume}\\n\' "$(pwd)" >> {shell}')
     lines += [
-        _agent_line(agent_command, shlex.quote(opening_prompt(files.prompt_file)), files.session),
+        _agent_line(
+            agent_command,
+            shlex.quote(opening_prompt(files.prompt_file)),
+            files.session,
+            shlex.quote(str(files.directory)),
+        ),
         "code=$?",
         f'echo "$code" > {exit_file}',
         'if [ "$code" -ne 0 ]; then',
@@ -434,6 +476,11 @@ def _posix_script(files: LaunchFiles, workdir: Path, agent_command: str, worktre
         'exit "$code"',
     ]
     return "\n".join(lines) + "\n"
+
+
+def _powershell_quoted(text: str) -> str:
+    """A PowerShell single-quoted string: only the quote itself needs doubling."""
+    return "'" + text.replace("'", "''") + "'"
 
 
 def _windows_script(files: LaunchFiles, workdir: Path, agent_command: str, worktree: str) -> str:
@@ -456,8 +503,12 @@ def _windows_script(files: LaunchFiles, workdir: Path, agent_command: str, workt
             ")",
             f'cd /d "{tree}"',
         ]
-    prompt = opening_prompt(files.prompt_file).replace("'", "''")
-    agent = _agent_line(agent_command, f"'{prompt}'", files.session)
+    agent = _agent_line(
+        agent_command,
+        _powershell_quoted(opening_prompt(files.prompt_file)),
+        files.session,
+        _powershell_quoted(str(files.directory)),
+    )
     resume = resume_command(agent_command, files.session)
     # PowerShell writes the facts (it is the process whose pid outlives the agent's start
     # and dies with the window) and carries the agent's exit status back out to cmd. Only
@@ -532,13 +583,29 @@ def _fill(template: str, values: Mapping[str, str]) -> list[str] | None:
         return None
 
 
-# What an agent CLI's shell carries that says "you are inside a session" — Claude Code's
-# two markers, and whatever names the session, its parent or a child under the same
-# prefix. Not the whole prefix: CLAUDE_CONFIG_DIR and CLAUDE_CODE_USE_BEDROCK are the
-# person's configuration, and an agent launched without them cannot sign in.
-SESSION_MARKERS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
+# What an agent CLI's shell carries that says "you are inside a session". The names are
+# the ones Claude Code sets in every shell it runs (CLAUDECODE, the parent's session id,
+# the child-session flag that turns transcript persistence off, its pid, the effort, the
+# agent flag) and the ones it scrubs itself before starting a session that must stand on
+# its own (its exec path, the trace id) — read off the 2.1 binary, not guessed — plus
+# whatever names a session, a parent, a child or the messaging bridge under the same
+# prefix: a 2.1.258 shell also carries CLAUDE_CODE_MESSAGING_SOCKET and _TOKEN, the
+# parent's inter-session bridge, and a bridge session id. Not the whole prefix:
+# CLAUDE_CONFIG_DIR and CLAUDE_CODE_USE_BEDROCK are the person's configuration, and an
+# agent launched without them cannot sign in.
+SESSION_MARKERS = (
+    "CLAUDECODE",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_PID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_CODE_EXECPATH",
+    "AI_AGENT",
+    "TRACEPARENT",
+)
 SESSION_MARKER_PREFIX = "CLAUDE_CODE_"
-SESSION_MARKER_WORDS = ("SESSION", "PARENT", "CHILD")
+SESSION_MARKER_WORDS = ("SESSION", "PARENT", "CHILD", "MESSAGING")
 
 
 def is_session_marker(name: str) -> bool:

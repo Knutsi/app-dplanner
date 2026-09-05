@@ -70,7 +70,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.domain.store import LibraryStore
     from dplanner.framework.aspect_bar import AspectTemplate
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
-    from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.coverage.activity import CoverageDeps
     from dplanner.modules.coverage.module import CoverageModule
@@ -96,6 +95,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.github.module import GithubDeps, GithubModule
+    from dplanner.modules.install.module import InstallDeps, InstallModule
     from dplanner.modules.library.module import LibraryDeps, LibraryModule
     from dplanner.modules.library_watch.module import LibraryWatchDeps, LibraryWatchModule
     from dplanner.modules.llm.module import LlmDeps, LlmModule
@@ -1172,8 +1172,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         step_order,
         progression,
         time_estimates,
-        AgentSkillModule(
-            AgentSkillDeps(
+        InstallModule(
+            InstallDeps(
                 actions=services.actions,
                 tasks=services.tasks,
                 parent=services.window,
@@ -1763,6 +1763,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.cli.aspects import commands as aspect_commands
     from dplanner.cli.assets import catalog_commands
     from dplanner.cli.command import CliRegistry
+    from dplanner.cli.desktop import commands as desktop_commands
     from dplanner.cli.gate import RECORD_FILE, TopologyGate, gated
     from dplanner.cli.lint import commands as lint_commands
     from dplanner.cli.scopes import commands as scope_commands
@@ -1903,6 +1904,8 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     # Every verb that declared it reshapes a graph runs behind the topology gate. Wrapped
     # before the skill reads the registry, so the skill describes the gated verbs.
     commands = [gated(command, gate) for command in commands]
+    # The desktop launcher's verbs: no module's, and no library's — the skill lists them.
+    commands += desktop_commands()
     # The skill describes the registry it is registered into, so the loop is closed here
     # rather than by anything going looking for a registry at run time.
     described = CliRegistry()

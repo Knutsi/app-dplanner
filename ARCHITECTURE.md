@@ -172,6 +172,30 @@ the same as today. One row per agent CLI known to mark its shell, and the launch
 the same markers when it spawns (*The peer is a top-level session*, below), for a window
 that got its environment some other way.
 
+**`dpw` is the word typed for you, and the desktop gets a file.** A person launching the
+window from a shell every day pays the word every day, so `dpw` — a second entry point,
+`entry.window_main`, prepending the word and going through the same door and the same
+refusal — is the alias nobody has to write. It is a `gui-scripts` entry rather than a
+script because of what an applications menu needs: on Windows a gui-script is an
+executable with no console window behind it, which is what a Start Menu shortcut should
+open. The desktop itself wants neither word but a file, and each platform's is different:
+a `.desktop` entry in the XDG applications directory on Linux (named `dplanner.desktop`
+because that is the `app_id` the application declares, and how a compositor matches a
+window to its entry), an application bundle in `~/Applications` on macOS whose executable
+is a shell script handing over to `dpw`, a Start Menu shortcut on Windows written through
+PowerShell because a `.lnk` is a COM object. `cli/desktop.py` is one class per platform
+behind one contract — where it goes, what it opens, how it is taken out — with the home
+directory, the environment and the process runner as arguments, so every platform's
+launcher is built and read back in the suite on whatever machine runs it. The launcher
+opens `dpw` by absolute path, since a menu has no PATH to resolve anything with; which
+`dpw` is the one beside the `dplanner` running the command, so the launcher opens the
+DPlanner it was installed from, and `desktop status` reads *stale* when it opens another.
+The window's *Install dplanner Command…* dialog writes the launcher in the same go as the
+command, and points it at the `dpw` uv just installed — it asks `uv tool dir --bin` rather
+than looking beside the build it happens to be running from, which may be a checkout's
+`.venv`. The skill names neither `dpw` nor the launcher's verbs' target: an agent has no
+business opening the window, whichever word it is.
+
 ## The index tree
 
 The template's sidebar was a tab set: one page per module, one visible at a time. DPlanner
@@ -2016,14 +2040,33 @@ line carries a path and nothing the project is about, so no pattern drawn from t
 match it; it also stays under the platform's argument limit, which a briefing with a long
 handoff would not, and `ps` stays readable. The agent pays one file read.
 
+That read is outside the checkout, and Claude Code asks before reading outside its
+working directories — one approval per launch, on every platform, and again for each
+staged asset. So the Claude preset hands the run directory over as an additional working
+directory (`--add-dir {run_dir}`), which its documentation says makes reads there ask
+nothing. Two facts shape the flag's place and its value. `--add-dir` takes a *list*, so
+it sits before another option and never before `{prompt}`: probed, a prompt following
+it was taken for a second directory and the session started with no prompt at all. And
+the directory is resolved when it is made (`new_run_dir`): the permission check compares
+a file's resolved path, macOS's temp directory sits under `/var`, a symlink to
+`/private/var`, and Windows's Temp is often an 8.3 short name — the pointer line, the
+staged asset paths and the flag all derive from that one path, so every spelling agrees.
+
 **The window was an agent's process, and its agents were its children.** *The window is a
 word* has that half. The launcher's own half is `scrubbed_environment()`: the terminal is
 spawned without the session markers an agent CLI sets in its shells, so an agent DPlanner
 launches is a top-level session with a transcript of its own, whatever started DPlanner.
-The scrub is narrow on purpose — the two markers Claude Code is known to set, and any
-variable under its prefix naming a session, a parent or a child — because the same prefix
-carries the person's configuration (`CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_USE_BEDROCK`), and an
-agent launched without that cannot sign in.
+The scrub is a list, not the prefix — what Claude Code sets in every shell it runs
+(`CLAUDECODE`, the parent's session id, the child-session flag that turns transcript
+persistence off, its pid, the effort, the agent flag) and what it scrubs itself before a
+session that must stand on its own (its exec path, the trace id), read off the 2.1 binary
+rather than guessed, plus any variable under its prefix naming a session, a parent, a
+child or the messaging bridge (a 2.1.258 shell carries the parent's bridge socket and
+token, which the list did not name and the rule now does) — because the same prefix
+carries the person's configuration (`CLAUDE_CONFIG_DIR`,
+`CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_MAX_OUTPUT_TOKENS`), and an agent launched without
+that cannot sign in. The first version named two markers and a rule; the rule caught the
+session id but not the pid, and a list read off the binary is the honest fix.
 
 **Nothing said not to kill by pattern.** The skill's *Cutting agent steps* and the
 briefing's preamble now both do: other agents work beside you in the same repository, their
@@ -2041,6 +2084,17 @@ Enter* when a run ends badly. The Agents browser shows it under an ended row. A 
 Agent* verb that opens a terminal on it is the obvious next step and is deliberately not
 built yet: the hint is what the recovery needed, and a second launch path is a feature to
 ask for.
+
+**A preset that changes carries the texts it replaced.** The settings page stores the
+picked preset's *text* — the dropdown reflects the field, which is what lets a preset be
+edited into a custom command — so a machine that picked Claude Code before `--session-id`
+was added held `claude --permission-mode plan {prompt}` from then on: read as Custom,
+launched without a session id, never resumable, and no later change to the preset
+reached it. `AgentPreset.superseded` lists every command text the preset has shipped, and
+`launcher.current_command` maps a stored one to the current — the settings page reads
+through it, so the dropdown shows the preset again, and so do the wrapper and the resume
+hint. The same idea as a `Takeover` for module data: the old spelling is the contract,
+and the successor carries it.
 
 ### The peer reports back through its run directory
 
@@ -2562,7 +2616,7 @@ mention in this file. Compile is its first, and these are the rules it establish
 
 **`complete()` is blocking network I/O.** It runs inside a `TaskRunner` body, and because
 the runner's body returns nothing, the answer comes back on the owner's own queued Qt
-signal — the pattern `agent_skill/cli_install.py` and `github/section.py` already use. A
+signal — the pattern `install/command_dialog.py` and `github/section.py` already use. A
 timeout becomes `TaskTimeoutError` so the task centre shows a timed-out job rather than a
 generic failure, and a delivery whose step has stopped collecting is dropped, exactly as a
 stale PR refresh is.

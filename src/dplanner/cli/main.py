@@ -31,6 +31,9 @@ HELP_WIDTH = 88
 # The one word that is not a noun: ``entry.py`` opens the application on it, and this tree
 # refuses every other word it does not know. Named here so the help can say so.
 WINDOW_WORD = "window"
+# The word typed for you: a second console script (``entry.window_main``) for a person's
+# shell and the desktop launcher. Like the word, the skill never names it.
+WINDOW_SHORTCUT = "dpw"
 
 
 class _Formatter(RawDescriptionHelpFormatter):
@@ -95,7 +98,8 @@ def build_tree(registry: CliRegistry) -> tuple[ArgumentParser, dict[str, Argumen
         prog=PROG,
         description=(
             f"{APP_NAME}: plan your projects as graphs of connected steps.\n\n"
-            f"{PROG} {WINDOW_WORD} [--library PATH] opens the application.\n"
+            f"{PROG} {WINDOW_WORD} [--library PATH] opens the application; {WINDOW_SHORTCUT}"
+            " is the same with the word typed for you.\n"
             "Everything else is one of the commands below."
         ),
         formatter_class=_formatter,
