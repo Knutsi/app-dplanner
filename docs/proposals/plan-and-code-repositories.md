@@ -1,4 +1,4 @@
-# Planner repositories and code repositories
+# Plan repositories and code repositories
 
 *Proposal, 2026-09-05. Status: for decision. Written from a full read of the code at `main`
 (4fd3759); every file and line named below is on that commit.*
@@ -19,7 +19,7 @@ wrapper script keep their shape.
 
 The recommendation, in one paragraph:
 
-> A project keeps living in a directory inside a git repository — the **planner
+> A project keeps living in a directory inside a git repository — the **plan
 > repository** — and Save, branches and Update from Remote keep acting on that repository
 > exactly as now; nothing new is stored for it. A project gains one shared fact, the **code
 > repository** it plans, written into `project.dproj` as the remote URL, and each machine
@@ -30,10 +30,10 @@ The recommendation, in one paragraph:
 > first `dplanner` call from a checkout records where the code lives. A plan kept inside
 > its code repository is still allowed but *warned*: in the window, in `project lint`, and
 > in every agent briefing. One verb, `dplanner project move`, and a wizard that calls the
-> same function take an existing plan into a planner repository, commit both sides and
+> same function take an existing plan into a plan repository, commit both sides and
 > re-point the library.
 
-Two things I would add to what was asked, both argued below: make the planner repository's
+Two things I would add to what was asked, both argued below: make the plan repository's
 committed index (`.dplanner`, one line per project) the way a colleague's clone joins a
 library, and let *Save* rebase before it pushes, because a repository that holds only plans
 is one where that is safe.
@@ -79,19 +79,19 @@ different questions, and they want different storage:
 
 | Question | Answer | Stored? |
 |---|---|---|
-| **Where does the plan live?** | the *planner repository*: the git repository enclosing the project directory | no — derived by `find_repo_root(project dir)`, exactly as today |
+| **Where does the plan live?** | the *plan repository*: the git repository enclosing the project directory | no — derived by `find_repo_root(project dir)`, exactly as today |
 | **Which code does it plan?** | the *code repository*, identified by its remote URL | yes — shared, in `project.dproj` |
 | **Where is that code on this machine?** | the *code checkout*, a local path | yes — per user, per machine, in `library.json` |
 
-Save, Review Changes, New/Switch Branch and Update from Remote act on the planner
+Save, Review Changes, New/Switch Branch and Update from Remote act on the plan
 repository (the store's `repo_groups()`), unchanged. Run Agent, the agent worktrees,
 `dplanner github …` and the GitHub tab act on the code repository. `dplanner` writes to the
 project directory from wherever it is run, so everything an agent records — status,
-handoff, docs, tests, GitHub refs — lands in the planner repository by construction; the
+handoff, docs, tests, GitHub refs — lands in the plan repository by construction; the
 code repository never receives a plan file. Neither repository has to be on GitHub: `gh`
 features degrade as they do today.
 
-Keeping the planner repository *derived* is the important choice. The retired
+Keeping the plan repository *derived* is the important choice. The retired
 `project_repo` module stored both a repository and a checkout in the shared plan, and was
 taken out because a per-machine path in a shared file is wrong on every other machine. The
 split above resolves that trade honestly: the identity (a remote URL) is shared, the
@@ -149,7 +149,7 @@ lowercased; a local-path origin canonicalises to its resolved path. Re-exported 
 `modules/github/gh.py::parse_repo` keeps its own GitHub-specific owner/repo parse; the two
 answer different questions, and its docstring already says so.
 
-**The `.dplanner` file** at a planner repository's root becomes an **index**: one project
+**The `.dplanner` file** at a plan repository's root becomes an **index**: one project
 directory per line, relative to the file, appended when a project is created or moved into
 that repository. One line is exactly today's pointer, so every existing file is a valid
 index. See *Several projects, several people* below.
@@ -162,7 +162,7 @@ This is the one thing separation breaks, and the fix is small. `find_current_pro
 1. `--project`, then `$DPLANNER_PROJECT` (new, below), as `--library` and
    `$DPLANNER_LIBRARY` pair today.
 2. Walk up from the working directory for `project.dproj` or a `.dplanner` index — the
-   planner side, unchanged except that an index with several lines answers "several" and
+   plan repository side, unchanged except that an index with several lines answers "several" and
    asks for `--project`. Inside a project directory the walk still finds `project.dproj`
    first.
 3. **New.** The working directory is inside a git repository — a linked worktree counts,
@@ -172,7 +172,7 @@ This is the one thing separation breaks, and the fix is small. `find_current_pro
    checkout against every entry's `checkout`. One match is the answer; several is the
    refusal that already exists ("this repository holds several library projects — pass
    --project"); none falls through.
-4. Today's rule 3 — the working directory's main checkout is a library project's planner
+4. Today's rule 3 — the working directory's main checkout is a library project's plan repository
    root — kept for legacy and colocated projects.
 5. Nowhere: no current project, as today.
 
@@ -190,7 +190,7 @@ scoped without the briefing saying `--project` on each line. One line in `_posix
 and `_windows_script`, one lookup in discovery.
 
 `dplanner agent prompt --json` and `project show --json` print all three facts —
-`planner`, `repository`, `checkout` — so an agent that wants to know never derives them.
+`plan`, `repository`, `checkout` — so an agent that wants to know never derives them.
 
 ### Run Agent, worktrees and GitHub refs
 
@@ -198,7 +198,7 @@ Both seams are already callbacks on the modules' `Deps`, wired in `modules/__ini
 only the root's lambdas change:
 
 - `workdir_for(step)` (root, line 811) — the code checkout from the library entry when the
-  project has a `repository`; the planner root when it has none (legacy — the briefing then
+  project has a `repository`; the plan repository root when it has none (legacy — the briefing then
   carries the colocation caution). A project with a repository but no checkout here answers
   `""`, and `_can_run` greys Run Agent with *"the code repository is not checked out on this
   machine — Project ▸ Settings…"* in place of today's *"not in a git repository"*.
@@ -209,8 +209,8 @@ only the root's lambdas change:
   under whatever `workdir` it is handed, which is now the code checkout — where the
   worktrees always belonged.
 - The conflict hand-off (`hand_conflicts`) is the one launch that edits *plan* entries by
-  verb and needs no code. It runs in the planner root, which exists on every machine that
-  has the project; today it runs in `workdir_for`. Give it the planner root explicitly.
+  verb and needs no code. It runs in the plan repository root, which exists on every machine that
+  has the project; today it runs in `workdir_for`. Give it the plan repository root explicitly.
 
 ### The window
 
@@ -219,7 +219,7 @@ only the root's lambdas change:
 blocks, at `DESIGN.md`'s dialog spacing:
 
 1. *Name* and *Summary* — the two fields Rename edits today, through the undo stack.
-2. *Plan* — where it lives: the planner repository's label and branch, read-only, and
+2. *Plan* — where it lives: the plan repository's label and branch, read-only, and
    **Move Plan…**, which opens the wizard below.
 3. *Code* — *Repository*: an editable combo pre-filled from GitHub
    (`GitHubStorage.list_repositories()`, fetched in a `TaskRunner` body through a callback
@@ -228,18 +228,18 @@ blocks, at `DESIGN.md`'s dialog spacing:
    and **Clone…** (`GitHubStorage.clone` into the folder the user picks). A checkout whose
    origin differs from the repository field offers to take the checkout's origin; a
    checkout picked for an empty repository field fills it in.
-4. The warning, when the code repository is the planner repository (canonical origins
+4. The warning, when the code repository is the plan repository (canonical origins
    equal, or either checkout inside the other): *"This plan would live inside the code it
    plans — see why that drifts"*, with **Keep it here** (writes `colocation: accepted`)
    beside **Move Plan…**. Warned, never refused.
 
 **File ▸ New Project** is the same dialog in create mode: the *Plan* block becomes a picker
-— the planner repositories this library already uses (last used first, remembered per user
+— the plan repositories this library already uses (last used first, remembered per user
 in `user_config`), **Browse…**, **New on GitHub…** (`init_repo` then
 `GitHubStorage.publish`) and **Clone…** — plus a folder name. The default is the last
-planner repository used, so the second project is two clicks. The CLI twin: `dplanner
+plan repository used, so the second project is two clicks. The CLI twin: `dplanner
 project create` gains `--repository URL` and `--checkout PATH` (a warning line, exit 0,
-when they coincide with the planner repository); `dplanner project set <project>
+when they coincide with the plan repository); `dplanner project set <project>
 --repository | --checkout | --accept-colocation`; `library add` is unchanged.
 
 **A Repositories card** in the project panel (`services.detail_cards`, first in order)
@@ -270,13 +270,13 @@ The skill preamble gets a matching *Where the plan lives* section. `dplanner pro
 reports `repo.unset` and `repo.colocated`, silenced by `colocation: accepted`, each with
 the verb that fixes it — lint is how an agent hands a plan over clean.
 
-### Several projects, several people in one planner repository
+### Several projects, several people in one plan repository
 
-The planner repository is meant to be shared: one repository holding every plan a team is
+The plan repository is meant to be shared: one repository holding every plan a team is
 working on, cloned by everyone who plans, tests, reads specs or runs agents. Three things
 make that work.
 
-**The index.** The `.dplanner` file at the planner root lists every project directory in
+**The index.** The `.dplanner` file at the plan repository root lists every project directory in
 it, one relative path per line, in the order the panel shows them. `seed_project` and
 `project move` append a line; `project delete` removes one; a hand-written line is never
 lost. `dplanner library add ~/plans` on a directory that holds an index rather than a
@@ -285,7 +285,7 @@ lost. `dplanner library add ~/plans` on a directory that holds an index rather t
 lone dangling line stays the error it is today.
 
 **Roles need different things.** Reading a spec, writing tests and reviewing a plan need
-only the planner clone; running agents and running the product need the code checkout too.
+only the plan repository clone; running agents and running the product need the code checkout too.
 That is why the checkout is optional per machine, and why Run Agent is *disabled with the
 reason*, never hidden, on a machine without one.
 
@@ -300,16 +300,59 @@ already uses — and a rebase that does conflict aborts and says so. This change
 `GitHubStorage.pull` and `push` (an entry for `NOTES-FOR-APPFRAME.md`), and it is safe
 precisely because separation guarantees the repository contains no code.
 
-**Phase 2, recommended: the planner repository as a library root.** With the index in
-place, a library entry can name a planner root instead of a project —
+**Phase 2, later: the plan repository as a library root.** With the index in
+place, a library entry can name a plan repository root instead of a project —
 `{"root": "/home/b/plans"}` — expanded at load into the projects its index lists, and
 re-expanded when the index changes on disk (a `git pull` that brought a colleague's new
 project). Membership then travels with the repository: nobody re-runs `library add`, the
-panel order is the committed order, and "the library" becomes "the planner repositories I
+panel order is the committed order, and "the library" becomes "the plan repositories I
 have cloned". It is additive — a bare project path keeps working — and it is a membership
 refactor (`library_file`, `LibraryStore.load`/`attach`/`_adopt_library_file`, the Projects
 panel's unavailable rows), which is why it is sequenced after the separation rather than
 bundled with it.
+
+### Git first, and what a backend would add
+
+Everything above is collaboration *through git*: the plan repository is the shared
+workspace, and a change reaches a colleague when one side pushes and the other pulls. What
+git cannot give is *liveness* — a change seen as it is typed, presence, two people inside
+one spec paragraph at once. A backend is what adds that. It sits on top of git-based
+sharing rather than replacing it, and the separation is the prerequisite for both, because
+a repository can only be synced aggressively when it holds nothing but plans.
+
+The ladder, simplest first:
+
+| Option | What it is | When a colleague's change is seen | Both edit the same entry | What has to run |
+|---|---|---|---|---|
+| Phase 1 only | Everyone clones the plan repository and runs one `library add` on it | After a Save on one side and a pull on the other | The conflict dialog that exists today, per entry | Nothing new |
+| Phase 2 | A cloned plan repository *is* the library; new projects appear after a pull | The same, and nobody maintains a project list | The same | Nothing new |
+| Auto-sync | The window pulls on a timer and pushes after every Save | Within a minute or two, adopted in place with caret and undo kept | The same, plus a rebase that stops and says so when git cannot merge | Nothing new |
+| Sync backend | A small service that syncs the plan repository and pings open windows | Within seconds | The same | A server, or GitHub webhooks |
+| Co-editing backend | A service holding live documents with CRDT text | As it is typed, with presence | Merged character by character, no dialog | A server, auth, an offline story, and a CLI that talks to it |
+
+What each step costs and buys:
+
+- **Phase 1 already lets several people work on one project.** The window takes a
+  colleague's edits into the live model entry by entry after a pull
+  (`adopt_outside_changes`), and a disagreement on the same entry goes to the conflict
+  dialog. The one real gap is a Save refused because somebody pushed first, which
+  rebase-before-push closes.
+- **Phase 2 is only bookkeeping.** It removes the step where each person tells their
+  library which projects exist; it changes nothing about how edits flow.
+- **Auto-sync is the cheap route to live updates on the graph.** A timer and two git calls
+  on a repository that holds only plans. Latency is a minute, not a second, and the history
+  fills with small commits, which a plans-only repository can afford.
+- **A backend is a different product decision.** Files in git are what make agents,
+  offline work, plan history and the review of a plan through a pull request possible. A
+  sync backend keeps all of that and adds speed. A co-editing backend gives up files as the
+  source of truth, and the CLI would speak to a service instead of a directory. The text
+  model already stores prose as positional edits (`TextEdit`), the shape live co-editing
+  builds on, but it is not conflict-free by itself.
+
+So the recommendation is Phase 1 with the index and `library add` over a plan repository,
+plus rebase-before-push, and then a pause: Phase 2, auto-sync and either backend all build
+on that without undoing it, and the choice between them is better made after a team has
+used the separated setup for a few weeks.
 
 ## Alternatives weighed
 
@@ -317,17 +360,17 @@ bundled with it.
   repository and no second remote: the window would hold a worktree of a `plans` branch,
   and no feature branch would ever carry plan files. Rejected as the default because it
   cannot hold plans for several code repositories in one place, which is the shared
-  planner repository you asked for, and because a push to any branch trips CI and
-  protection rules on many code repositories. The design does not preclude it: a planner
+  plan repository you asked for, and because a push to any branch trips CI and
+  protection rules on many code repositories. The design does not preclude it: a plan
   location is "a directory inside a git repository", and that repository may be the code
-  repository's `plans` worktree. If wanted, it is one more row in New Project's planner
+  repository's `plans` worktree. If wanted, it is one more row in New Project's plan repository
   picker, not a new model.
 - **Keep colocation and stop Save from committing to `main`** — commit plans to a side
   branch, or never auto-commit. Treats one symptom: a checkout in the code repository still
   swaps the plan under the window, and every worktree still carries a copy.
 - **Store the checkout path in the plan** — the retired `project_repo` trade. Rejected for
   the reason it was retired; the split above is the honest form of the same need.
-- **A committed `.dplanner` in the code repository naming the planner remote**, for
+- **A committed `.dplanner` in the code repository naming the plan repository's remote**, for
   zero-configuration discovery from a fresh code clone. Not needed: matching the
   checkout's origin against the projects' repositories needs no file, and a file in the
   user's code repository is a second source of truth. Could be a later `project link`
@@ -340,10 +383,10 @@ bundled with it.
 Every project is one of three, at open, in `project show` and in lint:
 
 - **legacy** — no `repository`. Read as colocated by every derivation (Run Agent opens in
-  the planner root, GitHub refs read its origin), so a project untouched since the update
+  the plan repository root, GitHub refs read its origin), so a project untouched since the update
   keeps working exactly as it does today.
-- **colocated** — a `repository` that canonicalises to the planner repository's origin, or
-  a checkout inside the planner root, or the planner root inside the checkout.
+- **colocated** — a `repository` that canonicalises to the plan repository's origin, or
+  a checkout inside the plan repository root, or the plan repository root inside the checkout.
 - **separated** — anything else.
 
 Legacy and colocated projects warn unless `colocation` is accepted. Nothing is guessed from
@@ -380,7 +423,7 @@ In order:
    operation does not earn a second path. The new window takes the old one's geometry.
 
 The wizard — reached from the card, the settings dialog and the open-time notice — is one
-page: *Where should the plan live?*, the planner picker from New Project (known planner
+page: *Where should the plan live?*, the plan repository picker from New Project (known plan
 repositories, Browse…, New on GitHub…, Clone…), a folder name defaulting to the project's,
 and a plain list of what will happen (copied, removed, two commits, the code checkout stays
 at `…/widget`), then **Move**. It runs synchronously with autosave paused — the *storage
@@ -389,7 +432,7 @@ operations that rewrite the working tree* exception `ARCHITECTURE.md` already do
 ### What the move leaves behind, on purpose
 
 - **History.** The plan's git history stays in the code repository; the target starts at
-  *"Add «…»"*. Rewriting it into the planner repository (`git filter-repo`) is a separate
+  *"Add «…»"*. Rewriting it into the plan repository (`git filter-repo`) is a separate
   tool and out of scope; the wizard says so in one line.
 - **Worktrees.** `.dplanner-worktrees/` stays under the code checkout; nothing in it is a
   plan.
@@ -400,14 +443,14 @@ operations that rewrite the working tree* exception `ARCHITECTURE.md` already do
   finishing running agents first and does not refuse.
 - **Old clones** of the code repository that still hold the plan directory resolve it by
   the walk (rule 2) and get *"is a DPlanner project, but it is not in your library"* — the
-  message that already exists, now also pointing at the planner repository.
+  message that already exists, now also pointing at the plan repository.
 
 ## The seams, one by one
 
 | Where | Today | After |
 |---|---|---|
 | `cli/discovery.py::find_current_project` | walk up; else main checkout == a project's repo | walk up (index-aware); else **origin match** or checkout match; else legacy repo match; records an absent checkout |
-| `modules/__init__.py` `workdir_for` | `find_repo_root(project dir)` | code checkout; planner root for legacy; `""` disables with reason |
+| `modules/__init__.py` `workdir_for` | `find_repo_root(project dir)` | code checkout; plan repository root for legacy; `""` disables with reason |
 | `modules/__init__.py` `repository_for`, `github/cli.py::_repo_url` | `origin_url(project dir)` | `project.repository`, legacy fallback to origin |
 | `modules/__init__.py::_agent_preamble` | worktree check | + *where the plan lives*, + colocation caution |
 | `domain/model.py` `Project`, `VALUE_FIELDS` | `title`, `summary` | + `repository`, `colocation` |
@@ -422,7 +465,7 @@ operations that rewrite the working tree* exception `ARCHITECTURE.md` already do
 | `domain/relocate.py` (new) | — | `move_project`, one function for both surfaces |
 | `modules/step_agent_instruction/launcher.py` | — | `DPLANNER_PROJECT` in the wrapper's environment |
 | `modules/step_agent_instruction/module.py::_can_run` | "not in a git repository" | "no code repository" / "not checked out on this machine" |
-| `modules/library_watch` → `hand_conflicts` | `workdir_for` | the planner root |
+| `modules/library_watch` → `hand_conflicts` | `workdir_for` | the plan repository root |
 | `modules/sync/module.py` | "If an agent is working in this checkout, it did this." | reworded: the plan's own repository |
 | `cli/skill_preamble.md` | "each one a directory inside a git repository" | *Where the plan lives*; never edit plan files by hand |
 | `tests/conftest.py` | `library_repo` | + `code_repo`; `make_project(repository=…)` |
@@ -449,7 +492,7 @@ In the order that keeps every step green and shippable on its own:
    create mode, the Move wizard, the open-time notice, `library add` over an index.
 5. **Docs** — `FORMAT.md`, `ARCHITECTURE.md` (the section rewrite and the rule's why),
    `CLAUDE.md`, `README.md`; `NOTES-FOR-APPFRAME.md` for the storage changes.
-6. **Phase 2** — planner roots as library entries; Save that rebases.
+6. **Phase 2** — plan repository roots as library entries; Save that rebases.
 
 Steps 1 to 3 are what stops the drift for an agent-driven team; step 4 is what makes it
 usable from the window. By the skill's own yardstick (four tasks to a day) steps 1 to 3 are
@@ -460,9 +503,8 @@ about a day each and step 4 about two; the numbers are a shape, not a promise.
 1. **Colocation acceptance: shared or per person?** Proposed shared, in `project.dproj`,
    so lint and the banner agree across the team. A per-user dismissal would leave lint red
    for everyone who did not click.
-2. **The word.** *Planner repository* (yours) or *plan repository* in the UI? The document
-   uses planner; the dialog's block label reads better as *Plan*.
-3. **Phase 2 now or after?** Sequenced after. Say if the multi-person clone story should
-   ship with the separation.
+2. **The word.** Settled: *plan repository*, in the document and the UI.
+3. **Phase 2 now or after?** After — *Git first, and what a backend would add* says why it
+   can wait, and what a backend would and would not change.
 4. **Move history?** Out of scope as proposed. If the plan's history matters, the wizard
    can name a manual `git filter-repo` recipe instead of pretending to carry it.
