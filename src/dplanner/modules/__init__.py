@@ -36,10 +36,11 @@ if TYPE_CHECKING:
     from dplanner.domain.ordering import Placed
     from dplanner.domain.schedule import Scheduled
     from dplanner.domain.scope import ScopeKind
-    from dplanner.domain.store import ModuleFileArea
+    from dplanner.domain.store import FilesFor, ModuleFileArea
     from dplanner.framework.mime_files import Payload
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
+    from dplanner.modules.coverage.trace import Trace
     from dplanner.modules.feature.catalogue import FeatureSource
     from dplanner.modules.project_editor.clipboard import PastePolicy
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
@@ -1394,6 +1395,112 @@ def _scope_kinds(
     )
 
 
+def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -> "Trace":
+    """The coverage picture: spec passages → features → milestones → tests and docs.
+
+    The one place the spec, the feature catalogue, the collectors, the tests and the docs
+    meet; each answers through its own Qt-free reader and ``coverage/trace.py`` only
+    arranges them. Derived on every read, like everything the graph could contradict.
+    """
+    from dplanner.modules.coverage.trace import (
+        Citation,
+        Document,
+        Feature,
+        Readers,
+        TestRow,
+        build,
+    )
+    from dplanner.modules.docs.aspect import read as docs_read
+    from dplanner.modules.docs.collect import sources_for
+    from dplanner.modules.docs.collect import state_of as docs_state
+    from dplanner.modules.feature.aspect import is_feature
+    from dplanner.modules.feature.catalogue import instance_of, read_catalogue
+    from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
+    from dplanner.modules.spec.cli import anchor_sources
+    from dplanner.modules.spec.documents import document_text, read_index
+    from dplanner.modules.step_check.aspect import read as check_read
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.modules.testing.aspect import covered
+    from dplanner.modules.testing.runs import latest_results
+    from dplanner.modules.testing.runs import read as read_runs
+
+    scopes = _scope_kinds(check_read, is_feature, milestone_read)
+
+    def features(library: "Library", project: "Project", files: "FilesFor") -> list[Feature]:
+        records = read_catalogue(project)
+        refs = [(s.document, s.quote, s.digest) for r in records for s in r.sources]
+        anchors = iter(anchor_sources(files, project, refs))
+        found = []
+        for record in records:
+            instance = instance_of(project, record.id)
+            citations = tuple(
+                Citation(s.document, s.quote, s.page, next(anchors)) for s in record.sources
+            )
+            found.append(
+                Feature(
+                    record.id,
+                    record.title,
+                    instance.id if instance is not None else None,
+                    citations,
+                )
+            )
+        return found
+
+    def documents(project: "Project", files: "FilesFor") -> list[Document]:
+        try:
+            area = files(project.id, SPEC_ID)
+        except KeyError:
+            area = None
+        return [
+            Document(doc.name, doc.kind, document_text(area, doc) if area is not None else None)
+            for doc in read_index(project).documents
+        ]
+
+    def tests(
+        library: "Library",
+        project: "Project",
+        step_id: str,
+        stops_at: "Callable[[Step], bool] | None",
+    ) -> list[TestRow]:
+        return [
+            TestRow(test.id, test.title, step.id, step.title)
+            for step, test in covered(library, project, step_id, stops_at=stops_at)
+        ]
+
+    def results(project: "Project") -> dict[str, str]:
+        outcomes = latest_results(read_runs(project))
+        return {test_id: outcome.result.status for test_id, outcome in outcomes.items()}
+
+    def docs(library: "Library", project: "Project", step_id: str) -> str:
+        step = project.step(step_id)
+        if step is None:
+            return ""
+        state = docs_state(scopes, library, project, step_id)
+        if state != "never":
+            return state
+        # Never compiled, but there is something to compile — or a note of its own.
+        has_notes = bool(docs_read(step)) or bool(sources_for(scopes, library, project, step_id))
+        return "never" if has_notes else ""
+
+    return build(
+        Readers(
+            features=features,
+            documents=documents,
+            is_feature=is_feature,
+            is_milestone=lambda step: bool(milestone_read(step)),
+            milestone_label=milestone_read,
+            is_done=lambda step: step_status(step) == "done",
+            tests=tests,
+            results=results,
+            docs=docs,
+        ),
+        library,
+        project,
+        files,
+    )
+
+
 def _covered_tests(
     library: "Library",
     project: "Project",
@@ -1485,6 +1592,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.cli.telemetry import commands as telemetry_commands
     from dplanner.core.config_dir import config_dir
     from dplanner.core.telemetry import crash_log_path, journal_path
+    from dplanner.modules.coverage import cli as coverage_cli
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
@@ -1559,6 +1667,9 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         # rather than one per aspect. The kinds and the coverage walk arrive as arguments,
         # so cli/scopes.py imports no module and no module imports it.
         *scope_commands(kinds=scopes, covered_by=_covered_tests),
+        # The coverage picture is every module's Qt-free half read once and arranged;
+        # assembled here, so neither the verbs nor the tab import any of them.
+        *coverage_cli.commands(trace_of=_coverage_trace),
         # The asset catalog is the same shape one level down: every file-carrying module
         # exports an asset_source(), the reports live in cli/assets.py, and the browser
         # module's own writes (attach, name) stay in its cli.py — the `scope` split.
