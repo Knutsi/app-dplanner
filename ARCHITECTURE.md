@@ -2373,11 +2373,30 @@ decisions carry it:
   done must undo the status, after which the next settle simply re-records the day.
   And it is written by whoever is there: the window's recorder after every settled
   change to any project, `dplanner progress record` for a plan driven from the
-  terminal — the skill says when. What the chart makes of it: the actual line is the
-  recorded days and today's live reading; an **earlier plan** is any recorded day whose
-  landing or total for the scope differs from the current one, drawn as a dashed line
-  from where progress stood that day to the landing it named, one per distinct promise,
-  and toggled off with *Earlier plans* when the present is what matters.
+  terminal — the skill says when. Each row also carries the stretch's **landing knots**
+  — what the simulation landed on each date — so the plan as it stood on any recorded
+  day is drawn *exactly*, never reconstructed from what the graph looks like now.
+- **Three lines: the plan then, the plan now, and what landed — and the delta is the
+  band between the first two.** The first cut drew every earlier promise as its own
+  dashed segment; the walk that redesigned it wanted one question answered clearly:
+  *how has the plan moved since we started?* So there is one **baseline** — the plan as
+  recorded on the **basis** day, the project's start unless a day is picked beside the
+  chart (`progress show --basis`) — chosen as the last row on or before the basis, or
+  the earliest row for a project older than its history, and the chart draws it dashed,
+  the plan now solid, and the change since as a wash between them; a landing that moved
+  is the gap between the hollow mark and the filled one on the 100 % line. The figure
+  under the caption says the delta in words — steps and days added, the landing shifted
+  in working days — and its tip names **why**: the steps born after the baseline's day
+  (the model's `created` stamp) and the estimates changed after it. That second list
+  needed a fact nobody kept: **an estimate now remembers what it was** — every write of
+  the aspect carries the value it replaced with the day, one row per day (the value that
+  stood when the day began), format 2 so an older build refuses to rewrite rather than
+  drop it; `dplanner estimate show` prints it, the Estimate block's field wears it as a
+  tooltip. Both the delta and the change list are measured **from the baseline's
+  recorded day**, not from the basis: the record is what the delta compares against, so
+  what the list names is what moved it, and a change on the record's own day is inside
+  that day's record (last-wins). The basis is a way of looking — view state, never
+  stored.
 
 ## A test belongs to a step, and a step carries several
 

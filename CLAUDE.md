@@ -832,15 +832,23 @@ root, stop and look for the registry or capability you have not found yet.
   and the plan's expected curve is the simulation's own per-step landings
   (`domain/schedule.py`'s `ParallelFinish.landings`, carried on each `Phase`). The one
   thing that cannot be derived is the past: a `Snapshot` — one row per stretch, steps,
-  done, days, done days, start, landing — is written under a second module id,
-  `progress_history`, **only on a day something in it changed**, last-wins within the
-  day, by `recorder.py` after every settled change in the window and by `dplanner
-  progress record` from the terminal. The recorder writes directly with its own origin,
-  off the undo stack (the PR refresher's rule — Ctrl+Z undoes the status, not the
-  record). The chart under the milestone list (`chart.py`) draws the promise, the
-  record and, faintly, every earlier promise for the picked milestone; `dplanner
-  progress show` prints the same three. `ARCHITECTURE.md`'s *Progress against the plan*
-  has the reasoning.
+  done, days, done days, start, landing, and the **landing knots** the curve is drawn
+  through — is written under a second module id, `progress_history`, **only on a day
+  something in it changed**, last-wins within the day, by `recorder.py` after every
+  settled change in the window and by `dplanner progress record` from the terminal.
+  The recorder writes directly with its own origin, off the undo stack (the PR
+  refresher's rule — Ctrl+Z undoes the status, not the record). **The baseline is the
+  plan as recorded on the basis day** — the project's start, or the day picked beside
+  the chart / `progress show --basis` — the last row on or before it (the earliest row
+  for a project older than its history), drawn exactly from its knots; the chart
+  (`chart.py`) draws it dashed, the plan now solid, the band between them as the change
+  since, and what actually landed in ink. The delta figure (`delta`, `delta_words`) says
+  what was added and how the landing moved **since the baseline's recorded day**, and
+  `changes_since` names the steps born and the estimates changed after that day — the
+  step's `created` stamp and the estimate aspect's own history (`estimation`'s
+  `read_history`; every `write` carries the value it replaced, one row per day, format
+  2; `dplanner estimate show` reads it back). `ARCHITECTURE.md`'s *Progress against the
+  plan* has the reasoning.
 - **A decision is a record beside the project, and every briefing carries the standing
   ones.** `modules/decisions/` — `log.py` (Qt-free; `D1, D2, …` minted per project, a
   title, markdown reasoning, the day, the step it was made on, what it supersedes),

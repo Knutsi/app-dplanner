@@ -171,9 +171,7 @@ def test_uninstall_runs_the_uninstall_command(app, services, monkeypatch):
 
 
 def test_uninstall_is_disabled_when_nothing_resolves(services, monkeypatch):
-    monkeypatch.setattr(
-        "dplanner.modules.agent_skill.cli_install.shutil.which", lambda _name: None
-    )
+    monkeypatch.setattr("dplanner.modules.agent_skill.cli_install.shutil.which", lambda _name: None)
     dialog = CliInstallDialog(services.tasks, None)
     assert not dialog.uninstall_button.isEnabled()
 
@@ -186,7 +184,5 @@ def test_a_worktree_build_warns_in_the_dialog(services, monkeypatch):
     dialog = CliInstallDialog(services.tasks, None)
     assert "worktree" in dialog.worktree_note.text()
 
-    monkeypatch.setattr(
-        "dplanner.modules.agent_skill.cli_install.worktree_warning", lambda: None
-    )
+    monkeypatch.setattr("dplanner.modules.agent_skill.cli_install.worktree_warning", lambda: None)
     assert CliInstallDialog(services.tasks, None).worktree_note.isHidden()

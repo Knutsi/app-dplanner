@@ -10,13 +10,16 @@ import pytest
 
 from dplanner.domain.model import Library, Project, Step
 from dplanner.modules.time_estimates.progress import (
-    EarlierPlan,
+    Delta,
+    Landing,
     Snapshot,
     Stretch,
     Tally,
     actual,
-    calendar_phases,
-    earlier_plans,
+    baseline,
+    changes_since,
+    delta,
+    delta_words,
     expected,
     read_history,
     recorded,
@@ -61,9 +64,9 @@ def done(*titles):
     return lambda step: "done" if step.title in titles else "pending"
 
 
-def snapshot(plan, *, finished=("A", "B"), closing=("B", "D"), today=date(2026, 9, 10)):
+def snapshot(plan, *, finished=("A", "B"), closing=("B", "D"), today=date(2026, 9, 10)) -> Snapshot:
     library, project = plan
-    return take(
+    found = take(
         library,
         project,
         days_for,
@@ -77,6 +80,8 @@ def snapshot(plan, *, finished=("A", "B"), closing=("B", "D"), today=date(2026, 
         start_for=lambda _s: None,
         today=today,
     )
+    assert found is not None
+    return found
 
 
 def key_of(plan, title):
@@ -116,45 +121,54 @@ def test_a_stepless_or_looped_project_has_no_snapshot(plan):
     library, project = plan
     empty = Project(title="Empty")
     library.add_child(library.id, empty)
-    assert snapshot((library, empty)) is None
+
+    def taken(target):
+        return take(
+            library,
+            target,
+            days_for,
+            is_agent,
+            done(),
+            humans=1,
+            agents=1,
+            start=MONDAY,
+            efficiency=1.0,
+            is_milestone=milestones("B", "D"),
+            start_for=lambda _s: None,
+            today=date(2026, 9, 10),
+        )
+
+    assert taken(empty) is None
     a, _b, _c, d = project.steps
     a.edges["requires"] = [d.id]  # A loop, written behind the model's back.
-    assert snapshot(plan) is None
+    assert taken(project) is None
 
 
 # -- the curves ----------------------------------------------------------------------------------
 
 
+def test_a_stretch_records_what_lands_on_each_date(plan):
+    now = snapshot(plan)
+    v1, v2 = now.stretches
+    assert v1.landings == (Landing(MONDAY, 1, 1.0), Landing(date(2026, 9, 9), 1, 2.0))
+    assert v2.landings == (Landing(date(2026, 9, 14), 1, 3.0), Landing(date(2026, 9, 18), 1, 4.0))
+
+
 def test_the_expected_curve_is_the_simulations_own_landings(plan):
-    library, project = plan
-    stretches = calendar_phases(
-        library,
-        project,
-        days_for,
-        is_agent,
-        humans=1,
-        agents=1,
-        start=MONDAY,
-        efficiency=1.0,
-        is_milestone=milestones("B", "D"),
-        start_for=lambda _s: None,
-    )
-    by_steps = expected(stretches, days_for, None, by_days=False)
-    assert (
-        by_steps
-        == [
-            (MONDAY, 0.0),
-            (MONDAY, 0.25),  # A lands on day one
-            (date(2026, 9, 9), 0.5),  # B on the third
-            (date(2026, 9, 14), 0.75),  # C: three days from the 10th
-            (date(2026, 9, 18), 1.0),
-        ][1:]
-        or by_steps[0] == (MONDAY, 0.0)
-    )
-    assert by_steps[0] == (MONDAY, 0.0) and by_steps[-1] == (date(2026, 9, 18), 1.0)
-    by_days = expected(stretches, days_for, key_of(plan, "B"), by_days=True)
-    assert by_days == [(MONDAY, 0.0), (MONDAY, 1 / 3), (date(2026, 9, 9), 1.0)]
-    assert expected(stretches, days_for, "nobody", by_days=False) == []
+    now = snapshot(plan)
+    assert expected(now, None, by_days=False) == [
+        (MONDAY, 0.0),
+        (MONDAY, 0.25),  # A lands on day one
+        (date(2026, 9, 9), 0.5),  # B on the third
+        (date(2026, 9, 14), 0.75),  # C: three days from the 10th
+        (date(2026, 9, 18), 1.0),
+    ]
+    assert expected(now, key_of(plan, "B"), by_days=True) == [
+        (MONDAY, 0.0),
+        (MONDAY, 1 / 3),
+        (date(2026, 9, 9), 1.0),
+    ]
+    assert expected(now, "nobody", by_days=False) == []
 
 
 def test_the_actual_curve_is_every_recorded_day_then_today(plan):
@@ -177,26 +191,58 @@ def test_the_actual_curve_is_every_recorded_day_then_today(plan):
     )
 
 
-def test_earlier_plans_are_the_days_whose_promise_differed(plan):
+def test_the_baseline_is_the_last_record_on_or_before_the_basis(plan):
+    first = snapshot(plan, finished=(), today=date(2026, 9, 7))
+    later = snapshot(plan, finished=("A",), today=date(2026, 9, 9))
+    assert baseline([first, later], date(2026, 9, 8)) is first
+    assert baseline([first, later], date(2026, 9, 9)) is later
+    # A project older than its history compares against the first day recorded.
+    assert baseline([first, later], date(2026, 9, 1)) is first
+    assert baseline([], date(2026, 9, 7)) is None
+
+
+def test_the_delta_says_what_was_added_and_how_the_landing_moved(plan):
     library, project = plan
     key = key_of(plan, "D")
-    first = snapshot(plan, finished=(), today=date(2026, 9, 7))
-    same = snapshot(plan, finished=("A",), today=date(2026, 9, 8))  # progress, same promise
+    then = snapshot(plan, finished=(), today=date(2026, 9, 7))
     library.add_child(project.id, Step(title="E"))
     _a, _b, c, d, e = project.steps
     library.set_edges(d.id, "requires", [c.id, e.id])  # E joins v2's stretch
     DAYS["E"] = 5.0
-    grown = snapshot(plan, finished=("A",), today=date(2026, 9, 9))
-    now = snapshot(plan)
     try:
-        assert earlier_plans([first, same, grown], now, key, by_days=False) == [
-            EarlierPlan(date(2026, 9, 7), 0.0, date(2026, 9, 18), Tally(4, 0, 10.0, 0.0))
-        ]
-        # The current promise itself is never an earlier plan, however many days say it.
-        assert earlier_plans([grown], now, key, by_days=False) == []
-        assert earlier_plans([], now, key, by_days=False) == []
+        now = snapshot(plan, finished=("A",))
+        moved = delta(then, now, key)
+        assert moved == Delta(1, 5.0, date(2026, 9, 18), date(2026, 9, 25))
+        assert moved.shift == 5 and not moved.unchanged
+        assert delta_words(moved, then.day) == (
+            "since 7 September: +1 step, +5d, lands 5 working days later (was 18 September)"
+        )
+        still = delta(then, now, key_of(plan, "B"))  # v1 did not move
+        assert still is not None and still.unchanged
+        assert delta_words(still, then.day) == "unchanged since 7 September"
+        assert delta(then, now, "nobody") is None
     finally:
         del DAYS["E"]
+
+
+def test_the_change_report_names_steps_born_and_re_estimated_after_the_basis(plan):
+    library, project = plan
+    a, b, _c, _d = project.steps
+    library.add_child(project.id, Step(title="E", created="2026-09-10T09:00:00+00:00"))
+    for step in (a, b):
+        step.created = "2026-09-01T09:00:00+00:00"
+    history = {a.id: [(date(2026, 9, 12), 3.0)], b.id: [(date(2026, 9, 2), 1.0)]}
+    changes = changes_since(project, date(2026, 9, 7), days_for, lambda s: history.get(s.id, []))
+    assert [(step.title, days) for step, days in changes.added] == [("E", None)]
+    assert [(step.title, when, was, days) for step, when, was, days in changes.estimates] == [
+        ("A", date(2026, 9, 12), 3.0, 1.0)
+    ]
+    assert changes.since == date(2026, 9, 7)
+    assert changes.lines(lambda step: f"S{step.title}") == [
+        "added since 7 September: SE",
+        "re-estimated since 7 September: SA 3d → 1d on 12 September",
+    ]
+    assert changes_since(project, date(2026, 9, 30), days_for, lambda _s: []).lines(str) == []
 
 
 # -- the history on disk -------------------------------------------------------------------------
@@ -215,6 +261,10 @@ def test_the_history_round_trips_with_absence_for_the_defaults(plan):
         "done_days": 3.0,
         "start": "2026-09-07",
         "finish": "2026-09-09",
+        "landings": [
+            {"date": "2026-09-07", "steps": 1, "days": 1.0},
+            {"date": "2026-09-09", "steps": 1, "days": 2.0},
+        ],
     }
     assert "milestone" not in row["stretches"][1]  # the work after the last milestone
     project = Project(title="P")
@@ -230,7 +280,10 @@ def test_unreadable_rows_read_as_absent():
         "days": [
             {"day": "soon", "stretches": []},
             {"day": "2026-09-10", "stretches": [{"start": "never"}]},
-            {"day": "2026-09-11", "stretches": [{"start": "2026-09-07", "steps": True}]},
+            {
+                "day": "2026-09-11",
+                "stretches": [{"start": "2026-09-07", "steps": True, "landings": [{"x": 1}]}],
+            },
             "junk",
         ],
     }

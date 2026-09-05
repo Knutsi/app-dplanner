@@ -7,9 +7,10 @@ milestone's stretch of work lit in its shade — the colour map they are shaded 
 chosen in the strip above it, beside the month arrows — and under it the milestones in
 one list, each with its swatch, where it begins (the sequence's day, or a date of its
 own, set right there), where it lands and how much of it has landed. Under the list,
-**progress toward the picked milestone** — all work when none is picked — as one chart:
-the plan's own curve, what actually landed, and faintly the landings the plan promised
-on earlier days (``chart.py``), by steps or by estimated days, the toggle above it.
+**progress toward the picked milestone** — all work when none is picked — as one chart
+(``chart.py``): the plan as it stood on the basis day, the plan now, the band between
+them that is the change since, and what actually landed — by steps or by estimated days,
+the toggle above it, against the project's start or any day picked beside it.
 Calendar days and project days are two lenses on one simulation, so they are a toggle
 over one grid rather than two tables side by side. Nothing on the page explains itself;
 the tooltips do.
@@ -34,10 +35,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QDate, QLocale, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QDateEdit,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -74,6 +76,7 @@ from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
 from dplanner.modules.time_estimates.chart import ChartData, ProgressChart
 from dplanner.modules.time_estimates.milestones import (
+    DATE_FORMAT,
     MilestoneEntry,
     MilestoneList,
     PalettePicker,
@@ -87,8 +90,12 @@ from dplanner.modules.time_estimates.progress import (
     Snapshot,
     Stretch,
     actual,
-    earlier_plans,
+    baseline,
+    changes_since,
+    delta,
+    delta_words,
     expected,
+    landings,
     read_history,
     tally,
 )
@@ -110,6 +117,7 @@ from dplanner.modules.time_estimates.schedule import (
     write_project,
 )
 from dplanner.modules.time_estimates.view import FocusBar, MatrixView
+from dplanner.theme.icons import close_icon
 
 TIME_KIND = "time"
 REFRESH_DELAY_MS = 500
@@ -144,6 +152,10 @@ class TimeEstimatesDeps:
     milestone_label: Callable[[Step], str]
     # Where a step stands, through the status aspect's reader — what "landed" means here.
     status_for: Callable[[Step], str]
+    # What each estimate was before, and the key a row prints: the change report behind
+    # the chart's delta, read off the steps themselves.
+    estimate_history: Callable[[Step], list[tuple[date, float]]]
+    step_key: Callable[[Step], str]
     # When the project's work begins, and how a calendar click re-dates it — whoever
     # owns start dates answers both, one undoable command per click.
     start_of: Callable[[ProjectId], date]
@@ -174,6 +186,8 @@ class TimeEstimatesActivity(EntityActivity):
         self._calendar_lens = True
         self._picked: StepId | None = None
         self._by_days = False
+        self._basis: date | None = None  # None: the project's start.
+        self._loading_basis = False
         self._syncing_team = False
 
         # -- left: what you set --------------------------------------------------------------
@@ -277,14 +291,36 @@ class TimeEstimatesActivity(EntityActivity):
             progress_row.addWidget(button)
         self.steps_button.setChecked(True)
         self._measures.idClicked.connect(self._on_measure)
-        progress_row.addSpacing(CAPTION_GAP)
-        self.earlier_button = self._measure_button(
-            "Earlier plans", "Show the landings the plan promised on earlier days"
-        )
-        self.earlier_button.setChecked(True)
-        self.earlier_button.toggled.connect(lambda _on: self._render())
-        progress_row.addWidget(self.earlier_button)
         right.addWidget(self.progress_bar)
+
+        # The change since the basis, and the basis itself — the start unless picked.
+        self.delta_bar = QWidget(answer)
+        delta_row = QHBoxLayout(self.delta_bar)
+        delta_row.setContentsMargins(0, 0, 0, 0)
+        delta_row.setSpacing(BUTTON_GAP)
+        self.delta_figure = QLabel(self.delta_bar)
+        self.delta_figure.setObjectName("InspectorNote")
+        self.delta_figure.setWordWrap(True)
+        delta_row.addWidget(self.delta_figure, 1)
+        self.basis_caption = QLabel("vs plan at", self.delta_bar)
+        self.basis_caption.setObjectName("InspectorNote")
+        delta_row.addWidget(self.basis_caption)
+        self.basis = QDateEdit(self.delta_bar)
+        self.basis.setCalendarPopup(True)
+        self.basis.setLocale(QLocale(QLocale.Language.English))
+        self.basis.setDisplayFormat(DATE_FORMAT)
+        self.basis.setKeyboardTracking(False)
+        self.basis.setToolTip("The day to compare the plan against — the start by default")
+        self.basis.dateChanged.connect(self._on_basis)
+        delta_row.addWidget(self.basis)
+        self.basis_reset = QToolButton(self.delta_bar)
+        self.basis_reset.setAutoRaise(True)
+        self.basis_reset.setIcon(close_icon(self.delta_bar.palette().text().color().name()))
+        self.basis_reset.setToolTip("Back to the project's start")
+        self.basis_reset.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.basis_reset.clicked.connect(lambda: self._set_basis(None))
+        delta_row.addWidget(self.basis_reset)
+        right.addWidget(self.delta_bar)
 
         self.chart = ProgressChart(answer)
         right.addWidget(self.chart)
@@ -390,6 +426,11 @@ class TimeEstimatesActivity(EntityActivity):
     def by_days(self) -> bool:
         return self._by_days
 
+    @property
+    def basis_day(self) -> date:
+        """The day the plan is compared against: picked, else the project's start."""
+        return self._basis or self._deps.start_of(self.project_id)
+
     def snapshot(self, today: date | None = None) -> Snapshot | None:
         """The plan today, stretch by stretch, for the selected team — what the chart and
         the rows' percentages are read from, and what the recorder writes."""
@@ -403,6 +444,7 @@ class TimeEstimatesActivity(EntityActivity):
                     tally=tally(phase.steps, self._deps.days_for, self._deps.status_for),
                     start=phase.start,
                     finish=phase.finish,
+                    landings=landings(phase, self._deps.days_for),
                 )
                 for phase in self._selected_cell().phases
             ),
@@ -416,6 +458,15 @@ class TimeEstimatesActivity(EntityActivity):
 
     def _on_measure(self, chosen: int) -> None:
         self._by_days = chosen == 1
+        self._render()
+
+    def _on_basis(self, picked: QDate) -> None:
+        if not self._loading_basis:
+            self._set_basis(date(picked.year(), picked.month(), picked.day()))
+
+    def _set_basis(self, when: date | None) -> None:
+        """A way of looking, not a plan fact: view state, re-rendered, never stored."""
+        self._basis = when
         self._render()
 
     def _on_team_picked(self) -> None:
@@ -594,20 +645,42 @@ class TimeEstimatesActivity(EntityActivity):
             f"{reached.done} of {reached.steps} steps done · "
             f"{format_days(reached.done_days)} of {format_days(reached.days)} estimated"
         )
-        history = read_history(self._project())
+        project = self._project()
+        history = read_history(project)
+        basis = self.basis_day
+        then = baseline(history, basis)
+        self._loading_basis = True
+        try:
+            self.basis.setDate(QDate(basis.year, basis.month, basis.day))
+        finally:
+            self._loading_basis = False
+        self.basis_reset.setVisible(self._basis is not None)
+        moved = delta(then, now, key) if then is not None else None
+        if then is None:
+            said, why = "no earlier plan recorded yet", ""
+        elif moved is None:
+            said, why = f"not in the plan on {format_date(then.day)}", ""
+        else:
+            said = delta_words(moved, then.day)
+            # Why it moved: the steps born and the estimates changed after that record.
+            changes = changes_since(
+                project, then.day, self._deps.days_for, self._deps.estimate_history
+            )
+            why = "\n".join(changes.lines(self._deps.step_key))
+        self.delta_figure.setText(said)
+        self.delta_figure.setToolTip(why)
         self.chart.show_data(
             ChartData(
                 label=label,
                 color=color,
                 today=now.day,
-                expected=tuple(
-                    expected(calendar.phases, self._deps.days_for, key, by_days=self._by_days)
-                ),
+                expected=tuple(expected(now, key, by_days=self._by_days)),
                 actual=tuple(actual(history, now, key, by_days=self._by_days)),
-                earlier=tuple(earlier_plans(history, now, key, by_days=self._by_days)),
+                baseline=tuple(expected(then, key, by_days=self._by_days)) if then else (),
+                baseline_day=then.day if then is not None else None,
                 finish=now.landing(key),
+                baseline_finish=then.landing(key) if then is not None else None,
                 by_days=self._by_days,
-                show_earlier=self.earlier_button.isChecked(),
             )
         )
 

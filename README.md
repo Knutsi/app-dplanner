@@ -41,9 +41,10 @@ step gathers every test it waits on, and a *test run* records what each one did.
 image and file a project carries is browsable in one place — the Assets tab and
 `dplanner asset` list what exists, who uses each, and what a sweep may safely remove —
 and any prose editor can reuse one with Insert from Assets…. The Time Estimates tab
-also says how far each milestone has come against the date the plan promises — the
-plan's curve, what actually landed, and the landings promised on earlier days — and
-`dplanner progress show` prints the same. The decisions a project made along the way
+also says how far each milestone has come against the plan as it stood at the start —
+the plan then, the plan now with the change between them, and what actually landed — and
+`dplanner progress show` prints the same, with the steps and estimates that moved it.
+The decisions a project made along the way
 are a log beside it (`dplanner decision add`, the project panel's Decisions card) that
 every agent's briefing carries.
 

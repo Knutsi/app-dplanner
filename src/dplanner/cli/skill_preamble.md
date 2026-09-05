@@ -54,10 +54,12 @@ you work. So:
   staffing lands between them — read the labels, and quote the one you mean.
   `dplanner schedule matrix` prices the staffings in between and dates every milestone
   for the project's team (`schedule team` sets it), and **`dplanner progress show`** says
-  how far each milestone has come — by steps and by estimated days — against the date
-  the plan promises, with every earlier promise the history recorded. That history is
-  what the window writes as the plan changes; when you finish a step with no window
-  open, `dplanner progress record <project>` writes the day's row yourself.
+  how far each milestone has come — by steps and by estimated days — against the plan
+  as it stood at the start (or at `--basis DATE`): what was added since, how the landing
+  moved, and which steps were born or re-estimated (`estimate show <step>` prints an
+  estimate's earlier values). That history is what the window writes as the plan
+  changes; when you finish a step with no window open, `dplanner progress record
+  <project>` writes the day's row yourself.
 - **Every `dplanner` command reaches the plan the window shows, from anywhere in the
   repository** — a worktree included: inside one, the walk finds the branch's copy of the
   plan and resolves it to the library's project of the same id, so a status set from an

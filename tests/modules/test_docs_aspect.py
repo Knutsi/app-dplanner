@@ -351,9 +351,7 @@ def test_status_names_every_collector_and_what_it_needs(documented):
     assert "compiled set" in row["message"]
 
 
-def test_compiled_set_lands_the_document_and_stamps_it_current(
-    documented, cli_stdin, workspace
-):
+def test_compiled_set_lands_the_document_and_stamps_it_current(documented, cli_stdin, workspace):
     cli_stdin("compiled", "set", "Auth", "--file", "-", stdin="# Signing in\n")
     folder = workspace / "discovery" / "steps" / "auth" / "modules"
     assert (folder / "docs_compiled.md").read_text() == "# Signing in\n"

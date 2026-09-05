@@ -265,6 +265,8 @@ def test_progress_show_counts_what_landed_toward_each_milestone(staged):
     assert whole["expected"][-1] == {"date": "2026-09-23", "share": 1.0}
     assert whole["actual"] == [{"date": date.today().isoformat(), "share": 0.25}]
     assert data["recorded_days"] == 0
+    assert whole["baseline"] is None and whole["delta"] is None
+    assert "no earlier plan" not in staged("progress", "show", "Discovery")
     said = staged("progress", "show", "Discovery")
     assert "v1: 50% by steps (1 of 2), 50% by days (2d of 4d) — lands 16 September" in said
     assert "All work: 25% by steps" in said
@@ -278,33 +280,81 @@ def test_progress_show_counts_what_landed_toward_each_milestone(staged):
     )
 
 
-def test_progress_record_writes_a_day_once_and_earlier_promises_are_kept(staged, cli_library):
+def test_progress_record_writes_a_day_once_and_the_delta_reads_against_it(
+    staged, cli_library, workspace
+):
     assert "progress recorded" in staged("progress", "record", "Discovery")
     assert "nothing changed" in staged("progress", "record", "Discovery")
     library = LibraryStore(cli_library).load()
     (row,) = library.projects[0].module_data["progress_history"]["days"]
     assert row["day"] == date.today().isoformat() and len(row["stretches"]) == 2
-    # More work behind v2 moves its landing; the day it was promised for 23 September
-    # becomes an earlier plan.
+    assert row["stretches"][0]["landings"][-1] == {"date": "2026-09-16", "steps": 1, "days": 2.0}
+    data = json.loads(staged("progress", "show", "Discovery", "--json"))
+    assert data["basis"] == "2026-09-07" and data["baseline_day"] == date.today().isoformat()
+    assert data["scopes"][1]["delta"] == {
+        "steps": 0,
+        "days": 0.0,
+        "finish_then": "2026-09-23",
+        "finish_now": "2026-09-23",
+        "shift": 0,
+    }
+    assert "v2: 0% by steps (0 of 4), 0% by days (0d of 7d) — lands 23 September; unchanged" in (
+        staged("progress", "show", "Discovery")
+    )
+    # Date the record back to the 1st: a change on the record's own day is inside that
+    # day's record, so today's edits only read as changes against an earlier day.
+    history_file = next(workspace.glob("*/modules/progress_history.json"))
+    entry = json.loads(history_file.read_text())
+    entry["days"][0]["day"] = "2026-09-01"
+    history_file.write_text(json.dumps(entry))
+    for step_file in workspace.glob("*/steps/*/step.json"):  # born before that record
+        node = json.loads(step_file.read_text())
+        node["created"] = "2026-08-30T09:00:00+00:00"
+        step_file.write_text(json.dumps(node))
+    # More work behind v2 moves its landing; the report says what moved it.
     staged("step", "add", "Discovery", "Polish", "--days", "2")
     staged("step", "link", "ship-the-docs", "polish")
+    staged("estimate", "set", "read-the-spec", "--days", "3")
     data = json.loads(staged("progress", "show", "Discovery", "--json"))
     v2 = data["scopes"][1]
-    assert v2["finish"] == "2026-09-28"  # four days of polishing, then four of shipping
-    assert v2["earlier"] == [
+    assert (
+        v2["finish"] == "2026-09-30"
+    )  # six days of reading, then four of polishing, four of shipping
+    assert data["baseline_day"] == "2026-09-01" and data["changes"]["since"] == "2026-09-01"
+    assert v2["baseline"]["finish"] == "2026-09-23" and v2["baseline"]["steps"] == 4
+    assert v2["baseline"]["expected"][0] == {"date": "2026-09-07", "share": 0.0}
+    assert v2["delta"]["steps"] == 1 and v2["delta"]["days"] == 3.0 and v2["delta"]["shift"] == 5
+    assert [(row["key"], row["days"]) for row in data["changes"]["added"]] == [("S5", 2.0)]
+    assert data["changes"]["estimates"] == [
         {
+            "step": data["changes"]["estimates"][0]["step"],
+            "key": "S1",
+            "title": "Read the spec",
             "day": date.today().isoformat(),
-            "share": 0.0,
-            "finish": "2026-09-23",
-            "steps": 4,
-            "days": 7.0,
+            "from": 2.0,
+            "to": 3.0,
         }
     ]
-    assert "earlier said 23 September" in staged("progress", "show", "Discovery")
-    staged("progress", "record", "Discovery")  # last-wins within the day
+    said = staged("progress", "show", "Discovery")
+    assert "since 1 September: +1 step, +3d, lands 5 working days later (was 23 September)" in said
+    assert "added since 1 September: S5 (2d)" in said
+    assert "re-estimated since 1 September: S1 2d → 3d on" in said
+    staged("progress", "record", "Discovery")  # a new day's row, after the dated-back one
     library = LibraryStore(cli_library).load()
-    (row,) = library.projects[0].module_data["progress_history"]["days"]
-    assert row["stretches"][1]["finish"] == "2026-09-28"
+    first, second = library.projects[0].module_data["progress_history"]["days"]
+    assert first["day"] == "2026-09-01" and second["stretches"][1]["finish"] == "2026-09-30"
+
+
+def test_the_basis_can_be_any_day_and_a_bad_one_is_refused(staged):
+    staged("progress", "record", "Discovery")
+    data = json.loads(staged("progress", "show", "Discovery", "--basis", "2030-01-01", "--json"))
+    assert data["basis"] == "2030-01-01" and data["baseline_day"] == date.today().isoformat()
+    assert "compared with the plan recorded" in staged(
+        "progress", "show", "Discovery", "--basis", "2030-01-01"
+    )
+    assert "YYYY-MM-DD" in staged("progress", "show", "Discovery", "--basis", "soon", expect=1)
+    fresh = json.loads(staged("progress", "show", "Discovery", "--basis", "2020-01-01", "--json"))
+    assert fresh["baseline_day"] == date.today().isoformat()  # older than its history
 
 
 def test_progress_on_a_stepless_project_says_so(cli):

@@ -11,6 +11,16 @@ model boundary, because an ``int`` writes as ``5`` where a reloaded ``float`` wr
 was written. Module data is opaque to the model and ``stamped()`` writes whatever dict it is
 handed, so that duty belongs to whoever owns the number. This is that owner.
 
+**An estimate remembers what it was.** Reviewing how a plan grew needs to know that S7
+was 3 days until the 12th and 5 after — so ``write`` carries a ``history`` beside the
+number: the value that stood at the start of each day on which it changed, one row per
+day (a second change on the same day keeps that day's first row, the same last-wins
+rule the progress history keeps). Only the days a value *changed* are written, and only
+when the writer hands over the entry it is replacing; nothing is derived from it, it is
+read back by ``dplanner estimate show`` and the change report ``progress show`` prints.
+Format 2 for the key, so an older build refuses to rewrite the entry rather than dropping
+the history on its next write.
+
 **This module used to be ``step_estimation``.** It became ``estimation`` when it grew a
 project's start date and the schedule over both, so the old id is retired and its data taken
 over here — the on-disk id was always the contract between the two, which is why a rename
@@ -18,6 +28,7 @@ needs no module to import another. The takeover is also what drops the ``confide
 the aspect used to carry: it rebuilds an entry from ``days`` alone.
 """
 
+from datetime import date
 from typing import Any
 
 from dplanner.core.module_data import ModuleDataFormat, Takeover, stamped
@@ -25,6 +36,7 @@ from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.model import Step
 
 MODULE_ID = "estimation"
+HISTORY_KEY = "history"
 
 # What ``step_estimation`` last wrote. Frozen at format 1 forever, whatever this module does
 # next: it is the retired schema's history, and history does not gain entries.
@@ -58,8 +70,16 @@ def _from_step_estimation(retired: dict[str, Any], existing: dict[str, Any]) -> 
     return kept if days is None else kept | {"days": days}
 
 
+def _to_format_2(data: dict[str, Any]) -> dict[str, Any]:
+    """Format 1 shapes are valid format 2 shapes: the bump exists for the ``history`` key,
+    so an older build refuses to rewrite an entry rather than dropping it."""
+    return dict(data)
+
+
 DATA_FORMAT = ModuleDataFormat(
     MODULE_ID,
+    2,
+    (_to_format_2,),
     takeovers=(Takeover(retired=RETIRED_STEP_ESTIMATION, convert=_from_step_estimation),),
 )
 
@@ -87,17 +107,59 @@ def enabled(step: Step) -> bool:
     return not (entry and entry.get("off"))
 
 
-def write(days: float | None, *, on: bool = True) -> dict[str, Any]:
+def read_history(step: Step) -> list[tuple[date, float]]:
+    """The values the estimate had before, each with the day it was replaced on, oldest
+    first. Unreadable rows read as absent."""
+    entry = step.module_data.get(MODULE_ID) or {}
+    return _history_in(entry)
+
+
+def _history_in(entry: dict[str, Any]) -> list[tuple[date, float]]:
+    raw = entry.get(HISTORY_KEY)
+    if not isinstance(raw, list):
+        return []
+    found: list[tuple[date, float]] = []
+    for row in raw:
+        if not isinstance(row, dict) or not isinstance(row.get("day"), str):
+            continue
+        was = _days_in(row)
+        try:
+            when = date.fromisoformat(row["day"])
+        except ValueError:
+            continue
+        if was is not None:
+            found.append((when, was))
+    return found
+
+
+def write(
+    days: float | None,
+    *,
+    on: bool = True,
+    previous: dict[str, Any] | None = None,
+    today: date | None = None,
+) -> dict[str, Any]:
     """The entry to store.
 
     Three cases: sized writes the number; on but unsized gives ``{}``, which removes the
-    file and leaves the aspect on by absence; off writes the opt-out marker.
+    file and leaves the aspect on by absence; off writes the opt-out marker. ``previous``
+    is the entry being replaced: its history rides along, and a value it held that
+    differs from ``days`` joins the history under today — the first change of a day
+    only, so a day's row is the value that stood when the day began.
     """
     if not on:
         return stamped({"off": True}, DATA_FORMAT.version)
     if days is None:
-        return {}
-    return stamped({"days": float(days)}, DATA_FORMAT.version)
+        return {}  # Unsized is unsized: nothing to remember it by, and no file.
+    history = _history_in(previous) if previous else []
+    was = _days_in(previous) if previous else None
+    when = today or date.today()
+    if was is not None and was != days and not any(day == when for day, _ in history):
+        history.append((when, was))
+    entry: dict[str, Any] = {"days": float(days)}
+    if history:
+        entry[HISTORY_KEY] = [{"day": day.isoformat(), "days": float(was)} for day, was in history]
+    return stamped(entry, DATA_FORMAT.version)
 
 
 def summary(step: Step) -> str:

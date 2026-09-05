@@ -14,6 +14,7 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Step, TextEdit
+from dplanner.domain.schedule import format_date
 from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
 from dplanner.modules.estimation.aspect import write as write_days
 from dplanner.modules.estimation.schedule import write_start
@@ -598,8 +599,8 @@ def test_the_chart_follows_the_picked_milestone_and_the_measure(services, staged
     )
     tab.days_button.click()
     assert tab.chart._data.by_days and tab.chart._data.actual[-1] == (date.today(), 0.5)
-    assert "plan 50% of days" in tab.chart.tooltip_at(date(2026, 9, 10))
-    assert "actual 50% of days" in tab.chart.tooltip_at(date.today())
+    assert "plan now: 50% of days" in tab.chart.tooltip_at(date(2026, 9, 10))
+    assert "actual: 50% of days" in tab.chart.tooltip_at(date.today())
     assert tab.chart.tooltip_at(date(2026, 9, 16)).startswith("16 September")
     assert tab.chart.span[0] <= date(2026, 9, 7) and tab.chart.span[1] >= date(2026, 9, 16)
 
@@ -629,11 +630,12 @@ def test_the_recorder_writes_the_day_once_off_the_undo_stack(services, staged):
     assert entry["format"] == 1 and len(entry["days"]) == 1
 
 
-def test_earlier_promises_show_behind_the_plan_until_toggled_off(services, staged):
-    """A day recorded with a different landing is an earlier plan on the chart; the
-    toggle hides them and the legend drops them."""
+def test_the_chart_compares_against_the_plan_at_the_basis_and_says_what_moved(services, staged):
+    """The baseline is the plan as recorded on the basis day — the start unless picked —
+    and the delta figure says how the scope moved since, with the reasons in its tip."""
     from dplanner.modules.time_estimates.progress import (
         HISTORY_ID,
+        Landing,
         Snapshot,
         Stretch,
         Tally,
@@ -645,18 +647,87 @@ def test_earlier_promises_show_behind_the_plan_until_toggled_off(services, stage
     old = Snapshot(
         date(2026, 9, 1),
         (
-            Stretch(draft.id, Tally(2, 0, 4.0, 0.0), date(2026, 9, 7), date(2026, 9, 14)),
-            Stretch(ship.id, Tally(2, 0, 3.0, 0.0), date(2026, 9, 15), date(2026, 9, 21)),
+            Stretch(
+                draft.id,
+                Tally(2, 0, 4.0, 0.0),
+                date(2026, 9, 7),
+                date(2026, 9, 14),
+                (Landing(date(2026, 9, 9), 1, 2.0), Landing(date(2026, 9, 14), 1, 2.0)),
+            ),
+            Stretch(
+                ship.id,
+                Tally(1, 0, 2.0, 0.0),
+                date(2026, 9, 15),
+                date(2026, 9, 18),
+                (Landing(date(2026, 9, 18), 1, 2.0),),
+            ),
         ),
     )
     SetModuleDataCommand(staged.id, HISTORY_ID, write_history([old])).redo(library)
     tab = services.tabs.open("time", staged.id)
-    (plan,) = tab.chart._data.earlier
-    assert (plan.day, plan.finish, plan.share) == (date(2026, 9, 1), date(2026, 9, 21), 0.0)
-    assert tab.chart.span[0] <= date(2026, 9, 1)
-    assert "the plan said 21 September" in tab.chart.tooltip_at(date(2026, 9, 10))
-    tab.earlier_button.click()
-    assert not tab.chart._data.show_earlier
-    assert "the plan said" not in tab.chart.tooltip_at(date(2026, 9, 10))
-    # The actual line still reaches back to the recorded day: the record is history too.
-    assert tab.chart._data.actual[0] == (date(2026, 9, 1), 0.0)
+    assert tab.basis_day == date(2026, 9, 7)  # the project's start
+    assert not tab.basis_reset.isVisibleTo(tab.widget)
+    # The recorder has since written today's row too; pick the 1st to compare against it
+    # whatever today is.
+    tab.basis.setDate(QDate(2026, 9, 1))
+    assert tab.basis_day == date(2026, 9, 1) and tab.basis_reset.isVisibleTo(tab.widget)
+    data = tab.chart._data
+    assert data.baseline_day == date(2026, 9, 1) and data.baseline_finish == date(2026, 9, 18)
+    assert data.baseline[0] == (date(2026, 9, 7), 0.0) and data.baseline[-1] == (
+        date(2026, 9, 18),
+        1.0,
+    )
+    assert data.finish == date(2026, 9, 23)
+    assert tab.delta_figure.text() == (
+        "since 1 September: +1 step, +1d, lands 3 working days later (was 18 September)"
+    )
+    assert "plan at 1 September" in tab.chart.tooltip_at(date(2026, 9, 10))
+    assert "plan now" in tab.chart.tooltip_at(date(2026, 9, 10))
+    # A basis after every record compares against the last one — today's own.
+    tab.basis.setDate(QDate(2030, 1, 1))
+    assert tab.chart._data.baseline_day == date.today()
+    assert tab.delta_figure.text() == f"unchanged since {format_date(date.today())}"
+    tab.basis_reset.click()
+    assert tab.basis_day == date(2026, 9, 7) and not tab.basis_reset.isVisibleTo(tab.widget)
+
+
+def test_the_delta_tip_names_what_moved_the_plan(services, staged):
+    """Against an earlier day's record, the tip lists the steps born and the estimates
+    changed since — the reasons behind the figure."""
+    from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION
+    from dplanner.modules.estimation.aspect import write as write_days_with
+    from dplanner.modules.time_estimates.progress import (
+        HISTORY_ID,
+        Snapshot,
+        Stretch,
+        Tally,
+        write_history,
+    )
+
+    library = services.document
+    read, draft, _docs, ship = staged.steps
+    for step in staged.steps:  # born before the record they are compared against
+        step.created = "2026-08-30T09:00:00+00:00"
+    old = Snapshot(
+        date(2026, 9, 1),
+        (
+            Stretch(draft.id, Tally(2, 0, 4.0, 0.0), date(2026, 9, 7), date(2026, 9, 16)),
+            Stretch(ship.id, Tally(2, 0, 3.0, 0.0), date(2026, 9, 17), date(2026, 9, 23)),
+        ),
+    )
+    SetModuleDataCommand(staged.id, HISTORY_ID, write_history([old])).redo(library)
+    tab = services.tabs.open("time", staged.id)
+    tab.basis.setDate(QDate(2026, 9, 1))
+    assert tab.delta_figure.text() == "unchanged since 1 September"
+    assert tab.delta_figure.toolTip() == ""
+    services.undo.push(
+        SetModuleDataCommand(
+            read.id, ESTIMATION, write_days_with(3.0, previous=read.module_data[ESTIMATION])
+        )
+    )
+    AddNodeCommand(staged.id, Step(title="Polish")).redo(library)
+    assert tab.delta_figure.text().startswith("since 1 September: +1 step, +1d")
+    assert tab.delta_figure.toolTip().splitlines() == [
+        "added since 1 September: S5",
+        f"re-estimated since 1 September: S1 2d → 3d on {format_date(date.today())}",
+    ]

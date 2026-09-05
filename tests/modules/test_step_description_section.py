@@ -18,9 +18,7 @@ def step(services, make_project):
 
 @pytest.fixture
 def section(services, step):
-    spec = next(
-        s for s in services.step_details.sections() if s.id == "step_description.details"
-    )
+    spec = next(s for s in services.step_details.sections() if s.id == "step_description.details")
     section = spec.factory()
     yield section
     section.dispose()
@@ -67,9 +65,7 @@ def agent_on(services, step, separate=False):
     )
 
 
-def test_the_checkbox_appears_only_on_agent_steps_and_follows_the_model(
-    services, step, section
-):
+def test_the_checkbox_appears_only_on_agent_steps_and_follows_the_model(services, step, section):
     section.show_target(step.id)
     assert not section.separate_check.isVisibleTo(section)
     agent_on(services, step)  # No reselect: the checkbox follows the model.
@@ -113,9 +109,7 @@ def test_unchecking_confirms_and_drops_the_text_as_one_undo_step(
     assert separate_instruction(services.document.step(step.id))
 
 
-def test_a_declined_confirm_keeps_the_separate_instruction(
-    services, step, section, monkeypatch
-):
+def test_a_declined_confirm_keeps_the_separate_instruction(services, step, section, monkeypatch):
     import dplanner.modules.step_description.section as description_section
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
 

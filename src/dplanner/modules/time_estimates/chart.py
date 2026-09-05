@@ -1,14 +1,15 @@
-"""Expected against actual: where the plan said it would be, where it is, and where it
-said so before.
+"""The plan, the change in the plan, and the actual work: three lines on one chart.
 
-One line chart, the shape a trip planner's energy graph has — the plan's promise as a
-curve in the milestone's colour, what actually landed as a solid line in ink with a dot
-at today, and, faintly behind them, every earlier promise the history recorded, each a
-dashed line from the day it was made to the landing it named. The x axis is time from
-the plan's start to the latest landing anyone promised; the y axis is the share landed,
-by steps or by estimated days — the host's toggle. Two series share the plot, so a
-legend sits in its corner; the rest is tooltips, the calendar's rule: hovering answers
-with the date, the plan's share and the actual one.
+The shape a trip planner's energy graph has. The **baseline** — the plan as it stood on
+the basis day, the project's start unless the host picked another — is a dashed curve in
+the milestone's colour; the **plan now** is the same colour, solid; the band between them
+is the **change in the plan** since the basis, washed in the same hue, so a plan that
+grew shows as the area it grew by and a landing that moved as the gap between two marks
+on the 100 % line. What **actually** landed is a solid line in ink with a dot at today.
+The x axis is time from the earlier of the two plans' starts to the later of their
+landings; the y axis is the share landed, by steps or by estimated days — the host's
+toggle. Three series share the plot, so a legend sits in its corner; the rest is
+tooltips, the calendar's rule: hovering answers with the date and all three shares.
 
 Every colour but the milestone's shade comes from the palette at paint time — the axes
 and the actual line in ink, gridlines a whisper of it — and the marks keep the chart
@@ -33,7 +34,6 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from dplanner.domain.schedule import format_date
-from dplanner.modules.time_estimates.progress import EarlierPlan
 from dplanner.modules.time_estimates.view import SECONDARY_ALPHA
 
 CHART_HEIGHT = 200
@@ -44,12 +44,14 @@ TOP_INSET = 12
 RIGHT_INSET = 12
 # The dataviz mark grammar: 2 px lines, a marker of at least 8 px ringed in the surface.
 LINE_WIDTH = 2.0
-EARLIER_WIDTH = 1.5
 MARKER = 8.0
 RING = 2.0
 LANDING_MARK = 6.0
 GRID_ALPHA = 28
-EARLIER_ALPHA = 90
+# The change in the plan: the series hue as a wash between the two curves (the dataviz
+# rule for an area — about a tenth).
+BAND_ALPHA = 28
+BASELINE_ALPHA = 170
 LEGEND_KEY = 18
 LEGEND_GAP = 6
 LEGEND_SPACING = 14
@@ -61,17 +63,19 @@ Point = tuple[date, float]
 
 @dataclass(frozen=True)
 class ChartData:
-    """What one scope's chart shows: the promise, the record, and the earlier promises."""
+    """What one scope's chart shows: the plan now, the plan on the basis day, and what
+    actually landed. ``baseline_day`` names the recorded day the baseline came from."""
 
     label: str
     color: QColor
     today: date
     expected: tuple[Point, ...] = ()
     actual: tuple[Point, ...] = ()
-    earlier: tuple[EarlierPlan, ...] = ()
+    baseline: tuple[Point, ...] = ()
+    baseline_day: date | None = None
     finish: date | None = None
+    baseline_finish: date | None = None
     by_days: bool = False
-    show_earlier: bool = True
 
 
 def _share_at(points: tuple[Point, ...], when: date) -> float | None:
@@ -107,11 +111,8 @@ class ProgressChart(QWidget):
         self._data = data
         if data is not None:
             dates = [data.today, *(when for when, _ in data.expected), *(w for w, _ in data.actual)]
-            if data.finish is not None:
-                dates.append(data.finish)
-            if data.show_earlier:
-                dates += [plan.day for plan in data.earlier]
-                dates += [plan.finish for plan in data.earlier]
+            dates += [when for when, _ in data.baseline]
+            dates += [when for when in (data.finish, data.baseline_finish) if when is not None]
             self._first = min(dates) - timedelta(days=PAD_DAYS)
             self._last = max(dates) + timedelta(days=PAD_DAYS)
             if self._last <= self._first:
@@ -133,19 +134,17 @@ class ProgressChart(QWidget):
             return ""
         lines = [format_date(when, today=data.today)]
         unit = "of days" if data.by_days else "of steps"
+        was = _share_at(data.baseline, when)
+        if was is not None and data.baseline_day is not None:
+            lines.append(
+                f"plan at {format_date(data.baseline_day, today=data.today)}: {was:.0%} {unit}"
+            )
         planned = _share_at(data.expected, when)
         if planned is not None:
-            lines.append(f"plan {planned:.0%} {unit}")
+            lines.append(f"plan now: {planned:.0%} {unit}")
         landed = _share_at(data.actual, when)
         if landed is not None and when <= data.today:
-            lines.append(f"actual {landed:.0%} {unit}")
-        if data.show_earlier:
-            for plan in data.earlier:
-                if plan.day <= when <= plan.finish:
-                    lines.append(
-                        f"on {format_date(plan.day, today=data.today)} the plan said "
-                        f"{format_date(plan.finish, today=data.today)}"
-                    )
+            lines.append(f"actual: {landed:.0%} {unit}")
         return "\n".join(lines)
 
     # -- geometry --------------------------------------------------------------------------------
@@ -221,21 +220,34 @@ class ProgressChart(QWidget):
             x = self._x(data.today)
             painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
 
-        # Earlier promises: faint dashed lines to the landings they named.
-        if data.show_earlier:
-            faint = QColor(data.color)
-            faint.setAlpha(EARLIER_ALPHA)
-            pen = QPen(faint, EARLIER_WIDTH)
-            pen.setStyle(Qt.PenStyle.DashLine)
-            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-            painter.setPen(pen)
-            for plan in data.earlier:
-                painter.drawLine(
-                    QPointF(self._x(plan.day), self._y(plan.share)),
-                    QPointF(self._x(plan.finish), self._y(1.0)),
-                )
+        # The change in the plan: the wash between the baseline and the plan now.
+        if len(data.baseline) >= 2 and len(data.expected) >= 2:
+            band = QPainterPath(self._point(data.expected[0]))
+            for point in data.expected[1:]:
+                band.lineTo(self._point(point))
+            for point in reversed(data.baseline):
+                band.lineTo(self._point(point))
+            band.closeSubpath()
+            wash = QColor(data.color)
+            wash.setAlpha(BAND_ALPHA)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(wash)
+            painter.drawPath(band)
 
-        # The plan's promise, in the milestone's colour; its landing as a filled mark.
+        # The baseline: the plan as it stood on the basis day, dashed, its landing hollow.
+        faded = QColor(data.color)
+        faded.setAlpha(BASELINE_ALPHA)
+        self._draw_line(painter, data.baseline, faded, Qt.PenStyle.DashLine)
+        if data.baseline_finish is not None:
+            painter.setPen(QPen(faded, LINE_WIDTH))
+            painter.setBrush(surface)
+            painter.drawEllipse(
+                QPointF(self._x(data.baseline_finish), self._y(1.0)),
+                LANDING_MARK / 2,
+                LANDING_MARK / 2,
+            )
+
+        # The plan now, in the milestone's colour; its landing as a filled mark.
         self._draw_line(painter, data.expected, data.color)
         if data.finish is not None:
             painter.setPen(Qt.PenStyle.NoPen)
@@ -258,13 +270,23 @@ class ProgressChart(QWidget):
         self._draw_legend(painter, plot, data, ink, secondary)
         painter.end()
 
-    def _draw_line(self, painter: QPainter, points: tuple[Point, ...], color: QColor) -> None:
+    def _point(self, point: Point) -> QPointF:
+        return QPointF(self._x(point[0]), self._y(point[1]))
+
+    def _draw_line(
+        self,
+        painter: QPainter,
+        points: tuple[Point, ...],
+        color: QColor,
+        style: Qt.PenStyle = Qt.PenStyle.SolidLine,
+    ) -> None:
         if len(points) < 2:
             return
-        path = QPainterPath(QPointF(self._x(points[0][0]), self._y(points[0][1])))
-        for when, share in points[1:]:
-            path.lineTo(QPointF(self._x(when), self._y(share)))
+        path = QPainterPath(self._point(points[0]))
+        for point in points[1:]:
+            path.lineTo(self._point(point))
         pen = QPen(color, LINE_WIDTH)
+        pen.setStyle(style)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
@@ -274,17 +296,19 @@ class ProgressChart(QWidget):
     def _draw_legend(
         self, painter: QPainter, plot: QRectF, data: ChartData, ink: QColor, secondary: QColor
     ) -> None:
-        """Two series, so a legend: short line keys and the words, in the top-left corner
-        — the one the lines leave empty, since both climb from the bottom-left."""
+        """Three series, so a legend: short line keys and the words, in the top-left corner
+        — the one the lines leave empty, since all of them climb from the bottom-left."""
         metrics = painter.fontMetrics()
-        entries: list[tuple[str, QColor, Qt.PenStyle]] = [
-            ("Plan", data.color, Qt.PenStyle.SolidLine),
+        entries: list[tuple[str, QColor, Qt.PenStyle]] = []
+        if data.baseline and data.baseline_day is not None:
+            faded = QColor(data.color)
+            faded.setAlpha(BASELINE_ALPHA)
+            when = format_date(data.baseline_day, today=data.today)
+            entries.append((f"Plan at {when}", faded, Qt.PenStyle.DashLine))
+        entries += [
+            ("Plan now" if data.baseline else "Plan", data.color, Qt.PenStyle.SolidLine),
             ("Actual", ink, Qt.PenStyle.SolidLine),
         ]
-        if data.show_earlier and data.earlier:
-            faint = QColor(data.color)
-            faint.setAlpha(EARLIER_ALPHA)
-            entries.append(("Earlier plans", faint, Qt.PenStyle.DashLine))
         x = plot.left() + LEGEND_SPACING
         y = plot.top() + metrics.height() / 2
         for label, color, style in entries:

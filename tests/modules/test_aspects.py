@@ -89,6 +89,45 @@ def test_an_integer_estimate_is_stored_as_a_float(cli, workspace):
     assert '"days": 3.0' in path.read_text()
 
 
+def test_an_estimate_remembers_what_it_was(cli, reload, workspace):
+    """Each write carries the values before it, one row per day they changed — the first
+    change of a day only — and `estimate show` reads them back."""
+    from datetime import date
+
+    from dplanner.modules.estimation.aspect import read_history, write
+
+    cli("estimate", "set", "Read the spec", "--days", "3")
+    cli("estimate", "set", "Read the spec", "--days", "5")
+    cli("estimate", "set", "Read the spec", "--days", "4")
+    step = first_step(reload())
+    assert read(step) == 4.0
+    assert read_history(step) == [(date.today(), 3.0)]  # the day's first value, kept
+    entry = json.loads(
+        (workspace / "discovery/steps/read-the-spec/modules/estimation.json").read_text()
+    )
+    assert entry == {
+        "days": 4.0,
+        "history": [{"day": date.today().isoformat(), "days": 3.0}],
+        "format": 2,
+    }
+    said = cli("estimate", "show", "Read the spec")
+    assert said.splitlines()[0] == "Read the spec: 4 days"
+    assert said.splitlines()[1].startswith("  was 3 days until")
+    shown = json.loads(cli("estimate", "show", "Read the spec", "--json"))
+    assert shown["days"] == 4.0 and shown["history"] == [
+        {"day": date.today().isoformat(), "days": 3.0}
+    ]
+    # Another day's change adds a row; the same value again adds nothing.
+    later = write(6.0, previous=entry, today=date(2030, 1, 2))
+    assert later["history"] == [
+        {"day": date.today().isoformat(), "days": 3.0},
+        {"day": "2030-01-02", "days": 4.0},
+    ]
+    assert write(6.0, previous=later, today=date(2030, 1, 3)) == later
+    # Unsizing leaves nothing behind, history included: an unsized step has no file.
+    assert write(None, previous=later) == {}
+
+
 def test_unestimated_is_not_zero(cli, reload):
     """ "We have not estimated this" and "this is free" are different claims."""
     assert read(first_step(reload())) is None
@@ -155,7 +194,7 @@ def test_a_step_estimation_entry_is_taken_over_and_loses_its_confidence(cli, wor
 
     cli("project", "list")  # Any verb: opening runs the module-data migrations.
     assert not (modules / "step_estimation.json").exists()
-    assert json.loads((modules / "estimation.json").read_text()) == {"days": 3.0, "format": 1}
+    assert json.loads((modules / "estimation.json").read_text()) == {"days": 3.0, "format": 2}
     assert read(first_step(reload())) == 3.0
 
 
@@ -197,7 +236,7 @@ def test_a_start_date_is_stored_on_the_project_not_the_step(cli, workspace):
     """A step's estimate and a project's start date are one module, on two node kinds."""
     cli("schedule", "start", "Discovery", "--date", "2026-09-07")
     path = workspace / "discovery/modules/estimation.json"
-    assert json.loads(path.read_text()) == {"start": "2026-09-07", "format": 1}
+    assert json.loads(path.read_text()) == {"start": "2026-09-07", "format": 2}
 
     cli("schedule", "start", "Discovery", "--clear")
     assert not path.exists()

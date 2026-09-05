@@ -13,9 +13,10 @@ from typing import Any
 from PySide6.QtWidgets import QVBoxLayout
 
 from dplanner.domain.model import Library, Step
+from dplanner.domain.schedule import format_date
 from dplanner.framework.module_data_section import FIELD_GAP, ModuleDataSection
 from dplanner.framework.undo import UndoService
-from dplanner.modules.estimation.aspect import MODULE_ID, read, write
+from dplanner.modules.estimation.aspect import MODULE_ID, read, read_history, write
 from dplanner.modules.estimation.quick_input import EstimateInput
 
 
@@ -40,6 +41,11 @@ class EstimateSection(ModuleDataSection):
 
     def load_step(self, step: Step | None) -> None:
         self._input.show_days(read(step) if step is not None else None)
+        # What the estimate was before, on the field itself: a review reads it by hovering.
+        history = read_history(step) if step is not None else []
+        self.days.setToolTip(
+            "\n".join(f"was {was:g}d until {format_date(when)}" for when, was in history)
+        )
 
     def entry(self, step: Step) -> dict[str, Any]:
-        return write(self._input.value())
+        return write(self._input.value(), previous=step.module_data.get(MODULE_ID))

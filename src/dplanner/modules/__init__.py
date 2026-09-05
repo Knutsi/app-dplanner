@@ -79,6 +79,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
     from dplanner.modules.estimation.aspect import read as estimated_days
+    from dplanner.modules.estimation.aspect import read_history as estimate_history
     from dplanner.modules.estimation.aspect import write as estimate_write
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.estimation.schedule import start_of, write_start
@@ -661,6 +662,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
             milestone_label=milestone_read,
             # What "landed" means: the status aspect's word, the progression board's seam.
             status_for=step_status,
+            # What each estimate was before, and the key a row prints: the change report
+            # behind the chart's delta.
+            estimate_history=estimate_history,
+            step_key=_step_key,
             start_of=lambda project_id: start_of(library.project(project_id)),
             # Clicking the calendar re-dates the plan: one undoable write of the
             # estimation module's own entry, composed here so neither module imports
@@ -1823,6 +1828,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
+    from dplanner.modules.estimation.aspect import read_history as estimate_history
     from dplanner.modules.estimation.schedule import start_of
     from dplanner.modules.feature import cli as feature_cli
     from dplanner.modules.feature.aspect import is_feature
@@ -1923,6 +1929,10 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
             status_for=step_status,
             start_of=start_of,
             milestone_label=milestone_read,
+            # What each estimate was before, for the change report — and the key every
+            # row prints, the one rule.
+            estimate_history=estimate_history,
+            key_of=_step_key,
         ),
         *github_cli.commands(),
         # A decision names the step it was made on by id and prints it by key — the

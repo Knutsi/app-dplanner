@@ -12,10 +12,11 @@ and ``--json``, so the three can never disagree. ``focus``, ``palette``, ``team`
 controls push.
 
 ``progress show`` prints what has landed toward each milestone, by steps and by estimated
-days, with the landing the plan promises and every earlier promise the history recorded;
-``progress record`` writes today's row of that history — what the window does by itself
-after every settled change, for a plan driven from the terminal (``progress.py`` has the
-shape and the reasoning).
+days, against the plan as recorded on the **basis** day — the project's start, or
+``--basis`` — and how the plan moved since: steps and days added, the landing shifted,
+and which steps were added or re-estimated after the basis; ``progress record`` writes
+today's row of that history — what the window does by itself after every settled change,
+for a plan driven from the terminal (``progress.py`` has the shape and the reasoning).
 
 The estimate, agent-step, status, milestone and start-date readers arrive as functions
 from the composition root, the same hand-over ``progression_cli.commands(status_for=…)``
@@ -25,7 +26,7 @@ Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -37,12 +38,14 @@ from dplanner.domain.model import Project, Step
 from dplanner.domain.schedule import Phase, format_date, format_days
 from dplanner.modules.time_estimates.progress import (
     HISTORY_ID,
-    EarlierPlan,
+    Delta,
     Snapshot,
     Tally,
     actual,
-    calendar_phases,
-    earlier_plans,
+    baseline,
+    changes_since,
+    delta,
+    delta_words,
     expected,
     read_history,
     recorded,
@@ -81,6 +84,9 @@ class Readers:
     status_for: Callable[[Step], str]
     start_of: Callable[[Project], date]
     milestone_label: Callable[[Step], str]
+    # What a step's estimate was before, each with the day it changed — the change report.
+    estimate_history: Callable[[Step], list[tuple[date, float]]]
+    key_of: Callable[[Step], str]
 
     def is_milestone(self, step: Step) -> bool:
         return bool(self.milestone_label(step))
@@ -93,8 +99,12 @@ def commands(
     status_for: Callable[[Step], str],
     start_of: Callable[[Project], date],
     milestone_label: Callable[[Step], str],
+    estimate_history: Callable[[Step], list[tuple[date, float]]],
+    key_of: Callable[[Step], str],
 ) -> list[CliCommand]:
-    readers = Readers(days_for, is_agent, status_for, start_of, milestone_label)
+    readers = Readers(
+        days_for, is_agent, status_for, start_of, milestone_label, estimate_history, key_of
+    )
 
     def matrix(context: CliContext, args: Namespace) -> int:
         return _matrix(context, args, readers)
@@ -167,12 +177,13 @@ def commands(
         CliCommand(
             path=("progress", "show"),
             summary="How far the plan has come toward each milestone, by steps and by "
-            "estimated days, against when it says it lands — and what it said before.",
+            "estimated days, against the plan as it stood at the start — or at --basis — "
+            "and what changed since.",
             configure=_configure_progress,
             run=progress_show,
             examples=(
                 "dplanner progress show discovery",
-                "dplanner progress show discovery --milestone v2 --json",
+                "dplanner progress show discovery --milestone v2 --basis 2026-09-15 --json",
             ),
         ),
         CliCommand(
@@ -234,6 +245,11 @@ def _configure_progress(parser: ArgumentParser) -> None:
     project_arg(parser)
     parser.add_argument(
         "--milestone", metavar="STEP", help="one milestone; omitted, every milestone in turn"
+    )
+    parser.add_argument(
+        "--basis",
+        metavar="YYYY-MM-DD",
+        help="compare against the plan as recorded on this day (default: the project's start)",
     )
 
 
@@ -603,17 +619,19 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
         raise CliError("these steps wait on each other, so nothing can be dated")
     history = read_history(project)
     humans, agents = read_team(project)
-    stretches = calendar_phases(
-        context.library,
-        project,
-        readers.days_for,
-        readers.is_agent,
-        humans=humans,
-        agents=agents,
-        start=readers.start_of(project),
-        efficiency=read_efficiency(project),
-        is_milestone=readers.is_milestone,
-        start_for=read_start,
+    basis = readers.start_of(project)
+    if args.basis:
+        try:
+            basis = date.fromisoformat(args.basis)
+        except ValueError as error:
+            raise CliError(f"--basis is a date, YYYY-MM-DD: {args.basis!r}") from error
+    then = baseline(history, basis)
+    # What moved the plan, since the day the baseline was recorded — the record the
+    # delta measures from.
+    changes = (
+        changes_since(project, then.day, readers.days_for, readers.estimate_history)
+        if then is not None
+        else None
     )
     scopes: list[tuple[str | None, str]] = []
     if args.milestone:
@@ -633,51 +651,80 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
     rows: list[dict[str, Any]] = []
     lines: list[str] = []
     for key, label in scopes:
-        tally = now.toward(key)
+        reached = now.toward(key)
         landing = now.landing(key)
-        earlier = earlier_plans(history, now, key, by_days=False)
+        moved = delta(then, now, key) if then is not None else None
+        then_landing = then.landing(key) if then is not None else None
         rows.append(
             {
                 "milestone": key,
                 "label": label,
-                "steps": tally.steps,
-                "done": tally.done,
-                "days": tally.days,
-                "done_days": tally.done_days,
-                "by_steps": tally.share(by_days=False),
-                "by_days": tally.share(by_days=True),
+                "steps": reached.steps,
+                "done": reached.done,
+                "days": reached.days,
+                "done_days": reached.done_days,
+                "by_steps": reached.share(by_days=False),
+                "by_days": reached.share(by_days=True),
                 "finish": landing.isoformat() if landing else "",
-                "expected": [
-                    {"date": when.isoformat(), "share": share}
-                    for when, share in expected(stretches, readers.days_for, key, by_days=False)
-                ],
-                "actual": [
-                    {"date": when.isoformat(), "share": share}
-                    for when, share in actual(history, now, key, by_days=False)
-                ],
-                "earlier": [
-                    {
-                        "day": plan.day.isoformat(),
-                        "share": plan.share,
-                        "finish": plan.finish.isoformat(),
-                        "steps": plan.tally.steps,
-                        "days": plan.tally.days,
-                    }
-                    for plan in earlier
-                ],
+                "expected": _curve(expected(now, key, by_days=False)),
+                "actual": _curve(actual(history, now, key, by_days=False)),
+                "baseline": None
+                if then is None or not then.has(key)
+                else {
+                    "day": then.day.isoformat(),
+                    "steps": then.toward(key).steps,
+                    "days": then.toward(key).days,
+                    "finish": then_landing.isoformat() if then_landing else "",
+                    "expected": _curve(expected(then, key, by_days=False)),
+                },
+                "delta": None
+                if moved is None
+                else {
+                    "steps": moved.steps,
+                    "days": moved.days,
+                    "finish_then": moved.finish_then.isoformat() if moved.finish_then else "",
+                    "finish_now": moved.finish_now.isoformat() if moved.finish_now else "",
+                    "shift": moved.shift,
+                },
             }
         )
-        lines.append(_progress_line(label, tally, landing, earlier))
+        lines.append(_progress_line(label, reached, landing, then, moved))
     data = {
         "project": project.id,
         "day": today.isoformat(),
+        "basis": basis.isoformat(),
+        "baseline_day": then.day.isoformat() if then is not None else "",
         "team": {"humans": humans, "agents": agents},
         "recorded_days": len(history),
         "scopes": rows,
+        "changes": None
+        if changes is None
+        else {
+            "since": changes.since.isoformat(),
+            "added": [
+                {"step": step.id, "key": readers.key_of(step), "title": step.title, "days": days}
+                for step, days in changes.added
+            ],
+            "estimates": [
+                {
+                    "step": step.id,
+                    "key": readers.key_of(step),
+                    "title": step.title,
+                    "day": when.isoformat(),
+                    "from": was,
+                    "to": days,
+                }
+                for step, when, was, days in changes.estimates
+            ],
+        },
     }
+    if changes is not None:
+        lines += changes.lines(readers.key_of)
+    said = f"(basis {format_date(basis)}"
+    said += f", compared with the plan recorded {format_date(then.day)}" if then is not None else ""
     lines.append(
-        f"({_people(humans, agents)}; {len(history)} day{'s' if len(history) != 1 else ''} "
-        "recorded)"
+        said + f"; {_people(humans, agents)}; {len(history)} day"
+        f"{'s' if len(history) != 1 else ''} recorded)"
     )
     context.report(data, "\n".join(lines))
     return 0
@@ -693,12 +740,16 @@ def _milestone_named(context: CliContext, project: Project, readers: Readers, ne
     return find_step(context.library, needle, project)
 
 
+def _curve(points: list[tuple[date, float]]) -> list[dict[str, Any]]:
+    return [{"date": when.isoformat(), "share": share} for when, share in points]
+
+
 def _percent(share: float | None) -> str:
     return "—" if share is None else f"{share:.0%}"
 
 
 def _progress_line(
-    label: str, tally: Tally, landing: date | None, earlier: Sequence[EarlierPlan]
+    label: str, tally: Tally, landing: date | None, then: Snapshot | None, moved: Delta | None
 ) -> str:
     said = (
         f"{label}: {_percent(tally.share(by_days=False))} by steps "
@@ -706,9 +757,8 @@ def _progress_line(
         f"({format_days(tally.done_days)} of {format_days(tally.days)})"
     )
     said += f" — lands {format_date(landing)}" if landing else " — nothing estimated, no date"
-    if earlier:
-        was = ", ".join(
-            f"{format_date(plan.finish)} (on {format_date(plan.day)})" for plan in earlier
-        )
-        said += f"; earlier said {was}"
+    if moved is not None and then is not None:
+        said += "; " + delta_words(moved, then.day)
+    elif then is not None:
+        said += "; not in the plan on the basis day"
     return said

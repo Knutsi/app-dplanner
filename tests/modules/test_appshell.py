@@ -40,8 +40,14 @@ def titles(services):
 def test_the_tab_verbs_live_in_the_view_menus_tabs_submenu(services):
     """The placement the tab bar's right-click depends on: show_tab_menu asks build_menu for
     View's Tabs submenu, so a spec that drifts elsewhere silently leaves that popup."""
-    for action_id in ("appshell.move_tab_right", "appshell.move_tab_left",
-                      CLOSE_TAB, CLOSE_OTHERS, CLOSE_RIGHT, CLOSE_ALL):
+    for action_id in (
+        "appshell.move_tab_right",
+        "appshell.move_tab_left",
+        CLOSE_TAB,
+        CLOSE_OTHERS,
+        CLOSE_RIGHT,
+        CLOSE_ALL,
+    ):
         spec = services.actions.spec(action_id)
         assert (spec.menu, spec.group, spec.submenu) == ("View", "tabs", "Tabs")
 
