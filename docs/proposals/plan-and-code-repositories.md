@@ -492,7 +492,11 @@ In the order that keeps every step green and shippable on its own:
    create mode, the Move wizard, the open-time notice, `library add` over an index.
 5. **Docs** — `FORMAT.md`, `ARCHITECTURE.md` (the section rewrite and the rule's why),
    `CLAUDE.md`, `README.md`; `NOTES-FOR-APPFRAME.md` for the storage changes.
-6. **Phase 2** — plan repository roots as library entries; Save that rebases.
+6. **Save that rebases** — `GitHubStorage.pull` and `push` rebase, for a repository that
+   holds only plans.
+
+Phase 2 — plan repository roots as library entries — is parked: it builds on all of the
+above and is picked up once a team has used the separated setup for a while.
 
 Steps 1 to 3 are what stops the drift for an agent-driven team; step 4 is what makes it
 usable from the window. By the skill's own yardstick (four tasks to a day) steps 1 to 3 are
@@ -504,7 +508,7 @@ about a day each and step 4 about two; the numbers are a shape, not a promise.
    so lint and the banner agree across the team. A per-user dismissal would leave lint red
    for everyone who did not click.
 2. **The word.** Settled: *plan repository*, in the document and the UI.
-3. **Phase 2 now or after?** After — *Git first, and what a backend would add* says why it
-   can wait, and what a backend would and would not change.
+3. **Phase 2 now or after?** Settled: after. *Git first, and what a backend would add*
+   says what it would and would not change.
 4. **Move history?** Out of scope as proposed. If the plan's history matters, the wizard
    can name a manual `git filter-repo` recipe instead of pretending to carry it.
