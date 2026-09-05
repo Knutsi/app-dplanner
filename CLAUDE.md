@@ -749,7 +749,14 @@ root, stop and look for the registry or capability you have not found yet.
   session of the outer one), the person's `CLAUDE_CONFIG_DIR`-style configuration stays.
   The Claude preset names the run's session (`--session-id {session}`, minted per launch);
   the wrapper records it with `dir` and `resume` in the shell facts, and an ended row in
-  the Agents browser shows the command that picks the agent up again. The skill and the
+  the Agents browser shows the command that picks the agent up again. The preset also
+  hands the run directory over as an additional working directory (`--add-dir
+  {run_dir}`, before another option: the flag takes a list and would swallow
+  `{prompt}`), so reading the briefing asks nothing, and `new_run_dir` resolves the
+  path so the flag and the file agree on macOS (`/var` is a symlink) and Windows (a
+  short-name Temp). **A preset that changes lists the texts it replaced**
+  (`AgentPreset.superseded`): the settings store the picked text, and
+  `current_command` reads a stale one as the preset. The skill and the
   briefing's preamble both say *never kill by name or pattern*.
   `ARCHITECTURE.md`'s *Running an agent launches a peer, not a task* has the reasoning.
 - **A worktree is the step's decision, and the run is named after the step.** Whether the

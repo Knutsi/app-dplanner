@@ -166,7 +166,7 @@ def test_prepare_writes_a_cmd_wrapper_on_windows(tmp_path):
 
 def test_the_default_is_claude_code_in_plan_mode_interactively(tmp_path):
     script = prepare("p", tmp_path, platform="linux").script.read_text()
-    assert "\nclaude --permission-mode plan" in script
+    assert "\nclaude --add-dir " in script and " --permission-mode plan " in script
     assert "prompt.md" in script
 
 
@@ -346,12 +346,16 @@ def test_the_claude_preset_names_the_session_and_the_script_says_how_to_resume(t
     files = prepare("p", tmp_path, platform="linux", directory=run_dir, session=session)
     script = files.script.read_text()
     assert files.session == session
-    assert f"\nclaude --permission-mode plan --session-id {session} 'Read" in script
+    assert f"\nclaude --add-dir {run_dir} --permission-mode plan --session-id {session} 'Read" in (
+        script
+    )
     assert (
         f'printf \'resume=cd "%s" && claude --resume {session}\\n\' "$(pwd)" >> {run_dir}/shell'
     ) in script
     assert f'To pick it up again: cd "%s" && claude --resume {session}' in script
-    assert resume_command("claude --permission-mode plan --session-id {session} {prompt}", "x")
+    assert resume_command(
+        "claude --add-dir {run_dir} --permission-mode plan --session-id {session} {prompt}", "x"
+    )
     assert resume_command("my-agent --session {session} {prompt}", "x") == ""  # Unknown agent.
     assert resume_command("codex {prompt}", "x") == ""  # Cannot name a session up front.
     windows = prepare(
@@ -360,6 +364,50 @@ def test_the_claude_preset_names_the_session_and_the_script_says_how_to_resume(t
     assert f"--session-id {session} 'Read" in windows
     assert f"'session={session}'" in windows and "'dir=' + $PWD" in windows
     assert f"'resume=cd /d ' + $PWD + ' && claude --resume {session}'" in windows
+
+
+def test_the_run_directory_is_handed_over_as_an_additional_directory(tmp_path):
+    """The pointer names a file outside the checkout, and Claude Code asks before reading
+    outside its working directories — one approval per launch, on every platform. The
+    preset adds the run directory (`--add-dir`), which takes a list: it sits before
+    another option, never before the prompt it would otherwise swallow. Quoted per
+    dialect, because a Temp path under a Windows user name can carry a space."""
+    import shlex
+
+    run_dir = tmp_path / "o'run dir"
+    run_dir.mkdir()
+    session = "7a1e4c2e-0000-4000-8000-000000000003"
+    script = prepare(
+        "p", tmp_path, platform="linux", directory=run_dir, session=session
+    ).script.read_text()
+    quoted = shlex.quote(str(run_dir))
+    assert f"\nclaude --add-dir {quoted} --permission-mode plan --session-id {session} 'Read" in (
+        script
+    )
+    windows = prepare(
+        "p", tmp_path, platform="win32", directory=run_dir, session=session
+    ).script.read_text()
+    doubled = str(run_dir).replace("'", "''")
+    assert f"claude --add-dir '{doubled}' --permission-mode plan --session-id {session} 'Read" in (
+        windows
+    )
+
+
+def test_a_run_directory_is_made_resolved(tmp_path, monkeypatch):
+    """macOS's temp directory sits under `/var`, a symlink to `/private/var`, and
+    Windows's Temp is often a short name; the permission check compares a file's
+    resolved path, so the flag and the pointer carry the resolved one."""
+    import tempfile
+
+    from dplanner.modules.step_agent_instruction import launcher
+
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    monkeypatch.setattr(tempfile, "tempdir", str(link))
+    run_dir = launcher.new_run_dir()
+    assert run_dir.is_dir() and run_dir.parent == real
 
 
 def test_a_minted_session_is_a_uuid(tmp_path):
@@ -386,20 +434,34 @@ def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_pat
 
     from dplanner.modules.step_agent_instruction import launcher
 
+    # What Claude Code 2.1 sets in every shell it runs, and what it scrubs itself before a
+    # standalone session — read off the binary, so the list is not a guess.
     env = {
         "PATH": "/usr/bin",
         "CLAUDECODE": "1",
         "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ID": "48bd92ff-5111-4a38-98bf-450df120a804",
         "CLAUDE_CODE_CHILD_SESSION": "1",
-        "CLAUDE_CODE_PARENT_SESSION_ID": "48bd92ff",
+        "CLAUDE_PID": "4242",
+        "CLAUDE_EFFORT": "high",
+        "CLAUDE_CODE_EXECPATH": "/opt/claude-code/bin/claude",
+        "AI_AGENT": "claude-code/agent",
+        "TRACEPARENT": "00-abc-def-01",
+        "CLAUDE_CODE_REMOTE_SESSION_ID": "s1",  # By the rule, not the list.
+        # 2.1.258 also sets these three: the parent's inter-session bridge. By the rule.
+        "CLAUDE_CODE_MESSAGING_SOCKET": "/run/user/1000/claude/bridge.sock",
+        "CLAUDE_CODE_MESSAGING_TOKEN": "t0ken",
+        "CLAUDE_CODE_BRIDGE_SESSION_ID": "b1",
         "CLAUDE_CONFIG_DIR": "/home/me/.claude",
         "CLAUDE_CODE_USE_BEDROCK": "1",
+        "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000",
         "ANTHROPIC_API_KEY": "k",
     }
     assert launcher.scrubbed_environment(env) == {
         "PATH": "/usr/bin",
         "CLAUDE_CONFIG_DIR": "/home/me/.claude",
         "CLAUDE_CODE_USE_BEDROCK": "1",
+        "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000",
         "ANTHROPIC_API_KEY": "k",
     }
     calls = []
@@ -417,6 +479,11 @@ def test_the_presets_cover_the_known_agents():
 
     assert [preset.id for preset in PRESETS] == ["claude", "codex", "opencode"]
     assert all("{prompt}" in preset.command for preset in PRESETS)
+    for preset in PRESETS:
+        tokens = preset.command.split()
+        if "{run_dir}" in tokens:
+            # `--add-dir` takes a list: what follows the directory is an option, not the prompt.
+            assert tokens[tokens.index("{run_dir}") + 1].startswith("--")
 
 
 def test_picking_a_terminal_prefills_its_command(app):
@@ -456,6 +523,42 @@ def test_picking_a_preset_prefills_the_command(app):
     combo.activated.emit(codex)
     assert edit.text() == PRESETS[1].command
     assert agent_command() == PRESETS[1].command
+
+
+def test_a_preset_text_an_earlier_version_shipped_is_still_that_preset(app, tmp_path):
+    """The settings store the picked preset's text, so a machine that picked Claude Code
+    before the command changed holds the old one — read as Custom, launched without
+    the session id and the directory, never resumable. It is the preset."""
+    from PySide6.QtWidgets import QComboBox
+
+    from dplanner.framework.user_config import set_global
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
+    from dplanner.modules.step_agent_instruction.launcher import (
+        PRESETS,
+        current_command,
+        resume_command,
+    )
+    from dplanner.modules.step_agent_instruction.settings_page import (
+        AGENT_COMMAND_KEY,
+        agent_command,
+        build_page,
+    )
+
+    claude = PRESETS[0]
+    assert claude.superseded
+    for old in claude.superseded:
+        assert current_command(old) == claude.command
+        assert resume_command(old, "x") == "claude --resume x"
+    assert current_command("my-agent {prompt}") == "my-agent {prompt}"
+    assert current_command("  ") == claude.command
+    old = "claude --permission-mode plan {prompt}"
+    script = prepare("p", tmp_path, agent_command=old, platform="linux").script.read_text()
+    assert "--add-dir" in script and "--session-id" in script
+    set_global(MODULE_ID, AGENT_COMMAND_KEY, old)
+    assert agent_command() == claude.command
+    page = build_page(None)
+    combo = page.findChild(QComboBox, "AgentPresetCombo")
+    assert combo is not None and combo.currentText() == "Claude Code"
 
 
 # -- resolution --------------------------------------------------------------------------------
