@@ -1,10 +1,12 @@
-"""One action: show the agent skill and let the user install, update or remove it.
+"""Getting DPlanner onto this machine, from the window.
 
-The skill is generated from the CLI registry, so this module writes exactly what
-``dplanner skill install`` writes — the same functions, not a second implementation. What
-the window adds is discoverability: somebody who has never run the CLI still finds out that
-their agent can drive DPlanner, sees what the skill says and where it goes before anything
-is written, and can take it back out again.
+Three things have to be in place for DPlanner to be usable — the agent skill an agent
+reads, the ``dplanner`` command on PATH, and a launcher in the applications menu — and each
+has a CLI verb (``skill install``, the ``uv tool install`` the skill names, ``desktop
+install``). What the window adds is discoverability: somebody who has never run the CLI
+finds them under Tools, sees what will be written and where before anything is, and can
+take each back out. Every dialog here writes exactly what its verb writes — the same
+functions, never a second implementation.
 """
 
 from collections.abc import Callable
@@ -16,14 +18,14 @@ from dplanner.cli.skill import target_dir
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.context import Context
 from dplanner.framework.tasks import TaskService
-from dplanner.modules.agent_skill.cli_install import CliInstallDialog
-from dplanner.modules.agent_skill.dialog import AgentSkillDialog
+from dplanner.modules.install.command_dialog import CommandInstallDialog
+from dplanner.modules.install.skill_dialog import AgentSkillDialog
 
-MODULE_ID = "agent_skill"
+MODULE_ID = "install"
 
 
 @dataclass(frozen=True)
-class AgentSkillDeps:
+class InstallDeps:
     actions: ActionRegistry
     tasks: TaskService
     parent: QWidget
@@ -33,16 +35,16 @@ class AgentSkillDeps:
     skill_files: Callable[[], dict[str, str]]
 
 
-class AgentSkillModule:
+class InstallModule:
     id = MODULE_ID
 
-    def __init__(self, deps: AgentSkillDeps) -> None:
+    def __init__(self, deps: InstallDeps) -> None:
         self._deps = deps
 
     def register(self) -> None:
         self._deps.actions.register(
             ActionSpec(
-                id="agent_skill.manage",
+                id="install.skill",
                 label="&Agent Skill…",
                 menu="Tools",
                 group="agent",
@@ -53,7 +55,7 @@ class AgentSkillModule:
         )
         self._deps.actions.register(
             ActionSpec(
-                id="agent_skill.install_cli",
+                id="install.command",
                 label="Install &dplanner Command…",
                 menu="Tools",
                 group="agent",
@@ -70,4 +72,4 @@ class AgentSkillModule:
         dialog.exec()
 
     def _run_install_cli(self, _context: Context) -> None:
-        CliInstallDialog(self._deps.tasks, self._deps.parent).exec()
+        CommandInstallDialog(self._deps.tasks, self._deps.parent).exec()

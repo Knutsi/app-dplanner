@@ -154,6 +154,13 @@ def install_command() -> list[str]:
     return ["uv", "tool", "install", PROG]
 
 
+def tool_bin_command() -> list[str]:
+    """The command that prints where ``uv tool install`` puts executables, as argv —
+    what the window asks after an install, to point the desktop launcher at the ``dpw``
+    uv just wrote rather than the one beside the build it is running from."""
+    return ["uv", "tool", "dir", "--bin"]
+
+
 def uninstall_command() -> list[str]:
     """The command that takes the installed ``dplanner`` tool back out, as argv."""
     return ["uv", "tool", "uninstall", PROG]

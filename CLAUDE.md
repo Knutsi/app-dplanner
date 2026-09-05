@@ -579,7 +579,14 @@ root, stop and look for the registry or capability you have not found yet.
   that is an agent's background process ends with the agent's turn and makes every agent
   it launches a *child session* of the first — no transcript, ended with its parent — which
   is how one stray window took four agents down. Not a dispatch rule, a guard on who owns
-  the window. `ARCHITECTURE.md`'s *The window is a word* has the reasoning.
+  the window. **`dpw` is the word typed for you** — a `gui-scripts` entry
+  (`entry.window_main`), so on Windows it is an executable with no console behind it — and
+  `dplanner desktop install` writes the launcher an applications menu opens on it:
+  `cli/desktop.py`, one class per platform (a `.desktop` entry named after `APP_ID`, an
+  app bundle, a Start Menu shortcut through PowerShell) behind one contract, each testable
+  on every other platform. *Tools ▸ Install dplanner Command…* writes it in the same go
+  as the command. Neither word reaches the skill. `ARCHITECTURE.md`'s *The window is a
+  word* has the reasoning.
 - **Discarding a build is `discard_build()`, and closing the window is not enough.** Qt keeps
   a closed `QWidget` in `topLevelWidgets()`, so without `deleteLater()` the whole build —
   services, model, every module — stays reachable forever. Nobody notices in the application;
