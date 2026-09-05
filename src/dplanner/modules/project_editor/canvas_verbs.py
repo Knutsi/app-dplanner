@@ -42,7 +42,13 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import Context
 from dplanner.modules.project_editor.look import BACKGROUNDS, Look
 from dplanner.modules.project_editor.marks import MARK_NAMES
-from dplanner.modules.project_editor.modes import CONNECT, LASSO, mode_uri
+from dplanner.modules.project_editor.modes import (
+    CONNECT,
+    DIVIDE_HORIZONTAL,
+    DIVIDE_VERTICAL,
+    LASSO,
+    mode_uri,
+)
 from dplanner.modules.project_editor.placement import positions
 from dplanner.theme.icons import lasso_icon
 
@@ -68,7 +74,7 @@ class CanvasVerbs:
     # The window capabilities these steer. Each is a no-op when no canvas is current.
     select_step: Callable[[StepId], None]
     select_steps: Callable[[list[StepId]], None]
-    # Enter or leave a named canvas mode (modes.CONNECT, modes.LASSO).
+    # Enter or leave a named canvas mode (modes.CONNECT, modes.LASSO, the divide pair).
     set_mode: Callable[[str, bool], None]
     frame: Callable[[], None]
     # The user's look — marks, background, snapping — and the setter for the whole value.
@@ -151,6 +157,32 @@ class CanvasVerbs:
                 tip="Zoom the canvas to the whole graph",
                 state=self._on_a_canvas,
                 run=lambda _context: self.frame(),
+            ),
+            ActionSpec(
+                id="canvas.divide_vertical",
+                label="&Vertical",
+                menu="View",
+                group="canvas",
+                submenu="Divide",
+                # Order 20: after the Sort and Layout child menus at 10 — a divide
+                # rearranges the graph as a sort does, one cut at a time.
+                order=20,
+                tip="Cut the graph with an upright line and push one side left or right "
+                "to make room. Esc leaves",
+                state=self._mode_state(DIVIDE_VERTICAL),
+                run=self._mode_toggle(DIVIDE_VERTICAL),
+            ),
+            ActionSpec(
+                id="canvas.divide_horizontal",
+                label="&Horizontal",
+                menu="View",
+                group="canvas",
+                submenu="Divide",
+                order=30,
+                tip="Cut the graph with a level line and push one side up or down "
+                "to make room. Esc leaves",
+                state=self._mode_state(DIVIDE_HORIZONTAL),
+                run=self._mode_toggle(DIVIDE_HORIZONTAL),
             ),
             *[
                 ActionSpec(

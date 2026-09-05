@@ -446,6 +446,15 @@ root, stop and look for the registry or capability you have not found yet.
   edges. One lasso ends the mode, Shift on the release adds to the selection, and the mode
   switch is `steps.lasso` (`S` on the canvas), the same shape as `steps.connect`. Region and
   lasso share one `OutlinePreviewItem` through `Canvas.aim_outline`.
+- **Divide is a mode, and it pushes a side.** `DivideMode` (View ▸ Divide ▸ Vertical or
+  Horizontal; `D` and `Shift+D` on the canvas) lays a cut under the cursor from edge to
+  edge, and the press hands over to `DivideDragMode`, a `GestureMode` that holds every card
+  and shifts the ones on the side dragged towards by the snapped distance. Which side a card
+  is on is its **centre** at the press, and a drag back past the cut flips the sides. The
+  release is one `graph_divided` signal and one `Divide Graph` command, written only for the
+  cards that moved; one divide ends the mode, and Escape puts the cards back and leaves. The
+  band drawn beside the cut — the room being made — is the same `OutlinePreviewItem`.
+  `ARCHITECTURE.md`'s *Who owns the canvas's input* has the reasoning.
 - **Isolate is one domain question and one domain command.** `Library.boundary_edges()`
   names every edge with exactly one end in a set (both kinds, skipping edges to a deleted
   step, as the canvas skips them) and `remove_edges_command()` turns edges into one

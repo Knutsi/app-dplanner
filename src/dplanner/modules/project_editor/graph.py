@@ -150,6 +150,8 @@ class GraphScene(QGraphicsScene):
         # A card that finished resizing: seat and size together, since an edge may have
         # moved the seat — one gesture, one command.
         self.node_resized: Signal[StepId, float, float, float, float] = Signal()
+        # The cards a divide pushed aside, at their new seats — one gesture, one command.
+        self.graph_divided: Signal[list[tuple[StepId, float, float]]] = Signal()
 
         self.selectionChanged.connect(self._on_selection)
 
@@ -296,6 +298,10 @@ class GraphScene(QGraphicsScene):
 
     def node(self, step_id: StepId) -> StepNodeItem | None:
         return self._nodes.get(step_id)
+
+    def nodes(self) -> list[StepNodeItem]:
+        """Every card — what a divide parts into the side that moves and the side that stays."""
+        return list(self._nodes.values())
 
     def link_refusal(self, waiter: StepId, source: StepId) -> str | None:
         return self._link_refusal(waiter, source)

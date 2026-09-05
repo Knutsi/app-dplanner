@@ -996,6 +996,21 @@ link ends connect; Shift on the release folds the catch into what was already se
 Nothing in it is new machinery: the outline it draws is the same `OutlinePreviewItem` the
 region mode drags out, reached through one `aim_outline` on the `Canvas` protocol.
 
+The divide is the stack used twice over. `DivideMode` is switchable like the lasso — View ▸
+Divide ▸ Vertical or Horizontal, `D` or `Shift+D` on the canvas — and does nothing but lay a
+cut under the cursor from edge to edge; the press hands over to `DivideDragMode`, a
+`GestureMode` in the card resize's mould, which *takes the divide mode's place* on the stack
+and so ends it when it pops: one divide ends the mode the way one lasso does, and Escape
+mid-drag puts the cards back and leaves, as it does for a resize. Every card is held for the
+drag, because either side may be the one that moves: which side a card is on is decided once,
+by its centre at the press, and the sign of the drag says which side goes — so dragging back
+past the cut returns the far side and pushes the near one with no state to clear. The release
+is one `graph_divided` signal carrying only the cards that moved, and the activity makes it
+one `Divide Graph` command, so a whole side comes back with one Ctrl+Z. Nothing is stored
+about the cut itself — a divide is a move of many cards, and what makes it a tool rather than
+a drag of a selection is that it names the side by geometry, not by what was picked — and the
+band it draws while it lasts, the room being made, is the outline item the lasso already had.
+
 ### An explicit sort persists; the ambient layout never does
 
 Two things place a node, and they persist differently on purpose. The **ambient layout** —

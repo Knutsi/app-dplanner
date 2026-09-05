@@ -26,6 +26,7 @@ from typing import Final
 from PySide6.QtCore import Qt
 
 _NONE = Qt.KeyboardModifier.NoModifier
+_SHIFT = Qt.KeyboardModifier.ShiftModifier
 
 type Binding = tuple[int, Qt.KeyboardModifier]
 
@@ -43,6 +44,9 @@ CANVAS_KEYS: Final[dict[Binding, tuple[str, ...]]] = {
     (Qt.Key.Key_Return, _NONE): ("steps.details",),
     (Qt.Key.Key_Enter, _NONE): ("steps.details",),
     (Qt.Key.Key_C, _NONE): ("steps.connect",),
+    # The divide pair: D cuts upright, and Shift turns the line on its side.
+    (Qt.Key.Key_D, _NONE): ("canvas.divide_vertical",),
+    (Qt.Key.Key_D, _SHIFT): ("canvas.divide_horizontal",),
     (Qt.Key.Key_F, _NONE): ("canvas.frame",),
     (Qt.Key.Key_N, _NONE): ("steps.new",),
     (Qt.Key.Key_R, _NONE): ("steps.rename",),

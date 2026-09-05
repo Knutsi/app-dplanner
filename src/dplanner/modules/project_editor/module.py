@@ -72,10 +72,13 @@ from dplanner.modules.project_editor.look import Look
 from dplanner.modules.project_editor.marks import ports
 from dplanner.modules.project_editor.modes import (
     CONNECT,
+    DIVIDE_HORIZONTAL,
+    DIVIDE_VERTICAL,
     LASSO,
     REGION_CREATE,
     CanvasDeps,
     ConnectMode,
+    DivideMode,
     IdleMode,
     LassoMode,
     ModeBase,
@@ -120,6 +123,8 @@ SWITCHABLE_MODES: dict[str, Callable[[CanvasDeps], ModeBase]] = {
     CONNECT: ConnectMode,
     LASSO: LassoMode,
     REGION_CREATE: RegionCreateMode,
+    DIVIDE_VERTICAL: lambda deps: DivideMode(deps, Qt.Orientation.Vertical),
+    DIVIDE_HORIZONTAL: lambda deps: DivideMode(deps, Qt.Orientation.Horizontal),
 }
 
 
@@ -208,6 +213,7 @@ class ProjectActivity(EntityActivity):
         self._scene.regions_moved.connect(self._on_regions_moved)
         self._scene.region_resized.connect(self._on_region_resized)
         self._scene.node_resized.connect(self._on_node_resized)
+        self._scene.graph_divided.connect(self._on_graph_divided)
         self._view.modes.changed.connect(lambda _name: self._publish_activity())
 
         # Once per event-loop turn, not once per signal: a paste of forty steps is forty
@@ -444,6 +450,13 @@ class ProjectActivity(EntityActivity):
         # A drag is a gesture with a clear end. Without the seal, two drags of the same node
         # coalesce — that command merges on node and module with no time window — and Ctrl+Z
         # would jump back past a move made minutes ago.
+        self._deps.undo.break_coalescing()
+
+    def _on_graph_divided(self, moved: list[tuple[StepId, float, float]]) -> None:
+        """One side of a cut was pushed aside: one undo step, however many cards went, and
+        named for the gesture rather than the moves it is made of."""
+        commands = [self._move_command(step_id, x, y) for step_id, x, y in moved]
+        self._deps.undo.push(CompositeCommand("Divide Graph", commands))
         self._deps.undo.break_coalescing()
 
     def _on_link_requested(self, source: StepId, target: StepId) -> None:

@@ -20,7 +20,15 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION
-from dplanner.modules.project_editor.modes import CONNECT, IDLE, LASSO, PAN, REGION_CREATE
+from dplanner.modules.project_editor.modes import (
+    CONNECT,
+    DIVIDE_HORIZONTAL,
+    DIVIDE_VERTICAL,
+    IDLE,
+    LASSO,
+    PAN,
+    REGION_CREATE,
+)
 from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snapped
 from dplanner.modules.project_editor.renderers import (
@@ -1569,6 +1577,201 @@ def test_the_lasso_button_checks_itself_and_hides_the_handles(app, services, pro
     assert all(item._hints.handles == "hidden" for item in scene(tab)._nodes.values())
     press_key(app, tab, Qt.Key.Key_Escape)
     assert not button.isChecked()
+
+
+# -- dividing --------------------------------------------------------------------------------------
+#
+# A cut is a line across the canvas, and dragging from it pushes every card on the side dragged
+# towards, so a crowded graph gets room in the middle. Driven with real mouse events, like the
+# lasso: the gesture is where the bugs live.
+
+
+def gap_between(tab, near, far):
+    """A point in the empty column between two cards, well clear of both."""
+    one, two = body_of(tab, near.id), body_of(tab, far.id)
+    return QPointF((one.right() + two.left()) / 2, one.bottom() + 200.0)
+
+
+def seats_of(tab, *steps):
+    return {step.id: body_of(tab, step.id).topLeft() for step in steps}
+
+
+def stored_x(services, step_id):
+    return placement_of(services, step_id)["x"]
+
+
+def test_a_vertical_divide_pushes_the_side_dragged_towards(app, services, project, tab):
+    first, second, third = chain(services, project)
+    seats = seats_of(tab, first, second, third)
+    services.actions.run("canvas.divide_vertical", services.context.current())
+    assert modes(tab).current().name == DIVIDE_VERTICAL
+
+    cut = gap_between(tab, first, second)
+    drag(app, tab, cut, cut + QPointF(120.0, 0.0))
+
+    assert stored_x(services, second.id) == seats[second.id].x() + 120.0
+    assert stored_x(services, third.id) == seats[third.id].x() + 120.0
+    assert "project_editor" not in services.document.step(first.id).module_data  # Untouched.
+    assert services.undo.undo_text() == "Divide Graph"
+    assert modes(tab).current().name == IDLE  # One divide ends the mode, like one lasso.
+
+    services.undo.undo()  # One step back takes the whole side with it.
+    assert seats_of(tab, first, second, third) == seats
+
+
+def test_dragging_back_past_the_cut_flips_the_side(app, services, project, tab):
+    first, second, third = chain(services, project)
+    seats = seats_of(tab, first, second, third)
+    press_key(app, tab, Qt.Key.Key_D)
+    assert modes(tab).current().name == DIVIDE_VERTICAL
+
+    cut = gap_between(tab, first, second)
+    send(app, tab, QEvent.Type.MouseButtonPress, cut)
+    send(app, tab, QEvent.Type.MouseMove, cut + QPointF(120.0, 0.0))
+    assert body_of(tab, second.id).topLeft() == seats[second.id] + QPointF(120.0, 0.0)
+    assert body_of(tab, first.id).topLeft() == seats[first.id]
+    send(app, tab, QEvent.Type.MouseMove, cut + QPointF(-80.0, 0.0))
+    assert body_of(tab, second.id).topLeft() == seats[second.id]  # The far side came back.
+    assert body_of(tab, first.id).topLeft() == seats[first.id] + QPointF(-80.0, 0.0)
+    send(
+        app, tab, QEvent.Type.MouseButtonRelease, cut + QPointF(-80.0, 0.0), Qt.MouseButton.NoButton
+    )
+
+    assert stored_x(services, first.id) == seats[first.id].x() - 80.0
+    assert "project_editor" not in services.document.step(second.id).module_data
+    assert "project_editor" not in services.document.step(third.id).module_data
+
+
+def test_a_horizontal_divide_pushes_up_or_down(app, services, project, tab):
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.project_editor.positions import write_position
+
+    first, second = project.steps
+    services.undo.push(
+        SetModuleDataCommand(second.id, "project_editor", write_position(40.0, 304.0))
+    )
+    press_key(app, tab, Qt.Key.Key_D, Qt.KeyboardModifier.ShiftModifier)
+    assert modes(tab).current().name == DIVIDE_HORIZONTAL
+
+    cut = QPointF(900.0, 200.0)  # Between the rows, off every card.
+    drag(app, tab, cut, cut + QPointF(0.0, 80.0))
+
+    assert placement_of(services, second.id)["y"] == 384.0
+    assert "project_editor" not in services.document.step(first.id).module_data
+    assert services.undo.undo_text() == "Divide Graph"
+
+
+def test_a_card_the_cut_crosses_goes_with_the_side_its_centre_is_on(app, services, project, tab):
+    first, second, third = chain(services, project)
+    body = body_of(tab, first.id)
+    seats = seats_of(tab, first, second, third)
+    below = body.bottom() + 200.0
+
+    services.actions.run("canvas.divide_vertical", services.context.current())
+    cut = QPointF(body.center().x() - 20.0, below)  # Through the card, left of its centre.
+    drag(app, tab, cut, cut + QPointF(80.0, 0.0))
+    assert stored_x(services, first.id) == seats[first.id].x() + 80.0
+    services.undo.undo()
+
+    services.actions.run("canvas.divide_vertical", services.context.current())
+    cut = QPointF(body.center().x() + 20.0, below)  # Through the card, right of its centre.
+    drag(app, tab, cut, cut + QPointF(80.0, 0.0))
+    assert "project_editor" not in services.document.step(first.id).module_data
+    assert stored_x(services, second.id) == seats[second.id].x() + 80.0
+
+
+def test_escape_puts_a_half_divided_graph_back(app, services, project, tab):
+    first, second, third = chain(services, project)
+    seats = seats_of(tab, first, second, third)
+    services.actions.run("canvas.divide_vertical", services.context.current())
+    cut = gap_between(tab, first, second)
+    send(app, tab, QEvent.Type.MouseButtonPress, cut)
+    send(app, tab, QEvent.Type.MouseMove, cut + QPointF(120.0, 0.0))
+    assert body_of(tab, third.id).topLeft() == seats[third.id] + QPointF(120.0, 0.0)
+
+    press_key(app, tab, Qt.Key.Key_Escape)
+
+    assert seats_of(tab, first, second, third) == seats
+    assert modes(tab).current().name == IDLE
+    assert services.undo.undo_text() != "Divide Graph"
+    assert not scene(tab)._outline.isVisible()
+
+
+def test_a_divide_that_never_moved_pushes_nothing(app, services, project, tab):
+    first, second, _third = chain(services, project)
+    services.actions.run("canvas.divide_vertical", services.context.current())
+
+    click(app, tab, gap_between(tab, first, second))
+
+    assert services.undo.undo_text() != "Divide Graph"
+    assert "project_editor" not in services.document.step(second.id).module_data
+    assert modes(tab).current().name == IDLE
+
+
+def test_a_change_from_the_model_mid_divide_leaves_the_pushed_cards_where_they_are(
+    app, services, project, tab
+):
+    first, second, third = chain(services, project)
+    seat = body_of(tab, third.id).topLeft()
+    services.actions.run("canvas.divide_vertical", services.context.current())
+    cut = gap_between(tab, first, second)
+    send(app, tab, QEvent.Type.MouseButtonPress, cut)
+    send(app, tab, QEvent.Type.MouseMove, cut + QPointF(120.0, 0.0))
+
+    services.undo.push(SetFieldCommand(third.id, "title", "Ship it, renamed"))  # A sync.
+
+    assert body_of(tab, third.id).topLeft() == seat + QPointF(120.0, 0.0)
+    send(
+        app, tab, QEvent.Type.MouseButtonRelease, cut + QPointF(120.0, 0.0), Qt.MouseButton.NoButton
+    )
+    assert stored_x(services, third.id) == seat.x() + 120.0
+
+
+def test_the_cut_lies_under_the_cursor_from_edge_to_edge(app, services, project, tab):
+    services.actions.run("canvas.divide_vertical", services.context.current())
+    assert view(tab).viewport().cursor().shape() == Qt.CursorShape.SplitHCursor
+    assert all(item._hints.handles == "hidden" for item in scene(tab)._nodes.values())
+
+    send(app, tab, QEvent.Type.MouseMove, QPointF(250.0, 90.0), Qt.MouseButton.NoButton)
+
+    outline = scene(tab)._outline
+    assert outline.isVisible()
+    shown = outline.path().boundingRect()
+    looking_at = view(tab).mapToScene(view(tab).viewport().rect()).boundingRect()
+    assert shown.width() == 0.0 and abs(shown.left() - 250.0) <= 1.0
+    assert shown.top() <= looking_at.top() and shown.bottom() >= looking_at.bottom()
+
+    press_key(app, tab, Qt.Key.Key_Escape)  # Nothing pending: Escape leaves.
+    assert modes(tab).current().name == IDLE
+    assert not outline.isVisible()
+    assert view(tab).viewport().cursor().shape() == Qt.CursorShape.ArrowCursor
+
+
+def test_the_band_beside_the_cut_is_the_room_being_made(app, services, project, tab):
+    first, second, _third = chain(services, project)
+    services.actions.run("canvas.divide_vertical", services.context.current())
+    cut = gap_between(tab, first, second)
+    send(app, tab, QEvent.Type.MouseButtonPress, cut)
+    send(app, tab, QEvent.Type.MouseMove, cut + QPointF(120.0, 0.0))
+
+    shown = scene(tab)._outline.path().boundingRect()
+    assert abs(shown.left() - cut.x()) <= 1.0 and abs(shown.width() - 120.0) <= 1.0
+
+    send(app, tab, QEvent.Type.MouseMove, cut + QPointF(-80.0, 0.0))
+    shown = scene(tab)._outline.path().boundingRect()
+    assert abs(shown.right() - cut.x()) <= 1.0 and abs(shown.width() - 80.0) <= 1.0
+    press_key(app, tab, Qt.Key.Key_Escape)
+
+
+def test_a_divide_entry_is_checked_only_while_its_own_mode_is_on(services, project, tab):
+    services.actions.run("canvas.divide_horizontal", services.context.current())
+    context = services.context.current()
+    assert state(services, "canvas.divide_horizontal", context).checked
+    assert not state(services, "canvas.divide_vertical", context).checked
+
+    services.actions.run("canvas.divide_horizontal", context)  # Again: leaves, as Lasso does.
+    assert modes(tab).current().name == IDLE
+    assert not state(services, "canvas.divide_horizontal", services.context.current()).checked
 
 
 # -- isolating ------------------------------------------------------------------------------------
