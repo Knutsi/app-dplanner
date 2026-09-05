@@ -66,10 +66,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.domain.model import Library, TextEdit
     from dplanner.domain.ordering import placed
     from dplanner.domain.schedule import format_date, format_days, schedule
+    from dplanner.domain.scope import gatherers
     from dplanner.domain.store import LibraryStore
     from dplanner.framework.aspect_bar import AspectTemplate
+    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
     from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
+    from dplanner.modules.coverage.activity import CoverageDeps
+    from dplanner.modules.coverage.module import CoverageModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
@@ -79,6 +83,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.estimation.schedule import start_of, write_start
     from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
     from dplanner.modules.feature.aspect import is_feature
+    from dplanner.modules.feature.aspect import read as feature_read
     from dplanner.modules.feature.aspect import write as feature_write
     from dplanner.modules.feature.catalogue import (
         FEATURE_MIME,
@@ -87,6 +92,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         read_catalogue,
     )
     from dplanner.modules.feature.module import FeatureDeps, FeatureModule
+    from dplanner.modules.feature.panel import panel_context
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.github.module import GithubDeps, GithubModule
@@ -146,10 +152,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
     from dplanner.modules.testing.aspect import enabled as test_enabled
+    from dplanner.modules.testing.aspect import read as tests_read
     from dplanner.modules.testing.module import TestsDeps, TestsModule
     from dplanner.modules.time_estimates.module import TimeEstimatesDeps, TimeEstimatesModule
     from dplanner.theme.icons import (
         clock_icon,
+        coverage_icon,
         gauge_icon,
         graph_icon,
         image_icon,
@@ -514,6 +522,67 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
     )
 
+    # Constructed before the list because the projects index opens it and the Specs tab
+    # jumps into it. Its picture is every module's Qt-free half read once (_coverage_trace);
+    # the surfaces a double-click reaches arrive as callables, and the Specs tab's is
+    # resolved lazily because the two modules point at each other.
+    def _step_passages(step_id: str) -> list[tuple[str, str]]:
+        """The passages a step reaches: its own record's, or its gathering features'."""
+        if not library.has(step_id):
+            return []
+        step = library.step(step_id)
+        project = library.project_of(step_id)
+        records = {record.id: record for record in read_catalogue(project)}
+        named = [feature_read(step)] if feature_read(step) else []
+        if not named:
+            owners = gatherers(
+                library,
+                project,
+                carried_by=is_feature,
+                stops_at=lambda other: is_feature(other) or bool(milestone_read(other)),
+            ).get(step_id, ())
+            named = [feature_read(project.step(owner) or step) or "" for owner in owners]
+        return [
+            (source.document, source.quote)
+            for record_id in named
+            if record_id in records
+            for source in records[record_id].sources
+            if source.quote
+        ]
+
+    coverage = CoverageModule(
+        CoverageDeps(
+            library=library,
+            actions=services.actions,
+            context=services.context,
+            tabs=services.tabs,
+            debounce=services.debounce,
+            files=store.files,
+            trace_of=_coverage_trace,
+            parent=services.window,
+            show_passages=lambda *args: spec.show_passages(*args),
+            open_docs=lambda _project_id, step_id: services.actions.run(
+                "docs.open_step",
+                Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)}),
+            ),
+            open_feature=lambda project_id, feature_id: services.actions.run(
+                "feature.edit", panel_context(project_id, feature_id)
+            ),
+            feature_of=lambda step_id: (
+                feature_read(library.step(step_id)) or None if library.has(step_id) else None
+            ),
+            is_milestone=lambda step_id: (
+                bool(milestone_read(library.step(step_id))) if library.has(step_id) else False
+            ),
+            tests_of=lambda step_id: (
+                [test.id for test in tests_read(library.step(step_id))]
+                if library.has(step_id)
+                else []
+            ),
+            passages_of=_step_passages,
+        )
+    )
+
     # Constructed before the list because the projects index opens Specs through it — the
     # same seam as open_project, one level down.
     spec = SpecModule(
@@ -534,6 +603,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 if source.document == document and source.quote
             ],
             cite=feature.cite_passage,
+            open_coverage=coverage.show_passage,
         )
     )
     # Constructed before the list because the projects index opens the board through it.
@@ -919,6 +989,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
                         order=20,
                     ),
                     ProjectEntry(
+                        id="coverage",
+                        label="Coverage",
+                        open=coverage.open,
+                        open_preview=lambda pid: coverage.open(pid, preview=True),
+                        icon=coverage_icon,
+                        menu="Project",
+                        order=22,
+                    ),
+                    ProjectEntry(
                         id="assets",
                         label="Assets",
                         open=project_assets.open,
@@ -949,6 +1028,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             )
         ),
         spec,
+        coverage,
         project_assets,
         # -- the step aspects --------------------------------------------------------------
         # Each registers one tab into the step detail panel — or, for the estimate and
