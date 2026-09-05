@@ -1041,10 +1041,10 @@ that decays silently.
 
 A step's key — `S7`, `F3` — is what a person says, what its branch and PR are named after,
 and what the agent's `dplanner` verbs address, so it has to be found from across the
-graph. It is painted on a **spine**: an 18 px strip inside the card's left edge, clipped to
+graph. It is painted on a **spine**: a 26 px strip inside the card's left edge, clipped to
 the rounded body, with the key set bold and rotated a quarter turn so it reads up the
 strip the way a book's spine does. Vertical, because a horizontal label wide enough to
-read would take a line the title needs; a spine costs the title 18 px of width and no
+read would take a line the title needs; a spine costs the title 26 px of width and no
 height at all.
 
 The spine is also where the card says where the step *stands*: its wash is the status —

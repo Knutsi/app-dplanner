@@ -642,7 +642,7 @@ root, stop and look for the registry or capability you have not found yet.
   refused), the run name a worktree and branch carry, and the briefing's verbs. Never
   store the letter, and never mint a number anywhere but `add_child`.
 - **The spine is the card's left edge, and it says who and where.** `paint_spine` draws
-  an 18 px strip inside the left edge, clipped to the body, carrying the key rotated a
+  a 26 px strip inside the left edge, clipped to the body, carrying the key rotated a
   quarter turn and washed by status — busy blue for in-progress, bad red for blocked, the
   good green for done, a quiet shade otherwise (`NodeAccent.key_text`, `spine_tone`; the
   3 px status bar it replaces is gone). The title and the left-edge decorations start

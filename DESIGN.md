@@ -80,7 +80,7 @@ A step on the graph is a card on a table, and the canvas is drawn to say so.
 - **Every card rests on a shadow**, faint, and a picked card lifts two pixels over a deeper
   one — the lift, not a colour, is what marks it (see *Colour* below). The fill is opaque:
   the ground never shows through a card.
-- **The spine names the card and says where it stands.** An 18 px strip inside the left
+- **The spine names the card and says where it stands.** A 26 px strip inside the left
   edge carries the step's key (`S7`, `F3`) set bold and read bottom-to-top, washed by
   status: busy blue in progress, the bad red blocked, the good green done, a quiet shade of
   ink otherwise. It is the one thing on a card meant to be found from across the graph, and

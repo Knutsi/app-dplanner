@@ -93,10 +93,11 @@ MUTED_FILL_ALPHA = 14
 MUTED_BORDER_ALPHA = 50
 
 # The spine: a strip down the node's left edge, clipped to the rounded body, carrying the
-# step's key read bottom-to-top and shaded by status. Wide enough for the chrome font's
-# height and a pixel of air on either side; a four-character key runs some 30 px along it,
+# step's key read bottom-to-top and shaded by status. The chrome font's height plus five
+# or six pixels of air on either side of the key — at 18 it was two, and the number read
+# as jammed against the strip's edges; a four-character key runs some 30 px along it,
 # which the shortest card still has room for.
-SPINE_W = 18.0
+SPINE_W = 26.0
 SPINE_FILL_ALPHA = 80  # A status tone's fill on the spine — a wash, not a swatch.
 SPINE_QUIET_ALPHA = 14  # No status to show: the spine is a shade darker than the body.
 
