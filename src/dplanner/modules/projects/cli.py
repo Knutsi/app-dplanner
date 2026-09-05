@@ -694,7 +694,7 @@ def _configure_link(parser: ArgumentParser) -> None:
 def _link_ends(context: CliContext, args: Namespace) -> tuple[Step, StepId]:
     library = context.library
     step = find_step(library, args.step, context.current)
-    other = find_step(library, args.on)
+    other = find_step(library, args.on, context.current)
     return step, other.id
 
 

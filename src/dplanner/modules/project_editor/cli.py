@@ -111,7 +111,7 @@ def commands(
         if args.center is not None:
             if args.algorithm != "radial":
                 raise CliError("--center only means something to the radial sort")
-            center = find_step(context.library, args.center).id
+            center = find_step(context.library, args.center, context.current).id
         placed = {
             "flow": lambda: layered_flow(context.library, project),
             "down": lambda: layered_down(context.library, project),
