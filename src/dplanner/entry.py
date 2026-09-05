@@ -15,9 +15,19 @@ holds for every agent, where a terminal test or an environment variable holds fo
 The dispatch happens **before** anything Qt is imported, so the CLI path never pays for a
 toolkit it does not use — and works on a machine that has none. Qt's own ``-style`` and
 ``-platform`` follow the word, because the first word is the decision.
+
+**And never from inside an agent's shell.** A window started from a shell an agent CLI
+runs is that agent's background process: it ends when the agent's turn does, and every
+agent launched from it inherits the shell's session markers and becomes a *child* session
+of the first — no transcript of its own, ended with its parent. One such window took four
+agents down with it. So ``dplanner window`` refuses when the environment says an agent's
+shell is around it, and says why; the launcher scrubs the same markers for a window that
+got them some other way. ``ARCHITECTURE.md``'s *The window is a word* has the reasoning.
 """
 
+import os
 import sys
+from collections.abc import Mapping
 
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import WINDOW_WORD, run
@@ -28,6 +38,23 @@ from dplanner.modules import default_cli_commands, default_module_formats
 # understand --library; the CLI also scopes verbs with --project. Skipping the value is
 # what lets ``dplanner --library ~/plans.json window`` open a window on that library.
 VALUE_OPTIONS = ("--library", "--project")
+
+# What an agent CLI sets in every shell it runs: one row per agent known to mark its
+# shell. Not a dispatch rule — the word decides what runs — but a guard on who owns the
+# window, and a missed agent here costs a guard, not a wrong dispatch.
+AGENT_SHELL_MARKERS = ("CLAUDECODE",)
+
+REFUSAL = (
+    "dplanner window: not from inside an agent's shell ({marker} is set).\n"
+    "A window opened here is the agent's background process: it ends when the agent's"
+    " turn does,\nand every agent launched from it goes with it. Open DPlanner from your"
+    " own terminal."
+)
+
+
+def agent_shell_marker(env: Mapping[str, str] = os.environ) -> str:
+    """The marker set in this environment, or "" when no agent's shell is around us."""
+    return next((name for name in AGENT_SHELL_MARKERS if env.get(name)), "")
 
 
 def _word_indices(argv: list[str]) -> list[int]:
@@ -76,6 +103,10 @@ def window_arguments(argv: list[str]) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     window = opens_a_window(arguments)
+    marker = agent_shell_marker() if window else ""
+    if marker:
+        print(REFUSAL.format(marker=marker), file=sys.stderr)
+        return 2
     # The journal is the process's, so it is installed here — before either surface —
     # and both write to the same file: a CLI run's row lands beside the window's.
     install(Telemetry(journal_path(), surface="window" if window else "cli"))

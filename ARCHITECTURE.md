@@ -156,6 +156,22 @@ and the agent that ran it bare was asking for exactly that list. A by-product: t
 longer builds the whole command inventory just to learn it is not a verb, and the CLI no
 longer builds it twice. `python -m dplanner` and `spawn_instance` go through the same door.
 
+**And the word refuses from inside an agent's shell.** The second incident was the first
+one's consequence: an agent ran `dplanner show F3` while the window was still the default,
+Claude Code kept the window it opened as a background task, and the developer used that
+window for an hour — launching three more agents from it. Each inherited the shell's
+session markers (`CLAUDECODE`, and the variables that name a session's parent), and a
+`claude` started under them makes itself a *child* session of the one that set them: no
+transcript on disk, ended when the parent's turn ends. When one agent's `pkill` (below)
+killed the first agent, its background window died with it, and every child session went
+too. So `entry.py` checks `AGENT_SHELL_MARKERS` before it opens a window and refuses with
+the reason. This *is* the vendor-variable check the list above declined — but for a
+different question. Dispatch asks *what runs*, and there a missed vendor is a wrong
+answer; this asks *who owns the window*, and a missed vendor is a missing guard, which is
+the same as today. One row per agent CLI known to mark its shell, and the launcher scrubs
+the same markers when it spawns (*The peer is a top-level session*, below), for a window
+that got its environment some other way.
+
 ## The index tree
 
 The template's sidebar was a tab set: one page per module, one visible at a time. DPlanner
@@ -1957,6 +1973,47 @@ The assembly is also where the CLI grew the composition root's other seam:
 what crosses modules arrives as arguments — `skill_commands(specs, described)` made that
 shape first, and this is its second use.
 
+### The peer is a top-level session, and the briefing stays out of argv
+
+Four agents died at once on 2026-09-05, and DPlanner had not crashed: it was killed, with
+them, by one agent's `pkill -f "Web.Host"`. The chain had three links, and each is now a
+rule.
+
+**The briefing was the command line.** The wrapper ran `claude … "$(cat prompt.md)"`, so
+every agent's argv was its whole briefing — and every briefing in that project mentioned
+`Web.Host` in the inherited handoff. An agent restarting its own .NET host by pattern
+matched every other agent on the machine. The opening prompt is now one line
+(`launcher.opening_prompt`): *read your briefing in `<file>` in full, then follow it*. The
+line carries a path and nothing the project is about, so no pattern drawn from the work can
+match it; it also stays under the platform's argument limit, which a briefing with a long
+handoff would not, and `ps` stays readable. The agent pays one file read.
+
+**The window was an agent's process, and its agents were its children.** *The window is a
+word* has that half. The launcher's own half is `scrubbed_environment()`: the terminal is
+spawned without the session markers an agent CLI sets in its shells, so an agent DPlanner
+launches is a top-level session with a transcript of its own, whatever started DPlanner.
+The scrub is narrow on purpose — the two markers Claude Code is known to set, and any
+variable under its prefix naming a session, a parent or a child — because the same prefix
+carries the person's configuration (`CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_USE_BEDROCK`), and an
+agent launched without that cannot sign in.
+
+**Nothing said not to kill by pattern.** The skill's *Cutting agent steps* and the
+briefing's preamble now both do: other agents work beside you in the same repository, their
+processes carry the same names and paths as yours, kill only by a pid your own shell
+started. The preamble is the one text every executing agent reads; the skill is where the
+convention lives for an agent driving the plan by hand.
+
+One more thing the incident cost was the way back. The Claude preset now names the run's
+session up front (`--session-id {session}`, a UUID minted per launch by `prepare`), the
+wrapper writes it into the shell facts beside `dir` (where the agent works, recorded once
+it is in place — a worktree, usually) and `resume` (`cd "<dir>" && claude --resume <id>`,
+composed from the preset's `resume` template, only for a preset's own command since a
+custom command's resume syntax is unknown), and prints the same command above *Press
+Enter* when a run ends badly. The Agents browser shows it under an ended row. A *Resume
+Agent* verb that opens a terminal on it is the obvious next step and is deliberately not
+built yet: the hint is what the recovery needed, and a second launch path is a feature to
+ask for.
+
 ### The peer reports back through its run directory
 
 A detached terminal tells nobody when it is done, and the four platforms' terminals have
@@ -1982,7 +2039,12 @@ One race is designed around. An agent's last `dplanner status set … done` and 
 land within a tick of each other, and a window that wrote the exit over a plan it had not
 re-read would trip the store's own refusal and leave the user with a conflict notice for
 something no person did. So the tick asks the store first — `changed_underneath()`, the
-same narrowed answer the library watcher reads — and stands down when it is true. The
+same narrowed answer the library watcher reads — and stands down when it is true. It asks
+**only once a run has ended**: the answer is a walk over every plan file, on the GUI
+thread, and asked every two seconds for its own sake it stalled a large library's window
+for as long as the walk took (300–500 ms, in the journal as `poll` spans) the whole time
+an agent ran; settling a run is a handful of stats, so a tick with nothing ended costs
+nothing. The
 watcher's move is to adopt the change into the live model (*Adopting the other writer's
 changes in place*), after which the same module, its runs intact, checks again on the next
 tick over a plan it has seen; when the store cannot reconcile and the watcher falls back to

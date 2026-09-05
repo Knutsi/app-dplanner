@@ -574,8 +574,12 @@ root, stop and look for the registry or capability you have not found yet.
   mistyped call gets the help and exit 2, never a window on the developer's desktop. Qt's
   `-style`/`-platform` follow the word; `spawn_instance` and `python -m dplanner` go through
   the same door; the word is not a noun and the skill never names it
-  (`tests/cli/test_entry.py` reserves it). `ARCHITECTURE.md`'s *The window is a word* has
-  the reasoning.
+  (`tests/cli/test_entry.py` reserves it). **And the word refuses inside an agent's
+  shell** (`AGENT_SHELL_MARKERS`, one row per agent CLI known to mark its shell): a window
+  that is an agent's background process ends with the agent's turn and makes every agent
+  it launches a *child session* of the first — no transcript, ended with its parent — which
+  is how one stray window took four agents down. Not a dispatch rule, a guard on who owns
+  the window. `ARCHITECTURE.md`'s *The window is a word* has the reasoning.
 - **Discarding a build is `discard_build()`, and closing the window is not enough.** Qt keeps
   a closed `QWidget` in `topLevelWidgets()`, so without `deleteLater()` the whole build —
   services, model, every module — stays reachable forever. Nobody notices in the application;
@@ -729,6 +733,17 @@ root, stop and look for the registry or capability you have not found yet.
   whose `requires` do not all read done (through `status_for` on the module's Deps, the
   progression board's seam) gets a confirmation naming them before a shell opens — the
   person may know the work landed unrecorded, so it asks rather than refuses.
+  **The briefing never rides in argv, and the peer is a top-level session.** The
+  agent's opening line is `launcher.opening_prompt` — a pointer at `prompt.md`, carrying
+  nothing the project is about — because the whole briefing as one argument was every
+  agent's command line, and one agent's `pkill -f "Web.Host"` matched four others.
+  `launcher.spawn` hands the terminal `scrubbed_environment()`: the session markers an
+  agent CLI sets in its shells are taken out (a nested `claude` under them is a child
+  session of the outer one), the person's `CLAUDE_CONFIG_DIR`-style configuration stays.
+  The Claude preset names the run's session (`--session-id {session}`, minted per launch);
+  the wrapper records it with `dir` and `resume` in the shell facts, and an ended row in
+  the Agents browser shows the command that picks the agent up again. The skill and the
+  briefing's preamble both say *never kill by name or pattern*.
   `ARCHITECTURE.md`'s *Running an agent launches a peer, not a task* has the reasoning.
 - **A worktree is the step's decision, and the run is named after the step.** Whether the
   agent gets a fresh git worktree is the agent aspect's `worktree` (absent = on; the Agent

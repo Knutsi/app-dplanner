@@ -1489,6 +1489,12 @@ def _agent_preamble(step: "Step", in_worktree: bool) -> str:
             " branch that is checked out — take care: other agents may be in worktrees"
             " beside you, but this one shares the developer's working tree."
         )
+    lines.append(
+        "Other agents may be working beside you in this repository, each in a worktree"
+        " of its own, and their processes carry the same names and paths as yours. Never"
+        " kill a process by name or pattern (`pkill -f`, `killall`, `kill $(pgrep …)`):"
+        " kill only by a pid your own shell started."
+    )
     return "\n\n".join(lines)
 
 

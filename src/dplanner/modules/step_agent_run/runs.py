@@ -83,8 +83,9 @@ def new_run(step_id: str, shell_file: str, exit_file: str) -> AgentRun:
 
 
 def read_shell(run: AgentRun) -> dict[str, str]:
-    """The shell's facts (``tty``, ``pid``, ``pane``, ``program``, ``title``), or {} before
-    the script has written them."""
+    """The shell's facts (``tty``, ``pid``, ``pane``, ``program``, ``title``, ``session``,
+    and once the agent is in place ``dir`` and ``resume``), or {} before the script has
+    written them."""
     try:
         text = Path(run.shell_file).read_text()
     except OSError:

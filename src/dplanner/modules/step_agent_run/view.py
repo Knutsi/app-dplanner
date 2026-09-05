@@ -4,7 +4,8 @@ Pure widgets, on the task centre's pattern: the module feeds them the run list a
 callbacks; they only render. Browser rows are persistent widgets keyed by run and
 reconciled on refresh, so a row survives a tick with its buttons' state intact. A live
 row offers *Show Terminal* and *Reveal* — greyed per run with the reason when that run's
-terminal cannot be raised; an ended row keeps its outcome until dismissed.
+terminal cannot be raised; an ended row keeps its outcome until dismissed, with the
+command that picks the agent up again under it when the wrapper recorded one.
 
 Presentation follows DESIGN.md: the step's title on the primary line, the state or outcome
 and the launch time on a secondary line, rows in a framed scrolling well, quiet buttons —
@@ -131,20 +132,31 @@ class AgentRow(QWidget):
         self.status.setObjectName("AgentRowStatus")
         self.status.setWordWrap(True)
 
+        # An ended run's way back: the command that resumes the agent where it stopped,
+        # selectable so it can be pasted into a terminal.
+        self.resume = QLabel(self)
+        self.resume.setObjectName("AgentRowResume")
+        self.resume.setWordWrap(True)
+        self.resume.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.resume.hide()
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)  # Rich-row metrics per DESIGN.md.
         layout.setSpacing(4)
         layout.addLayout(title_line)
         layout.addWidget(self.status)
+        layout.addWidget(self.resume)
         self.refresh(run, "")
 
-    def refresh(self, run: AgentRun, focus_reason: str) -> None:
+    def refresh(self, run: AgentRun, focus_reason: str, resume: str = "") -> None:
         self.run = run
         self.title.setText(self._title_of(run.step_id))
         self.status.setText(status_text(run, self._state_of(run.step_id)))
         self.terminal_button.setVisible(run.live)
         self.terminal_button.setEnabled(not focus_reason)
         self.terminal_button.setToolTip(focus_reason or "Bring the agent's terminal to the front")
+        self.resume.setText(f"Pick it up again: {resume}" if resume else "")
+        self.resume.setVisible(bool(resume) and not run.live)
 
 
 class AgentBrowserDialog(QDialog):
@@ -212,7 +224,12 @@ class AgentBrowserDialog(QDialog):
         layout.addWidget(self.well, 1)
         layout.addLayout(footer)
 
-    def refresh(self, runs: list[AgentRun], reason_of: Callable[[AgentRun], str]) -> None:
+    def refresh(
+        self,
+        runs: list[AgentRun],
+        reason_of: Callable[[AgentRun], str],
+        resume_of: Callable[[AgentRun], str],
+    ) -> None:
         wanted = {run.key for run in runs}
         for key, row in list(self._rows.items()):
             if key not in wanted:
@@ -234,7 +251,7 @@ class AgentBrowserDialog(QDialog):
                 )
                 self._rows_layout.insertWidget(len(self._rows), existing)
                 self._rows[run.key] = existing
-            existing.refresh(run, reason_of(run))
+            existing.refresh(run, reason_of(run), resume_of(run))
         live = sum(1 for run in runs if run.live)
         ended = len(runs) - live
         parts = ([f"{live} running"] if live else []) + ([f"{ended} ended"] if ended else [])

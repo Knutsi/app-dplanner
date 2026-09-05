@@ -134,3 +134,59 @@ def test_the_entry_point_answers_a_bare_or_mistyped_call_without_qt(tmp_path, ar
     )
     assert result.returncode == 0, result.stderr
     assert said in result.stderr
+
+
+# -- never from inside an agent's shell -------------------------------------------------------
+
+
+def test_the_window_refuses_inside_an_agents_shell(monkeypatch, capsys):
+    """The incident: an agent ran `dplanner show F3`, which opened a window — the agent's
+    own background process — and every agent launched from that window was a child
+    session of the first; one `pkill` later, four were gone. The word is explicit now,
+    and even the word refuses where an agent's shell is around it."""
+    from dplanner.entry import AGENT_SHELL_MARKERS, agent_shell_marker, main
+
+    assert AGENT_SHELL_MARKERS == ("CLAUDECODE",)
+    assert agent_shell_marker({"CLAUDECODE": "1"}) == "CLAUDECODE"
+    assert agent_shell_marker({"CLAUDECODE": ""}) == ""  # Set to nothing is not set.
+    assert agent_shell_marker({"PATH": "/usr/bin"}) == ""
+    monkeypatch.setenv("CLAUDECODE", "1")
+    assert main([WINDOW_WORD]) == 2
+    err = capsys.readouterr().err
+    assert "not from inside an agent's shell (CLAUDECODE is set)" in err
+    assert "Open DPlanner from your own terminal" in err
+
+
+@pytest.mark.parametrize(
+    ("argv", "code", "said"),
+    [
+        ([WINDOW_WORD], 2, "CLAUDECODE is set"),
+        (["--version"], 0, "dplanner "),  # Only the window: the CLI is how an agent drives it.
+    ],
+)
+def test_inside_an_agents_shell_the_window_is_refused_and_the_cli_runs(tmp_path, argv, code, said):
+    probe = (
+        "import sys\n"
+        "from dplanner.entry import main\n"
+        "try:\n"
+        f"    result = main({argv!r})\n"
+        "except SystemExit as error:\n"
+        "    result = error.code\n"
+        f"assert result == {code}, result\n"
+        "assert 'PySide6' not in sys.modules, sorted(m for m in sys.modules if 'Side' in m)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            **os.environ,
+            "CLAUDECODE": "1",
+            "XDG_CONFIG_HOME": str(tmp_path),
+            "HOME": str(tmp_path),
+            "APPDATA": str(tmp_path),
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    assert said in result.stderr + result.stdout

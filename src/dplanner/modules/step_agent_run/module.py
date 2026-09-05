@@ -16,7 +16,8 @@ half of a launch — **the shell is a peer this window keeps an eye on**:
   call.
 - A status-bar button ("Agent on “X”", "2 agents running") opens the Agents browser —
   View ▸ Agents… does the same — where every run this machine launched is a row with its
-  state or outcome, *Show Terminal*, *Reveal* and a dismiss.
+  state or outcome, *Show Terminal*, *Reveal* and a dismiss — and, once it has ended, the
+  command that picks the agent up again where it stopped, as the wrapper recorded it.
 - Tools ▸ Agent List is the quick switch: a data child menu listing the live runs, each
   entry raising its terminal. Availability is per run (``terminal.focus_reason`` — a tmux
   pane is reachable on a desktop whose bare windows are not), and a run that cannot be
@@ -177,23 +178,32 @@ class StepAgentRunModule:
         self._refresh()
 
     def check(self) -> None:
-        """One tick: settle every live run whose shell has ended, and say so."""
+        """One tick: settle every live run whose shell has ended, and say so.
+
+        The store is asked whether the plan changed underneath only once a run *has*
+        ended: that answer is a walk over every plan file, on the GUI thread, and asking
+        it every two seconds for its own sake stalled a large library's window for as
+        long as the walk took (300 to 500 ms) the whole time an agent ran. Settling a run
+        is a handful of stats, so the tick costs nothing until there is an exit to write.
+        """
         deps = self._deps
-        if any(run.live for run in self._runs) and deps.repo.changed_underneath():
+        ended = [
+            (index, settled)
+            for index, run in enumerate(self._runs)
+            if (settled := settle(run)) is not run
+        ]
+        if not ended:
+            self._refresh()
+            return
+        if deps.repo.changed_underneath():
             return  # The watcher takes the change first; the next tick checks again.
-        changed = False
-        for index, run in enumerate(self._runs):
-            settled = settle(run)
-            if settled is run:
-                continue
+        for index, settled in ended:
             self._runs[index] = settled
-            changed = True
-            record_exit(deps.library, run.step_id)
+            record_exit(deps.library, settled.step_id)
             deps.status.show_status(
-                f"Agent on “{self._title_of(run.step_id)}” {describe(settled, '')}", 6000
+                f"Agent on “{self._title_of(settled.step_id)}” {describe(settled, '')}", 6000
             )
-        if changed:
-            self._store()
+        self._store()
         self._refresh()
 
     def _forget(self, run: AgentRun) -> None:
@@ -214,7 +224,7 @@ class StepAgentRunModule:
             return
         self._button.show_runs(self._runs, self._title_of)
         if self._browser.isVisible():
-            self._browser.refresh(self._runs, self._focus_reason)
+            self._browser.refresh(self._runs, self._focus_reason, self._resume_of)
         live = any(run.live for run in self._runs)
         if live and not self._timer.isActive():
             self._timer.start()
@@ -223,7 +233,7 @@ class StepAgentRunModule:
 
     def _open_browser(self) -> None:
         assert self._browser is not None
-        self._browser.refresh(self._runs, self._focus_reason)
+        self._browser.refresh(self._runs, self._focus_reason, self._resume_of)
         self._browser.show()  # Non-modal: the agents keep working underneath.
         self._browser.raise_()
 
@@ -239,6 +249,11 @@ class StepAgentRunModule:
     def _focus_reason(self, run: AgentRun) -> str:
         """Why this run's terminal cannot be raised, or "" — per run, not per desktop."""
         return terminal.focus_reason(read_shell(run))
+
+    def _resume_of(self, run: AgentRun) -> str:
+        """The command that picks an ended run up where it stopped, as the wrapper
+        recorded it, or "" for a live run or an agent that cannot resume."""
+        return "" if run.live else read_shell(run).get("resume", "")
 
     # -- the verbs -----------------------------------------------------------------------------
 

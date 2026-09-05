@@ -422,3 +422,62 @@ def test_needs_input_reaches_the_canvas_as_an_attention_chip(services, step):
     )
     accent = tab._scene._nodes[step.id]._accent
     assert (accent.chip_text, accent.chip_tone) == ("needs input", "attention")
+
+
+def test_the_tick_asks_the_store_only_once_a_run_has_ended(services, step, tmp_path, monkeypatch):
+    """`changed_underneath` is a walk over every plan file on the GUI thread; asked every
+    two seconds while an agent ran, it stalled a large library's window for as long as
+    the walk took. A tick with nothing ended never asks."""
+    runs = module(services)
+    runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"))
+    services.autosave.flush_now()
+    asked: list[int] = []
+
+    def changed_underneath() -> bool:
+        asked.append(1)
+        return False
+
+    monkeypatch.setattr(services.repo, "changed_underneath", changed_underneath)
+    runs.check()
+    runs.check()
+    assert asked == []
+    assert runs.runs()[0].live
+    (tmp_path / "exit").write_text("0\n")
+    runs.check()
+    assert asked == [1]
+    assert runs.runs()[0].outcome == "finished"
+
+
+def test_an_ended_run_shows_the_command_that_picks_it_up_again(services, step, tmp_path):
+    """The wrapper records the resume command beside the shell's facts once the agent is
+    in place; the browser shows it under an ended row, never under a live one."""
+    runs = module(services)
+    runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"))
+    (tmp_path / "shell").write_text(
+        "pid=1\nsession=7a1e4c2e-0000-4000-8000-000000000003\ndir=/repo/.dplanner-worktrees/s7\n"
+        'resume=cd "/repo/.dplanner-worktrees/s7" && claude --resume'
+        " 7a1e4c2e-0000-4000-8000-000000000003\n"
+    )
+    runs._open_browser()
+    row = next(iter(runs._browser._rows.values()))
+    assert not row.resume.isVisibleTo(row)
+
+    (tmp_path / "exit").write_text("143\n")
+    runs.check()
+    assert row.status.text().startswith("failed (exit 143)")
+    assert row.resume.isVisibleTo(row)
+    assert row.resume.text() == (
+        'Pick it up again: cd "/repo/.dplanner-worktrees/s7" && claude --resume'
+        " 7a1e4c2e-0000-4000-8000-000000000003"
+    )
+
+
+def test_an_ended_run_without_a_resume_shows_none(services, step, tmp_path):
+    runs = module(services)
+    runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"))
+    (tmp_path / "shell").write_text("pid=1\nsession=\ndir=/repo\n")
+    (tmp_path / "exit").write_text("1\n")
+    runs.check()
+    runs._open_browser()
+    row = next(iter(runs._browser._rows.values()))
+    assert not row.resume.isVisibleTo(row) and row.resume.text() == ""

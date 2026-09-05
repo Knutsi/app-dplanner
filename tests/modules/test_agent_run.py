@@ -177,7 +177,12 @@ def test_the_script_reports_the_shell_and_the_exit(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     files = prepare(
-        "p", tmp_path, platform="linux", directory=run_dir, step_title="Deploy: the 'beta' (v2)"
+        "p",
+        tmp_path,
+        platform="linux",
+        directory=run_dir,
+        step_title="Deploy: the 'beta' (v2)",
+        session="7a1e4c2e-0000-4000-8000-000000000001",
     )
     script = files.script.read_text()
     assert files.title == "dplanner: Deploy: the beta (v2)"
@@ -185,8 +190,9 @@ def test_the_script_reports_the_shell_and_the_exit(tmp_path):
     assert "printf '\\033]0;%s\\007' 'dplanner: Deploy: the beta (v2)'" in script
     assert (
         f'"$(tty)" "$$" "$TMUX_PANE" "$TERM_PROGRAM" \'dplanner: Deploy: the beta (v2)\''
-        f" > {run_dir}/shell"
+        f" 7a1e4c2e-0000-4000-8000-000000000001 > {run_dir}/shell"
     ) in script
+    assert f"printf 'dir=%s\\n' \"$(pwd)\" >> {run_dir}/shell" in script
     assert f"trap 'echo closed > {run_dir}/exit; exit 129' HUP" in script
     assert f'echo "$code" > {run_dir}/exit' in script
     assert "read -r _" in script
@@ -306,7 +312,104 @@ def test_a_run_name_is_the_key_the_ticket_and_the_slug_made_ref_safe():
 
 def test_a_command_without_the_placeholder_still_gets_the_prompt(tmp_path):
     script = prepare("p", tmp_path, agent_command="my-agent", platform="linux").script.read_text()
-    assert '\nmy-agent "$(cat' in script
+    assert "\nmy-agent 'Read your briefing in " in script
+
+
+def test_the_briefing_never_rides_in_argv(tmp_path):
+    """The incident: every briefing handed to the agent as one argument was every agent's
+    command line, and one agent's `pkill -f "Web.Host"` — its own dev server — matched
+    the words of every other agent's briefing. The opening line points at the file and
+    carries nothing the project is about."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    briefing = "Restart Web.Host after the migration; vite serves the front end."
+    files = prepare(briefing, tmp_path, platform="linux", directory=run_dir)
+    script = files.script.read_text()
+    assert files.prompt_file.read_text() == briefing
+    assert "Web.Host" not in script and "vite" not in script
+    assert f"'Read your briefing in {run_dir}/prompt.md in full, then follow it.'" in script
+    assert "$(cat" not in script
+    windows = prepare(briefing, tmp_path, platform="win32", directory=run_dir).script.read_text()
+    assert "Web.Host" not in windows and "Get-Content" not in windows
+    assert f"'Read your briefing in {run_dir / 'prompt.md'} in full, then follow it.'" in windows
+
+
+def test_the_claude_preset_names_the_session_and_the_script_says_how_to_resume(tmp_path):
+    """A session id minted per launch is what `claude --resume` takes back: the facts
+    carry it with the directory the agent works in, and a failed run's window prints
+    the command before it waits for Enter."""
+    from dplanner.modules.step_agent_instruction.launcher import resume_command
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    session = "7a1e4c2e-0000-4000-8000-000000000002"
+    files = prepare("p", tmp_path, platform="linux", directory=run_dir, session=session)
+    script = files.script.read_text()
+    assert files.session == session
+    assert f"\nclaude --permission-mode plan --session-id {session} 'Read" in script
+    assert (
+        f'printf \'resume=cd "%s" && claude --resume {session}\\n\' "$(pwd)" >> {run_dir}/shell'
+    ) in script
+    assert f'To pick it up again: cd "%s" && claude --resume {session}' in script
+    assert resume_command("claude --permission-mode plan --session-id {session} {prompt}", "x")
+    assert resume_command("my-agent --session {session} {prompt}", "x") == ""  # Unknown agent.
+    assert resume_command("codex {prompt}", "x") == ""  # Cannot name a session up front.
+    windows = prepare(
+        "p", tmp_path, platform="win32", directory=run_dir, session=session
+    ).script.read_text()
+    assert f"--session-id {session} 'Read" in windows
+    assert f"'session={session}'" in windows and "'dir=' + $PWD" in windows
+    assert f"'resume=cd /d ' + $PWD + ' && claude --resume {session}'" in windows
+
+
+def test_a_minted_session_is_a_uuid(tmp_path):
+    import uuid
+
+    files = prepare("p", tmp_path, platform="linux")
+    assert uuid.UUID(files.session)
+    assert files.session in files.script.read_text()
+
+
+def test_an_agent_without_a_session_gets_no_resume_lines(tmp_path):
+    script = prepare("p", tmp_path, agent_command="codex {prompt}", platform="linux")
+    text = script.script.read_text()
+    assert "resume=" not in text and "pick it up" not in text
+    assert f"session={script.session}" not in text  # The facts name it; the command does not.
+    assert f" {script.session} > " in text
+
+
+def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_path):
+    """Inside another agent's session markers a nested `claude` is a child session — no
+    transcript, ended with its parent — which is how one window took four agents down.
+    The person's own configuration under the same prefix stays."""
+    import subprocess
+
+    from dplanner.modules.step_agent_instruction import launcher
+
+    env = {
+        "PATH": "/usr/bin",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_PARENT_SESSION_ID": "48bd92ff",
+        "CLAUDE_CONFIG_DIR": "/home/me/.claude",
+        "CLAUDE_CODE_USE_BEDROCK": "1",
+        "ANTHROPIC_API_KEY": "k",
+    }
+    assert launcher.scrubbed_environment(env) == {
+        "PATH": "/usr/bin",
+        "CLAUDE_CONFIG_DIR": "/home/me/.claude",
+        "CLAUDE_CODE_USE_BEDROCK": "1",
+        "ANTHROPIC_API_KEY": "k",
+    }
+    calls = []
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: calls.append((a, kw)))
+    monkeypatch.setenv("CLAUDECODE", "1")
+    launcher.spawn(["term", "-e", "run.sh"], tmp_path)
+    ((command,), options) = calls[0]
+    assert command == ["term", "-e", "run.sh"]
+    assert options["start_new_session"] is True and options["cwd"] == tmp_path
+    assert "CLAUDECODE" not in options["env"] and "PATH" in options["env"]
 
 
 def test_the_presets_cover_the_known_agents():

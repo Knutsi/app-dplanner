@@ -132,8 +132,10 @@ def build_page(parent: QWidget | None, platform: str = sys.platform) -> QWidget:
     layout.addWidget(command_edit)
     layout.addWidget(
         _note(
-            "What the terminal runs, seeded with the step's briefing — {prompt} is where"
-            " it goes (appended when omitted). Picking an agent above fills this in.",
+            "What the terminal runs. {prompt} is the opening line — one sentence pointing"
+            " the agent at the briefing file, never the briefing itself (appended when"
+            " omitted); {session} is the run's session id, for an agent that can resume"
+            " one. Picking an agent above fills this in.",
             page,
         )
     )

@@ -211,6 +211,12 @@ checkout shares the developer's working tree with every other agent and with the
 When you *execute* a step, its briefing tells you which worktree to expect; if you are
 not in it, stop and say so rather than working in the main checkout.
 
+**Other agents work beside you — same repository, same project, same process names.**
+Never kill a process by name or pattern: `pkill -f`, `killall`, `kill $(pgrep …)`. Every
+agent's dev server, test runner and agent process carries the same names and paths as
+yours, and one agent's `pkill -f vite` has stopped three others mid-task. Kill only by a
+pid your own shell started, on a port you chose.
+
 ## Linking honestly
 
 Link `requires` only when the work truly cannot start before the other step lands. A plan

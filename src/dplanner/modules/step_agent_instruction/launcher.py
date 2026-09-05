@@ -34,11 +34,33 @@ command in a fresh process with its own window — it forces ``gtk-single-instan
 **The shell reports back through its run directory.** The wrapper script is the one
 process that knows when the agent ends, so it writes two files beside the prompt: the
 shell's facts on start (``shell``: tty, pid, tmux pane, terminal program, window title —
-what a later *Show Agent Terminal* needs to find the window again) and the agent's exit
-status when it ends (``exit``; ``closed`` when the terminal was shut on it). The agent-run
-module watches for the second and clears the step's chip; nothing here depends on the
-terminal, so the report works with every row of the table. On a non-zero exit the window
-stays open on a *Press Enter* line, so a crash can be read before it is gone.
+what a later *Show Agent Terminal* needs to find the window again — the run's session id,
+and once it is in place the directory it works in and the command that resumes it) and
+the agent's exit status when it ends (``exit``; ``closed`` when the terminal was shut on
+it). The agent-run module watches for the second and clears the step's chip; nothing here
+depends on the terminal, so the report works with every row of the table. On a non-zero
+exit the window stays open on a *Press Enter* line, with the resume command above it, so
+a crash can be read — and picked up again — before it is gone.
+
+**The briefing never rides in argv.** The agent's opening prompt is one line pointing at
+``prompt.md`` (:func:`opening_prompt`); the briefing itself is read from the file. Handed
+over as an argument, the whole briefing was every agent's command line — and one agent's
+``pkill -f "Web.Host"``, aimed at its own dev server, matched the words of every other
+agent's briefing and killed four of them mid-task. A command line that carries only a
+path cannot be matched by anything the project is about; it also stays under the
+platform's argument limit and readable in ``ps``.
+
+**The agent is a top-level session.** :func:`spawn` hands the terminal an environment
+with the session markers an agent CLI sets in its shells taken out
+(:func:`scrubbed_environment`): with them in place a nested ``claude`` makes itself a
+*child* of the session that set them — no transcript of its own, ended when the parent's
+turn ends — which is how a DPlanner started from an agent's shell took every agent it
+launched down with it. ``entry.py`` refuses to open a window from such a shell; the scrub
+is the second line, for a window that got its environment some other way. User
+configuration under the same prefix (``CLAUDE_CONFIG_DIR``, ``CLAUDE_CODE_USE_BEDROCK``)
+is the person's, not a session's, and stays. The Claude preset also names the run's
+session (``--session-id``, minted per launch): the id is what ``claude --resume`` takes,
+so an agent that died can be picked up where it stopped.
 
 **A worktree is prepared by the script, and a worktree that cannot be prepared stops the
 run.** When the step asks for one (its agent aspect's ``worktree``, on by default), the
@@ -69,6 +91,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -123,20 +146,57 @@ def branch_name(name: str) -> str:
 class AgentPreset:
     id: str
     label: str
-    # The command the wrapper execs; {prompt} becomes the briefing text, quoted.
+    # The command the wrapper runs; {prompt} becomes the opening line (quoted) and
+    # {session} the run's session id.
     command: str
+    # How a run of this agent is picked up again, over the same {session}; "" when the
+    # agent has no way to name a session up front.
+    resume: str = ""
 
 
 # The dropdown's rows, first is the default. Every command opens an *interactive* session
 # seeded with the briefing; Claude Code also starts in plan mode, so the developer approves
 # the plan before anything changes.
 PRESETS: tuple[AgentPreset, ...] = (
-    AgentPreset("claude", "Claude Code", "claude --permission-mode plan {prompt}"),
+    AgentPreset(
+        "claude",
+        "Claude Code",
+        "claude --permission-mode plan --session-id {session} {prompt}",
+        resume="claude --resume {session}",
+    ),
     AgentPreset("codex", "Codex", "codex {prompt}"),
     AgentPreset("opencode", "OpenCode", "opencode --prompt {prompt}"),
 )
 
 DEFAULT_AGENT_COMMAND = PRESETS[0].command
+
+
+def resume_command(agent_command: str, session: str) -> str:
+    """How this run is picked up again, or "" for an agent whose resume is unknown.
+
+    Known only for a preset's own command — a custom command may name ``{session}`` for
+    an agent whose resume syntax nothing here knows, and a hint that guesses is worse
+    than none.
+    """
+    command = agent_command.strip() or DEFAULT_AGENT_COMMAND
+    preset = next((preset for preset in PRESETS if preset.command == command), None)
+    if preset is None or not preset.resume or "{session}" not in command:
+        return ""
+    return preset.resume.replace("{session}", session)
+
+
+def new_session() -> str:
+    """A run's session id: a UUID, which is what ``claude --session-id`` accepts."""
+    return str(uuid.uuid4())
+
+
+def opening_prompt(prompt_file: Path) -> str:
+    """The one line the agent starts with — a pointer at the briefing, never the briefing.
+
+    See the module docstring: the whole briefing in argv was what one agent's ``pkill
+    -f`` matched on every other. Nothing the project is about appears in this line.
+    """
+    return f"Read your briefing in {prompt_file} in full, then follow it."
 
 
 @dataclass(frozen=True)
@@ -221,6 +281,7 @@ class LaunchFiles:
     shell_file: Path
     exit_file: Path
     title: str  # The terminal window's title, as the script sets it.
+    session: str = ""  # The run's session id, as the agent command names it.
 
 
 def new_run_dir() -> Path:
@@ -254,12 +315,13 @@ def stage_assets(
     return staged
 
 
-def _agent_line(agent_command: str, prompt_expansion: str) -> str:
-    """The command with the briefing substituted; appended when no placeholder names it."""
+def _agent_line(agent_command: str, prompt_expansion: str, session: str) -> str:
+    """The command with the opening prompt and the session substituted; the prompt is
+    appended when no placeholder names it."""
     command = agent_command.strip() or DEFAULT_AGENT_COMMAND
     if "{prompt}" not in command:
         command += " {prompt}"
-    return command.replace("{prompt}", prompt_expansion)
+    return command.replace("{prompt}", prompt_expansion).replace("{session}", session)
 
 
 def window_title(step_title: str) -> str:
@@ -281,12 +343,14 @@ def prepare(
     platform: str = sys.platform,
     directory: Path | None = None,
     step_title: str = "",
+    session: str = "",
 ) -> LaunchFiles:
     """Write the prompt and a wrapper script to ``directory``, or a fresh temp directory.
 
     ``worktree`` is a run name (:func:`run_name`); when non-empty the script prepares
     :func:`worktree_path` on :func:`branch_name` and moves into it before starting — or
-    stops with git's reason when it cannot. Empty means the checkout itself.
+    stops with git's reason when it cannot. Empty means the checkout itself. ``session``
+    is the run's session id, minted here when not given.
     """
     if directory is None:
         directory = new_run_dir()
@@ -299,6 +363,7 @@ def prepare(
         shell_file=directory / SHELL_FILE,
         exit_file=directory / EXIT_FILE,
         title=window_title(step_title),
+        session=session or new_session(),
     )
     if platform.startswith("win"):
         files.script.write_text(_windows_script(files, workdir, agent_command, worktree))
@@ -311,12 +376,13 @@ def prepare(
 def _posix_script(files: LaunchFiles, workdir: Path, agent_command: str, worktree: str) -> str:
     title = shlex.quote(files.title)
     shell, exit_file = shlex.quote(str(files.shell_file)), shlex.quote(str(files.exit_file))
+    resume = resume_command(agent_command, files.session)
     lines = [
         "#!/bin/sh",
         # The title first, so the window is findable from its first frame; then the facts.
         f"printf '\\033]0;%s\\007' {title}",
-        f"printf 'tty=%s\\npid=%s\\npane=%s\\nprogram=%s\\ntitle=%s\\n'"
-        f' "$(tty)" "$$" "$TMUX_PANE" "$TERM_PROGRAM" {title} > {shell}',
+        f"printf 'tty=%s\\npid=%s\\npane=%s\\nprogram=%s\\ntitle=%s\\nsession=%s\\n'"
+        f' "$(tty)" "$$" "$TMUX_PANE" "$TERM_PROGRAM" {title} {files.session} > {shell}',
         # The terminal closed on the agent: say so rather than reporting its signal.
         f"trap 'echo closed > {exit_file}; exit 129' HUP",
         f'cd "{workdir}"',
@@ -348,12 +414,21 @@ def _posix_script(files: LaunchFiles, workdir: Path, agent_command: str, worktre
             "fi",
             f'cd "{tree}"',
         ]
+    # In place now: where the agent works, and how to pick this run up again from there.
+    lines.append(f"printf 'dir=%s\\n' \"$(pwd)\" >> {shell}")
+    if resume:
+        lines.append(f'printf \'resume=cd "%s" && {resume}\\n\' "$(pwd)" >> {shell}')
     lines += [
-        _agent_line(agent_command, f"\"$(cat '{files.prompt_file}')\""),
+        _agent_line(agent_command, shlex.quote(opening_prompt(files.prompt_file)), files.session),
         "code=$?",
         f'echo "$code" > {exit_file}',
         'if [ "$code" -ne 0 ]; then',
-        "  printf '\\nThe agent exited with status %s. Press Enter to close.\\n' \"$code\"",
+        "  printf '\\nThe agent exited with status %s.\\n' \"$code\"",
+    ]
+    if resume:
+        lines.append(f'  printf \'To pick it up again: cd "%s" && {resume}\\n\' "$(pwd)"')
+    lines += [
+        "  printf 'Press Enter to close.\\n'",
         "  read -r _",
         "fi",
         'exit "$code"',
@@ -381,12 +456,23 @@ def _windows_script(files: LaunchFiles, workdir: Path, agent_command: str, workt
             ")",
             f'cd /d "{tree}"',
         ]
-    agent = _agent_line(agent_command, f"(Get-Content -Raw '{files.prompt_file}')")
+    prompt = opening_prompt(files.prompt_file).replace("'", "''")
+    agent = _agent_line(agent_command, f"'{prompt}'", files.session)
+    resume = resume_command(agent_command, files.session)
     # PowerShell writes the facts (it is the process whose pid outlives the agent's start
-    # and dies with the window) and carries the agent's exit status back out to cmd.
+    # and dies with the window) and carries the agent's exit status back out to cmd. Only
+    # single quotes inside: the whole command sits in cmd's double quotes.
+    rows = [
+        "'pid=' + $PID",
+        f"'title={files.title}'",
+        f"'session={files.session}'",
+        "'dir=' + $PWD",
+    ]
+    if resume:
+        rows.append(f"'resume=cd /d ' + $PWD + ' && {resume}'")
     facts = (
         f"Set-Content -Path '{files.shell_file}'"
-        f" -Value ('pid=' + $PID + [Environment]::NewLine + 'title={files.title}')"
+        f" -Value ({' + [Environment]::NewLine + '.join(rows)})"
     )
     lines += [
         f'powershell -Command "{facts}; {agent}; exit $LASTEXITCODE"',
@@ -395,6 +481,10 @@ def _windows_script(files: LaunchFiles, workdir: Path, agent_command: str, workt
         f'>"{files.exit_file}" echo %code%',
         'if not "%code%"=="0" (',
         "  echo The agent exited with status %code%.",
+    ]
+    if resume:
+        lines.append(f"  echo To pick it up again: cd /d %CD% ^&^& {resume}")
+    lines += [
         "  pause",
         ")",
     ]
@@ -442,11 +532,39 @@ def _fill(template: str, values: Mapping[str, str]) -> list[str] | None:
         return None
 
 
+# What an agent CLI's shell carries that says "you are inside a session" — Claude Code's
+# two markers, and whatever names the session, its parent or a child under the same
+# prefix. Not the whole prefix: CLAUDE_CONFIG_DIR and CLAUDE_CODE_USE_BEDROCK are the
+# person's configuration, and an agent launched without them cannot sign in.
+SESSION_MARKERS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
+SESSION_MARKER_PREFIX = "CLAUDE_CODE_"
+SESSION_MARKER_WORDS = ("SESSION", "PARENT", "CHILD")
+
+
+def is_session_marker(name: str) -> bool:
+    if name in SESSION_MARKERS:
+        return True
+    return name.startswith(SESSION_MARKER_PREFIX) and any(
+        word in name for word in SESSION_MARKER_WORDS
+    )
+
+
+def scrubbed_environment(env: Mapping[str, str] = os.environ) -> dict[str, str]:
+    """``env`` without the session markers, so the agent starts a session of its own.
+
+    See the module docstring: inside another agent's session markers a nested ``claude``
+    is a child session — no transcript, ended with its parent — and every agent launched
+    from a window that inherited them died with the agent that had started the window.
+    """
+    return {name: value for name, value in env.items() if not is_session_marker(name)}
+
+
 def spawn(command: list[str], workdir: Path) -> None:
     """Start the terminal, detached: its life is the user's, not the application's."""
     subprocess.Popen(
         command,
         cwd=workdir,
+        env=scrubbed_environment(),
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
