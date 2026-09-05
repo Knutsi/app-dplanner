@@ -58,7 +58,7 @@ def _configure_set(parser: ArgumentParser) -> None:
 
 
 def _set(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.library, args.step)
+    step = find_step(context.library, args.step, context.current)
     if args.label is None and (kept := shelved(step, MODULE_ID)) is not None and not read(step):
         # No label asked for and one on the shelf: bring it back rather than generate.
         context.apply(turn_on(step, MODULE_ID, fresh={}, label="Add Milestone"))
@@ -79,7 +79,7 @@ def _set(context: CliContext, args: Namespace) -> int:
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.library, args.step)
+    step = find_step(context.library, args.step, context.current)
     if not read(step):
         # Already clear is success — state-clearing verbs must survive batches.
         context.report({"step": step.id}, f"{step.title}: not a milestone")

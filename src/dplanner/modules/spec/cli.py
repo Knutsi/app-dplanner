@@ -584,7 +584,7 @@ def _assets(context: CliContext, args: Namespace) -> int:
 
 
 def _attach_to_step(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.library, args.step)
+    step = find_step(context.library, args.step, context.current)
     project = context.library.project_of(step.id)
     wanted = list(dict.fromkeys(args.asset))
     if args.remove:

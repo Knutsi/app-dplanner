@@ -34,8 +34,23 @@ def node(tab, step):
     return tab._scene._nodes[step.id]
 
 
-def test_a_plain_step_has_no_accent(project, tab):
-    assert node(tab, project.steps[0])._accent == NodeAccent()
+def test_a_plain_step_has_no_accent_beyond_its_key(project, tab):
+    assert node(tab, project.steps[0])._accent == NodeAccent(key_text="S1")
+
+
+def test_the_key_letter_follows_the_kind_and_the_number_stays(services, project, tab):
+    """The spine reads the step's key: the number the project dealt, behind a letter for
+    what the step is now — a milestone outranks a feature, a check ranks below both."""
+    from dplanner.modules.step_check import aspect as check
+
+    step = project.steps[1]
+    assert node(tab, step)._accent.key_text == "S2"
+    services.undo.push(SetModuleDataCommand(step.id, check.MODULE_ID, check.write(True)))
+    assert node(tab, step)._accent.key_text == "C2"
+    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write("f1")))
+    assert node(tab, step)._accent.key_text == "F2"
+    services.undo.push(SetModuleDataCommand(step.id, milestone.MODULE_ID, milestone.write("MVP")))
+    assert node(tab, step)._accent.key_text == "M2"
 
 
 def test_a_done_step_is_muted_with_a_green_body(services, project, tab):
@@ -44,7 +59,7 @@ def test_a_done_step_is_muted_with_a_green_body(services, project, tab):
     accent = node(tab, step)._accent
     assert accent.muted is True
     assert accent.body_tone == "good"
-    assert accent.bar_tone == ""  # The body wears the green; a bar would say it twice.
+    assert accent.spine_tone == "good"  # The spine says where the step stands, always.
 
 
 def test_a_shipped_milestone_reads_finished(services, project, tab):
@@ -116,14 +131,14 @@ def test_in_progress_gets_a_busy_bar(services, project, tab):
     step = project.steps[0]
     services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("in-progress")))
     accent = node(tab, step)._accent
-    assert accent.bar_tone == "busy"
+    assert accent.spine_tone == "busy"
     assert accent.muted is False
 
 
 def test_blocked_gets_a_bad_bar(services, project, tab):
     step = project.steps[0]
     services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("blocked")))
-    assert node(tab, step)._accent.bar_tone == "bad"
+    assert node(tab, step)._accent.spine_tone == "bad"
 
 
 def test_an_instructed_step_wears_the_spark_medallion(services, project, tab):

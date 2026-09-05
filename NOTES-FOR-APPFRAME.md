@@ -2024,3 +2024,18 @@ synthesises a context carrying the step and the thing and no verb grew a paramet
 section with nothing addressable implements nothing and is never asked. **Upstream?** Yes —
 the protocol and `StepPanel.focus` together; it is the general "open the detail panel on a
 sub-item" every inspector eventually wants.
+
+## 17. From the multi-agent worktree pass
+
+### `core/storage/git.py` — `main_checkout(root)` beside `find_repo_root` (new)
+
+**What.** One function: the main checkout a linked worktree belongs to, read from the
+worktree's `.git` *file* (`gitdir: <main>/.git/worktrees/<name>`), or the root itself
+when it is not a worktree. Re-exported through `core/storage/locations.py` like
+`find_repo_root`. **Why.** Two callers above the storage layer needed the same six lines:
+the CLI's project discovery — an agent running `dplanner` inside its worktree has to
+resolve the library's project, not the branch's copy of the plan — and the skill's
+caution against an editable install into a worktree, which had the parse inline.
+**Upstream?** Yes, with `find_repo_root`: any template application that opens a
+repository and can be run from a linked worktree wants the same answer, and the `.git`
+file's format is git's contract, not ours.

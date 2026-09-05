@@ -545,8 +545,8 @@ root, stop and look for the registry or capability you have not found yet.
   has its own stamp. That one check also makes a lock between CLI runs unnecessary. **What
   it looks at is the plan, not the directory**: `PLAN_ENTRIES` (`project.dproj`,
   `modules/`, `steps/`) — a project directory is often the repository root, and counting
-  the source tree or an agent worktree under `.dplanner/` as another writer reloaded the
-  window on every edit anyone made.
+  the source tree or an agent worktree under `.dplanner-worktrees/` as another writer
+  reloaded the window on every edit anyone made.
 - **The window takes an outside change in place, entry by entry.** The same per-file
   record says *which* files changed, and each plan file is one entry of one node, so
   `LibraryStore.adopt_outside_changes` reads the change into the live model through the
@@ -630,6 +630,23 @@ root, stop and look for the registry or capability you have not found yet.
   change, so a colour baked into one goes stale; that is the same trap as `option.palette`.
   Every Type toggle carries the glyph its node's medallion wears (`theme/icons.py`'s
   `GLYPH_ICONS` vocabulary), so the Type submenu, the aspect bar and the node agree.
+- **A step has a number, and the key is how it is named everywhere.** `Step.number` is
+  dealt by `Library.add_child` from the project's `last_number` high-water mark — one
+  sequence per project, never reused (a deleted step's branch may live on), kept through
+  undo, a paste and an import — and written to `step.json` / `project.dproj` (format 2;
+  the migration numbers an old project's steps in `children` order). The **letter is
+  presentation**: `_step_key` in the root reads the kind — `M` milestone, `F` feature,
+  `C` check, `S` otherwise, the coarser claim first — so a step keeps its number when its
+  kind changes and the letter follows. One rule, four readers: the canvas spine, every
+  CLI row and `find_step` (`S7`, `s7` and `7` all resolve; several projects' `7` is
+  refused), the run name a worktree and branch carry, and the briefing's verbs. Never
+  store the letter, and never mint a number anywhere but `add_child`.
+- **The spine is the card's left edge, and it says who and where.** `paint_spine` draws
+  a 26 px strip inside the left edge, clipped to the body, carrying the key rotated a
+  quarter turn and washed by status — busy blue for in-progress, bad red for blocked, the
+  good green for done, a quiet shade otherwise (`NodeAccent.key_text`, `spine_tone`; the
+  3 px status bar it replaces is gone). The title and the left-edge decorations start
+  past it (`LEFT_INSET`).
 - **A picked node is lifted, not recoloured — and every card rests on a shadow.** Selection
   thickens the border to the accent, *gains* whatever fill the node already had (so a picked
   milestone is still purple), lifts the card two pixels over a deeper shadow than the faint
@@ -706,6 +723,22 @@ root, stop and look for the registry or capability you have not found yet.
   progression board's seam) gets a confirmation naming them before a shell opens — the
   person may know the work landed unrecorded, so it asks rather than refuses.
   `ARCHITECTURE.md`'s *Running an agent launches a peer, not a task* has the reasoning.
+- **A worktree is the step's decision, and the run is named after the step.** Whether the
+  agent gets a fresh git worktree is the agent aspect's `worktree` (absent = on; the Agent
+  tab's checkbox, `dplanner agent worktree <step> off`, `step add --no-worktree`) — a fact
+  about the step, never a setting, because only a step that must act on the checkout the
+  window shows (a release cut, a conflict) turns it off. The wrapper script prepares
+  `.dplanner-worktrees/<run name>` on branch `agent/<run name>` **and stops with git's
+  reason if it cannot** — the first version swallowed the error and ran two "isolated"
+  agents on one checkout, because `.dplanner/` is the pointer *file* a subfolder project
+  leaves at the repo root. The run name is `launcher.run_name`: the step's key, its ticket
+  key and its title slug, ref-safe (`f7-PROJ-12-build-the-modal`), composed by the root
+  from aspects the launcher never reads. The briefing's preamble names that very worktree
+  and tells the agent to **stop if it is not in it**; the epilogue addresses every verb by
+  the step's key. Inside a worktree the CLI resolves the branch's copy of the plan to the
+  library project of the same id (`cli/discovery.py`), so `dplanner status set` reaches
+  the plan the window shows. `ARCHITECTURE.md`'s *A worktree is the step's decision* has
+  the reasoning.
 - **The peer reports its end through its run directory, and the window clears the chip.**
   The wrapper script is the one process that knows when the agent exits, so it writes the
   shell's facts (`shell`: tty, pid, tmux pane, terminal program, window title) beside the
@@ -726,11 +759,15 @@ root, stop and look for the registry or capability you have not found yet.
   whose bare windows are not); *Clear Agent Run* is the window's twin of `agent-state
   clear`. `ARCHITECTURE.md`'s *The peer reports back through its run directory* has the
   reasoning.
-- **Which terminal opens is a table, not a chain.** `launcher.TERMINALS` is one row per
-  known terminal per platform with a probe saying whether it is installed; *Automatic* is
-  the first installed row (the platform's own default), and the settings dropdown lists the
-  same rows and pre-fills the editable template — the agent presets' pattern. A new
-  terminal is a row, never an `if`.
+- **Which terminal opens is a table, not a chain — and tmux is its last row.**
+  `launcher.TERMINALS` is one row per known terminal per platform with a probe saying
+  whether it is installed; *Automatic* is the first installed row (the platform's own
+  default), and the settings dropdown lists the same rows and pre-fills the editable
+  template — the agent presets' pattern. A new terminal is a row, never an `if`. tmux
+  led the table once, and a DPlanner started from a tmux shell inherits `$TMUX`, so
+  every agent opened as a tmux window inside whatever terminal the person was using; a
+  desktop agent gets a desktop window, and tmux is what Automatic reaches for only when
+  nothing else is installed. Ghostty's `-e` is always a fresh process and window.
 - **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
   state; the dashed ring round the body moves, which is what says "somebody is on this one
   right now". One `QTimer` on the scene advances every ring and runs only while a node

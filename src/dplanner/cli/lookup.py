@@ -14,6 +14,7 @@ reaches the generated skill verbatim — has exactly one source, and a verb cann
 lookup this module does not perform.
 """
 
+import re
 import sys
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
@@ -26,9 +27,15 @@ if TYPE_CHECKING:
     from dplanner.cli.command import CliContext
 
 
+# A step's key as a person types it: the number with or without its letter — `S7`, `s7`,
+# `7`. The letter is presentation over the stored number (a feature's `F7` is the same
+# step as its earlier `S7`), so only the number decides.
+_KEY = re.compile(r"^[A-Za-z]?(\d+)$")
+
+
 def step_arg(parser: ArgumentParser) -> None:
     """The positional a step verb takes, resolved by :func:`find_step`."""
-    parser.add_argument("step", help="step id, folder name, or part of its title")
+    parser.add_argument("step", help="step key (S7), id, folder name, or part of its title")
 
 
 def project_arg(parser: ArgumentParser) -> None:
@@ -52,7 +59,7 @@ def find_project(library: Library, needle: str) -> Project:
 
 
 def find_step(library: Library, needle: str, within: Project | None = None) -> Step:
-    """A step by id, folder name, or a unique part of its title.
+    """A step by key, id, folder name, or a unique part of its title.
 
     ``within`` is the current project, when the invocation has one: a needle that matches
     there is resolved there, so "the step called review" means *this* project's — and only
@@ -66,21 +73,32 @@ def find_step(library: Library, needle: str, within: Project | None = None) -> S
 
 def _matches_something(candidates: list[Step], needle: str) -> bool:
     lowered = needle.lower()
+    number = _key_number(needle)
     return any(
         needle in (node.id, node.folder_name)
+        or (number is not None and node.number == number)
         or (needle and node.id.startswith(needle))
         or lowered in node.title.lower()
         for node in candidates
     )
 
 
-def _find[NodeT: (Project, Step)](candidates: list[NodeT], needle: str, kind: str) -> NodeT:
-    """Exact identity first, then a unique id prefix, then a unique partial title.
+def _key_number(needle: str) -> int | None:
+    match = _KEY.match(needle.strip())
+    return int(match.group(1)) if match else None
 
-    The prefix pass is what makes the 8-character ids the CLI *prints* the ids it also
-    *accepts* — a message that says "use an id" must take the id it showed. It applies to
-    ids only: folder names stay exact, because a folder-name prefix is indistinguishable
-    from the start of a title and the title pass already covers that intent.
+
+def _find[NodeT: (Project, Step)](candidates: list[NodeT], needle: str, kind: str) -> NodeT:
+    """Exact identity first — an id, a folder name, or a step's key — then a unique id
+    prefix, then a unique partial title.
+
+    The key is numbered per project, so a bare number is unambiguous inside one and may
+    match a step in each of several; several is refused with the keys and titles, exactly
+    as a title shared across projects is. The prefix pass is what makes the 8-character
+    ids the CLI *prints* the ids it also *accepts* — a message that says "use an id" must
+    take the id it showed. It applies to ids only: folder names stay exact, because a
+    folder-name prefix is indistinguishable from the start of a title and the title pass
+    already covers that intent.
 
     An ambiguous name is refused rather than resolved to the first match: silently acting on
     one of two things a person might have meant is the failure they cannot see.
@@ -88,6 +106,13 @@ def _find[NodeT: (Project, Step)](candidates: list[NodeT], needle: str, kind: st
     exact = [node for node in candidates if needle in (node.id, node.folder_name)]
     if exact:
         return exact[0]
+    number = _key_number(needle)
+    keyed = [node for node in candidates if isinstance(node, Step) and node.number == number]
+    if len(keyed) == 1:
+        return keyed[0]
+    if keyed:
+        names = ", ".join(sorted(f"{node.title} ({node.id[:8]})" for node in keyed))
+        raise CliError(f"{needle!r} is a step in several projects — use an id: {names}")
     prefixed = [node for node in candidates if needle and node.id.startswith(needle)]
     if len(prefixed) == 1:
         return prefixed[0]

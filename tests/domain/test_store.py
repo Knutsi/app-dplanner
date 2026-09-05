@@ -94,9 +94,49 @@ def test_ordering_lives_in_the_parent_not_in_filenames(store, library, project_d
 
 
 def test_absence_encodes_the_default(store, library, project_dir):
-    """A step at its default carries only identity — so a diff shows exactly what changed."""
+    """A step at its default carries only identity — the id, the number the project dealt
+    it, when it was born, its name — so a diff shows exactly what changed."""
     meta = read(project_dir / "steps" / "read-the-spec" / "step.json")
-    assert set(meta) == {"id", "created", "title"}
+    assert set(meta) == {"id", "number", "created", "title"}
+
+
+def test_numbers_are_dealt_per_project_and_round_trip(store, library, project_dir):
+    """The number is minted where a step joins a project and the project keeps the mark
+    it dealt last, so a reload deals the next step the next number — never a reused one."""
+    project = library.projects[0]
+    assert [step.number for step in project.steps] == [1, 2]
+    assert read(project_dir / "project.dproj")["last_number"] == 2
+    assert read(project_dir / "steps" / "draft-the-model" / "step.json")["number"] == 2
+
+    reloaded = LibraryStore(store.library_path).load()
+    again = reloaded.projects[0]
+    assert [step.number for step in again.steps] == [1, 2] and again.last_number == 2
+    reloaded.remove_child(again.steps[1].id)
+    reloaded.add_child(again.id, Step(title="Review"))
+    assert again.steps[-1].number == 3  # 2 is gone with its step, and stays gone.
+
+
+def test_a_version_one_project_is_dealt_its_numbers_on_open(store, library, project_dir):
+    """The format's first migration: steps written before numbers existed are numbered
+    in the order the project lists them, once, and the project is saved at format 2."""
+    meta = read(project_dir / "project.dproj")
+    meta["format"] = 1
+    meta.pop("last_number")
+    (project_dir / "project.dproj").write_text(json.dumps(meta))
+    for folder in ("read-the-spec", "draft-the-model"):
+        step_file = project_dir / "steps" / folder / "step.json"
+        step_meta = read(step_file)
+        step_meta.pop("number")
+        step_file.write_text(json.dumps(step_meta))
+
+    migrated = LibraryStore(store.library_path).load().projects[0]
+    assert [(step.title, step.number) for step in migrated.steps] == [
+        ("Read the spec", 1),
+        ("Draft the model", 2),
+    ]
+    assert migrated.last_number == 2
+    assert read(project_dir / "project.dproj")["format"] == 2
+    assert read(project_dir / "steps" / "read-the-spec" / "step.json")["number"] == 1
 
 
 def test_the_format_version_is_written_per_project(store, library, project_dir):
@@ -232,11 +272,11 @@ def test_a_project_changed_underneath_is_noticed(store, library, project_dir):
 
 def test_only_the_plan_counts_as_another_writer(store, library, project_dir):
     """A project directory that is the repository root holds the user's source tree and
-    the agent worktrees Run Agent keeps under .dplanner/ — none of it plan content, and
-    every edit there used to reload the whole window. The plan is project.dproj,
-    modules/ and steps/; a file beside them is somebody else's business."""
+    the agent worktrees Run Agent keeps under .dplanner-worktrees/ — none of it plan
+    content, and every edit there used to reload the whole window. The plan is
+    project.dproj, modules/ and steps/; a file beside them is somebody else's business."""
     (project_dir / "main.py").write_text("print('hi')\n")
-    worktree = project_dir / ".dplanner" / "worktrees" / "build-it" / "src"
+    worktree = project_dir / ".dplanner-worktrees" / "s1-build-it" / "src"
     worktree.mkdir(parents=True)
     (worktree / "main.py").write_text("print('agent')\n")
     assert not store.changed_underneath()

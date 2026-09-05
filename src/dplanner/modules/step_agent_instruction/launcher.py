@@ -16,11 +16,20 @@ file); a command without the placeholder gets it appended.
 **Which terminal opens is the same shape.** ``TERMINALS`` is one table of the known
 terminals per platform — Ghostty, iTerm and Terminal on macOS; Ghostty, Windows Terminal
 and the Command Prompt on Windows; Ghostty, kitty, Alacritty, foot, GNOME Terminal, Konsole
-and xterm on Linux, with tmux first while inside one — each with the command that opens it
-on the wrapper script and a probe saying whether it is installed. The settings dropdown
-lists the table and pre-fills the editable template; *Automatic* is the first installed
-row, which is the platform's own default terminal. One table, two readers, so the
-dropdown can never offer a terminal the launch would not find.
+and xterm on Linux — each with the command that opens it on the wrapper script and a probe
+saying whether it is installed. The settings dropdown lists the table and pre-fills the
+editable template; *Automatic* is the first installed row, which is the platform's own
+default terminal. One table, two readers, so the dropdown can never offer a terminal the
+launch would not find.
+
+**tmux is the last row, never the first.** A DPlanner started from a shell inside tmux
+inherits ``$TMUX``, and while tmux led the table Automatic opened every agent as a tmux
+window in whatever session tmux called current — inside a terminal window the person was
+using, and a different one each time. A desktop application's agent belongs in a desktop
+terminal; tmux is what Automatic reaches for only when no terminal is installed (a session
+over ssh), and what the dropdown offers to anyone who wants it. Ghostty's ``-e`` runs the
+command in a fresh process with its own window — it forces ``gtk-single-instance=false``
+— so a Ghostty row never lands in a split or a tab of a window already in use.
 
 **The shell reports back through its run directory.** The wrapper script is the one
 process that knows when the agent ends, so it writes two files beside the prompt: the
@@ -31,11 +40,19 @@ module watches for the second and clears the step's chip; nothing here depends o
 terminal, so the report works with every row of the table. On a non-zero exit the window
 stays open on a *Press Enter* line, so a crash can be read before it is gone.
 
-**The step gets a worktree when it can.** When the checkout is a git repository (and the
-setting is on), the wrapper script puts the agent in ``.dplanner/worktrees/<step>`` on an
-``agent/<step>`` branch — created on the first run, reused on the next — so parallel agents
-never trample one checkout, and the branch is the reviewable result. The directory is
-excluded via ``.git/info/exclude`` (local, never versioned).
+**A worktree is prepared by the script, and a worktree that cannot be prepared stops the
+run.** When the step asks for one (its agent aspect's ``worktree``, on by default), the
+wrapper puts the agent in :data:`WORKTREES_DIR`/``<run name>`` on the ``agent/<run name>``
+branch — created on the first run, reused on the next — so parallel agents never trample
+one checkout, and the branch is the reviewable result. The run name is
+:func:`run_name`: the step's key, its ticket and its title, made safe for a ref, so the
+branch says which step it is and a person can find it in ``git branch``. The directory is
+excluded through ``.git/info/exclude`` (local, never versioned). **If git cannot make the
+worktree, the script says why and exits 1 instead of carrying on in the main checkout** —
+the first version swallowed the error, and two agents launched into "fresh worktrees" did
+their work on the same branch. The directory is deliberately not ``.dplanner/``: that name
+is the pointer *file* a project kept in a subfolder leaves at the repository root, and a
+file is where the old path failed.
 
 The prompt and the wrapper script go to a per-run temp directory, never the workspace — a
 prompt file inside the workspace would dirty it and end up in version control.
@@ -56,13 +73,50 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-WORKTREES_DIR = ".dplanner/worktrees"
+from dplanner.core.fsio import slugify
+
+# Where a step's worktree lives, under the repository root. A sibling of the `.dplanner`
+# pointer file, never inside it — see the module docstring.
+WORKTREES_DIR = ".dplanner-worktrees"
+BRANCH_PREFIX = "agent/"
 
 # The names the wrapper script reports under, beside the prompt. The exit file holds the
 # agent's status, or the word ``closed`` when the terminal was shut on it (the POSIX
 # script's HUP trap) — the reader takes any non-number as that.
 SHELL_FILE = "shell"
 EXIT_FILE = "exit"
+
+# A run name is a branch name's last component, so it keeps to what git's ref rules allow
+# everywhere: letters, digits, `.`, `_` and `-`, none of them doubled up or at an end.
+RUN_NAME_MAX = 60
+
+
+def ref_safe(text: str) -> str:
+    """``text`` as one component of a git ref: nothing a ref rule refuses, and nothing a
+    shell would quote — the run name is written into three script dialects verbatim."""
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", text)
+    safe = re.sub(r"[-.]{2,}", "-", safe).strip("-.")
+    return safe[:RUN_NAME_MAX].rstrip("-.")
+
+
+def run_name(step_key: str, ticket_key: str, title: str) -> str:
+    """What a step's worktree and branch are called: ``<key>-<ticket>-<slug>``.
+
+    The key first, so ``git branch`` and the worktrees directory sort by step; the ticket
+    beside it when the step has one, so the branch answers the tracker too; the title's
+    slug last, for the person reading the list. Every part is optional, and a step with
+    none of them is still a run — ``step`` — rather than an empty name.
+    """
+    parts = [step_key.lower(), ref_safe(ticket_key), slugify(title, fallback="")]
+    return ref_safe("-".join(part for part in parts if part)) or "step"
+
+
+def worktree_path(workdir: Path, name: str) -> Path:
+    return workdir / WORKTREES_DIR / name
+
+
+def branch_name(name: str) -> str:
+    return f"{BRANCH_PREFIX}{name}"
 
 
 @dataclass(frozen=True)
@@ -98,12 +152,10 @@ class TerminalPreset:
 
 
 # Per platform, in the order Automatic tries them: the platform's own default terminal
-# first, so an untouched setting behaves the way the machine does. tmux comes before all
-# of them on the two platforms it runs on, but only while the application is inside one.
+# first, so an untouched setting behaves the way the machine does, and tmux last — see
+# the module docstring for why it is never first. Every Ghostty row opens a new window:
+# `-e` on Linux and Windows is a fresh process, `open -n` on macOS a fresh instance.
 TERMINALS: tuple[TerminalPreset, ...] = (
-    TerminalPreset(
-        "tmux", "tmux (new window)", "linux", "tmux new-window -c {workdir} {script}", "env:TMUX"
-    ),
     TerminalPreset("ghostty", "Ghostty", "linux", "ghostty -e {script}", "ghostty"),
     TerminalPreset("kitty", "kitty", "linux", "kitty {script}", "kitty"),
     TerminalPreset("alacritty", "Alacritty", "linux", "alacritty -e {script}", "alacritty"),
@@ -114,23 +166,24 @@ TERMINALS: tuple[TerminalPreset, ...] = (
     TerminalPreset("konsole", "Konsole", "linux", "konsole -e {script}", "konsole"),
     TerminalPreset("xterm", "xterm", "linux", "xterm -e {script}", "xterm"),
     TerminalPreset(
-        "tmux-mac",
-        "tmux (new window)",
-        "darwin",
-        "tmux new-window -c {workdir} {script}",
-        "env:TMUX",
+        "tmux", "tmux (new window)", "linux", "tmux new-window -c {workdir} {script}", "env:TMUX"
     ),
     TerminalPreset("terminal", "Terminal", "darwin", "open -a Terminal {script}"),
     TerminalPreset("iterm", "iTerm", "darwin", "open -a iTerm {script}", "app:iTerm"),
     TerminalPreset(
         "ghostty-mac", "Ghostty", "darwin", "open -na Ghostty --args -e {script}", "app:Ghostty"
     ),
+    TerminalPreset(
+        "tmux-mac",
+        "tmux (new window)",
+        "darwin",
+        "tmux new-window -c {workdir} {script}",
+        "env:TMUX",
+    ),
     TerminalPreset("wt", "Windows Terminal", "win32", "wt -d {workdir} cmd /k {script}", "wt"),
     TerminalPreset("cmd", "Command Prompt", "win32", 'cmd /c start "" cmd /k {script}'),
     TerminalPreset("ghostty-win", "Ghostty", "win32", "ghostty -e {script}", "ghostty"),
 )
-
-# Where a macOS application bundle may be, in the order Finder would look.
 MAC_APP_DIRS = ("/Applications", "~/Applications", "/System/Applications/Utilities")
 
 
@@ -231,8 +284,9 @@ def prepare(
 ) -> LaunchFiles:
     """Write the prompt and a wrapper script to ``directory``, or a fresh temp directory.
 
-    ``worktree`` is a slug; when non-empty and the workdir is a git repository, the script
-    moves into ``.dplanner/worktrees/<slug>`` (branch ``agent/<slug>``) before starting.
+    ``worktree`` is a run name (:func:`run_name`); when non-empty the script prepares
+    :func:`worktree_path` on :func:`branch_name` and moves into it before starting — or
+    stops with git's reason when it cannot. Empty means the checkout itself.
     """
     if directory is None:
         directory = new_run_dir()
@@ -268,16 +322,31 @@ def _posix_script(files: LaunchFiles, workdir: Path, agent_command: str, worktre
         f'cd "{workdir}"',
     ]
     if worktree:
-        tree = f"{workdir}/{WORKTREES_DIR}/{worktree}"
+        tree = worktree_path(workdir, worktree)
+        branch = branch_name(worktree)
         lines += [
-            "if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then",
-            '  exclude="$(git rev-parse --git-common-dir)/info/exclude"',
-            f"  grep -qxF '/{WORKTREES_DIR.split('/')[0]}/' \"$exclude\" 2>/dev/null"
-            f" || echo '/{WORKTREES_DIR.split('/')[0]}/' >> \"$exclude\"",
-            f'  git worktree add "{tree}" -b "agent/{worktree}" >/dev/null 2>&1'
-            f' || git worktree add "{tree}" "agent/{worktree}" >/dev/null 2>&1 || true',
-            f'  if [ -d "{tree}" ]; then cd "{tree}"; fi',
+            # A registration whose directory is gone would refuse the add; prune is safe.
+            "git worktree prune >/dev/null 2>&1",
+            'exclude="$(git rev-parse --git-common-dir)/info/exclude"',
+            f"grep -qxF '/{WORKTREES_DIR}/' \"$exclude\" 2>/dev/null"
+            f" || echo '/{WORKTREES_DIR}/' >> \"$exclude\"",
+            f'if [ ! -e "{tree}" ]; then',
+            # One attempt, one honest error: reuse the branch when it exists.
+            f'  if git show-ref --verify --quiet "refs/heads/{branch}"; then',
+            f'    git worktree add "{tree}" "{branch}"',
+            "  else",
+            f'    git worktree add "{tree}" -b "{branch}"',
+            "  fi",
             "fi",
+            # A linked worktree is marked by a `.git` file; anything else is not one.
+            f'if [ ! -f "{tree}/.git" ]; then',
+            f"  printf '\\nCould not prepare the worktree {tree}"
+            f" on branch {branch}. Press Enter to close.\\n'",
+            "  read -r _",
+            f"  echo 1 > {exit_file}",
+            "  exit 1",
+            "fi",
+            f'cd "{tree}"',
         ]
     lines += [
         _agent_line(agent_command, f"\"$(cat '{files.prompt_file}')\""),
@@ -295,12 +364,22 @@ def _posix_script(files: LaunchFiles, workdir: Path, agent_command: str, worktre
 def _windows_script(files: LaunchFiles, workdir: Path, agent_command: str, worktree: str) -> str:
     lines = ["@echo off", f"title {files.title}", f'cd /d "{workdir}"']
     if worktree:
-        tree = str(workdir / ".dplanner" / "worktrees" / worktree)
+        tree = worktree_path(workdir, worktree)
+        branch = branch_name(worktree)
         lines += [
-            "git rev-parse --is-inside-work-tree >nul 2>&1 && ("
-            f'git worktree add "{tree}" -b "agent/{worktree}" >nul 2>&1'
+            "git worktree prune >nul 2>&1",
+            f'if not exist "{tree}" (',
+            f'  git show-ref --verify --quiet "refs/heads/{branch}"',
+            f'  if errorlevel 1 (git worktree add "{tree}" -b "{branch}")'
+            f' else (git worktree add "{tree}" "{branch}")',
             ")",
-            f'if exist "{tree}" cd /d "{tree}"',
+            f'if not exist "{tree}\\.git" (',
+            f"  echo Could not prepare the worktree {tree} on branch {branch}.",
+            "  pause",
+            f'  >"{files.exit_file}" echo 1',
+            "  exit /b 1",
+            ")",
+            f'cd /d "{tree}"',
         ]
     agent = _agent_line(agent_command, f"(Get-Content -Raw '{files.prompt_file}')")
     # PowerShell writes the facts (it is the process whose pid outlives the agent's start

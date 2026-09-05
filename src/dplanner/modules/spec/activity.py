@@ -165,9 +165,6 @@ class SpecsActivity(EntityActivity):
         self._session_last: SpecDocument | None = None
         self._session_blobs: set[str] = set()
         self._edit_origin = object()
-        # The model autosave's rhythm: a pause in typing is when the session flushes.
-        self._flush_timer = QTimer(interval=FLUSH_DELAY_MS, singleShot=True)
-        self._flush_timer.timeout.connect(self._flush_edit)
 
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -210,6 +207,12 @@ class SpecsActivity(EntityActivity):
         self._text = MarkdownView(self._views)
         self._pdf = PdfPageView(self._views)
         self._editor = SpecMarkdownEditor()
+        # The model autosave's rhythm: a pause in typing is when the session flushes. The
+        # timer is the editor's child, so it dies with the editor: a build discarded with
+        # the timer armed (a test's teardown never closes a tab) used to fire it into a
+        # deleted editor a second later, from whatever ran next in the process.
+        self._flush_timer = QTimer(self._editor, interval=FLUSH_DELAY_MS, singleShot=True)
+        self._flush_timer.timeout.connect(self._flush_edit)
         self._editor.textChanged.connect(self._on_typed)
         self._editor_page = self._build_editor_page()
         self._topology_page = self._build_topology_page(library, undo, project_id)
@@ -277,9 +280,7 @@ class SpecsActivity(EntityActivity):
 
     def close(self) -> None:
         self.end_session()
-        # A parentless timer outlives the widget; a flush after `deleteLater` would reach
-        # a deleted editor.
-        self._flush_timer.stop()
+        self._flush_timer.stop()  # Nothing fires between close and the widget's deletion.
         self.topology.dispose()
         self.toolbar.dispose()
         for unsubscribe in self._unsubscribes:

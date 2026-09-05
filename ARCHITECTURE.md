@@ -1037,6 +1037,25 @@ agent created through the CLI grew a position file the next time a window happen
 test asserts the project is unchanged after a tab is opened, because that is the kind of rule
 that decays silently.
 
+### The spine names the card
+
+A step's key — `S7`, `F3` — is what a person says, what its branch and PR are named after,
+and what the agent's `dplanner` verbs address, so it has to be found from across the
+graph. It is painted on a **spine**: a 26 px strip inside the card's left edge, clipped to
+the rounded body, with the key set bold and rotated a quarter turn so it reads up the
+strip the way a book's spine does. Vertical, because a horizontal label wide enough to
+read would take a line the title needs; a spine costs the title 26 px of width and no
+height at all.
+
+The spine is also where the card says where the step *stands*: its wash is the status —
+busy blue for in-progress, the bad red for blocked, the good green for done, and a quiet
+shade of ink otherwise, so the strip is always there and the key always has a ground. It
+replaces the 3 px status bar that sat in the same edge: one strip that carries the key and
+the status is the same idea as the bar with something to say written on it, and two
+strips down one edge would have been noise. The done wash sits on the done body's green
+— the body says the work receded, the spine says why. Everything on the left edge starts
+past it (`LEFT_INSET`): the medallions, the chip, the title.
+
 ### A picked node is lifted, not recoloured
 
 Selection used to be a one-pixel-wider border in the accent, and on a graph of twenty nodes
@@ -1265,7 +1284,7 @@ the agent deleted writes back only what this window changed, which is the honest
 What the check *looks at* is the plan, not the directory. A project directory is often
 the repository root itself — New Project's git-init flow makes exactly that — and then the
 directory holds the user's source tree, `.git/` and the worktrees Run Agent keeps under
-`.dplanner/worktrees/`. None of it is anything the store reads or writes, and a snapshot
+`.dplanner-worktrees/`. None of it is anything the store reads or writes, and a snapshot
 that walked all of it made every source edit, every Save and every file an agent touched
 read as "another writer" and reload the window. So `LibraryStore._snapshot` walks
 `PLAN_ENTRIES` — `project.dproj`, `modules/`, `steps/` — which is exactly the set a flush
@@ -1470,6 +1489,35 @@ when the first save would. **A foreign change to the edited document ends the se
 reopens the document as it now is: the model is the authority, unflushed keystrokes yield,
 and anything already flushed survives as a recoverable blob. An agent replacing the document under an open window resolves through
 *Two writers, one folder* like every other write.
+
+## A step has a number, and the letter in front of it is derived
+
+A uuid is the right identity for files that link to each other across renames and
+branches, and the wrong thing to say out loud, type into a verb, or put in a branch name.
+So a step also carries a **number**, dealt per project and never reused: `Step.number`,
+minted in the one place a step joins a project (`Library.add_child`) from the project's
+`last_number` high-water mark. The mark is stored rather than derived from the steps
+present, because a deleted step's number must stay retired — its branch `agent/s7-…` and
+its PR titled `S7: …` may outlive it, and a new `S7` would inherit them. Undo restores a
+step with its number; a paste and an import arrive numberless and are dealt the next ones
+(an import keeps the document's numbers where they are whole and unique, so `S7` survives
+a round trip). Format 2 of the project format is this: the first migration numbers an
+old project's steps in the order its `children` list records — the order it always showed
+them in — and sets the mark past the last.
+
+**The letter is not stored.** `S7` becomes `F7` when the step is placed as a feature and
+`M7` when it becomes a milestone, because the letter says what the step *is* and the
+kind is a set of toggles (*A kind is what a node is*): a stored letter would go stale the
+moment a toggle flipped, and renumbering on a kind change would break the branch. The
+root's `_step_key` ranks the kinds the way the body tone does — milestone over feature
+over check over step — and every reader takes the answer from there: the spine, every
+CLI row, `find_step` (which accepts `S7`, `s7` and bare `7`, and refuses a bare number
+that names a step in several projects the way it refuses a shared title), the run name,
+and the briefing's verbs, which address the step by key because a key is unambiguous
+where a title may not be. The one cost is that a branch named after `s7` is not renamed
+when the step becomes `F7`; the next launch reuses the worktree by its recorded name only
+if the name matches, so a kind change after work has started earns a second branch. That
+is rare, visible in `git branch`, and cheaper than a branch that lies.
 
 ## Deriving rather than storing
 
@@ -1929,13 +1977,63 @@ tmux can select the pane wherever its client is — while the run in a bare wind
 is greyed with what the desktop would need. Gating every row on the desktop's answer alone
 was the first version, and it greyed switches that would have worked.
 
+### A worktree is the step's decision, and the run is named after the step
+
+Whether an agent works in a fresh git worktree was a global switch on the Agent settings
+page. It is the agent aspect's own field now — `"worktree": false` is the opt-out, absence
+is on — because the question is about the step, not the machine: nearly every step wants
+isolation, and the few that do not (a release cut that must tag the checkout the window
+shows, a conflict the window hands over, a step that only reads) are the same few on
+every machine. A global switch is also one nobody dares turn off, since turning it off for
+one step turns it off for the twenty launched after it. The Agent tab carries the checkbox
+beside Run Agent, `dplanner agent worktree <step> off` and `step add --no-worktree` are the
+CLI's word, and the skill tells an agent to leave it on unless the step genuinely must
+share the working tree.
+
+**The worktree is prepared by the wrapper script, and a worktree it cannot prepare stops
+the run.** The first version put the worktrees under `.dplanner/worktrees/` and wrapped
+every git call in `|| true`. Two things followed. A project kept in a subfolder of its
+repository leaves a `.dplanner` pointer *file* at the root (FORMAT.md's pointer), so `git
+worktree add` under that path failed with *Not a directory* on every such project; and the
+script, having hidden the failure, carried on in the main checkout — so two agents
+launched "into fresh worktrees" edited one checkout on one branch, which is the bug this
+section exists for. The worktrees live in `.dplanner-worktrees/` now, and the script
+prunes stale registrations, reuses the branch when it exists, verifies the tree is a
+linked worktree (a `.git` *file*), and otherwise prints git's reason, waits for Enter and
+writes `1` to the exit file — the window reports *failed (exit 1)*, the same way it reports
+any agent that died. Never the main checkout by accident.
+
+**The run is named after the step, once.** `launcher.run_name(key, ticket, title)` —
+`f7-PROJ-12-build-the-modal`, made ref-safe — is the worktree's directory, the branch's
+last component and the start of the terminal's title. The key first so `git branch` sorts
+by step, the ticket so the branch answers the tracker too, the slug for the person reading
+the list. The pieces are aspects the launcher never reads, so the root composes them
+(`_step_key`, `_ticket_key`) and hands them to the module; the root's `_run_name` applies
+the same launcher rule, because the **briefing names the worktree**: its preamble tells the
+agent to confirm `git rev-parse --show-toplevel` ends in that directory and the branch is
+`agent/<name>`, and to stop if either differs. The check costs the agent two commands and
+closes the gap the silent script left — a run that somehow lands in the main checkout is
+refused by the agent, not just by the script. A step whose worktree is off is told so
+instead, and warned that it shares the developer's tree.
+
+**Inside the worktree the plan of record is still the library's.** The plan is usually
+versioned, so the walk `cli/discovery.py` makes from the agent's working directory finds
+the *branch's copy* of `project.dproj` — a directory not in the library. Resolving that
+copy would write the agent's status into a file nobody is looking at until the branch
+merges. So a project found by the walk that is not in the library, but whose `project.dproj`
+declares the id of one that is, resolves to the library's project — the one the window
+shows and autosaves — and the repository match below it counts a linked worktree as its
+main checkout (`core/storage/git.py::main_checkout`, which the skill's worktree warning
+reads too). The agent's `dplanner` calls therefore land where the person is looking, and
+the branch's copy of the plan is never touched, so a merge never has to reconcile it.
+
 ### Which terminal opens is a table, not a chain
 
 The platform `if`-chain that used to resolve a terminal is one table now, `TERMINALS`:
 a row per known terminal per platform — Terminal, iTerm and Ghostty on macOS; Windows
 Terminal, the Command Prompt and Ghostty on Windows; Ghostty, kitty, Alacritty, foot,
-GNOME Terminal, Konsole and xterm on Linux, with tmux ahead of all of them while inside
-one — each with the command that opens it on the wrapper script and a probe (a binary on
+GNOME Terminal, Konsole and xterm on Linux, with tmux *last* on the two platforms it runs
+on — each with the command that opens it on the wrapper script and a probe (a binary on
 PATH, an application bundle, an environment variable) saying whether it is installed.
 *Automatic* is the first installed row, which is the platform's own default terminal, so
 an untouched setting behaves the way the machine does; the settings dropdown lists the
@@ -1943,6 +2041,15 @@ same rows, marks the ones the probe cannot find, and pre-fills the editable temp
 the agent presets' pattern, applied to the second choice on the same page. One table with
 two readers is what keeps the dropdown from ever offering a terminal the launch would not
 find, and a new terminal is a row rather than a branch.
+
+**tmux was first, and that was the bug that looked like Ghostty's.** A DPlanner started
+from a shell inside tmux inherits `$TMUX`, its probe answered yes, and Automatic opened
+every agent with `tmux new-window` — a new window in whatever session tmux called current,
+inside a Ghostty window the person was typing in, and a different one each time the
+current session changed. It read as "the agent lands in a random split". Ghostty itself
+never does that: its `-e` forces a fresh process (`gtk-single-instance=false`) with a
+window of its own. So tmux is the last resort — what Automatic reaches for over ssh with
+no terminal installed — and a desktop application's agent gets a desktop window.
 
 ## Repository facts are derived from the project's directory
 

@@ -19,6 +19,49 @@ def find(library, title):
     return next(node for node in library.nodes() if getattr(node, "title", None) == title)
 
 
+# -- the numbers -------------------------------------------------------------------------------
+
+
+def test_a_step_is_numbered_as_it_joins_and_a_number_is_never_dealt_twice(library):
+    """One sequence per project, dealt at add_child: a deleted step's number stays
+    retired — its branch may still exist — and a step put back keeps its own."""
+    project = find(library, "Discovery")
+    assert [step.number for step in project.steps] == [1, 2, 3]
+    assert project.last_number == 3
+    review = find(library, "Review")
+    parent_id, index = library.remove_child(review.id)
+    library.add_child(project.id, Step(title="Ship"))
+    assert find(library, "Ship").number == 4
+    library.restore_child(parent_id, review, index)
+    assert review.number == 3 and project.last_number == 4
+
+
+def test_undoing_a_birth_hands_the_number_back(library):
+    """Undo restores the workspace exactly, so the mark falls back with the step that
+    never was; redo gives the same step its own number again."""
+    from dplanner.domain.commands import AddNodeCommand
+
+    project = find(library, "Discovery")
+    ship = Step(title="Ship")
+    command = AddNodeCommand(project.id, ship)
+    command.redo(library)
+    assert ship.number == 4 and project.last_number == 4
+    command.undo(library)
+    assert project.last_number == 3
+    command.redo(library)
+    assert ship.number == 4 and project.last_number == 4
+
+
+def test_a_number_a_file_already_carries_is_kept_and_the_mark_catches_up(library):
+    """A hand-edited plan may hold a number the project's mark never saw: the next step
+    is dealt one past the highest number in sight, whichever record holds it."""
+    project = find(library, "Discovery")
+    library.add_child(project.id, Step(title="Imported", number=10))
+    library.add_child(project.id, Step(title="After"))
+    assert find(library, "Imported").number == 10
+    assert find(library, "After").number == 11 and project.last_number == 11
+
+
 # -- the index ---------------------------------------------------------------------------------
 
 

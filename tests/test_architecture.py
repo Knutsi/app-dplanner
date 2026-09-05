@@ -67,6 +67,7 @@ HEADLESS_FILES = (
     "trace.py",
     "handoff.py",
     "prompt.py",
+    "launcher.py",
     "membership.py",
     "gh.py",
     "pdf.py",

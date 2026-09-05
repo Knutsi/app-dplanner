@@ -17,6 +17,16 @@ written into the JSON. A node keeps its identity through renames and reorders �
 what lets an open tab, a selection, an undo command and *another step's edge* all keep
 pointing at the right thing while the plan is rearranged underneath them.
 
+**A step also carries a number, minted per project and never reused.** ``S7`` is what a
+person says, a branch is named after and a PR title opens with; the uuid is what the
+files link by. The number is dealt by :meth:`Library.add_child` from the project's
+``last_number`` high-water mark — one sequence per project, so it grows as the plan does,
+and a deleted step's number is never handed out again (its branch may still exist).
+Undoing a step's *creation* is the one way a number comes back: the step never was, and
+undo leaves the workspace as it found it (``AddNodeCommand``). What *letter* goes in
+front is a fact about the step's kind, derived by whoever renders the key; the model
+stores only the number.
+
 **Every mutator takes an origin.** A view that edits passes itself, then ignores the signal
 when ``origin is self`` — its widget already shows the change. Undo passes a token matching
 no view, so every view applies it.
@@ -67,6 +77,12 @@ FIELD_LABELS: Final[dict[str, str]] = {
 
 def now_stamp() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def next_number(project: "Project") -> int:
+    """The number the project deals next: past its high-water mark, and past every
+    number a step already holds — a hand-edited file may carry one the mark never saw."""
+    return max(project.last_number, *(step.number for step in project.steps), 0) + 1
 
 
 @dataclass(frozen=True)
@@ -127,9 +143,12 @@ class Step(Node):
         edges: dict[str, list[StepId]] | None = None,
         folder_name: str = "",
         created: str = "",
+        number: int = 0,
     ) -> None:
         super().__init__(node_id=node_id, folder_name=folder_name, created=created)
         self.title = title
+        # The per-project number a person calls the step by; 0 until a project deals one.
+        self.number = number
         # Incoming edges, keyed by kind: `edges["requires"]` is what this step waits on.
         # They live on the step that waits, so a step is self-contained — remove it and its
         # edges go with it — and so the direction cannot be read the wrong way round.
@@ -157,11 +176,14 @@ class Project(Node):
         summary: str = "",
         folder_name: str = "",
         created: str = "",
+        last_number: int = 0,
     ) -> None:
         super().__init__(node_id=node_id, folder_name=folder_name, created=created)
         self.title = title
         self.summary = summary
         self.steps: list[Step] = []
+        # The highest step number ever dealt here — see the module docstring.
+        self.last_number = last_number
 
     def __repr__(self) -> str:
         return f"Project({self.title!r}, {len(self.steps)} steps, id={self.id[:8]})"
@@ -431,12 +453,24 @@ class Library(Node):
     def add_child(
         self, parent_id: NodeId, child: Node, index: int | None = None, origin: Origin = None
     ) -> NodeId:
-        """Add a project to the library, or a step to a project."""
+        """Add a project to the library, or a step to a project.
+
+        A step arriving without a number is dealt the project's next one — the one place
+        numbers are minted, so a paste, an import, ``step add`` and New all number the
+        same way; a step put back by undo keeps the number it had.
+        """
         children = self._children_of(parent_id, type(child))
         if not child.folder_name:
             child.folder_name = unique_folder_name(
                 child.title_for_folder(), {sibling.folder_name for sibling in children}
             )
+        parent = self._nodes[parent_id]
+        if isinstance(child, Step) and isinstance(parent, Project):
+            if not child.number:
+                child.number = next_number(parent)
+            # A numbered arrival — a redo, an import, another writer's step — raises
+            # the mark too, so the mark never reads below a number a step holds.
+            parent.last_number = max(parent.last_number, child.number)
         children.insert(len(children) if index is None else index, child)
         self.reindex()
         self.dirty.emit(parent_id, "structure")

@@ -154,7 +154,7 @@ def _configure_start(parser: ArgumentParser) -> None:
 def _set(context: CliContext, args: Namespace) -> int:
     if args.days < 0:
         raise CliError("an estimate cannot be negative")
-    step = find_step(context.library, args.step)
+    step = find_step(context.library, args.step, context.current)
     entry = write(args.days)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
     context.report({"step": step.id} | entry, f"{step.title}: {format_day_count(args.days)}")
@@ -168,7 +168,7 @@ def _clear(context: CliContext, args: Namespace) -> int:
     lint would keep asking. What a person means by clearing it on a milestone is that the
     step has no work of its own, and that is what gets written.
     """
-    step = find_step(context.library, args.step)
+    step = find_step(context.library, args.step, context.current)
     message = f"{step.title}: no estimate — this step has no work"
     if not enabled(step):
         # Already clear is success, and writes nothing: a state-clearing verb must survive

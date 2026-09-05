@@ -218,7 +218,7 @@ def _milestone(context: CliContext, args: Namespace, milestone_label: Callable[[
         raise CliError("give either --color or --clear-color")
     if not (args.start or args.clear_start or args.color or args.clear_color):
         raise CliError("nothing to change: give --start, --clear-start, --color or --clear-color")
-    step = find_step(context.library, args.step)
+    step = find_step(context.library, args.step, context.current)
     if not milestone_label(step):
         raise CliError(f"{step.title!r} is not a milestone — mark it with `milestone set` first")
     start = read_start(step)

@@ -353,6 +353,7 @@ class LibraryStore:
             summary=str(raw.get("summary", "")),
             folder_name=record.directory.name,
             created=str(raw.get("created", "")),
+            last_number=_read_number(raw.get("last_number")),
         )
         self._load_node_files(record, project, "", raw, pending)
         for folder in self._child_folders(record, raw, ""):
@@ -370,6 +371,7 @@ class LibraryStore:
             edges=_read_edges(raw.get("edges")),
             folder_name=directory.rsplit("/", 1)[-1],
             created=str(raw.get("created", "")),
+            number=_read_number(raw.get("number")),
         )
         self._load_node_files(record, step, directory, raw, pending)
         return step
@@ -802,8 +804,12 @@ class LibraryStore:
             if isinstance(live, Project) and isinstance(fresh, Project):
                 for name in ("title", "summary"):
                     library.set_field(live.id, name, getattr(fresh, name), OUTSIDE_ORIGIN)
+                # A high-water mark only ever rises, and no view shows it: no signal.
+                live.last_number = max(live.last_number, fresh.last_number)
             elif isinstance(live, Step) and isinstance(fresh, Step):
                 library.set_field(live.id, "title", fresh.title, OUTSIDE_ORIGIN)
+                if fresh.number and not live.number:
+                    live.number = fresh.number  # Dealt by another writer; never changed later.
                 for kind in sorted(live.edges.keys() | fresh.edges.keys()):
                     targets = fresh.edges.get(kind, [])
                     if live.edges.get(kind, []) == targets:
@@ -845,7 +851,7 @@ class LibraryStore:
         A project directory is often the repository root itself (New Project's git-init
         flow makes exactly that), so the directory holds far more than the plan: the
         user's source tree, `.git/`, and the agent worktrees Run Agent keeps under
-        `.dplanner/worktrees/`. None of it is anything this store reads or writes, and
+        `.dplanner-worktrees/`. None of it is anything this store reads or writes, and
         counting it as "another writer" made every Save, every source edit and every file
         an agent touched reload the application. So the walk is ``PLAN_ENTRIES`` — the
         meta file and the two directories the format owns — which is exactly the set a
@@ -1061,11 +1067,15 @@ class LibraryStore:
                 meta["title"] = node.title
             if node.summary:
                 meta["summary"] = node.summary
+            if node.last_number:
+                meta["last_number"] = node.last_number
             # The format stamp is per project: each directory migrates on its own.
             meta[FORMAT_KEY] = FORMAT.current_version
         elif isinstance(node, Step):
             if node.title:
                 meta["title"] = node.title
+            if node.number:
+                meta["number"] = node.number
             if node.edges:
                 meta["edges"] = {kind: list(t) for kind, t in sorted(node.edges.items()) if t}
         children = _children(node)
@@ -1175,10 +1185,23 @@ def _is_entry(name: str) -> bool:
 
 def _meta_differs(live: Node, fresh: Node) -> bool:
     if isinstance(live, Project) and isinstance(fresh, Project):
-        return (live.title, live.summary) != (fresh.title, fresh.summary)
+        return (live.title, live.summary, live.last_number) != (
+            fresh.title,
+            fresh.summary,
+            fresh.last_number,
+        )
     if isinstance(live, Step) and isinstance(fresh, Step):
-        return live.title != fresh.title or live.edges != fresh.edges
+        return (
+            live.title != fresh.title
+            or live.edges != fresh.edges
+            or (bool(fresh.number) and live.number != fresh.number)
+        )
     return False
+
+
+def _read_number(raw: object) -> int:
+    """A step or project number as stored, 0 for anything that is not a whole number."""
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0 else 0
 
 
 __all__ = [

@@ -12,6 +12,7 @@ the next GUI open would migrate the untouched ones and leave the stamped one alo
 loss that shows up months later, in a project nobody can reconstruct.
 """
 
+import json
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -20,7 +21,7 @@ from typing import TextIO
 from dplanner.cli.command import CliContext, CliError
 from dplanner.cli.lookup import find_project
 from dplanner.core.module_data import ModuleDataFormat, migrate_module_data
-from dplanner.core.storage.locations import find_repo_root
+from dplanner.core.storage.locations import find_repo_root, main_checkout
 from dplanner.core.storage.pointer import POINTER_FILE
 from dplanner.domain.library_file import LIBRARY_ENV, resolve_library_path
 from dplanner.domain.model import Library, Project
@@ -58,11 +59,16 @@ def find_current_project(
     2. **Upwards from the working directory** for a ``project.dproj`` — or a ``.dplanner``
        pointer file whose one line is the project directory's path, relative to the
        pointer's own directory. That walk is the whole point: an agent is already sitting
-       in the project's checkout, so the CLI needs no configuration at all. A directory
-       found this way that is *not* in the library is refused rather than half-served.
+       in the project's checkout, so the CLI needs no configuration at all. **Inside an
+       agent's worktree the walk finds the branch's copy of the plan**, and the answer is
+       the library project with the same id — the plan of record, the one the window
+       shows — never the copy: a status written into a branch's copy reaches nobody until
+       the branch merges. A directory found this way that is *not* in the library, and
+       is not such a copy, is refused rather than half-served.
     3. Failing that, every library project whose repository contains the working
-       directory: exactly one is the answer, several is a refusal naming them, none means
-       there is no current project — verbs that need one say so.
+       directory — a linked worktree counting as its main checkout: exactly one is the
+       answer, several is a refusal naming them, none means there is no current project —
+       verbs that need one say so.
     """
     if explicit:
         return find_project(library, explicit)
@@ -72,6 +78,10 @@ def find_current_project(
         for project in library.projects:
             if _dir_of(store, project) == found:
                 return project
+        same = _project_id_at(found)
+        for project in library.projects:
+            if project.id == same:
+                return project
         raise CliError(
             f"{found} is a DPlanner project, but it is not in your library — "
             f"run: dplanner library add {found}"
@@ -79,10 +89,13 @@ def find_current_project(
     root = find_repo_root(start)
     if root is None:
         return None
+    root = main_checkout(root)
     matches = [
         project
         for project in library.projects
-        if (directory := _dir_of(store, project)) is not None and find_repo_root(directory) == root
+        if (directory := _dir_of(store, project)) is not None
+        and (project_root := find_repo_root(directory)) is not None
+        and main_checkout(project_root) == root
     ]
     if len(matches) == 1:
         return matches[0]
@@ -90,6 +103,16 @@ def find_current_project(
         names = ", ".join(sorted(project.title or project.folder_name for project in matches))
         raise CliError(f"this repository holds several library projects — pass --project: {names}")
     return None
+
+
+def _project_id_at(directory: Path) -> str:
+    """The id ``project.dproj`` in ``directory`` declares, or "" when it cannot be read —
+    a torn or hand-broken file is no reason to fail a lookup that has other answers."""
+    try:
+        raw = json.loads((directory / PROJECT_META).read_text())
+    except (OSError, json.JSONDecodeError):
+        return ""
+    return str(raw.get("id", "")) if isinstance(raw, dict) else ""
 
 
 def _dir_of(store: LibraryStore, project: Project) -> Path | None:
