@@ -19,7 +19,7 @@ into, never by a mode field on the section.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QWidget
@@ -34,6 +34,21 @@ class InspectorExtension(Protocol):
     def show_target(self, target_id: str | None) -> None: ...
 
     def dispose(self) -> None: ...
+
+
+@runtime_checkable
+class FocusableExtension(Protocol):
+    """An extension that can put one of *its own* things in front: a test in the Tests
+    tab, a passage in the Feature tab. Optional — a host asks ``isinstance`` — so a
+    section with nothing addressable inside it implements nothing.
+
+    ``focus_entity(kind, entity_id)`` answers True when it showed the thing, and the host
+    then brings the section's tab forward; False means "not mine", and the host asks the
+    next. The kinds are the selection-URI kinds the context already speaks (``"test"``,
+    ``"feature"``), so a jump from anywhere can name what it means without a new vocabulary.
+    """
+
+    def focus_entity(self, kind: str, entity_id: str) -> bool: ...
 
 
 @dataclass(frozen=True)

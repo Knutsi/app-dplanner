@@ -27,7 +27,11 @@ from dplanner.domain.model import Library, NodeId, StepId, TextEdit
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.aspect_bar import AspectBar, AspectTemplate
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
-from dplanner.framework.inspector import InspectorExtension, InspectorSection
+from dplanner.framework.inspector import (
+    FocusableExtension,
+    InspectorExtension,
+    InspectorSection,
+)
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.theme.themes import Theme
@@ -158,6 +162,19 @@ class StepPanel(QWidget):
 
     def current_step_id(self) -> StepId | None:
         return self._step_id
+
+    def focus(self, kind: str, entity_id: str) -> bool:
+        """Bring the tab holding ``entity_id`` forward, with the thing itself shown —
+        the first section that answers for the kind wins; none is False."""
+        for index, extension in enumerate(self._extensions):
+            if not self.tab_bar.isTabVisible(index):
+                continue
+            if isinstance(extension, FocusableExtension) and extension.focus_entity(
+                kind, entity_id
+            ):
+                self.tab_bar.setCurrentIndex(index)
+                return True
+        return False
 
     def dispose(self) -> None:
         """Full detachment — a disposed panel must never hear another model signal."""

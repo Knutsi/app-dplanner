@@ -75,6 +75,12 @@ class FeatureSection(QWidget):
         self._step_id = target_id
         self._retarget()
 
+    def focus_entity(self, kind: str, entity_id: str) -> bool:
+        """The Feature tab answers for the record this step realises."""
+        if kind != "feature" or self._step_id is None or not self._library.has(self._step_id):
+            return False
+        return read(self._library.step(self._step_id)) == entity_id
+
     def dispose(self) -> None:
         self._unsubscribe()
         self.editor.dispose()

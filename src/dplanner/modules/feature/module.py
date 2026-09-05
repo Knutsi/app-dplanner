@@ -10,7 +10,7 @@ half, so neither module learns the other's name.
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
-from PySide6.QtGui import QAction, QCursor
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QInputDialog, QMenu, QWidget
 
 from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
@@ -241,24 +241,41 @@ class FeatureModule:
     def cite_passage(self, project_id: NodeId, document: str, quote: str, page: int | None) -> None:
         """Cite ``quote`` of ``document`` as a feature's passage — the window's half of
         ``feature cite`` and ``feature add --quote``: a menu of the project's features
-        under the cursor, and *New feature…* to mint one titled on the spot. One
-        command either way, stamped with the document as it is now."""
+        under the cursor, and *New feature…* to mint one titled on the spot."""
+        menu = self.cite_menu(project_id, document, quote, page)
+        menu.exec(QCursor.pos())
+        menu.deleteLater()
+
+    def cite_menu(self, project_id: NodeId, document: str, quote: str, page: int | None) -> QMenu:
+        """The picker behind :meth:`cite_passage`, built without showing it: one entry
+        per record and *New feature…*, each writing one command when triggered."""
         library = self._deps.library
-        if not library.has(project_id):
-            return
-        records = read_catalogue(library.project(project_id))
+        records = read_catalogue(library.project(project_id)) if library.has(project_id) else []
         menu = QMenu(self._deps.parent)
-        choices: dict[QAction, FeatureRecord | None] = {}
+
+        def cite(record: FeatureRecord | None) -> None:
+            self._cite_into(project_id, records, record, document, quote, page)
+
         for known in records:
-            choices[menu.addAction(f"{known.id}  {known.title}")] = known
+            action = menu.addAction(f"{known.id}  {known.title}")
+            action.triggered.connect(lambda _checked=False, record=known: cite(record))
         if records:
             menu.addSeparator()
         fresh = menu.addAction("New feature…")
-        choices[fresh] = None
-        picked: QAction | None = menu.exec(QCursor.pos())
-        if picked is None or picked not in choices:
-            return
-        record = choices[picked]
+        fresh.triggered.connect(lambda _checked=False: cite(None))
+        return menu
+
+    def _cite_into(
+        self,
+        project_id: NodeId,
+        records: list[FeatureRecord],
+        record: FeatureRecord | None,
+        document: str,
+        quote: str,
+        page: int | None,
+    ) -> None:
+        """One command: the passage appended to ``record`` — minted first, titled by the
+        person, when it is None — stamped with the document as it is now."""
         if record is None:
             title, accepted = QInputDialog.getText(self._deps.parent, "New Feature", "Title:")
             if not accepted or not title.strip():
@@ -267,12 +284,8 @@ class FeatureModule:
             records = [*records, record]
         if cited_at(record, document, quote) is not None:
             return
-        source = FeatureSource(
-            document=document,
-            quote=quote,
-            page=page,
-            digest=self._deps.digest_of(project_id, document),
-        )
+        digest = self._deps.digest_of(project_id, document)
+        source = FeatureSource(document=document, quote=quote, page=page, digest=digest)
         updated = replace(record, sources=(*record.sources, source))
         self._deps.undo.push(
             SetModuleDataCommand(

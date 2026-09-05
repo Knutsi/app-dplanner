@@ -150,6 +150,20 @@ class DocsActivity(EntityActivity):
             unsubscribe()
         self._unsubscribes = []
 
+    def show_collector(self, step_id: StepId) -> None:
+        """Select the group that is ``step_id``'s — its own, when it collects, else the
+        one holding its fragment — what a jump from a step or the coverage view lands on."""
+        self._refresh()
+        held = next(
+            (group for group in self._groups if group.key == step_id),
+            next((group for group in self._groups if step_id in group.areas), None),
+        )
+        if held is None:
+            return
+        self._selected = held.key
+        self.page.show_groups(self._groups, keep=self._selected)
+        self._show_selected()
+
     def _project(self) -> Project:
         return self._library.project(self.project_id)
 

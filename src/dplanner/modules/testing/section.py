@@ -312,6 +312,14 @@ class TestsSection(QWidget):
         self._selected = ""  # Ids are unique per project, never across two of them.
         self._refresh()
 
+    def focus_entity(self, kind: str, entity_id: str) -> bool:
+        """Select one of this step's tests — what a jump from the coverage view lands on."""
+        if kind != "test" or find(self._tests(), entity_id) is None:
+            return False
+        self._selected = entity_id
+        self._refresh()
+        return True
+
     def dispose(self) -> None:
         for unsubscribe in self._unsubscribes:
             unsubscribe()
