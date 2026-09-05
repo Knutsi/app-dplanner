@@ -496,6 +496,24 @@ def default_modules(services: "AppServices") -> list["Module"]:
             drops=(CanvasDrop(FEATURE_MIME, place_feature),),
         )
     )
+    # Constructed before the list because the Specs tab reads the catalogue's passages
+    # through it and cites a selection into it — the feature side of one seam.
+    feature = FeatureModule(
+        FeatureDeps(
+            library=library,
+            debounce=services.debounce,
+            undo=services.undo,
+            actions=services.actions,
+            panels=services.panels,
+            sections=services.inspector_sections,
+            files=store.files,
+            theme=services.theme,
+            parent=services.window,
+            documents_of=lambda project_id: spec_document_names(library.project(project_id)),
+            digest_of=lambda project_id, name: spec_digest_of(library.project(project_id), name),
+        )
+    )
+
     # Constructed before the list because the projects index opens Specs through it — the
     # same seam as open_project, one level down.
     spec = SpecModule(
@@ -509,6 +527,13 @@ def default_modules(services: "AppServices") -> list["Module"]:
             parent=services.window,
             files=lambda node_id: store.files(node_id, SPEC_ID),
             details=services.step_details,
+            passages_of=lambda project_id, document: [
+                source.quote
+                for record in read_catalogue(library.project(project_id))
+                for source in record.sources
+                if source.document == document and source.quote
+            ],
+            cite=feature.cite_passage,
         )
     )
     # Constructed before the list because the projects index opens the board through it.
@@ -1022,23 +1047,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         # A feature is a record in the project's catalogue and, once placed, the step that
         # realises it; it gathers the work behind it, stopping at the previous feature.
         # The Covers tab that shows what it gathers is still the tests module's.
-        FeatureModule(
-            FeatureDeps(
-                library=library,
-                debounce=services.debounce,
-                undo=services.undo,
-                actions=services.actions,
-                panels=services.panels,
-                sections=services.inspector_sections,
-                files=store.files,
-                theme=services.theme,
-                parent=services.window,
-                documents_of=lambda project_id: spec_document_names(library.project(project_id)),
-                digest_of=lambda project_id, name: spec_digest_of(
-                    library.project(project_id), name
-                ),
-            )
-        ),
+        feature,
         TestsModule(
             TestsDeps(
                 library=library,

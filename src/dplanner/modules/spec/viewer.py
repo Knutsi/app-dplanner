@@ -7,19 +7,29 @@ would make marshalling a pixmap back worth the machinery. If enormous documents 
 off-thread rendering is the named follow-up. The page's white sheet is the document's own
 colour and is honest on both themes.
 
+A cited passage is drawn as a wash over the boxes pdfium's own search finds for it
+(:func:`~dplanner.modules.spec.pdf.quote_boxes`), in the accent at low alpha — DESIGN.md's
+exception #2, a semantic tint that reads on the page's white whatever the theme. A quote
+the search cannot place gets the page and nothing more.
+
 Markdown and plain text are :class:`~dplanner.framework.markdown_view.MarkdownView`, which
 is the framework's — a well resolving its images through the store is not a spec idea.
 """
 
+from collections.abc import Sequence
 from typing import Any
 
 import pypdfium2 as pdfium
-from PySide6.QtGui import QImage, QPainter, QPaintEvent, QPixmap, QResizeEvent
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QColor, QImage, QPainter, QPaintEvent, QPixmap, QResizeEvent
 from PySide6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
 
 from dplanner.framework.widgets import DOCUMENT_MARGIN
+from dplanner.modules.spec.pdf import quote_boxes
 
 PAGE_GAP = 12
+WASH_ALPHA = 60
+FOCUS_ALPHA = 110
 
 
 class _PdfPage(QWidget):
@@ -30,6 +40,8 @@ class _PdfPage(QWidget):
         self._page = page
         self._points = page.get_size()  # (width, height) in PDF points.
         self._cache: QPixmap | None = None
+        # (left, bottom, right, top) in PDF points, and whether each is the focused one.
+        self._boxes: list[tuple[tuple[float, float, float, float], bool]] = []
 
     def set_render_width(self, width: int) -> None:
         width = max(width, 1)
@@ -38,13 +50,41 @@ class _PdfPage(QWidget):
             self._cache = None
             self.setFixedSize(width, height)
 
+    def mark(self, quotes: Sequence[str], focus: str) -> bool:
+        """Wash every box a quote is printed in; whether the focused one is on this page."""
+        self._boxes = []
+        found_focus = False
+        for quote in quotes:
+            boxes = quote_boxes(self._page, quote)
+            is_focus = bool(focus) and quote == focus
+            found_focus |= is_focus and bool(boxes)
+            self._boxes += [(box, is_focus) for box in boxes]
+        self.update()
+        return found_focus
+
     def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 - Qt override
         if self._cache is None or self._cache.deviceIndependentSize().width() != self.width():
             self._cache = self._render()
-        if self._cache is not None:
-            painter = QPainter(self)
-            painter.drawPixmap(0, 0, self._cache)
-            painter.end()
+        if self._cache is None:
+            return
+        painter = QPainter(self)
+        painter.drawPixmap(0, 0, self._cache)
+        if self._boxes:
+            scale = self.width() / self._points[0]
+            wash = QColor(self.palette().highlight().color())
+            painter.setPen(Qt.PenStyle.NoPen)
+            for (left, bottom, right, top), is_focus in self._boxes:
+                wash.setAlpha(FOCUS_ALPHA if is_focus else WASH_ALPHA)
+                painter.setBrush(wash)
+                # PDF points run up from the bottom-left corner; the widget runs down.
+                rect = QRectF(
+                    left * scale,
+                    (self._points[1] - top) * scale,
+                    (right - left) * scale,
+                    (top - bottom) * scale,
+                )
+                painter.drawRect(rect.adjusted(-1, -1, 1, 1))
+        painter.end()
 
     def _render(self) -> QPixmap | None:
         ratio = self.devicePixelRatioF()
@@ -94,6 +134,30 @@ class PdfPageView(QScrollArea):
         if self._document is not None:
             self._document.close()
             self._document = None
+
+    def page_count(self) -> int:
+        return len(self._pages)
+
+    def scroll_to_page(self, number: int) -> None:
+        """Bring 1-based page ``number`` to the top of the viewport."""
+        if not 1 <= number <= len(self._pages):
+            return
+        self._column_layout.activate()  # Positions come from the layout pass.
+        self.verticalScrollBar().setValue(max(0, self._pages[number - 1].y() - DOCUMENT_MARGIN))
+
+    def show_quotes(self, quotes: Sequence[str], focus: str = "", page: int | None = None) -> None:
+        """Wash every printed occurrence of ``quotes``; scroll to ``focus`` — to the page
+        it is found on, else to ``page`` when the caller knows it."""
+        landing = page
+        for number, sheet in enumerate(self._pages, start=1):
+            if sheet.mark(quotes, focus) and landing is None:
+                landing = number
+        if landing is not None:
+            self.scroll_to_page(landing)
+
+    def clear_quotes(self) -> None:
+        for sheet in self._pages:
+            sheet.mark((), "")
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)

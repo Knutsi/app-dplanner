@@ -8,9 +8,10 @@ half, so neither module learns the other's name.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from PySide6.QtWidgets import QInputDialog, QWidget
+from PySide6.QtGui import QAction, QCursor
+from PySide6.QtWidgets import QInputDialog, QMenu, QWidget
 
 from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, StepId
@@ -34,10 +35,13 @@ from dplanner.framework.widgets import confirm
 from dplanner.modules.feature.aspect import MODULE_ID, RECORD_KEY, SPEC, read
 from dplanner.modules.feature.catalogue import (
     FeatureRecord,
+    FeatureSource,
+    cited_at,
     instance_of,
     next_feature_id,
     read_catalogue,
     registration,
+    with_record,
     without_record,
     write_catalogue,
 )
@@ -231,6 +235,51 @@ class FeatureModule:
         self._deps.undo.push(
             SetModuleDataCommand(
                 project.id, MODULE_ID, write_catalogue([*records, record]), label="Add Feature"
+            )
+        )
+
+    def cite_passage(self, project_id: NodeId, document: str, quote: str, page: int | None) -> None:
+        """Cite ``quote`` of ``document`` as a feature's passage — the window's half of
+        ``feature cite`` and ``feature add --quote``: a menu of the project's features
+        under the cursor, and *New feature…* to mint one titled on the spot. One
+        command either way, stamped with the document as it is now."""
+        library = self._deps.library
+        if not library.has(project_id):
+            return
+        records = read_catalogue(library.project(project_id))
+        menu = QMenu(self._deps.parent)
+        choices: dict[QAction, FeatureRecord | None] = {}
+        for known in records:
+            choices[menu.addAction(f"{known.id}  {known.title}")] = known
+        if records:
+            menu.addSeparator()
+        fresh = menu.addAction("New feature…")
+        choices[fresh] = None
+        picked: QAction | None = menu.exec(QCursor.pos())
+        if picked is None or picked not in choices:
+            return
+        record = choices[picked]
+        if record is None:
+            title, accepted = QInputDialog.getText(self._deps.parent, "New Feature", "Title:")
+            if not accepted or not title.strip():
+                return
+            record = FeatureRecord(id=next_feature_id(records), title=title.strip())
+            records = [*records, record]
+        if cited_at(record, document, quote) is not None:
+            return
+        source = FeatureSource(
+            document=document,
+            quote=quote,
+            page=page,
+            digest=self._deps.digest_of(project_id, document),
+        )
+        updated = replace(record, sources=(*record.sources, source))
+        self._deps.undo.push(
+            SetModuleDataCommand(
+                project_id,
+                MODULE_ID,
+                write_catalogue(with_record(records, updated)),
+                label="Cite Passage",
             )
         )
 
