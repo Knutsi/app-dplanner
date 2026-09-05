@@ -2,7 +2,9 @@
 
 Recording (``set``, ``clear``) is plain strings and always works. The verbs that talk to
 GitHub — ``refresh``, ``prs``, ``branches`` — need the ``gh`` CLI and a GitHub repository
-URL, and refuse with one line when either is missing.
+URL, and refuse with one line when either is missing. ``show`` prints a step's refs as
+recorded and, with ``gh``, where they stand now: the PR's state and title, and whether
+the branch is still on the remote — the GitHub tab's standing line, for the terminal.
 
 Which repository a step belongs to is **derived from its project's directory**: the
 enclosing git repository's ``origin`` remote. Nothing stores a URL, so nothing can
@@ -23,7 +25,9 @@ from dplanner.domain.shelf import turn_off
 from dplanner.modules.github.aspect import (
     MODULE_ID,
     GithubRefs,
+    branch_url,
     pr_label,
+    pr_url,
     read,
     refreshed,
     write,
@@ -59,6 +63,14 @@ def commands() -> list[CliCommand]:
             configure=_configure_clear,
             run=_clear,
             examples=("dplanner github clear 'Read the spec' --pr",),
+        ),
+        CliCommand(
+            path=("github", "show"),
+            summary="A step's branch and PR as recorded and, with gh, where they stand now: "
+            "the PR's state and whether the branch is still on the remote.",
+            configure=step_arg,
+            run=_show,
+            examples=("dplanner github show S7",),
         ),
         CliCommand(
             path=("github", "refresh"),
@@ -152,6 +164,55 @@ def _clear(context: CliContext, args: Namespace) -> int:
     refs = _cleared_half(current, branch=args.branch)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(refs)))
     context.report({"step": step.id} | write(refs), f"{step.title}: GitHub refs cleared")
+    return 0
+
+
+def _show(context: CliContext, args: Namespace) -> int:
+    step = find_step(context.library, args.step, context.current)
+    refs = read(step)
+    if refs is None:
+        context.report({"step": step.id}, f"{step.title}: no GitHub refs")
+        return 0
+    repo = _step_repo(context, step)
+    data: dict[str, object] = {"step": step.id} | write(refs)
+    data["pr_link"] = pr_url(refs, repo)
+    data["branch_link"] = branch_url(refs, repo)
+    lines = [f"{step.title}: " + ", ".join(filter(None, [refs.branch, _pr_phrase(refs)]))]
+    checked = repo is not None and which_gh() is not None
+    data["checked"] = checked
+    if checked:
+        assert repo is not None
+        if refs.pr_number is not None:
+            info = _fetch_pr(repo, refs.pr_number)
+            if info is not None:
+                fresh = refreshed(refs, info)
+                if fresh != refs:
+                    context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(fresh)))
+                    refs = fresh
+                data["pr_state"] = info.state
+                data["pr_title"] = info.title
+                lines.append(
+                    f"{pr_label(refs)} is {info.state}" + (f" · {info.title}" if info.title else "")
+                )
+        if refs.branch:
+            try:
+                on_remote = refs.branch in list_branches(repo)
+            except GhError:
+                on_remote = None
+            data["branch_on_remote"] = on_remote
+            if on_remote is not None:
+                lines.append(
+                    f"{refs.branch} is on the remote"
+                    if on_remote
+                    else f"{refs.branch} is not on the remote — deleted after the merge?"
+                )
+    else:
+        data["branch_on_remote"] = None
+        lines.append("(stored state only — gh or a GitHub remote is missing)")
+    for link in (data["pr_link"], data["branch_link"]):
+        if link:
+            lines.append(str(link))
+    context.report(data, "\n".join(lines))
     return 0
 
 

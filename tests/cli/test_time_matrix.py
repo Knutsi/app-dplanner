@@ -1,6 +1,7 @@
 """``dplanner schedule matrix`` and ``schedule focus`` end to end. No ``qapp`` fixture."""
 
 import json
+from datetime import date
 
 import pytest
 
@@ -210,3 +211,103 @@ def test_a_loop_in_the_file_is_refused_with_its_steps_named(cli, workspace):
     said = cli("schedule", "matrix", "Discovery", expect=1)
     assert "wait on each other" in said
     assert "'Read the spec'" in said and "'Draft the model'" in said
+
+
+# -- the team, and progress against the plan -----------------------------------------------------
+
+
+def test_the_team_is_stored_and_the_milestones_are_printed_for_it(staged, cli_library):
+    staged("schedule", "team", "Discovery", "--humans", "2", "--agents", "3")
+    library = LibraryStore(cli_library).load()
+    assert library.projects[0].module_data[MODULE_ID] == {"team": [2, 3], "format": 1}
+    data = json.loads(staged("schedule", "matrix", "Discovery", "--json"))
+    assert data["team"] == {"humans": 2, "agents": 3}
+    said = staged("schedule", "team", "Discovery", "--clear")
+    assert "1 person + 1 agent" in said
+    library = LibraryStore(cli_library).load()
+    assert MODULE_ID not in library.projects[0].module_data
+    assert "both --humans and --agents" in staged("schedule", "team", "Discovery", expect=1)
+    assert "≥ 1" in staged(
+        "schedule", "team", "Discovery", "--humans", "0", "--agents", "1", expect=1
+    )
+
+
+def test_the_team_rides_beside_the_focus_and_the_palette(staged, cli_library):
+    staged("schedule", "team", "Discovery", "--humans", "2", "--agents", "1")
+    staged("schedule", "focus", "Discovery", "--percent", "60")
+    staged("schedule", "palette", "Discovery", "mako")
+    library = LibraryStore(cli_library).load()
+    assert library.projects[0].module_data[MODULE_ID] == {
+        "efficiency": 0.6,
+        "palette": "mako",
+        "team": [2, 1],
+        "format": 1,
+    }
+    staged("schedule", "focus", "Discovery", "--clear")
+    library = LibraryStore(cli_library).load()
+    assert library.projects[0].module_data[MODULE_ID] == {
+        "palette": "mako",
+        "team": [2, 1],
+        "format": 1,
+    }
+
+
+def test_progress_show_counts_what_landed_toward_each_milestone(staged):
+    staged("status", "set", "read-the-spec", "done")
+    data = json.loads(staged("progress", "show", "Discovery", "--json"))
+    v1, v2, whole = data["scopes"]
+    assert (v1["label"], v1["steps"], v1["done"], v1["by_steps"]) == ("v1", 2, 1, 0.5)
+    assert (v1["days"], v1["done_days"], v1["by_days"]) == (4.0, 2.0, 0.5)
+    assert v1["finish"] == "2026-09-16"
+    assert (v2["label"], v2["steps"], v2["done"], v2["finish"]) == ("v2", 4, 1, "2026-09-23")
+    assert whole["label"] == "All work" and whole["by_steps"] == 0.25
+    assert whole["expected"][0] == {"date": "2026-09-07", "share": 0.0}
+    assert whole["expected"][-1] == {"date": "2026-09-23", "share": 1.0}
+    assert whole["actual"] == [{"date": date.today().isoformat(), "share": 0.25}]
+    assert data["recorded_days"] == 0
+    said = staged("progress", "show", "Discovery")
+    assert "v1: 50% by steps (1 of 2), 50% by days (2d of 4d) — lands 16 September" in said
+    assert "All work: 25% by steps" in said
+    # A milestone is named by its label or by its step, whichever comes to mind.
+    one = json.loads(staged("progress", "show", "Discovery", "--milestone", "v2", "--json"))
+    assert [scope["label"] for scope in one["scopes"]] == ["v2"]
+    by_step = json.loads(staged("progress", "show", "Discovery", "--milestone", "S4", "--json"))
+    assert [scope["label"] for scope in by_step["scopes"]] == ["v2"]
+    assert "not a milestone" in staged(
+        "progress", "show", "Discovery", "--milestone", "read-the-spec", expect=1
+    )
+
+
+def test_progress_record_writes_a_day_once_and_earlier_promises_are_kept(staged, cli_library):
+    assert "progress recorded" in staged("progress", "record", "Discovery")
+    assert "nothing changed" in staged("progress", "record", "Discovery")
+    library = LibraryStore(cli_library).load()
+    (row,) = library.projects[0].module_data["progress_history"]["days"]
+    assert row["day"] == date.today().isoformat() and len(row["stretches"]) == 2
+    # More work behind v2 moves its landing; the day it was promised for 23 September
+    # becomes an earlier plan.
+    staged("step", "add", "Discovery", "Polish", "--days", "2")
+    staged("step", "link", "ship-the-docs", "polish")
+    data = json.loads(staged("progress", "show", "Discovery", "--json"))
+    v2 = data["scopes"][1]
+    assert v2["finish"] == "2026-09-28"  # four days of polishing, then four of shipping
+    assert v2["earlier"] == [
+        {
+            "day": date.today().isoformat(),
+            "share": 0.0,
+            "finish": "2026-09-23",
+            "steps": 4,
+            "days": 7.0,
+        }
+    ]
+    assert "earlier said 23 September" in staged("progress", "show", "Discovery")
+    staged("progress", "record", "Discovery")  # last-wins within the day
+    library = LibraryStore(cli_library).load()
+    (row,) = library.projects[0].module_data["progress_history"]["days"]
+    assert row["stretches"][1]["finish"] == "2026-09-28"
+
+
+def test_progress_on_a_stepless_project_says_so(cli):
+    cli("project", "create", "Empty")
+    assert "No steps yet." in cli("progress", "show", "Empty")
+    assert "nothing to record" in cli("progress", "record", "Empty", expect=1)

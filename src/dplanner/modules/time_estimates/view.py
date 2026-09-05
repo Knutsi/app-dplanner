@@ -42,7 +42,6 @@ from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
     Cell,
     read_efficiency,
-    read_palette,
     write_project,
 )
 
@@ -132,7 +131,7 @@ class FocusBar(QWidget):
         if self._loading or not self._product.has(self._project_id):
             return
         project = self._product.project(self._project_id)
-        entry = write_project(self.percent.value() / 100, read_palette(project).id)
+        entry = write_project(project, efficiency=self.percent.value() / 100)
         if entry == project.module_data.get(MODULE_ID, {}):
             return
         self._undo.push(
@@ -213,6 +212,16 @@ class MatrixView(QWidget):
         self.selection = (humans, agents)
         self.update()
         self.scenario_changed.emit()
+
+    def select_nearest(self, humans: int, agents: int) -> None:
+        """Select the seat, or the nearest shown one: the same people with the first agent
+        column when the agent columns are collapsed, else the first seat of all."""
+        if (humans, agents) in self._cells:
+            self.select(humans, agents)
+        elif self._agents and (humans, self._agents[0]) in self._cells:
+            self.select(humans, self._agents[0])
+        elif self._humans and self._agents:
+            self.select(self._humans[0], self._agents[0])
 
     # -- what the tests read off the widget ----------------------------------------------------
 

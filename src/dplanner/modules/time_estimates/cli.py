@@ -1,23 +1,32 @@
-"""``dplanner schedule matrix``, ``schedule focus``, ``schedule palette`` and ``schedule
-milestone`` — staffing the plan.
+"""``dplanner schedule matrix``, ``schedule focus``, ``schedule palette``, ``schedule
+team``, ``schedule milestone`` — staffing the plan — and ``dplanner progress show`` and
+``progress record`` — how far it has come.
 
 ``schedule show`` prints the brackets (serial, critical path); ``matrix`` prints what lands
 between them: the makespan for every staffing in a small grid of people by coding agents,
 in project working days and in calendar days once a person's divided focus is priced in —
-and, for one team, the milestones in sequence with the dates they land. One derivation —
-``time_estimates/schedule.py``'s ``time_report`` — feeds this verb, the tab and ``--json``,
-so the three can never disagree. ``focus``, ``palette`` and ``milestone`` store the
-assumptions behind the calendar half — the same writes the tab's controls push.
+and, for the project's team, the milestones in sequence with the dates they land. One
+derivation — ``time_estimates/schedule.py``'s ``time_report`` — feeds this verb, the tab
+and ``--json``, so the three can never disagree. ``focus``, ``palette``, ``team`` and
+``milestone`` store the assumptions behind the calendar half — the same writes the tab's
+controls push.
 
-The estimate, agent-step, milestone and start-date readers arrive as functions from the
-composition root, the same hand-over ``progression_cli.commands(status_for=…)`` uses — no
-``cli.py`` imports another module's.
+``progress show`` prints what has landed toward each milestone, by steps and by estimated
+days, with the landing the plan promises and every earlier promise the history recorded;
+``progress record`` writes today's row of that history — what the window does by itself
+after every settled change, for a plan driven from the terminal (``progress.py`` has the
+shape and the reasoning).
+
+The estimate, agent-step, status, milestone and start-date readers arrive as functions
+from the composition root, the same hand-over ``progression_cli.commands(status_for=…)``
+uses — no ``cli.py`` imports another module's.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
@@ -26,9 +35,23 @@ from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Project, Step
 from dplanner.domain.schedule import Phase, format_date, format_days
+from dplanner.modules.time_estimates.progress import (
+    HISTORY_ID,
+    EarlierPlan,
+    Snapshot,
+    Tally,
+    actual,
+    calendar_phases,
+    earlier_plans,
+    expected,
+    read_history,
+    recorded,
+    take,
+    write_history,
+)
 from dplanner.modules.time_estimates.schedule import (
     DEFAULT_EFFICIENCY,
-    EFFICIENCY_KEY,
+    DEFAULT_TEAM,
     MODULE_ID,
     PALETTES,
     Cell,
@@ -41,6 +64,7 @@ from dplanner.modules.time_estimates.schedule import (
     read_efficiency,
     read_palette,
     read_start,
+    read_team,
     shades,
     time_report,
     write_milestone,
@@ -48,18 +72,41 @@ from dplanner.modules.time_estimates.schedule import (
 )
 
 
+@dataclass(frozen=True)
+class Readers:
+    """The other modules' Qt-free readers a verb here needs, handed over by the root."""
+
+    days_for: Callable[[Step], float | None]
+    is_agent: Callable[[Step], bool]
+    status_for: Callable[[Step], str]
+    start_of: Callable[[Project], date]
+    milestone_label: Callable[[Step], str]
+
+    def is_milestone(self, step: Step) -> bool:
+        return bool(self.milestone_label(step))
+
+
 def commands(
     *,
     days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
+    status_for: Callable[[Step], str],
     start_of: Callable[[Project], date],
     milestone_label: Callable[[Step], str],
 ) -> list[CliCommand]:
+    readers = Readers(days_for, is_agent, status_for, start_of, milestone_label)
+
     def matrix(context: CliContext, args: Namespace) -> int:
-        return _matrix(context, args, days_for, is_agent, start_of, milestone_label)
+        return _matrix(context, args, readers)
 
     def milestone(context: CliContext, args: Namespace) -> int:
         return _milestone(context, args, milestone_label)
+
+    def progress_show(context: CliContext, args: Namespace) -> int:
+        return _progress_show(context, args, readers)
+
+    def progress_record(context: CliContext, args: Namespace) -> int:
+        return _progress_record(context, args, readers)
 
     return [
         CliCommand(
@@ -95,6 +142,17 @@ def commands(
             ),
         ),
         CliCommand(
+            path=("schedule", "team"),
+            summary="Set the team the calendar is dated for — people and coding agents — "
+            "or clear it back to the smallest.",
+            configure=_configure_team,
+            run=_team,
+            examples=(
+                "dplanner schedule team discovery --humans 2 --agents 3",
+                "dplanner schedule team discovery --clear",
+            ),
+        ),
+        CliCommand(
             path=("schedule", "milestone"),
             summary="Date a milestone's stretch of work, or colour it, instead of the "
             "sequence's own answer.",
@@ -105,6 +163,25 @@ def commands(
                 "dplanner schedule milestone 'Ship the beta' --color '#e0602c'",
                 "dplanner schedule milestone 'Ship the beta' --clear-start --clear-color",
             ),
+        ),
+        CliCommand(
+            path=("progress", "show"),
+            summary="How far the plan has come toward each milestone, by steps and by "
+            "estimated days, against when it says it lands — and what it said before.",
+            configure=_configure_progress,
+            run=progress_show,
+            examples=(
+                "dplanner progress show discovery",
+                "dplanner progress show discovery --milestone v2 --json",
+            ),
+        ),
+        CliCommand(
+            path=("progress", "record"),
+            summary="Record today's progress and landing dates in the project's history, "
+            "when they changed — the window does this itself while it is open.",
+            configure=project_arg,
+            run=progress_record,
+            examples=("dplanner progress record discovery",),
         ),
     ]
 
@@ -142,6 +219,24 @@ def _configure_palette(parser: ArgumentParser) -> None:
     )
 
 
+def _configure_team(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument("--humans", type=int, metavar="N", help="people on the project")
+    parser.add_argument("--agents", type=int, metavar="N", help="coding agents in parallel")
+    parser.add_argument(
+        "--clear",
+        action="store_true",
+        help=f"back to the smallest team, {DEFAULT_TEAM[0]} person + {DEFAULT_TEAM[1]} agent",
+    )
+
+
+def _configure_progress(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument(
+        "--milestone", metavar="STEP", help="one milestone; omitted, every milestone in turn"
+    )
+
+
 def _configure_milestone(parser: ArgumentParser) -> None:
     step_arg(parser)
     parser.add_argument(
@@ -163,9 +258,12 @@ def _focus(context: CliContext, args: Namespace) -> int:
         raise CliError("--percent is a percentage between 1 and 100")
     project = find_project(context.library, args.project)
     value = None if args.clear else args.percent / 100
-    context.apply(
-        SetModuleDataCommand(project.id, MODULE_ID, write_project(value, read_palette(project).id))
+    entry = (
+        write_project(project, clear="efficiency")
+        if value is None
+        else write_project(project, efficiency=value)
     )
+    context.apply(SetModuleDataCommand(project.id, MODULE_ID, entry))
     said = (
         f"focus back to the default, {DEFAULT_EFFICIENCY:.0%}"
         if value is None
@@ -199,16 +297,42 @@ def _palette(context: CliContext, args: Namespace) -> int:
         raise CliError(
             f"no palette called {args.name!r} — one of " + ", ".join(found.id for found in PALETTES)
         )
-    # The focus factor rides along as stored — absent stays absent, so choosing a palette
-    # never writes the default factor into the file.
-    stored = project.module_data.get(MODULE_ID, {})
-    efficiency = read_efficiency(project) if EFFICIENCY_KEY in stored else None
-    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_project(efficiency, chosen.id)))
+    context.apply(
+        SetModuleDataCommand(project.id, MODULE_ID, write_project(project, palette_id=chosen.id))
+    )
     context.report(
         {"project": project.id, "palette": chosen.id, "palettes": choices},
         f"{project.title}: milestones shaded from {chosen.name}",
     )
     return 0
+
+
+def _team(context: CliContext, args: Namespace) -> int:
+    named = args.humans is not None or args.agents is not None
+    if args.clear == named:
+        raise CliError("give both --humans and --agents, or --clear")
+    if named and (args.humans is None or args.agents is None):
+        raise CliError("give both --humans and --agents")
+    if named and (args.humans < 1 or args.agents < 1):
+        raise CliError("a team needs at least one of each — --humans and --agents are ≥ 1")
+    project = find_project(context.library, args.project)
+    entry = (
+        write_project(project, clear="team")
+        if args.clear
+        else write_project(project, team=(args.humans, args.agents))
+    )
+    context.apply(SetModuleDataCommand(project.id, MODULE_ID, entry))
+    humans, agents = read_team(project)
+    context.report(
+        {"project": project.id, "team": {"humans": humans, "agents": agents}},
+        f"{project.title}: the calendar is dated for {_people(humans, agents)}",
+    )
+    return 0
+
+
+def _people(humans: int, agents: int) -> str:
+    people = f"{humans} {'person' if humans == 1 else 'people'}"
+    return f"{people} + {agents} {'agent' if agents == 1 else 'agents'}"
 
 
 def _milestone(context: CliContext, args: Namespace, milestone_label: Callable[[Step], str]) -> int:
@@ -252,14 +376,7 @@ def _milestone(context: CliContext, args: Namespace, milestone_label: Callable[[
     return 0
 
 
-def _matrix(
-    context: CliContext,
-    args: Namespace,
-    days_for: Callable[[Step], float | None],
-    is_agent: Callable[[Step], bool],
-    start_of: Callable[[Project], date],
-    milestone_label: Callable[[Step], str],
-) -> int:
+def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
     if (args.humans is None) != (args.agents is None):
         raise CliError("give both --humans and --agents, or neither")
     if args.humans is not None and (args.humans < 1 or args.agents < 1):
@@ -267,12 +384,10 @@ def _matrix(
     if args.efficiency is not None and not 0 < args.efficiency <= 100:
         raise CliError("--efficiency is a percentage between 1 and 100")
     project = find_project(context.library, args.project)
+    days_for, is_agent = readers.days_for, readers.is_agent
+    milestone_label, is_milestone = readers.milestone_label, readers.is_milestone
     efficiency = args.efficiency / 100 if args.efficiency is not None else read_efficiency(project)
-    start = start_of(project)
-
-    def is_milestone(step: Step) -> bool:
-        return bool(milestone_label(step))
-
+    start = readers.start_of(project)
     report = time_report(
         context.library,
         project,
@@ -306,8 +421,9 @@ def _matrix(
                 start_for=read_start,
             )
         )
-    # The milestones are printed for one team: the one named, else the smallest.
-    team = calendar[0]
+    # The milestones are printed for one team: the one named, else the project's own.
+    stored = read_team(project)
+    team = next((cell for cell in calendar if (cell.humans, cell.agents) == stored), calendar[0])
     colors = phase_colors(team.phases, read_color, read_palette(project))
     data: dict[str, Any] = {
         "project": project.id,
@@ -431,3 +547,168 @@ def _report(
     if not report.has_agent_steps:
         lines += ["", "No agent steps — agent capacity does not change these numbers."]
     return "\n".join(lines)
+
+
+# -- progress -----------------------------------------------------------------------------------
+
+
+def _snapshot(
+    context: CliContext, project: Project, readers: Readers, today: date
+) -> Snapshot | None:
+    humans, agents = read_team(project)
+    return take(
+        context.library,
+        project,
+        readers.days_for,
+        readers.is_agent,
+        readers.status_for,
+        humans=humans,
+        agents=agents,
+        start=readers.start_of(project),
+        efficiency=read_efficiency(project),
+        is_milestone=readers.is_milestone,
+        start_for=read_start,
+        today=today,
+    )
+
+
+def _progress_record(context: CliContext, args: Namespace, readers: Readers) -> int:
+    project = find_project(context.library, args.project)
+    now = _snapshot(context, project, readers, date.today())
+    if now is None:
+        raise CliError("nothing to record — the project has no steps, or cannot be dated")
+    rows = recorded(read_history(project), now)
+    if rows is None:
+        context.report(
+            {"project": project.id, "day": now.day.isoformat(), "outcome": "unchanged"},
+            f"{project.title}: nothing changed since the last record",
+        )
+        return 0
+    context.apply(SetModuleDataCommand(project.id, HISTORY_ID, write_history(rows)))
+    context.report(
+        {"project": project.id, "day": now.day.isoformat(), "outcome": "recorded"},
+        f"{project.title}: progress recorded for {format_date(now.day)}",
+    )
+    return 0
+
+
+def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> int:
+    project = find_project(context.library, args.project)
+    today = date.today()
+    now = _snapshot(context, project, readers, today)
+    if now is None:
+        if not project.steps:
+            context.report({"project": project.id, "steps": 0}, "No steps yet.")
+            return 0
+        raise CliError("these steps wait on each other, so nothing can be dated")
+    history = read_history(project)
+    humans, agents = read_team(project)
+    stretches = calendar_phases(
+        context.library,
+        project,
+        readers.days_for,
+        readers.is_agent,
+        humans=humans,
+        agents=agents,
+        start=readers.start_of(project),
+        efficiency=read_efficiency(project),
+        is_milestone=readers.is_milestone,
+        start_for=read_start,
+    )
+    scopes: list[tuple[str | None, str]] = []
+    if args.milestone:
+        step = _milestone_named(context, project, readers, args.milestone)
+        if not readers.is_milestone(step):
+            raise CliError(
+                f"{step.title!r} is not a milestone — mark it with `milestone set` first"
+            )
+        scopes.append((step.id, readers.milestone_label(step)))
+    else:
+        scopes += [
+            (s.key, readers.milestone_label(project.step(s.key) or Step()))
+            for s in now.stretches
+            if s.key
+        ]
+        scopes.append((None, "All work"))
+    rows: list[dict[str, Any]] = []
+    lines: list[str] = []
+    for key, label in scopes:
+        tally = now.toward(key)
+        landing = now.landing(key)
+        earlier = earlier_plans(history, now, key, by_days=False)
+        rows.append(
+            {
+                "milestone": key,
+                "label": label,
+                "steps": tally.steps,
+                "done": tally.done,
+                "days": tally.days,
+                "done_days": tally.done_days,
+                "by_steps": tally.share(by_days=False),
+                "by_days": tally.share(by_days=True),
+                "finish": landing.isoformat() if landing else "",
+                "expected": [
+                    {"date": when.isoformat(), "share": share}
+                    for when, share in expected(stretches, readers.days_for, key, by_days=False)
+                ],
+                "actual": [
+                    {"date": when.isoformat(), "share": share}
+                    for when, share in actual(history, now, key, by_days=False)
+                ],
+                "earlier": [
+                    {
+                        "day": plan.day.isoformat(),
+                        "share": plan.share,
+                        "finish": plan.finish.isoformat(),
+                        "steps": plan.tally.steps,
+                        "days": plan.tally.days,
+                    }
+                    for plan in earlier
+                ],
+            }
+        )
+        lines.append(_progress_line(label, tally, landing, earlier))
+    data = {
+        "project": project.id,
+        "day": today.isoformat(),
+        "team": {"humans": humans, "agents": agents},
+        "recorded_days": len(history),
+        "scopes": rows,
+    }
+    lines.append(
+        f"({_people(humans, agents)}; {len(history)} day{'s' if len(history) != 1 else ''} "
+        "recorded)"
+    )
+    context.report(data, "\n".join(lines))
+    return 0
+
+
+def _milestone_named(context: CliContext, project: Project, readers: Readers, needle: str) -> Step:
+    """The milestone ``needle`` names — its label (``v2``) first, since that is what a
+    person calls it, else the step the way every step verb finds one."""
+    wanted = needle.strip().lower()
+    labelled = [step for step in project.steps if readers.milestone_label(step).lower() == wanted]
+    if len(labelled) == 1:
+        return labelled[0]
+    return find_step(context.library, needle, project)
+
+
+def _percent(share: float | None) -> str:
+    return "—" if share is None else f"{share:.0%}"
+
+
+def _progress_line(
+    label: str, tally: Tally, landing: date | None, earlier: Sequence[EarlierPlan]
+) -> str:
+    said = (
+        f"{label}: {_percent(tally.share(by_days=False))} by steps "
+        f"({tally.done} of {tally.steps}), {_percent(tally.share(by_days=True))} by days "
+        f"({format_days(tally.done_days)} of {format_days(tally.days)})"
+    )
+    said += f" — lands {format_date(landing)}" if landing else " — nothing estimated, no date"
+    if earlier:
+        was = ", ".join(
+            f"{format_date(plan.finish)} (on {format_date(plan.day)})" for plan in earlier
+        )
+        said += f"; earlier said {was}"
+    return said
