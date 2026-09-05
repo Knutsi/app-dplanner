@@ -984,7 +984,7 @@ QSplitter::handle:vertical:pressed {
 
 /* Dialog footer buttons: quiet bordered secondaries, at most one accent primary. */
 #EditReviewDialog QPushButton, #TaskBrowserDialog QPushButton, #CardPreviewDialog QPushButton,
-#AgentSkillDialog QPushButton, #CliInstallDialog QPushButton {
+#AgentSkillDialog QPushButton, #CommandInstallDialog QPushButton {
     background-color: $BG_OVERLAY;
     color: $TEXT_PRIMARY;
     border: 1px solid $BORDER;
@@ -996,7 +996,7 @@ QSplitter::handle:vertical:pressed {
 #TaskBrowserDialog QPushButton:hover,
 #CardPreviewDialog QPushButton:hover,
 #AgentSkillDialog QPushButton:hover,
-#CliInstallDialog QPushButton:hover {
+#CommandInstallDialog QPushButton:hover {
     border-color: $BORDER_STRONG;
 }
 
@@ -1004,12 +1004,12 @@ QSplitter::handle:vertical:pressed {
 #TaskBrowserDialog QPushButton:disabled,
 #CardPreviewDialog QPushButton:disabled,
 #AgentSkillDialog QPushButton:disabled,
-#CliInstallDialog QPushButton:disabled {
+#CommandInstallDialog QPushButton:disabled {
     color: $TEXT_DISABLED;
 }
 
 #EditReviewDialog #PrimaryButton, #CardPreviewDialog #PrimaryButton,
-#AgentSkillDialog #PrimaryButton, #CliInstallDialog #PrimaryButton {
+#AgentSkillDialog #PrimaryButton, #CommandInstallDialog #PrimaryButton {
     background-color: $ACCENT;
     color: $ON_ACCENT;
     border-color: $ACCENT;
@@ -1018,13 +1018,13 @@ QSplitter::handle:vertical:pressed {
 }
 
 #EditReviewDialog #PrimaryButton:hover, #CardPreviewDialog #PrimaryButton:hover,
-#AgentSkillDialog #PrimaryButton:hover, #CliInstallDialog #PrimaryButton:hover {
+#AgentSkillDialog #PrimaryButton:hover, #CommandInstallDialog #PrimaryButton:hover {
     background-color: $ACCENT_HOVER;
     border-color: $ACCENT_HOVER;
 }
 
 #EditReviewDialog #PrimaryButton:disabled, #AgentSkillDialog #PrimaryButton:disabled,
-#CliInstallDialog #PrimaryButton:disabled {
+#CommandInstallDialog #PrimaryButton:disabled {
     background-color: $BG_OVERLAY;
     color: $TEXT_DISABLED;
     border-color: $BORDER;

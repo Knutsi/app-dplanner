@@ -16,6 +16,12 @@ dependencies = [
 [project.scripts]
 dplanner = "dplanner.entry:main"
 
+# The window, with the word typed for you. A gui-script rather than a script so that on
+# Windows it is an executable with no console window behind it — what a Start Menu
+# shortcut should open. `dplanner desktop install` writes the launcher that opens it.
+[project.gui-scripts]
+dpw = "dplanner.entry:window_main"
+
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"

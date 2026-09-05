@@ -24,6 +24,7 @@ from dplanner.modules.step_agent_instruction.launcher import (
     DEFAULT_AGENT_COMMAND,
     PRESETS,
     TerminalPreset,
+    current_command,
     is_installed,
     terminals_for,
 )
@@ -36,7 +37,10 @@ AUTOMATIC_LABEL = "Automatic"
 
 
 def agent_command() -> str:
-    return str(get_global(MODULE_ID, AGENT_COMMAND_KEY, DEFAULT_AGENT_COMMAND))
+    """The stored command, read through the presets: a text an earlier version shipped
+    for a preset is that preset, so the dropdown shows it and the wrapper runs its
+    current command."""
+    return current_command(str(get_global(MODULE_ID, AGENT_COMMAND_KEY, DEFAULT_AGENT_COMMAND)))
 
 
 def launch_command() -> str:
@@ -135,7 +139,9 @@ def build_page(parent: QWidget | None, platform: str = sys.platform) -> QWidget:
             "What the terminal runs. {prompt} is the opening line — one sentence pointing"
             " the agent at the briefing file, never the briefing itself (appended when"
             " omitted); {session} is the run's session id, for an agent that can resume"
-            " one. Picking an agent above fills this in.",
+            " one; {run_dir} is the directory holding the briefing and its staged files,"
+            " for an agent that must be allowed to read there. Picking an agent above"
+            " fills this in.",
             page,
         )
     )

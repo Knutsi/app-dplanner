@@ -53,9 +53,17 @@ every agent's briefing carries.
 ```bash
 uv sync
 uv run dplanner window                                  # your library; created empty on first run
+uv run dpw                                              # the same, with the word typed for you
 uv run dplanner window --library ~/plans/library.json   # another library, in its own instance
 uv run dplanner --help                                  # the CLI; a bare `dplanner` prints this too
 ```
+
+To have it on hand outside the checkout, `uv tool install --editable .` puts `dplanner`
+and `dpw` on PATH (*Tools ▸ Install dplanner Command…* runs the same), and `dplanner
+desktop install` adds DPlanner to the applications menu — a `.desktop` entry on Linux, an
+app bundle in `~/Applications` on macOS, a Start Menu shortcut on Windows — opening that
+`dpw`; the dialog writes it in the same go. `dplanner desktop status` says whether the
+launcher still opens this build, and `desktop uninstall` takes it out.
 
 The library file lists your projects and lives per user (`$DPLANNER_LIBRARY` also names
 one). *File ▸ New Project* creates a project folder inside a git repository — offering
@@ -164,10 +172,12 @@ src/dplanner/
 ├── identity.py            what this application calls itself
 ├── menus.py               the menu bar's shape, including the Project menu
 ├── app.py                 bootstrap: QApplication, the session, the first open
-├── entry.py               the one `dplanner` command: the CLI, or `dplanner window`
+├── entry.py               the one `dplanner` command: the CLI, or `dplanner window` (`dpw`)
+├── assets/                what the application ships: the icon, one PNG per size, read by the window and the launcher alike
 ├── scripts/measure_edit_cost.py   what an edit costs the GUI thread, measured headless through the journal
 ├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
 ├── scripts/layout_item_double_delete.py   the layout-item double delete built to order, and the finalizer that stops it
+├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
 │   ├── storage/             three providers behind one protocol: folder, git, GitHub
@@ -204,6 +214,7 @@ src/dplanner/
 │   ├── main.py              the argparse tree, built from the registry
 │   ├── lookup.py            a key (S7 / 7), an id, a folder name, or part of a title
 │   ├── aspects.py           `aspect list`
+│   ├── desktop.py           `desktop install`/`status`/`uninstall`: the launcher an applications menu opens, one class per platform
 │   ├── assets.py            `<noun> attach`/`assets` — the per-aspect pair — and `asset list`/`uses`/`prune` over every module's areas
 │   ├── lint.py              `lint` — every module's checks over the library, one report
 │   ├── scopes.py            `scope show` — what a check, feature or milestone gathers
@@ -291,7 +302,7 @@ src/dplanner/
 │   ├── project_assets/      every asset a project carries and what uses each — the Assets
 │   │                        tab, the pool, display titles, and `dplanner asset`
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
-│   ├── agent_skill/         the skill dialog, and the install that puts dplanner on PATH
+│   ├── install/             getting DPlanner onto this machine from the window: the agent skill, the `dplanner` command and the desktop launcher
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
 │   ├── appshell/  sync/  settings/  taskcenter/  debug/
 │   └── llm/  llm_openai/  llm_anthropic/

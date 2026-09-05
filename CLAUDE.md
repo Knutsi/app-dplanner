@@ -561,6 +561,15 @@ root, stop and look for the registry or capability you have not found yet.
   read as foreign. Branch switch and pull go through the same `SessionControl.refresh`,
   clearing undo history (theirs describes another tree). `ARCHITECTURE.md`'s *Adopting the
   other writer's changes in place* has the reasoning.
+- **A branch switched underneath the window is taken in, and said.** The sync module
+  asks every repository's branch at the workspace watcher's cadence (`POLL_MS`) and
+  compares it with the one this window last saw; a switch it did not make — a terminal's
+  `git checkout`, an agent working in the checkout with its worktree off — goes through
+  the same `_take_worktree` as the window's own switch (tree into the model, undo history
+  dropped when anything was taken, autosave resumed) and then a warning names the
+  repository and both branches. The window's own operations re-baseline when they end,
+  so only a switch from outside is ever reported. `ARCHITECTURE.md`'s *A branch switched
+  underneath the window* has the reasoning.
 - **Reloading the library is a full rebuild — and the fallback, not the rule.**
   `SessionControl.refresh()` adopts; `reload()` is what it falls back to when the store
   cannot read what it found (a pending format migration, a failure halfway), and what *File
@@ -579,7 +588,14 @@ root, stop and look for the registry or capability you have not found yet.
   that is an agent's background process ends with the agent's turn and makes every agent
   it launches a *child session* of the first — no transcript, ended with its parent — which
   is how one stray window took four agents down. Not a dispatch rule, a guard on who owns
-  the window. `ARCHITECTURE.md`'s *The window is a word* has the reasoning.
+  the window. **`dpw` is the word typed for you** — a `gui-scripts` entry
+  (`entry.window_main`), so on Windows it is an executable with no console behind it — and
+  `dplanner desktop install` writes the launcher an applications menu opens on it:
+  `cli/desktop.py`, one class per platform (a `.desktop` entry named after `APP_ID`, an
+  app bundle, a Start Menu shortcut through PowerShell) behind one contract, each testable
+  on every other platform. *Tools ▸ Install dplanner Command…* writes it in the same go
+  as the command. Neither word reaches the skill. `ARCHITECTURE.md`'s *The window is a
+  word* has the reasoning.
 - **Discarding a build is `discard_build()`, and closing the window is not enough.** Qt keeps
   a closed `QWidget` in `topLevelWidgets()`, so without `deleteLater()` the whole build —
   services, model, every module — stays reachable forever. Nobody notices in the application;
@@ -742,7 +758,14 @@ root, stop and look for the registry or capability you have not found yet.
   session of the outer one), the person's `CLAUDE_CONFIG_DIR`-style configuration stays.
   The Claude preset names the run's session (`--session-id {session}`, minted per launch);
   the wrapper records it with `dir` and `resume` in the shell facts, and an ended row in
-  the Agents browser shows the command that picks the agent up again. The skill and the
+  the Agents browser shows the command that picks the agent up again. The preset also
+  hands the run directory over as an additional working directory (`--add-dir
+  {run_dir}`, before another option: the flag takes a list and would swallow
+  `{prompt}`), so reading the briefing asks nothing, and `new_run_dir` resolves the
+  path so the flag and the file agree on macOS (`/var` is a symlink) and Windows (a
+  short-name Temp). **A preset that changes lists the texts it replaced**
+  (`AgentPreset.superseded`): the settings store the picked text, and
+  `current_command` reads a stale one as the preset. The skill and the
   briefing's preamble both say *never kill by name or pattern*.
   `ARCHITECTURE.md`'s *Running an agent launches a peer, not a task* has the reasoning.
 - **A worktree is the step's decision, and the run is named after the step.** Whether the
