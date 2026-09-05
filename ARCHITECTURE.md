@@ -1988,6 +1988,18 @@ line carries a path and nothing the project is about, so no pattern drawn from t
 match it; it also stays under the platform's argument limit, which a briefing with a long
 handoff would not, and `ps` stays readable. The agent pays one file read.
 
+That read is outside the checkout, and Claude Code asks before reading outside its
+working directories — one approval per launch, on every platform, and again for each
+staged asset. So the Claude preset hands the run directory over as an additional working
+directory (`--add-dir {run_dir}`), which its documentation says makes reads there ask
+nothing. Two facts shape the flag's place and its value. `--add-dir` takes a *list*, so
+it sits before another option and never before `{prompt}`: probed, a prompt following
+it was taken for a second directory and the session started with no prompt at all. And
+the directory is resolved when it is made (`new_run_dir`): the permission check compares
+a file's resolved path, macOS's temp directory sits under `/var`, a symlink to
+`/private/var`, and Windows's Temp is often an 8.3 short name — the pointer line, the
+staged asset paths and the flag all derive from that one path, so every spelling agrees.
+
 **The window was an agent's process, and its agents were its children.** *The window is a
 word* has that half. The launcher's own half is `scrubbed_environment()`: the terminal is
 spawned without the session markers an agent CLI sets in its shells, so an agent DPlanner
@@ -2018,6 +2030,17 @@ Enter* when a run ends badly. The Agents browser shows it under an ended row. A 
 Agent* verb that opens a terminal on it is the obvious next step and is deliberately not
 built yet: the hint is what the recovery needed, and a second launch path is a feature to
 ask for.
+
+**A preset that changes carries the texts it replaced.** The settings page stores the
+picked preset's *text* — the dropdown reflects the field, which is what lets a preset be
+edited into a custom command — so a machine that picked Claude Code before `--session-id`
+was added held `claude --permission-mode plan {prompt}` from then on: read as Custom,
+launched without a session id, never resumable, and no later change to the preset
+reached it. `AgentPreset.superseded` lists every command text the preset has shipped, and
+`launcher.current_command` maps a stored one to the current — the settings page reads
+through it, so the dropdown shows the preset again, and so do the wrapper and the resume
+hint. The same idea as a `Takeover` for module data: the old spelling is the contract,
+and the successor carries it.
 
 ### The peer reports back through its run directory
 
