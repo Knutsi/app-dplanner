@@ -28,6 +28,7 @@ from dplanner.modules.project_editor.renderers import (
     FILL_ALPHA,
     ICON_D,
     ICON_GAP,
+    LEFT_INSET,
     LIFT,
     PAINT_MARGIN,
     medallion_end,
@@ -1706,8 +1707,8 @@ def test_the_medallion_row_leaves_the_badge_less_room_the_more_it_holds():
     share. The row's advance already includes the trailing gap, which is why one term covers
     both the medallions and the space after them.
     """
-    assert medallion_end(()) == BADGE_INSET
-    assert medallion_end(("tag",)) == BADGE_INSET + ICON_D + ICON_GAP
+    assert medallion_end(()) == LEFT_INSET
+    assert medallion_end(("tag",)) == LEFT_INSET + ICON_D + ICON_GAP
     assert medallion_end(("tag", "layers")) > medallion_end(("tag",))
 
 
@@ -1939,11 +1940,60 @@ def test_a_title_takes_as_many_lines_as_the_card_has_room_for(app):
     assert len(one) == 1 and one[0].startswith("Rebuild the") and one[0].endswith("…")
 
 
+def render_card(tab, step_id) -> QImage:
+    node = scene(tab)._nodes[step_id]
+    body = node.body_scene_rect()
+    image = QImage(int(body.width()), int(body.height()), QImage.Format.Format_ARGB32)
+    image.fill(scene(tab).palette().window().color())
+    painter = QPainter(image)
+    scene(tab).render(painter, QRectF(image.rect()), body)
+    painter.end()
+    return image
+
+
+def test_the_spine_carries_the_key_and_is_shaded_by_status(services, project, tab):
+    """The strip down the left edge: the key's ink lands inside it and nowhere in the
+    title's column, and a status changes its wash — busy blue for in-progress, the good
+    green for done — while the body keeps its own fill beside it."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.project_editor.renderers import SPINE_W
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as status
+
+    step = project.steps[0]
+    image = render_card(tab, step.id)
+    height = image.height()
+    inside = image.pixelColor(int(SPINE_W) + 8, height // 2)  # The body, past the spine.
+
+    def spine_colours():
+        return {
+            image.pixelColor(x, y).name()
+            for x in range(4, int(SPINE_W) - 3)
+            for y in range(12, height - 12)
+        }
+
+    quiet = spine_colours()
+    assert inside.name() not in quiet  # The strip is a shade of its own, even at rest.
+    assert len(quiet) > 1  # The key's glyphs put a second colour inside it.
+
+    services.undo.push(SetModuleDataCommand(step.id, STATUS_ID, status("in-progress")))
+    image = render_card(tab, step.id)
+    busy = spine_colours()
+    assert busy != quiet
+    busiest = max(busy, key=lambda name: QColor(name).blue() - QColor(name).red())
+    assert QColor(busiest).blue() > QColor(busiest).red()  # A blue wash.
+
+    services.undo.push(SetModuleDataCommand(step.id, STATUS_ID, status("done")))
+    image = render_card(tab, step.id)
+    greenest = max(spine_colours(), key=lambda name: QColor(name).green() - QColor(name).red())
+    assert QColor(greenest).green() > QColor(greenest).red()  # A green wash.
+
+
 def ink_in_corner(tab, step_id) -> int:
     """How far the card's bottom-right corner departs from its own fill, rendered over the
     theme's base: the stat's text pulls a pixel far from it, an empty corner stays flat.
     The card is rendered over the theme's own ground, since its ink is the theme's."""
-    from dplanner.modules.project_editor.renderers import PAD_Y, PADDING
+    from dplanner.modules.project_editor.renderers import PAD_Y, PADDING, SPINE_W
 
     node = scene(tab)._nodes[step_id]
     body = node.body_scene_rect()
@@ -1953,7 +2003,8 @@ def ink_in_corner(tab, step_id) -> int:
     painter = QPainter(image)
     scene(tab).render(painter, QRectF(image.rect()), body)
     painter.end()
-    fill = image.pixelColor(int(PADDING) + 4, height // 2)
+    # The fill is sampled past the spine, whose key and wash are ink of their own.
+    fill = image.pixelColor(int(SPINE_W + PADDING) + 4, height // 2)
     line = int(PAD_Y) + 18
     return int(
         max(

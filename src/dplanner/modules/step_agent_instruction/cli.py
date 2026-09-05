@@ -30,6 +30,8 @@ from dplanner.modules.step_agent_instruction.aspect import (
     read,
     read_project,
     separate_instruction,
+    uses_worktree,
+    with_worktree,
     write_state,
 )
 from dplanner.modules.step_agent_instruction.prompt import Briefing, assemble
@@ -54,24 +56,35 @@ def step_author() -> StepAuthor:
             help="a separate agent instruction, or - for stdin — only when how-to-execute"
             " differs from the description",
         )
+        parser.add_argument(
+            "--no-worktree",
+            dest="no_worktree",
+            action="store_true",
+            help="the agent works in the checkout itself rather than a fresh worktree —"
+            " only for a step that must (implies --agent)",
+        )
 
     def author(context: CliContext, step: Step, args: Namespace) -> StepAuthored | None:
+        if not (args.agent or args.agent_file is not None or args.no_worktree):
+            return None
+        worktree = not args.no_worktree
+        note = "agent step" if worktree else "agent step, in the checkout itself"
+        data: dict[str, object] = {"agent": True, "worktree": worktree}
         if args.agent_file is not None:
             body = body_from(args.agent_file)
             edit = TextEdit(step.id, MODULE_ID, 0, "", body)
             context.apply(EditTextCommand(edit, label="Set Agent Instruction"))
-            return StepAuthored(
-                {"agent": True, "instruction": len(body)},
-                f"agent step, separate instruction: {len(body)} characters",
+            data["instruction"] = len(body)
+            note += f", separate instruction: {len(body)} characters"
+        context.apply(
+            SetModuleDataCommand(
+                step.id,
+                MODULE_ID,
+                write_state(True, separate=args.agent_file is not None, worktree=worktree),
+                label="Set Agent Aspect",
             )
-        if args.agent:
-            context.apply(
-                SetModuleDataCommand(
-                    step.id, MODULE_ID, write_state(True), label="Set Agent Aspect"
-                )
-            )
-            return StepAuthored({"agent": True}, "agent step")
-        return None
+        )
+        return StepAuthored(data, note)
 
     return StepAuthor(configure, author, lambda args: args.agent_file == "-")
 
@@ -105,7 +118,7 @@ def lint_checks(*, described: Callable[[Step], bool]) -> list[LintCheck]:
 
 def commands(*, briefing: Briefing) -> list[CliCommand]:
     def _prompt(context: CliContext, args: Namespace) -> int:
-        step = find_step(context.library, args.step)
+        step = find_step(context.library, args.step, context.current)
         project = context.library.project_of(step.id)
         if not enabled(step):
             raise CliError(
@@ -129,7 +142,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             sections=briefing.sections(context.library, step, context.store.files),
             project_sections=briefing.project_sections(context.library, step, context.store.files),
             epilogue=briefing.epilogue(step),
-            preamble=briefing.preamble,
+            preamble=briefing.preamble(step, uses_worktree(step)),
             project_instruction=project_instruction,
             project_files=asset_paths(context.store.files, project.id),
             instruction_files=instruction.files,
@@ -184,6 +197,15 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             ),
         ),
         CliCommand(
+            path=("agent", "worktree"),
+            summary="Whether Run Agent puts this step's agent in a fresh git worktree on its"
+            " own branch (on by default); off only for a step that must work in the checkout"
+            " the window shows.",
+            configure=_configure_worktree,
+            run=_worktree,
+            examples=("dplanner agent worktree 'Cut the release' off",),
+        ),
+        CliCommand(
             path=("agent", "prompt"),
             summary="Print the full briefing for a step: instructions, requirements, "
             "branch and inherited context — everything, in one read.",
@@ -206,6 +228,30 @@ def _one_target(parser: ArgumentParser) -> None:
         help="the project instead: its standing instruction, prepended to every "
         "briefing (defaults to the current project)",
     )
+
+
+def _configure_worktree(parser: ArgumentParser) -> None:
+    step_arg(parser)
+    parser.add_argument("worktree", choices=("on", "off"), help="fresh worktree, or the checkout")
+
+
+def _worktree(context: CliContext, args: Namespace) -> int:
+    step = find_step(context.library, args.step, context.current)
+    wanted = args.worktree == "on"
+    if not enabled(step):
+        raise CliError(
+            f"{step.title!r} is not an agent step — mark it with `dplanner agent on {step.title!r}`"
+        )
+    where = "a fresh worktree" if wanted else "the checkout itself"
+    if uses_worktree(step) == wanted:
+        context.report({"step": step.id, "worktree": wanted}, f"{step.title}: already {where}")
+        return 0
+    label = "Agent Worktree On" if wanted else "Agent Worktree Off"
+    context.apply(
+        SetModuleDataCommand(step.id, MODULE_ID, with_worktree(step, wanted), label=label)
+    )
+    context.report({"step": step.id, "worktree": wanted}, f"{step.title}: {where}")
+    return 0
 
 
 def _configure_set(parser: ArgumentParser) -> None:
@@ -231,7 +277,7 @@ def _target(context: CliContext, args: Namespace) -> Node:
 
 
 def _on(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.library, args.step)
+    step = find_step(context.library, args.step, context.current)
     if enabled(step):
         context.report({"step": step.id, "agent": True}, f"{step.title}: already an agent step")
         return 0
@@ -242,7 +288,7 @@ def _on(context: CliContext, args: Namespace) -> int:
 
 
 def _off(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.library, args.step)
+    step = find_step(context.library, args.step, context.current)
     if not enabled(step):
         # Already in the target state is success — a batch of offs must survive a step
         # somebody else already unmarked.
@@ -267,6 +313,7 @@ def _show(context: CliContext, args: Namespace) -> int:
         "markdown": body,
         "agent": enabled(step),
         "separate": separate_instruction(step),
+        "worktree": uses_worktree(step),
     }
     if body:
         context.report(data, body)

@@ -173,7 +173,8 @@ src/dplanner/
 │   ├── signals.py  fsio.py  text_diff.py
 │
 ├── domain/                ── the planner itself. Qt-free.
-│   ├── model.py             Library, Project, Step: the graph, its edges, its aspects
+│   ├── model.py             Library, Project, Step: the graph, its edges, its aspects — and the
+│   │                        per-project step number a key (S7) is made of
 │   ├── store.py             the on-disk format above, one provider per project, the stale-write guard
 │   ├── library_file.py      the per-user library file: which projects exist
 │   ├── aspects.py           what an aspect is: id, label, summary, data format
@@ -192,7 +193,7 @@ src/dplanner/
 │   ├── command.py           CliCommand, CliContext, CliRegistry
 │   ├── discovery.py         finding the library and the current project; opening and flushing
 │   ├── main.py              the argparse tree, built from the registry
-│   ├── lookup.py            an id, a folder name, or part of a title
+│   ├── lookup.py            a key (S7 / 7), an id, a folder name, or part of a title
 │   ├── aspects.py           `aspect list`
 │   ├── assets.py            `<noun> attach`/`assets` — the per-aspect pair — and `asset list`/`uses`/`prune` over every module's areas
 │   ├── lint.py              `lint` — every module's checks over the library, one report
@@ -242,9 +243,11 @@ src/dplanner/
 │   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
-│   ├── step_agent_instruction/   … this one also holds the project's standing instruction
-│   │                             and assembles and launches Run Agent (`launcher.py`: the
-│   │                             agent and terminal preset tables, the reporting wrapper script)
+│   ├── step_agent_instruction/   … this one also holds the project's standing instruction,
+│   │                             the step's worktree choice, and assembles and launches Run
+│   │                             Agent (`launcher.py`: the agent and terminal preset tables,
+│   │                             the run name a worktree and branch carry, the wrapper script
+│   │                             that prepares the worktree and reports back)
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
 │   │                        reads the wrapper's report; `terminal.py` finds the window again;

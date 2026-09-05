@@ -1996,3 +1996,18 @@ turn came (every builder test) raised the notice's `QMessageBox` over a deleted 
 `test_builder.py::test_a_closed_session_leaves_nothing_of_its_build_behind`, on all three
 baseline runs of this pass. **The rule.** A zero-timer that touches a widget names that
 widget as its context; CLAUDE.md already says so for views, and modules are no exception.
+
+## 16. From the multi-agent worktree pass
+
+### `core/storage/git.py` — `main_checkout(root)` beside `find_repo_root` (new)
+
+**What.** One function: the main checkout a linked worktree belongs to, read from the
+worktree's `.git` *file* (`gitdir: <main>/.git/worktrees/<name>`), or the root itself
+when it is not a worktree. Re-exported through `core/storage/locations.py` like
+`find_repo_root`. **Why.** Two callers above the storage layer needed the same six lines:
+the CLI's project discovery — an agent running `dplanner` inside its worktree has to
+resolve the library's project, not the branch's copy of the plan — and the skill's
+caution against an editable install into a worktree, which had the parse inline.
+**Upstream?** Yes, with `find_repo_root`: any template application that opens a
+repository and can be run from a linked worktree wants the same answer, and the `.git`
+file's format is git's contract, not ours.

@@ -5,16 +5,18 @@ editable field: the agent is one of the known CLIs — Claude Code, Codex, OpenC
 the terminal is one of the known terminals for this platform, each marked when it is not
 installed. Picking a row pre-fills the field, so nobody has to research an invocation to
 use the feature; the free-text field exists for the person who already knows exactly what
-they want. The defaults work untouched: Claude Code, in plan mode, in a fresh worktree, in
-the platform's own default terminal.
+they want. The defaults work untouched: Claude Code, in plan mode, in the platform's own
+default terminal.
 
 Per user, per machine — a colleague's terminal is not the workspace's business, which is
-why this is a GLOBAL-scope section and never a file in the plan.
+why this is a GLOBAL-scope section and never a file in the plan. Whether a step's agent
+gets a fresh worktree is *not* here: that is a fact about the step, kept on its agent
+aspect and switched on the Agent tab.
 """
 
 import sys
 
-from PySide6.QtWidgets import QCheckBox, QComboBox, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
@@ -27,7 +29,6 @@ from dplanner.modules.step_agent_instruction.launcher import (
 )
 
 AGENT_COMMAND_KEY = "agent_command"
-WORKTREE_KEY = "worktree"
 LAUNCH_COMMAND_KEY = "launch_command"
 
 CUSTOM_LABEL = "Custom"
@@ -36,10 +37,6 @@ AUTOMATIC_LABEL = "Automatic"
 
 def agent_command() -> str:
     return str(get_global(MODULE_ID, AGENT_COMMAND_KEY, DEFAULT_AGENT_COMMAND))
-
-
-def use_worktree() -> bool:
-    return bool(get_global(MODULE_ID, WORKTREE_KEY, True))
 
 
 def launch_command() -> str:
@@ -111,11 +108,6 @@ def build_page(parent: QWidget | None, platform: str = sys.platform) -> QWidget:
         CUSTOM_LABEL,
     )
 
-    worktree_box = QCheckBox("Start in a fresh git worktree", page)
-    worktree_box.setObjectName("AgentWorktreeBox")
-    worktree_box.setChecked(use_worktree())
-    worktree_box.toggled.connect(lambda on: set_global(MODULE_ID, WORKTREE_KEY, bool(on)))
-
     terminal_combo = QComboBox(page)
     terminal_combo.setObjectName("AgentTerminalCombo")
     terminal_edit = QLineEdit(page)
@@ -145,23 +137,15 @@ def build_page(parent: QWidget | None, platform: str = sys.platform) -> QWidget:
             page,
         )
     )
-    layout.addWidget(worktree_box)
-    layout.addWidget(
-        _note(
-            "When the checkout is a git repository, the agent works in"
-            " .dplanner/worktrees/<step> on an agent/<step> branch — created on the first"
-            " run, reused on the next — so parallel agents never share a checkout.",
-            page,
-        )
-    )
     layout.addWidget(QLabel("Terminal", page))
     layout.addWidget(terminal_combo)
     layout.addWidget(terminal_edit)
     layout.addWidget(
         _note(
             "How the terminal opens on the run script. Automatic takes the first installed"
-            " terminal above (tmux when inside one); picking one fills in its command,"
-            " which can be edited. Placeholders: {script}, {workdir}, {title}.",
+            " terminal above, always a new window — tmux only when nothing else is"
+            " installed; picking one fills in its command, which can be edited."
+            " Placeholders: {script}, {workdir}, {title}.",
             page,
         )
     )

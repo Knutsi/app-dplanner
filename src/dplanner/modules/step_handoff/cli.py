@@ -87,7 +87,7 @@ def _configure_show(parser: ArgumentParser) -> None:
 def _set(context: CliContext, args: Namespace) -> int:
     body = body_from(args.file)
 
-    step = find_step(context.library, args.step)
+    step = find_step(context.library, args.step, context.current)
     current = read_note(step)
     edit = TextEdit(step.id, MODULE_ID, 0, current, body)
     context.apply(EditTextCommand(edit, label="Set Handoff"))
@@ -120,7 +120,7 @@ def _show(context: CliContext, args: Namespace) -> int:
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.library, args.step)
+    step = find_step(context.library, args.step, context.current)
     if not enabled(step):
         # Already clear is success — state-clearing verbs must survive batches.
         context.report({"step": step.id}, f"{step.title}: no handoff")

@@ -118,6 +118,11 @@ Four conventions, and each one is a lesson about diffs:
   Reordering two projects is then a one-line JSON diff instead of a mass rename.
 - **A folder name is frozen at creation** and never follows a retitle. Identity is the id;
   the folder name is presentation. Renaming a folder churns history for no benefit.
+- **A step carries a number, and the project keeps the last one dealt.** `"number": 7` in
+  `step.json`, `"last_number": 12` in `project.dproj` — one sequence per project, dealt
+  where a step joins it and never reused (a deleted step's branch may live on). The
+  letter a person sees in front of it (`S7`, `F7`, `M7`) is derived from the step's kind
+  and never written; `ARCHITECTURE.md`'s *A step has a number* has the reasoning.
 - **Absence encodes the default.** A step with no links writes no `edges` key, and an empty
   document is deleted rather than written blank — so a diff shows exactly the nodes whose
   plan actually changed.
@@ -132,6 +137,16 @@ rather than an object per edge, and the direction cannot be read the wrong way r
 mean different things to different people. **A kind this build does not know is loaded and
 written back untouched**, so a colleague's newer link survives an older build opening the
 file.
+
+### The `.dplanner-worktrees` directory
+
+Run Agent keeps a step's worktree at `<repository>/.dplanner-worktrees/<run name>` on the
+branch `agent/<run name>`, where the run name is the step's key, its ticket key and its
+title slug (`f7-PROJ-12-build-the-modal`). Local and never versioned: the wrapper adds
+`/.dplanner-worktrees/` to `.git/info/exclude`, and the store's stale-write check never
+looks there. It is a sibling of the `.dplanner` pointer below rather than a directory
+under it, because the pointer is a *file* — which is exactly where the earlier
+`.dplanner/worktrees/` path failed for every project kept in a subfolder.
 
 ### The `.dplanner` pointer file
 
@@ -153,7 +168,8 @@ repository root needs none, so none is written.
 ### Changing it
 
 The chain lives in `domain/migrations.py` and the engine in `core/formats.py`. DPlanner is
-at format 1, so the chain is still empty.
+at format 2; the one entry so far dealt every step of a version-1 project its number, in
+`children` order, and set the project's `last_number` past the last.
 
 1. **Append a `Migration` to the end of the tuple.** `current_version` is derived from the
    chain, so that edit *is* the version bump.
@@ -269,7 +285,9 @@ shape for "on, but empty": `step_ticket` writes `{"on": true}` when the Type tog
 enables it before any field is filled (a filled ticket's entry replaces the marker),
 `step_check` writes `{"on": true}` and never anything else — what it *gathers* is the
 graph's answer, not a stored list — and `step_agent_instruction` writes `{"on": true}` — plus `"separate": true` when the step
-opts into an instruction distinct from its description — beside the step whose prose file
+opts into an instruction distinct from its description, and `"worktree": false` when its
+agent is to work in the checkout itself rather than a fresh worktree (absence is on: the
+opt-outs are the only keys ever added) — beside the step whose prose file
 may not exist at all. Both are format 1 of their existing `ModuleDataFormat`s; a step
 carrying only the old prose file still reads as agent-on, so no migration ships with them.
 A feature step's marker names its record instead (`{"feature": "f1"}`); a bare `{"on":

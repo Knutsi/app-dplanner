@@ -292,14 +292,16 @@ def default_modules(services: "AppServices") -> list["Module"]:
 
 
         A done step is muted with a green body — finished work recedes into a colour the
-        eye can skip; in-progress and blocked wear busy and bad bars; a milestone is a
-        purple-highlighted node wearing its label as a badge, a tag medallion and the
-        schedule's accumulated days and date as its stat (done outranks it on the body —
-        a shipped milestone reads finished, and the tag still says what it was); an agent
-        instruction is the spark medallion; a PR is a pill with its state as a tone and a
-        branch the fork glyph; a live agent run is the chip on the bottom edge; a plain
-        step's stat is its own estimate. The card says nothing in words beyond its title:
-        every aspect it wears is one of these, never a phrase.
+        eye can skip; the spine down the card's left carries the step's key and is shaded
+        by status — busy for in-progress, bad for blocked, good for done, quiet otherwise;
+        a milestone is a purple-highlighted node wearing its label as a badge, a tag
+        medallion and the schedule's accumulated days and date as its stat (done outranks
+        it on the body — a shipped milestone reads finished, and the tag still says what
+        it was); an agent instruction is the spark medallion; a PR is a pill with its
+        state as a tone and a branch the fork glyph; a live agent run is the chip on the
+        bottom edge; a plain step's stat is its own estimate. The card says nothing in
+        words beyond its title and its key: every aspect it wears is one of these, never
+        a phrase.
         """
         refs = github_read(step)
 
@@ -326,8 +328,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             pill_text=pill,
             pill_tone={"merged": "good", "closed": "bad"}.get(refs.pr_state, "") if refs else "",
             branch=bool(refs is not None and refs.branch),
-            # Done colours the whole body, so its bar would only repeat the same green.
-            bar_tone={"in-progress": "busy", "blocked": "bad"}.get(status, ""),
+            key_text=_step_key(step),
+            spine_tone={"in-progress": "busy", "blocked": "bad", "done": "good"}.get(status, ""),
             chip_text=chip_text,
             chip_tone=chip_tone,
             # Done outranks a kind, and a milestone outranks a feature: the coarser claim
@@ -720,6 +722,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # Run Agent asks before launching on a step whose prerequisites are not
             # done — the same status reader the progression board's frontier uses.
             status_for=step_status,
+            # What names the run — its worktree, its branch, its window: the key and
+            # the ticket, composed here from aspects the agent module never reads.
+            step_key=_step_key,
+            ticket_key=_ticket_key,
         )
     )
 
@@ -1292,51 +1298,129 @@ def _default_briefing() -> "Briefing":
         parts=_handoff_parts,
         sections=_briefing_sections,
         project_sections=_briefing_project_sections,
-        epilogue=lambda step: _agent_epilogue(step.title),
-        preamble=_agent_preamble(),
+        epilogue=_agent_epilogue,
+        preamble=_agent_preamble,
         instruction=_briefing_instruction,
     )
 
 
-def _agent_preamble() -> str:
-    """The briefing's preflight: the agent proves it can report back before it starts.
+def _step_key(step: "Step") -> str:
+    """The step's readable key: a letter for what it is, the number the project dealt.
+
+    ``M`` a milestone, ``F`` a feature, ``C`` a check, ``S`` any other step — the coarser
+    claim wins, in the order the body tone ranks them, so a milestone that is also a
+    feature reads ``M``. The letter is presentation over the stored number, which is why
+    a step keeps its number when its kind changes and the letter follows. Read by the
+    canvas spine, every CLI row and lookup, the branch a run is named after, and the
+    briefing that tells the agent which step it holds.
+    """
+    from dplanner.modules.feature.aspect import is_feature
+    from dplanner.modules.step_check.aspect import read as check_read
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+
+    if not step.number:
+        return ""
+    letter = (
+        "M"
+        if milestone_read(step)
+        else "F"
+        if is_feature(step)
+        else "C"
+        if check_read(step)
+        else "S"
+    )
+    return f"{letter}{step.number}"
+
+
+def _ticket_key(step: "Step") -> str:
+    from dplanner.modules.step_ticket.aspect import read as ticket_read
+
+    ticket = ticket_read(step)
+    return ticket.key if ticket is not None else ""
+
+
+def _run_name(step: "Step") -> str:
+    """What a step's agent run is called — the same rule the launcher applies, read here
+    so the briefing can name the worktree the script prepared."""
+    from dplanner.modules.step_agent_instruction.launcher import run_name
+
+    return run_name(_step_key(step), _ticket_key(step), step.title)
+
+
+def _agent_preamble(step: "Step", in_worktree: bool) -> str:
+    """The briefing's preflight: the agent proves it can report back, and that it is
+    where this run said it would be, before it starts.
 
     An agent without the DPlanner skill would do the work and leave the plan blind — no
     status, no handoff — so the briefing makes the check the first move and stopping the
-    honest fallback. Root prose for the same reason as the epilogue: it names another
-    module's verbs.
+    honest fallback. The second check is the worktree: two agents once "launched into
+    fresh worktrees" and did their work on the same branch, so an agent whose step asks
+    for a worktree confirms it is in one — by the name the launcher prepared — and stops
+    if it is not. ``in_worktree`` is the caller's word on *this run* — the step's own
+    choice for Run Agent and ``agent prompt``, never for a conflict the window hands over.
+    Root prose for the same reason as the epilogue: it names other modules' verbs and the
+    launcher's naming.
     """
-    return (
+    from dplanner.modules.step_agent_instruction.launcher import (
+        WORKTREES_DIR,
+        branch_name,
+    )
+
+    lines = [
         "First, confirm you can drive DPlanner: run `dplanner skill status`. If the"
         " command is missing or the skill is not installed, STOP — do not carry out the"
         " step — and tell the developer this step needs the DPlanner skill"
         " (`dplanner skill install`)."
-    )
+    ]
+    if in_worktree:
+        name = _run_name(step)
+        lines.append(
+            "Second, confirm you are in this step's own git worktree: `git rev-parse"
+            f" --show-toplevel` must end in `{WORKTREES_DIR}/{name}` and `git branch"
+            f" --show-current` must print `{branch_name(name)}`. If either differs, STOP"
+            " — do not touch the main checkout — and tell the developer the worktree"
+            " was not prepared. Commit on that branch; every `dplanner` command still"
+            " reaches the plan the window shows."
+        )
+    else:
+        lines.append(
+            "This step works in the checkout itself (its worktree option is off), on the"
+            " branch that is checked out — take care: other agents may be in worktrees"
+            " beside you, but this one shares the developer's working tree."
+        )
+    return "\n\n".join(lines)
 
 
-def _agent_epilogue(step_title: str) -> str:
+def _agent_epilogue(step: "Step") -> str:
     """The briefing's closing words: how the agent reports back through the CLI.
 
     Cross-module prose — it names the status and handoff verbs — so it is written here, in
     the one file allowed to know every module's vocabulary, and handed to the agent module
-    as a callback on both surfaces.
+    as a callback on both surfaces. Every verb names the step by its key: a key is
+    unambiguous where a title may match two steps, and it is what the branch and the
+    PR are named after.
     """
-    title = step_title or "Untitled step"
+    key = _step_key(step) or step.title or "Untitled step"
+    ref = f"'{key}'" if " " in key else key
     return (
+        f"This step is {key}. Its branch and worktree carry that key; open the PR title"
+        f" with it (`{key}: …`) and record the branch and the PR on the step as they"
+        f" exist: `dplanner github set {ref} --branch $(git branch --show-current)`,"
+        f" then `dplanner github set {ref} --pr <number>`.\n"
         "As you work, keep the run state current:\n"
-        f"- `dplanner agent-state set '{title}' plan-for-review` when your plan is ready"
+        f"- `dplanner agent-state set {ref} plan-for-review` when your plan is ready"
         " to review\n"
-        f"- `dplanner agent-state set '{title}' working` while implementing\n"
-        f"- `dplanner agent-state set '{title}' pending-approval` while waiting on an"
+        f"- `dplanner agent-state set {ref} working` while implementing\n"
+        f"- `dplanner agent-state set {ref} pending-approval` while waiting on an"
         " approval\n"
-        f"- `dplanner agent-state set '{title}' needs-input` when you have a question the"
+        f"- `dplanner agent-state set {ref} needs-input` when you have a question the"
         " developer must answer before you can go on\n"
         "When the work is finished, record it in DPlanner:\n"
-        f"- `dplanner status set '{title}' done` and `dplanner agent-state clear '{title}'`\n"
-        f"- `dplanner handoff set '{title}' --file -` with anything later steps should"
+        f"- `dplanner status set {ref} done` and `dplanner agent-state clear {ref}`\n"
+        f"- `dplanner handoff set {ref} --file -` with anything later steps should"
         " know (add `--scope project` to reach the whole project;"
-        f" `dplanner handoff attach '{title}' <file>` for files).\n"
-        f"If you cannot finish, `dplanner status set '{title}' blocked` and say why in the"
+        f" `dplanner handoff attach {ref} <file>` for files).\n"
+        f"If you cannot finish, `dplanner status set {ref} blocked` and say why in the"
         " handoff."
     )
 
@@ -1524,7 +1608,9 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
                 feature_cli.step_author(),
                 spec_cli.step_author(),
                 testing_cli.step_author(),
-            ]
+            ],
+            # The key a row prints is the one the canvas paints: one rule, here.
+            key_of=_step_key,
         ),
         # `topology show` tells the gate what it printed; the gate is built here, so the
         # spec module never learns where the record lives.

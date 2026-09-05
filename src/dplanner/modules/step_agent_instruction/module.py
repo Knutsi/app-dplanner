@@ -22,7 +22,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QMessageBox, QWidget
 
-from dplanner.core.fsio import slugify
+from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Node, Step, StepId
 from dplanner.domain.progression import DONE
 from dplanner.domain.store import Conflict, FilesFor
@@ -52,6 +52,8 @@ from dplanner.modules.step_agent_instruction.aspect import (
     asset_paths,
     enabled,
     read_project,
+    uses_worktree,
+    with_worktree,
     write_state,
 )
 from dplanner.modules.step_agent_instruction.prompt import (
@@ -71,7 +73,6 @@ from dplanner.modules.step_agent_instruction.settings_page import (
     agent_command,
     build_page,
     launch_command,
-    use_worktree,
 )
 from dplanner.theme.icons import spark_icon, typewriter_icon
 
@@ -91,6 +92,10 @@ def _no_record(_step_id: StepId, _files: launcher.LaunchFiles) -> None:
 def _all_done(_step: Step) -> str:
     """A build with nobody to ask about status: nothing is unfinished, nothing warns."""
     return DONE
+
+
+def _no_key(_step: Step) -> str:
+    return ""
 
 
 def _our_version(node: Node, entry: str) -> str:
@@ -144,6 +149,12 @@ class StepAgentInstructionDeps:
     # progression board's seam. Run Agent asks before launching on a step whose
     # prerequisites do not all read done; this module never learns the vocabulary's shape.
     status_for: Callable[[Step], str] = field(default=_all_done)
+    # The step's readable key ("F7") and its ticket key ("PROJ-12"), both composed by the
+    # root from aspects this module never reads. They name the run — the worktree, the
+    # branch, the terminal's title — through ``launcher.run_name``, which the briefing's
+    # preamble reads too, so the agent is told the very name the script prepared.
+    step_key: Callable[[Step], str] = field(default=_no_key)
+    ticket_key: Callable[[Step], str] = field(default=_no_key)
 
 
 class StepAgentInstructionModule:
@@ -186,6 +197,8 @@ class StepAgentInstructionModule:
                 ),
                 preview=lambda: deps.actions.run("agent.preview", deps.context.current()),
                 pick_assets=deps.pick_assets,
+                worktree=lambda step_id: uses_worktree(deps.library.step(step_id)),
+                set_worktree=self._set_worktree,
             )
 
         deps.sections.register(
@@ -306,7 +319,8 @@ class StepAgentInstructionModule:
         return ENABLED
 
     def _assembled(self, step: Step, staged: Mapping[str, str] | None = None) -> AssembledPrompt:
-        """The briefing, with every referenced file path mapped through ``staged``."""
+        """The briefing, with every referenced file path mapped through ``staged``, opening
+        with the preflight for the run the step asks for — a worktree unless it opted out."""
         deps = self._deps
         project = deps.library.project_of(step.id)
         remap: Mapping[str, str] = staged or {}
@@ -334,7 +348,7 @@ class StepAgentInstructionModule:
             sections=sections,
             project_sections=deps.briefing.project_sections(deps.library, step, deps.files),
             epilogue=deps.briefing.epilogue(step),
-            preamble=deps.briefing.preamble,
+            preamble=deps.briefing.preamble(step, uses_worktree(step)),
             project_instruction=read_project(project),
             project_files=project_files,
             instruction_files=place(instruction.files),
@@ -355,12 +369,28 @@ class StepAgentInstructionModule:
         run_dir = launcher.new_run_dir()
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
-        # The slug carries a short id so two steps with one title never share a worktree.
-        worktree = f"{slugify(step.title, fallback='step')}-{step.id[:6]}" if use_worktree() else ""
+        worktree = self._run_name(step) if uses_worktree(step) else ""
         spawned, prepared = self._launch(step, assembled.text, run_dir, worktree)
         if not spawned:
             # No shell was started, so nothing is stamped: the fallback hands over the prompt.
             PromptFallbackDialog(assembled.text, str(prepared.prompt_file), deps.parent).exec()
+
+    def _run_name(self, step: Step) -> str:
+        """What this step's worktree and branch are called: the launcher's rule over the
+        root's key and ticket — the same rule the root applies when the briefing names
+        the worktree, so the script and the preflight cannot disagree."""
+        deps = self._deps
+        return launcher.run_name(deps.step_key(step), deps.ticket_key(step), step.title)
+
+    def _set_worktree(self, step_id: StepId, worktree: bool) -> None:
+        """The Agent tab's checkbox: one undoable write of this aspect's own entry."""
+        step = self._deps.library.step(step_id)
+        if uses_worktree(step) == worktree:
+            return
+        label = "Agent Worktree On" if worktree else "Agent Worktree Off"
+        self._deps.undo.push(
+            SetModuleDataCommand(step_id, MODULE_ID, with_worktree(step, worktree), label=label)
+        )
 
     def _confirm_unfinished(self, step: Step, unfinished: Sequence[Step]) -> bool:
         """The graph gates launching: an agent briefed on a step whose prerequisites are
@@ -393,13 +423,14 @@ class StepAgentInstructionModule:
         here, so a change to how a terminal opens is made once."""
         deps = self._deps
         workdir = Path(deps.workdir_for(step.id)).expanduser()
+        key = deps.step_key(step)
         prepared = launcher.prepare(
             text,
             workdir,
             agent_command=agent_command(),
             worktree=worktree,
             directory=run_dir,
-            step_title=step.title,
+            step_title=f"{key} {step.title}".strip(),
         )
         command = None
         if workdir.is_dir():
@@ -445,7 +476,7 @@ class StepAgentInstructionModule:
         text = conflict_prompt(
             step_title=step.title or "Untitled step",
             project_title=library.project_of(step_id).title or "Untitled project",
-            preamble=deps.briefing.preamble,
+            preamble=deps.briefing.preamble(step, False),
             entries=entries,
         )
         spawned, prepared = self._launch(step, text, run_dir, worktree="")

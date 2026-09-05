@@ -14,7 +14,8 @@ Qt-free by rule — see ``tests/test_architecture.py``.
 import json
 import shutil
 from argparse import ArgumentParser, Namespace
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,10 @@ from dplanner.domain.seed import seed_project
 from dplanner.domain.store import FilesFor
 
 
+def _no_key(_step: Step) -> str:
+    return ""
+
+
 def lint_checks() -> list[LintCheck]:
     def dangling_requires(
         _product: Library, project: Project, _files: FilesFor
@@ -70,7 +75,13 @@ def lint_checks() -> list[LintCheck]:
     return [dangling_requires]
 
 
-def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
+def commands(
+    step_authors: Sequence[StepAuthor] = (), key_of: Callable[[Step], str] = _no_key
+) -> list[CliCommand]:
+    """``key_of`` is the step's readable key (``S7``, ``F3``) — the letter is a fact
+    about aspects this file never reads, so the root hands the rule in and every row,
+    listing and chart here prints the same key the canvas paints."""
+
     def _configure_step_add(parser: ArgumentParser) -> None:
         project_arg(parser)
         parser.add_argument("title", help="what the step is called")
@@ -96,7 +107,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
             context.apply(SetEdgesCommand(step.id, "requires", waiting))
         # Composition-root order is report order. No rollback: an author that raises
         # aborts the run, and the transaction writes nothing — the step included.
-        data, notes = _step_row(library, step), []
+        data, notes = _step_row(library, step, key_of), []
         for author in step_authors:
             contributed = author.author(context, step, args)
             if contributed is not None:
@@ -104,7 +115,9 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
                 notes.append(f"  {contributed.note}")
         context.report(
             data,
-            "\n".join([f"Added {step.title!r} to {project.title}  {step.id}", *notes]),
+            "\n".join(
+                [f"Added {key_of(step)} {step.title!r} to {project.title}  {step.id}", *notes]
+            ),
         )
         return 0
 
@@ -119,7 +132,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
             path=("project", "show"),
             summary="One project: its summary, its steps and the links between them.",
             configure=project_arg,
-            run=_project_show,
+            run=partial(_project_show, key_of=key_of),
             examples=("dplanner project show discovery",),
         ),
         CliCommand(
@@ -157,7 +170,7 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
             summary="The step graph as a Mermaid flowchart: waves as rows, requires as "
             "arrows. Paste it into a PR or a report.",
             configure=_configure_graph,
-            run=_project_graph,
+            run=partial(_project_graph, key_of=key_of),
             examples=(
                 "dplanner project graph discovery",
                 "dplanner project graph discovery --short",
@@ -181,14 +194,14 @@ def commands(step_authors: Sequence[StepAuthor] = ()) -> list[CliCommand]:
             path=("step", "list"),
             summary="The steps of one project, in order.",
             configure=project_arg,
-            run=_step_list,
+            run=partial(_step_list, key_of=key_of),
             examples=("dplanner step list discovery",),
         ),
         CliCommand(
             path=("step", "show"),
             summary="One step: what it waits on, what waits on it, and its aspects.",
             configure=step_arg,
-            run=_step_show,
+            run=partial(_step_show, key_of=key_of),
             examples=("dplanner step show read-the-spec",),
         ),
         CliCommand(
@@ -269,6 +282,7 @@ def project_document(library: Library, project: Project) -> dict[str, Any]:
         "steps": [
             {
                 "id": step.id,
+                "number": step.number,
                 "title": step.title,
                 "edges": {kind: list(targets) for kind, targets in sorted(step.edges.items())},
                 "aspects": {key: dict(value) for key, value in sorted(step.module_data.items())},
@@ -294,9 +308,13 @@ def _project_row(context: CliContext, project: Project) -> dict[str, Any]:
     }
 
 
-def _step_row(library: Library, step: Step) -> dict[str, Any]:
+def _step_row(
+    library: Library, step: Step, key_of: Callable[[Step], str] = _no_key
+) -> dict[str, Any]:
     return {
         "id": step.id,
+        "number": step.number,
+        "key": key_of(step),
         "title": step.title,
         "requires": [other.id for other in library.requires(step.id)],
         "aspects": sorted(step.module_data),
@@ -323,17 +341,20 @@ def _project_list(context: CliContext, _args: Namespace) -> int:
     return 0
 
 
-def _project_show(context: CliContext, args: Namespace) -> int:
+def _project_show(
+    context: CliContext, args: Namespace, key_of: Callable[[Step], str] = _no_key
+) -> int:
     library = context.library
     project = find_project(library, args.project)
     data = _project_row(context, project) | {
-        "steps": [_step_row(library, step) for step in project.steps]
+        "steps": [_step_row(library, step, key_of) for step in project.steps]
     }
     lines = [project.title, f"  {project.summary}" if project.summary else "", "  Steps:"]
     for step in project.steps:
         waiting = library.requires(step.id)
-        suffix = f"  (after {', '.join(s.title for s in waiting)})" if waiting else ""
-        lines.append(f"    {step.title}{suffix}  {step.id[:8]}")
+        after = ", ".join(key_of(other) or other.title for other in waiting)
+        suffix = f"  (after {after})" if waiting else ""
+        lines.append(f"    {key_of(step):<4} {step.title}{suffix}  {step.id[:8]}")
     if not project.steps:
         lines.append("    none yet")
     context.report(data, "\n".join(line for line in lines if line))
@@ -345,9 +366,8 @@ def _configure_graph(parser: ArgumentParser) -> None:
     parser.add_argument(
         "--short",
         action="store_true",
-        help="compact labels: s1, s2 ids and titles cut to ~24 characters — for graphs "
-        "too wide to read; the ids are positional, so the default form is the "
-        "diff-stable one",
+        help="compact labels: the steps' keys (s1, f2) as ids and titles cut to ~24"
+        " characters — for graphs too wide to read, and the keys match the branches",
     )
 
 
@@ -431,7 +451,12 @@ def _project_delete(context: CliContext, args: Namespace) -> int:
 SHORT_TITLE = 24  # Where a compact label cuts a title; enough to recognise, not to read.
 
 
-def mermaid(library: Library, project: Project, short: bool = False) -> str:
+def mermaid(
+    library: Library,
+    project: Project,
+    short: bool = False,
+    key_of: Callable[[Step], str] = _no_key,
+) -> str:
     """The step graph as a Mermaid flowchart — the same map the canvas draws, as text.
 
     Deliberately structure-only: waves become subgraphs so parallelism is visible at a
@@ -439,15 +464,19 @@ def mermaid(library: Library, project: Project, short: bool = False) -> str:
     ``placed()``, whose order is stable, so regenerating the chart after an unrelated edit
     diffs clean. Dangling edges are skipped, as everywhere ``requires()`` is read.
 
-    ``short`` swaps full titles for ``1: Truncated title…`` labels over positional
-    ``s1, s2, …`` ids — narrow enough for a PR description, but positional, so the
-    default form remains the diff-stable one.
+    ``short`` swaps full titles for ``S7: Truncated title…`` labels over the steps' keys
+    as node ids — narrow enough for a PR description, and the key is the name the branch
+    and the PR carry, so a reader can match the chart to the work.
     """
     lines = ["flowchart TD"]
     rows = placed(library, project)
     if not rows:
         return "flowchart TD\n    %% no steps yet"
-    node_ids = {row.step.id: f"s{row.index}" if short else f"s{row.step.id[:12]}" for row in rows}
+
+    def node_id(step: Step) -> str:
+        return (key_of(step) or f"s{step.id[:12]}").lower() if short else f"s{step.id[:12]}"
+
+    node_ids = {row.step.id: node_id(row.step) for row in rows}
     for wave in range(1, rows[-1].wave + 1):
         lines.append(f'    subgraph wave{wave}["Wave {wave}"]')
         for row in rows:
@@ -455,7 +484,7 @@ def mermaid(library: Library, project: Project, short: bool = False) -> str:
                 title = (row.step.title or "Untitled step").replace('"', "#quot;")
                 if short:
                     cut = title if len(title) <= SHORT_TITLE else title[: SHORT_TITLE - 1] + "…"
-                    title = f"{row.index}: {cut}"
+                    title = f"{key_of(row.step) or row.index}: {cut}"
                 lines.append(f'        {node_ids[row.step.id]}["{title}"]')
         lines.append("    end")
     for row in rows:
@@ -464,9 +493,11 @@ def mermaid(library: Library, project: Project, short: bool = False) -> str:
     return "\n".join(lines)
 
 
-def _project_graph(context: CliContext, args: Namespace) -> int:
+def _project_graph(
+    context: CliContext, args: Namespace, key_of: Callable[[Step], str] = _no_key
+) -> int:
     project = find_project(context.library, args.project)
-    chart = mermaid(context.library, project, short=args.short)
+    chart = mermaid(context.library, project, short=args.short, key_of=key_of)
     context.report({"project": project.id, "mermaid": chart}, chart)
     return 0
 
@@ -551,8 +582,15 @@ def _project_import(context: CliContext, args: Namespace) -> int:
     raw_steps = document.get("steps", [])
     if not isinstance(raw_steps, list):
         raise CliError("`steps` must be a list")
+    taken: set[int] = set()
     for raw in raw_steps:
         step = Step(title=str(raw.get("title", "Untitled step")))
+        # The document's numbers are kept where they are whole and unique — S7 stays S7
+        # across an export and an import — and a step without one is dealt the next.
+        number = raw.get("number")
+        if isinstance(number, int) and not isinstance(number, bool) and 0 < number not in taken:
+            step.number = number
+            taken.add(number)
         step.module_data = {k: dict(v) for k, v in dict(raw.get("aspects", {})).items()}
         step.module_text = {k: str(v) for k, v in dict(raw.get("text", {})).items()}
         remapped[str(raw.get("id", step.id))] = step.id
@@ -577,32 +615,43 @@ def _project_import(context: CliContext, args: Namespace) -> int:
 # -- step verbs ---------------------------------------------------------------------------------
 
 
-def _step_list(context: CliContext, args: Namespace) -> int:
+def _step_list(
+    context: CliContext, args: Namespace, key_of: Callable[[Step], str] = _no_key
+) -> int:
     library = context.library
     project = find_project(library, args.project)
-    rows = [_step_row(library, step) for step in project.steps]
-    text = "\n".join(f"{row['title']}  {row['id'][:8]}" for row in rows) or "No steps yet."
+    rows = [_step_row(library, step, key_of) for step in project.steps]
+    text = (
+        "\n".join(f"{row['key']:<4} {row['title']}  {row['id'][:8]}" for row in rows)
+        or "No steps yet."
+    )
     context.report({"steps": rows}, text)
     return 0
 
 
-def _step_show(context: CliContext, args: Namespace) -> int:
+def _step_show(
+    context: CliContext, args: Namespace, key_of: Callable[[Step], str] = _no_key
+) -> int:
     library = context.library
-    step = find_step(library, args.step)
+    step = find_step(library, args.step, context.current)
     project = library.project_of(step.id)
-    data = _step_row(library, step) | {
+    data = _step_row(library, step, key_of) | {
         "project": project.id,
         "dependents": [other.id for other in library.dependents(step.id)],
         "aspects": {key: dict(value) for key, value in sorted(step.module_data.items())},
         "text": sorted(step.module_text),
     }
-    lines = [f"{step.title}  {step.id}", f"  in {project.title}"]
+
+    def named(others: Sequence[Step]) -> str:
+        return ", ".join(f"{key_of(s)} {s.title}".strip() for s in others)
+
+    lines = [f"{key_of(step)} {step.title}".strip() + f"  {step.id}", f"  in {project.title}"]
     waiting = library.requires(step.id)
     if waiting:
-        lines.append("  waits on: " + ", ".join(s.title for s in waiting))
+        lines.append("  waits on: " + named(waiting))
     blocked = library.dependents(step.id)
     if blocked:
-        lines.append("  blocks:   " + ", ".join(s.title for s in blocked))
+        lines.append("  blocks:   " + named(blocked))
     for key, value in sorted(step.module_data.items()):
         lines.append(f"  {key}: {json.dumps(value, sort_keys=True)}")
     for key in sorted(step.module_text):
@@ -617,14 +666,14 @@ def _configure_step_rename(parser: ArgumentParser) -> None:
 
 
 def _step_rename(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.library, args.step)
+    step = find_step(context.library, args.step, context.current)
     context.apply(SetFieldCommand(step.id, "title", args.title))
     context.report(_step_row(context.library, step), step.title)
     return 0
 
 
 def _step_remove(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.library, args.step)
+    step = find_step(context.library, args.step, context.current)
     title = step.title
     context.apply(RemoveNodeCommand(step.id))
     context.report({"deleted": step.id}, f"Removed {title!r}")
@@ -644,7 +693,7 @@ def _configure_link(parser: ArgumentParser) -> None:
 
 def _link_ends(context: CliContext, args: Namespace) -> tuple[Step, StepId]:
     library = context.library
-    step = find_step(library, args.step)
+    step = find_step(library, args.step, context.current)
     other = find_step(library, args.on)
     return step, other.id
 

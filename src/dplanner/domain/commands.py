@@ -30,6 +30,7 @@ from dplanner.domain.model import (
     Library,
     Node,
     NodeId,
+    Project,
     StepId,
     TextEdit,
 )
@@ -190,15 +191,24 @@ class AddNodeCommand:
         self.parent_id = parent_id
         self.node = node
         self.index = index
+        self._mark_before: int | None = None
 
     def text(self) -> str:
         return f"Add {self.node.kind.title()}"
 
     def redo(self, library: Library) -> None:
+        parent = library.node(self.parent_id)
+        if self._mark_before is None:
+            self._mark_before = getattr(parent, "last_number", 0)
         library.add_child(self.parent_id, self.node, self.index)
 
     def undo(self, library: Library) -> None:
         _, self.index = library.remove_child(self.node.id)
+        # Undoing a birth hands the number back: the step never was, so nothing can
+        # carry its key, and undo has to leave the workspace exactly as it found it.
+        parent = library.node(self.parent_id)
+        if isinstance(parent, Project) and self._mark_before is not None:
+            parent.last_number = self._mark_before
 
     def merge_with(self, other: Command) -> bool:
         return False

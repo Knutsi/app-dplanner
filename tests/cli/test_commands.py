@@ -22,6 +22,74 @@ def data(text):
     return json.loads(text)
 
 
+# -- keys: the name a person calls a step by ----------------------------------------------------
+
+
+def test_steps_are_keyed_in_order_and_every_row_prints_the_key(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Read the spec")
+    added = cli("step", "add", "Discovery", "Draft the model", "--after", "Read the spec")
+    assert "Added S2 'Draft the model'" in added
+    rows = data(cli("step", "list", "Discovery", "--json"))["steps"]
+    assert [(row["key"], row["number"]) for row in rows] == [("S1", 1), ("S2", 2)]
+    shown = cli("project", "show", "Discovery")
+    assert "S1   Read the spec" in shown
+    assert "S2   Draft the model  (after S1)" in shown
+    assert cli("step", "list", "Discovery").startswith("S1   Read the spec")
+
+
+def test_a_step_is_found_by_its_key_with_or_without_the_letter(cli):
+    """The letter is presentation over the number — a step marked as a feature keeps its
+    number — so `F2`, `s2` and `2` all name the same step."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Read the spec")
+    cli("step", "add", "Discovery", "Draft the model")
+    for needle in ("S2", "s2", "2", "F2"):
+        assert data(cli("step", "show", needle, "--json"))["title"] == "Draft the model"
+    cli("status", "set", "S2", "done")
+    assert data(cli("status", "show", "2", "--json"))["status"] == "done"
+
+
+def test_a_deleted_steps_number_is_never_dealt_again(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "One")
+    cli("step", "add", "Discovery", "Two")
+    cli("step", "remove", "S2")
+    assert data(cli("step", "add", "Discovery", "Three", "--json"))["key"] == "S3"
+
+
+def test_the_key_letter_follows_the_kind(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Ship the beta")
+    cli("milestone", "set", "S1", "--label", "MVP")
+    assert data(cli("step", "show", "1", "--json"))["key"] == "M1"
+    cli("milestone", "clear", "M1")
+    cli("check", "set", "1")
+    assert data(cli("step", "show", "1", "--json"))["key"] == "C1"
+
+
+def test_a_bare_number_matching_steps_in_two_projects_is_refused(cli):
+    cli("project", "create", "Discovery")
+    cli("project", "create", "Satellite")
+    cli("step", "add", "Discovery", "One")
+    cli("step", "add", "Satellite", "Uno")
+    assert "several projects" in cli("step", "show", "1", expect=1)
+    assert data(cli("step", "show", "1", "--project", "Satellite", "--json"))["title"] == "Uno"
+
+
+def test_export_and_import_keep_the_numbers(cli, cli_stdin, tmp_path):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "One")
+    cli("step", "add", "Discovery", "Two")
+    cli("step", "remove", "S1")
+    document = cli("project", "export", "Discovery")
+    cli_stdin("project", "import", "--dir", str(tmp_path / "widget" / "copy"), stdin=document)
+    projects = data(cli("project", "list", "--json"))["projects"]
+    copy = next(p for p in projects if p["dir"].endswith("copy"))
+    rows = data(cli("step", "list", copy["id"], "--json"))["steps"]
+    assert [(row["key"], row["title"]) for row in rows] == [("S2", "Two")]
+
+
 # -- finding the library -----------------------------------------------------------------------
 
 
@@ -51,6 +119,68 @@ def test_nothing_named_means_the_per_user_default(libraries, monkeypatch):
     monkeypatch.delenv(LIBRARY_ENV, raising=False)
     monkeypatch.setattr("dplanner.domain.library_file.default_library_path", lambda: first)
     assert find_library() == first
+
+
+def _commit_all(repo):
+    import subprocess
+
+    git = ["git", "-C", str(repo)]
+    subprocess.run([*git, "config", "user.email", "t@example.com"], check=True)
+    subprocess.run([*git, "config", "user.name", "t"], check=True)
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", "plan"], check=True)
+
+
+def test_inside_an_agents_worktree_the_current_project_is_the_library_one(tmp_path):
+    """The branch's copy of the plan is what the walk finds; the answer is the library's
+    project of the same id — the plan the window shows — so a status set from the
+    worktree lands where somebody is looking."""
+    import subprocess
+
+    repo = init_repo(tmp_path / "repo")
+    directory = seed_project(repo / "planning", "Discovery")
+    _commit_all(repo)
+    library_path = tmp_path / "library.json"
+    create_library(library_path)
+    write_library_file(library_path, [directory])
+    store = LibraryStore(library_path)
+    library = store.load()
+    worktree = repo / ".dplanner-worktrees" / "s1-discovery"
+    subprocess.run(
+        ["git", "-C", str(repo), "worktree", "add", str(worktree), "-b", "agent/s1-discovery"],
+        check=True,
+        capture_output=True,
+    )
+    assert (worktree / "planning" / "project.dproj").is_file()  # The branch's own copy.
+
+    for start in (worktree, worktree / "planning", worktree / "src"):
+        start.mkdir(exist_ok=True)
+        found = find_current_project(library, store, start=start)
+        assert found is not None and found.id == library.projects[0].id
+    assert store.project_dir(library.projects[0].id) == directory
+
+
+def test_a_worktree_whose_plan_is_not_versioned_still_resolves_by_its_main_checkout(tmp_path):
+    import subprocess
+
+    repo = init_repo(tmp_path / "repo")
+    (repo / "README").write_text("code\n")
+    _commit_all(repo)
+    directory = seed_project(repo / "planning", "Discovery")  # Never committed.
+    library_path = tmp_path / "library.json"
+    create_library(library_path)
+    write_library_file(library_path, [directory])
+    store = LibraryStore(library_path)
+    library = store.load()
+    worktree = repo / ".dplanner-worktrees" / "s1-discovery"
+    subprocess.run(
+        ["git", "-C", str(repo), "worktree", "add", str(worktree), "-b", "agent/s1-discovery"],
+        check=True,
+        capture_output=True,
+    )
+    assert not (worktree / "planning").exists()
+    found = find_current_project(library, store, start=worktree)
+    assert found is not None and found.id == library.projects[0].id
 
 
 def test_a_missing_library_is_a_refusal_that_names_the_fixes(tmp_path, monkeypatch):
@@ -704,13 +834,15 @@ def test_project_graph_quotes_awkward_titles(cli):
     assert '"Say #quot;hello#quot; [loudly]"' in chart
 
 
-def test_project_graph_short_uses_positional_ids_and_cut_titles(cli):
+def test_project_graph_short_uses_step_keys_and_cut_titles(cli):
+    """The short chart's node ids are the steps' keys — the names the branches and the
+    PRs carry — so a reader can match the chart to the work."""
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "A step with a very long descriptive title indeed")
     cli("step", "add", "Discovery", "B", "--after", "A step")
     chart = cli("project", "graph", "Discovery", "--short")
-    assert 's1["1: A step with a very long…"]' in chart
-    assert 's2["2: B"]' in chart
+    assert 's1["S1: A step with a very long…"]' in chart
+    assert 's2["S2: B"]' in chart
     assert "s1 --> s2" in chart
 
 

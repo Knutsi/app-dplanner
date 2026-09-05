@@ -25,7 +25,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-# find_repo_root, init_repo and origin_url are re-exported (the `as` form marks it
+# find_repo_root, main_checkout, init_repo and origin_url are re-exported (the `as` form marks it
 # deliberate): this module is the storage layer's public front door, and callers above it
 # may not name a provider module.
 from dplanner.core.storage.git import (
@@ -36,6 +36,9 @@ from dplanner.core.storage.git import (
 )
 from dplanner.core.storage.git import (
     init_repo as init_repo,
+)
+from dplanner.core.storage.git import (
+    main_checkout as main_checkout,
 )
 from dplanner.core.storage.git import (
     origin_url as origin_url,

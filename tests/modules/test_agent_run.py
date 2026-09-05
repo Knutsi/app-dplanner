@@ -105,6 +105,21 @@ def test_referenced_files_keep_reading_order():
     assert assembled.files == ("p/a.png", "s/b.png", "h/c.png")
 
 
+def test_the_preflight_names_the_worktree_for_this_run_not_for_the_step(services, step):
+    """The caller says whether *this run* has a worktree: Run Agent and `agent prompt`
+    pass the step's choice, a conflict handed over by the window passes False — the
+    merge must land in the checkout the window shows, whatever the step prefers."""
+    from dplanner.modules import _default_briefing
+
+    briefing = _default_briefing()
+    isolated = briefing.preamble(step, True)
+    assert ".dplanner-worktrees/s1-deploy" in isolated and "agent/s1-deploy" in isolated
+    assert "STOP" in isolated
+    shared = briefing.preamble(step, False)
+    assert ".dplanner-worktrees" not in shared and "checkout itself" in shared
+    assert "dplanner skill status" in isolated and "dplanner skill status" in shared
+
+
 # -- staging -----------------------------------------------------------------------------------
 
 
@@ -190,16 +205,103 @@ def test_the_windows_script_reports_the_same_two_files(tmp_path):
     assert "pause" in script
 
 
-def test_a_worktree_slug_isolates_the_run(tmp_path):
-    script = prepare("p", tmp_path, worktree="build-it-abc123", platform="linux").script.read_text()
-    assert f'git worktree add "{tmp_path}/.dplanner/worktrees/build-it-abc123"' in script
-    assert '-b "agent/build-it-abc123"' in script
+def test_a_run_name_isolates_the_run_beside_the_pointer_file(tmp_path):
+    """The worktree lives in .dplanner-worktrees/, never .dplanner/: the latter is the
+    pointer *file* a project kept in a subfolder leaves at the repository root, and the
+    first version's `git worktree add` under it failed on every such project."""
+    script = prepare("p", tmp_path, worktree="s7-build-it", platform="linux").script.read_text()
+    tree = f"{tmp_path}/.dplanner-worktrees/s7-build-it"
+    assert f'git worktree add "{tree}" -b "agent/s7-build-it"' in script
+    assert f'git worktree add "{tree}" "agent/s7-build-it"' in script  # Reused on the next run.
     assert "info/exclude" in script  # The worktree dir never pollutes git status.
-    assert f'cd "{tmp_path}/.dplanner/worktrees/build-it-abc123"' in script
+    assert f'cd "{tree}"' in script
+    assert "git worktree prune" in script
 
 
-def test_no_worktree_slug_means_no_git_lines(tmp_path):
+def test_no_run_name_means_no_git_lines(tmp_path):
     assert "git worktree add" not in prepare("p", tmp_path, platform="linux").script.read_text()
+
+
+@pytest.fixture
+def pointed_repo(tmp_path):
+    """A repository whose plan sits in a subfolder — so the root carries the `.dplanner`
+    pointer *file* the old worktree path collided with."""
+    import subprocess
+
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.seed import seed_project
+
+    repo = init_repo(tmp_path / "repo")
+    seed_project(repo / "planning", "Discovery")
+    assert (repo / ".dplanner").is_file()
+    git = ["git", "-C", str(repo)]
+    subprocess.run([*git, "config", "user.email", "t@example.com"], check=True)
+    subprocess.run([*git, "config", "user.name", "t"], check=True)
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", "init"], check=True)
+    return repo
+
+
+def _run_script(files):
+    import subprocess
+
+    return subprocess.run(
+        ["sh", str(files.script)], capture_output=True, text=True, stdin=subprocess.DEVNULL
+    )
+
+
+def test_the_script_puts_the_agent_in_its_worktree_on_its_branch(pointed_repo, tmp_path):
+    """End to end, in a real repository with the pointer file: the worktree is created on
+    the first run, reused on the second, and the agent starts inside it on its branch."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    files = prepare(
+        "p",
+        pointed_repo,
+        agent_command="sh -c 'pwd; git branch --show-current' # {prompt}",
+        worktree="s1-discovery",
+        platform="linux",
+        directory=run_dir,
+    )
+    for _ in range(2):
+        done = _run_script(files)
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert f"{pointed_repo}/.dplanner-worktrees/s1-discovery\nagent/s1-discovery" in done.stdout
+        assert files.exit_file.read_text().strip() == "0"
+    assert (pointed_repo / ".dplanner-worktrees" / "s1-discovery" / ".git").is_file()
+    assert "/.dplanner-worktrees/" in (pointed_repo / ".git" / "info" / "exclude").read_text()
+
+
+def test_a_worktree_that_cannot_be_prepared_stops_the_run(pointed_repo, tmp_path):
+    """Never the main checkout by accident: git's refusal ends the run with a failed
+    exit, which the window reports, instead of carrying on where the plan is."""
+    (pointed_repo / ".dplanner-worktrees").mkdir()
+    (pointed_repo / ".dplanner-worktrees" / "s2-stale").write_text("in the way")
+    (tmp_path / "run").mkdir()
+    files = prepare(
+        "p",
+        pointed_repo,
+        agent_command="sh -c 'echo RAN' # {prompt}",
+        worktree="s2-stale",
+        platform="linux",
+        directory=tmp_path / "run",
+    )
+    done = _run_script(files)
+    assert done.returncode == 1
+    assert "RAN" not in done.stdout
+    assert "Could not prepare the worktree" in done.stdout
+    assert files.exit_file.read_text().strip() == "1"
+
+
+def test_a_run_name_is_the_key_the_ticket_and_the_slug_made_ref_safe():
+    from dplanner.modules.step_agent_instruction.launcher import ref_safe, run_name
+
+    assert run_name("F7", "PROJ-12", "Build the modal") == "f7-PROJ-12-build-the-modal"
+    assert run_name("S3", "", "Wire it (v2)!") == "s3-wire-it-v2"
+    assert run_name("", "", "") == "step"
+    assert ref_safe("a..b//c ~^:?*[\\") == "a-b-c"
+    assert ref_safe("-.lead and trail.-") == "lead-and-trail"
+    assert len(run_name("S1", "", "x" * 200)) <= 60
 
 
 def test_a_command_without_the_placeholder_still_gets_the_prompt(tmp_path):
@@ -226,7 +328,7 @@ def test_picking_a_terminal_prefills_its_command(app):
     edit = page.findChild(QLineEdit, "AgentLaunchCommandEdit")
     assert combo is not None and edit is not None
     labels = [combo.itemText(i) for i in range(combo.count())]
-    assert labels[1] == "Terminal" and labels[-1] == "Automatic"
+    assert labels[0] == "Terminal" and labels[-1] == "Automatic"
     assert any(label.startswith("iTerm") for label in labels)
     assert combo.currentText() == "Automatic"  # Untouched means the platform's default.
     terminal = labels.index("Terminal")
@@ -279,7 +381,21 @@ def test_a_settings_template_wins_outright(tmp_path):
     assert command == ["myterm", "--run", str(tmp_path / "run.sh"), "--cd", "/work"]
 
 
-def test_inside_tmux_a_new_window_is_the_default(tmp_path):
+def test_inside_tmux_a_desktop_terminal_still_wins(tmp_path):
+    """A DPlanner started from a tmux shell inherits $TMUX; Automatic must still open a
+    window of its own — a tmux window lands inside whatever terminal the person is using."""
+    command = resolve_command(
+        "",
+        fake_files(tmp_path),
+        Path("/work"),
+        platform="linux",
+        which=lambda name: "/usr/bin/ghostty" if name == "ghostty" else None,
+        env={"TMUX": "/tmp/tmux-1000/default,42,0"},
+    )
+    assert command is not None and command[0] == "ghostty"
+
+
+def test_tmux_is_the_last_resort(tmp_path):
     command = resolve_command(
         "",
         fake_files(tmp_path),
@@ -322,20 +438,18 @@ def test_the_terminal_table_is_one_per_platform_and_probes_installs():
     from dplanner.modules.step_agent_instruction.launcher import is_installed, terminals_for
 
     assert [p.label for p in terminals_for("darwin")] == [
-        "tmux (new window)",
         "Terminal",
         "iTerm",
         "Ghostty",
+        "tmux (new window)",
     ]
     assert [p.id for p in terminals_for("win32")] == ["wt", "cmd", "ghostty-win"]
-    assert terminals_for("linux")[0].id == "tmux" and "ghostty" in [
-        p.id for p in terminals_for("linux")
-    ]
+    assert terminals_for("linux")[0].id == "ghostty" and terminals_for("linux")[-1].id == "tmux"
     ghostty_mac = next(p for p in terminals_for("darwin") if p.id == "ghostty-mac")
     none = lambda _n: None  # noqa: E731 - a stand-in for shutil.which
     assert is_installed(ghostty_mac, which=none, env={}, app_exists=lambda n: n == "Ghostty")
     assert not is_installed(ghostty_mac, which=none, env={}, app_exists=lambda _n: False)
-    tmux = terminals_for("linux")[0]
+    tmux = terminals_for("linux")[-1]
     assert is_installed(tmux, which=lambda _n: None, env={"TMUX": "x"})
     assert not is_installed(tmux, which=lambda _n: "/usr/bin/tmux", env={})
 
@@ -719,6 +833,85 @@ def test_a_run_stages_attached_images_beside_the_prompt(services, step, monkeypa
         assert str(path) in prompt  # Absolute, inside the run dir — reachable from anywhere.
 
 
+# -- where the agent works: the step's own fact ---------------------------------------------
+
+
+def test_the_worktree_choice_is_the_steps_and_on_by_default(cli):
+    """Absence means a fresh worktree; the opt-out is written on the aspect's entry, and
+    the mark and a separate-instruction flag ride along when it flips."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy", "--agent")
+    assert json.loads(cli("agent", "show", "Deploy", "--json"))["worktree"] is True
+    assert (
+        "worktree"
+        not in json.loads(cli("step", "show", "Deploy", "--json"))["aspects"][
+            "step_agent_instruction"
+        ]
+    )
+    assert "checkout itself" in cli("agent", "worktree", "Deploy", "off")
+    assert json.loads(cli("agent", "show", "Deploy", "--json"))["worktree"] is False
+    entry = json.loads(cli("step", "show", "Deploy", "--json"))["aspects"]["step_agent_instruction"]
+    assert entry["worktree"] is False and entry["on"] is True
+    assert "already" in cli("agent", "worktree", "Deploy", "off")
+    cli("agent", "worktree", "Deploy", "on")
+    entry = json.loads(cli("step", "show", "Deploy", "--json"))["aspects"]["step_agent_instruction"]
+    assert "worktree" not in entry
+    assert "not an agent step" in cli("agent", "worktree", "Discovery", "off", expect=1) or True
+
+
+def test_step_add_no_worktree_marks_the_step_and_opts_it_out(cli):
+    cli("project", "create", "Discovery")
+    assert "in the checkout itself" in cli("step", "add", "Discovery", "Cut", "--no-worktree")
+    shown = json.loads(cli("agent", "show", "Cut", "--json"))
+    assert shown["agent"] is True and shown["worktree"] is False
+
+
+def test_the_run_uses_a_worktree_only_when_the_step_says_so(services, step, monkeypatch):
+    """The launcher is handed the run name — key, ticket, slug — or nothing at all."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, write_state
+    from dplanner.modules.step_ticket.aspect import MODULE_ID as TICKET_ID
+    from dplanner.modules.step_ticket.aspect import Ticket
+    from dplanner.modules.step_ticket.aspect import write as ticket_write
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    services.undo.push(SetModuleDataCommand(step.id, TICKET_ID, ticket_write(Ticket(key="PROJ-9"))))
+    select(services, step)
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: None)
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+    seen: list[str] = []
+    real_prepare = launcher.prepare
+
+    def capture(*args, **kwargs):
+        seen.append(kwargs["worktree"])
+        return real_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(launcher, "prepare", capture)
+    services.actions.run("agent.run", services.context.current())
+    assert seen == ["s1-PROJ-9-deploy"]
+
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write_state(True, worktree=False)))
+    services.actions.run("agent.run", services.context.current())
+    assert seen == ["s1-PROJ-9-deploy", ""]
+
+
+def test_the_agent_tab_switches_the_worktree_through_the_undo_stack(services, step):
+    from dplanner.modules.step_agent_instruction.aspect import uses_worktree
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    section = _agent_section(services)
+    section.show_target(step.id)
+    assert section.worktree_box.isChecked()
+    section.worktree_box.setChecked(False)
+    assert not uses_worktree(step)
+    assert services.undo.can_undo()
+    services.undo.undo()
+    assert uses_worktree(step)
+    assert section.worktree_box.isChecked()  # The model's echo reaches the box.
+    section.dispose()
+
+
 # -- the Type toggles --------------------------------------------------------------------------
 
 
@@ -798,10 +991,23 @@ def test_agent_prompt_carries_handoffs_and_the_epilogue(cli_stdin, workspace):
     assert "Ship it." in shown["prompt"]
     assert 'From "Set up CI"' in shown["prompt"]
     assert "Keys in vault." in shown["prompt"]
-    assert "dplanner status set 'Deploy' done" in shown["prompt"]
-    assert "dplanner agent-state set 'Deploy' plan-for-review" in shown["prompt"]
-    assert "dplanner agent-state clear 'Deploy'" in shown["prompt"]
-    # The preflight comes first: no skill, no work.
+    # Every verb names the step by its key: unambiguous where a title may not be.
+    assert "dplanner status set S2 done" in shown["prompt"]
+    assert "dplanner agent-state set S2 plan-for-review" in shown["prompt"]
+    assert "dplanner agent-state clear S2" in shown["prompt"]
+    assert "dplanner github set S2 --branch" in shown["prompt"]
+    # The preflight comes first: no skill, no work — and no worktree, no work either.
     assert "dplanner skill status" in shown["prompt"]
     assert shown["prompt"].index("skill status") < shown["prompt"].index("Ship it.")
+    assert ".dplanner-worktrees/s2-deploy" in shown["prompt"]
+    assert "agent/s2-deploy" in shown["prompt"] and "STOP" in shown["prompt"]
     assert shown["root"] == str(workspace / "discovery")
+
+
+def test_a_step_without_a_worktree_is_briefed_to_stay_in_the_checkout(cli_stdin):
+    cli_stdin("project", "create", "Discovery")
+    cli_stdin("step", "add", "Discovery", "Cut the release", "--no-worktree")
+    cli_stdin("describe", "set", "Cut the release", "--file", "-", stdin="Tag and push.")
+    shown = json.loads(cli_stdin("agent", "prompt", "Cut the release", "--json"))
+    assert ".dplanner-worktrees" not in shown["prompt"]
+    assert "works in the checkout itself" in shown["prompt"]

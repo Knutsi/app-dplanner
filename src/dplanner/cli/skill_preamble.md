@@ -18,6 +18,12 @@ The user is planning something with you, and the plan is a shared artefact: it i
 files in a folder, usually in version control, and a DPlanner window may be open on it while
 you work. So:
 
+- **Call a step by its key.** Every row prints one — `S7`, `F3` for a feature step, `M1`
+  for a milestone, `C2` for a check — and every step verb takes it (`dplanner status set
+  S7 done`; `s7` and a bare `7` work too). The number is the step's for life; the letter
+  follows what the step is. Use the key rather than a title, which may match two steps,
+  and put it first in anything you name after the step — a branch, a PR title (`S7: …`),
+  a commit message.
 - **Read before writing.** `dplanner project list`, then `dplanner project show <project>`,
   then **`dplanner topology show <project>`** — the project's own account of how its graph
   is shaped. The graph-editing verbs (`step add`, `step link`, `feature add`, …) refuse
@@ -192,6 +198,18 @@ graph needs a boundary — a real dependency another step waits on, a feature st
 gathers the work, a check or a review the topology asks for, or work that belongs to a
 different person or agent. A plan of many quarter-day steps is a plan of many launches;
 a plan of a few well-batched days is what an agent and its reviewer both prefer.
+
+**An agent step runs in a fresh git worktree on its own branch — leave that on.** Run
+Agent prepares `.dplanner-worktrees/<key>-<ticket>-<slug>` on `agent/<key>-<ticket>-<slug>`
+(created once, reused on the next run), so parallel agents never touch one checkout and
+the branch is the reviewable result. It is on for every step unless somebody says
+otherwise (`dplanner agent worktree <step> off`, or `step add --no-worktree`), and turn
+it off **only when the step genuinely must act on the checkout the user is looking at** —
+cutting a release from the current branch, settling a conflict the window handed over, a
+step that only reads and reports. "It would be convenient" is not a reason: a step in the
+checkout shares the developer's working tree with every other agent and with the person.
+When you *execute* a step, its briefing tells you which worktree to expect; if you are
+not in it, stop and say so rather than working in the main checkout.
 
 ## Linking honestly
 

@@ -123,12 +123,19 @@ MUTED_SECONDARY_ALPHA = 80
 MUTED_FILL_ALPHA = 14
 MUTED_BORDER_ALPHA = 50
 
-# The status bar: a slim strip inside the node's left edge, clipped to the rounded body.
-BAR_W = 3.0
+# The spine: a strip down the node's left edge, clipped to the rounded body, carrying the
+# step's key read bottom-to-top and shaded by status. Wide enough for the chrome font's
+# height and a pixel of air on either side; a four-character key runs some 30 px along it,
+# which the shortest card still has room for.
+SPINE_W = 18.0
+SPINE_FILL_ALPHA = 80  # A status tone's fill on the spine — a wash, not a swatch.
+SPINE_QUIET_ALPHA = 14  # No status to show: the spine is a shade darker than the body.
 
 BADGE_H = 14.0
 BADGE_PAD = 6.0
 BADGE_INSET = 10.0  # From the node's right edge, clear of the link handle's corner.
+# Where the top-left medallions and the bottom-left chip start: past the spine, a gap on.
+LEFT_INSET = SPINE_W + 4.0
 
 # Selection: a thicker outline in the accent, and half again the fill the node already had.
 # A *gain* rather than a colour of its own is what lets a picked milestone stay purple and a
@@ -182,7 +189,7 @@ PAINT_MARGIN = max(
     LIFTED_SHADOW.drop + LIFTED_SHADOW.spread + 1.0,
 )
 
-BAR_TONES = {"good": VALID_TINT, "busy": BUSY_TINT, "bad": INVALID_TINT}
+SPINE_TONES = {"good": VALID_TINT, "busy": BUSY_TINT, "bad": INVALID_TINT}
 CHIP_TONES = {
     "info": (CHIP_INFO_TINT, CHIP_INFO_BORDER),
     "attention": (CHIP_ATTENTION_TINT, CHIP_ATTENTION_BORDER),
@@ -199,8 +206,8 @@ class NodeAccent:
     (a milestone label); a ``chip`` sits on the bottom edge (a live agent run — and the
     same run wears the marching ring, so one field says both); a ``pill``
     sits on the second line with a tone that is "good" or "bad", never "merged";
-    ``branch`` and ``spark`` ask for the small glyphs beside it; ``bar_tone`` is the slim
-    strip inside the left edge.
+    ``branch`` and ``spark`` ask for the small glyphs beside it; ``key_text`` is what the
+    spine down the left edge reads, and ``spine_tone`` how it is shaded.
     """
 
     muted: bool = False
@@ -208,7 +215,8 @@ class NodeAccent:
     pill_text: str = ""  # "" → no pill.
     pill_tone: str = ""  # "" neutral | "good" | "bad".
     branch: bool = False  # Paint the branch glyph.
-    bar_tone: str = ""  # "" none | "good" | "busy" | "bad".
+    key_text: str = ""  # The step's key ("F7"), read up the spine; "" → a bare spine.
+    spine_tone: str = ""  # "" quiet | "good" | "busy" | "bad": the status, as a shade.
     chip_text: str = ""  # "" → no chip.
     chip_tone: str = ""  # "" neutral | "info" | "attention".
     body_tone: str = ""  # "" plain | "highlight" | "good" | "feature": the node is a kind.
@@ -257,8 +265,8 @@ def paint_node(
     accent: NodeAccent,
     state: NodeState,
 ) -> None:
-    """The default node: body, the title over a bottom line of stat, pill and glyph, the
-    edge decorations, and the link handle.
+    """The default node: the spine with its key, the body, the title over a bottom line of
+    stat, pill and glyph, the edge decorations, and the link handle.
 
     Every card rests on a shadow; a selected one is drawn :data:`LIFT` above its seat over
     a deeper shadow, so the whole composition — badge, chip, medallions, handle — travels
@@ -277,10 +285,11 @@ def paint_node(
         painter.translate(0.0, -LIFT)
 
     paint_body(painter, palette, body, accent, state)
+    paint_spine(painter, palette, body, accent, text_colour)
     paint_marks(painter, palette, body, state)
     if accent.chip_text:
         paint_ring(painter, body, accent.chip_tone, state.ring_phase)
-    inner = body.adjusted(PADDING, PAD_Y, -PADDING, -PAD_Y)
+    inner = body.adjusted(SPINE_W + PAD_Y, PAD_Y, -PADDING, -PAD_Y)
     detail = bool(accent.stat_text or accent.pill_text or accent.branch)
     reserved = painter.fontMetrics().height() + LINE_GAP if detail else 0.0
     paint_title(painter, inner, title, text_colour, accent.muted, reserved)
@@ -335,7 +344,7 @@ def over(ground: QColor, ink: QColor) -> QColor:
 def paint_body(
     painter: QPainter, palette: QPalette, body: QRectF, accent: NodeAccent, state: NodeState
 ) -> None:
-    """The rounded rect: fill, border (selection and link aim win), and the status bar.
+    """The rounded rect: fill, and the border (selection and link aim win).
 
     A body tone tints the whole node and strengthens its border — this node is a
     different kind of thing, legible at any zoom — but selection and a link drag's
@@ -371,8 +380,6 @@ def paint_body(
     painter.setBrush(Qt.BrushStyle.NoBrush)
     painter.setPen(QPen(border, width))
     painter.drawRoundedRect(body, RADIUS, RADIUS)
-    if accent.bar_tone in BAR_TONES:
-        paint_status_bar(painter, body, accent.bar_tone)
 
 
 def paint_marks(painter: QPainter, palette: QPalette, body: QRectF, state: NodeState) -> None:
@@ -398,13 +405,49 @@ def paint_marks(painter: QPainter, palette: QPalette, body: QRectF, state: NodeS
         painter.drawEllipse(QPointF(body.right(), body.center().y()), MARK_R, MARK_R)
 
 
-def paint_status_bar(painter: QPainter, body: QRectF, tone: str) -> None:
-    """A slim strip inside the left edge, clipped to the rounded body."""
+def spine_rect(body: QRectF) -> QRectF:
+    return QRectF(body.left(), body.top(), SPINE_W, body.height())
+
+
+def spine_fill(palette: QPalette, tone: str) -> QColor:
+    """The spine's wash: the status tone at a wash's alpha, or a quiet shade of ink."""
+    toned = SPINE_TONES.get(tone)
+    fill = QColor(toned if toned is not None else palette.text().color())
+    fill.setAlpha(SPINE_FILL_ALPHA if toned is not None else SPINE_QUIET_ALPHA)
+    return fill
+
+
+def paint_spine(
+    painter: QPainter, palette: QPalette, body: QRectF, accent: NodeAccent, ink: QColor
+) -> None:
+    """The strip down the left edge: the status as a shade, the key read bottom-to-top.
+
+    Clipped to the rounded body so the strip's outer corners follow the card's, painted
+    after the body so the wash sits on the fill and under nothing. The key is set in the
+    chrome font, bold — it is the one thing on the card meant to be found from across
+    the graph — and rotated a quarter turn anticlockwise, the way a spine on a shelf
+    reads.
+    """
+    strip = spine_rect(body)
     clip = QPainterPath()
     clip.addRoundedRect(body, RADIUS, RADIUS)
     painter.save()
     painter.setClipPath(clip)
-    painter.fillRect(QRectF(body.left(), body.top(), BAR_W, body.height()), BAR_TONES[tone])
+    painter.fillRect(strip, spine_fill(palette, accent.spine_tone))
+    if accent.key_text:
+        font = QFont(painter.font())
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(ink)
+        metrics = QFontMetricsF(font)
+        length = metrics.horizontalAdvance(accent.key_text)
+        painter.translate(strip.center())
+        painter.rotate(-90.0)
+        painter.drawText(
+            QRectF(-length / 2, -metrics.height() / 2, length, metrics.height()),
+            int(Qt.AlignmentFlag.AlignCenter),
+            accent.key_text,
+        )
     painter.restore()
 
 
@@ -596,7 +639,7 @@ def paint_chip(painter: QPainter, palette: QPalette, body: QRectF, text: str, to
     metrics = painter.fontMetrics()
     shown = metrics.elidedText(text, Qt.TextElideMode.ElideRight, int(body.width() * 0.5))
     width = metrics.horizontalAdvance(shown) + 2 * BADGE_PAD
-    pill = QRectF(BADGE_INSET, body.bottom() - CHIP_H / 2, width, CHIP_H)
+    pill = QRectF(LEFT_INSET, body.bottom() - CHIP_H / 2, width, CHIP_H)
     ink = QColor(palette.text().color())
     faded_ink = QColor(ink)
     faded_ink.setAlpha(SECONDARY_ALPHA)
@@ -611,19 +654,20 @@ def paint_chip(painter: QPainter, palette: QPalette, body: QRectF, text: str, to
 
 def medallion_end(icons: tuple[str, ...]) -> float:
     """Where the medallion row leaves off — the first x another top-edge decoration may use."""
-    return BADGE_INSET + sum(ICON_D + ICON_GAP for _ in icons)
+    return LEFT_INSET + sum(ICON_D + ICON_GAP for _ in icons)
 
 
 def paint_icon_medallions(painter: QPainter, palette: QPalette, icons: tuple[str, ...]) -> None:
     """One small circle per aspect kind, on the top edge's left end — the badge's opposite.
 
     A glance at a node's top-left corner answers "what is this step": a tag means a
-    milestone, a spark means machine guidance, nothing means a plain step.
+    milestone, a spark means machine guidance, nothing means a plain step. The row starts
+    past the spine, so the key under it stays clear.
     """
     ink = QColor(palette.text().color())
     faded = QColor(ink)
     faded.setAlpha(SECONDARY_ALPHA)
-    x = BADGE_INSET
+    x = LEFT_INSET
     for kind in icons:
         centre = QPointF(x + ICON_D / 2, 0.0)
         border = QColor(BADGE_BORDER) if kind == "tag" else faded

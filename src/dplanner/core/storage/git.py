@@ -34,6 +34,25 @@ def find_repo_root(start: Path) -> Path | None:
     return None
 
 
+def main_checkout(root: Path) -> Path:
+    """The main checkout of the repository ``root`` belongs to: itself, unless it is a
+    linked worktree, whose ``.git`` is a *file* naming ``<main>/.git/worktrees/<name>``.
+
+    Two things read this: the CLI resolving a project from inside an agent's worktree,
+    and the skill's caution against an editable install into one.
+    """
+    gitfile = root / ".git"
+    if not gitfile.is_file():
+        return root
+    content = gitfile.read_text().strip()
+    if not content.startswith("gitdir:"):
+        return root
+    gitdir = Path(content.removeprefix("gitdir:").strip())
+    if gitdir.parent.name == "worktrees" and gitdir.parents[1].name == ".git":
+        return gitdir.parents[2]
+    return root
+
+
 def init_repo(path: Path) -> Path:
     """``git init`` at ``path`` (created if missing), returning the new repository root."""
     path = path.expanduser()

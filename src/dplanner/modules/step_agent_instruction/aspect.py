@@ -11,6 +11,13 @@ Prose, so the separate instruction lives in ``module_text`` and diffs line by li
 carry images in its file area — a mockup, an annotated screenshot — handed to the agent
 beside the prompt at launch.
 
+**Where the agent works is the step's decision, not a setting.** The entry's ``worktree``
+says whether Run Agent puts the agent in a fresh git worktree on its own branch — absent
+means *on*, and ``false`` is the opt-out — because whether a step can share the checkout
+the window shows is a fact about that step (a merge, a release cut, a conflict to settle),
+not about the machine. A global switch was where this lived first, and one switch for
+every step is a switch nobody dares turn off.
+
 The namespace spans node kinds (FORMAT.md's rule, like ``estimation``): beside a step it is
 that step's separate instruction; beside the *project* it is the project's standing
 instruction, prepended to every step's briefing. The id keeps its historical ``step_``
@@ -60,14 +67,33 @@ def separate_instruction(step: Step) -> bool:
     return bool(entry.get("separate")) or bool(read(step))
 
 
-def write_state(on: bool, separate: bool = False) -> dict[str, Any]:
-    """The aspect's entry: ``{}`` when off (the file disappears), the mark otherwise."""
+def uses_worktree(step: Step) -> bool:
+    """Whether Run Agent puts this step's agent in a fresh worktree. Absence means yes."""
+    entry = step.module_data.get(MODULE_ID) or {}
+    return entry.get("worktree", True) is not False
+
+
+def write_state(on: bool, separate: bool = False, worktree: bool = True) -> dict[str, Any]:
+    """The aspect's entry: ``{}`` when off (the file disappears), the mark otherwise.
+
+    Only the opt-outs are written — ``separate`` when true, ``worktree`` when false —
+    so a plain agent step's entry stays the bare mark it always was.
+    """
     if not on:
         return {}
     entry: dict[str, Any] = {"on": True}
     if separate:
         entry["separate"] = True
+    if not worktree:
+        entry["worktree"] = False
     return stamped(entry, DATA_FORMAT.version)
+
+
+def with_worktree(step: Step, worktree: bool) -> dict[str, Any]:
+    """The step's entry with only its worktree choice changed — the mark and a stored
+    ``separate`` flag ride along, so flipping one field never loses another."""
+    entry = step.module_data.get(MODULE_ID) or {}
+    return write_state(True, separate=bool(entry.get("separate")), worktree=worktree)
 
 
 def read_project(project: Project) -> str:

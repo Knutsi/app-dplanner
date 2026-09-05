@@ -23,6 +23,7 @@ from pathlib import Path
 
 from dplanner.cli.command import CliCommand, CliRegistry
 from dplanner.cli.main import PROG, build_tree
+from dplanner.core.storage.locations import main_checkout
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.model import EDGE_KINDS
 from dplanner.identity import APP_NAME, APP_VERSION
@@ -185,15 +186,11 @@ def worktree_warning(root: Path | None = None) -> str | None:
         f"This build runs from a git worktree ({root}) — the installed command would "
         "break when the worktree is removed."
     )
-    content = gitfile.read_text().strip()
-    if content.startswith("gitdir:"):
-        gitdir = Path(content.removeprefix("gitdir:").strip())
-        # A linked worktree's gitdir is <main>/.git/worktrees/<name>.
-        if gitdir.parent.name == "worktrees" and gitdir.parents[1].name == ".git":
-            main = gitdir.parents[2]
-            message += (
-                f" Consider installing from the main checkout:  uv tool install --editable {main}"
-            )
+    main = main_checkout(root)
+    if main != root:
+        message += (
+            f" Consider installing from the main checkout:  uv tool install --editable {main}"
+        )
     return message
 
 

@@ -58,15 +58,17 @@ class Briefing:
     instruction; ``instruction`` the block the ``## Instructions`` heading carries — the
     step's separate instruction when one exists, the description otherwise, decided by
     the root; ``epilogue`` closes the prompt with the report-back protocol and
-    ``preamble`` opens it. The default is the honest empty briefing of a build where no
-    other module contributes.
+    ``preamble`` opens it — per step, and told whether *this run* gets a worktree, since
+    the preflight names the worktree the launcher prepares and a conflict run never has
+    one whatever the step says. The default is the honest empty briefing of a build where
+    no other module contributes.
     """
 
     parts: PartsFor = _no_parts
     sections: PartsFor = _no_parts
     project_sections: PartsFor = _no_parts
     epilogue: Callable[[Step], str] = field(default=lambda _step: "")
-    preamble: str = ""
+    preamble: Callable[[Step, bool], str] = field(default=lambda _step, _worktree: "")
     instruction: Callable[[Library, Step, FilesFor], PromptPart] = _own_instruction
 
 

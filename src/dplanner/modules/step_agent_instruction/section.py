@@ -22,6 +22,7 @@ from collections.abc import Callable, Sequence
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QColor, QIcon, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
+    QCheckBox,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
@@ -162,11 +163,15 @@ class AgentSection(QWidget):
         assembled: Callable[[StepId], AssembledPrompt] | None = None,
         pick_assets: Callable[[str], list[Payload]] | None = None,
         debounce: DebounceService | None = None,
+        worktree: Callable[[StepId], bool] = lambda _sid: True,
+        set_worktree: Callable[[StepId, bool], None] = lambda _sid, _on: None,
     ) -> None:
         super().__init__()
         self._product = library
         self._undo = undo
         self._pick_assets = pick_assets
+        self._worktree = worktree
+        self._set_worktree = set_worktree
 
         self._prompt_parts = prompt_parts
         self._prompt_sections = prompt_sections
@@ -292,8 +297,19 @@ class AgentSection(QWidget):
         self.run_button = QPushButton("Run Agent…", self)
         self.run_button.setObjectName("AgentRunButton")
         self.run_button.clicked.connect(lambda: run())
+        # Where the agent works is the step's own fact, kept on this aspect — so the
+        # switch sits with the verb that reads it, not on a settings page.
+        self.worktree_box = QCheckBox("Fresh git worktree", self)
+        self.worktree_box.setObjectName("AgentWorktreeBox")
+        self.worktree_box.setToolTip(
+            "Run Agent puts the agent in its own worktree on an agent/<step> branch, so"
+            " parallel agents never share a checkout. Off only for a step that must work"
+            " in the checkout this window shows."
+        )
+        self.worktree_box.toggled.connect(self._worktree_toggled)
         buttons = QHBoxLayout()
         buttons.setSpacing(FIELD_GAP)
+        buttons.addWidget(self.worktree_box)
         buttons.addStretch(1)
         buttons.addWidget(self.preview_button)
         buttons.addWidget(self.run_button)
@@ -442,6 +458,7 @@ class AgentSection(QWidget):
         self._refresh_context()
         self._refresh_summaries()
         self._update_step_part()
+        self._refresh_buttons()
         self._mark_prompt_stale()
 
     def _mark_prompt_stale(self) -> None:
@@ -572,9 +589,17 @@ class AgentSection(QWidget):
             "nothing yet" if sections == 0 else f"{sections} section{'s' if sections != 1 else ''}"
         )
 
+    def _worktree_toggled(self, on: bool) -> None:
+        if self._step_id is not None and not self.worktree_box.signalsBlocked():
+            self._set_worktree(self._step_id, bool(on))
+
     def _refresh_buttons(self) -> None:
         state = self._run_state()
         self.run_button.setEnabled(state.enabled)
+        self.worktree_box.setEnabled(self._step_id is not None)
+        self.worktree_box.blockSignals(True)
+        self.worktree_box.setChecked(self._step_id is not None and self._worktree(self._step_id))
+        self.worktree_box.blockSignals(False)
         self.run_button.setToolTip(
             state.label or "Open a terminal with the agent briefed on this step"
         )
