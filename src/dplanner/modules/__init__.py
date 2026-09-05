@@ -70,7 +70,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.domain.store import LibraryStore
     from dplanner.framework.aspect_bar import AspectTemplate
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
-    from dplanner.modules.agent_skill.module import AgentSkillDeps, AgentSkillModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.coverage.activity import CoverageDeps
     from dplanner.modules.coverage.module import CoverageModule
@@ -96,6 +95,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.github.module import GithubDeps, GithubModule
+    from dplanner.modules.install.module import InstallDeps, InstallModule
     from dplanner.modules.library.module import LibraryDeps, LibraryModule
     from dplanner.modules.library_watch.module import LibraryWatchDeps, LibraryWatchModule
     from dplanner.modules.llm.module import LlmDeps, LlmModule
@@ -1172,8 +1172,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         step_order,
         progression,
         time_estimates,
-        AgentSkillModule(
-            AgentSkillDeps(
+        InstallModule(
+            InstallDeps(
                 actions=services.actions,
                 tasks=services.tasks,
                 parent=services.window,

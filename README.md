@@ -167,9 +167,11 @@ src/dplanner/
 ├── menus.py               the menu bar's shape, including the Project menu
 ├── app.py                 bootstrap: QApplication, the session, the first open
 ├── entry.py               the one `dplanner` command: the CLI, or `dplanner window` (`dpw`)
+├── assets/                what the application ships: the icon, one PNG per size, read by the window and the launcher alike
 ├── scripts/measure_edit_cost.py   what an edit costs the GUI thread, measured headless through the journal
 ├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
 ├── scripts/layout_item_double_delete.py   the layout-item double delete built to order, and the finalizer that stops it
+├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
 │   ├── storage/             three providers behind one protocol: folder, git, GitHub
@@ -287,7 +289,7 @@ src/dplanner/
 │   ├── project_assets/      every asset a project carries and what uses each — the Assets
 │   │                        tab, the pool, display titles, and `dplanner asset`
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
-│   ├── agent_skill/         the skill dialog, and the install that puts dplanner on PATH
+│   ├── install/             getting DPlanner onto this machine from the window: the agent skill, the `dplanner` command and the desktop launcher
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
 │   ├── appshell/  sync/  settings/  taskcenter/  debug/
 │   └── llm/  llm_openai/  llm_anthropic/

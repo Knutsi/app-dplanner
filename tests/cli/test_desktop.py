@@ -7,17 +7,23 @@ and read back on whatever machine runs the suite.
 """
 
 import plistlib
+import struct
 import subprocess
 from io import StringIO
 from pathlib import Path
 
 import pytest
 
+from dplanner.assets import ICON_SIZES, icon_path
 from dplanner.cli import desktop
 from dplanner.cli.desktop import (
+    ICNS_TYPES,
+    ICO_SIZES,
     AppBundle,
     DesktopEntry,
     StartMenuShortcut,
+    icns_bytes,
+    ico_bytes,
     launcher_for,
     shortcut_script,
     shortcut_target_script,
@@ -58,6 +64,10 @@ def test_each_platform_has_its_place(tmp_path):
     assert launcher_for("darwin", {}, tmp_path).path == (tmp_path / "Applications" / "DPlanner.app")
     programs = Path("Microsoft") / "Windows" / "Start Menu" / "Programs" / "DPlanner.lnk"
     assert launcher_for("win32", env, tmp_path).path == tmp_path / "roaming" / programs
+    env["LOCALAPPDATA"] = str(tmp_path / "local")
+    shortcut = launcher_for("win32", env, tmp_path)
+    assert isinstance(shortcut, StartMenuShortcut)
+    assert shortcut.icon_file == tmp_path / "local" / "DPlanner" / "dplanner.ico"
     assert launcher_for("win32", {}, tmp_path).path == (tmp_path / "AppData" / "Roaming" / programs)
 
 
@@ -74,10 +84,16 @@ def test_the_linux_entry_is_named_after_the_app_id_and_opens_by_absolute_path(tm
     assert text.startswith("[Desktop Entry]\nType=Application\nName=DPlanner\n")
     assert "\nExec=/opt/tools/bin/dpw\n" in text
     assert "\nTryExec=/opt/tools/bin/dpw\n" in text
+    assert "\nIcon=dplanner\n" in text  # By name: the hicolor theme beside the entry has it.
     assert "\nTerminal=false\n" in text
     assert "\nStartupWMClass=dplanner\n" in text
     assert entry.target() == Path("/opt/tools/bin/dpw")
+    hicolor = tmp_path / "icons" / "hicolor"
+    assert entry.icon_file(256) == hicolor / "256x256" / "apps" / "dplanner.png"
+    assert all(entry.icon_file(size).is_file() for size in ICON_SIZES)
+    assert entry.icon_file(48).read_bytes() == icon_path(48).read_bytes()
     assert entry.remove() and not entry.path.exists()
+    assert not any(entry.icon_file(size).exists() for size in ICON_SIZES)
     assert not entry.remove()
 
 
@@ -109,6 +125,9 @@ def test_the_mac_bundle_is_a_plist_and_a_script_handing_over(tmp_path):
     bundle.write(Path("/Users/me/.local/bin/dpw"))
     plist = plistlib.loads((bundle.path / "Contents" / "Info.plist").read_bytes())
     assert plist["CFBundleExecutable"] == "DPlanner"
+    assert plist["CFBundleIconFile"] == "DPlanner"
+    assert bundle.icon_file == bundle.path / "Contents" / "Resources" / "DPlanner.icns"
+    assert bundle.icon_file.read_bytes() == icns_bytes()
     assert plist["CFBundleIdentifier"] == "local.dplanner"
     assert plist["CFBundlePackageType"] == "APPL"
     assert bundle.script == bundle.path / "Contents" / "MacOS" / "DPlanner"
@@ -133,7 +152,12 @@ def test_the_windows_shortcut_goes_through_powershell(tmp_path):
     link.write(Path(r"C:\Users\me\.local\bin\dpw.exe"))
     (command,) = run_.calls
     assert command[:4] == ["powershell", "-NoProfile", "-NonInteractive", "-Command"]
-    assert command[4] == shortcut_script(link.path, Path(r"C:\Users\me\.local\bin\dpw.exe"))
+    assert command[4] == shortcut_script(
+        link.path, Path(r"C:\Users\me\.local\bin\dpw.exe"), link.icon_file
+    )
+    assert f"$link.IconLocation = '{link.icon_file},0'" in command[4]
+    assert link.icon_file == tmp_path / "Programs" / "DPlanner.ico"  # No icon named: beside it.
+    assert link.icon_file.read_bytes()[:6] == b"\x00\x00\x01\x00\x04\x00"  # An ICO of 4 sizes.
     assert "$link.TargetPath = 'C:\\Users\\me\\.local\\bin\\dpw.exe'" in command[4]
     assert "$link.Save()" in command[4]
     assert link.path.parent.is_dir()
@@ -157,7 +181,9 @@ def test_a_failed_powershell_is_an_error_carrying_its_words(tmp_path):
 
 
 def test_a_powershell_literal_doubles_its_quotes():
-    script = shortcut_script(Path("C:/O'Brien/DPlanner.lnk"), Path("C:/x/dpw.exe"))
+    script = shortcut_script(
+        Path("C:/O'Brien/DPlanner.lnk"), Path("C:/x/dpw.exe"), Path("C:/i.ico")
+    )
     assert "CreateShortcut('C:\\O''Brien\\DPlanner.lnk')" in script.replace("/", "\\")
 
 
@@ -278,3 +304,50 @@ def test_the_desktop_verbs_need_no_library(registry, launcher, tmp_path):
         registry, "--library", str(tmp_path / "nowhere.json"), "desktop", "status"
     )
     assert code == 0 and out.startswith("missing")
+
+
+# -- the icon -----------------------------------------------------------------------------------
+
+
+def png_size(data: bytes) -> tuple[int, int]:
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    width, height = struct.unpack(">II", data[16:24])
+    return width, height
+
+
+def test_the_shipped_icon_comes_at_every_size_it_claims():
+    for size in ICON_SIZES:
+        assert png_size(icon_path(size).read_bytes()) == (size, size)
+
+
+def test_the_icns_carries_each_png_as_it_is():
+    """macOS reads a PNG payload in every element type since 10.7, so nothing is re-encoded:
+    the container is a header and the shipped bytes, one element per size."""
+    data = icns_bytes()
+    assert data[:4] == b"icns" and struct.unpack(">I", data[4:8])[0] == len(data)
+    offset = 8
+    seen = {}
+    while offset < len(data):
+        kind, length = (
+            data[offset : offset + 4],
+            struct.unpack(">I", data[offset + 4 : offset + 8])[0],
+        )
+        seen[kind] = data[offset + 8 : offset + length]
+        offset += length
+    assert set(seen) == set(ICNS_TYPES.values())
+    for size, kind in ICNS_TYPES.items():
+        assert seen[kind] == icon_path(size).read_bytes()
+
+
+def test_the_ico_directory_points_at_each_png():
+    data = ico_bytes()
+    reserved, kind, count = struct.unpack("<HHH", data[:6])
+    assert (reserved, kind, count) == (0, 1, len(ICO_SIZES))
+    for index, size in enumerate(ICO_SIZES):
+        entry = data[6 + 16 * index : 6 + 16 * (index + 1)]
+        width, height, _colors, _reserved, planes, bits, length, offset = struct.unpack(
+            "<BBBBHHII", entry
+        )
+        assert (width, height) == (size % 256, size % 256) and (planes, bits) == (1, 32)
+        blob = data[offset : offset + length]
+        assert blob == icon_path(size).read_bytes() and png_size(blob) == (size, size)

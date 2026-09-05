@@ -18,8 +18,11 @@ other, because the home directory, the environment and the process runner are ar
 
 The Linux entry is named after ``APP_ID`` because that is the ``app_id`` the application
 declares (``app.py``'s ``setDesktopFileName``) and a compositor matches a window to its
-entry by that name. No icon yet: the application has none to give, and a launcher without
-one wears the platform's generic icon rather than nothing.
+entry by that name. The icon is the PNGs ``dplanner.assets`` ships, in the container each
+desktop wants: copied into the user's hicolor theme on Linux (``Icon=dplanner`` then
+resolves by name, for the entry and for the running window alike), wrapped as an ICNS in
+the bundle on macOS and as an ICO beside the shortcut on Windows — both containers hold
+the PNG bytes as they are, so no pixel is re-encoded here.
 """
 
 import os
@@ -27,6 +30,7 @@ import plistlib
 import re
 import shlex
 import shutil
+import struct
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -34,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from dplanner.assets import ICON_SIZES, icon_path
 from dplanner.cli.command import CliCommand, CliError
 from dplanner.cli.main import PROG, WINDOW_SHORTCUT
 from dplanner.identity import APP_DOMAIN, APP_ID, APP_NAME, APP_VERSION
@@ -111,6 +116,7 @@ def desktop_entry(executable: Path) -> str:
                 "Comment=Plan a project as a graph of steps, with a coding agent or by hand",
                 f"Exec={_exec_quote(str(executable))}",
                 f"TryExec={executable}",
+                f"Icon={APP_ID}",
                 "Terminal=false",
                 "Categories=Development;ProjectManagement;",
                 "Keywords=planner;plan;steps;agent;",
@@ -128,9 +134,20 @@ class DesktopEntry:
     run: Runner = _run
     which: Callable[[str], str | None] = shutil.which
 
+    def icon_file(self, size: int) -> Path:
+        """Where the hicolor theme beside the entry keeps the icon at ``size`` — the
+        theme every icon theme falls back to, under the same data directory."""
+        return (
+            self.path.parents[1] / "icons" / "hicolor" / f"{size}x{size}" / "apps" / f"{APP_ID}.png"
+        )
+
     def write(self, executable: Path) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(desktop_entry(executable))
+        for size in ICON_SIZES:
+            target = self.icon_file(size)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(icon_path(size).read_bytes())
         if self.which("update-desktop-database") is not None:  # Best effort: menus refresh.
             self.run(["update-desktop-database", str(self.path.parent)])
 
@@ -146,6 +163,8 @@ class DesktopEntry:
         return None
 
     def remove(self) -> bool:
+        for size in ICON_SIZES:
+            self.icon_file(size).unlink(missing_ok=True)
         if not self.path.is_file():
             return False
         self.path.unlink()
@@ -170,10 +189,25 @@ def info_plist() -> bytes:
             "CFBundleShortVersionString": APP_VERSION,
             "CFBundlePackageType": "APPL",
             "CFBundleExecutable": APP_NAME,
+            "CFBundleIconFile": APP_NAME,
             "NSHighResolutionCapable": True,
         },
         sort_keys=True,
     )
+
+
+# The ICNS element types that take a PNG payload as it is, by pixel size.
+ICNS_TYPES = {16: b"icp4", 32: b"icp5", 64: b"icp6", 128: b"ic07", 256: b"ic08", 512: b"ic09"}
+
+
+def icns_bytes() -> bytes:
+    """The icon as an ICNS: a header and one element per size, each carrying the PNG."""
+    elements = b"".join(
+        kind + struct.pack(">I", 8 + len(data)) + data
+        for size, kind in ICNS_TYPES.items()
+        for data in [icon_path(size).read_bytes()]
+    )
+    return b"icns" + struct.pack(">I", 8 + len(elements)) + elements
 
 
 def bundle_script(executable: Path) -> str:
@@ -194,9 +228,15 @@ class AppBundle:
     def script(self) -> Path:
         return self.path / "Contents" / "MacOS" / APP_NAME
 
+    @property
+    def icon_file(self) -> Path:
+        return self.path / "Contents" / "Resources" / f"{APP_NAME}.icns"
+
     def write(self, executable: Path) -> None:
         self.script.parent.mkdir(parents=True, exist_ok=True)
+        self.icon_file.parent.mkdir(parents=True, exist_ok=True)
         (self.path / "Contents" / "Info.plist").write_bytes(info_plist())
+        self.icon_file.write_bytes(icns_bytes())
         self.script.write_text(bundle_script(executable))
         self.script.chmod(0o755)
         if LSREGISTER.is_file():  # Best effort: Spotlight and Launchpad see it now.
@@ -227,7 +267,7 @@ def _powershell_literal(value: object) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def shortcut_script(path: Path, executable: Path) -> str:
+def shortcut_script(path: Path, executable: Path, icon: Path) -> str:
     """PowerShell that writes the ``.lnk``: a shortcut is a COM object, and PowerShell is
     the one COM client every Windows has."""
     return "\n".join(
@@ -236,10 +276,28 @@ def shortcut_script(path: Path, executable: Path) -> str:
             f"$link = $shell.CreateShortcut({_powershell_literal(path)})",
             f"$link.TargetPath = {_powershell_literal(executable)}",
             f"$link.WorkingDirectory = {_powershell_literal(executable.parent)}",
+            f"$link.IconLocation = {_powershell_literal(f'{icon},0')}",
             f"$link.Description = {_powershell_literal(APP_NAME)}",
             "$link.Save()",
         ]
     )
+
+
+# The sizes an ICO carries: the small ones Explorer draws itself, and the large one it
+# scales from. All PNG-compressed, which Windows has read since Vista.
+ICO_SIZES = (16, 32, 48, 256)
+
+
+def ico_bytes() -> bytes:
+    """The icon as an ICO: a directory of entries, then the PNGs as they are."""
+    blobs = [icon_path(size).read_bytes() for size in ICO_SIZES]
+    offset = 6 + 16 * len(ICO_SIZES)
+    entries = b""
+    for size, blob in zip(ICO_SIZES, blobs, strict=True):
+        # Width and height are one byte each, and 0 means 256.
+        entries += struct.pack("<BBBBHHII", size % 256, size % 256, 0, 0, 1, 32, len(blob), offset)
+        offset += len(blob)
+    return struct.pack("<HHH", 0, 1, len(ICO_SIZES)) + entries + b"".join(blobs)
 
 
 def shortcut_target_script(path: Path) -> str:
@@ -255,10 +313,19 @@ def powershell(script: str) -> list[str]:
 class StartMenuShortcut:
     path: Path  # %APPDATA%\Microsoft\Windows\Start Menu\Programs\DPlanner.lnk
     run: Runner = _run
+    # Where the ICO the shortcut points at lives: %LOCALAPPDATA%\DPlanner\dplanner.ico.
+    # A shortcut carries no icon of its own, only a path to one.
+    icon: Path | None = None
+
+    @property
+    def icon_file(self) -> Path:
+        return self.icon or self.path.with_suffix(".ico")
 
     def write(self, executable: Path) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        result = self.run(powershell(shortcut_script(self.path, executable)))
+        self.icon_file.parent.mkdir(parents=True, exist_ok=True)
+        self.icon_file.write_bytes(ico_bytes())
+        result = self.run(powershell(shortcut_script(self.path, executable, self.icon_file)))
         if result.returncode != 0:
             said = (result.stderr or result.stdout).strip()
             raise OSError(said or "PowerShell could not write the shortcut")
@@ -271,6 +338,7 @@ class StartMenuShortcut:
         return Path(text) if result.returncode == 0 and text else None
 
     def remove(self) -> bool:
+        self.icon_file.unlink(missing_ok=True)
         if not self.path.is_file():
             return False
         self.path.unlink()
@@ -291,8 +359,11 @@ def launcher_for(
     run = run or _run
     if platform.startswith("win"):
         base = Path(env.get("APPDATA", "") or home / "AppData" / "Roaming")
+        local = Path(env.get("LOCALAPPDATA", "") or home / "AppData" / "Local")
         programs = base / "Microsoft" / "Windows" / "Start Menu" / "Programs"
-        return StartMenuShortcut(programs / f"{APP_NAME}.lnk", run)
+        return StartMenuShortcut(
+            programs / f"{APP_NAME}.lnk", run, local / APP_NAME / f"{APP_ID}.ico"
+        )
     if platform == "darwin":
         return AppBundle(home / "Applications" / f"{APP_NAME}.app", run)
     base = Path(env.get("XDG_DATA_HOME", "") or home / ".local" / "share")

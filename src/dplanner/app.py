@@ -15,8 +15,10 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
+from dplanner.assets import ICON_SIZES, icon_path
 from dplanner.core.telemetry import crash_log_path, current
 from dplanner.domain.library_file import resolve_library_path
 from dplanner.domain.seed import create_library
@@ -50,6 +52,13 @@ def set_early_attributes() -> None:
     QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeMenuBar, True)
 
 
+def application_icon() -> QIcon:
+    icon = QIcon()
+    for size in ICON_SIZES:
+        icon.addFile(str(icon_path(size)))
+    return icon
+
+
 def configure_application(app: QApplication) -> None:
     """Apply identity metadata and the theme to an existing ``QApplication``."""
     app.setApplicationName(APP_NAME)
@@ -60,6 +69,9 @@ def configure_application(app: QApplication) -> None:
     # Sets the xdg-shell app_id on Wayland; without it a compositor cannot match the window
     # to a .desktop file, giving the wrong icon and broken window grouping.
     app.setDesktopFileName(APP_ID)
+    # The same PNGs the desktop launcher installs, so the dock and the menu agree; every
+    # size at once, and Qt picks the one the surface asks for.
+    app.setWindowIcon(application_icon())
 
     # After the identity metadata: saved_theme() reads QSettings, which resolves its storage
     # location from the organisation and application names set above.

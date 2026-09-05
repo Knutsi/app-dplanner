@@ -46,13 +46,13 @@ from dplanner.identity import APP_NAME
 from dplanner.theme.fonts import mono_font
 
 
-class CliInstallDialog(QDialog):
+class CommandInstallDialog(QDialog):
     # Worker → GUI: the tool's output, queued because it is emitted off-thread.
     _done = Signal(str)
 
     def __init__(self, tasks: TaskService, parent: QWidget | None) -> None:
         super().__init__(parent)
-        self.setObjectName("CliInstallDialog")
+        self.setObjectName("CommandInstallDialog")
         self.setWindowTitle("Install dplanner Command")
         self.resize(560, 500)
         self._runner = TaskRunner(tasks, parent=self)
@@ -83,7 +83,7 @@ class CliInstallDialog(QDialog):
         self.launcher_box = QCheckBox(
             f"Also add {APP_NAME} to the applications menu ({self._launcher.path})", self
         )
-        self.launcher_box.setObjectName("CliInstallLauncherBox")
+        self.launcher_box.setObjectName("CommandInstallLauncherBox")
         self.launcher_box.setChecked(True)
 
         self.output = QPlainTextEdit(self)
@@ -165,7 +165,7 @@ class CliInstallDialog(QDialog):
                 raise RuntimeError(output or f"{command[0]} exited with {result.returncode}")
             self._done.emit("\n".join([output, *after()]).strip())
 
-        if self._runner.run(label, body, key="agent_skill.cli_install"):
+        if self._runner.run(label, body, key="install.command"):
             self.primary.setEnabled(False)
             self.uninstall_button.setEnabled(False)
 

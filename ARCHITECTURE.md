@@ -2558,7 +2558,7 @@ mention in this file. Compile is its first, and these are the rules it establish
 
 **`complete()` is blocking network I/O.** It runs inside a `TaskRunner` body, and because
 the runner's body returns nothing, the answer comes back on the owner's own queued Qt
-signal — the pattern `agent_skill/cli_install.py` and `github/section.py` already use. A
+signal — the pattern `install/command_dialog.py` and `github/section.py` already use. A
 timeout becomes `TaskTimeoutError` so the task centre shows a timed-out job rather than a
 generic failure, and a delivery whose step has stopped collecting is dropped, exactly as a
 stale PR refresh is.
