@@ -1,6 +1,7 @@
 """The one ``dplanner`` command: the CLI, or ``dplanner window``.
 
-``dplanner window`` opens the application. Every other command line is the CLI: ``dplanner
+``dplanner window`` opens the application (``dpw`` is the same with the word typed for you).
+Every other command line is the CLI: ``dplanner
 project list`` runs a verb, a word the CLI does not know is refused with exit 2, and a bare
 ``dplanner`` prints the help. One binary rather than two because the whole point of the CLI
 is that an agent can use it, and "which executable" is a paragraph of instructions that a
@@ -118,3 +119,14 @@ def main(argv: list[str] | None = None) -> int:
     registry = CliRegistry()
     registry.register_all(default_cli_commands())
     return run(registry, default_module_formats(), arguments)
+
+
+def window_main(argv: list[str] | None = None) -> int:
+    """``dpw``: the window, with the word typed for you.
+
+    The same door — the same refusal inside an agent's shell — with the word prepended.
+    It is a ``gui-scripts`` entry in ``pyproject.toml``, so on Windows it is an executable
+    with no console window behind it, which is what a desktop launcher should open.
+    """
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    return main([WINDOW_WORD, *arguments])

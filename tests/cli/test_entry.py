@@ -190,3 +190,33 @@ def test_inside_an_agents_shell_the_window_is_refused_and_the_cli_runs(tmp_path,
     )
     assert result.returncode == 0, result.stderr
     assert said in result.stderr + result.stdout
+
+
+# -- dpw: the word typed for you ---------------------------------------------------------------
+
+
+def test_dpw_is_the_window_word_typed_for_you(monkeypatch):
+    from dplanner import entry
+
+    seen = []
+
+    def fake_main(argv):
+        seen.append(argv)
+        return 0
+
+    monkeypatch.setattr(entry, "main", fake_main)
+    assert entry.window_main(["--library", "/tmp/plans.json"]) == 0
+    assert seen == [[WINDOW_WORD, "--library", "/tmp/plans.json"]]
+
+
+def test_dpw_is_a_gui_script_so_windows_opens_no_console():
+    """A gui-scripts entry runs under pythonw on Windows: an executable a Start Menu
+    shortcut can open without a console window behind it."""
+    import tomllib
+    from pathlib import Path
+
+    from dplanner.cli.main import WINDOW_SHORTCUT
+
+    project = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())["project"]
+    assert project["gui-scripts"] == {WINDOW_SHORTCUT: "dplanner.entry:window_main"}
+    assert WINDOW_SHORTCUT not in project["scripts"]

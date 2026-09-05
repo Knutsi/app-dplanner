@@ -7,11 +7,13 @@ import time
 import pytest
 
 from dplanner.cli.command import CliRegistry
+from dplanner.cli.desktop import DesktopEntry
 from dplanner.cli.skill import (
     REFERENCE_FILE,
     SKILL_FILE,
     generate,
     install_command,
+    tool_bin_command,
     uninstall_command,
 )
 from dplanner.modules.agent_skill.cli_install import CliInstallDialog
@@ -123,6 +125,7 @@ def test_the_cli_install_dialog_shows_and_runs_the_command(app, services, monkey
     dialog = CliInstallDialog(services.tasks, None)
     assert dialog.command.text() == shlex.join(install_command())
 
+    dialog.launcher_box.setChecked(False)  # The launcher has its own tests below.
     dialog.primary.click()
     wait_for(app, lambda: not dialog._runner.is_busy())
 
@@ -171,9 +174,7 @@ def test_uninstall_runs_the_uninstall_command(app, services, monkeypatch):
 
 
 def test_uninstall_is_disabled_when_nothing_resolves(services, monkeypatch):
-    monkeypatch.setattr(
-        "dplanner.modules.agent_skill.cli_install.shutil.which", lambda _name: None
-    )
+    monkeypatch.setattr("dplanner.modules.agent_skill.cli_install.shutil.which", lambda _name: None)
     dialog = CliInstallDialog(services.tasks, None)
     assert not dialog.uninstall_button.isEnabled()
 
@@ -186,7 +187,80 @@ def test_a_worktree_build_warns_in_the_dialog(services, monkeypatch):
     dialog = CliInstallDialog(services.tasks, None)
     assert "worktree" in dialog.worktree_note.text()
 
-    monkeypatch.setattr(
-        "dplanner.modules.agent_skill.cli_install.worktree_warning", lambda: None
-    )
+    monkeypatch.setattr("dplanner.modules.agent_skill.cli_install.worktree_warning", lambda: None)
     assert CliInstallDialog(services.tasks, None).worktree_note.isHidden()
+
+
+# -- the desktop launcher, in the same go ------------------------------------------------------
+
+
+@pytest.fixture
+def launcher(tmp_path, monkeypatch):
+    """The dialog over a Linux entry under tmp_path, with a known dpw to point it at."""
+    quiet = lambda command: subprocess.CompletedProcess(command, 0, stdout="", stderr="")  # noqa: E731
+    entry = DesktopEntry(tmp_path / "applications" / "dplanner.desktop", quiet, lambda _n: None)
+    monkeypatch.setattr("dplanner.modules.agent_skill.cli_install.launcher_for", lambda: entry)
+    monkeypatch.setattr(
+        "dplanner.modules.agent_skill.cli_install.window_executable",
+        lambda *_a, **_k: tmp_path / "bin" / "dpw",
+    )
+    return entry
+
+
+def test_installing_the_command_writes_the_desktop_launcher_in_the_same_go(
+    app, services, monkeypatch, launcher, tmp_path
+):
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="Installed dplanner\n", stderr="")
+
+    monkeypatch.setattr("dplanner.modules.agent_skill.cli_install.subprocess.run", fake_run)
+    dialog = CliInstallDialog(services.tasks, None)
+    assert dialog.launcher_box.isChecked()
+    assert str(launcher.path) in dialog.launcher_box.text()
+
+    dialog.primary.click()
+    wait_for(app, lambda: not dialog._runner.is_busy())
+    wait_for(app, lambda: dialog.output.toPlainText() != "")
+
+    assert calls == [install_command(), tool_bin_command()]  # Asks uv where dpw went.
+    assert launcher.target() == tmp_path / "bin" / "dpw"
+    assert f"Desktop launcher: {launcher.path}" in dialog.output.toPlainText()
+
+
+def test_unticked_the_launcher_is_left_alone(app, services, monkeypatch, launcher):
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="Installed dplanner\n", stderr="")
+
+    monkeypatch.setattr("dplanner.modules.agent_skill.cli_install.subprocess.run", fake_run)
+    dialog = CliInstallDialog(services.tasks, None)
+    dialog.launcher_box.setChecked(False)
+    dialog.primary.click()
+    wait_for(app, lambda: not dialog._runner.is_busy())
+    wait_for(app, lambda: dialog.output.toPlainText() != "")
+    assert calls == [install_command()]
+    assert launcher.target() is None
+
+
+def test_uninstalling_the_command_removes_the_launcher(app, services, monkeypatch, launcher):
+    launcher.write(launcher.path.parent.parent / "bin" / "dpw")
+
+    def fake_run(command, **_kwargs):
+        return subprocess.CompletedProcess(command, 0, stdout="Uninstalled dplanner\n", stderr="")
+
+    monkeypatch.setattr("dplanner.modules.agent_skill.cli_install.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "dplanner.modules.agent_skill.cli_install.shutil.which",
+        lambda _name: "/home/x/.local/bin/dplanner",
+    )
+    dialog = CliInstallDialog(services.tasks, None)
+    dialog.uninstall_button.click()
+    wait_for(app, lambda: not dialog._runner.is_busy())
+    wait_for(app, lambda: dialog.output.toPlainText() != "")
+    assert not launcher.path.exists()
+    assert f"Removed the desktop launcher: {launcher.path}" in dialog.output.toPlainText()

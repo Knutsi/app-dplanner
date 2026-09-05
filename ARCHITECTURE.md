@@ -172,6 +172,30 @@ the same as today. One row per agent CLI known to mark its shell, and the launch
 the same markers when it spawns (*The peer is a top-level session*, below), for a window
 that got its environment some other way.
 
+**`dpw` is the word typed for you, and the desktop gets a file.** A person launching the
+window from a shell every day pays the word every day, so `dpw` — a second entry point,
+`entry.window_main`, prepending the word and going through the same door and the same
+refusal — is the alias nobody has to write. It is a `gui-scripts` entry rather than a
+script because of what an applications menu needs: on Windows a gui-script is an
+executable with no console window behind it, which is what a Start Menu shortcut should
+open. The desktop itself wants neither word but a file, and each platform's is different:
+a `.desktop` entry in the XDG applications directory on Linux (named `dplanner.desktop`
+because that is the `app_id` the application declares, and how a compositor matches a
+window to its entry), an application bundle in `~/Applications` on macOS whose executable
+is a shell script handing over to `dpw`, a Start Menu shortcut on Windows written through
+PowerShell because a `.lnk` is a COM object. `cli/desktop.py` is one class per platform
+behind one contract — where it goes, what it opens, how it is taken out — with the home
+directory, the environment and the process runner as arguments, so every platform's
+launcher is built and read back in the suite on whatever machine runs it. The launcher
+opens `dpw` by absolute path, since a menu has no PATH to resolve anything with; which
+`dpw` is the one beside the `dplanner` running the command, so the launcher opens the
+DPlanner it was installed from, and `desktop status` reads *stale* when it opens another.
+The window's *Install dplanner Command…* dialog writes the launcher in the same go as the
+command, and points it at the `dpw` uv just installed — it asks `uv tool dir --bin` rather
+than looking beside the build it happens to be running from, which may be a checkout's
+`.venv`. The skill names neither `dpw` nor the launcher's verbs' target: an agent has no
+business opening the window, whichever word it is.
+
 ## The index tree
 
 The template's sidebar was a tab set: one page per module, one visible at a time. DPlanner

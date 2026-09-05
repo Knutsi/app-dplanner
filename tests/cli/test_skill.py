@@ -7,7 +7,7 @@ from io import StringIO
 
 import pytest
 
-from dplanner.cli.main import WINDOW_WORD, run
+from dplanner.cli.main import WINDOW_SHORTCUT, WINDOW_WORD, run
 from dplanner.cli.skill import (
     REFERENCE_FILE,
     SKILL_FILE,
@@ -123,6 +123,7 @@ def test_the_skill_says_how_to_discover_commands_and_never_names_the_window(file
     assert "`dplanner --help`" in files[SKILL_FILE]
     for content in files.values():
         assert f"dplanner {WINDOW_WORD}" not in content
+        assert WINDOW_SHORTCUT not in content  # Nor the word typed for you.
 
 
 def test_the_output_does_not_depend_on_the_terminal_it_was_generated_in():
