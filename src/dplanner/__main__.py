@@ -2,7 +2,7 @@
 
 import sys
 
-from dplanner.app import main
+from dplanner.entry import main
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -28,6 +28,9 @@ from dplanner.identity import APP_NAME, APP_VERSION
 
 PROG = "dplanner"
 HELP_WIDTH = 88
+# The one word that is not a noun: ``entry.py`` opens the application on it, and this tree
+# refuses every other word it does not know. Named here so the help can say so.
+WINDOW_WORD = "window"
 
 
 class _Formatter(RawDescriptionHelpFormatter):
@@ -90,7 +93,11 @@ def build_tree(registry: CliRegistry) -> tuple[ArgumentParser, dict[str, Argumen
     verb_parsers: dict[str, ArgumentParser] = {}
     parser = ArgumentParser(
         prog=PROG,
-        description=f"{APP_NAME}: plan your projects as graphs of connected steps.",
+        description=(
+            f"{APP_NAME}: plan your projects as graphs of connected steps.\n\n"
+            f"{PROG} {WINDOW_WORD} [--library PATH] opens the application.\n"
+            "Everything else is one of the commands below."
+        ),
         formatter_class=_formatter,
     )
     parser.add_argument("--version", action="version", version=f"{PROG} {APP_VERSION}")
@@ -137,10 +144,18 @@ def run(
     refusal (``CliError``) is a run that ended with exit 1 and a reason, not a failure;
     anything else that escapes is a bug, journaled with its traceback and re-raised so it
     still prints — a bug that printed like a usage error would never get reported.
+
+    A bare run prints the whole help and exits 2 — git's convention — because argparse's own
+    answer names neither the nouns nor the window word, and an agent that ran the command
+    bare was asking for exactly that list.
     """
     out = out if out is not None else sys.stdout
     err = err if err is not None else sys.stderr
-    args: Namespace = build_tree(registry)[0].parse_args(list(argv))
+    parser = build_tree(registry)[0]
+    if not argv:
+        parser.print_help(err)
+        return 2
+    args: Namespace = parser.parse_args(list(argv))
     command: CliCommand = args._command
     telemetry = current()
     span = telemetry.begin(
@@ -148,7 +163,6 @@ def run(
         command.id,
         argv=list(argv),
         cwd=str(Path.cwd()),
-
         library=args.library,
         project=args.project_scope,
     )

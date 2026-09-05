@@ -569,6 +569,13 @@ root, stop and look for the registry or capability you have not found yet.
   new window takes the old one's geometry. Opening a *different* library is not even a
   reload: File ▸ New/Open Project Library spawns a detached instance
   (`modules/library/module.py::spawn_instance`).
+- **`dplanner` is the CLI; `dplanner window` is the application.** `entry.py` dispatches on
+  the first command word — no terminal test, no environment variable — so an agent's bare or
+  mistyped call gets the help and exit 2, never a window on the developer's desktop. Qt's
+  `-style`/`-platform` follow the word; `spawn_instance` and `python -m dplanner` go through
+  the same door; the word is not a noun and the skill never names it
+  (`tests/cli/test_entry.py` reserves it). `ARCHITECTURE.md`'s *The window is a word* has
+  the reasoning.
 - **Discarding a build is `discard_build()`, and closing the window is not enough.** Qt keeps
   a closed `QWidget` in `topLevelWidgets()`, so without `deleteLater()` the whole build —
   services, model, every module — stays reachable forever. Nobody notices in the application;

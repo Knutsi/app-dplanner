@@ -8,6 +8,7 @@ with a reason, or handed to a brand-new process.
 import pytest
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
+from dplanner.cli.main import WINDOW_WORD
 from dplanner.domain.store import PROJECT_META
 from dplanner.identity import APP_NAME
 from dplanner.modules.library import module as library_module
@@ -128,7 +129,7 @@ def test_new_library_creates_the_file_and_spawns_a_detached_instance(
     run(services, "library.new_library")
     assert target.is_file()  # Created before the new instance opens it.
     command, kwargs = spawned[0]
-    assert command[-2:] == ["--library", str(target)]
+    assert command[-3:] == [WINDOW_WORD, "--library", str(target)]
     assert kwargs["start_new_session"] is True
 
 
@@ -141,7 +142,7 @@ def test_open_library_spawns_a_detached_instance(services, tmp_path, monkeypatch
 
     run(services, "library.open_library")
     command, kwargs = spawned[0]
-    assert command[-2:] == ["--library", str(target)]
+    assert command[-3:] == [WINDOW_WORD, "--library", str(target)]
     assert kwargs["start_new_session"] is True
 
 

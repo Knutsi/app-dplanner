@@ -359,6 +359,8 @@ then authored `step add`s.
 
 ## Conventions
 
+- **`dplanner --help` lists every noun and `dplanner <noun> --help` its verbs**; `reference.md`
+  beside this file has every argument. A bare `dplanner` prints the same help and exits 2.
 - **`--json` on any command** gives machine-readable output. It works before or after the
   verb.
 - **Names or ids.** Anywhere a project or step is named you may use its id, its folder name,

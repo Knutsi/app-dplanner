@@ -46,8 +46,9 @@ and any prose editor can reuse one with Insert from Assets….
 
 ```bash
 uv sync
-uv run dplanner                                  # your library; created empty on first run
-uv run dplanner --library ~/plans/library.json   # another library, in its own instance
+uv run dplanner window                                  # your library; created empty on first run
+uv run dplanner window --library ~/plans/library.json   # another library, in its own instance
+uv run dplanner --help                                  # the CLI; a bare `dplanner` prints this too
 ```
 
 The library file lists your projects and lives per user (`$DPLANNER_LIBRARY` also names
@@ -157,7 +158,7 @@ src/dplanner/
 ├── identity.py            what this application calls itself
 ├── menus.py               the menu bar's shape, including the Project menu
 ├── app.py                 bootstrap: QApplication, the session, the first open
-├── entry.py               the one `dplanner` command: a window, or a verb
+├── entry.py               the one `dplanner` command: the CLI, or `dplanner window`
 ├── scripts/measure_edit_cost.py   what an edit costs the GUI thread, measured headless through the journal
 ├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
 ├── scripts/layout_item_double_delete.py   the layout-item double delete built to order, and the finalizer that stops it

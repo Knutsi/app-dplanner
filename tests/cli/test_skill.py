@@ -7,7 +7,7 @@ from io import StringIO
 
 import pytest
 
-from dplanner.cli.main import run
+from dplanner.cli.main import WINDOW_WORD, run
 from dplanner.cli.skill import (
     REFERENCE_FILE,
     SKILL_FILE,
@@ -115,6 +115,14 @@ def test_the_skill_has_frontmatter_a_skill_loader_can_read(files):
     assert head[0] == "---"
     assert head[1] == "name: dplanner"
     assert head[2].startswith("description: ")
+
+
+def test_the_skill_says_how_to_discover_commands_and_never_names_the_window(files):
+    """An agent that runs `dplanner` bare is looking for this list; the skill tells it where
+    the list is, and never the one word that opens a window on the developer's desktop."""
+    assert "`dplanner --help`" in files[SKILL_FILE]
+    for content in files.values():
+        assert f"dplanner {WINDOW_WORD}" not in content
 
 
 def test_the_output_does_not_depend_on_the_terminal_it_was_generated_in():

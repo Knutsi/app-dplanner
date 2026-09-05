@@ -21,6 +21,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QWidget
 
+from dplanner.cli.main import WINDOW_WORD
 from dplanner.core.storage.locations import find_repo_root, init_repo
 from dplanner.domain.library_file import default_library_path
 from dplanner.domain.model import Library, Project, ProjectId
@@ -51,11 +52,11 @@ class LibraryDeps:
 
 
 def spawn_instance(library_path: Path) -> None:
-    """Start a new detached DPlanner on ``library_path`` — the user owns it from here."""
+    """Start a new detached DPlanner window on ``library_path`` — the user owns it from here."""
     dplanner = shutil.which("dplanner")
     command = [dplanner] if dplanner else [sys.executable, "-m", "dplanner"]
     subprocess.Popen(
-        [*command, "--library", str(library_path)],
+        [*command, WINDOW_WORD, "--library", str(library_path)],
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

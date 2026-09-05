@@ -121,6 +121,41 @@ There are therefore two composition roots, and both are in `modules/__init__.py`
 `default_modules(services)` builds the window, `default_cli_commands()` builds the verbs.
 Reading that one file still answers "what is this application".
 
+### The window is a word, and everything else is the CLI
+
+`dplanner window` opens the application. Every other command line is the CLI: a verb runs,
+a word the CLI does not know is refused with exit 2, and a bare `dplanner` prints the help.
+It was the other way round — the window was the default and the CLI ran only when the first
+word was a registered noun — until agents driving the skill ran `dplanner` bare to see the
+usage, or mistyped a noun: each time a window opened on the developer's desktop, and the
+agent's shell hung until somebody closed it.
+
+The fix is a flipped default rather than an added check, because the asymmetry is total. A
+person pays one word, once, and a launcher pays it in a file; an agent that guesses wrong
+pays a stray window and a hung shell every time, and can see neither. So the rule is *a
+word*, not a test of the environment:
+
+- **Not a terminal test.** A `.desktop` launcher and `spawn_instance` (stdout to `DEVNULL`)
+  have no TTY either, so both would need an explicit word anyway — the heuristic buys
+  nothing and costs isatty mocking in every test.
+- **Not an environment variable from the agent wrapper script.** That covers the agents
+  DPlanner launched itself and not the one the developer started in a terminal, which is
+  the case that was reported.
+- **Not a vendor's variable** (`CLAUDECODE`, …). Every new agent would be a new `if`.
+- **Not a registered `CliCommand`** (`library open`). Its `run` would import Qt from a
+  module's Qt-free `cli.py` — the upward import `HEADLESS_FILES` exists to refuse.
+
+`window` is the word because it is what this codebase calls the surface — "a window, or a
+verb", "one per window" — and because no agent task contains it. It is not a noun and the
+skill never renders it: `entry.py` dispatches on it, the top-level `--help` names it, and
+`tests/cli/test_entry.py` reserves it against a future noun. Two consequences follow. Qt's
+own `-style` and `-platform` come *after* the word, since the first word is the decision.
+And a bare `dplanner` prints the whole help at exit 2 — git's convention — because
+argparse's own "the following arguments are required" names neither the nouns nor the word,
+and the agent that ran it bare was asking for exactly that list. A by-product: the window no
+longer builds the whole command inventory just to learn it is not a verb, and the CLI no
+longer builds it twice. `python -m dplanner` and `spawn_instance` go through the same door.
+
 ## The index tree
 
 The template's sidebar was a tab set: one page per module, one visible at a time. DPlanner
