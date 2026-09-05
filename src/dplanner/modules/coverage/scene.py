@@ -69,8 +69,10 @@ from dplanner.theme.tones import BODY_TONES, GOOD_BORDER
 MARGIN = 16.0
 LANE_PAD = 12.0
 CARD_GAP = 12.0
-GUTTER = 56.0  # Room for a curve to read as a curve.
-LANE_MIN_W = 200.0  # DESIGN.md: a card stack fits a 200 px panel; narrower is unreadable.
+GUTTER = 56.0  # Room for a curve to read as a curve…
+GUTTER_NARROW = 32.0  # …and what it gives up on a narrow viewport before the lanes do.
+LANE_MIN_W = 168.0  # Two words of title beside a medallion; narrower is unreadable.
+NARROW_VIEWPORT = 1100.0
 CAPTION_H = 28.0
 THUMB_W = 4.0
 THUMB_INSET = 4.0

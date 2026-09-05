@@ -75,14 +75,15 @@ class CoverageDeps:
 
 
 class CoverageView(QGraphicsView):
-    """The viewport: no scroll bars of its own, the lanes laid to its width."""
+    """The viewport: the lanes laid to its width, and a horizontal scroll bar only when
+    four lanes at their narrowest still do not fit — a finite extent, so the bar is honest."""
 
     def __init__(self, scene: CoverageScene, parent: QWidget | None = None) -> None:
         super().__init__(scene, parent)
         self.setObjectName("GraphView")  # The canvas's ground: $BG_BASE, no frame.
         self._scene = scene
         self.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setFrameShape(QGraphicsView.Shape.NoFrame)
         self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
