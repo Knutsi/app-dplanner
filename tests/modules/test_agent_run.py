@@ -386,20 +386,30 @@ def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_pat
 
     from dplanner.modules.step_agent_instruction import launcher
 
+    # What Claude Code 2.1 sets in every shell it runs, and what it scrubs itself before a
+    # standalone session — read off the binary, so the list is not a guess.
     env = {
         "PATH": "/usr/bin",
         "CLAUDECODE": "1",
         "CLAUDE_CODE_ENTRYPOINT": "cli",
+        "CLAUDE_CODE_SESSION_ID": "48bd92ff-5111-4a38-98bf-450df120a804",
         "CLAUDE_CODE_CHILD_SESSION": "1",
-        "CLAUDE_CODE_PARENT_SESSION_ID": "48bd92ff",
+        "CLAUDE_PID": "4242",
+        "CLAUDE_EFFORT": "high",
+        "CLAUDE_CODE_EXECPATH": "/opt/claude-code/bin/claude",
+        "AI_AGENT": "claude-code/agent",
+        "TRACEPARENT": "00-abc-def-01",
+        "CLAUDE_CODE_REMOTE_SESSION_ID": "s1",  # By the rule, not the list.
         "CLAUDE_CONFIG_DIR": "/home/me/.claude",
         "CLAUDE_CODE_USE_BEDROCK": "1",
+        "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000",
         "ANTHROPIC_API_KEY": "k",
     }
     assert launcher.scrubbed_environment(env) == {
         "PATH": "/usr/bin",
         "CLAUDE_CONFIG_DIR": "/home/me/.claude",
         "CLAUDE_CODE_USE_BEDROCK": "1",
+        "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000",
         "ANTHROPIC_API_KEY": "k",
     }
     calls = []

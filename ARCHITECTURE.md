@@ -1992,10 +1992,15 @@ handoff would not, and `ps` stays readable. The agent pays one file read.
 word* has that half. The launcher's own half is `scrubbed_environment()`: the terminal is
 spawned without the session markers an agent CLI sets in its shells, so an agent DPlanner
 launches is a top-level session with a transcript of its own, whatever started DPlanner.
-The scrub is narrow on purpose — the two markers Claude Code is known to set, and any
-variable under its prefix naming a session, a parent or a child — because the same prefix
-carries the person's configuration (`CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_USE_BEDROCK`), and an
-agent launched without that cannot sign in.
+The scrub is a list, not the prefix — what Claude Code sets in every shell it runs
+(`CLAUDECODE`, the parent's session id, the child-session flag that turns transcript
+persistence off, its pid, the effort, the agent flag) and what it scrubs itself before a
+session that must stand on its own (its exec path, the trace id), read off the 2.1 binary
+rather than guessed, plus any variable under its prefix naming a session, a parent or a
+child — because the same prefix carries the person's configuration (`CLAUDE_CONFIG_DIR`,
+`CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_MAX_OUTPUT_TOKENS`), and an agent launched without
+that cannot sign in. The first version named two markers and a rule; the rule caught the
+session id but not the pid, and a list read off the binary is the honest fix.
 
 **Nothing said not to kill by pattern.** The skill's *Cutting agent steps* and the
 briefing's preamble now both do: other agents work beside you in the same repository, their

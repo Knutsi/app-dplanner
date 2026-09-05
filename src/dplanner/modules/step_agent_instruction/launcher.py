@@ -56,11 +56,12 @@ with the session markers an agent CLI sets in its shells taken out
 *child* of the session that set them — no transcript of its own, ended when the parent's
 turn ends — which is how a DPlanner started from an agent's shell took every agent it
 launched down with it. ``entry.py`` refuses to open a window from such a shell; the scrub
-is the second line, for a window that got its environment some other way. User
-configuration under the same prefix (``CLAUDE_CONFIG_DIR``, ``CLAUDE_CODE_USE_BEDROCK``)
-is the person's, not a session's, and stays. The Claude preset also names the run's
-session (``--session-id``, minted per launch): the id is what ``claude --resume`` takes,
-so an agent that died can be picked up where it stopped.
+is the second line, for a window that got its environment some other way. The list is
+what Claude Code itself sets per shell and scrubs before a standalone session
+(``SESSION_MARKERS``); user configuration under the same prefix (``CLAUDE_CONFIG_DIR``,
+``CLAUDE_CODE_USE_BEDROCK``) is the person's, not a session's, and stays. The Claude
+preset also names the run's session (``--session-id``, minted per launch): the id is what
+``claude --resume`` takes, so an agent that died can be picked up where it stopped.
 
 **A worktree is prepared by the script, and a worktree that cannot be prepared stops the
 run.** When the step asks for one (its agent aspect's ``worktree``, on by default), the
@@ -532,11 +533,25 @@ def _fill(template: str, values: Mapping[str, str]) -> list[str] | None:
         return None
 
 
-# What an agent CLI's shell carries that says "you are inside a session" — Claude Code's
-# two markers, and whatever names the session, its parent or a child under the same
-# prefix. Not the whole prefix: CLAUDE_CONFIG_DIR and CLAUDE_CODE_USE_BEDROCK are the
-# person's configuration, and an agent launched without them cannot sign in.
-SESSION_MARKERS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
+# What an agent CLI's shell carries that says "you are inside a session". The names are
+# the ones Claude Code sets in every shell it runs (CLAUDECODE, the parent's session id,
+# the child-session flag that turns transcript persistence off, its pid, the effort, the
+# agent flag) and the ones it scrubs itself before starting a session that must stand on
+# its own (its exec path, the trace id) — read off the 2.1 binary, not guessed — plus
+# whatever names a session, a parent or a child under the same prefix. Not the whole
+# prefix: CLAUDE_CONFIG_DIR and CLAUDE_CODE_USE_BEDROCK are the person's configuration,
+# and an agent launched without them cannot sign in.
+SESSION_MARKERS = (
+    "CLAUDECODE",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_PID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_CODE_EXECPATH",
+    "AI_AGENT",
+    "TRACEPARENT",
+)
 SESSION_MARKER_PREFIX = "CLAUDE_CODE_"
 SESSION_MARKER_WORDS = ("SESSION", "PARENT", "CHILD")
 
