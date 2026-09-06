@@ -196,6 +196,30 @@ plan arrives; deleting one drops it. An existing line is never rewritten — a h
 one is the user's word — and a project that *is* the repository root needs none, so none
 is written.
 
+### The `reports` directory
+
+A plan repository may carry its projects' reports beside the plans — derived, never read
+back, and outside every project's `PLAN_ENTRIES`, so the store's stale-write check never
+sees them:
+
+```
+<repository root>/reports/
+├── index.html            the site: every project's headline, one card each
+├── <slug>/index.html     one project's full report — a single self-contained HTML file
+└── <slug>/summary.js     that project's headline figures: window.dplannerProjects.push({…})
+```
+
+`<slug>` is the project directory's path relative to the repository root with separators
+folded (`plans/search` → `plans-search`); the repository directory's own name when the
+project *is* the root. Save writes the directory for each dirty repository and records it
+in the plan's commit (the window's Settings ▸ Reports switch, on by default);
+`dplanner report site` writes it from a terminal and never commits. The index is a
+function of the set of `*/summary.js` present, so its bytes change only when a project
+joins or leaves — the rule that keeps two writers from conflicting over a generated page.
+The directory name is a constant, not a setting. Nothing in it is versioned or migrated:
+every Save rewrites it whole from the plan. `ARCHITECTURE.md`'s *A report is a
+publication, not a record* has the reasoning.
+
 ### Changing it
 
 The chain lives in `domain/migrations.py` and the engine in `core/formats.py`. DPlanner is

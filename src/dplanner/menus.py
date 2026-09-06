@@ -22,7 +22,8 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # (New/Open Project Library, Reload) from the library module and the watcher;
     # "save"/"branch" from sync; "window" from
     # the app shell and the settings dialog. "export" holds the Export submenu — one entry
-    # per feature that can write itself out (the order list's CSV today).
+    # per feature that can write itself out: the order list's and the milestones' CSVs,
+    # the plan's report as HTML and PDF, its tables as a workbook.
     "File": ("project", "library", "save", "branch", "export", "window"),
     # "history" is the app shell's Undo/Redo. "clipboard" and "selection" are the graph's:
     # Cut, Copy, Paste, Duplicate and Delete's second seat (its home is Step, which every

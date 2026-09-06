@@ -440,6 +440,10 @@ then authored `step add`s.
   beside this file has every argument. A bare `dplanner` prints the same help and exits 2.
 - **`--json` on any command** gives machine-readable output. It works before or after the
   verb.
+- **The plan is also a page.** `dplanner report html --out plan.html` writes one self-contained
+  HTML report of the current project for people who have no DPlanner, and `dplanner report
+  site` refreshes the plan repository's `reports/` site (the window does this on every Save;
+  from a terminal it is yours to run, and it never commits).
 - **Names or ids.** Anywhere a project or step is named you may use its id, its folder name,
   or a unique part of its title. An ambiguous name is refused and the message lists the ids —
   use one of those rather than guessing.

@@ -34,12 +34,14 @@ picture of a plan that has since changed.
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 
 from PySide6.QtCore import QDate, QLocale, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDateEdit,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -51,6 +53,8 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
+from dplanner.cli.report.sheets import csv_rows
+from dplanner.core.fsio import write_csv
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, ProjectId, Step, StepId
 from dplanner.domain.schedule import Phase, format_date, format_days
@@ -73,8 +77,10 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.tabs import TabHost
+from dplanner.framework.toolbar import ActionToolbar
 from dplanner.framework.undo import UndoService
 from dplanner.modules.time_estimates.chart import ChartData, Mark, ProgressChart
+from dplanner.modules.time_estimates.cli import Readers
 from dplanner.modules.time_estimates.milestones import (
     DATE_FORMAT,
     MilestoneEntry,
@@ -102,6 +108,7 @@ from dplanner.modules.time_estimates.progress import (
     tally,
 )
 from dplanner.modules.time_estimates.recorder import ProgressRecorder
+from dplanner.modules.time_estimates.report import milestones_table
 from dplanner.modules.time_estimates.schedule import (
     DATA_FORMAT,
     MODULE_ID,
@@ -336,7 +343,29 @@ class TimeEstimatesActivity(EntityActivity):
         self.split.setStretchFactor(0, 1)
         self.split.setStretchFactor(1, 1)
         self.split.setSizes([LEFT_WIDTH, RIGHT_WIDTH])
-        self._widget = self.split
+        # -- the frame: one quiet Export button over the seam ------------------------------
+        # Its arrow renders File ▸ Export — the milestones' CSV, the plan's page, the PDF,
+        # the workbook — the same entries, never a copy, found where the numbers are.
+        frame = QWidget()
+        framed = QVBoxLayout(frame)
+        framed.setContentsMargins(0, 0, 0, 0)
+        framed.setSpacing(0)
+        strip = QWidget(frame)
+        strip_row = QHBoxLayout(strip)
+        strip_row.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, 0)
+        strip_row.addStretch(1)
+        self.toolbar = ActionToolbar(
+            deps.actions,
+            deps.context,
+            ("report.html",),
+            {"report.html": "Export"},
+            strip,
+            menus={"report.html": ("File", "Export")},
+        )
+        strip_row.addWidget(self.toolbar)
+        framed.addWidget(strip)
+        framed.addWidget(self.split, 1)
+        self._widget = frame
 
         # After a quiet spell, not per signal: a refresh is two dozen schedule simulations
         # and a re-render of the matrix, the months and the milestones — the heaviest
@@ -412,6 +441,7 @@ class TimeEstimatesActivity(EntityActivity):
             unsubscribe()
         self._unsubscribes.clear()
         self.focus_bar.dispose()
+        self.toolbar.dispose()
 
     # -- what the tests read off the tab ------------------------------------------------------
 
@@ -774,6 +804,35 @@ class TimeEstimatesModule:
         self._deps = deps
         self._recorder: ProgressRecorder | None = None
 
+    def _export(self, context: Context) -> None:
+        deps = self._deps
+        project_id = context.focus_entity("project")
+        if project_id is None or not deps.library.has(project_id):
+            return
+        project = deps.library.project(project_id)
+        readers = Readers(
+            deps.days_for,
+            deps.is_agent,
+            deps.status_for,
+            lambda dated: deps.start_of(dated.id),
+            deps.milestone_label,
+            deps.estimate_history,
+            deps.step_key,
+        )
+        table = milestones_table(deps.library, project, readers)
+        if table is None:
+            return
+        suggested = f"{project.title or 'Untitled project'} milestones.csv"
+        chosen, _filter = QFileDialog.getSaveFileName(
+            deps.parent, "Export Milestones", str(Path.home() / suggested), "CSV files (*.csv)"
+        )
+        if not chosen:
+            return
+        path = Path(chosen)
+        if path.suffix.lower() != ".csv":
+            path = path.with_suffix(".csv")
+        write_csv(path, csv_rows(table))
+
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
         self._deps.tabs.open(TIME_KIND, project_id, preview=preview)
 
@@ -815,6 +874,21 @@ class TimeEstimatesModule:
                 "and when each milestone lands",
                 state=self._on_a_project,
                 run=self._open,
+            )
+        )
+        # File ▸ Export ▸ Milestones (CSV): the milestones table the report shows, as data a
+        # spreadsheet can compute with — beside the order list's CSV.
+        deps.actions.register(
+            ActionSpec(
+                id="time.export",
+                label="&Milestones (CSV)…",
+                menu="File",
+                group="export",
+                submenu="Export",
+                order=15,
+                tip="Write the focused project's milestones — set date, landing, days — to CSV",
+                state=self._on_a_project,
+                run=self._export,
             )
         )
         follow_entity_tabs(

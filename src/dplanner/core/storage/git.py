@@ -271,15 +271,21 @@ class GitStorage(LocalStorage):
 
     # -- history -------------------------------------------------------------------------------
 
-    def commit(self, message: str = "") -> bool:
-        """Stage and commit the workspace directory only. False when nothing had changed.
+    def commit(self, message: str = "", also: Sequence[str] = ()) -> bool:
+        """Stage and commit the workspace directory — plus ``also``, repo-root-relative
+        paths recorded in the same version. False when nothing had changed.
 
         A scope nothing matches — a directory that was never tracked and is gone now — is
         left out rather than failing the whole commit on git's *did not match any files*:
         moving a plan out of a repository commits its removal, which is only a change
         where the plan was tracked.
+
+        ``also`` is for what is written beside the plan on purpose (the reports directory)
+        and is deliberately not part of ``scopes``: the dirty count and the review diff
+        stay about the plan, and a publication that failed to write never reads as
+        unsaved work.
         """
-        scopes = [scope for scope in self._scopes if self._matches(scope)]
+        scopes = [scope for scope in (*self._scopes, *also) if self._matches(scope)]
         if not scopes:
             return False
         self._git("add", "-A", "--", *scopes)

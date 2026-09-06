@@ -228,6 +228,7 @@ modules/<name>/
 ├── module.py    the Qt half: the module class, its Deps, its views
 ├── cli.py       the headless half: CliCommand specs                ← imports no Qt
 ├── aspect.py    for a step aspect: SPEC, DATA_FORMAT, read/write    ← imports no Qt
+├── report.py    what it says in a report: report_source()           ← imports no Qt
 └── section.py   the editor it puts in the step detail panel
 ```
 
@@ -1098,6 +1099,25 @@ root, stop and look for the registry or capability you have not found yet.
   no feature* and *Authoring a step is one verb, many modules* have the reasoning — the
   latter includes why the CLI transaction, not per-author rollback, is what makes a
   multi-module `step add` safe.
+- **A report is a publication, not a record.** `cli/report/` is the plan as one HTML page
+  for people with no DPlanner: **modules say, one renderer shows.** A module that has
+  something to say exports a Qt-free `report_source()` from `modules/<m>/report.py`,
+  returning parts from `cli/report/parts.py`'s vocabulary — figures, tables, chart series,
+  timeline spans, prose, the graph, per-step *facets* — and the root assembles the tuple
+  (`_report_sources`) for both `dplanner report` and the window. **Every part is plain
+  data** (a test walks it): the window builds on the GUI thread and renders on a worker,
+  the CLI inline, and the same plan gives the same bytes. **Drill-down is the step id**:
+  the page has one selection, and a facet carries the id rather than the module knowing
+  the graph. **Save publishes before it commits**: the sync module asks the reporting
+  module for a publication per dirty repository, runs it inside the save task and commits
+  with `also=paths`, so `reports/` lands in the plan's own version; a publication that
+  raises is logged and the plan is saved without it; the switch (Settings ▸ Reports) is per
+  user and on by default. **The site index depends only on the project set** (one
+  `<script src>` per `reports/<slug>/summary.js`), never on a project's state, so two
+  writers never conflict over it; the directory is a constant because QSettings cannot
+  reach the CLI. PDF is `modules/reporting/paper.py`, window-only, over the same SVG.
+  `ARCHITECTURE.md`'s *A report is a publication, not a record* has the reasoning and
+  the measurements.
 
 ## Deliberate divergences from the template
 

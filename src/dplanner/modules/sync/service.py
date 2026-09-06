@@ -18,7 +18,7 @@ race a checkout that is rewriting the same files.
 
 import logging
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
 from PySide6.QtCore import QObject, Signal
@@ -36,6 +36,10 @@ logger = logging.getLogger(__name__)
 
 # How long the status bar's branch label trusts its last answer from git.
 BRANCH_CACHE_S = 1.0
+
+# What a repository publishes beside its plan on Save — the reports site: run on the
+# worker, returns the repository-relative paths the commit records with the plan.
+Publication = Callable[[], Sequence[str]]
 
 
 @runtime_checkable
@@ -159,19 +163,36 @@ class SyncService(QObject):
 
     # -- operations ----------------------------------------------------------------------------
 
-    def save_sync(self, message: str = "", only: Sequence[RepoGroup] | None = None) -> None:
+    def save_sync(
+        self,
+        message: str = "",
+        only: Sequence[RepoGroup] | None = None,
+        *,
+        publications: Mapping[int, Publication] | None = None,
+    ) -> None:
         """Commit every dirty repository — one commit per repo — pushing where possible.
 
         ``only`` narrows the sweep (the quit dialog's unchecked rows are left dirty).
-        Directly testable, no threads.
+        ``publications``, keyed by ``id(group)``, is what each repository publishes beside
+        its plan — prepared on the GUI thread, run here before the commit, and recorded in
+        the same version. A publication that fails is logged and the plan is saved without
+        it: a report is never a reason to lose a save. Directly testable, no threads.
         """
         targets = self._groups if only is None else list(only)
-        saved, pushed = 0, 0
+        saved, pushed, unpublished = 0, 0, 0
         for group in targets:
             group.refresh_dirty()
             if not group.is_dirty():
                 continue
-            if group.commit(message):
+            also: Sequence[str] = ()
+            publish = (publications or {}).get(id(group))
+            if publish is not None:
+                try:
+                    also = publish()
+                except Exception:
+                    logger.exception("Publishing the reports beside %s failed", group.label)
+                    unpublished += 1
+            if group.commit(message, also=also):
                 saved += 1
                 remote = self._remote(group)
                 if remote is not None:
@@ -179,15 +200,20 @@ class SyncService(QObject):
                     pushed += 1
         self._recount()
         if saved == 0:
-            self.notice.emit("Nothing new to save")
+            said = "Nothing new to save"
         elif saved == 1:
-            self.notice.emit("Saved" + (" and pushed" if pushed else ""))
+            said = "Saved" + (" and pushed" if pushed else "")
         else:
             suffix = " and pushed" if pushed else ""
-            self.notice.emit(f"Saved {saved} repositories{suffix}")
+            said = f"Saved {saved} repositories{suffix}"
+        if unpublished:
+            said += " — reports not written (see Debug ▸ Telemetry)"
+        self.notice.emit(said)
 
-    def save(self, message: str = "") -> bool:
-        return self._start("Saving", lambda: self.save_sync(message))
+    def save(
+        self, message: str = "", publications: Mapping[int, Publication] | None = None
+    ) -> bool:
+        return self._start("Saving", lambda: self.save_sync(message, publications=publications))
 
     def pull_sync(self) -> None:
         arrived = 0

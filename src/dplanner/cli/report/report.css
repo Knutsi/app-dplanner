@@ -1,0 +1,239 @@
+/* The report's stylesheet — inlined into every page by page.py.
+   Tokens are the hex twins of theme/themes.py (LIGHT, DARK) and theme/tones.py; DESIGN.md's
+   spacing scale (4/8/12/16/20/24), left-aligned headers, numerics right, one bold per table. */
+
+:root {
+  --bg: #f5f4f1;
+  --surface: #fcfbf9;
+  --elevated: #e9e7e2;
+  --overlay: #ffffff;
+  --border: #d7d4cd;
+  --border-strong: #bfbbb1;
+  --ink: #23262b;
+  --secondary: #5d6169;
+  --disabled: #a4a49e;
+  --accent: #a07c33;
+  --link: #2e5e9e;
+  --good: #78c88c;
+  --busy: #6ea0dc;
+  --bad: #dc6e6e;
+  --milestone: #9682dc;
+  --feature: #50b4af;
+  --plan: #5f87d7;
+  --radius: 8px;
+  --radius-sm: 5px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --surface: #0f1115;
+    --elevated: #1b1e24;
+    --overlay: #23272f;
+    --border: #2b303a;
+    --border-strong: #39404d;
+    --ink: #e6e8ec;
+    --secondary: #a8b0bd;
+    --disabled: #5c6472;
+    --accent: #c8a45c;
+    --link: #7aa2d6;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  /* The drawings carry light-theme colours as attributes; classes restyle them here. */
+  svg .body { fill: var(--surface); stroke: var(--border); }
+  svg .shadow { fill: var(--ink); }
+  svg .title, svg .key, svg .stat, svg .label { fill: var(--ink); }
+  svg .axis, svg .date, svg .legend text, svg .mark text, svg .region text { fill: var(--secondary); }
+  svg .grid, svg .today, svg .region rect, svg .edge path, svg .edge polygon { stroke: var(--ink); }
+  svg .edge polygon { fill: var(--ink); }
+  svg .series-actual, svg .marker[fill="#23262b"], svg .legend-actual line { stroke: var(--ink); }
+  svg .marker[fill="#23262b"] { fill: var(--ink); }
+  svg .marker[stroke="#fcfbf9"] { stroke: var(--surface); }
+  svg .marker[fill="#fcfbf9"] { fill: var(--surface); }
+  svg .pill text { fill: var(--surface); }
+  svg .pill rect { stroke: var(--surface); }
+  svg .idle[stroke="#fcfbf9"] { stroke: var(--surface); }
+  svg .asked { fill: var(--ink); }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+}
+a { color: var(--link); }
+h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+h2 { font-size: 22px; margin: 0 0 16px; }
+h3 { font-size: 16px; }
+code, pre { font-family: ui-monospace, "SF Mono", Menlo, "JetBrains Mono", monospace; font-size: 0.92em; }
+pre { background: var(--elevated); border-radius: var(--radius-sm); padding: 12px; overflow-x: auto; }
+code { background: var(--elevated); padding: 1px 4px; border-radius: 3px; }
+pre code { background: none; padding: 0; }
+
+/* Header: title, the day the plan was read, and the sections. */
+header.top {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+  padding: 12px 24px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+header.top h1 { font-size: 20px; }
+header.top .summary { margin: 2px 0 0; color: var(--secondary); font-size: 13px; }
+header.top .asof { color: var(--secondary); font-size: 13px; margin-left: auto; white-space: nowrap; }
+header.top nav { display: flex; gap: 4px; flex-wrap: wrap; }
+header.top nav a {
+  color: var(--secondary); text-decoration: none; font-size: 13px;
+  padding: 4px 10px; border-radius: 999px;
+}
+header.top nav a:hover { background: var(--elevated); color: var(--ink); }
+
+main { max-width: 1160px; margin: 0 auto; padding: 24px 24px 96px; }
+section { padding: 24px 0; border-bottom: 1px solid var(--border); }
+section:last-child { border-bottom: 0; }
+.note { color: var(--secondary); font-size: 13px; margin: 8px 0 0; }
+
+/* Figures: the sponsor's first screen. */
+.figures {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px; margin-bottom: 20px;
+}
+.figure {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; box-shadow: var(--shadow);
+}
+.figure .value { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
+.figure .label { color: var(--secondary); font-size: 13px; margin-top: 4px; }
+.figure .note { margin-top: 4px; }
+.figure.tone-good .value { color: color-mix(in srgb, var(--good) 70%, var(--ink)); }
+.figure.tone-busy .value { color: color-mix(in srgb, var(--busy) 70%, var(--ink)); }
+.figure.tone-bad .value { color: color-mix(in srgb, var(--bad) 70%, var(--ink)); }
+
+/* Figures with drawings. */
+figure { margin: 0 0 20px; }
+figcaption { font-weight: 600; color: var(--secondary); font-size: 13px; margin-bottom: 8px; }
+figure.chart, figure.timeline { position: relative; }
+figure.chart svg, figure.timeline svg { width: 100%; height: auto; display: block;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+figure.chart .tooltip {
+  position: absolute; pointer-events: none; z-index: 3;
+  background: var(--overlay); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow); padding: 8px 10px; font-size: 12px; white-space: nowrap;
+}
+figure.chart .tooltip b { font-weight: 600; }
+svg .mark { cursor: pointer; }
+svg .span[data-step]:not([data-step=""]) { cursor: pointer; }
+
+/* The graph: a viewport the script pans and zooms. */
+figure.graph-frame { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+figure.graph-frame .tools { display: flex; align-items: center; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+figure.graph-frame .tools button, .filter select, .filter input, aside#drawer .close {
+  font: inherit; font-size: 13px; color: var(--secondary);
+  background: var(--overlay); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 4px 10px; cursor: pointer;
+}
+figure.graph-frame .tools button:hover, aside#drawer .close:hover { color: var(--ink); border-color: var(--border-strong); }
+figure.graph-frame .hint { margin-left: auto; color: var(--secondary); font-size: 12px; }
+figure.graph-frame .viewport {
+  height: min(70vh, 720px); overflow: hidden; cursor: grab; touch-action: none;
+  background-image: radial-gradient(color-mix(in srgb, var(--ink) 18%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+figure.graph-frame .viewport:active { cursor: grabbing; }
+figure.graph-frame svg.graph { display: block; transform-origin: 0 0; }
+svg .node { cursor: pointer; }
+svg .node.selected .body { stroke: var(--accent); stroke-width: 2.5; }
+svg .node.dimmed { opacity: 0.35; }
+figure.graph-frame .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 8px 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--secondary); }
+.swatch::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: var(--border); }
+.swatch.kind-milestone::before { background: var(--milestone); }
+.swatch.kind-feature::before { background: var(--feature); }
+.swatch.status-done::before { background: var(--good); }
+.swatch.status-in-progress::before { background: var(--busy); }
+.swatch.status-blocked::before { background: var(--bad); }
+.swatch.edge-requires::before, .swatch.edge-relates::before { height: 2px; width: 16px; border-radius: 0; background: var(--ink); vertical-align: 3px; }
+.swatch.edge-relates::before { background: repeating-linear-gradient(90deg, var(--ink) 0 4px, transparent 4px 7px); }
+
+/* Tables — DESIGN.md: headers left-aligned whatever the column holds, numerics right,
+   the one bold weight for a fixed point among its neighbours. */
+figure.table .scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+table.data { border-collapse: collapse; width: 100%; font-size: 14px; }
+table.data th { text-align: left; font-weight: 600; color: var(--secondary); font-size: 12px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0; background: var(--surface); }
+table.data td { padding: 7px 12px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); vertical-align: top; }
+table.data tr:last-child td { border-bottom: 0; }
+table.data td.kind-number, table.data td.kind-days { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.data td.kind-date, table.data td.kind-key { white-space: nowrap; }
+table.data tr[data-step] { cursor: pointer; }
+table.data tr[data-step]:hover td { background: color-mix(in srgb, var(--elevated) 60%, transparent); }
+table.data tr.selected td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+table.data tr.strong td { font-weight: 600; }
+table.data tr.hidden { display: none; }
+.key { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.92em; color: var(--secondary); }
+.filter { display: flex; gap: 8px; margin-bottom: 8px; }
+.filter input { min-width: 240px; cursor: text; }
+
+/* Status: a word, and a dot in the window's tone beside it — never colour alone. */
+.status::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--disabled); }
+.status-done::before { background: var(--good); }
+.status-in-progress::before { background: var(--busy); }
+.status-blocked::before { background: var(--bad); }
+.status-ok::before { background: var(--good); }
+.status-failed::before { background: var(--bad); }
+.status-skipped::before { background: var(--busy); }
+.badge { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--elevated); color: var(--secondary); margin-right: 6px; }
+.badge.kind-milestone { background: color-mix(in srgb, var(--milestone) 24%, transparent); color: var(--ink); }
+.badge.kind-feature { background: color-mix(in srgb, var(--feature) 24%, transparent); color: var(--ink); }
+
+/* Prose: decisions, descriptions. */
+article.prose { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+article.prose .meta { color: var(--secondary); font-size: 13px; margin: 4px 0 8px; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md img { max-width: 100%; height: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+.md table { border-collapse: collapse; font-size: 14px; }
+.md th, .md td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.md td.right, .md th.right { text-align: right; }
+.md td.center, .md th.center { text-align: center; }
+.md blockquote { margin: 0; padding: 0 12px; border-left: 3px solid var(--border); color: var(--secondary); }
+.md-image-missing, .md-link-inert { color: var(--secondary); }
+
+/* The drawer: the selected step, every module's facets. */
+aside#drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); z-index: 10;
+  background: var(--overlay); border-left: 1px solid var(--border); box-shadow: var(--shadow);
+  overflow-y: auto; padding: 16px 20px 24px;
+}
+aside#drawer .close { position: absolute; top: 12px; right: 12px; padding: 2px 8px; font-size: 16px; line-height: 1; }
+article.card header { padding-right: 40px; }
+article.card header h3 { font-size: 18px; margin: 4px 0 8px; }
+article.card .badges { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--secondary); }
+dl.facets { margin: 16px 0 0; }
+dl.facets dt { font-size: 12px; font-weight: 600; color: var(--secondary); margin-top: 12px; }
+dl.facets dd { margin: 4px 0 0; }
+@media (max-width: 900px) {
+  aside#drawer { top: auto; left: 0; width: auto; max-height: 60vh; border-left: 0; border-top: 1px solid var(--border); }
+}
+
+/* About. */
+section.about .md { max-width: 760px; }
+
+/* Paper. */
+@media print {
+  header.top { position: static; backdrop-filter: none; }
+  header.top nav, figure.graph-frame .tools, .filter, aside#drawer, figure.chart .tooltip { display: none !important; }
+  main { max-width: none; padding: 0; }
+  section { break-before: page; border: 0; }
+  section:first-child { break-before: auto; }
+  figure.graph-frame .viewport { height: auto; overflow: visible; }
+  figure.graph-frame svg.graph { transform: none !important; width: 100%; height: auto; }
+  figure.table .scroll { overflow: visible; border: 0; }
+  table.data th { position: static; }
+  .figure { box-shadow: none; }
+}

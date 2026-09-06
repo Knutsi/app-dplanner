@@ -2118,3 +2118,41 @@ per poll, after a Move Plan reload and at close). A QObject owned by the window 
 it, timer and all — the same reason the module's ask-soon timer was already the window's.
 **Upstream?** Yes: a watcher that outlives what it watches for is a bug in any host.
 
+## 19. From the reporting pass
+
+### `core/markdown.py` — a stdlib markdown-subset renderer (new)
+
+**What.** `render(text, *, image_src=None) -> str`: headings, paragraphs, emphasis, code
+spans and fences, one level of nested lists, blockquotes, rules, links, images through a
+callback, GFM tables; every user string HTML-escaped, `javascript:` and relative links
+rendered inert, never raises. **Why.** The report inlines descriptions, decisions and
+handoffs into a single HTML file. Python-Markdown is BSD-3, which would have been fine on
+licence, but the project judges a dependency on supply-chain surface too, and a bounded
+subset is ~300 lines of stdlib — the same trade `core/png.py` made. **Upstream?** Yes: any
+template application that shows user markdown outside Qt wants it, and the escaping
+discipline is the part worth sharing.
+
+### `core/xlsx.py` — a stdlib `.xlsx` writer (new)
+
+**What.** `Sheet(name, columns, rows)` and `workbook_bytes(sheets)` / `write_xlsx(path,
+sheets)`: inline strings, numbers, dates with a date style, a bold frozen header, column
+widths, sanitised sheet names, and byte-for-byte deterministic output (fixed zip
+timestamps and order). Verified against LibreOffice. **Why.** Spreadsheet export without
+`openpyxl`, for the same dependency rule; an `.xlsx` is a zip of six XML parts.
+**Upstream?** Yes, as-is.
+
+### `core/fsio.py` — `write_csv(path, rows)`
+
+**What.** The five-line utf-8-sig CSV writer, moved here from `modules/step_order/export.py`.
+**Why.** A second module (time estimates) needed it and modules never import each other.
+**Upstream?** Yes, beside `write_atomic`.
+
+### `core/storage/provider.py`, `git.py` — `commit(message, also=())`
+
+**What.** `VersionedStorage.commit` takes extra repository-relative pathspecs recorded in
+the same version as the scoped workspace; `GitStorage` adds them to `add -A`, `diff
+--cached` and `commit --`. `refresh_dirty` and `diff` stay scoped. **Why.** A publication
+written beside the plan (the reports site) must land in the plan's own commit without
+becoming "unsaved work" when stale, and the sync module may not name the concrete
+provider, so the parameter belongs to the protocol. **Upstream?** Yes: any application
+that generates an artefact beside what it versions has this need.

@@ -29,6 +29,7 @@ from typing import Protocol
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from dplanner.core.fsio import write_csv
 from dplanner.domain.model import Library, NodeId, Project, ProjectId, StepId
 from dplanner.domain.ordering import Placed, placed
 from dplanner.domain.schedule import Scheduled, schedule
@@ -52,8 +53,9 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.tabs import TabHost
+from dplanner.framework.toolbar import ActionToolbar
 from dplanner.modules.step_order.cli import wave_label
-from dplanner.modules.step_order.export import order_rows, write_csv
+from dplanner.modules.step_order.export import order_rows
 from dplanner.modules.step_order.view import OrderTable
 
 MODULE_ID = "step_order"
@@ -146,7 +148,21 @@ class OrderActivity(EntityActivity):
 
         caption = QLabel("Order", page)
         caption.setObjectName("InspectorCaption")
-        layout.addWidget(caption)
+        # The caption row carries one quiet Export button whose arrow renders File ▸ Export
+        # — the same entries, never a copy — so the exports are found where the table is.
+        head = QHBoxLayout()
+        layout.addLayout(head)
+        head.addWidget(caption)
+        head.addStretch(1)
+        self.toolbar = ActionToolbar(
+            deps.actions,
+            deps.context,
+            ("report.html",),
+            {"report.html": "Export"},
+            page,
+            menus={"report.html": ("File", "Export")},
+        )
+        head.addWidget(self.toolbar)
 
         self._note = QLabel(
             "Steps in an order that never puts one before what it waits on. Everything in the "
@@ -224,6 +240,7 @@ class OrderActivity(EntityActivity):
         self._unsubscribes.clear()
         if self.start_bar is not None:
             self.start_bar.dispose()
+        self.toolbar.dispose()
 
     # -- internals -----------------------------------------------------------------------------
 
@@ -302,7 +319,7 @@ class StepOrderModule:
         deps.actions.register(
             ActionSpec(
                 id="order.export",
-                label="&Order List…",
+                label="&Order List (CSV)…",
                 menu="File",
                 group="export",
                 submenu="Export",

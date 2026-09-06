@@ -5,8 +5,10 @@ anything. ``slugify`` transliterates rather than merely stripping, because a fol
 the one part of a workspace a person reads in a file browser.
 """
 
+import csv
 import re
 import unicodedata
+from collections.abc import Sequence
 from pathlib import Path
 
 # Norwegian (plus neighbours) transliterated explicitly: NFKD alone would drop ø entirely
@@ -46,3 +48,13 @@ def write_atomic(path: Path, text: str) -> None:
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
+
+
+def write_csv(path: Path, rows: Sequence[Sequence[str]]) -> None:
+    """Write ``rows`` as CSV the way a spreadsheet expects it.
+
+    utf-8-sig: the BOM is what makes Excel read the file as Unicode rather than guessing
+    the console code page.
+    """
+    with path.open("w", newline="", encoding="utf-8-sig") as handle:
+        csv.writer(handle).writerows(rows)

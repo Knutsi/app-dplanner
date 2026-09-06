@@ -4,13 +4,8 @@ from datetime import date
 
 from PySide6.QtGui import QColor
 
-from dplanner.modules.time_estimates.chart import (
-    CHART_HEIGHT,
-    LABEL_GAP,
-    ChartData,
-    ProgressChart,
-    axis_ticks,
-)
+from dplanner.domain.schedule import axis_ticks
+from dplanner.modules.time_estimates.chart import CHART_HEIGHT, LABEL_GAP, ChartData, ProgressChart
 
 
 def test_the_axis_marks_the_finest_calendar_unit_that_fits():

@@ -127,6 +127,28 @@ lists every run this window launched; *Step ▸ Show Agent Terminal* brings its 
 the window reloads when it owes nothing, and neither side ever overwrites a file it has not
 seen. See `FORMAT.md`.
 
+## Reports
+
+A plan is also a page. *File ▸ Export ▸ Plan Report (HTML)…* writes one self-contained
+file — the graph as the window draws it, the order, the time estimates and the progress
+chart, every step with everything the modules know about it, and a last section that says
+what DPlanner is and how to open the plan — for a sponsor, a product owner or a tester who
+has no DPlanner. Click a card, a row or a milestone anywhere on it and every view answers.
+*Plan Report (PDF)…* prints the same report; *Plan Tables (Excel)…* writes its tables as a
+workbook, beside the Order and Time tabs' CSVs. *Project ▸ Preview Report* opens the page
+in the browser.
+
+Every Save also writes the plan repository's site under `reports/` — a page per project and
+an index — into the same commit as the plan, so anyone with the repository has the plan as
+a website (turn it off under *Settings ▸ Reports*; *Write Now* writes it on demand).
+
+```bash
+uv run dplanner report html search --out search.html   # one project's page
+uv run dplanner report site                             # the plan repository's site, uncommitted
+uv run dplanner report xlsx search --out search.xlsx    # every table as a workbook
+uv run dplanner report csv search --table order         # one table, to stdout
+```
+
 ## On disk
 
 ```
@@ -224,6 +246,11 @@ src/dplanner/
 │   ├── scopes.py            `scope show` — what a check, feature or milestone gathers
 │   ├── authoring.py         `step add` — one verb, each module contributing its flags
 │   ├── telemetry.py         `telemetry show|path|clear` — the journal, read back
+│   ├── report/              the plan as a page for people with no DPlanner: what modules say
+│   │                        (parts.py, the vocabulary a module's report.py speaks), assembled
+│   │                        (assemble.py), drawn as one HTML file with inline SVG (page.py,
+│   │                        drawings.py), as sheets (sheets.py), as a plan repository's site
+│   │                        (website.py) — `dplanner report html|site|xlsx|csv|tables`
 │   └── skill.py             the agent skill, generated from the registry
 
 │
@@ -297,6 +324,9 @@ src/dplanner/
 │   │                        `dplanner schedule matrix`, `schedule palette`, `schedule team`, `schedule milestone`;
 │   │                        and progress against the plan (progress.py derives it, recorder.py writes the
 │   │                        day's history, chart.py draws expected against actual) — `dplanner progress show|record`
+│   ├── reporting/           the window's half of the report: File ▸ Export's HTML, PDF (paper.py) and Excel,
+│   │                        Project ▸ Preview Report, the publisher that writes `reports/` on every Save,
+│   │                        Settings ▸ Reports
 │   ├── decisions/           the decisions a project made along the way: the log (log.py), `dplanner decision`,
 │   │                        the project panel's Decisions card — and every briefing's *Decisions so far*
 │   ├── spec/                spec documents beside a project, their figures, and the project's

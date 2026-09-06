@@ -3185,3 +3185,70 @@ it is current (spans arrive from worker threads and the watchdog's thread, so po
 what keeps every widget touch on the GUI thread), and `dplanner telemetry show` reads the
 file — `--slow 50` for what took long, `--failures` for tracebacks and the crash log's tail,
 `--json` for an agent. The generated skill points an agent at it before it reports a hang.
+
+## A report is a publication, not a record
+
+People with a stake in a project but no DPlanner — a sponsor, a product owner, a tester, a
+colleague glancing at status — had nothing to look at. The answer is one HTML file per
+project that reads like a page and needs no server: the graph as the window draws it, the
+order, the time estimates, every step with everything the modules know about it, and a
+last section that says what DPlanner is and how to open the plan. `CLAUDE.md` has the rule
+in its short form (*A report is a publication, not a record*); this is why it is shaped
+the way it is.
+
+**Modules say, one renderer shows.** A report is a question about *every* feature at once,
+and no module may import another, so no module can draw the page. The split that keeps
+the layering honest: each participating module exports a Qt-free `report.py` with
+`report_source()` — the `asset_source()` / `lint_checks()` shape — returning parts from a
+small vocabulary (`cli/report/parts.py`: figures, tables, chart series, timeline spans,
+prose, the graph, and per-step *facets*); the composition root assembles the tuple
+(`_report_sources`); `cli/report/assemble.py` merges it into one `Report`; `page.py`
+draws that, knowing only the vocabulary. The alternative — modules emitting their own
+HTML — was rejected because it fragments one design system across a page and gives the
+PDF and the spreadsheets nothing to read. The vocabulary lives under `cli/` for the reason
+lint does: it is the highest layer that is still Qt-free and reachable from both surfaces.
+`dplanner report html` and File ▸ Export write byte-identical pages from it.
+
+**Drill-down is a shared key, not a shared import.** Every part about a step carries the
+step's id, and the page keeps one selection — the window's one-context rule, rebuilt in
+the browser. Clicking a card, a row, a milestone's hairline or a timeline bar highlights
+the step everywhere and opens a drawer listing every module's facets for it. The graph
+never learns about estimates; both key by id.
+
+**Every part is plain data, and that is what makes the worker safe.** A contribution holds
+strings, dates, floats and bytes — never a `Step`. The window builds the report on the GUI
+thread (the read of the model) and renders and writes it on a worker the task centre
+shows; the CLI does both inline. Plain data is also what makes the output deterministic:
+the same plan gives the same bytes, and the "generated" stamp is a day, so an unchanged
+plan re-renders to an unchanged file. A test walks every contribution to hold the line.
+Measured on a synthetic plan: 300 steps read in ~90 ms on the GUI thread and render in
+~17 ms; 1,000 steps read in ~580 ms and render in ~50 ms. The read is the cost, and it is
+the same read the Time tab makes on its 500 ms debounce.
+
+**Save publishes before it commits.** The sync module asks the reporting module for a
+*publication* per dirty repository before its save task starts — the model is read then,
+on the GUI thread — and runs it inside the task, before `commit(message, also=paths)`, so
+the site lands in the same version as the plan and is never one commit behind. `also` is
+on the storage *protocol* (`VersionedStorage.commit`) because the sync module may not name
+`GitStorage`. The dirty count and the review diff stay scoped to the plan: a stale site is
+never unsaved work, and a publication that raises is logged and the plan saved without it
+— a report is never a reason to lose a save. The switch is per user and on by default.
+
+**The site's index is a function of the project set, never of any project's state.** Under
+`reports/` each project owns its own directory (`<slug>/index.html`, `<slug>/summary.js`);
+`index.html` is rendered from the sorted set of `*/summary.js` present on disk as a static
+page with one `<script src>` per project and a few lines of client-side rendering —
+`<script src>` works from `file://` and GitHub Pages alike, where `fetch()` does not. Its
+bytes change only when a project joins or leaves, so two people saving two projects in one
+shared plan repository never both touch it, and a pull that brings a colleague's project
+is picked up by the next run. The directory name is a constant, not a setting: the
+window's preferences are QSettings, which `dplanner report site` cannot read, and a
+per-user name would let the two surfaces write two sites into one repository.
+
+**Paper is the same report, not a second one.** The PDF is `QTextDocument` printing to
+`QPdfWriter` — pagination for free — with the chart, timeline and graph rendered from the
+very SVG strings the page inlines, through `QSvgRenderer`. It is window-only by decision:
+PySide6-Essentials has this and no Chromium, and adding a PDF library for the CLI was
+judged against the dependency rule; the page carries print CSS for anyone at a terminal.
+The XLSX writer and the markdown renderer are stdlib for the same rule (`core/xlsx.py`,
+`core/markdown.py`, in the spirit of `core/png.py`).

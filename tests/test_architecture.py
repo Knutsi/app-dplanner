@@ -73,6 +73,7 @@ HEADLESS_FILES = (
     "membership.py",
     "gh.py",
     "pdf.py",
+    "report.py",
 )
 CONCRETE_STORAGE = (
     f"{PACKAGE}.core.storage.local",
