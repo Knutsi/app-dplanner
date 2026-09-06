@@ -603,3 +603,48 @@ def recorded(history: Sequence[Snapshot], now: Snapshot) -> list[Snapshot] | Non
         return None
     rows.append(now)
     return rows
+
+
+@dataclass(frozen=True)
+class ScopeView:
+    """One scope of the plan as the chart draws it: the plan now, the plan as recorded on
+    the basis day, what landed, and where the milestones through it stand.
+
+    The Time tab, ``dplanner progress show`` and the report each read this once per scope
+    rather than assembling the same eight calls three ways.
+    """
+
+    key: str | None
+    reached: Tally
+    finish: date | None
+    expected: tuple[tuple[date, float], ...]
+    actual: tuple[tuple[date, float], ...]
+    baseline: tuple[tuple[date, float], ...]
+    baseline_day: date | None
+    baseline_finish: date | None
+    moved: Delta | None
+    marks: tuple[tuple[date, str], ...]  # (the day it lands, the milestone's step id)
+    idle: tuple[tuple[date, date], ...]
+
+
+def view_scope(
+    now: Snapshot,
+    history: Sequence[Snapshot],
+    then: Snapshot | None,
+    key: str | None,
+    *,
+    by_days: bool,
+) -> ScopeView:
+    return ScopeView(
+        key=key,
+        reached=now.toward(key),
+        finish=now.landing(key),
+        expected=tuple(expected(now, key, by_days=by_days)),
+        actual=tuple(actual(history, now, key, by_days=by_days)),
+        baseline=tuple(expected(then, key, by_days=by_days)) if then is not None else (),
+        baseline_day=then.day if then is not None else None,
+        baseline_finish=then.landing(key) if then is not None else None,
+        moved=delta(then, now, key) if then is not None else None,
+        marks=tuple(marks(now, key)),
+        idle=tuple(idle(now, key)),
+    )

@@ -47,7 +47,7 @@ from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.window import StatusHost, UnsavedChangesHost
 from dplanner.framework.window_watch import POLL_MS
 from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
-from dplanner.modules.sync.service import RepoGroup, SyncService
+from dplanner.modules.sync.service import Publication, RepoGroup, SyncService
 from dplanner.modules.sync.view import DiffDialog, IconLabel, UnsavedChangesButton
 from dplanner.theme.icons import branch_icon, folder_icon
 from dplanner.theme.themes import Theme
@@ -73,6 +73,9 @@ class SyncDeps:
     focused_project: Callable[[Context], ProjectId | None]
     # The titles a repository group covers, for the diff picker and the quit dialog.
     projects_in: Callable[[RepoGroup], list[str]]
+    # What a repository publishes beside its plan when it is saved — the reports site —
+    # prepared on the GUI thread and run inside the save. None when there is nothing.
+    publisher: Callable[[RepoGroup], Publication | None] = lambda _group: None
 
 
 class SyncModule:
@@ -264,6 +267,16 @@ class SyncModule:
 
     # -- quitting ------------------------------------------------------------------------------
 
+    def _publications(self, service: SyncService) -> dict[int, Publication]:
+        """What each dirty repository publishes beside its plan, prepared now on the GUI
+        thread — the model is read here — for the save to run and record."""
+        found: dict[int, Publication] = {}
+        for group in service.dirty_groups():
+            publish = self._deps.publisher(group)
+            if publish is not None:
+                found[id(group)] = publish
+        return found
+
     def _confirm_close(self, service: SyncService) -> bool:
         deps = self._deps
         # The debounce means the very last edit may not be on disk yet: flush and re-check
@@ -285,7 +298,9 @@ class SyncModule:
         if chosen:
             # Synchronous, like the old quit-time save: the window is closing, and a task
             # nobody can watch is worse than a moment's wait.
-            service.save_sync(dialog.message(), only=chosen)
+            service.save_sync(
+                dialog.message(), only=chosen, publications=self._publications(service)
+            )
         return True
 
     # -- actions -------------------------------------------------------------------------------
@@ -308,7 +323,8 @@ class SyncModule:
 
         def run_save(_context: Context) -> None:
             deps.autosave.flush_now()  # Typing reaches disk before it is committed.
-            service.save()
+            service.refresh()
+            service.save(publications=self._publications(service))
 
         def run_switch(context: Context) -> None:
             group = self._focused_group(service, context)

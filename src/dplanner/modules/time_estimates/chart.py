@@ -43,11 +43,9 @@ height-for-width, so nothing here can loop a scroll area. The gutters are measur
 the font, so "100 %" fits whatever the platform's text size.
 """
 
-from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, timedelta
 from itertools import pairwise
-from math import ceil
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt
 from PySide6.QtGui import (
@@ -60,7 +58,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
-from dplanner.domain.schedule import ABBREVIATION, MONTHS, format_date
+from dplanner.domain.schedule import Tick, axis_ticks, format_date
 from dplanner.modules.time_estimates.view import SECONDARY_ALPHA
 from dplanner.theme.cards import over
 
@@ -104,7 +102,6 @@ IDLE_SURFACE_ALPHA = 120
 DOT_PATTERN = (0.1, 3.0)
 
 Point = tuple[date, float]
-Tick = tuple[date, str]
 Mark = tuple[date, str, QColor]
 
 
@@ -145,66 +142,6 @@ def _share_at(points: tuple[Point, ...], when: date) -> float | None:
 
 
 # -- the x axis ----------------------------------------------------------------------------------
-
-
-def _day_label(when: date) -> str:
-    return f"{when.day} {MONTHS[when.month - 1][:ABBREVIATION]}"
-
-
-def _month_label(when: date) -> str:
-    return MONTHS[when.month - 1][:ABBREVIATION]
-
-
-def _with_years(ticks: list[Tick]) -> tuple[Tick, ...]:
-    """The first mark of each new year carries the year, whatever the unit — thinned
-    months may skip January, and a week may cross the boundary."""
-    labelled: list[Tick] = []
-    for index, (when, label) in enumerate(ticks):
-        if index and when.year != ticks[index - 1][0].year:
-            label = f"{label} '{when.year % 100:02d}"
-        labelled.append((when, label))
-    return tuple(labelled)
-
-
-def _days(first: date, last: date) -> Iterator[date]:
-    when = first
-    while when <= last:
-        yield when
-        when += timedelta(days=1)
-
-
-def _mondays(first: date, last: date) -> Iterator[date]:
-    when = first + timedelta(days=(7 - first.weekday()) % 7)
-    while when <= last:
-        yield when
-        when += timedelta(days=7)
-
-
-def _month_starts(first: date, last: date) -> Iterator[date]:
-    year, month = first.year, first.month
-    if first.day != 1:
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-    while date(year, month, 1) <= last:
-        yield date(year, month, 1)
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-
-
-def axis_ticks(first: date, last: date, room: int) -> tuple[Tick, ...]:
-    """The dates marked along the axis and their labels: every day, else every Monday,
-    else every month's first — the finest unit whose marks fit ``room`` (how many labels
-    the plot has width for) — and months thinned to every second, third… when even those
-    do not. Calendar boundaries, never an even division of the span, because a reader
-    places a point by the nearest mark. At least one mark, whatever the room."""
-    days = list(_days(first, last))
-    if len(days) <= room:
-        return _with_years([(when, _day_label(when)) for when in days])
-    mondays = list(_mondays(first, last))
-    if mondays and len(mondays) <= room:
-        return _with_years([(when, _day_label(when)) for when in mondays])
-    months = list(_month_starts(first, last))
-    every = max(1, ceil(len(months) / max(1, room)))
-    ticks = _with_years([(when, _month_label(when)) for when in months[::every]])
-    return ticks or ((first, _day_label(first)),)
 
 
 class ProgressChart(QWidget):

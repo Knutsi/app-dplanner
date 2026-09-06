@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
     from dplanner.cli import CliCommand
     from dplanner.cli.gate import TopologyGate
+    from dplanner.cli.report.parts import ReportSource
     from dplanner.domain.aspects import AspectSpec
     from dplanner.domain.assets import AssetSource
     from dplanner.domain.model import Library, Project, Step
@@ -45,6 +46,7 @@ if TYPE_CHECKING:
     from dplanner.modules.feature.catalogue import FeatureSource
     from dplanner.modules.project_editor.clipboard import PastePolicy
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
+    from dplanner.modules.sync.service import Publication
 
 __all__ = [
     "aspect_specs",
@@ -68,10 +70,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
         SetModuleDataCommand,
     )
     from dplanner.domain.model import Library, Project, TextEdit
-    from dplanner.domain.ordering import placed
     from dplanner.domain.relocate import move_project
     from dplanner.domain.repositories import RepositoryFacts, repository_facts
-    from dplanner.domain.schedule import format_date, format_days, schedule
+    from dplanner.domain.schedule import format_days, schedule
     from dplanner.domain.scope import gatherers
     from dplanner.domain.store import LibraryStore
     from dplanner.framework.aspect_bar import AspectTemplate
@@ -125,6 +126,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         RepositoryServices,
     )
     from dplanner.modules.reopen_tabs.module import ReopenTabsDeps, ReopenTabsModule
+    from dplanner.modules.reporting.module import ReportingDeps, ReportingModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
     from dplanner.modules.spec.cli import digest_of as spec_digest_of
@@ -165,7 +167,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
-    from dplanner.modules.testing.aspect import enabled as test_enabled
     from dplanner.modules.testing.aspect import read as tests_read
     from dplanner.modules.testing.module import TestsDeps, TestsModule
     from dplanner.modules.time_estimates.module import (
@@ -350,42 +351,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
 
     def milestone_stats(project: "Project") -> dict[str, str]:
-        """What each milestone answers with: the schedule's accumulated days and landing
-        date at its row — the same pair the order table's milestone row highlights.
-
-        A milestone closes the block of work above it, so its number is the walk's total
-        at that row. One walk per project rather than one per milestone, because a canvas
-        sync asks for every milestone at once and the order is the same for all of them.
-        A milestone the project cannot date is absent; so is every step when nothing is a
-        milestone, which costs the sync no walk at all.
-        """
-        if not any(milestone_read(step) for step in project.steps):
-            return {}
-        stats: dict[str, str] = {}
-        for scheduled in step_schedule(project.id, placed(library, project)):
-            step = scheduled.place.step
-            if not milestone_read(step):
-                continue
-            if scheduled.finish is not None:
-                stats[step.id] = (
-                    f"{format_days(scheduled.accumulated)} · {format_date(scheduled.finish)}"
-                )
-            elif scheduled.accumulated:
-                stats[step.id] = format_days(scheduled.accumulated)
-        return stats
+        return _milestone_stats(library, project)
 
     def step_type_icons(step: "Step") -> tuple[str, ...]:
-        """What kind of thing a step is, in the medallion vocabulary the canvas painted
-        first: "tag" a milestone, "layers" a feature, "spark" an agent step, "beaker" one
-        carrying tests, "shield" a check. The order table's title column reads the same
-        answer, so a step is the same kind everywhere."""
-        return (
-            *(("tag",) if milestone_read(step) else ()),
-            *(("layers",) if is_feature(step) else ()),
-            *(("spark",) if agent_enabled(step) else ()),
-            *(("beaker",) if test_enabled(step) else ()),
-            *(("shield",) if check_read(step) else ()),
-        )
+        return _step_type_icons(step)
 
     def set_separate_instruction(step_id: str, separate: bool) -> None:
         """The Description block's checkbox, translated into the agent aspect's writes.
@@ -825,6 +794,41 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
     )
 
+    # Constructed before the list because Save publishes through it: the sync module is
+    # handed `publication_for` and never learns this module's name. The sources are the
+    # tuple `dplanner report` reads (`_report_sources`), so the page a Save writes and the
+    # page the terminal writes are one page.
+    reporting = ReportingModule(
+        ReportingDeps(
+            library=library,
+            actions=services.actions,
+            context=services.context,
+            tasks=services.tasks,
+            status=services.window,
+            settings_sections=services.settings_sections,
+            parent=services.window,
+            files=store.files,
+            project_dir=store.project_dir,
+            repo_root=lambda project_id: find_repo_root(store.project_dir(project_id)),
+            plan_remote=lambda project_id: origin_url(store.project_dir(project_id)),
+            sources=_report_sources(),
+            key_of=_step_key,
+            kind_of=_step_kind,
+            status_for=step_status,
+        )
+    )
+
+    def publication_for(group: object) -> "Publication | None":
+        """Save's hook: the reports of every project a repository group covers, written
+        beside the plan in the same commit — or nothing, when the switch is off."""
+        members = [
+            project.id for project in library.projects if store.repo_for(project.id) is group
+        ]
+        root = find_repo_root(store.project_dir(members[0])) if members else None
+        if root is None:
+            return None
+        return reporting.prepare_publication(root, members)
+
     def pick_assets(node_id: str) -> "list[Payload]":
         """Insert from Assets…: the picker over the node's project's whole catalog.
 
@@ -1020,6 +1024,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 repo_for=store.repo_for,
                 focused_project=focused_project,
                 projects_in=projects_in,
+                publisher=publication_for,
             )
         ),
         # After sync, so the conflict button lands to the right of the library path.
@@ -1334,6 +1339,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
         step_order,
         progression,
         time_estimates,
+        # After every module whose report_source it renders; before Settings, whose dialog
+        # is built from the sections registered by then.
+        reporting,
         # Declares the progress history's format only; the recorder above writes it.
         ProgressHistoryModule(),
         InstallModule(
@@ -1620,6 +1628,161 @@ def _step_key(step: "Step") -> str:
         else "S"
     )
     return f"{letter}{step.number}"
+
+
+def _step_kind(step: "Step") -> str:
+    """What a step *is*, in one word, the coarser claim first — the same ranking as the key's
+    letter and the body tone: milestone, feature, check, agent step, or nothing."""
+    from dplanner.modules.feature.aspect import is_feature
+    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
+    from dplanner.modules.step_check.aspect import read as check_read
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+
+    if milestone_read(step):
+        return "milestone"
+    if is_feature(step):
+        return "feature"
+    if check_read(step):
+        return "check"
+    if agent_enabled(step):
+        return "agent"
+    return ""
+
+
+def _milestone_stats(library: "Library", project: "Project") -> dict[str, str]:
+    """What each milestone answers with: the schedule's accumulated days and landing date
+    at its row — the same pair the order table's milestone row highlights.
+
+    A milestone closes the block of work above it, so its number is the walk's total at
+    that row. One walk per project rather than one per milestone, because a canvas sync
+    asks for every milestone at once and the order is the same for all of them. A
+    milestone the project cannot date is absent; so is every step when nothing is a
+    milestone, which costs the sync no walk at all.
+    """
+    from dplanner.domain.schedule import format_date, format_days
+    from dplanner.modules.estimation.schedule import project_schedule
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+
+    if not any(milestone_read(step) for step in project.steps):
+        return {}
+    stats: dict[str, str] = {}
+    for scheduled in project_schedule(library, project):
+        step = scheduled.place.step
+        if not milestone_read(step):
+            continue
+        if scheduled.finish is not None:
+            stats[step.id] = (
+                f"{format_days(scheduled.accumulated)} · {format_date(scheduled.finish)}"
+            )
+        elif scheduled.accumulated:
+            stats[step.id] = format_days(scheduled.accumulated)
+    return stats
+
+
+def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
+    """The figure at each card's bottom right: a milestone's total and landing, any other
+    step's estimate — what the canvas paints, read once for the report's graph."""
+    from dplanner.domain.schedule import format_days
+    from dplanner.modules.estimation.aspect import read as estimated_days
+
+    stats = _milestone_stats(library, project)
+    for step in project.steps:
+        if step.id in stats:
+            continue
+        days = estimated_days(step)
+        if days is not None:
+            stats[step.id] = format_days(days)
+    return stats
+
+
+def _step_type_icons(step: "Step") -> tuple[str, ...]:
+    """What kind of thing a step is, in the medallion vocabulary the canvas painted
+    first: "tag" a milestone, "layers" a feature, "spark" an agent step, "beaker" one
+    carrying tests, "shield" a check. The order table's title column reads the same
+    answer, so a step is the same kind everywhere."""
+    from dplanner.modules.feature.aspect import is_feature
+    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
+    from dplanner.modules.step_check.aspect import read as check_read
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.testing.aspect import enabled as test_enabled
+
+    return (
+        *(("tag",) if milestone_read(step) else ()),
+        *(("layers",) if is_feature(step) else ()),
+        *(("spark",) if agent_enabled(step) else ()),
+        *(("beaker",) if test_enabled(step) else ()),
+        *(("shield",) if check_read(step) else ()),
+    )
+
+
+def _report_sources() -> tuple["ReportSource", ...]:
+    """Every module's say in a report, in page order.
+
+    The tuple both surfaces read — ``dplanner report`` and the window's exports and
+    on-Save site — assembled here because each ``report_source()`` lives in its owner's
+    Qt-free half and no module may import another. Cross-module readers are handed in as
+    functions, the way the CLI verbs get theirs; the order is the order parts land in
+    their slots when two modules place at the same rank.
+    """
+    from dplanner.modules.decisions.report import report_source as decisions
+    from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
+    from dplanner.modules.estimation.aspect import read as estimated_days
+    from dplanner.modules.estimation.aspect import read_history as estimate_history
+    from dplanner.modules.estimation.report import report_source as estimates
+    from dplanner.modules.estimation.schedule import project_schedule, start_of
+    from dplanner.modules.feature.report import report_source as features
+    from dplanner.modules.github.report import report_source as github
+    from dplanner.modules.progression.report import report_source as progression
+    from dplanner.modules.project_editor.report import report_source as graph
+    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
+    from dplanner.modules.step_description.report import report_source as descriptions
+    from dplanner.modules.step_handoff.report import report_source as handoffs
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_milestone.report import report_source as milestones
+    from dplanner.modules.step_order.report import report_source as order
+    from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.modules.step_ticket.report import report_source as tickets
+    from dplanner.modules.testing.report import report_source as tests
+    from dplanner.modules.time_estimates.report import report_source as time_estimates
+
+    summaries = aspect_summaries(skip={ESTIMATION_ID})
+
+    def step_aspects(step: "Step") -> list[str]:
+        return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
+
+    return (
+        progression(status_for=step_status, days_for=estimated_days, key_of=_step_key),
+        time_estimates(
+            days_for=estimated_days,
+            is_agent=agent_enabled,
+            status_for=step_status,
+            start_of=start_of,
+            milestone_label=milestone_read,
+            estimate_history=estimate_history,
+            key_of=_step_key,
+        ),
+        graph(
+            key_of=_step_key,
+            kind_of=_step_kind,
+            status_for=step_status,
+            stats_of=_step_stats,
+            badge_of=milestone_read,
+        ),
+        order(
+            schedule_of=project_schedule,
+            step_aspects=step_aspects,
+            milestone_label=milestone_read,
+        ),
+        estimates(),
+        milestones(),
+        features(),
+        descriptions(),
+        tests(key_of=_step_key),
+        handoffs(),
+        tickets(),
+        github(),
+        decisions(key_of=_step_key),
+    )
 
 
 def _ticket_key(step: "Step") -> str:
@@ -1993,6 +2156,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.cli.desktop import commands as desktop_commands
     from dplanner.cli.gate import RECORD_FILE, TopologyGate, gated
     from dplanner.cli.lint import commands as lint_commands
+    from dplanner.cli.report.commands import commands as report_commands
     from dplanner.cli.scopes import commands as scope_commands
     from dplanner.cli.scopes import lint_checks as scope_lint
     from dplanner.cli.skill import commands as skill_commands
@@ -2114,6 +2278,14 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         # A decision names the step it was made on by id and prints it by key — the
         # same rule every row prints, handed over rather than imported.
         *decision_cli.commands(key_of=_step_key),
+        # The report is every module's Qt-free say, assembled once (`_report_sources`) for
+        # the terminal and the window alike; the readers every step row needs come with it.
+        *report_commands(
+            sources=_report_sources(),
+            key_of=_step_key,
+            kind_of=_step_kind,
+            status_for=step_status,
+        ),
         # The journal both surfaces write, read back: the paths are the process's, handed
         # over here so a test can point the same verbs at a file of its own.
         *telemetry_commands(journal=journal_path(), crash_log=crash_log_path()),
