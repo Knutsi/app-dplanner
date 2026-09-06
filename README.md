@@ -40,7 +40,13 @@ Tests are what a step must keep passing once it is done: a step carries several,
 step gathers every test it waits on, and a *test run* records what each one did. Every
 image and file a project carries is browsable in one place — the Assets tab and
 `dplanner asset` list what exists, who uses each, and what a sweep may safely remove —
-and any prose editor can reuse one with Insert from Assets….
+and any prose editor can reuse one with Insert from Assets…. The Time Estimates tab
+also says how far each milestone has come against the plan as it stood at the start —
+the plan then, the plan now with the change between them, and what actually landed — and
+`dplanner progress show` prints the same, with the steps and estimates that moved it.
+The decisions a project made along the way
+are a log beside it (`dplanner decision add`, the project panel's Decisions card) that
+every agent's briefing carries.
 
 ## Running
 
@@ -196,7 +202,8 @@ src/dplanner/
 │   ├── aspects.py           what an aspect is: id, label, summary, data format
 │   ├── ordering.py          what order a project can be done in, and what can start now
 │   ├── scope.py             what a collector gathers: the cone, truncated at the next one
-│   ├── schedule.py          the same walk carrying estimates: running totals and dates
+│   ├── schedule.py          the same walk carrying estimates: running totals, dates, and when each
+│   │                        step lands in a staffed simulation
 │   ├── progression.py       the status-aware frontier: what can be launched right now
 │   ├── commands.py          undoable changes — the vocabulary the GUI and CLI share
 │   ├── shelf.py             where a turned-off aspect's data waits: turn_off / turn_on, and the migration into it
@@ -245,7 +252,7 @@ src/dplanner/
 │   ├── projects/            the Projects folder in the index, the project verbs, New Project…, Open
 │   │                        Projects…, the Project dialog (settings, both logs), the Repositories
 │   │                        card, Move Plan, and the repositories folder clones land in
-│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, lasso, regions, resize) and renderers,
+│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, lasso, divide, regions, resize) and renderers,
 │   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid;
 │   │                        ground.py paints the background)
 │   │                        (clipboard.py is what a copied step is; clipboard_verbs.py the Edit menu's
@@ -281,11 +288,17 @@ src/dplanner/
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, the project's Tests tab and the library-wide roll call
 │   ├── step_handoff/        what a step passes forward, and who inherits it
-│   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, the missing-gh notice
+│   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, where
+│   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── progression/         the execution board — what can be launched now — and `dplanner progression show`
-│   ├── time_estimates/      the staffing matrix, the milestones in sequence and the calendar they date — `dplanner schedule matrix`, `schedule palette`, `schedule milestone`
+│   ├── time_estimates/      the staffing matrix, the milestones in sequence and the calendar they date —
+│   │                        `dplanner schedule matrix`, `schedule palette`, `schedule team`, `schedule milestone`;
+│   │                        and progress against the plan (progress.py derives it, recorder.py writes the
+│   │                        day's history, chart.py draws expected against actual) — `dplanner progress show|record`
+│   ├── decisions/           the decisions a project made along the way: the log (log.py), `dplanner decision`,
+│   │                        the project panel's Decisions card — and every briefing's *Decisions so far*
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
 │   │                        and page rendering; editor.py: the in-app markdown editor)

@@ -1000,6 +1000,21 @@ link ends connect; Shift on the release folds the catch into what was already se
 Nothing in it is new machinery: the outline it draws is the same `OutlinePreviewItem` the
 region mode drags out, reached through one `aim_outline` on the `Canvas` protocol.
 
+The divide is the stack used twice over. `DivideMode` is switchable like the lasso — View ▸
+Divide ▸ Vertical or Horizontal, `D` or `Shift+D` on the canvas — and does nothing but lay a
+cut under the cursor from edge to edge; the press hands over to `DivideDragMode`, a
+`GestureMode` in the card resize's mould, which *takes the divide mode's place* on the stack
+and so ends it when it pops: one divide ends the mode the way one lasso does, and Escape
+mid-drag puts the cards back and leaves, as it does for a resize. Every card is held for the
+drag, because either side may be the one that moves: which side a card is on is decided once,
+by its centre at the press, and the sign of the drag says which side goes — so dragging back
+past the cut returns the far side and pushes the near one with no state to clear. The release
+is one `graph_divided` signal carrying only the cards that moved, and the activity makes it
+one `Divide Graph` command, so a whole side comes back with one Ctrl+Z. Nothing is stored
+about the cut itself — a divide is a move of many cards, and what makes it a tool rather than
+a drag of a selection is that it names the side by geometry, not by what was picked — and the
+band it draws while it lasts, the room being made, is the outline item the lasso already had.
+
 ### An explicit sort persists; the ambient layout never does
 
 Two things place a node, and they persist differently on purpose. The **ambient layout** —
@@ -2461,6 +2476,94 @@ decisions worth writing down:
   the names in place of the calendar, and `schedule matrix` exits non-zero with them.
   A view that computes on every change has to be robust to every state the file can be
   in, or it is a view that sometimes shows a picture of nothing.
+- **The team is an assumption, so it is stored — and a tile click is the write.** The
+  matrix's selection used to be view state that reset on every open, which meant the
+  calendar, the landing list and `schedule matrix` could each be dating the plan for a
+  different team. It is the project's now — `{"team": [2, 3]}` beside the focus factor
+  and the palette, one `Assumptions` record read and written whole so no control has to
+  juggle the other two — pushed by the tile click as *Choose Team* and by `dplanner
+  schedule team`, restored when the tab reopens, and the team every stretch, every row's
+  percentage and every recorded day are computed for. When the agent columns collapse
+  (no agent steps), a stored team the grid cannot show selects the nearest seat it can,
+  and a sync is never a click.
+
+### Progress against the plan: the promise is derived, the past is recorded
+
+The calendar says when each milestone lands; a person working the plan wants the other
+half — how far it has come, and whether it is on the curve it promised. The chart under
+the milestone list answers with the shape a trip planner's energy graph has: the plan's
+curve, what actually landed, and, faintly behind them, every earlier promise. Three
+decisions carry it:
+
+- **Two measures, both honest, neither hidden.** By steps (done over steps) and by
+  estimated days (the days of done steps over the days of all); the toggle above the
+  chart picks which the chart and the rows read, and the figure beside the caption
+  always prints both. A count never lies about what it is, and a weighted share
+  answers "how much of the *work*"; picking one for everybody would have been a claim
+  the numbers do not carry. Both are `time_estimates/progress.py` over `status_for` —
+  the status aspect's reader handed in like `days_for`, so this module never learns
+  where a status lives — and "toward a milestone" is **cumulative through its
+  stretch**, because a milestone lands when everything before it has, not only what is
+  new since the last one.
+- **The expected curve is the simulation's own.** A straight line from start to landing
+  would be a guess wearing the plan's colour. `parallel_finish` already knows the
+  working day each step lands on; it now says so (`ParallelFinish.landings`, carried on
+  each `Phase`), and the curve is the cumulative share landed by date — exact for the
+  stored team and focus, and free, because the simulation ran anyway.
+- **The past is recorded, because it is the one thing that cannot be derived.** What the
+  plan looked like last Tuesday — how many steps, how much done, when it said it would
+  land — is gone the moment the plan changes, and a chart of expected against actual is
+  nothing without it. So a snapshot is written: one row per day, the stretches in
+  sequence with their tallies, starts and landings, under a module id of its own
+  (`progress_history`) so the assumptions file stays byte-stable. Three rules keep it
+  from being the stored-answer mistake `ordering.py` warns about. It is written **only
+  on a day something in it changed** — a window open on an untouched plan writes
+  nothing — and last-wins within the day. It is written **directly, with its own
+  origin, never onto the undo stack** (`recorder.py`; the PR refresher's rule): a record
+  of what the plan looked like is not a user decision, and Ctrl+Z after marking a step
+  done must undo the status, after which the next settle simply re-records the day.
+  And it is written by whoever is there: the window's recorder after every settled
+  change to any project, `dplanner progress record` for a plan driven from the
+  terminal — the skill says when. Each row also carries the stretch's **landing knots**
+  — what the simulation landed on each date — so the plan as it stood on any recorded
+  day is drawn *exactly*, never reconstructed from what the graph looks like now.
+- **Three lines: the plan then, the plan now, and what landed — and the delta is the
+  band between the first two.** The first cut drew every earlier promise as its own
+  dashed segment; the walk that redesigned it wanted one question answered clearly:
+  *how has the plan moved since we started?* So there is one **baseline** — the plan as
+  recorded on the **basis** day, the project's start unless a day is picked beside the
+  chart (`progress show --basis`) — chosen as the last row on or before the basis, or
+  the earliest row for a project older than its history, and the chart draws it dashed,
+  the plan now solid, and the change since as a wash between them; a landing that moved
+  is the gap between the hollow mark and the filled one on the 100 % line. The baseline
+  is painted *last*, in a paler shade mixed opaque: a plan unchanged since the basis
+  has a baseline that coincides with it, and a translucent dash of the same hue under
+  the solid line was invisible — the first cut showed one line under a caption saying
+  *unchanged*, and the reader took the other for a line that had failed to draw.
+  Dashes riding on the solid line say *two lines in the same place*, which is the
+  fact. The axis is marked at calendar boundaries (`chart.axis_ticks`: every day,
+  every Monday or every month's first, the finest whose labels fit the width) because
+  a reader places a point by the nearest mark; two labels at the ends of the span were
+  not a scale. Milestones stand on the chart as hairlines in their shades where the
+  plan lands them, named at the top — the marks a reader was placing the curve against
+  in their head — and a span the plan leaves empty (a milestone's own start date holding
+  its work back past the previous landing) is dotted and pulled toward the surface, with
+  a knot in the expected line at the day work resumes so the gap is flat rather than a
+  slope through days nothing is planned for. `progress.marks` and `progress.idle`
+  derive both from the snapshot's stretches, so `progress show` prints the same gaps.
+  The figure
+  under the caption says the delta in words — steps and days added, the landing shifted
+  in working days — and its tip names **why**: the steps born after the baseline's day
+  (the model's `created` stamp) and the estimates changed after it. That second list
+  needed a fact nobody kept: **an estimate now remembers what it was** — every write of
+  the aspect carries the value it replaced with the day, one row per day (the value that
+  stood when the day began), format 2 so an older build refuses to rewrite rather than
+  drop it; `dplanner estimate show` prints it, the Estimate block's field wears it as a
+  tooltip. Both the delta and the change list are measured **from the baseline's
+  recorded day**, not from the basis: the record is what the delta compares against, so
+  what the list names is what moved it, and a change on the record's own day is inside
+  that day's record (last-wins). The basis is a way of looking — view state, never
+  stored.
 
 ## A test belongs to a step, and a step carries several
 
@@ -2877,6 +2980,38 @@ but the one it landed in — the card under the pointer stays under the pointer.
 paint with the primitives the canvas paints with (`theme/cards.py`, moved there so two
 modules can share them without importing each other), and every colour is read from the
 scene's palette at paint time, so a theme switch costs nothing.
+
+## A decision is a record, and the briefing carries it
+
+A plan says what; a decision says why the plan went one way and not another — the
+trade-off taken, the convention settled, the option rejected. Until now that reasoning
+lived in commit messages and agent transcripts, and the first real project with four
+agents in worktrees showed the cost: the fourth agent re-argued what the first three had
+settled, because nothing it was handed said so. Three decisions:
+
+- **A record list beside the project, not a prose document and not a spec.** The
+  obvious homes were the spec module (the topology is already the project's prose there)
+  or one markdown log. Neither fits: a decision is *addressed* — a later one supersedes an
+  earlier one by id, a briefing lists them one by one, a card shows them as rows — so it
+  is a record with an id (`D1, D2, …`, minted per project and never reused, the feature
+  catalogue's precedent), a title, markdown reasoning inside the record (the shape
+  `testing` and `feature` settled on for N documents per node), the day, and the step it
+  was made on. `modules/decisions/` is its own module because it is its own concern: the
+  spec is what the project *answers to*, a decision is what the project *chose*.
+- **Adding twice is one decision, and reversing is a new one.** An agent re-runs a verb
+  after a stale-workspace refusal, or an epilogue runs again; a title already in the log
+  *is* that decision, reported with the verb that revises it and never duplicated. A
+  reversal is a new record `--supersedes` the old — the history stays, `decision list`
+  shows what stands, `--all` shows what did — because a decision edited into its
+  opposite is the one kind of history nobody can reconstruct.
+- **The briefing carries what stands.** `_briefing_project_sections` lists the standing
+  decisions beside the topology, title and reasoning, superseded ones left out, and
+  names the verb to record a new one — so an agent builds on what was settled rather
+  than around it, and records what it settles in the same breath as its status. The
+  window's half is the project panel's Decisions card: rows, a double-click into a
+  buttonless live editor (every field undoable, per-record undo labels), and *Add
+  Decision…* that records a fresh one and opens it on the title, the way Step ▸ New
+  opens the details on the name.
 
 ## The topology is read before the graph is edited
 

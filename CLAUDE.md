@@ -101,6 +101,10 @@ says so in one line, where faulthandler shows four Python frames and a symbol
 depends on its width implements `heightForWidth` and lets the layout ask; it never resizes
 itself in `resizeEvent`.** `time_estimates/months.py` is the worked example, and its
 regression test sweeps a scroll area across every width that could flip the scrollbar.
+**Its `minimumSizeHint` is the least it can ever need — one row — never its `sizeHint`**:
+a resizable scroll area sizes its page to the minimum, and a minimum computed at the
+*minimum width* (every month in one column) made the Time tab scroll over empty space
+in any window.
 
 **A worker that segfaults after reporting green is dying at exit, not in a test.** The
 2026-09-03 cores — two per full run, "Process crashed: python3.13" on the desktop, the
@@ -446,6 +450,15 @@ root, stop and look for the registry or capability you have not found yet.
   edges. One lasso ends the mode, Shift on the release adds to the selection, and the mode
   switch is `steps.lasso` (`S` on the canvas), the same shape as `steps.connect`. Region and
   lasso share one `OutlinePreviewItem` through `Canvas.aim_outline`.
+- **Divide is a mode, and it pushes a side.** `DivideMode` (View ▸ Divide ▸ Vertical or
+  Horizontal; `D` and `Shift+D` on the canvas) lays a cut under the cursor from edge to
+  edge, and the press hands over to `DivideDragMode`, a `GestureMode` that holds every card
+  and shifts the ones on the side dragged towards by the snapped distance. Which side a card
+  is on is its **centre** at the press, and a drag back past the cut flips the sides. The
+  release is one `graph_divided` signal and one `Divide Graph` command, written only for the
+  cards that moved; one divide ends the mode, and Escape puts the cards back and leaves. The
+  band drawn beside the cut — the room being made — is the same `OutlinePreviewItem`.
+  `ARCHITECTURE.md`'s *Who owns the canvas's input* has the reasoning.
 - **Isolate is one domain question and one domain command.** `Library.boundary_edges()`
   names every edge with exactly one end in a set (both kinds, skipping edges to a deleted
   step, as the canvas skips them) and `remove_edges_command()` turns edges into one
@@ -838,16 +851,63 @@ root, stop and look for the registry or capability you have not found yet.
   from a date of its own, when it has one and that is later; an earlier date is *pushed*
   and reported, never silently overlapped. Calendar time is the same walk over a wrapped
   `days_for` (`time_estimates/schedule.py`'s `stretched`), so the domain never learns what
-  an efficiency is. Four things reach disk, all under `time_estimates`: the focus factor
-  and the colour map on the project node, and a milestone's start date and colour on its
-  step — written by the tab's controls and `dplanner schedule focus` / `schedule palette`
-  / `schedule milestone` alike. **Milestones are shades of one map, dealt by place in the
+  an efficiency is. Five assumptions reach disk, all under `time_estimates`: the focus
+  factor, the colour map and the **team** the calendar is dated for on the project node
+  (one `Assumptions` record, `schedule.py`'s `read_assumptions`/`write_project` — a
+  control changing one carries the others as stored), and a milestone's start date and
+  colour on its step — written by the tab's controls (a matrix tile click *is* the
+  team) and `dplanner schedule focus` / `schedule palette` / `schedule team` / `schedule
+  milestone` alike. **Milestones are shades of one map, dealt by place in the
   sequence** (`schedule.py`'s `PALETTES` and `shades`), never a list of hues; the
-  milestone list under the calendar is the one list — the date you set and the date it
-  lands sit on one row. A cycle a
+  milestone list under the calendar is the one list — the date you set, the date it
+  lands and how much of it has landed sit on one row. A cycle a
   hand-edited file smuggled in is named by `ordering.cyclic()` and the tab says so instead
   of drawing a calendar over a broken walk. `ARCHITECTURE.md`'s *Time estimates: two
   worker pools, one greedy simulation* has the reasoning.
+- **Progress is derived; the day's progress is recorded.** How far a milestone has come —
+  by steps and by estimated days, everything through its stretch — is
+  `time_estimates/progress.py` over the statuses (`status_for`, handed in like `days_for`),
+  and the plan's expected curve is the simulation's own per-step landings
+  (`domain/schedule.py`'s `ParallelFinish.landings`, carried on each `Phase`). The one
+  thing that cannot be derived is the past: a `Snapshot` — one row per stretch, steps,
+  done, days, done days, start, landing, and the **landing knots** the curve is drawn
+  through — is written under a second module id, `progress_history`, **only on a day
+  something in it changed**, last-wins within the day, by `recorder.py` after every
+  settled change in the window and by `dplanner progress record` from the terminal.
+  The recorder writes directly with its own origin, off the undo stack (the PR
+  refresher's rule — Ctrl+Z undoes the status, not the record). **The baseline is the
+  plan as recorded on the basis day** — the project's start, or the day picked beside
+  the chart / `progress show --basis` — the last row on or before it (the earliest row
+  for a project older than its history), drawn exactly from its knots; the chart
+  (`chart.py`) draws it dashed **over** the plan now, opaque and paler — so a plan
+  unchanged since the basis reads as two lines in one place, not one — the plan now
+  solid, the band between them as the change since, and what actually landed in ink,
+  on an axis marked at days, Mondays or month firsts (`axis_ticks`) over a hairline
+  grid; each milestone stands on it as a named hairline where the plan lands it, and
+  a span a milestone's own start date leaves empty is flat and dotted (`progress.marks`,
+  `progress.idle` — the same two `progress show` prints). The delta figure (`delta`, `delta_words`) says
+  what was added and how the landing moved **since the baseline's recorded day**, and
+  `changes_since` names the steps born and the estimates changed after that day — the
+  step's `created` stamp and the estimate aspect's own history (`estimation`'s
+  `read_history`; every `write` carries the value it replaced, one row per day, format
+  2; `dplanner estimate show` reads it back). `ARCHITECTURE.md`'s *Progress against the
+  plan* has the reasoning.
+- **A decision is a record beside the project, and every briefing carries the standing
+  ones.** `modules/decisions/` — `log.py` (Qt-free; `D1, D2, …` minted per project, a
+  title, markdown reasoning, the day, the step it was made on, what it supersedes),
+  `dplanner decision add|set|remove|list|show`, and the project panel's Decisions card.
+  **Adding a title already in the log is that decision**, reported and not duplicated,
+  so an agent's retry never leaves two; a reversal is a new record `--supersedes` the
+  old, never an edit. The briefing's *Decisions so far* (`_briefing_project_sections`)
+  lists what stands, so the fourth agent builds on what the first three settled.
+  `ARCHITECTURE.md`'s *A decision is a record, and the briefing carries it* has the
+  reasoning.
+- **The GitHub tab's standing line is the picker fetch.** Showing a step fetches the
+  repository's branches and PRs (again past `LISTS_TTL_S`), and the answer says where
+  the refs stand — the PR's state and title now, whether the branch is still on the
+  remote — writes fresh PR state into the step with the refresher's origin, and enables
+  *Open PR* / *Open branch* (`aspect.py`'s `pr_url`/`branch_url`, the recorded URL over
+  one built from the number). `dplanner github show` is the terminal's copy.
 - **A test belongs to a step, and a step carries several.** A description says what a step
   *is*; a test says how you would prove it, and it outlives the step. A test is **not a
   node** — it is a record in the step's `testing` aspect with its own id, title, markdown

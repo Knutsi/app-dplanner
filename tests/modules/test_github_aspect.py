@@ -21,6 +21,7 @@ from dplanner.modules.github.gh import PrInfo
 
 MERGED = PrInfo(number=12, title="Add login flow", state="merged", url="u12", head_ref="feat/login")
 OPEN = PrInfo(number=7, title="Fix crash", state="open", url="u7", head_ref="fix/crash")
+OPEN_12 = PrInfo(number=12, title="Fix crash", state="open", url="u12", head_ref="fix/crash")
 
 
 def add_origin(repo, url):
@@ -252,3 +253,39 @@ def test_refresh_without_changes_reports_zero_updates(cli, origin, gh_present, m
     monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: OPEN)
     cli("github", "set", "Read the spec", "--pr", "7")
     assert json.loads(cli("github", "refresh", "--json")) == {"checked": 1, "updated": 0}
+
+
+# -- where the refs stand ----------------------------------------------------------------------
+
+
+def test_show_prints_the_refs_and_where_they_stand(cli, origin, reload, gh_present, monkeypatch):
+    monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: MERGED)
+    monkeypatch.setattr(github_cli, "list_branches", lambda repo: ["main"])
+    cli("github", "set", "Read the spec", "--branch", "feat/login")
+    cli("github", "set", "Read the spec", "--pr", "12")
+    said = cli("github", "show", "Read the spec")
+    assert "PR #12 is merged · Add login flow" in said
+    assert "feat/login is not on the remote — deleted after the merge?" in said
+    assert "u12" in said  # the PR's recorded URL, over one built from the number
+    assert "https://github.com/acme/widget/tree/feat/login" in said
+    data = json.loads(cli("github", "show", "Read the spec", "--json"))
+    assert data["checked"] is True and data["branch_on_remote"] is False
+    assert data["pr_state"] == "merged" and data["branch_link"].endswith("/tree/feat/login")
+
+
+def test_show_writes_fresh_state_and_says_when_it_could_not_check(
+    cli, origin, reload, gh_present, gh_less, monkeypatch
+):
+    """Recorded gh-less, the state is empty; shown with gh, the answer is written back."""
+    cli("github", "set", "Read the spec", "--pr", "12")
+    assert stored_refs(reload).pr_state == ""
+    said = cli("github", "show", "Read the spec")
+    assert "stored state only" in said and "PR #12" in said
+    monkeypatch.setattr(github_cli, "which_gh", lambda: "/usr/bin/gh")
+    monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: OPEN_12)
+    monkeypatch.setattr(github_cli, "list_branches", lambda repo: ["main", "fix/crash"])
+    said = cli("github", "show", "Read the spec")
+    assert "PR #12 is open · Fix crash" in said and "fix/crash is on the remote" in said
+    assert stored_refs(reload).pr_state == "open" and stored_refs(reload).branch == "fix/crash"
+    cli("github", "clear", "Read the spec")
+    assert "no GitHub refs" in cli("github", "show", "Read the spec")

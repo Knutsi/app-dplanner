@@ -25,7 +25,7 @@ from dplanner.domain.schedule import (
 )
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
-from dplanner.modules.estimation.aspect import MODULE_ID, enabled, read, write
+from dplanner.modules.estimation.aspect import MODULE_ID, enabled, read, read_history, write
 from dplanner.modules.estimation.schedule import (
     critical_finish,
     finish_date,
@@ -102,6 +102,13 @@ def commands() -> list[CliCommand]:
             examples=("dplanner estimate set 'Read the spec' --days 3",),
         ),
         CliCommand(
+            path=("estimate", "show"),
+            summary="A step's estimate, and every value it had before with the day it changed.",
+            configure=step_arg,
+            run=_estimate_show,
+            examples=("dplanner estimate show S7",),
+        ),
+        CliCommand(
             path=("estimate", "clear"),
             summary="This step has no size of its own — a milestone, say. Stops lint asking.",
             configure=step_arg,
@@ -155,9 +162,32 @@ def _set(context: CliContext, args: Namespace) -> int:
     if args.days < 0:
         raise CliError("an estimate cannot be negative")
     step = find_step(context.library, args.step, context.current)
-    entry = write(args.days)
+    entry = write(args.days, previous=step.module_data.get(MODULE_ID))
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
     context.report({"step": step.id} | entry, f"{step.title}: {format_day_count(args.days)}")
+    return 0
+
+
+def _estimate_show(context: CliContext, args: Namespace) -> int:
+    """The estimate as it stands, and what it was before — one line per day it changed."""
+    step = find_step(context.library, args.step, context.current)
+    days = read(step)
+    history = read_history(step)
+    data = {
+        "step": step.id,
+        "days": days,
+        "on": enabled(step),
+        "history": [{"day": when.isoformat(), "days": was} for when, was in history],
+    }
+    said = (
+        f"{step.title}: {format_day_count(days)}"
+        if days is not None
+        else f"{step.title}: " + ("unestimated" if enabled(step) else "no estimate — no work")
+    )
+    lines = [said] + [
+        f"  was {format_day_count(was)} until {format_date(when)}" for when, was in history
+    ]
+    context.report(data, "\n".join(lines))
     return 0
 
 

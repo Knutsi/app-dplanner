@@ -353,6 +353,37 @@ def test_working_days_between_counts_both_ends_and_skips_the_weekend():
     assert working_days_between(MONDAY, date(2026, 9, 14)) == 6
 
 
+def test_the_simulation_says_when_each_step_lands(project):
+    """The makespan alone cannot draw an expected-progress curve; the per-step landings
+    can — and a phase dates them from its own start."""
+    from dplanner.domain.schedule import parallel_finish, phases
+
+    library, plan = project
+    a, b, c, d = plan.steps
+    days = days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0})
+    run = parallel_finish(library, plan, days, lambda _s: False, humans=1, agents=1)
+    assert run is not None
+    assert run.landings == {a.id: 1.0, b.id: 3.0, c.id: 6.0, d.id: 10.0}
+    (only,) = phases(
+        library,
+        plan,
+        days,
+        lambda _s: False,
+        humans=1,
+        agents=1,
+        start=MONDAY,
+        is_milestone=lambda _s: False,
+        start_for=lambda _s: None,
+    )
+    assert [only.landing_of(step.id) for step in plan.steps] == [
+        MONDAY,
+        date(2026, 9, 9),
+        date(2026, 9, 14),
+        date(2026, 9, 18),
+    ]
+    assert only.landing_of("nobody") == MONDAY  # unknown or weightless: the stretch's start
+
+
 def test_a_subset_simulation_treats_edges_out_of_it_as_met(project):
     from dplanner.domain.schedule import parallel_finish
 

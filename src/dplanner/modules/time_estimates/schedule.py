@@ -8,15 +8,19 @@ the terminal cannot answer "how long with two people and three agents" two diffe
 **Qt-free**, like ``estimation/schedule.py``: the CLI reaches this file and must start on a
 machine with no graphics stack. ``tests/test_architecture.py``'s ``HEADLESS_FILES`` names it.
 
-**Four assumptions reach disk, all under this module's id, and nothing derived does.**
-On the project node, ``{"efficiency": 0.5, "palette": "mako"}`` — the focus factor, the
-fraction of a working day a person actually spends on this project, and the colour map
-the milestones are shaded from (absent for the default, FORMAT.md's absence rule). On a
-milestone step, ``{"start": "2026-10-05", "color": "#e0602c"}`` — a date the milestone's
-stretch of work begins on rather than the day the previous one lands, and a colour chosen
-over the dealt one; either key alone is fine and an empty entry removes the file. One
-module, one namespace, two node kinds — ``estimation``'s precedent. Every matrix cell and
-every landing date is recomputed from the graph and the estimates, for ``ordering.py``'s
+**Five assumptions reach disk, all under this module's id, and nothing derived does.**
+On the project node, ``{"efficiency": 0.5, "palette": "mako", "team": [2, 3]}`` — the
+focus factor, the fraction of a working day a person actually spends on this project; the
+colour map the milestones are shaded from; and the **team** the calendar is dated for,
+people and coding agents (each absent for its default, FORMAT.md's absence rule — the
+smallest team, the way ``schedule matrix`` always printed its milestones). The three are
+one :class:`Assumptions`, read and written whole, so a control changing one carries the
+others as they are stored rather than each caller juggling the rest. On a milestone step,
+``{"start": "2026-10-05", "color": "#e0602c"}`` — a date the milestone's stretch of work
+begins on rather than the day the previous one lands, and a colour chosen over the dealt
+one; either key alone is fine and an empty entry removes the file. One module, one
+namespace, two node kinds — ``estimation``'s precedent. Every matrix cell and every
+landing date is recomputed from the graph and the estimates, for ``ordering.py``'s
 reason: a stored answer disagrees with what it came from the moment ``dplanner estimate
 set`` runs with no window open to notice.
 
@@ -37,7 +41,7 @@ Hex strings here so the CLI can print and store them; the view turns them into p
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from math import ceil
 from typing import Any, TypeGuard
@@ -57,6 +61,7 @@ DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 EFFICIENCY_KEY = "efficiency"
 DEFAULT_EFFICIENCY = 0.5
 PALETTE_KEY = "palette"
+TEAM_KEY = "team"
 START_KEY = "start"
 COLOR_KEY = "color"
 
@@ -64,6 +69,8 @@ COLOR_KEY = "color"
 # agent one, small enough to read at a glance.
 HUMANS = (1, 2, 3)
 AGENTS = (1, 2, 3, 4)
+# The team the calendar is dated for until somebody picks one: the smallest.
+DEFAULT_TEAM = (HUMANS[0], AGENTS[0])
 
 
 @dataclass(frozen=True)
@@ -146,9 +153,7 @@ def palette(palette_id: str | None) -> Palette:
 
 def read_palette(project: Project) -> Palette:
     """The colour map the project's milestones are shaded from."""
-    entry = project.module_data.get(MODULE_ID)
-    written = entry.get(PALETTE_KEY) if entry else None
-    return palette(written if isinstance(written, str) else None)
+    return palette(read_assumptions(project).palette)
 
 
 def _mix(low: str, high: str, share: float) -> str:
@@ -175,32 +180,95 @@ def shades(found: Palette, count: int) -> list[str]:
     return [shade(found, (index + 0.5) / count) for index in range(count)]
 
 
-def read_efficiency(project: Project) -> float:
-    """The stored focus factor, or the default. Anything unreadable reads as the default —
-    a factor outside (0, 1] would divide an estimate into nonsense, so it does too."""
-    entry = project.module_data.get(MODULE_ID)
-    if not entry:
-        return DEFAULT_EFFICIENCY
-    value = entry.get(EFFICIENCY_KEY)
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return DEFAULT_EFFICIENCY
-    if not 0.0 < value <= 1.0:
-        return DEFAULT_EFFICIENCY
-    return float(value)
+@dataclass(frozen=True)
+class Assumptions:
+    """What the project node stores about its staffing: each None where the file is
+    silent and the default answers. Read whole, changed with ``replace``, written whole."""
+
+    efficiency: float | None = None
+    palette: str | None = None
+    team: tuple[int, int] | None = None  # (people, agents)
 
 
-def write_project(efficiency: float | None, palette_id: str | None) -> dict[str, Any]:
-    """The project entry to store: the focus factor, and the palette when it is not the
-    default. Neither gives ``{}``, which removes the file — the project is back on both
-    defaults. A caller changing one passes the other as it reads it."""
+def read_assumptions(project: Project) -> Assumptions:
+    """The project's stored assumptions exactly as written — None for an absent key, and
+    for an unreadable one, so a rewrite drops it rather than carrying nonsense along."""
+    entry = project.module_data.get(MODULE_ID) or {}
+    efficiency = entry.get(EFFICIENCY_KEY)
+    # A bool is not a number here, and a factor outside (0, 1] would divide an estimate
+    # into nonsense — either reads as the default.
+    if (
+        isinstance(efficiency, bool)
+        or not isinstance(efficiency, int | float)
+        or not 0.0 < efficiency <= 1.0
+    ):
+        efficiency = None
+    written = entry.get(PALETTE_KEY)
+    palette_id = written if isinstance(written, str) and palette(written).id == written else None
+    return Assumptions(
+        efficiency=float(efficiency) if efficiency is not None else None,
+        palette=palette_id,
+        team=_team_in(entry.get(TEAM_KEY)),
+    )
+
+
+def _team_in(value: object) -> tuple[int, int] | None:
+    if not isinstance(value, list) or len(value) != 2:
+        return None
+    humans, agents = value
+    if any(isinstance(count, bool) or not isinstance(count, int) for count in (humans, agents)):
+        return None
+    return (humans, agents) if humans >= 1 and agents >= 1 else None
+
+
+def write_assumptions(assumptions: Assumptions) -> dict[str, Any]:
+    """The project entry to store. Every field on its default gives ``{}``, which removes
+    the file — the project is back on every default."""
     entry: dict[str, Any] = {}
-    if efficiency is not None:
-        entry[EFFICIENCY_KEY] = float(efficiency)
-    if palette_id is not None and palette_id != DEFAULT_PALETTE:
-        if palette(palette_id).id != palette_id:
-            raise ValueError(f"no palette called {palette_id!r}")
-        entry[PALETTE_KEY] = palette_id
+    if assumptions.efficiency is not None:
+        entry[EFFICIENCY_KEY] = float(assumptions.efficiency)
+    if assumptions.palette is not None and assumptions.palette != DEFAULT_PALETTE:
+        if palette(assumptions.palette).id != assumptions.palette:
+            raise ValueError(f"no palette called {assumptions.palette!r}")
+        entry[PALETTE_KEY] = assumptions.palette
+    if assumptions.team is not None and assumptions.team != DEFAULT_TEAM:
+        humans, agents = assumptions.team
+        if humans < 1 or agents < 1:
+            raise ValueError("a team needs at least one person and one agent")
+        entry[TEAM_KEY] = [int(humans), int(agents)]
     return stamped(entry, DATA_FORMAT.version) if entry else {}
+
+
+def write_project(
+    project: Project,
+    *,
+    efficiency: float | None = None,
+    palette_id: str | None = None,
+    team: tuple[int, int] | None = None,
+    clear: str = "",
+) -> dict[str, Any]:
+    """The project's entry with one assumption changed and the rest as stored — what
+    every control and verb pushes. ``clear`` names a field going back to its default."""
+    current = read_assumptions(project)
+    changed = Assumptions(
+        efficiency=efficiency if efficiency is not None else current.efficiency,
+        palette=palette_id if palette_id is not None else current.palette,
+        team=team if team is not None else current.team,
+    )
+    if clear:
+        changed = replace(changed, **{clear: None})
+    return write_assumptions(changed)
+
+
+def read_efficiency(project: Project) -> float:
+    """The stored focus factor, or the default."""
+    efficiency = read_assumptions(project).efficiency
+    return DEFAULT_EFFICIENCY if efficiency is None else efficiency
+
+
+def read_team(project: Project) -> tuple[int, int]:
+    """The team the calendar is dated for: (people, agents), the smallest by default."""
+    return read_assumptions(project).team or DEFAULT_TEAM
 
 
 def read_start(step: Step) -> date | None:

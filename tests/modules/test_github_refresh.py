@@ -98,9 +98,7 @@ def test_a_stale_answer_is_dropped(services, step, refresher):
     assert refs is not None and refs.pr_number == 99 and refs.pr_state == ""
 
 
-def test_a_gh_refusal_stops_the_timer_for_the_session(
-    app, services, step, refresher, monkeypatch
-):
+def test_a_gh_refusal_stops_the_timer_for_the_session(app, services, step, refresher, monkeypatch):
     monkeypatch.setattr(refresh_mod, "gh_refusal", lambda **_kw: "gh not found on PATH")
     refresher._timer.start()
     refresher._tick()

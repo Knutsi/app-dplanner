@@ -6,10 +6,11 @@ spawns no subprocess; the fetched lists are handed to ``_on_lists`` directly.
 
 import pytest
 
-from dplanner.domain.commands import AddNodeCommand
+from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules.github.aspect import MODULE_ID, read
+from dplanner.modules.github import section as section_mod
+from dplanner.modules.github.aspect import MODULE_ID, GithubRefs, read
 from dplanner.modules.github.gh import PrInfo
 from dplanner.modules.github.section import MERGED_COLOUR
 from dplanner.modules.step_properties.module import PANEL_ID
@@ -115,3 +116,85 @@ def test_no_repository_means_no_fetch_and_a_hint(editor):
     a loader — the status explains what to set instead."""
     assert editor._loaded_repo is None
     assert "repository" in editor.status.text()
+
+
+# -- where the refs stand ----------------------------------------------------------------------
+
+
+def with_refs(services, project, refs):
+    from dplanner.modules.github.aspect import write
+
+    step = project.steps[0]
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write(refs)))
+    return step
+
+
+def test_the_standing_line_reads_the_fetched_lists(services, project, editor, monkeypatch):
+    """The PR's live state and title, and whether the branch is still on the remote — from
+    the same answer that fills the pickers."""
+    monkeypatch.setattr(section_mod, "parse_repo", lambda _url: "acme/widget")
+    with_refs(services, project, GithubRefs(branch="feat/login", pr_number=12))
+    assert editor.standing_words() == "PR #12 — not checked yet"
+    loaded(editor, ["main"], [OPEN, MERGED])
+    assert editor.standing_words() == (
+        "PR #12 is merged · Add login flow\n"
+        "feat/login is not on the remote — deleted after the merge?"
+    )
+    assert editor.standing.isVisibleTo(editor)
+    loaded(editor, ["main", "feat/login"], [OPEN, MERGED])
+    assert editor.standing_words().endswith("feat/login is on the remote")
+
+
+def test_fresh_pr_state_is_written_into_the_step_off_the_undo_stack(services, project, editor):
+    step = with_refs(services, project, GithubRefs(pr_number=12))
+    before = services.undo.undo_text()
+    loaded(editor, [], [MERGED])
+    refs = read(services.document.step(step.id))
+    assert refs is not None and refs.pr_state == "merged" and refs.pr_title == "Add login flow"
+    assert services.undo.undo_text() == before  # a fact from outside is no undo step
+
+
+def test_the_open_buttons_hand_the_links_to_the_browser(services, project, editor, monkeypatch):
+    opened: list[str] = []
+    monkeypatch.setattr(section_mod, "open_url", opened.append)
+    monkeypatch.setattr(section_mod, "parse_repo", lambda _url: "acme/widget")
+    assert not editor.open_pr.isEnabled() and not editor.open_branch.isEnabled()
+    with_refs(services, project, GithubRefs(branch="feat/login", pr_number=12))
+    assert editor.open_pr.isEnabled() and editor.open_branch.isEnabled()
+    editor.open_pr.click()
+    editor.open_branch.click()
+    assert opened == [
+        "https://github.com/acme/widget/pull/12",
+        "https://github.com/acme/widget/tree/feat/login",
+    ]
+    # A recorded URL wins over the one built from the number.
+    with_refs(services, project, GithubRefs(pr_number=12, pr_url="https://gh/x/pull/12"))
+    editor.open_pr.click()
+    assert opened[-1] == "https://gh/x/pull/12"
+
+
+def test_without_a_github_repository_there_is_nothing_to_open(services, project, editor):
+    with_refs(services, project, GithubRefs(branch="feat/login", pr_number=12))
+    assert not editor.open_pr.isEnabled() and not editor.open_branch.isEnabled()
+    assert editor.standing_words() == "PR #12 — not checked yet"
+
+
+def test_a_stale_answer_is_asked_for_again_on_the_next_show(services, project, editor, monkeypatch):
+    """Within the TTL a show costs nothing; past it the same repository is fetched again,
+    so the standing line is current when the tab opens."""
+    started: list[str] = []
+
+    def fake_run(title, _body, **_kw):
+        started.append(title)
+        return True
+
+    monkeypatch.setattr(section_mod, "parse_repo", lambda _url: "acme/widget")
+    monkeypatch.setattr(editor._runner, "run", fake_run)
+    editor.show_target(project.steps[0].id)
+    assert len(started) == 1
+    loaded(editor, ["main"], [])
+    editor.show_target(project.steps[0].id)
+    assert len(started) == 1  # fresh enough
+    editor._loaded_at -= section_mod.LISTS_TTL_S + 1
+    editor.show_target(project.steps[0].id)
+    assert len(started) == 2

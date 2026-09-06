@@ -361,17 +361,39 @@ for a card somebody resized, its size, absent for the default footprint — as
 an aspect is a fact about the work that an agent may want to write, and a layout is
 presentation. It is per step rather than one map on the project so that moving a node is a
 one-file diff — the same reasoning as ordering living in the parent's list. The time
-report's focus factor is the second instance: `modules/time_estimates.json` beside the
-project, `{"efficiency": 0.5}` — an assumption about the team, not a fact about a step. The
-same module writes `{"start": "2026-10-05", "color": "#e0602c"}` beside a *milestone* step:
-the day its stretch of work begins instead of the day the previous one lands, and a colour
-chosen over the dealt one — assumptions again, and the landing date itself is never written. The
+report's assumptions are the second instance: `modules/time_estimates.json` beside the
+project, `{"efficiency": 0.5, "palette": "mako", "team": [2, 3]}` — the focus factor, the
+colour map and the team the calendar is dated for, each absent on its default — an
+assumption about the team, not a fact about a step. The same module writes `{"start":
+"2026-10-05", "color": "#e0602c"}` beside a *milestone* step: the day its stretch of work
+begins instead of the day the previous one lands, and a colour chosen over the dealt one
+— assumptions again, and the landing date itself is never written. The same package
+writes a **second id** beside the project, `modules/progress_history.json`: `{"days":
+[{"day": "2026-09-05", "stretches": [{"milestone": "<step id>", "steps": 8, "done": 3,
+"days": 11.0, "done_days": 4.5, "start": "2026-09-07", "finish": "2026-10-12",
+"landings": [{"date": "2026-09-09", "steps": 2, "days": 3.0}, …]}]}]}` — one row per
+day on which the plan's progress or its promise changed, the stretches in the order the
+sequence ran them that day (no `milestone` key for the work after the last one, no
+`finish` for a stretch nothing dated, no `landings` for one with nothing to land). The
+landings are what the simulation expected to land on each date, so the plan as it stood
+that day is drawn exactly from the row. It is the one derived-looking thing that is
+stored, because the past cannot be recomputed: the chart of the plan against what became
+of it needs where the plan stood and what it promised on earlier days. **An estimate
+remembers what it was** for the same review: `estimation.json` (format 2) carries
+`"history": [{"day": "2026-09-12", "days": 3.0}]` beside `days` — the value that stood
+when each listed day began, one row per day it changed, written only by a writer that
+handed over the entry it replaced, and gone with the entry when a step is unsized. The
 asset browser's display titles are the third: `modules/project_assets.json` beside the
 project, `{"titles": {"assets/<sha16>.png": "Login mock"}}` — presentation for
 content-addressed files, keyed by content name so one title covers every copy and no link
-ever carries it. The distinction has one practical consequence worth knowing: the CLI's
-migration list is built from the aspects *plus* anything like this, and a format missing
-from it is data the CLI silently declines to bring forward.
+ever carries it. The **decision log** is the fourth: `modules/decisions.json` beside the
+project, `{"decisions": [{"id": "D1", "title": "…", "body": "…", "made": "2026-09-05",
+"step": "<step id>", "supersedes": "D0"}]}` — a record list like the feature catalogue
+(every key but `id` and `title` omitted when empty), ids minted per project and never
+reused so a later decision can name the one it replaces. The distinction has one
+practical consequence worth knowing: the CLI's migration list is built from the aspects
+*plus* anything like this, and a format missing from it is data the CLI silently
+declines to bring forward.
 
 **A module that writes a number owes it a `float`.** The old format enforced this at the
 model boundary, because an `int` writes as `5` where a reloaded float writes as `5.0`

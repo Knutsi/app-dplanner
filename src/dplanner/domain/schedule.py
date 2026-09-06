@@ -29,7 +29,7 @@ to notice.
 """
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from math import ceil
 
@@ -179,11 +179,14 @@ class ParallelFinish:
 
     ``unestimated`` counts every step that ran as zero days, project-wide — broader than
     ``CriticalPath.unestimated``, which counts only the chain, because here every step
-    takes a slot and every zero is in the answer.
+    takes a slot and every zero is in the answer. ``landings`` is the working day each
+    step finished on in the simulation, from the walk's start — what an expected-progress
+    curve is drawn from, and the one thing a makespan alone cannot say.
     """
 
     days: float  # Simulated makespan in working days.
     unestimated: int  # Steps that ran as zero days — the number's honesty.
+    landings: dict[StepId, float] = field(default_factory=dict)
 
 
 def parallel_finish(
@@ -255,6 +258,7 @@ def parallel_finish(
         if not waiting[step.id]:
             ready[pool[step.id]].append(step.id)
     running: list[tuple[float, StepId]] = []
+    landings: dict[StepId, float] = {}
     now = 0.0
     remaining = len(steps)
     while remaining:
@@ -271,6 +275,7 @@ def parallel_finish(
             if finish > now:
                 continue
             running.remove((finish, step_id))
+            landings[step_id] = finish
             free[pool[step_id]] += 1
             remaining -= 1
             for after in dependents[step_id]:
@@ -280,6 +285,7 @@ def parallel_finish(
     return ParallelFinish(
         days=now,
         unestimated=sum(1 for value in days.values() if value is None),
+        landings=landings,
     )
 
 
@@ -301,6 +307,15 @@ class Phase:
     finish: date | None
     asked: date | None
     unestimated: int
+    # The working day each step lands on inside the stretch, from ``start``: the
+    # simulation's own answer, which is what an expected-progress curve is made of.
+    landings: dict[StepId, float] = field(default_factory=dict)
+
+    def landing_of(self, step_id: StepId) -> date:
+        """The date a step of this stretch lands in the simulation — its own start for a
+        step that cost nothing, the same rule ``finish`` follows."""
+        offset = self.landings.get(step_id, 0.0)
+        return working_days_after(self.start, offset) if offset > 0 else self.start
 
     @property
     def pushed(self) -> bool:
@@ -375,6 +390,7 @@ def phases(
                 finish=finish,
                 asked=asked,
                 unestimated=run.unestimated,
+                landings=run.landings,
             )
         )
         when = next_working_day(finish + _ONE_DAY) if finish is not None else begins

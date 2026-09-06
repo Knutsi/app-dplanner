@@ -73,6 +73,20 @@ you work. So:
 - **Mind the two totals.** `dplanner schedule show` prints the serial total (one worker,
   steps end to end) *and* the critical path (dependency-aware, unlimited workers). Real
   staffing lands between them — read the labels, and quote the one you mean.
+  `dplanner schedule matrix` prices the staffings in between and dates every milestone
+  for the project's team (`schedule team` sets it), and **`dplanner progress show`** says
+  how far each milestone has come — by steps and by estimated days — against the plan
+  as it stood at the start (or at `--basis DATE`): what was added since, how the landing
+  moved, and which steps were born or re-estimated (`estimate show <step>` prints an
+  estimate's earlier values). That history is what the window writes as the plan
+  changes; when you finish a step with no window open, `dplanner progress record
+  <project>` writes the day's row yourself.
+- **Every `dplanner` command reaches the plan the window shows, from anywhere in the
+  repository** — a worktree included: inside one, the walk finds the branch's copy of the
+  plan and resolves it to the library's project of the same id, so a status set from an
+  agent's worktree lands where the person is looking and the branch's copy is never
+  written. Two agents writing at once are serialised by the stale-workspace check: the
+  loser is told and runs the command again.
 - **Re-planning?** `dplanner project clear-steps <project>` removes every step at once and
   keeps the specs, the features (unplaced again), the topology and the start date — then
   rebuild with authored `step add`s.
@@ -373,8 +387,39 @@ says where the code is:
   GitHub CLI (`gh`) installed, DPlanner fills in the PR's title and state for you.
 - `dplanner github refresh` updates the stored state of open PRs; `dplanner github prs`
   and `dplanner github branches` list what the repository has, for finding the right ref.
+- `dplanner github show <step>` says where a step's refs stand now — the PR's state and
+  title, and whether its branch is still on the remote (gone after a merge is normal).
 - Without `gh`, recording still works — the refs are stored as written, and the state
   fills in when a machine with `gh` refreshes.
+
+## Recording decisions
+
+A plan says *what*; the decisions say *why it went this way and not another* — a
+trade-off taken, a convention settled, an option rejected. Left in a commit message or a
+transcript they are gone by the next session, and the next agent re-argues them. So they
+are a log beside the project, and **every briefing carries the ones still in force**,
+under *Decisions so far*:
+
+```
+dplanner decision add <project> 'Keep the index in SQLite' --step S7 \
+  --text 'Read-mostly and one operator; Postgres would cost an ops step for nothing.'
+dplanner decision list <project>          # what stands; --all includes the superseded
+dplanner decision show <project> D3       # the reasoning in full
+```
+
+- **Record a decision when you make one** — while executing a step as much as while
+  planning — with the step it was made on (`--step`) and the reasoning (`--text`, or
+  `--file -` for more than a line). A decision with no reasoning is a rule nobody can
+  revisit.
+- **Safe to run twice.** A title already in the log *is* that decision: `decision add`
+  reports it and writes nothing, so a retry after a stale-workspace refusal never leaves
+  two. To change one, `decision set`.
+- **Reverse by superseding, never by editing away.** `decision add <project> 'Move the
+  index to Postgres' --supersedes D3` keeps the history and takes D3 out of every later
+  briefing. Only a decision recorded by mistake is `decision remove`d.
+- **Build on what stands.** Your briefing's *Decisions so far* is the list; read it before
+  proposing something one of them already settled, and say so if you think one is wrong
+  rather than quietly working around it.
 
 Prefer building the project up with authored `step add`s: the user sees each step arrive
 whole and can stop you. To move an agreed plan into a **new** project in one command,
@@ -400,8 +445,10 @@ then authored `step add`s.
   positional.
 - **Already clear is success.** State-clearing verbs (`status clear`, `estimate clear`,
   `milestone clear`, `feature clear`, `feature uncite`, `ticket clear`, `handoff clear`,
-  `github clear`, `agent off`, `agent set --clear`) exit 0 when there is nothing to clear —
-  safe to batch; so does `feature cite` of a passage already cited.
+  `github clear`, `agent off`, `agent set --clear`, `decision remove`) exit 0 when there
+  is nothing to clear — safe to batch; so does `feature cite` of a passage already cited,
+  `decision add` of a title already recorded, and `progress record` of a day nothing
+  changed on.
 - **A verb marked *reads the topology first*** refuses until `topology show` has printed
   the project's current topology on this machine. Read it once per session, and again
   after `topology set`; it costs one command and it is the shape of everything you add.
