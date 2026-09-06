@@ -274,6 +274,10 @@ def project_document(library: Library, project: Project) -> dict[str, Any]:
     return {
         "title": project.title,
         "summary": project.summary,
+        # The code repository it plans travels with the plan; where it is checked out on
+        # a machine never does.
+        "repository": project.repository,
+        "colocation": project.colocation,
         # A project owns module data and prose of its own — its start date, its standing
         # agent instruction — so the document carries both. Without this, exporting and
         # importing quietly drops them.
@@ -387,7 +391,9 @@ def _configure_create(parser: ArgumentParser) -> None:
     parser.add_argument("--summary", default="", help="one line on what it delivers")
 
 
-def _materialize(context: CliContext, directory: Path, title: str, *, init: bool) -> Project:
+def _materialize(
+    context: CliContext, directory: Path, title: str, *, init: bool, repository: str = ""
+) -> Project:
     """Seed a project directory and attach it — the CLI's half of File ▸ New Project."""
     directory = directory.expanduser()
     if find_repo_root(directory) is None:
@@ -400,7 +406,7 @@ def _materialize(context: CliContext, directory: Path, title: str, *, init: bool
     for existing in context.library.projects:
         if context.store.project_dir(existing.id).resolve() == directory.resolve():
             raise CliError(f"{directory} is already in the library")
-    seed_project(directory, title)
+    seed_project(directory, title, repository=repository)
     project = context.store.attach(directory)
     # Membership is applied directly: the CLI has no undo stack, and the GUI's half of
     # this verb is off the stack too — a repository cannot be un-inited.
@@ -566,10 +572,19 @@ def _project_import(context: CliContext, args: Namespace) -> int:
         raise CliError("expected a JSON object in the shape `dplanner project export` writes")
 
     title = args.title or str(document.get("title", "Imported project"))
-    project = _materialize(context, Path(args.directory), title, init=args.init_repo)
+    project = _materialize(
+        context,
+        Path(args.directory),
+        title,
+        init=args.init_repo,
+        repository=str(document.get("repository", "")),
+    )
     summary = str(document.get("summary", ""))
     if summary:
         context.apply(SetFieldCommand(project.id, "summary", summary))
+    colocation = str(document.get("colocation", ""))
+    if colocation:
+        context.apply(SetFieldCommand(project.id, "colocation", colocation))
     for module_id, entry in dict(document.get("aspects", {})).items():
         context.apply(SetModuleDataCommand(project.id, str(module_id), dict(entry)))
     for module_id, body in dict(document.get("text", {})).items():

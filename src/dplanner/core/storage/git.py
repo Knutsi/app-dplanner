@@ -272,14 +272,29 @@ class GitStorage(LocalStorage):
     # -- history -------------------------------------------------------------------------------
 
     def commit(self, message: str = "") -> bool:
-        """Stage and commit the workspace directory only. False when nothing had changed."""
-        self._git("add", "-A", "--", *self._scopes)
-        staged = self._git("diff", "--cached", "--quiet", "--", *self._scopes, check=False)
+        """Stage and commit the workspace directory only. False when nothing had changed.
+
+        A scope nothing matches — a directory that was never tracked and is gone now — is
+        left out rather than failing the whole commit on git's *did not match any files*:
+        moving a plan out of a repository commits its removal, which is only a change
+        where the plan was tracked.
+        """
+        scopes = [scope for scope in self._scopes if self._matches(scope)]
+        if not scopes:
+            return False
+        self._git("add", "-A", "--", *scopes)
+        staged = self._git("diff", "--cached", "--quiet", "--", *scopes, check=False)
         if staged.returncode == 0:
             return False
-        self._git("commit", "-m", message or self._timestamped("Save"), "--", *self._scopes)
+        self._git("commit", "-m", message or self._timestamped("Save"), "--", *scopes)
         self.refresh_dirty()
         return True
+
+    def _matches(self, scope: str) -> bool:
+        """Whether a pathspec names anything: present in the tree, or known to the index."""
+        if (self.repo_root / scope).exists():
+            return True
+        return bool(self._git("ls-files", "--", scope, check=False).stdout.strip())
 
     def history(self, limit: int = 50) -> list[Revision]:
         # A unit separator between fields and a record separator between commits: commit

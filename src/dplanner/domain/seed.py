@@ -22,8 +22,11 @@ def create_library(path: Path) -> None:
     write_library_file(path, [])
 
 
-def seed_project(directory: Path, title: str) -> Path:
+def seed_project(directory: Path, title: str, *, summary: str = "", repository: str = "") -> Path:
     """Write a brand-new project: its ``project.dproj`` and its line in the repo-root index.
+
+    ``repository`` is the code repository the project plans, as git names its remote;
+    left empty, the project reads as planning the repository it was created in.
 
     A project born inside a git checkout is listed in the ``.dplanner`` index at the
     repository root, so the CLI's walk finds the plan from anywhere in the checkout — for
@@ -39,6 +42,10 @@ def seed_project(directory: Path, title: str) -> Path:
     meta: dict[str, object] = {"id": project.id, "created": project.created}
     if title:
         meta["title"] = title
+    if summary:
+        meta["summary"] = summary
+    if repository:
+        meta["repository"] = repository
     meta[FORMAT_KEY] = FORMAT.current_version
     write_atomic(
         directory / PROJECT_META,

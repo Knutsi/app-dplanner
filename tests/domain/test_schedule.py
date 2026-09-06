@@ -360,9 +360,7 @@ def test_a_subset_simulation_treats_edges_out_of_it_as_met(project):
     _a, _b, c, d = plan.steps
     days = days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0})
     whole = parallel_finish(library, plan, days, lambda _s: False, humans=1, agents=1)
-    later = parallel_finish(
-        library, plan, days, lambda _s: False, humans=1, agents=1, among=(c, d)
-    )
+    later = parallel_finish(library, plan, days, lambda _s: False, humans=1, agents=1, among=(c, d))
     assert whole is not None and whole.days == 10.0
     assert later is not None and later.days == 7.0  # C no longer waits for B
 
@@ -418,9 +416,7 @@ def test_a_dated_milestone_begins_on_its_date_and_a_kept_one_says_so(project):
 
 def test_a_date_before_the_previous_landing_is_pushed_and_reported(project):
     library, plan = project
-    _first, second = _stretches(
-        library, plan, milestones=("B", "D"), dated={"D": date(2026, 9, 8)}
-    )
+    _first, second = _stretches(library, plan, milestones=("B", "D"), dated={"D": date(2026, 9, 8)})
     assert second.asked == date(2026, 9, 8)
     assert second.start == date(2026, 9, 10)  # the sequence holds
     assert second.pushed
@@ -428,9 +424,7 @@ def test_a_date_before_the_previous_landing_is_pushed_and_reported(project):
 
 def test_the_first_milestone_may_be_dated_before_the_project_start(project):
     library, plan = project
-    first, _second = _stretches(
-        library, plan, milestones=("B", "D"), dated={"B": date(2026, 9, 5)}
-    )
+    first, _second = _stretches(library, plan, milestones=("B", "D"), dated={"B": date(2026, 9, 5)})
     assert first.start == MONDAY  # a Saturday rolls to the Monday, which is the start
     assert not first.pushed
     earlier, _ = _stretches(library, plan, milestones=("B", "D"), dated={"B": date(2026, 9, 1)})

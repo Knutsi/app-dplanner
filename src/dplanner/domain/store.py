@@ -68,7 +68,7 @@ from dplanner.core.storage.locations import (
 )
 from dplanner.core.storage.provider import StorageError, StorageProvider
 from dplanner.core.text_diff import diff_hunks
-from dplanner.domain.library_file import read_library_file, write_library_file
+from dplanner.domain.library_file import LibraryEntry, read_library_file, write_library_file
 from dplanner.domain.migrations import FORMAT
 from dplanner.domain.model import (
     EDGE_KINDS,
@@ -178,6 +178,9 @@ class _ProjectRecord:
     # What the directory looked like the last time this store read or wrote it. Size and
     # modification time per file — what every build tool uses for the same question.
     disk: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # Where this machine has the project's code repository — the library file's row, never
+    # the plan's. None until something records it.
+    checkout: Path | None = None
 
 
 class ModuleFileArea:
@@ -258,12 +261,15 @@ class LibraryStore:
         self._problems: list[ProjectProblem] = []
         # Library entries that failed to open keep their place in the file across rewrites:
         # a project this build cannot read is still the user's project.
-        self._problem_paths: list[Path] = []
+        self._problem_entries: list[LibraryEntry] = []
         # One provider per distinct git repository, cached because the sync feature
         # subscribes to their signals — rebuilt only when membership changes.
         self._groups: list[StorageProvider] | None = None
         self._library_stamp: tuple[int, int] | None = None
         self.dirty: Signal[str, str] = Signal()
+        # A project's code checkout was recorded or changed — here, or by another writer
+        # whose library file this store adopted. Run Agent re-evaluates on it.
+        self.checkout_changed: Signal[ProjectId] = Signal()
         # Every (node, entry) changed here and not yet written — the finer twin of the
         # dirty marks, kept so an outside change to the *same* entry is a conflict and one
         # to any other entry of the same node is not. See adopt_outside_changes().
@@ -285,16 +291,17 @@ class LibraryStore:
         library = Library()
         self._records.clear()
         self._problems.clear()
-        self._problem_paths.clear()
+        self._problem_entries.clear()
         self._groups = None
         migrated: list[tuple[_ProjectRecord, Project]] = []
-        for directory in read_library_file(self.library_path):
+        for entry in read_library_file(self.library_path):
             try:
-                project, record, pending = self._open_project(directory)
+                project, record, pending = self._open_project(entry.path)
             except (StorageError, UnsupportedFormatError, OSError) as error:
-                self._problems.append(ProjectProblem(directory, str(error)))
-                self._problem_paths.append(directory)
+                self._problems.append(ProjectProblem(entry.path, str(error)))
+                self._problem_entries.append(entry)
                 continue
+            record.checkout = entry.checkout
             library.projects.append(project)
             self._records[project.id] = record
             if pending:
@@ -354,6 +361,8 @@ class LibraryStore:
             folder_name=record.directory.name,
             created=str(raw.get("created", "")),
             last_number=_read_number(raw.get("last_number")),
+            repository=str(raw.get("repository", "")),
+            colocation=str(raw.get("colocation", "")),
         )
         self._load_node_files(record, project, "", raw, pending)
         for folder in self._child_folders(record, raw, ""):
@@ -463,11 +472,13 @@ class LibraryStore:
 
     # -- membership ----------------------------------------------------------------------------
 
-    def attach(self, directory: Path) -> Project:
+    def attach(self, directory: Path, checkout: Path | None = None) -> Project:
         """Open a project directory and start tracking it. No model mutation here —
         the caller adds the returned project to the library, which marks the root
-        structure dirty and gets the library file rewritten on the next flush."""
+        structure dirty and gets the library file rewritten on the next flush.
+        ``checkout`` is where this machine has the project's code, when that is known."""
         project, record, pending = self._open_project(Path(directory))
+        record.checkout = checkout
         self._records[project.id] = record
         self._groups = None
         if pending:
@@ -480,6 +491,67 @@ class LibraryStore:
         """Forget a project. Its files stay on disk — removal is from the library only."""
         self._records.pop(project_id, None)
         self._groups = None
+
+    def checkout_of(self, project_id: ProjectId) -> Path | None:
+        """Where this machine has the project's code repository; None while nothing said."""
+        record = self._records.get(project_id)
+        return None if record is None else record.checkout
+
+    def set_checkout(self, project_id: ProjectId, checkout: Path | None) -> None:
+        """Record where this machine has the project's code — in the library file, now.
+
+        Written straight into the file rather than through a dirty mark, because the CLI
+        records a checkout as a side effect of a *read* verb (discovery matched the
+        working directory's origin), and a mark would put that run's final flush behind
+        the library stamp check — refused with "run this again" over nothing the user
+        did. The file is read back first so another instance's rows survive, and the
+        stamp is taken afterwards so this write never reads as somebody else's; another
+        window takes it in through :meth:`_adopt_library_file`. Membership keeps the
+        flush path. A file that cannot be read whole right now (a torn write) is left
+        alone: the record holds the answer, and the next membership flush writes it.
+        """
+        record = self._records[project_id]
+        if record.checkout == checkout:
+            return
+        record.checkout = checkout
+        try:
+            entries = read_library_file(self.library_path, strict=True)
+        except (OSError, ValueError):
+            return
+        target = record.directory.resolve()
+        write_library_file(
+            self.library_path,
+            [
+                LibraryEntry(entry.path, checkout)
+                if entry.path.expanduser().resolve() == target
+                else entry
+                for entry in entries
+            ],
+        )
+        self._remember_library_stamp()
+        self.checkout_changed.emit(project_id)
+
+    def has_unflushed(self, project_id: ProjectId) -> bool:
+        """Whether anything of this project changed here and has not reached disk yet."""
+        library = self.library
+        return library is not None and any(
+            library.belongs_to(node_id, project_id) for node_id, _entry in self._unflushed
+        )
+
+    def relocate(self, project_id: ProjectId, directory: Path, checkout: Path | None) -> None:
+        """The project's files moved to ``directory`` — ``domain/relocate.py`` did the
+        moving — so open the record there, keep the node map (the layout inside is the
+        same tree), and mark the library file for its next flush, which writes the path."""
+        old = self._records[project_id]
+        storage = open_project_storage(directory)
+        record = _ProjectRecord(
+            directory=storage.root, storage=storage, dirs=dict(old.dirs), checkout=checkout
+        )
+        self._remember_disk(record)
+        self._records[project_id] = record
+        self._groups = None
+        if self.library is not None:
+            self.dirty.emit(self.library.id, "structure")
 
     def project_dir(self, project_id: ProjectId) -> Path:
         return self._records[project_id].directory
@@ -637,22 +709,32 @@ class LibraryStore:
         library = self.library
         assert library is not None
         try:
-            listed = [d.resolve() for d in read_library_file(self.library_path, strict=True)]
+            entries = read_library_file(self.library_path, strict=True)
         except (OSError, ValueError) as error:
             raise _DeferredError from error  # A torn write, not a library that emptied itself.
+        listed = [entry.path.resolve() for entry in entries]
         by_directory = {
             record.directory.resolve(): project_id for project_id, record in self._records.items()
         }
-        problems = {path.expanduser().resolve() for path in self._problem_paths}
+        problems = {entry.path.expanduser().resolve() for entry in self._problem_entries}
         applied = 0
-        for directory in listed:
-            if directory in by_directory or directory in problems:
+        for entry, directory in zip(entries, listed, strict=True):
+            known = by_directory.get(directory)
+            if known is not None:
+                # A row this store holds: only its checkout can have changed underneath.
+                record = self._records[known]
+                if record.checkout != entry.checkout:
+                    record.checkout = entry.checkout
+                    self.checkout_changed.emit(known)
+                    applied += 1
+                continue
+            if directory in problems:
                 continue
             try:
-                project = self.attach(directory)
+                project = self.attach(directory, entry.checkout)
             except (StorageError, UnsupportedFormatError, OSError, json.JSONDecodeError) as error:
                 self._problems.append(ProjectProblem(directory, str(error)))
-                self._problem_paths.append(directory)
+                self._problem_entries.append(entry)
                 continue
             # Attached first, then added: the sync feature rewires its repository groups on
             # the structure signal, and the groups come from the records.
@@ -665,8 +747,8 @@ class LibraryStore:
                 library.remove_child(project_id, origin=OUTSIDE_ORIGIN)
                 del by_directory[directory]
                 applied += 1
-        self._problem_paths = [
-            path for path in self._problem_paths if path.expanduser().resolve() in listed
+        self._problem_entries = [
+            entry for entry in self._problem_entries if entry.path.expanduser().resolve() in listed
         ]
         self._problems = [
             problem for problem in self._problems if problem.path.expanduser().resolve() in listed
@@ -802,7 +884,7 @@ class LibraryStore:
             if not _meta_differs(live, fresh) or clashes(live.id, entry, path):
                 return 0
             if isinstance(live, Project) and isinstance(fresh, Project):
-                for name in ("title", "summary"):
+                for name in ("title", "summary", "repository", "colocation"):
                     library.set_field(live.id, name, getattr(fresh, name), OUTSIDE_ORIGIN)
                 # A high-water mark only ever rises, and no view shows it: no signal.
                 live.last_number = max(live.last_number, fresh.last_number)
@@ -943,12 +1025,12 @@ class LibraryStore:
         assert self.library is not None
         # Model order first; entries that failed to open keep their place at the end —
         # a project this build cannot read is still the user's project.
-        directories = [
-            self._records[project.id].directory
+        entries: list[LibraryEntry | Path] = [
+            LibraryEntry(self._records[project.id].directory, self._records[project.id].checkout)
             for project in self.library.projects
             if project.id in self._records
         ]
-        write_library_file(self.library_path, directories + self._problem_paths)
+        write_library_file(self.library_path, [*entries, *self._problem_entries])
         self._remember_library_stamp()
 
     def _flush_project(self, record: _ProjectRecord, marks: set[DirtyMark]) -> None:
@@ -1067,6 +1149,10 @@ class LibraryStore:
                 meta["title"] = node.title
             if node.summary:
                 meta["summary"] = node.summary
+            if node.repository:
+                meta["repository"] = node.repository
+            if node.colocation:
+                meta["colocation"] = node.colocation
             if node.last_number:
                 meta["last_number"] = node.last_number
             # The format stamp is per project: each directory migrates on its own.
@@ -1185,9 +1271,11 @@ def _is_entry(name: str) -> bool:
 
 def _meta_differs(live: Node, fresh: Node) -> bool:
     if isinstance(live, Project) and isinstance(fresh, Project):
-        return (live.title, live.summary, live.last_number) != (
+        return (live.title, live.summary, live.repository, live.colocation, live.last_number) != (
             fresh.title,
             fresh.summary,
+            fresh.repository,
+            fresh.colocation,
             fresh.last_number,
         )
     if isinstance(live, Step) and isinstance(fresh, Step):

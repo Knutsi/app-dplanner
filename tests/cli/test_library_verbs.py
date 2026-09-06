@@ -56,7 +56,7 @@ def test_add_puts_an_existing_project_into_the_library_file(cli, cli_library, tm
 
     said = cli("library", "add", str(directory))
     assert "Gadget" in said and "added" in said
-    assert directory in read_library_file(cli_library)
+    assert directory in [entry.path for entry in read_library_file(cli_library)]
     titles = [row["title"] for row in data(cli("project", "list", "--json"))["projects"]]
     assert titles == ["Gadget"]
 

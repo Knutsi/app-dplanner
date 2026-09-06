@@ -2074,3 +2074,13 @@ appended, never rewriting a hand-written line; `remove_from_index`, `read_index`
 repository holds several projects for several people, and the committed list of them is
 what a clone needs to say which projects it holds. **Upstream?** The index, yes, with the
 pointer it grew from; the constant is DPlanner's.
+
+### `core/storage/git.py` — `GitStorage.commit` leaves out a scope nothing matches
+
+**What.** Before staging, each scope is checked to exist in the tree or to be known to
+the index; one that is neither is dropped, and a commit with no scope left answers False.
+**Why.** Moving a plan commits its removal from the repository it left; when the plan was
+never tracked there — created and moved before anybody saved — `git add -A -- planning`
+fails on the pathspec, and that failure would have failed a move whose files were already
+where they belonged. **Upstream?** Yes: a scoped commit that cannot fail on an absent
+scope is what every caller wants.
