@@ -27,7 +27,7 @@ from dplanner.modules.projects.repos import (
     RepositoryServices,
     candidate_repositories_folders,
 )
-from dplanner.modules.projects.settings_dialog import CREATE, ProjectDialog
+from dplanner.modules.projects.project_dialog import CREATE, ProjectDialog
 
 CODE_URL = "https://github.com/acme/widget"
 

@@ -15,7 +15,7 @@ from dplanner.framework.context import ContextService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.modules.projects.repos import RepositoryServices
 from dplanner.modules.projects.repositories_folder import shown_path
-from dplanner.modules.projects.settings_dialog import glyph_label, restyle
+from dplanner.modules.projects.project_dialog import glyph_label, restyle
 from dplanner.theme.icons import ICON_SIZE, branch_icon, code_icon, folder_icon
 from dplanner.theme.themes import Theme
 

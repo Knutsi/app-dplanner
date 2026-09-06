@@ -82,31 +82,57 @@ class GitHubStorage(GitStorage):
         return remote or super().label
 
     def pull(self) -> bool:
-        """Fast-forward from origin. True when anything arrived."""
+        """Bring origin's commits in, with what is local rebased on top. True when anything
+        arrived.
+
+        A rebase rather than a fast-forward: a plan repository is written by several people
+        and every *Save* is a commit, so two writers' branches diverge routinely — and two
+        Saves are commits to different files far more often than a conflict. A conflict is
+        aborted and refused; the tree is left as it was.
+        """
         if not self.has_remote():
             return False
         branch = self.current_branch() or DEFAULT_BRANCH
-        before = self._git("rev-parse", "HEAD", check=False).stdout.strip()
+        before = self._head()
         self._git("fetch", "origin", check=False, timeout=60)
-        merged = self._git("merge", "--ff-only", f"origin/{branch}", check=False)
-        if merged.returncode != 0:
-            # Not fast-forwardable means local and remote have diverged. Refusing is the
-            # honest outcome: an automatic merge here would resolve a conflict nobody saw.
-            raise StorageError(
-                f"{branch} has diverged from origin — reconcile it in a terminal; "
-                "your workspace is unchanged"
-            )
-        after = self._git("rev-parse", "HEAD", check=False).stdout.strip()
-        if before == after:
+        self._rebase_onto(branch)
+        if before == self._head():
             return False
         self.worktree_changed.emit()
         return True
 
     def push(self) -> None:
+        """Record the local commits on origin — after rebasing onto what arrived there
+        since, so a Save from a second clone is never refused for being second."""
         if not self.has_remote():
             return
         branch = self.current_branch() or DEFAULT_BRANCH
+        before = self._head()
+        self._git("fetch", "origin", check=False, timeout=60)
+        self._rebase_onto(branch)
+        if before != self._head():
+            self.worktree_changed.emit()  # Their commits are in the tree now too.
         self._git("push", "-u", "origin", branch, timeout=120)
+
+    def _head(self) -> str:
+        return self._git("rev-parse", "HEAD", check=False).stdout.strip()
+
+    def _rebase_onto(self, branch: str) -> None:
+        """Rebase the checkout onto ``origin/<branch>`` when the two diverged. Nothing
+        when origin has no such branch yet, or is behind or equal. A conflict is aborted
+        — the autostash restored with it — and refused with the tree as it was."""
+        if self._git("rev-parse", "--verify", f"origin/{branch}", check=False).returncode != 0:
+            return
+        ahead = self._git("merge-base", "--is-ancestor", f"origin/{branch}", "HEAD", check=False)
+        if ahead.returncode == 0:
+            return
+        result = self._git("rebase", "--autostash", f"origin/{branch}", check=False, timeout=120)
+        if result.returncode != 0:
+            self._git("rebase", "--abort", check=False)
+            raise StorageError(
+                f"{branch} and origin/{branch} changed the same lines — reconcile it in a "
+                "terminal; your workspace is unchanged"
+            )
 
     # -- getting a workspace onto, and off, the machine ----------------------------------------
 

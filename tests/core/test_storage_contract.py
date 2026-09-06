@@ -307,6 +307,88 @@ def test_remote_label_is_readable(remote):
     assert remote.remote_label()
 
 
+def _second_clone(tmp_path, name="other"):
+    """Another person's clone of the same remote, committing as someone else."""
+    other = tmp_path / name
+    subprocess.run(["git", "clone", "-q", str(tmp_path / "origin.git"), str(other)], check=True)
+    _git("config", "user.email", "bo@example.com", cwd=other)
+    _git("config", "user.name", "Bo", cwd=other)
+    return other
+
+
+def test_a_save_after_someone_elses_lands_on_top_of_theirs(remote, tmp_path):
+    """Two clones of one plan repository, two Saves: the second is rebased onto the first
+    and pushed, never refused for being second — and their commit is in the tree now."""
+    remote.write_text("note.md", "from here")
+    remote.commit("one")
+    remote.push()
+
+    other = _second_clone(tmp_path)
+    (other / "workspace" / "theirs.md").write_text("from there")
+    _git("add", "-A", cwd=other)
+    _git("commit", "-q", "-m", "theirs", cwd=other)
+    _git("push", "-q", cwd=other)
+
+    arrived = []
+    remote.worktree_changed.connect(lambda: arrived.append(True))
+    remote.write_text("note.md", "from here, again")
+    remote.commit("two")
+    remote.push()
+
+    assert arrived == [True]
+    assert remote.read_text("theirs.md") == "from there"
+    log = [rev.message for rev in remote.history(3)]
+    assert log == ["two", "theirs", "one"]
+    on_origin = subprocess.run(
+        ["git", "log", "--format=%s", "main"],
+        cwd=tmp_path / "origin.git",
+        capture_output=True,
+        text=True,
+    )
+    assert on_origin.stdout.split()[:3] == ["two", "theirs", "one"]
+
+
+def test_pull_rebases_local_commits_onto_what_arrived(remote, tmp_path):
+    remote.write_text("note.md", "x")
+    remote.commit("one")
+    remote.push()
+    other = _second_clone(tmp_path)
+    (other / "workspace" / "theirs.md").write_text("from there")
+    _git("add", "-A", cwd=other)
+    _git("commit", "-q", "-m", "theirs", cwd=other)
+    _git("push", "-q", cwd=other)
+
+    remote.write_text("mine.md", "local, unpushed")
+    remote.commit("mine")
+    assert remote.pull() is True
+    assert [rev.message for rev in remote.history(3)] == ["mine", "theirs", "one"]
+    assert remote.read_text("theirs.md") == "from there"
+
+
+def test_a_conflicting_save_is_refused_and_leaves_the_tree_as_it_was(remote, tmp_path):
+    remote.write_text("note.md", "from here")
+    remote.commit("one")
+    remote.push()
+    other = _second_clone(tmp_path)
+    (other / "workspace" / "note.md").write_text("from there")
+    _git("add", "-A", cwd=other)
+    _git("commit", "-q", "-m", "theirs", cwd=other)
+    _git("push", "-q", cwd=other)
+
+    remote.write_text("note.md", "from here, changed")
+    remote.commit("two")
+    remote.write_text("draft.md", "not yet committed")
+    with pytest.raises(Exception, match="same lines"):
+        remote.push()
+    assert remote.read_text("note.md") == "from here, changed"
+    assert remote.read_text("draft.md") == "not yet committed"  # The autostash came back.
+    assert [rev.message for rev in remote.history(2)] == ["two", "one"]
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=tmp_path / "clone", capture_output=True, text=True
+    ).stdout
+    assert "rebase" not in status  # No rebase left in progress.
+
+
 # -- a provider over a whole repository ------------------------------------------------------
 
 

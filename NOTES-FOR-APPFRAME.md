@@ -2092,3 +2092,18 @@ for a repository nobody has started yet, cloned into a chosen directory (gh land
 clone under the repository's own name beside where it runs, so it runs in the parent and
 renames). **Why.** The Project dialog's *new code repository* glyph: a plan that names
 code nobody has started. **Upstream?** Yes, with the other two.
+
+### `core/storage/github.py` — `push` rebases onto origin first, `pull` rebases instead of fast-forwarding
+
+**What.** Both fetch, then rebase the checkout onto `origin/<branch>` when the two
+diverged (`--autostash`, so an uncommitted edit rides along); a conflict is aborted —
+the stash restored — and refused with the tree as it was, the same refusal the old
+`--ff-only` gave. `push` emits `worktree_changed` when the rebase brought commits in,
+so the window reads them the way it reads a pull. **Why.** A plan repository is written
+by several people and every *Save* is a commit, so two clones' branches diverge on an
+ordinary afternoon, and the second Save used to be rejected by the remote for being
+second. Two Saves are commits to different files far more often than a conflict. It
+applies to a code repository holding its plan as well, and the failure mode — a real
+conflict — is exactly what the old refusal was. **Upstream?** Yes: any application whose
+Save is a push wants the second writer's push to land.
+
