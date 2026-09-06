@@ -102,6 +102,15 @@ def watcher(session):
     return module(session)._watcher
 
 
+def test_the_watcher_dies_with_the_window_it_watches_for(session, watcher):
+    """A reload discards the build; a poll that outlived it ran the adoption against a
+    deleted status-bar button. The timer is the window's now, and a closed window takes
+    nothing in."""
+    assert watcher.parent() is session.services.window
+    session.services.window.hide()
+    module(session)._on_changed()  # Nothing raised, nothing refreshed.
+
+
 @pytest.fixture
 def project(services, make_project):
     """One flushed project, so the window starts clean with nothing pending."""

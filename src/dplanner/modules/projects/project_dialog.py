@@ -589,6 +589,9 @@ class ProjectDialog(QDialog):
                 self.checkout_edit.setText(shown)
             self.warning.setText(_warning_text(facts))
             self.warning_row.setVisible(facts.warns)
+            # Apart from its code, a plan has nothing to move out of: the glyph and the
+            # plan column's Set up both stand down, and the log takes the column.
+            self.move_button.setVisible(facts.state != SEPARATED)
             if facts.state != SEPARATED:
                 self.plan_column.show_setup(primary=facts.warns)
         finally:

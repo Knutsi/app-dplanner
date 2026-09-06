@@ -146,7 +146,7 @@ def test_the_preflight_says_where_the_plan_lives(services, step):
     )
     text = briefing.preamble(step, True, inside)
     assert "WARNING" in text and "do not stage or commit" in text
-    assert "dplanner project move" in text
+    assert "dplanner project move" in text and "when the developer asks" in text
 
     text = briefing.preamble(step, True, replace(inside, colocation="accepted"))
     assert "WARNING" not in text and "by the developer's choice" in text

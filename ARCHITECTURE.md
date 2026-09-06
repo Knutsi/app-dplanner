@@ -2313,7 +2313,12 @@ meta with the code repository it left, maintains both indexes, removes the sourc
 re-points the store and commits on both sides, best-effort; the window pauses autosave
 around it and reloads after, because every view that cached a directory is rebuilt rather
 than patched. It is the one place colocation is *refused* rather than warned about: moving
-a plan into its own code repository is the shape the move exists to end.
+a plan into its own code repository is the shape the move exists to end. **The window's
+Move Plan exists for that migration and stands down once it is done**: on a plan apart
+from its code the verb is greyed with the reason and the card's and dialog's buttons are
+gone — a control that teaches nothing is left out (`DESIGN.md`). Moving a plan *between*
+plan repositories is rare and CLI-shaped, so `dplanner project move` keeps it, and the
+briefing and the skill tell an agent to run it when the developer asks, never unasked.
 
 The git requirement is **gating at membership, honest afterwards**: New Project initialises
 or picks a plan repository, Open Projects lists only what is inside one (the plan's history

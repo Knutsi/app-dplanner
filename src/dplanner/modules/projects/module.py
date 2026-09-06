@@ -137,6 +137,7 @@ class ProjectsModule:
             detach=deps.detach,
             settings=self.show_project,
             move=self.move_plan,
+            facts_of=deps.repos.facts_of,
         ).register_into(deps.actions)
 
         deps.cards.register(

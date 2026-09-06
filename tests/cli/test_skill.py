@@ -110,6 +110,8 @@ def test_the_skill_says_how_the_current_project_is_found(files):
     assert "--library PATH" in skill and "$DPLANNER_LIBRARY" in skill
     assert "$DPLANNER_PROJECT" in skill
     assert "## Where the plan lives" in skill
+    assert "project move <project> --into <plan repository>" in skill
+    assert "when the developer asks, never unasked" in skill
 
 
 def test_the_skill_has_frontmatter_a_skill_loader_can_read(files):

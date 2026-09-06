@@ -41,8 +41,10 @@ class WatchableRepository(Protocol):
 class WorkspaceWatcher(QObject):
     """Polls a repository and emits once each time the workspace changes underneath it."""
 
-    def __init__(self, repo: WatchableRepository) -> None:
-        super().__init__()
+    def __init__(self, repo: WatchableRepository, parent: QObject | None = None) -> None:
+        # Parented to the window it watches for: a build that is discarded — a reload,
+        # a close — takes the timer with it, so no tick ever runs against a deleted widget.
+        super().__init__(parent)
         self.changed: Signal[()] = Signal()
         self._repo = repo
         self._timer = QTimer(self)

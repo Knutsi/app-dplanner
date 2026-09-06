@@ -368,6 +368,21 @@ def test_remove_takes_the_project_out_of_model_and_store_but_leaves_its_files(
     assert (directory / PROJECT_META).is_file()  # The files really did stay.
 
 
+def test_move_plan_stands_down_once_the_plan_has_its_own_repository(services, project, tmp_path):
+    """The window's Move Plan is the migration out of the code; apart from it, the verb is
+    greyed with the reason and the CLI keeps the rare move between plan repositories."""
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.commands import SetFieldCommand
+
+    context = select(services, "project", project.id)
+    assert state(services, "projects.move", context).enabled
+    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
+    services.repo.set_checkout(project.id, init_repo(tmp_path / "widget"))
+    found = state(services, "projects.move", context)
+    assert found.visible and not found.enabled
+    assert found.label is not None and "own" in found.label
+
+
 def test_a_rename_in_the_project_dialog_reaches_the_tab_title_through_undo(services, project):
     """Settings… replaces Rename: the name is a live field of the Project dialog, one
     instance per window, and the write is the same undoable command."""

@@ -2107,3 +2107,14 @@ applies to a code repository holding its plan as well, and the failure mode — 
 conflict — is exactly what the old refusal was. **Upstream?** Yes: any application whose
 Save is a push wants the second writer's push to land.
 
+### `framework/window_watch.py` — `WorkspaceWatcher` takes a parent
+
+**What.** The watcher's constructor takes the window as its parent, and the library-watch
+module hands it over. **Why.** A reload discards a build with `deleteLater` on the window
+but stopped nothing the modules had started: the watcher's poll timer kept firing every
+two seconds against the discarded build, and its adoption ran into the deleted status-bar
+button (`libshiboken: Internal C++ object (OutsideChangesButton) already deleted`, once
+per poll, after a Move Plan reload and at close). A QObject owned by the window dies with
+it, timer and all — the same reason the module's ask-soon timer was already the window's.
+**Upstream?** Yes: a watcher that outlives what it watches for is a bug in any host.
+

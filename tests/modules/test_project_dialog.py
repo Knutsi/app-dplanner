@@ -209,6 +209,7 @@ def test_a_plan_beside_its_code_shows_one_log_and_offers_setup(dialog, fakes, li
     assert dialog.code_column.rows() == [("Add the login form", "anna · just now")]
     assert dialog.code_column.branch.text() == "main"
     assert dialog.plan_column.pages.currentWidget() is dialog.plan_column.setup
+    assert dialog.move_button.isVisibleTo(dialog)
 
 
 def test_a_separated_plan_fills_both_columns_and_prs_lead_the_code_column(
@@ -224,6 +225,7 @@ def test_a_separated_plan_fills_both_columns_and_prs_lead_the_code_column(
     assert dialog.plan_column.rows() == [("Add the login form", "anna · just now")]
     assert dialog.plan_column.pages.currentWidget() is dialog.plan_column.well
     assert not dialog.warning_row.isVisibleTo(dialog)
+    assert not dialog.move_button.isVisibleTo(dialog)  # Nothing to move out of any more.
 
 
 def test_an_answer_for_a_project_the_dialog_left_is_dropped(
@@ -362,7 +364,7 @@ def test_the_card_states_both_repositories_and_follows_the_facts(
     assert card.code_text.text() == "acme/widget"
     assert card.checkout_text.text().endswith("widget")
     assert not card.note.isVisibleTo(card)
-    assert card.move_button.text() == "Move Plan…"
+    assert not card.move_button.isVisibleTo(card)  # Apart from its code: nothing to set up.
 
 
 def test_the_cards_buttons_run_the_registry_verbs(services, project, monkeypatch):

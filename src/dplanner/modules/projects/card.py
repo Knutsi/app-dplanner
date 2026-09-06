@@ -73,7 +73,7 @@ class RepositoriesCard(QWidget):
         self.settings_button.clicked.connect(
             lambda: actions.run("projects.settings", context.current())
         )
-        self.move_button = QPushButton(self)
+        self.move_button = QPushButton("Set up a plan repository…", self)
         self.move_button.setObjectName("RepoCardMove")
         self.move_button.clicked.connect(lambda: actions.run("projects.move", context.current()))
         buttons = QHBoxLayout()
@@ -139,9 +139,7 @@ class RepositoriesCard(QWidget):
             root = facts.plan_root or Path()
             self._set(self.checkout_text, shown_path(root) if facts.plan_root else "", False)
         self.note.setVisible(facts.warns)
-        self.move_button.setText(
-            "Move Plan…" if facts.state == SEPARATED else "Set up a plan repository…"
-        )
+        self.move_button.setVisible(facts.state != SEPARATED)  # Nothing to set up once apart.
 
     def _set(self, label: QLabel, text: str, muted: bool) -> None:
         label.setText(text)

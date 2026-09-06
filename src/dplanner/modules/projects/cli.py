@@ -176,7 +176,11 @@ def commands(
             "— into a plan repository, committing both sides.",
             configure=_configure_move,
             run=_project_move,
-            examples=("dplanner project move discovery --into ~/plans",),
+            examples=(
+                "dplanner project move discovery --into ~/plans",
+                "dplanner project move discovery --into ~/plans --init-repo",
+                "dplanner project move discovery --to ~/plans/search/discovery",
+            ),
         ),
         CliCommand(
             path=("project", "delete"),

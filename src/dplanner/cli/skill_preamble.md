@@ -25,10 +25,15 @@ where the code is checked out on this machine. Three rules follow:
   drifts.
 - **A plan kept inside its code repository is a warning, not a shape to build on.** The
   window, `project lint` (`repo.unset`, `repo.colocated`) and every briefing say so. The
-  way out is `dplanner project move <project> --into <plan repository>`; the way to keep it
-  there on purpose is `project set <project> --accept-colocation`. While it stays there, do
-  not touch anything under the plan's directory on your branch, and merge or rebase `main`
-  before opening a PR — planning commits land on `main` while you work.
+  way to keep it there on purpose is `project set <project> --accept-colocation`. While it
+  stays there, do not touch anything under the plan's directory on your branch, and merge
+  or rebase `main` before opening a PR — planning commits land on `main` while you work.
+- **Moving a plan is yours to run when the developer asks, never unasked.** `dplanner
+  project move <project> --into <plan repository>` (`--init-repo` to start one there;
+  `--to DIR` for an exact folder) copies the plan, lists it in the new repository's
+  `.dplanner`, commits the departure and the arrival, and re-points the library — the
+  window reloads on its own, and every verb keeps reaching the plan where it landed, so
+  nothing about your run changes. Say what moved where when you report back.
 - **A plan repository is joined in two commands.** Clone it, then `dplanner library add
   <root>` adds every project it lists; `library browse <root>` shows them first, with who
   worked on each and when.

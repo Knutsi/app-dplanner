@@ -1717,8 +1717,10 @@ def _plan_whereabouts(facts: "RepositoryFacts") -> str:
     )
     if facts.warns:
         text += (
-            " Moving the plan into a repository of its own is the developer's call"
-            " (Project ▸ Move Plan…, or `dplanner project move`), not this step's."
+            " Do not move the plan on your own; when the developer asks for it,"
+            " `dplanner project move <project> --into <plan repository>` (`--init-repo`"
+            " to start one) moves it, commits both sides and re-points the library, and"
+            " every verb keeps reaching the plan where it lands."
         )
     return text
 

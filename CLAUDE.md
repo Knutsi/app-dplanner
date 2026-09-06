@@ -1080,8 +1080,11 @@ root, stop and look for the registry or capability you have not found yet.
   checkout the first time; the wrapper exports `DPLANNER_PROJECT`. A plan repository holds
   several projects for several people under a `.dplanner` index (`FORMAT.md`); *File ▸ New
   Project…* is the Project dialog in create mode over a picked plan repository, *Open
-  Projects…* browses one and adds the chosen projects, *Move Plan…* (`dplanner project
-  move`) takes a plan out of its code through `domain/relocate.py` and reloads. Never store
+  Projects…* browses one and adds the chosen projects, *Move Plan…* takes a plan out of
+  its code through `domain/relocate.py` and reloads — and stands down (greyed with the
+  reason; the card's and dialog's buttons hidden) once the plan is apart from its code;
+  from there `dplanner project move` is the verb, the briefing and the skill tell an agent
+  to run it when the developer asks and never unasked. Never store
   a plan root, and never compare paths where `RepositoryFacts` already answers.
   `ARCHITECTURE.md`'s *Two repositories, two questions* has the reasoning.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
