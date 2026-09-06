@@ -179,7 +179,7 @@ def test_a_chip_click_writes_an_undoable_estimate(services, project):
 
     services.undo.undo()
     assert read_estimate(services.document.step(a.id)) is None
-    assert tab._editors[a.id].days.value() == 0.0  # The undo reached the row.
+    assert tab._editors[a.id].value() is None  # The undo reached the row.
 
 
 def test_a_change_made_elsewhere_reaches_the_row(services, project):

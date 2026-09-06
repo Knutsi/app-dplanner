@@ -773,6 +773,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
                     project_id, ESTIMATION_ID, write_start(when), label="Set Start Date"
                 )
             ),
+            # The banner's *Estimate missing*: the Estimates tab, on the unsized rows.
+            estimate_missing=lambda project_id: estimation.open_for_steps(
+                project_id, unestimated=True
+            ),
             parent=services.window,
         )
     )

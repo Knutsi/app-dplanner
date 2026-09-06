@@ -1,5 +1,5 @@
-"""The time estimates tab: the staffing picker and milestones on the left, the calendar
-they date on the right."""
+"""The time estimates tab: the staffing picker, the start dates and the milestones on the
+left, the calendar and the three plots they date on the right, under one strip."""
 
 from datetime import date
 
@@ -22,6 +22,8 @@ from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
 from dplanner.modules.step_agent_instruction.aspect import write_state
 from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
 from dplanner.modules.step_milestone.aspect import write as write_milestone_label
+from dplanner.modules.time_estimates.chart import shift_words
+from dplanner.modules.time_estimates.milestones import ALL_KEY
 from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
     PALETTES,
@@ -78,15 +80,20 @@ def _landings(tab):
     return [(row.name.text(), row.when.text(), row.days.text()) for row in tab.milestones.rows]
 
 
+def _swatches(tab):
+    """The milestone rows' colours, top to bottom — the whole and the remainder aside."""
+    keys = tab.milestones.keys
+    return [row.swatch.color.name() for row in tab.milestones.rows if row.key in keys]
+
+
 # -- the grid and the answer -----------------------------------------------------------------
 
 
 def test_the_default_team_dates_the_plan_in_the_landing_list(tab):
     assert tab.landing == date(2026, 9, 16)
     assert tab.matrix.value_at(1, 1) == "1.6w"
-    assert _landings(tab) == [("All work", "16 September", "1.6w")]
-    assert not tab.milestones.total.isVisibleTo(tab.widget)  # one stretch needs no total
-    assert not tab.notice.isVisibleTo(tab.widget)
+    assert _landings(tab) == [("All work", "16 September", "1.6w")]  # one stretch, no whole
+    assert not tab.banner.isVisibleTo(tab.widget)
 
 
 def test_selecting_a_tile_re_asks_the_question(tab):
@@ -205,11 +212,30 @@ def _bands_of(months):
     return months._start, months._bands, months._today
 
 
-def test_an_unestimated_step_is_noted(services, project, tab):
+def test_an_unestimated_step_is_noted_and_the_banner_opens_the_estimates_on_it(
+    services, project, tab
+):
+    """The banner over the answer counts what runs as zero, and its button opens the
+    Estimates tab on exactly those rows."""
+    from dplanner.modules.estimation.bulk import BulkEstimateActivity
+
     read, _draft, _docs = project.steps
     services.undo.push(SetModuleDataCommand(read.id, ESTIMATION_ID, {}))
-    assert tab.notice.isVisibleTo(tab.widget)
-    assert tab.notice.text() == "1 step unestimated · counted as 0d"
+    assert tab.banner.isVisibleTo(tab.widget)
+    assert tab.banner.note.text() == "1 step unestimated · counted as 0d"
+    assert tab.banner.button.text() == "Estimate missing"
+    tab.banner.button.click()
+    (estimates,) = [a for a in services.tabs.activities() if isinstance(a, BulkEstimateActivity)]
+    assert estimates.filter_key == "unestimated"
+    table = estimates.table
+    shown = [
+        item.text()
+        for row in range(table.rowCount())
+        if (item := table.item(row, 0)) is not None and not table.isRowHidden(row)
+    ]
+    assert shown == ["Read the spec"]
+    services.undo.undo()
+    assert not tab.banner.isVisibleTo(tab.widget)
 
 
 # -- the two pools ---------------------------------------------------------------------------
@@ -283,14 +309,19 @@ def test_stretching_prices_human_steps_only(project):
 # -- milestones in sequence ------------------------------------------------------------------
 
 
-def test_the_milestones_land_in_sequence_and_the_total_closes_the_list(services, staged):
+def test_the_milestones_land_in_sequence_and_the_whole_leads_the_list(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, ship = staged.steps
     assert tab.milestones.keys == (draft.id, ship.id)
-    assert _landings(tab) == [("v1", "16 September", "1.6w"), ("v2", "23 September", "5d")]
-    assert tab.milestones.total.isVisibleTo(tab.widget)
-    assert tab.milestones.total_when.text() == "23 September"
-    assert tab.milestones.total_days.text() == "2.6w"  # 13 working days, 7 → 23 September
+    assert _landings(tab) == [
+        ("All milestones", "23 September", "2.6w"),  # 13 working days, 7 → 23 September
+        ("v1", "16 September", "1.6w"),
+        ("v2", "23 September", "5d"),
+    ]
+    whole = tab.milestones.rows[0]
+    assert whole.key == ALL_KEY and whole.selected  # nothing picked: the whole is
+    assert not whole.swatch.isVisibleTo(tab.widget)
+    assert tab.start_dates.keys == (draft.id, ship.id)
     assert tab.landing == date(2026, 9, 23)
 
 
@@ -299,7 +330,7 @@ def test_a_stretch_prints_whole_days_never_the_simulation_fraction(services, sta
     and seven is what the list says — not 6.66667."""
     tab = services.tabs.open("time", staged.id)
     tab.focus_bar.percent.setValue(60)
-    assert _landings(tab)[0] == ("v1", "15 September", "7d")
+    assert _landings(tab)[1] == ("v1", "15 September", "7d")
 
 
 def test_each_milestone_wears_its_shade_of_the_palette(services, staged):
@@ -319,9 +350,9 @@ def test_the_dealt_shades_spread_along_the_map_as_milestones_are_added(services,
     library = services.document
     tab = services.tabs.open("time", staged.id)
     read, _draft, _docs, _ship = staged.steps
-    before = [row.swatch.color.name() for row in tab.milestones.rows]
+    before = _swatches(tab)
     services.undo.push(SetModuleDataCommand(read.id, MILESTONE_ID, write_milestone_label("v0")))
-    after = [row.swatch.color.name() for row in tab.milestones.rows]
+    after = _swatches(tab)
     assert after == shades(PALETTES[0], 3) and before == shades(PALETTES[0], 2)
     assert len(set(after)) == 3
     assert MODULE_ID not in library.project(staged.id).module_data  # nothing dealt is stored
@@ -334,7 +365,7 @@ def test_picking_a_palette_reshades_the_milestones_and_is_undoable(services, sta
     tab.palette_picker.setCurrentIndex(tab.palette_picker.findData("mako"))
     assert staged.module_data[MODULE_ID] == {"palette": "mako", "format": 1}
     assert read_palette(staged) is mako
-    assert [row.swatch.color.name() for row in tab.milestones.rows] == shades(mako, 2)
+    assert _swatches(tab) == shades(mako, 2)
     assert tab.months.band_at(date(2026, 9, 10)).color.name() == shades(mako, 2)[0]
     services.undo.undo()
     assert MODULE_ID not in staged.module_data
@@ -378,34 +409,51 @@ def test_the_calendar_paints_each_stretch_and_marks_the_landing(services, staged
 
 
 def test_dating_a_milestone_starts_with_the_day_the_sequence_gave_it(services, staged):
-    """*Begin…* pre-fills the stretch's own start, so choosing a date is one click and an
-    edit; the cross hands the decision back to the sequence. Both undo — and the landing
-    date on the same row answers each edit."""
+    """*Begin…* in the start-dates table pre-fills the stretch's own start, so choosing a
+    date is one click and an edit; the cross hands the decision back to the sequence.
+    Both undo — and the landing date in the milestone list answers each edit."""
     tab = services.tabs.open("time", staged.id)
     _read, _draft, _docs, ship = staged.steps
-    row = tab.milestones.row(ship.id)
+    row = tab.start_dates.row(ship.id)
+    assert row.name.text() == "v2"
     assert row.set_date.isVisibleTo(tab.widget) and not row.date.isVisibleTo(tab.widget)
     row.set_date.click()
     assert ship.module_data[MODULE_ID] == {"start": "2026-09-17", "format": 1}
     assert row.date.isVisibleTo(tab.widget) and not row.set_date.isVisibleTo(tab.widget)
     row.date.setDate(QDate(2026, 10, 5))
     assert ship.module_data[MODULE_ID]["start"] == "2026-10-05"
-    assert _landings(tab)[1] == ("v2", "9 October", "5d")
-    assert tab.milestones.row(ship.id) is row  # the row the edit came from survives
+    assert _landings(tab)[2] == ("v2", "9 October", "5d")
+    assert tab.start_dates.row(ship.id) is row  # the row the edit came from survives
     row.clear.click()
     assert MODULE_ID not in ship.module_data
-    assert _landings(tab)[1] == ("v2", "23 September", "5d")
+    assert _landings(tab)[2] == ("v2", "23 September", "5d")
     services.undo.undo()  # a burst of edits to one milestone is one step, like typing
     assert MODULE_ID not in ship.module_data
     services.undo.redo()
     assert MODULE_ID not in ship.module_data
 
 
+def test_the_project_start_is_the_first_start_date(services, staged, project):
+    """The table leads with the project's own start — always dated, never handed back —
+    and setting it is the calendar click's twin: one undoable write of the same entry."""
+    tab = services.tabs.open("time", staged.id)
+    row = tab.start_dates.project
+    assert row.name.text() == "Project"
+    assert row.date.isVisibleTo(tab.widget)
+    assert not row.clear.isVisibleTo(tab.widget) and not row.set_date.isVisibleTo(tab.widget)
+    assert row.date.date() == QDate(2026, 9, 7)
+    row.date.setDate(QDate(2026, 9, 14))
+    assert project.module_data[ESTIMATION_ID]["start"] == "2026-09-14"
+    assert tab.months.span[0] == date(2026, 9, 14)
+    services.undo.undo()
+    assert row.date.date() == QDate(2026, 9, 7)
+
+
 def test_a_date_the_sequence_cannot_keep_is_pushed_and_flagged(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, _draft, _docs, ship = staged.steps
-    tab.milestones.row(ship.id).date.setDate(QDate(2026, 9, 10))
-    tab.milestones.row(ship.id).start_changed.emit(ship.id, date(2026, 9, 10))
+    tab.start_dates.row(ship.id).date.setDate(QDate(2026, 9, 10))
+    tab.start_dates.row(ship.id).start_changed.emit(ship.id, date(2026, 9, 10))
     v2 = tab.milestones.row(ship.id)
     assert v2.when.text() == "⚠ 23 September"
     assert "Asked to begin 10 September" in v2.toolTip()
@@ -428,7 +476,7 @@ def test_a_dated_milestone_keeps_its_colour_and_vice_versa(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, _ship = staged.steps
     tab.milestones.row(draft.id).swatch.color_picked.emit("#c98500")
-    tab.milestones.row(draft.id).start_changed.emit(draft.id, date(2026, 9, 1))
+    tab.start_dates.row(draft.id).start_changed.emit(draft.id, date(2026, 9, 1))
     assert draft.module_data[MODULE_ID] == {
         "start": "2026-09-01",
         "color": "#c98500",
@@ -438,16 +486,22 @@ def test_a_dated_milestone_keeps_its_colour_and_vice_versa(services, staged):
     assert draft.module_data[MODULE_ID] == {"start": "2026-09-01", "format": 1}
 
 
-def test_picking_a_milestone_emphasises_its_stretch_in_the_calendar(services, staged):
+def test_picking_a_milestone_emphasises_it_in_the_calendar_and_the_plots(services, staged):
+    """A pick highlights; it hides nothing. *All milestones* shows them all alike again."""
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, ship = staged.steps
-    tab.milestones.row(ship.id).picked.emit(ship.id)
+    whole, first, second = tab.milestones.rows
+    second.picked.emit(ship.id)
     assert tab.picked == ship.id
     assert tab.months.emphasised == ship.id
-    assert tab.milestones.rows[1].selected and not tab.milestones.rows[0].selected
-    tab.milestones.rows[1].picked.emit(ship.id)  # picked again: let go
+    assert tab.chart._data.emphasis == ship.id
+    assert second.selected and not first.selected and not whole.selected
+    assert [s.key for s in tab.chart._data.segments] == [draft.id, ship.id]  # both stay
+    whole.picked.emit(ALL_KEY)
     assert tab.picked is None and tab.months.emphasised is None
-    tab.milestones.rows[0].picked.emit(draft.id)
+    assert tab.chart._data.emphasis is None and whole.selected
+    first.picked.emit(draft.id)
+    assert tab.picked == draft.id
     services.undo.push(SetModuleDataCommand(draft.id, MILESTONE_ID, {}))  # no longer one
     assert tab.picked is None
 
@@ -457,7 +511,12 @@ def test_removing_a_milestone_step_takes_its_row_with_it(services, staged):
     _read, draft, _docs, ship = staged.steps
     services.undo.push(RemoveNodeCommand(ship.id))
     assert tab.milestones.keys == (draft.id,)
-    assert [label for label, _when, _days in _landings(tab)] == ["v1", "Remaining work"]
+    assert [label for label, _when, _days in _landings(tab)] == [
+        "All milestones",
+        "v1",
+        "Remaining work",
+    ]
+    assert tab.start_dates.keys == (draft.id,)
 
 
 def test_the_milestone_rows_are_never_read_back_out_of_the_layout(monkeypatch, services, staged):
@@ -476,6 +535,7 @@ def test_the_milestone_rows_are_never_read_back_out_of_the_layout(monkeypatch, s
     services.undo.push(SetEdgesCommand(ship.id, "requires", [read.id]))
     services.undo.push(SetEdgesCommand(draft.id, "requires", [ship.id]))
     assert tab.milestones.keys == (ship.id, draft.id)
+    assert tab.start_dates.keys == (ship.id, draft.id)
 
 
 def test_without_milestones_the_list_says_where_to_make_one(tab):
@@ -485,7 +545,8 @@ def test_without_milestones_the_list_says_where_to_make_one(tab):
     assert "Step ▸ Type ▸ Milestone" in tab.milestones.empty.text()
     (whole,) = tab.milestones.rows
     assert whole.name.text() == "All work" and whole.key == ""
-    assert not whole.begin.isVisibleTo(tab.widget) and not whole.swatch.isVisibleTo(tab.widget)
+    assert not whole.swatch.isVisibleTo(tab.widget)
+    assert tab.start_dates.keys == ()  # the project's own start is the whole table
 
 
 # -- what breaks, said plainly ---------------------------------------------------------------
@@ -499,9 +560,10 @@ def test_a_loop_in_the_file_says_which_steps_wait_on_each_other(services, projec
     library.edges_changed.emit(read.id, None)
     assert not tab.months.isVisibleTo(tab.widget)
     assert not tab.matrix.isVisibleTo(tab.widget)
-    assert tab.notice.isVisibleTo(tab.widget)
-    assert "Read the spec, Draft the model" in tab.notice.text()
-    assert "Unlink one" in tab.notice.text()
+    assert not tab.chart.isVisibleTo(tab.widget)
+    assert tab.banner.isVisibleTo(tab.widget) and not tab.banner.button.isVisibleTo(tab.widget)
+    assert "Read the spec, Draft the model" in tab.banner.note.text()
+    assert "Unlink one" in tab.banner.note.text()
     read.edges["requires"] = []
     library.edges_changed.emit(read.id, None)
     assert tab.months.isVisibleTo(tab.widget)
@@ -511,10 +573,11 @@ def test_a_loop_in_the_file_says_which_steps_wait_on_each_other(services, projec
 def test_a_stepless_project_says_so_instead_of_a_grid_of_zeros(services, make_project):
     empty = make_project("Empty")
     tab = services.tabs.open("time", empty.id)
-    assert tab.notice.text() == "No steps yet"
+    assert tab.banner.note.text() == "No steps yet"
     assert not tab.matrix.isVisibleTo(tab.widget)
-    assert not tab.lens_bar.isVisibleTo(tab.widget)
+    assert not tab.start_dates.isVisibleTo(tab.widget)
     assert not tab.months.isVisibleTo(tab.widget)
+    assert tab.controls.isVisibleTo(tab.widget)  # the strip is chrome, and stays
 
 
 def test_the_tab_titles_itself_after_the_project(tab):
@@ -559,18 +622,18 @@ def test_each_row_says_how_much_of_the_work_through_it_has_landed(services, stag
     library = services.document
     read, draft, _docs, ship = staged.steps
     tab = services.tabs.open("time", staged.id)
-    assert [row.progress.text() for row in tab.milestones.rows] == ["0%", "0%"]
+    assert [row.progress.text() for row in tab.milestones.rows] == ["0%", "0%", "0%"]
     services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
-    assert [row.progress.text() for row in tab.milestones.rows] == ["50%", "25%"]
+    # The whole, then v1, then v2 — everything through its stretch.
+    assert [row.progress.text() for row in tab.milestones.rows] == ["25%", "50%", "25%"]
     assert tab.milestones.row(ship.id).progress.toolTip() == (
         "1 of 4 steps done · 2d of 7d estimated"
     )
-    assert tab.milestones.total_progress.text() == "25%"
-    tab.days_button.click()  # by estimated days: 2 of 4, then 2 of 7
+    tab.days_button.click()  # by estimated days: 2 of 7, 2 of 4, then 2 of 7
     assert tab.by_days
-    assert [row.progress.text() for row in tab.milestones.rows] == ["50%", "29%"]
+    assert [row.progress.text() for row in tab.milestones.rows] == ["29%", "50%", "29%"]
     SetModuleDataCommand(draft.id, STATUS_ID, write_status("done")).redo(library)
-    assert [row.progress.text() for row in tab.milestones.rows] == ["100%", "57%"]
+    assert [row.progress.text() for row in tab.milestones.rows] == ["57%", "100%", "57%"]
 
 
 def test_the_right_half_is_no_taller_than_its_content(services, staged, tab, app):
@@ -592,36 +655,37 @@ def test_the_right_half_is_no_taller_than_its_content(services, staged, tab, app
     assert page.height() <= max(right.viewport().height(), needed)
 
 
-def test_the_chart_follows_the_picked_milestone_and_the_measure(services, staged):
+def test_the_plots_show_the_whole_plan_and_follow_the_measure(services, staged):
+    """The plots are always the whole project; a pick changes what is held in full ink,
+    never what is drawn."""
     from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
     from dplanner.modules.step_status.aspect import write as write_status
 
-    read, draft, _docs, _ship = staged.steps
+    read, draft, _docs, ship = staged.steps
     tab = services.tabs.open("time", staged.id)
     services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
-    assert tab.progress_caption.text() == "Progress, all work"
-    assert tab.progress_figure.text() == "25% of steps · 29% of days"
     data = tab.chart._data
-    assert data.label == "All work" and data.finish == date(2026, 9, 23)
+    assert data.finish == date(2026, 9, 23) and data.emphasis is None
     assert data.expected[0] == (date(2026, 9, 7), 0.0)
     assert data.expected[-1] == (date(2026, 9, 23), 1.0)
     assert data.actual[-1] == (date.today(), 0.25)
+    assert [(s.key, s.label, s.now) for s in data.segments] == [
+        (draft.id, "v1", (date(2026, 9, 7), date(2026, 9, 16))),
+        (ship.id, "v2", (date(2026, 9, 17), date(2026, 9, 23))),
+    ]
+    assert [s.color.name() for s in data.segments] == shades(PALETTES[0], 2)
     tab.milestones.row(draft.id).picked.emit(draft.id)
-    assert tab.progress_caption.text() == "Progress toward v1"
-    assert tab.progress_figure.text() == "50% of steps · 50% of days"
     data = tab.chart._data
-    assert data.finish == date(2026, 9, 16) and data.color.name() == shades(PALETTES[0], 2)[0]
-    assert data.expected == (
-        (date(2026, 9, 7), 0.0),
-        (date(2026, 9, 10), 0.5),
-        (date(2026, 9, 16), 1.0),
-    )
+    assert data.emphasis == draft.id and data.emphasised is data.segments[0]
+    assert data.finish == date(2026, 9, 23) and len(data.segments) == 2  # nothing hidden
     tab.days_button.click()
-    assert tab.chart._data.by_days and tab.chart._data.actual[-1] == (date.today(), 0.5)
-    assert "plan now: 50% of days" in tab.chart.tooltip_at(date(2026, 9, 10))
-    assert "actual: 50% of days" in tab.chart.tooltip_at(date.today())
+    data = tab.chart._data
+    assert data.by_days and data.actual[-1] == (date.today(), pytest.approx(2 / 7))
+    assert "plan now:" in tab.chart.tooltip_at(date(2026, 9, 10))
+    assert "of days" in tab.chart.tooltip_at(date(2026, 9, 10))
+    assert "actual: 29% of days" in tab.chart.tooltip_at(date.today())
     assert tab.chart.tooltip_at(date(2026, 9, 16)).startswith("16 September")
-    assert tab.chart.span[0] <= date(2026, 9, 7) and tab.chart.span[1] >= date(2026, 9, 16)
+    assert tab.chart.span[0] <= date(2026, 9, 7) and tab.chart.span[1] >= date(2026, 9, 23)
 
 
 def test_the_recorder_writes_the_day_once_off_the_undo_stack(services, staged):
@@ -649,9 +713,10 @@ def test_the_recorder_writes_the_day_once_off_the_undo_stack(services, staged):
     assert entry["format"] == 1 and len(entry["days"]) == 1
 
 
-def test_the_chart_compares_against_the_plan_at_the_basis_and_says_what_moved(services, staged):
+def test_the_plots_compare_against_the_plan_at_the_basis(services, staged):
     """The baseline is the plan as recorded on the basis day — the start unless picked —
-    and the delta figure says how the scope moved since, with the reasons in its tip."""
+    drawn against the plan now in the scope plot, and milestone by milestone in the
+    shift plot, where each row says in words which way it went."""
     from dplanner.modules.time_estimates.progress import (
         HISTORY_ID,
         Landing,
@@ -697,72 +762,41 @@ def test_the_chart_compares_against_the_plan_at_the_basis_and_says_what_moved(se
         1.0,
     )
     assert data.finish == date(2026, 9, 23)
-    assert tab.delta_figure.text() == (
-        "since 1 September: +1 step, +1d, lands 3 working days later (was 18 September)"
+    assert [(s.then, s.now) for s in data.segments] == [
+        ((date(2026, 9, 7), date(2026, 9, 14)), (date(2026, 9, 7), date(2026, 9, 16))),
+        ((date(2026, 9, 15), date(2026, 9, 18)), (date(2026, 9, 17), date(2026, 9, 23))),
+    ]
+    assert shift_words(data.segments[1], data.baseline_day, data.today) == (
+        "v2 lands 23 September — 3 working days later than planned on 1 September (18 September)"
     )
-    assert "plan at 1 September" in tab.chart.tooltip_at(date(2026, 9, 10))
-    assert "plan now" in tab.chart.tooltip_at(date(2026, 9, 10))
+    assert "plan at 1 September" in tab.chart.tooltip_at(date(2026, 9, 10), "scope")
+    assert "plan now" in tab.chart.tooltip_at(date(2026, 9, 10), "scope")
+    assert "plan at" not in tab.chart.tooltip_at(date(2026, 9, 10))  # the status plot's words
     # A basis after every record compares against the last one — today's own.
     tab.basis.setDate(QDate(2030, 1, 1))
-    assert tab.chart._data.baseline_day == date.today()
-    assert tab.delta_figure.text() == f"unchanged since {format_date(date.today())}"
+    data = tab.chart._data
+    assert data.baseline_day == date.today()
+    assert shift_words(data.segments[1], data.baseline_day, data.today) == (
+        f"v2 lands 23 September — unchanged since {format_date(date.today())}"
+    )
     tab.basis_reset.click()
     assert tab.basis_day == date(2026, 9, 7) and not tab.basis_reset.isVisibleTo(tab.widget)
 
 
-def test_the_delta_tip_names_what_moved_the_plan(services, staged):
-    """Against an earlier day's record, the tip lists the steps born and the estimates
-    changed since — the reasons behind the figure."""
-    from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION
-    from dplanner.modules.estimation.aspect import write as write_days_with
-    from dplanner.modules.time_estimates.progress import (
-        HISTORY_ID,
-        Snapshot,
-        Stretch,
-        Tally,
-        write_history,
-    )
-
-    library = services.document
-    read, draft, _docs, ship = staged.steps
-    for step in staged.steps:  # born before the record they are compared against
-        step.created = "2026-08-30T09:00:00+00:00"
-    old = Snapshot(
-        date(2026, 9, 1),
-        (
-            Stretch(draft.id, Tally(2, 0, 4.0, 0.0), date(2026, 9, 7), date(2026, 9, 16)),
-            Stretch(ship.id, Tally(2, 0, 3.0, 0.0), date(2026, 9, 17), date(2026, 9, 23)),
-        ),
-    )
-    SetModuleDataCommand(staged.id, HISTORY_ID, write_history([old])).redo(library)
-    tab = services.tabs.open("time", staged.id)
-    tab.basis.setDate(QDate(2026, 9, 1))
-    assert tab.delta_figure.text() == "unchanged since 1 September"
-    assert tab.delta_figure.toolTip() == ""
-    services.undo.push(
-        SetModuleDataCommand(
-            read.id, ESTIMATION, write_days_with(3.0, previous=read.module_data[ESTIMATION])
-        )
-    )
-    AddNodeCommand(staged.id, Step(title="Polish")).redo(library)
-    assert tab.delta_figure.text().startswith("since 1 September: +1 step, +1d")
-    assert tab.delta_figure.toolTip().splitlines() == [
-        "added since 1 September: S5",
-        f"re-estimated since 1 September: S1 2d → 3d on {format_date(date.today())}",
-    ]
-
-
-def test_the_chart_marks_the_milestones_and_dots_a_gap_the_plan_leaves_empty(services, staged, tab):
-    """v1 and v2 stand on the chart where they land; giving v2 a start date a week past
-    v1's landing leaves the days between empty, and the chart says so."""
+def test_the_milestone_plot_rows_the_milestones_and_a_gap_the_plan_leaves_empty_is_dotted(
+    services, staged, tab
+):
+    """v1 and v2 get a row each where they land; giving v2 a start date a week past v1's
+    landing leaves the days between empty, and the plots say so."""
     from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
     from dplanner.modules.time_estimates.schedule import write_milestone
 
     data = tab.chart._data
-    assert [(when, label) for when, label, _ in data.marks] == [
-        (date(2026, 9, 16), "v1"),
-        (date(2026, 9, 23), "v2"),
+    assert [(s.label, s.now[1]) for s in data.milestones] == [
+        ("v1", date(2026, 9, 16)),
+        ("v2", date(2026, 9, 23)),
     ]
+    assert [panel.kind for panel in tab.chart.panels()] == ["status", "scope", "shift"]
     assert data.idle == ()
     ship = staged.steps[3]
     services.undo.push(

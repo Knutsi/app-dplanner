@@ -160,13 +160,19 @@ class Delta:
     def shift(self) -> int | None:
         if self.finish_then is None or self.finish_now is None:
             return None
-        if self.finish_now >= self.finish_then:
-            return working_days_between(self.finish_then, self.finish_now) - 1
-        return -(working_days_between(self.finish_now, self.finish_then) - 1)
+        return landing_shift(self.finish_then, self.finish_now)
 
     @property
     def unchanged(self) -> bool:
         return not self.steps and not self.days and not self.shift
+
+
+def landing_shift(then: date, now: date) -> int:
+    """How many working days a landing moved from ``then`` to ``now``: positive for
+    later, negative for earlier, zero for the same day."""
+    if now >= then:
+        return working_days_between(then, now) - 1
+    return -(working_days_between(now, then) - 1)
 
 
 # -- taking a snapshot ------------------------------------------------------------------------

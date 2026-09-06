@@ -320,10 +320,11 @@ src/dplanner/
 │   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── progression/         the execution board — what can be launched now — and `dplanner progression show`
-│   ├── time_estimates/      the staffing matrix, the milestones in sequence and the calendar they date —
-│   │                        `dplanner schedule matrix`, `schedule palette`, `schedule team`, `schedule milestone`;
-│   │                        and progress against the plan (progress.py derives it, recorder.py writes the
-│   │                        day's history, chart.py draws expected against actual) — `dplanner progress show|record`
+│   ├── time_estimates/      the staffing matrix, the start dates and milestones in sequence and the calendar
+│   │                        they date — `dplanner schedule matrix`, `schedule palette`, `schedule team`,
+│   │                        `schedule milestone`; and progress against the plan (progress.py derives it,
+│   │                        recorder.py writes the day's history, chart.py draws three plots on one time
+│   │                        axis: progress, scope change, milestone shifts) — `dplanner progress show|record`
 │   ├── reporting/           the window's half of the report: File ▸ Export's HTML, PDF (paper.py) and Excel,
 │   │                        Project ▸ Preview Report, the publisher that writes `reports/` on every Save,
 │   │                        Settings ▸ Reports

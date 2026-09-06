@@ -28,12 +28,16 @@ STACK_SPACING = 12  # Between cards.
 SECTION_GAP = 12  # Between the sections of a split card (above and below its rule).
 
 
-def card_rule(parent: QWidget | None = None) -> QFrame:
-    """A 1 px rule splitting a card's body into sections; inset by the card padding."""
+def card_rule(parent: QWidget | None = None, *, vertical: bool = False) -> QFrame:
+    """A 1 px rule splitting a card's body into sections; inset by the card padding.
+    ``vertical`` stands it up, to part two groups of controls in one row."""
     rule = QFrame(parent)
     rule.setObjectName("ToolCardRule")
     rule.setFrameShape(QFrame.Shape.NoFrame)
-    rule.setFixedHeight(1)
+    if vertical:
+        rule.setFixedWidth(1)
+    else:
+        rule.setFixedHeight(1)
     return rule
 
 

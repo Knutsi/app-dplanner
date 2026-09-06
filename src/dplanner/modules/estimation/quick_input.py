@@ -5,6 +5,12 @@ sizes, and typing into a spin box to say "half a day" is three gestures for a va
 planner picks from a short list. The chip matching the current value reads checked, so the
 row also answers "what is this set to" without reading the number.
 
+**Zero is a claim, and it has its own chip.** "Not estimated" and "adds no time" are
+different things to say about a step — the first is missing, the second is counted — so
+the box has to show both: its minimum is one step *under* zero and prints as a dash, and
+0 prints as 0. *Does not add time* stands apart from the sizes, past a rule, because it
+is not a size.
+
 The widget renders and reports; it never writes. Committing is :func:`push_estimate`, so
 every owner — the step detail panel, a table row — pushes the same command and picks its own
 ``view_origin`` for echo suppression. A widget that committed for itself would fix that
@@ -24,12 +30,21 @@ from PySide6.QtWidgets import (
 from dplanner.core.signals import Signal
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, StepId
+from dplanner.framework.cards import card_rule
 from dplanner.framework.undo import UndoService
 from dplanner.modules.estimation.aspect import MODULE_ID, write
 
 CHIP_GAP = 8
 
 MAX_DAYS = 999.0
+# The finest estimate — one agent task — and the box's step. One step under zero is the
+# box's "no estimate": the special value text prints it as a dash, an arrow-down from 0
+# reaches it, and 0 itself stays sayable.
+QUARTER = 0.25
+UNESTIMATED = -QUARTER
+
+FREE_LABEL = "Does not add time"
+FREE_TIP = "0 days — counted as estimated, and adds no time to the plan"
 
 # The sizes a step usually is. A quarter day is one agent task (about two hours with a
 # human in the loop), half a day is where most small human work sits, and the top of the
@@ -63,13 +78,13 @@ class EstimateInput(QWidget):
         self.edited: Signal[()] = Signal()
 
         self.days = _DaysBox(self)
-        self.days.setRange(0.0, MAX_DAYS)
+        self.days.setRange(UNESTIMATED, MAX_DAYS)
         self.days.setDecimals(2)
-        self.days.setSingleStep(0.25)
+        self.days.setSingleStep(QUARTER)
         # A table row has half a pane; the panel can afford the word.
         self.days.setSuffix("d" if horizontal else " days")
-        # "Not estimated" and "free" are different claims, so 0 has to be sayable as
-        # neither: an empty box is unestimated, and clearing it removes the entry.
+        # The minimum is "not estimated", printed as a dash; stepping down to it removes
+        # the entry. 0 is above it, and means what it says.
         self.days.setSpecialValueText("—")
         self.days.editingFinished.connect(self._on_edited)
 
@@ -82,17 +97,20 @@ class EstimateInput(QWidget):
         self.chips = QButtonGroup(self)
         self.chips.setExclusive(True)
         for value, label in QUICK_DAYS:
-            chip = QPushButton(label, chips)
-            chip.setObjectName("EstimateChip")
-            chip.setCheckable(True)
-            chip.setCursor(Qt.CursorShape.PointingHandCursor)
-            chip.setToolTip(
-                "0.25 days — one agent task, about two hours with a human in the loop"
-                if value == 0.25
-                else f"{value:g} days"
+            chip_row.addWidget(
+                self._chip(
+                    chips,
+                    value,
+                    label,
+                    "0.25 days — one agent task, about two hours with a human in the loop"
+                    if value == QUARTER
+                    else f"{value:g} days",
+                )
             )
-            self.chips.addButton(chip, self._chip_id(value))
-            chip_row.addWidget(chip)
+        # Zero is not a size: it stands past a rule, worded as the claim it makes.
+        chip_row.addWidget(card_rule(chips, vertical=True))
+        self.free = self._chip(chips, 0.0, FREE_LABEL, FREE_TIP)
+        chip_row.addWidget(self.free)
         if not horizontal:
             chip_row.addStretch(1)
         self.chips.idClicked.connect(self._on_chip)
@@ -107,19 +125,31 @@ class EstimateInput(QWidget):
         """Display a value without reporting it as an edit."""
         self._loading = True
         try:
-            self.days.setValue(days or 0.0)
+            self.days.setValue(UNESTIMATED if days is None else days)
             self._show_chip(days)
         finally:
             self._loading = False
 
     def value(self) -> float | None:
-        return self.days.value() or None
+        """The days shown, or None at the box's dash — 0 is a value."""
+        shown = self.days.value()
+        return None if shown < 0 else shown
 
     # -- internals -----------------------------------------------------------------------------
 
+    def _chip(self, parent: QWidget, value: float, label: str, tip: str) -> QPushButton:
+        chip = QPushButton(label, parent)
+        chip.setObjectName("EstimateChip")
+        chip.setCheckable(True)
+        chip.setCursor(Qt.CursorShape.PointingHandCursor)
+        chip.setToolTip(tip)
+        self.chips.addButton(chip, self._chip_id(value))
+        return chip
+
     @staticmethod
     def _chip_id(value: float) -> int:
-        """A button id per quick value. Quarters exist, so the id counts quarter-days."""
+        """A button id per quick value. Quarters exist, so the id counts quarter-days —
+        and 0, a legal id, is the chip that adds no time."""
         return int(value * 4)
 
     def _show_chip(self, days: float | None) -> None:
@@ -133,7 +163,7 @@ class EstimateInput(QWidget):
     def _on_chip(self, chip_id: int) -> None:
         if self._loading:
             return
-        self.days.setValue(chip_id / 4)
+        self.days.setValue(chip_id * QUARTER)
         self._on_edited()
 
     def _on_edited(self) -> None:

@@ -859,9 +859,16 @@ root, stop and look for the registry or capability you have not found yet.
   colour on its step — written by the tab's controls (a matrix tile click *is* the
   team) and `dplanner schedule focus` / `schedule palette` / `schedule team` / `schedule
   milestone` alike. **Milestones are shades of one map, dealt by place in the
-  sequence** (`schedule.py`'s `PALETTES` and `shades`), never a list of hues; the
-  milestone list under the calendar is the one list — the date you set, the date it
-  lands and how much of it has landed sit on one row. A cycle a
+  sequence** (`schedule.py`'s `PALETTES` and `shades`), never a list of hues. Under the
+  staffing grid, **Start dates** is what you set (the project's own, and each
+  milestone's *Begin…*) and **Milestones** is what it answers — the date it lands and
+  how much of it has landed on one row, led by *All milestones*, the whole plan on one
+  line. Picking a row **highlights, never hides**: the calendar and every plot keep the
+  whole project and fade what is outside the picked stretch. The focus factor, the
+  calendar-or-project-days lens, the palette and Export sit in one control strip over
+  the page (`framework/toolbar.py`'s `control_bar`), and a banner over the answer counts
+  the steps running as zero, with *Estimate missing* opening the Estimates tab on them
+  through `TimeEstimatesDeps.estimate_missing`. A cycle a
   hand-edited file smuggled in is named by `ordering.cyclic()` and the tab says so instead
   of drawing a calendar over a broken walk. `ARCHITECTURE.md`'s *Time estimates: two
   worker pools, one greedy simulation* has the reasoning.
@@ -879,20 +886,23 @@ root, stop and look for the registry or capability you have not found yet.
   refresher's rule — Ctrl+Z undoes the status, not the record). **The baseline is the
   plan as recorded on the basis day** — the project's start, or the day picked beside
   the chart / `progress show --basis` — the last row on or before it (the earliest row
-  for a project older than its history), drawn exactly from its knots; the chart
-  (`chart.py`) draws it dashed **over** the plan now, opaque and paler — so a plan
-  unchanged since the basis reads as two lines in one place, not one — the plan now
-  solid, the band between them as the change since, and what actually landed in ink,
-  on an axis marked at days, Mondays or month firsts (`axis_ticks`) over a hairline
-  grid; each milestone stands on it as a named hairline where the plan lands it, and
-  a span a milestone's own start date leaves empty is flat and dotted (`progress.marks`,
-  `progress.idle` — the same two `progress show` prints). The delta figure (`delta`, `delta_words`) says
-  what was added and how the landing moved **since the baseline's recorded day**, and
-  `changes_since` names the steps born and the estimates changed after that day — the
-  step's `created` stamp and the estimate aspect's own history (`estimation`'s
-  `read_history`; every `write` carries the value it replaced, one row per day, format
-  2; `dplanner estimate show` reads it back). `ARCHITECTURE.md`'s *Progress against the
-  plan* has the reasoning.
+  for a project older than its history), drawn exactly from its knots. `chart.py` is
+  **three plots on one locked time axis** — the same dates under all three, the date
+  marks (days, Mondays or month firsts, `axis_ticks`) as hairlines through every plot,
+  the labels printed once under the last, the edges the earliest and latest date any
+  plot has to show: *Progress* (the plan now in each stretch's shade against what
+  landed in ink, with *ahead 5 %* / *behind 12 %* beside today's dot), *Scope change*
+  (the baseline dashed **over** the plan now, opaque and paler — so a plan unchanged
+  since the basis reads as two lines in one place — and the band between them), and
+  *Milestones* (a row each: the landing then hollow, the landing now filled, an arrow
+  between). A span a milestone's own start date leaves empty is flat and dotted
+  (`progress.idle`, the same one `progress show` prints). The delta in words (`delta`,
+  `delta_words`) and `changes_since` — the steps born and the estimates changed after
+  the baseline's recorded day, from the step's `created` stamp and the estimate
+  aspect's own history (`estimation`'s `read_history`; every `write` carries the value
+  it replaced, one row per day, format 2; `dplanner estimate show` reads it back) —
+  are the terminal's and the report's; the window says it with the plots.
+  `ARCHITECTURE.md`'s *Progress against the plan* has the reasoning.
 - **A decision is a record beside the project, and every briefing carries the standing
   ones.** `modules/decisions/` — `log.py` (Qt-free; `D1, D2, …` minted per project, a
   title, markdown reasoning, the day, the step it was made on, what it supersedes),

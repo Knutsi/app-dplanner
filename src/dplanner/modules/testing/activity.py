@@ -17,14 +17,13 @@ at most one open run, so "mark this ok" never has to ask which.
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QPoint, QSize, Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QToolBar,
     QVBoxLayout,
     QWidget,
 )
@@ -45,11 +44,11 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.debounce import Debounced
 from dplanner.framework.module_data_section import PANEL_MARGIN
+from dplanner.framework.toolbar import control_bar
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import covered, project_tests
 from dplanner.modules.testing.table import Row, TestsTable
 from dplanner.modules.testing.view import word
-from dplanner.theme.icons import ICON_SIZE
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
     from dplanner.modules.testing.module import TestsDeps
@@ -96,20 +95,6 @@ def headline(statuses: Sequence[str], *, run: runs.Run | None = None) -> tuple[s
     return f"{label} — {verdict}", detail
 
 
-def _control_bar(parent: QWidget) -> QToolBar:
-    """A toolbar that overflows into its » menu instead of squeezing its contents."""
-    bar = QToolBar(parent)
-    bar.setObjectName("TestsToolBar")
-    bar.setMovable(False)
-    bar.setFloatable(False)
-    bar.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
-    inner = bar.layout()
-    if inner is not None:
-        inner.setSpacing(CONTROL_GAP)
-        inner.setContentsMargins(0, 0, 0, 0)
-    return bar
-
-
 class _TestsPage(QWidget):
     """The shared page: caption, the answer, then the table. Both activities host one."""
 
@@ -146,8 +131,8 @@ class _TestsPage(QWidget):
         # the left bar takes the slack and is the one that ever needs to overflow.
         strip = QHBoxLayout()
         strip.setSpacing(CONTROL_GAP)
-        self.controls = _control_bar(self)
-        self.actions_bar = _control_bar(self)
+        self.controls = control_bar(self)
+        self.actions_bar = control_bar(self)
         strip.addWidget(self.controls, 1)
         strip.addWidget(self.actions_bar)
         layout.addLayout(strip)

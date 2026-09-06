@@ -32,7 +32,6 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QTabWidget,
-    QToolBar,
     QVBoxLayout,
     QWidget,
 )
@@ -45,6 +44,7 @@ from dplanner.framework.context import ContextNode, Uri, activity_uri, selection
 from dplanner.framework.debounce import Debounced
 from dplanner.framework.markdown_view import MarkdownView
 from dplanner.framework.module_data_section import PANEL_MARGIN
+from dplanner.framework.toolbar import control_bar
 from dplanner.modules.docs.aspect import MODULE_ID, read
 from dplanner.modules.docs.collect import (
     Source,
@@ -349,15 +349,7 @@ class _DocsPage(QWidget):
         # » overflow button, where a plain row simply overlaps.
         strip = QHBoxLayout()
         strip.setSpacing(CONTROL_GAP)
-        self.controls = QToolBar(self)
-        self.controls.setObjectName("TestsToolBar")  # The one control-strip look.
-        self.controls.setMovable(False)
-        self.controls.setFloatable(False)
-        self.controls.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
-        inner = self.controls.layout()
-        if inner is not None:
-            inner.setSpacing(CONTROL_GAP)
-            inner.setContentsMargins(0, 0, 0, 0)
+        self.controls = control_bar(self)
         self.group_box = QComboBox(self.controls)
         self.group_box.setMinimumWidth(SELECTOR_WIDTH)
         # A toolbar wraps a widget in an action, and it is the *action* that carries

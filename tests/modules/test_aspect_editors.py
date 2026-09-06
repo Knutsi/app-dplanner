@@ -86,13 +86,31 @@ def test_an_estimate_is_written_through_the_undo_stack(services, project, panel)
 
 
 def test_clearing_an_estimate_removes_the_entry(services, project, panel):
+    """The box's dash — one step under zero — is "not estimated"; zero itself is a value."""
+    from dplanner.modules.estimation.quick_input import UNESTIMATED
+
     step = project.steps[0]
     editor = section(panel, "Estimate")
     editor.days.setValue(3.0)
     editor.days.editingFinished.emit()
-    editor.days.setValue(0.0)
+    editor.days.setValue(UNESTIMATED)
     editor.days.editingFinished.emit()
     assert "estimation" not in services.document.step(step.id).module_data
+    assert editor.days.text() == "—"
+
+
+def test_a_step_that_adds_no_time_is_a_claim_with_its_own_chip(services, project, panel):
+    """*Does not add time* writes an explicit zero — counted, where an unsized step is
+    missing — and the box prints it as 0, not as the dash."""
+    step = project.steps[0]
+    editor = section(panel, "Estimate")
+    editor._input.free.click()
+    assert read_estimate(services.document.step(step.id)) == 0.0
+    assert editor.days.value() == 0.0 and editor.days.text() == "0 days"
+    assert [b.text() for b in editor.chips.buttons() if b.isChecked()] == ["Does not add time"]
+    editor.chips.button(4).click()  # a day
+    assert read_estimate(services.document.step(step.id)) == 1.0
+    assert not editor._input.free.isChecked()
 
 
 def test_a_change_made_elsewhere_reaches_the_estimate(services, project, panel):
