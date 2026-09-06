@@ -22,7 +22,7 @@ from dplanner.cli.command import CliContext, CliError
 from dplanner.cli.lookup import find_project
 from dplanner.core.module_data import ModuleDataFormat, migrate_module_data
 from dplanner.core.storage.locations import find_repo_root, main_checkout
-from dplanner.core.storage.pointer import POINTER_FILE
+from dplanner.core.storage.pointer import POINTER_FILE, resolve_index
 from dplanner.domain.library_file import LIBRARY_ENV, resolve_library_path
 from dplanner.domain.model import Library, Project
 from dplanner.domain.shelf import migrate_shelved
@@ -134,19 +134,23 @@ def _walk_up(start: Path) -> Path | None:
 
 
 def _follow_pointer(directory: Path) -> Path | None:
-    """The project a ``.dplanner`` file names, or None when there is no pointer here.
+    """The project the ``.dplanner`` index here names, or None when there is no index.
 
-    A pointer that leads nowhere raises rather than letting the walk continue past it:
-    silently acting on some project further up when the user explicitly named this one
-    is the failure they cannot see.
+    An index may list several projects, one per line; the first that leads to a
+    ``project.dproj`` answers. An index none of whose lines leads anywhere raises rather
+    than letting the walk continue past it: silently acting on some project further up
+    when the user explicitly named this one is the failure they cannot see.
     """
     pointer = directory / POINTER_FILE
     if not pointer.is_file():
         return None
-    target = (directory / pointer.read_text().strip()).resolve()
-    if not (target / PROJECT_META).is_file():
-        raise CliError(f"{pointer} points at {target}, but there is no {PROJECT_META} there")
-    return target
+    entries = resolve_index(directory)
+    for _line, target in entries:
+        if (target / PROJECT_META).is_file():
+            return target
+    if not entries:
+        return None
+    raise CliError(f"{pointer} points at {entries[0][1]}, but there is no {PROJECT_META} there")
 
 
 @contextmanager

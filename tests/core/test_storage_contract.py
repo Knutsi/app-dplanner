@@ -19,6 +19,7 @@ import pytest
 from dplanner.core.storage.git import GitStorage
 from dplanner.core.storage.github import GitHubStorage
 from dplanner.core.storage.local import LocalStorage
+from dplanner.core.storage.locations import repo_storage
 from dplanner.core.storage.provider import RemoteStorage, StorageProvider, VersionedStorage
 
 
@@ -304,3 +305,31 @@ def test_pull_reports_whether_anything_arrived(remote):
 
 def test_remote_label_is_readable(remote):
     assert remote.remote_label()
+
+
+# -- a provider over a whole repository ------------------------------------------------------
+
+
+def test_repo_storage_commits_only_its_scopes(tmp_path):
+    """The constructor moving a plan uses: a commit at the root that sweeps up exactly the
+    directories it was scoped to, and nothing beside them."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "plans").mkdir()
+    (repo / "plans" / "a.txt").write_text("plan")
+    (repo / "src").mkdir()
+    (repo / "src" / "b.txt").write_text("code")
+    scoped = repo_storage(repo, ["plans"])
+    assert isinstance(scoped, VersionedStorage)
+    assert scoped.commit("plans only") is True
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout
+    assert "src/" in status and "plans/" not in status
+    assert scoped.history(1)[0].message == "plans only"
+
+
+def test_repo_storage_over_a_checkout_with_an_origin_has_the_remote(tmp_path):
+    make_github(tmp_path)
+    whole = repo_storage(tmp_path / "clone")
+    assert isinstance(whole, RemoteStorage) and whole.has_remote()

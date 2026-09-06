@@ -105,9 +105,11 @@ from pathlib import Path
 
 from dplanner.core.fsio import slugify
 
-# Where a step's worktree lives, under the repository root. A sibling of the `.dplanner`
-# pointer file, never inside it — see the module docstring.
-WORKTREES_DIR = ".dplanner-worktrees"
+# Where a step's worktree lives, under the repository root: a sibling of the `.dplanner`
+# index file, never inside it — see the module docstring. Declared beside that file, since
+# the plan repository scan has to know to skip it.
+from dplanner.core.storage.pointer import WORKTREES_DIR as WORKTREES_DIR
+
 BRANCH_PREFIX = "agent/"
 
 # The names the wrapper script reports under, beside the prompt. The exit file holds the

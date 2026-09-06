@@ -15,7 +15,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from dplanner.core.storage.git import DEFAULT_BRANCH, GitStorage
+from dplanner.core.storage.git import DEFAULT_BRANCH, GitStorage, remote_label
 from dplanner.core.storage.provider import StorageError
 
 
@@ -71,17 +71,10 @@ class GitHubStorage(GitStorage):
         return self._git("remote", "get-url", "origin", check=False).returncode == 0
 
     def remote_label(self) -> str:
-        """``owner/repo``, derived from the origin URL. "" when there is no origin."""
-        url = self._git("remote", "get-url", "origin", check=False).stdout.strip()
-        if not url:
-            return ""
-        if "github.com" not in url:
-            # Pull and push are plain git, so a non-GitHub origin works; only cloning and
-            # publishing need gh. Showing the raw URL is more honest than pretending.
-            return url
-        # Both forms in the wild: git@github.com:owner/repo.git and https://…/owner/repo.git
-        tail = url.split("github.com", 1)[-1].lstrip(":/")
-        return tail.removesuffix(".git")
+        """``owner/repo`` for a GitHub origin, ``host/owner/repo`` for any other — pull and
+        push are plain git, so a non-GitHub origin works; only cloning and publishing need
+        gh. "" when there is no origin."""
+        return remote_label(self._git("remote", "get-url", "origin", check=False).stdout.strip())
 
     @property
     def label(self) -> str:
