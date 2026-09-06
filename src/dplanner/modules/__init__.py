@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from dplanner.domain.assets import AssetSource
     from dplanner.domain.model import Library, Project, Step
     from dplanner.domain.ordering import Placed
+    from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.schedule import Scheduled
     from dplanner.domain.scope import ScopeKind
     from dplanner.domain.store import FilesFor, ModuleFileArea
@@ -56,7 +57,6 @@ __all__ = [
 def default_modules(services: "AppServices") -> list["Module"]:
     from pathlib import Path
 
-    from dplanner.core.storage.locations import find_repo_root, origin_url
     from dplanner.domain.commands import (
         Command,
         CompositeCommand,
@@ -65,6 +65,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
     from dplanner.domain.model import Library, TextEdit
     from dplanner.domain.ordering import placed
+    from dplanner.domain.repositories import RepositoryFacts, repository_facts
     from dplanner.domain.schedule import format_date, format_days, schedule
     from dplanner.domain.scope import gatherers
     from dplanner.domain.store import LibraryStore
@@ -173,6 +174,26 @@ def default_modules(services: "AppServices") -> list["Module"]:
 
     def project_dir_of(step_id: str) -> "Path":
         return store.project_dir(library.project_of(step_id).id)
+
+    def facts_for(step_id: str) -> RepositoryFacts:
+        """Both repositories of a step's project — where the plan lives, which code it
+        plans, where that code is here — the one derivation every seam below reads."""
+        project = library.project_of(step_id)
+        return repository_facts(
+            project, store.project_dir(project.id), store.checkout_of(project.id)
+        )
+
+    def repository_for(step_id: str) -> str:
+        """Which repository a step's GitHub refs belong to: the code repository the
+        project records, else — the older shape, a plan kept beside its code — the plan's
+        own origin. Git's answer either way; nothing stored can disagree with it."""
+        facts = facts_for(step_id)
+        return facts.repository or facts.plan_remote
+
+    # A checkout recorded for a project — by the Project dialog, or by an agent's first
+    # `dplanner` call from the code and adopted through the library file — is what turns
+    # Run Agent from greyed to runnable, and nothing in the context graph changed.
+    store.checkout_changed.connect(lambda _project_id: services.context.refresh())
 
     def read_absolute(path: str) -> bytes | None:
         """Asset bytes by absolute path — module file areas hand those out now."""
@@ -806,9 +827,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
             files=store.files,
             # How staged assets are read at launch — bytes by absolute path.
             read_asset=read_absolute,
-            # Where the agent runs: the project's git repository root, derived from
-            # its directory. "" (a disabled verb) when the repository has vanished.
-            workdir_for=lambda step_id: str(find_repo_root(project_dir_of(step_id)) or ""),
+            # Where the agent runs is the module's reading of these: the code checkout
+            # for a project that records its code repository, the plan's own repository
+            # for one that does not.
+            facts_for=facts_for,
             briefing=briefing,
             # The spawned shell goes to the run tracker: it stamps the launch — directly,
             # off the undo stack, since Ctrl+Z cannot un-launch a shell — and watches
@@ -1162,9 +1184,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 sections=services.inspector_sections,
                 tasks=services.tasks,
                 parent=services.window,
-                # Which repository a step's refs belong to: derived from its project's
-                # directory — git's answer, so nothing stored can disagree with it.
-                repository_for=lambda step_id: origin_url(project_dir_of(step_id)),
+                repository_for=repository_for,
             )
         ),
         step_properties,
@@ -1448,9 +1468,9 @@ def _run_name(step: "Step") -> str:
     return run_name(_step_key(step), _ticket_key(step), step.title)
 
 
-def _agent_preamble(step: "Step", in_worktree: bool) -> str:
-    """The briefing's preflight: the agent proves it can report back, and that it is
-    where this run said it would be, before it starts.
+def _agent_preamble(step: "Step", in_worktree: bool, facts: "RepositoryFacts | None") -> str:
+    """The briefing's preflight: the agent proves it can report back, that it is where
+    this run said it would be, and knows where the plan lives, before it starts.
 
     An agent without the DPlanner skill would do the work and leave the plan blind — no
     status, no handoff — so the briefing makes the check the first move and stopping the
@@ -1459,6 +1479,8 @@ def _agent_preamble(step: "Step", in_worktree: bool) -> str:
     for a worktree confirms it is in one — by the name the launcher prepared — and stops
     if it is not. ``in_worktree`` is the caller's word on *this run* — the step's own
     choice for Run Agent and ``agent prompt``, never for a conflict the window hands over.
+    ``facts`` says where the plan lives: apart from the code, or inside it — the shape that
+    drifts, so the agent is warned to leave the plan files alone and let the verbs write.
     Root prose for the same reason as the epilogue: it names other modules' verbs and the
     launcher's naming.
     """
@@ -1489,6 +1511,8 @@ def _agent_preamble(step: "Step", in_worktree: bool) -> str:
             " branch that is checked out — take care: other agents may be in worktrees"
             " beside you, but this one shares the developer's working tree."
         )
+    if facts is not None:
+        lines.append(_plan_whereabouts(facts))
     lines.append(
         "Other agents may be working beside you in this repository, each in a worktree"
         " of its own, and their processes carry the same names and paths as yours. Never"
@@ -1496,6 +1520,38 @@ def _agent_preamble(step: "Step", in_worktree: bool) -> str:
         " kill only by a pid your own shell started."
     )
     return "\n\n".join(lines)
+
+
+def _plan_whereabouts(facts: "RepositoryFacts") -> str:
+    """Where the plan lives, told to the agent: in a repository of its own, or — warned
+    about unless the people on the project accepted it — inside the code it plans."""
+    from dplanner.domain.repositories import SEPARATED
+
+    if facts.state == SEPARATED:
+        code = f" ({facts.code_label})" if facts.code_label else ""
+        return (
+            f"The plan is kept in its own repository, {facts.plan_label}, apart from the"
+            f" code you are working in{code}: every `dplanner` command writes to the plan"
+            " there, never to this checkout, so nothing you commit here carries a plan"
+            " file and `git status` never shows one."
+        )
+    lead = (
+        "WARNING: this plan lives inside the code repository it plans"
+        if facts.warns
+        else "This plan is kept inside the code repository it plans, by the developer's choice"
+    )
+    text = (
+        f"{lead}: its files (`project.dproj`, `steps/`, `modules/`) sit in the checkout"
+        " beside the code. Every `dplanner` command reaches the plan of record — the copy"
+        " the window shows, in the main checkout — never a branch's copy, so do not edit"
+        " those files by hand, and do not stage or commit them with your work."
+    )
+    if facts.warns:
+        text += (
+            " Moving the plan into a repository of its own is the developer's call"
+            " (Project ▸ Move Plan…, or `dplanner project move`), not this step's."
+        )
+    return text
 
 
 def _agent_epilogue(step: "Step") -> str:

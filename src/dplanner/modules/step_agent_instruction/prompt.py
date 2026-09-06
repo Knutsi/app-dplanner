@@ -15,6 +15,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from dplanner.domain.model import Library, Step
+from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import FilesFor
 from dplanner.modules.step_agent_instruction.aspect import asset_paths, read
 
@@ -58,17 +59,20 @@ class Briefing:
     instruction; ``instruction`` the block the ``## Instructions`` heading carries — the
     step's separate instruction when one exists, the description otherwise, decided by
     the root; ``epilogue`` closes the prompt with the report-back protocol and
-    ``preamble`` opens it — per step, and told whether *this run* gets a worktree, since
+    ``preamble`` opens it — per step, told whether *this run* gets a worktree, since
     the preflight names the worktree the launcher prepares and a conflict run never has
-    one whatever the step says. The default is the honest empty briefing of a build where
-    no other module contributes.
+    one whatever the step says, and handed the project's repository facts so it can say
+    where the plan lives (None when the caller has none to give). The default is the
+    honest empty briefing of a build where no other module contributes.
     """
 
     parts: PartsFor = _no_parts
     sections: PartsFor = _no_parts
     project_sections: PartsFor = _no_parts
     epilogue: Callable[[Step], str] = field(default=lambda _step: "")
-    preamble: Callable[[Step, bool], str] = field(default=lambda _step, _worktree: "")
+    preamble: Callable[[Step, bool, RepositoryFacts | None], str] = field(
+        default=lambda _step, _worktree, _facts: ""
+    )
     instruction: Callable[[Library, Step, FilesFor], PromptPart] = _own_instruction
 
 

@@ -313,6 +313,34 @@ def test_resolving_with_an_agent_hands_over_both_versions_and_yields(
     assert not services.autosave.has_pending()
 
 
+def test_a_conflict_is_settled_where_the_plan_lives_not_in_the_code_checkout(
+    session, step, library_file, library_repo, tmp_path, monkeypatch
+):
+    """A separated plan: Run Agent opens in the code checkout, but a conflict is about
+    plan files, so its shell opens in the plan repository the window is showing."""
+    from dplanner.core.storage.locations import init_repo
+
+    services = session.services
+    project = services.document.project_of(step.id)
+    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
+    services.repo.set_checkout(project.id, init_repo(tmp_path / "widget"))
+    services.autosave.flush_now()
+
+    services.undo.push(SetFieldCommand(step.id, "title", "Typed here"))
+    agent_edits_a_step(library_file, step.id)
+    services.autosave.flush_now()
+    watch = module(session)
+    assert [c.node_id for c in watch._conflicts] == [step.id]
+
+    opened = []
+    monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["true"])
+    monkeypatch.setattr(launcher, "spawn", lambda _command, workdir: opened.append(workdir))
+    FakeDialog.answer = AGENT
+    watch._ask()
+    assert FakeDialog.refusals == [""]
+    assert opened == [library_repo]
+
+
 def test_reload_is_offered_and_discards_what_was_typed(session, project, library_file, monkeypatch):
     services = session.services
     services.undo.push(SetFieldCommand(project.id, "title", "Typed here"))

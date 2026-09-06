@@ -255,10 +255,11 @@ class SyncModule:
         QMessageBox.warning(
             deps.parent,
             "Branch changed",
-            "The checkout switched branches outside DPlanner:\n\n"
+            "The plan repository switched branches outside DPlanner:\n\n"
             + "\n".join(f"• {line}" for line in lines)
             + "\n\nThe plan shown is now the one on the new branch, and so is every edit"
-            " from here on. If an agent is working in this checkout, it did this.",
+            " from here on. A plan kept inside its code repository switches with the"
+            " code — an agent working in that checkout may have done this.",
         )
 
     # -- quitting ------------------------------------------------------------------------------

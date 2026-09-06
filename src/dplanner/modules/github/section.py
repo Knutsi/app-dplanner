@@ -104,7 +104,9 @@ class GithubSection(ModuleDataSection):
             return
         repo = parse_repo(self._repository_for(step.id))
         if repo is None:
-            self.status.setText("Set a repository URL on the library to list branches and PRs")
+            self.status.setText(
+                "Set the project's code repository (Project ▸ Settings…) to list branches and PRs"
+            )
             return
         if repo == self._loaded_repo:
             return
