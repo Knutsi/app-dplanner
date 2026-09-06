@@ -1,5 +1,5 @@
-"""What the time estimates say in a report: when it lands, how the plan moved, the
-progress chart, the milestones in sequence and the staffing what-ifs.
+"""What the time estimates say in a report: when it lands, how the plan moved, the three
+progress plots, the milestones in sequence and the staffing what-ifs.
 
 The same derivations the Time tab renders and ``dplanner schedule matrix`` /
 ``progress show`` print — ``time_report``, ``take``, ``view_scope`` — read once for the
@@ -19,12 +19,13 @@ from dplanner.cli.report.parts import (
     Column,
     Contribution,
     Figure,
-    Mark,
     Placed,
+    Plot,
     ReportSource,
     Row,
     Series,
     Span,
+    Stretch,
     Table,
     Timeline,
     Tone,
@@ -40,6 +41,9 @@ from dplanner.modules.time_estimates.progress import (
     baseline,
     delta_words,
     read_history,
+    shift_words,
+    span_of,
+    standing_words,
     take,
     tally,
     view_scope,
@@ -128,16 +132,12 @@ def report_source(
                     CHART_ID,
                     "Progress against the plan",
                     today,
-                    _series(view, then, today),
-                    marks=tuple(
-                        Mark(when, labels[id(phase)], phase.milestone.id)
-                        for when, milestone_id in view.marks
-                        for phase in team.phases
-                        if phase.milestone is not None and phase.milestone.id == milestone_id
-                    ),
+                    plots=_plots(view, then, today),
+                    stretches=_stretches(team, colors, labels, now, then, today),
                     idle=view.idle,
-                    note="The share of steps done, over time: the plan as it stands, the plan "
-                    "as it was recorded on the basis day, and what has landed.",
+                    note="Three plots on one time axis, by steps: where the work stands "
+                    "against the plan, how the plan itself has moved since it was recorded, "
+                    "and where each milestone has slid.",
                 ),
             ),
             Placed(
@@ -249,13 +249,68 @@ def _change_figure(moved: Delta | None, then: Snapshot | None, today: date) -> F
     return Figure(label, words, tone=tone)
 
 
-def _series(view: ScopeView, then: Snapshot | None, today: date) -> tuple[Series, ...]:
-    found = [Series("Plan now", view.expected, "plan")]
-    if then is not None and view.baseline:
-        found.append(
-            Series(f"Plan at {format_date(then.day, today=today)}", view.baseline, "baseline")
+def _plots(view: ScopeView, then: Snapshot | None, today: date) -> tuple[Plot, ...]:
+    """The three plots the chart stacks — the window's, said as data.
+
+    The scope plot is left out when there is no earlier plan to compare against: an empty
+    box saying "nothing recorded yet" is the placeholder the card rule forbids.
+    """
+    plan = Series("Plan now" if then is not None else "Plan", view.expected, "plan")
+    found = [
+        Plot(
+            "status",
+            "Progress",
+            (plan, Series("Landed", view.actual, "actual")),
+            standing=standing_words(view.standing),
         )
-    found.append(Series("Landed", view.actual, "actual"))
+    ]
+    if then is not None and view.baseline:
+        was = format_date(then.day, today=today)
+        found.append(
+            Plot(
+                "scope",
+                f"Scope change since {was}",
+                (plan, Series(f"Plan at {was}", view.baseline, "baseline")),
+                note="Amber where the plan now promises more by a date than it did then, "
+                "red where it promises less, green where the two agree.",
+            )
+        )
+    found.append(Plot("shift", "Milestones"))
+    return tuple(found)
+
+
+def _stretches(
+    team: Cell,
+    colors: list[str],
+    labels: dict[int, str],
+    now: Snapshot,
+    then: Snapshot | None,
+    today: date,
+) -> tuple[Stretch, ...]:
+    """Every stretch of the plan: its shade, where it runs now and where it ran on the
+    basis day. One shape for all three plots, as in the window."""
+    found = []
+    for phase, color in zip(team.phases, colors, strict=True):
+        key = phase.milestone.id if phase.milestone else ""
+        span, was = span_of(now, key), span_of(then, key)
+        found.append(
+            Stretch(
+                label=labels[id(phase)],
+                color=color,
+                start=span[0] if span else None,
+                finish=span[1] if span else None,
+                was_start=was[0] if was else None,
+                was_finish=was[1] if was else None,
+                step_id=key,
+                note=shift_words(
+                    labels[id(phase)],
+                    was[1] if was else None,
+                    span[1] if span else None,
+                    then.day if then is not None else None,
+                    today,
+                ),
+            )
+        )
     return tuple(found)
 
 

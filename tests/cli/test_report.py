@@ -8,6 +8,7 @@ export as what they show. No ``qapp`` fixture anywhere in this file.
 
 import io
 import json
+import re
 import zipfile
 from dataclasses import fields, is_dataclass
 from datetime import date
@@ -18,7 +19,7 @@ import pytest
 from dplanner.cli.discovery import open_library
 from dplanner.cli.report import website
 from dplanner.cli.report.assemble import build
-from dplanner.cli.report.parts import Contribution, Graph, Table
+from dplanner.cli.report.parts import Chart, Contribution, Graph, Table
 from dplanner.core.png import encode_rgb
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
@@ -97,6 +98,47 @@ def test_every_source_speaks_plain_data(cli_library, plan):
     assert len(graph.nodes) == 3 and len(graph.edges) == 2
     steps = next(t for t in report.tables() if t.id == "steps")
     assert [c.label for c in steps.columns][:5] == ["Key", "Step", "Kind", "Status", "Estimate"]
+
+
+def test_the_progress_chart_is_three_plots_on_one_axis(cli_library, plan):
+    """Each plot answers one question, and the renderer takes the axis from all of them at
+    once: the same first and last day, the labels drawn once under the last plot."""
+    from dplanner.cli.report.drawings import LIGHT, chart_svg
+
+    with open_library(cli_library, default_module_formats(), io.StringIO()) as context:
+        report = build(
+            context.library,
+            context.library.project(plan),
+            context.store.files,
+            _report_sources(),
+            key_of=_step_key,
+            kind_of=_step_kind,
+            status_for=status_for,
+            today=date(2026, 9, 6),
+        )
+    chart = next(p for p in report.sections["overview"] if isinstance(p, Chart))
+    # No earlier plan is recorded, so there is nothing to compare scope against and that
+    # plot is left out rather than drawn empty.
+    assert [plot.kind for plot in chart.plots] == ["status", "shift"]
+    status = chart.plots[0]
+    assert [series.role for series in status.series] == ["plan", "actual"]
+    assert status.standing in ("on plan", "") or status.standing.startswith(("ahead", "behind"))
+    # One stretch per milestone plus the work after the last one; only the milestone gets
+    # a row, and its sentence is the one the window's tooltip says.
+    assert [stretch.label for stretch in chart.stretches] == ["v1"]
+    (v1,) = chart.milestones
+    assert v1.step_id and v1.note.startswith("v1 lands ")
+    svg = chart_svg(chart, LIGHT)
+    assert svg.count('class="plot ') == 2
+    assert 'data-kind="status"' in svg and 'data-kind="shift"' in svg
+    # One axis under every plot: the dates are labelled once, under the last plot's box —
+    # a plot in the middle of the stack prints none of its own.
+    last_plot = max(float(value) for value in re.findall(r'data-bottom="([\d.]+)"', svg))
+    dates = [
+        float(y)
+        for y in re.findall(r'class="axis" x="[\d.]+" y="([\d.]+)" text-anchor="middle"', svg)
+    ]
+    assert dates and all(y > last_plot for y in dates)
 
 
 def test_report_html_carries_every_step_and_escapes_what_people_typed(cli, plan, tmp_path):

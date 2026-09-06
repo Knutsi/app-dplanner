@@ -12,10 +12,12 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import placed
 from dplanner.domain.schedule import (
     as_weeks,
+    change_runs,
     format_date,
     format_days,
     next_working_day,
     schedule,
+    share_at,
     working_days_after,
 )
 
@@ -506,3 +508,40 @@ def test_a_loop_in_a_hand_edited_file_is_named():
     a.edges["requires"] = [b.id]
     c.edges["requires"] = [b.id]
     assert [step.title for step in cyclic(library, plan)] == ["A", "B", "C", "D"]
+
+
+# -- reading two plotted lines ---------------------------------------------------------------
+
+
+def test_a_line_is_read_at_a_date_by_interpolating_between_its_corners():
+    """What every chart drawing a plan does, and the one place it is rounded."""
+    line = ((date(2026, 9, 1), 0.0), (date(2026, 9, 11), 1.0))
+    assert share_at(line, date(2026, 9, 1)) == 0.0
+    assert share_at(line, date(2026, 9, 6)) == pytest.approx(0.5)
+    assert share_at(line, date(2026, 9, 30)) == 1.0  # held flat past the last point
+    assert share_at(line, date(2026, 8, 20)) is None  # before it begins, it says nothing
+    assert share_at((), date(2026, 9, 1)) is None
+    assert share_at(((date(2026, 9, 1), 0.4),), date(2026, 8, 1)) == 0.4  # one point is flat
+
+
+def test_two_plans_are_cut_into_runs_of_one_sign_at_the_day_they_cross():
+    """The area between two plans changes colour where they meet, not at the next knot —
+    so the fill says which way the plan moved on every day it did."""
+    first, last = date(2026, 9, 1), date(2026, 9, 11)
+    plan = ((first, 0.0), (last, 1.0))
+    base = ((first, 0.4), (last, 0.6))
+    runs = change_runs(plan, base)
+    assert [sign for sign, _ in runs] == [-1, 1]  # the baseline leads, then the plan does
+    (_, behind), (_, ahead) = runs
+    crossing = behind[-1]
+    assert crossing == ahead[0]  # the crossing belongs to both runs, so the fills meet
+    assert crossing[1] == pytest.approx(crossing[2], abs=0.02)  # and the lines agree there
+    assert date(2026, 9, 4) <= crossing[0] <= date(2026, 9, 6)
+
+
+def test_two_plans_that_agree_are_one_run_of_no_sign():
+    """A plan unchanged since the basis has no area to fill: the run is drawn as a line."""
+    line = ((date(2026, 9, 1), 0.0), (date(2026, 9, 11), 1.0))
+    (sign, run) = change_runs(line, line)[0]
+    assert sign == 0 and len(run) == 2
+    assert change_runs(line, ()) == []

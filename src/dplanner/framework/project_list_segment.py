@@ -95,7 +95,6 @@ class ProjectListSegment:
         if self._library.has(node_id) and isinstance(self._library.node(node_id), Project):
             self.rebuild()
 
-
     # -- what the panel asks for ---------------------------------------------------------
 
     def selection_nodes(self, items: Sequence[QTreeWidgetItem]) -> Sequence[ContextNode]:

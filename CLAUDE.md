@@ -886,23 +886,30 @@ root, stop and look for the registry or capability you have not found yet.
   refresher's rule — Ctrl+Z undoes the status, not the record). **The baseline is the
   plan as recorded on the basis day** — the project's start, or the day picked beside
   the chart / `progress show --basis` — the last row on or before it (the earliest row
-  for a project older than its history), drawn exactly from its knots. `chart.py` is
-  **three plots on one locked time axis** — the same dates under all three, the date
-  marks (days, Mondays or month firsts, `axis_ticks`) as hairlines through every plot,
-  the labels printed once under the last, the edges the earliest and latest date any
-  plot has to show: *Progress* (the plan now in each stretch's shade against what
+  for a project older than its history), drawn exactly from its knots. The progress
+  chart is **three plots on one locked time axis** — the same dates under all three, the
+  date marks (days, Mondays or month firsts, `axis_ticks`) as hairlines through every
+  plot, the labels printed once under the last, the edges the earliest and latest date
+  any plot has to show: *Progress* (the plan now in each stretch's shade against what
   landed in ink, with *ahead 5 %* / *behind 12 %* beside today's dot), *Scope change*
   (the baseline dashed **over** the plan now, opaque and paler — so a plan unchanged
-  since the basis reads as two lines in one place — and the band between them), and
-  *Milestones* (a row each: the landing then hollow, the landing now filled, an arrow
-  between). A span a milestone's own start date leaves empty is flat and dotted
-  (`progress.idle`, the same one `progress show` prints). The delta in words (`delta`,
-  `delta_words`) and `changes_since` — the steps born and the estimates changed after
-  the baseline's recorded day, from the step's `created` stamp and the estimate
-  aspect's own history (`estimation`'s `read_history`; every `write` carries the value
-  it replaced, one row per day, format 2; `dplanner estimate show` reads it back) —
-  are the terminal's and the report's; the window says it with the plots.
-  `ARCHITECTURE.md`'s *Progress against the plan* has the reasoning.
+  since the basis reads as two lines in one place — and **the area between them filled
+  by direction**: the attention amber where the plan now promises more by a date than
+  it did, the bad red where it promises less, the good green as a line where the two
+  agree), and *Milestones* (a row each: the landing then hollow, the landing now
+  filled, an arrow between). A span a milestone's own start date leaves empty is flat
+  and dotted (`progress.idle`, the same one `progress show` prints). **Both surfaces
+  draw those three plots** — `time_estimates/chart.py` in the window, `cli/report/`'s
+  `Chart` of `Plot`s and `Stretch`es on the page and the PDF — so what they share is
+  `domain/schedule.py`: `share_at` reads a line at a date and `change_runs` cuts two
+  plans into the runs the fill is coloured by, and `progress.py` words `standing_words`
+  and `shift_words` once. The delta in words (`delta`, `delta_words`) and
+  `changes_since` — the steps born and the estimates changed after the baseline's
+  recorded day, from the step's `created` stamp and the estimate aspect's own history
+  (`estimation`'s `read_history`; every `write` carries the value it replaced, one row
+  per day, format 2; `dplanner estimate show` reads it back) — are the terminal's and
+  the report's prose; the charts say it with the plots. `ARCHITECTURE.md`'s *Progress
+  against the plan* has the reasoning.
 - **A decision is a record beside the project, and every briefing carries the standing
   ones.** `modules/decisions/` — `log.py` (Qt-free; `D1, D2, …` minted per project, a
   title, markdown reasoning, the day, the step it was made on, what it supersedes),
@@ -1116,7 +1123,11 @@ root, stop and look for the registry or capability you have not found yet.
   timeline spans, prose, the graph, per-step *facets* — and the root assembles the tuple
   (`_report_sources`) for both `dplanner report` and the window. **Every part is plain
   data** (a test walks it): the window builds on the GUI thread and renders on a worker,
-  the CLI inline, and the same plan gives the same bytes. **Drill-down is the step id**:
+  the CLI inline, and the same plan gives the same bytes. **A chart part is the window's
+  chart said as data** — a `Chart` of `Plot`s (status, scope, shift) over one axis, with
+  the `Stretch`es all three read — so the page and the paper draw what the tab draws;
+  `drawings.py` slices a polyline per stretch rather than clipping one, because the PDF
+  goes through a renderer that honours no `clipPath`. **Drill-down is the step id**:
   the page has one selection, and a facet carries the id rather than the module knowing
   the graph. **Save publishes before it commits**: the sync module asks the reporting
   module for a publication per dirty repository, runs it inside the save task and commits

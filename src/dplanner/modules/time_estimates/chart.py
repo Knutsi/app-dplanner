@@ -12,10 +12,13 @@ the three has to show — so a point placed in one plot is placed in all of them
   (the calendar's colours, on the line); what actually landed, in ink, with a dot at
   today and beside it a short word on where it stands: *ahead 5 %*, *behind 12 %*, *on
   plan*.
-- **Scope change** — the plan as it stood on the basis day (the project's start, or
-  the day picked beside the chart) dashed and paler, the plan now solid, and the band
-  between them washed in the plan's hue: a plan that grew shows as the area it grew by,
-  a landing that moved as the gap between two marks on the 100 % line.
+- **Scope change** — the plan as it stood on the basis day (the project's start, or the
+  day picked beside the chart) dashed and paler, the plan now solid, and **the area
+  between them filled by which way it went**: the plan now above the baseline is work
+  pulled in — the same amount promised sooner — and wears the attention amber; below it
+  is work that slipped, and wears the bad red; where the two agree there is no area to
+  fill, so the run is a line in the good green. The overlap is the point, so the fill
+  says the direction and the legend does not have to.
 - **Milestones** — one row per milestone, its landing on the basis day as a hollow
   mark, its landing now filled, and an arrow from the one to the other saying which way
   it went. A milestone the plan then did not know has only the filled mark; an
@@ -63,8 +66,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
-from dplanner.domain.schedule import Tick, axis_ticks, format_date
-from dplanner.modules.time_estimates.progress import landing_shift
+from dplanner.domain.schedule import Tick, axis_ticks, change_runs, format_date, share_at
+from dplanner.modules.time_estimates.progress import shift_words, standing_words
 from dplanner.modules.time_estimates.schedule import WHOLE_COLOR
 from dplanner.modules.time_estimates.view import SECONDARY_ALPHA
 from dplanner.theme.cards import over
@@ -90,13 +93,19 @@ RING = 2.0
 LANDING_MARK = 6.0
 ARROW_HEAD = 6.0
 GRID_ALPHA = 28
-# The change in the plan: the plan's hue as a wash between the two curves (the dataviz
-# rule for an area — about a tenth).
-BAND_ALPHA = 28
+# The change in the plan, by direction: work pulled in wears the attention amber, work
+# that slipped the bad red, and a stretch the two plans agree on the good green — the
+# window's tones (``theme/tones.py``), as a low-alpha region tint (DESIGN.md's deliberate
+# exception #2) so the two curves stay what a reader measures against.
+PULLED_TONE = QColor(220, 170, 90)
+SLIPPED_TONE = QColor(220, 110, 110)
+GOOD_TONE = QColor(120, 200, 140)
+BAND_ALPHA = 56
 # The baseline's shade: the colour pulled this far toward the ink, mixed opaque — enough
 # to tell its dashes from the solid line they may ride on, on either theme.
 BASELINE_INK_ALPHA = 110
 LEGEND_KEY = 18
+LEGEND_PATCH = 9  # A fill's key is a patch of it, not a line.
 LEGEND_GAP = 6
 LEGEND_SPACING = 14
 # One day of air at either end, so a line never sits on the frame.
@@ -116,8 +125,6 @@ IDLE_SURFACE_ALPHA = 120
 DOT_PATTERN = (0.1, 3.0)
 # Everything outside the picked stretch is painted at this opacity.
 FADE = 0.3
-# Two shares within this are "on plan".
-ON_PLAN = 0.005
 
 Point = tuple[date, float]
 Span = tuple[date, date]
@@ -175,8 +182,8 @@ class ChartData:
     def standing(self) -> float | None:
         """Actual against plan today, in share: positive ahead, negative behind — None
         when either line has nothing to say for today."""
-        planned = _share_at(self.expected, self.today)
-        landed = _share_at(self.actual, self.today)
+        planned = share_at(self.expected, self.today)
+        landed = share_at(self.actual, self.today)
         if planned is None or landed is None:
             return None
         return landed - planned
@@ -188,49 +195,15 @@ class _Panel:
     rect: QRectF  # The plot area; the title band sits above it.
 
 
-def _share_at(points: tuple[Point, ...], when: date) -> float | None:
-    """The line's value on ``when`` — held flat before the first point and after the last,
-    interpolated between corners — or None when there is no line."""
-    if not points:
-        return None
-    if when <= points[0][0]:
-        return points[0][1] if when == points[0][0] or len(points) == 1 else None
-    for (left, low), (right, high) in pairwise(points):
-        if left <= when <= right:
-            span = (right - left).days
-            share = (when - left).days / span if span else 1.0
-            return low + (high - low) * share
-    return points[-1][1]
-
-
-def standing_words(standing: float | None) -> str:
-    """Ahead or behind, in one short phrase — the word beside today's dot."""
-    if standing is None:
-        return ""
-    if abs(standing) < ON_PLAN:
-        return "on plan"
-    return f"{'ahead' if standing > 0 else 'behind'} {abs(standing):.0%}"
-
-
-def shift_words(segment: Segment, baseline_day: date | None, today: date) -> str:
-    """A milestone's row in words: where it lands, where it landed then, and the move."""
-    now = segment.now[1] if segment.now else None
-    then = segment.then[1] if segment.then else None
-    if now is None:
-        return f"{segment.label} — nothing estimated, so no date"
-    said = f"{segment.label} lands {format_date(now, today=today)}"
-    if baseline_day is None:
-        return said
-    if then is None:
-        return f"{said} — not in the plan at {format_date(baseline_day, today=today)}"
-    moved = landing_shift(then, now)
-    if moved == 0:
-        return f"{said} — unchanged since {format_date(baseline_day, today=today)}"
-    direction = "later" if moved > 0 else "earlier"
-    return (
-        f"{said} — {abs(moved)} working day{'' if abs(moved) == 1 else 's'} {direction} "
-        f"than planned on {format_date(baseline_day, today=today)} "
-        f"({format_date(then, today=today)})"
+def segment_words(segment: Segment, baseline_day: date | None, today: date) -> str:
+    """A milestone row's sentence for a :class:`Segment` — ``progress.shift_words`` with
+    the segment's own fields, so the window and the report word one move one way."""
+    return shift_words(
+        segment.label,
+        segment.then[1] if segment.then else None,
+        segment.now[1] if segment.now else None,
+        baseline_day,
+        today,
     )
 
 
@@ -307,18 +280,18 @@ class ProgressChart(QWidget):
         lines = [format_date(when, today=data.today)]
         unit = "of days" if data.by_days else "of steps"
         if kind == "scope":
-            was = _share_at(data.baseline, when)
+            was = share_at(data.baseline, when)
             if was is not None and data.baseline_day is not None:
                 lines.append(
                     f"plan at {format_date(data.baseline_day, today=data.today)}: {was:.0%} {unit}"
                 )
-        planned = _share_at(data.expected, when)
+        planned = share_at(data.expected, when)
         if planned is not None:
             lines.append(f"plan now: {planned:.0%} {unit}")
         if any(start < when < end for start, end in data.idle):
             lines.append("no work planned")
         if kind == "status":
-            landed = _share_at(data.actual, when)
+            landed = share_at(data.actual, when)
             if landed is not None and when <= data.today:
                 lines.append(f"actual: {landed:.0%} {unit}")
         return "\n".join(lines)
@@ -431,6 +404,11 @@ class ProgressChart(QWidget):
         if not found:
             return None
         return (min(span[0] for span in found), max(span[1] for span in found))
+
+    @staticmethod
+    def _tone(tone: QColor) -> QColor:
+        """A fresh copy of a constant tone — a painter must never mutate the module's."""
+        return QColor(tone)
 
     @staticmethod
     def _idle_shade(color: QColor, surface: QColor) -> QColor:
@@ -552,14 +530,20 @@ class ProgressChart(QWidget):
     ) -> None:
         """The band between the two plans, the plan now over it, and the baseline over
         both — opaque and paler, so dashes on the line say the plans agree."""
-        if len(data.baseline) >= 2 and len(data.expected) >= 2:
-            band = QPainterPath(self._point(panel, data.expected[0]))
-            for point in data.expected[1:]:
-                band.lineTo(self._point(panel, point))
-            for point in reversed(data.baseline):
-                band.lineTo(self._point(panel, point))
+        for sign, run in change_runs(data.expected, data.baseline):
+            if sign == 0:
+                same = QPainterPath(QPointF(self._x(run[0][0]), self._y(panel, run[0][1])))
+                for when, high, _low in run[1:]:
+                    same.lineTo(QPointF(self._x(when), self._y(panel, high)))
+                self._draw_path(painter, same, self._tone(GOOD_TONE))
+                continue
+            band = QPainterPath(QPointF(self._x(run[0][0]), self._y(panel, run[0][1])))
+            for when, high, _low in run[1:]:
+                band.lineTo(QPointF(self._x(when), self._y(panel, high)))
+            for when, _high, low in reversed(run):
+                band.lineTo(QPointF(self._x(when), self._y(panel, low)))
             band.closeSubpath()
-            wash = QColor(data.color)
+            wash = self._tone(PULLED_TONE if sign > 0 else SLIPPED_TONE)
             wash.setAlpha(BAND_ALPHA)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(wash)
@@ -757,7 +741,7 @@ class ProgressChart(QWidget):
                 found.append(
                     (f"Plan at {format_date(data.baseline_day, today=data.today)}", "baseline")
                 )
-            return [*found, ("Plan now", "plan")]
+            return [*found, ("Plan now", "plan"), ("Pulled in", "pulled"), ("Slipped", "slipped")]
         return [("Then", "hollow"), ("Now", "filled")] if data.baseline_day is not None else []
 
     def _draw_title(
@@ -797,7 +781,14 @@ class ProgressChart(QWidget):
         x = band.right() - needed + LEGEND_SPACING
         y = band.center().y()
         for label, kind in entries:
-            if kind in keys:
+            if kind in ("pulled", "slipped"):
+                # A fill is keyed by a patch of that fill, never a line of it.
+                wash = self._tone(PULLED_TONE if kind == "pulled" else SLIPPED_TONE)
+                wash.setAlpha(BAND_ALPHA)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(wash)
+                painter.drawRect(QRectF(x, y - LEGEND_PATCH / 2, LEGEND_KEY, LEGEND_PATCH))
+            elif kind in keys:
                 color, style = keys[kind]
                 painter.setPen(self._pen(color, style))
                 painter.drawLine(QPointF(x, y), QPointF(x + LEGEND_KEY, y))
@@ -833,7 +824,7 @@ class ProgressChart(QWidget):
             if panel.kind == "shift":
                 index = int((position.y() - panel.rect.top()) // ROW_HEIGHT)
                 if 0 <= index < len(data.milestones):
-                    return shift_words(data.milestones[index], data.baseline_day, data.today)
+                    return segment_words(data.milestones[index], data.baseline_day, data.today)
                 return ""
             return self.tooltip_at(self._date_at(position.x()), panel.kind)
         return ""

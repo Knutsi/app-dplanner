@@ -170,7 +170,9 @@
     window.addEventListener("resize", fit);
   });
 
-  // The chart: a crosshair and a tooltip reading every series at the pointer's date.
+  // The chart: one crosshair down every plot, and a tooltip reading the plot under the
+  // pointer — the plots share an axis, so the date is one date, but each answers its own
+  // question and reporting all of them at once is what the stacked plots undid.
   document.querySelectorAll("figure.chart").forEach(function (figure) {
     var svg = figure.querySelector("svg.chart");
     var tip = figure.querySelector(".tooltip");
@@ -180,13 +182,27 @@
     var left = parseFloat(svg.dataset.left), right = parseFloat(svg.dataset.right);
     var top = parseFloat(svg.dataset.top), bottom = parseFloat(svg.dataset.bottom);
     var days = Math.max(1, Math.round((last - first) / 86400000));
-    var series = [];
-    svg.querySelectorAll("polyline.series").forEach(function (line) {
-      var points = (line.dataset.points || "").split(";").filter(Boolean).map(function (pair) {
-        var bits = pair.split(":");
-        return { day: new Date(bits[0] + "T00:00:00Z"), share: parseFloat(bits[1]) };
+    var plots = [];
+    svg.querySelectorAll("g.plot").forEach(function (group) {
+      var series = [];
+      group.querySelectorAll("polyline.series").forEach(function (line) {
+        var points = (line.dataset.points || "").split(";").filter(Boolean).map(function (pair) {
+          var bits = pair.split(":");
+          return { day: new Date(bits[0] + "T00:00:00Z"), share: parseFloat(bits[1]) };
+        });
+        series.push({ label: line.dataset.label, points: points });
       });
-      series.push({ label: line.dataset.label, points: points, role: line.className.baseVal });
+      var rows = [];
+      group.querySelectorAll("g.shift").forEach(function (row) {
+        rows.push(row.dataset.words || "");
+      });
+      plots.push({
+        kind: group.dataset.kind,
+        top: parseFloat(group.dataset.top),
+        bottom: parseFloat(group.dataset.bottom),
+        series: series,
+        rows: rows,
+      });
     });
     var cross = document.createElementNS("http://www.w3.org/2000/svg", "line");
     cross.setAttribute("class", "crosshair");
@@ -205,27 +221,42 @@
     function fmt(day) {
       return day.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     }
+    function hide() { tip.hidden = true; cross.style.display = "none"; }
     svg.addEventListener("pointermove", function (event) {
       var box = svg.getBoundingClientRect();
-      var viewX = (event.clientX - box.left) / box.width * svg.viewBox.baseVal.width;
-      if (viewX < left || viewX > right) { tip.hidden = true; cross.style.display = "none"; return; }
+      var scale = svg.viewBox.baseVal.width / box.width;
+      var viewX = (event.clientX - box.left) * scale;
+      var viewY = (event.clientY - box.top) * (svg.viewBox.baseVal.height / box.height);
+      if (viewX < left || viewX > right) { hide(); return; }
+      var plot = null;
+      for (var i = 0; i < plots.length; i++) {
+        if (viewY >= plots[i].top && viewY <= plots[i].bottom) { plot = plots[i]; break; }
+      }
+      if (!plot) { hide(); return; }
       var offset = Math.round((viewX - left) / (right - left) * days);
       var day = new Date(first.getTime() + offset * 86400000);
       var snapped = left + offset / days * (right - left);
       cross.setAttribute("x1", snapped); cross.setAttribute("x2", snapped);
       cross.style.display = "";
-      var lines = ["<b>" + fmt(day) + "</b>"];
-      series.forEach(function (entry) {
-        var share = shareAt(entry.points, day);
-        if (share !== null) lines.push(entry.label + ": " + Math.round(share * 100) + "%");
-      });
+      var lines = [];
+      if (plot.kind === "shift") {
+        var row = Math.floor((viewY - plot.top) / ((plot.bottom - plot.top) / plot.rows.length));
+        if (row < 0 || row >= plot.rows.length) { hide(); return; }
+        lines.push(plot.rows[row]);
+      } else {
+        lines.push("<b>" + fmt(day) + "</b>");
+        plot.series.forEach(function (entry) {
+          var share = shareAt(entry.points, day);
+          if (share !== null) lines.push(entry.label + ": " + Math.round(share * 100) + "%");
+        });
+      }
       tip.innerHTML = lines.join("<br>");
       tip.hidden = false;
       var x = event.clientX - box.left + 12, y = event.clientY - box.top + 12;
       if (x + tip.offsetWidth > box.width) x = event.clientX - box.left - tip.offsetWidth - 12;
       tip.style.left = x + "px"; tip.style.top = y + "px";
     });
-    svg.addEventListener("pointerleave", function () { tip.hidden = true; cross.style.display = "none"; });
+    svg.addEventListener("pointerleave", hide);
   });
 
   fromHash();
