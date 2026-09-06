@@ -17,6 +17,11 @@ the plan has no repository of its own the plan column offers *Set up a plan repo
 instead of a log: with the accent while the colocation is unaccepted, quiet once it is.
 Cloning, publishing and creating on GitHub run in a second task body, and their outcome
 lands in the model on the GUI thread through one ``_done`` signal.
+
+*File ▸ New Project…* is the same dialog in **create mode**: the same name, summary, code
+repository and checkout fields, the plan repository as a picker with a folder name under
+it, no logs, and a Create button. It answers a :class:`NewProjectSpec`; the module seeds
+the project and connects it, so the dialog writes nothing anywhere.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -68,7 +73,7 @@ from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
-from dplanner.modules.projects.repo_picker import tool_button
+from dplanner.modules.projects.repo_picker import PlanTarget, RepoPicker, tool_button
 from dplanner.modules.projects.repos import (
     LOG_LIMIT,
     PullRequest,
@@ -85,6 +90,7 @@ from dplanner.theme.icons import (
     branch_icon,
     clone_icon,
     code_icon,
+    container_icon,
     external_icon,
     folder_icon,
     move_icon,
@@ -98,6 +104,25 @@ DIALOG_MARGIN = 20
 SECTION_GAP = 12
 FIELD_GAP = 8
 URL_ROLE = int(Qt.ItemDataRole.UserRole) + 10
+
+SETTINGS = "settings"
+CREATE = "create"
+
+
+@dataclass(frozen=True)
+class NewProjectSpec:
+    """What Create asked for — seeded and connected by the module, never by the dialog."""
+
+    title: str
+    summary: str
+    plan: PlanTarget
+    folder: str
+    repository: str
+    checkout: Path | None
+
+    @property
+    def target(self) -> Path:
+        return self.plan.root / self.folder
 
 
 def restyle(widget: QWidget, name: str) -> None:
@@ -256,6 +281,7 @@ class ProjectDialog(QDialog):
         theme: ThemeService,
         *,
         move: Callable[[NodeId], None],
+        mode: str = SETTINGS,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -263,6 +289,7 @@ class ProjectDialog(QDialog):
         self.setWindowTitle("Project")
         self.setMinimumSize(560, 460)
         self.resize(780, 640)
+        self.mode = mode
         self._library = library
         self._undo = undo
         self._services = services
@@ -405,12 +432,19 @@ class ProjectDialog(QDialog):
         columns.addWidget(self.code_column, 1)
         columns.addWidget(self.plan_column, 1)
 
+        rule = card_rule(self)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
         layout.setSpacing(SECTION_GAP)
         layout.addWidget(settings)
-        layout.addWidget(card_rule(self))
+        layout.addWidget(rule)
         layout.addWidget(logs, 1)
+
+        # -- create mode: the plan repository is picked, the folder named, nothing edited --
+        self.plan_picker: RepoPicker | None = None
+        self.folder_edit: QLineEdit | None = None
+        self.folder_glyph: QLabel | None = None
+        self._folder_touched = False
 
         self._unsubscribes = [
             library.field_changed.connect(self._on_field),
@@ -419,6 +453,99 @@ class ProjectDialog(QDialog):
             theme.changed.connect(self._paint),
         ]
         self._paint(theme.current)
+        if mode == CREATE:
+            self.setWindowTitle("New Project")
+            self.setMinimumSize(520, 360)
+            self.resize(640, 420)
+            for hidden in (
+                self.plan_label,
+                self.publish_button,
+                self.move_button,
+                self.new_code_button,
+                self.clone_button,
+                rule,
+                logs,
+            ):
+                hidden.hide()
+            self.plan_picker = RepoPicker(services, tasks, allow_new=True, theme=theme, parent=self)
+            self.plan_picker.setObjectName("PlanRepoPicker")
+            self.plan_picker.changed.connect(self._revalidate_create)
+            grid.addWidget(self.plan_picker, 2, 1, 1, 3)
+            self.folder_glyph = glyph_label(self)
+            self.folder_edit = QLineEdit(self)
+            self.folder_edit.setObjectName("ProjectFolderEdit")
+            self.folder_edit.setPlaceholderText("folder name inside the plan repository")
+            self.folder_edit.textEdited.connect(self._folder_typed)
+            self.folder_edit.textChanged.connect(lambda _text: self._revalidate_create())
+            self.name_edit.textChanged.connect(self._suggest_folder)
+            grid.addWidget(self.folder_glyph, 5, 0)
+            grid.addWidget(self.folder_edit, 5, 1, 1, 3)
+            self.target_label = QLabel(self)
+            self.target_label.setObjectName("ProjectFolderPath")
+            self.target_label.setWordWrap(True)
+            column.addWidget(self.target_label)
+            cancel = QPushButton("Cancel", self)
+            cancel.clicked.connect(self.reject)
+            self.create_button = QPushButton("Create", self)
+            self.create_button.setObjectName("PrimaryButton")
+            self.create_button.setDefault(True)
+            self.create_button.clicked.connect(self.accept)
+            footer = QHBoxLayout()
+            footer.setSpacing(FIELD_GAP)
+            footer.addStretch(1)
+            footer.addWidget(cancel)
+            footer.addWidget(self.create_button)
+            layout.addStretch(1)
+            layout.addLayout(footer)
+            self._paint(theme.current)
+            self._revalidate_create()
+            self.name_edit.setFocus()
+
+    # -- create mode ---------------------------------------------------------------------------
+
+    def spec(self) -> NewProjectSpec | None:
+        """What Create would make; None while a name, a plan repository or a folder is
+        missing."""
+        if self.plan_picker is None or self.folder_edit is None:
+            return None
+        title = self.name_edit.text().strip()
+        plan = self.plan_picker.current()
+        folder = self.folder_edit.text().strip()
+        if not title or plan is None or not folder:
+            return None
+        checkout = self.checkout_edit.text().strip()
+        return NewProjectSpec(
+            title=title,
+            summary=self.summary_edit.text().strip(),
+            plan=plan,
+            folder=folder,
+            repository=self.repository_combo.currentText().strip(),
+            checkout=Path(checkout).expanduser() if checkout else None,
+        )
+
+    def _folder_typed(self, _text: str) -> None:
+        self._folder_touched = True  # From here the name no longer dictates the folder.
+
+    def _suggest_folder(self, title: str) -> None:
+        if self.folder_edit is not None and not self._folder_touched:
+            self.folder_edit.setText(slugify(title, fallback="project") if title.strip() else "")
+
+    def _revalidate_create(self) -> None:
+        if self.mode != CREATE:
+            return
+        spec = self.spec()
+        if spec is None:
+            self.target_label.setText("")
+            self.create_button.setEnabled(False)
+            return
+        exists = spec.target.exists()
+        self.target_label.setText(shown_path(spec.target) + (" — already exists" if exists else ""))
+        self.create_button.setEnabled(not exists)
+
+    def accept(self) -> None:
+        if self.plan_picker is not None:
+            self.plan_picker.remember()
+        super().accept()
 
     # -- aiming ---------------------------------------------------------------------------------
 
@@ -587,15 +714,21 @@ class ProjectDialog(QDialog):
 
     def _browse_checkout(self) -> None:
         project = self._project()
-        if project is None:
+        if project is None and self.mode != CREATE:
             return
         start = repositories_folder() or Path.home()
         chosen = QFileDialog.getExistingDirectory(self, "Code Checkout", str(start))
         if not chosen:
             return
         root = find_repo_root(Path(chosen)) or Path(chosen)
-        self._services.set_checkout(project.id, root)
         origin = origin_url(root)
+        if self.mode == CREATE:  # Nothing exists yet: the fields carry the answer to Create.
+            self.checkout_edit.setText(shown_path(root))
+            if origin and not self.repository_combo.currentText().strip():
+                self.repository_combo.setEditText(origin)
+            return
+        assert project is not None
+        self._services.set_checkout(project.id, root)
         if not origin:
             return
         if project.repository and canonical_remote(origin) == canonical_remote(project.repository):
@@ -774,6 +907,8 @@ class ProjectDialog(QDialog):
         )
         for label, painter in glyphs:
             label.setPixmap(painter(color).pixmap(ICON_SIZE, ICON_SIZE))
+        if self.folder_glyph is not None:
+            self.folder_glyph.setPixmap(container_icon(color).pixmap(ICON_SIZE, ICON_SIZE))
         self.move_button.setIcon(move_icon(color))
         self.open_button.setIcon(external_icon(color))
         self.new_code_button.setIcon(plus_icon(color))

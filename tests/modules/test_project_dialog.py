@@ -27,7 +27,7 @@ from dplanner.modules.projects.repos import (
     RepositoryServices,
     candidate_repositories_folders,
 )
-from dplanner.modules.projects.settings_dialog import ProjectDialog
+from dplanner.modules.projects.settings_dialog import CREATE, ProjectDialog
 
 CODE_URL = "https://github.com/acme/widget"
 
@@ -429,3 +429,57 @@ def test_opening_says_which_plan_lives_inside_its_code(app, library_file, librar
         assert "“Discovery” lives inside its code repository" in message
     finally:
         session.close()
+
+
+# -- create mode --------------------------------------------------------------------------------
+
+
+def test_create_mode_answers_a_spec_once_a_name_and_a_home_are_given(
+    services, fakes, tmp_path, monkeypatch
+):
+    """The same dialog, nothing to edit: a name, a plan repository, a folder — the folder
+    follows the name until it is typed in — and the code fields ride along."""
+    import subprocess
+
+    repos, _calls, _state = fakes
+    dialog = ProjectDialog(
+        services.document,
+        services.undo,
+        repos,
+        services.tasks,
+        services.theme,
+        move=lambda _pid: None,
+        mode=CREATE,
+        parent=services.window,
+    )
+    assert dialog.plan_picker is not None and dialog.folder_edit is not None
+    assert not dialog.create_button.isEnabled()
+    assert not dialog.plan_label.isVisibleTo(dialog) and not dialog.publish_button.isVisibleTo(
+        dialog
+    )
+
+    dialog.name_edit.setText("Alpha Search")
+    assert dialog.folder_edit.text() == "alpha-search"
+    plans = init_repo(tmp_path / "plans")
+    dialog.plan_picker.set_current(plans)
+    assert dialog.create_button.isEnabled()
+
+    code = init_repo(tmp_path / "widget")
+    subprocess.run(["git", "-C", str(code), "remote", "add", "origin", CODE_URL], check=True)
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(code))
+    dialog.browse_button.click()
+    assert dialog.repository_combo.currentText() == CODE_URL  # From the checkout's origin.
+
+    spec = dialog.spec()
+    assert spec is not None
+    assert spec.target == plans / "alpha-search" and spec.plan.root == plans
+    assert spec.title == "Alpha Search" and spec.repository == CODE_URL and spec.checkout == code
+    assert services.document.projects == []  # The dialog wrote nothing anywhere.
+
+    (plans / "alpha").mkdir()
+    dialog.folder_edit.setText("alpha")
+    dialog.folder_edit.textEdited.emit("alpha")
+    assert not dialog.create_button.isEnabled() and "already exists" in dialog.target_label.text()
+    dialog.name_edit.setText("Alpha Search v2")
+    assert dialog.folder_edit.text() == "alpha"  # Typed once, the folder is the person's.
+    dialog.deleteLater()

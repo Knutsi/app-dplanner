@@ -18,8 +18,9 @@ that does not exist is vocabulary that lies, and the next person goes looking fo
 from typing import Final
 
 MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
-    # "project" (New/Open Project) and "library" (New/Open Project Library, Reload) come
-    # from the library module and the watcher; "save"/"branch" from sync; "window" from
+    # "project" (New Project, Open Projects) comes from the projects module, "library"
+    # (New/Open Project Library, Reload) from the library module and the watcher;
+    # "save"/"branch" from sync; "window" from
     # the app shell and the settings dialog. "export" holds the Export submenu — one entry
     # per feature that can write itself out (the order list's CSV today).
     "File": ("project", "library", "save", "branch", "export", "window"),
@@ -68,6 +69,5 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # rebuilt on open — above "agent", the agent-facing setup (the skill, the CLI).
     "Tools": ("runs", "agent"),
     "Debug": ("llm", "telemetry"),
-
     "Help": ("about",),
 }

@@ -9,21 +9,32 @@ Where a project lives is this module's other subject: the Project dialog (settin
 the plan's and the code's logs below), the Repositories card on the project panel, Move
 Plan, and the *Settings ▸ Repositories* page. Git and GitHub reach it only through the
 :class:`RepositoryServices` the composition root fills in.
+
+Membership is here too — *File ▸ New Project…* (the Project dialog in create mode) and
+*Open Projects…* (a plan repository browsed, its projects picked) — because both start
+from the same question, which plan repository, and the same picker answers it. Adding a
+project happens **off the undo stack**, through the root's ``connect_project`` with the
+library origin: creating one initialises a repository and writes files an undo could never
+honestly take back. The library file is rewritten by the store on the next autosave flush.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QMessageBox, QTreeWidgetItem, QWidget
 
+from dplanner.core.storage.locations import init_repo
 from dplanner.core.storage.provider import StorageError
-from dplanner.domain.model import Library, NodeId, ProjectId
+from dplanner.domain.model import Library, NodeId, Project, ProjectId
 from dplanner.domain.relocate import RelocateError
+from dplanner.domain.seed import seed_project
 from dplanner.domain.store import ProjectProblem
-from dplanner.framework.action_registry import ActionRegistry
+from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.autosave import AutosaveService
-from dplanner.framework.context import ContextService
+from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
@@ -40,9 +51,10 @@ from dplanner.modules.projects.card import RepositoriesCard
 from dplanner.modules.projects.index import ProjectEntry as ProjectEntry
 from dplanner.modules.projects.index import ProjectsSegment
 from dplanner.modules.projects.move_dialog import MovePlanDialog
+from dplanner.modules.projects.open_dialog import OpenProjectsDialog
 from dplanner.modules.projects.repos import MODULE_ID, RepositoryServices
 from dplanner.modules.projects.repositories_folder import shown_path
-from dplanner.modules.projects.settings_dialog import ProjectDialog
+from dplanner.modules.projects.settings_dialog import CREATE, ProjectDialog
 from dplanner.modules.projects.settings_page import build_page
 from dplanner.modules.projects.verbs import ProjectVerbs
 from dplanner.theme.icons import branch_icon, container_icon
@@ -71,6 +83,11 @@ class ProjectsDeps:
     open_project: Callable[[NodeId], None]
     # The store's half of Remove from Library, wired by the composition root.
     detach: Callable[[ProjectId], None]
+    # Its other half: attach a directory (with the code checkout, when known) and add
+    # the project to the library with the membership origin, off the undo stack.
+    connect_project: Callable[[Path, Path | None], Project]
+    # Every directory the library lists, opened or not — what Open Projects greys.
+    project_dirs: Callable[[], list[Path]]
     # Library entries that failed to open — shown greyed with the reason.
     problems: Callable[[], list[ProjectProblem]]
     # Git and GitHub, as the composition root wires them.
@@ -88,6 +105,30 @@ class ProjectsModule:
 
     def register(self) -> None:
         deps = self._deps
+        deps.actions.register(
+            ActionSpec(
+                id="projects.new",
+                label="&New Project…",
+                menu="File",
+                group="project",
+                order=10,
+                shortcut="Ctrl+Shift+N",
+                tip="Start a project in a plan repository and add it here",
+                run=self.new_project,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="projects.browse",
+                label="&Open Projects…",
+                menu="File",
+                group="project",
+                order=20,
+                shortcut="Ctrl+O",
+                tip="Browse a plan repository and add the projects you work on",
+                run=self.open_projects,
+            )
+        )
         ProjectVerbs(
             library=deps.library,
             undo=deps.undo,
@@ -137,6 +178,74 @@ class ProjectsModule:
             )
         )
         self._say_where_plans_live()
+
+    # -- membership ----------------------------------------------------------------------------
+
+    def new_project(self, _context: Context) -> None:
+        deps = self._deps
+        dialog = ProjectDialog(
+            deps.library,
+            deps.undo,
+            deps.repos,
+            deps.tasks,
+            deps.theme,
+            move=self.move_plan,
+            mode=CREATE,
+            parent=deps.parent,
+        )
+        accepted = bool(dialog.exec())
+        spec = dialog.spec() if accepted else None
+        dialog.deleteLater()
+        if spec is None:
+            return
+        try:
+            if spec.plan.init:
+                init_repo(spec.plan.root)
+            directory = seed_project(
+                spec.target, spec.title, summary=spec.summary, repository=spec.repository
+            )
+        except (StorageError, OSError) as error:
+            QMessageBox.warning(deps.parent, "New Project", str(error))
+            return
+        project = deps.connect_project(directory, spec.checkout)
+        deps.status.show_status(f"“{project.title or project.folder_name}” created", 4000)
+        if spec.plan.publish:
+            self._publish(spec.plan.root, spec.plan.publish)
+
+    def open_projects(self, _context: Context) -> None:
+        deps = self._deps
+        dialog = OpenProjectsDialog(
+            deps.repos,
+            deps.tasks,
+            deps.theme,
+            listed_dirs=deps.project_dirs(),
+            listed_ids=[project.id for project in deps.library.projects],
+            parent=deps.parent,
+        )
+        accepted = bool(dialog.exec())
+        chosen = dialog.chosen() if accepted else []
+        dialog.deleteLater()
+        added = [deps.connect_project(directory, None) for directory in chosen]
+        if len(added) == 1:
+            title = added[0].title or added[0].folder_name
+            deps.status.show_status(f"“{title}” added to the library", 4000)
+        elif added:
+            deps.status.show_status(f"{len(added)} projects added to the library", 4000)
+
+    def _publish(self, root: Path, name: str) -> None:
+        """Publish a plan repository made a moment ago. Synchronous, like the move it
+        may follow: the repository was just written and the person is waiting on it —
+        the one shape the wait cursor is honest for."""
+        deps = self._deps
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            origin = deps.repos.publish(root, name)
+        except (StorageError, OSError) as error:
+            QMessageBox.warning(deps.parent, "Publish to GitHub", str(error))
+            return
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+        deps.status.show_status(f"Published {root.name} as {origin or name}", 6000)
 
     # -- the dialogs ---------------------------------------------------------------------------
 
@@ -195,10 +304,13 @@ class ProjectsModule:
             return
         notes = list(moved.notes)
         if chosen.publish:
+            QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             try:
                 deps.repos.publish(chosen.root, chosen.publish)
             except (StorageError, OSError) as error:
                 notes.append(f"not published to GitHub: {error}")
+            finally:
+                QGuiApplication.restoreOverrideCursor()
         where = shown_path(Path(target))
         if notes:
             QMessageBox.information(

@@ -124,3 +124,22 @@ def test_a_new_repository_is_initialised_for_the_move(
     assert (tmp_path / "fresh" / "discovery" / PROJECT_META).is_file()
     assert Path(project.id) is not None  # The id survives the move and the reload.
     assert session.services is not None and session.services.document.has(project.id)
+
+
+def test_a_move_into_a_new_github_repository_publishes_after_the_move(
+    session, services, make_project, tmp_path, boxes, monkeypatch
+):
+    from dplanner.core.storage import github
+
+    published = []
+    monkeypatch.setattr(
+        github.GitHubStorage,
+        "publish",
+        classmethod(lambda cls, storage, name, **_k: published.append((storage.repo_root, name))),
+    )
+    project = make_project("Discovery")
+    services.autosave.flush_now()
+    FakeWizard.chosen = PlanTarget(tmp_path / "fresh", init=True, publish="plans")
+    services.actions.run("projects.move", select(services, "project", project.id))
+    assert published == [((tmp_path / "fresh").resolve(), "plans")]
+    assert session.services is not None and session.services.document.has(project.id)

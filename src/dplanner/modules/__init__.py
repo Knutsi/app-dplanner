@@ -67,7 +67,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         EditTextCommand,
         SetModuleDataCommand,
     )
-    from dplanner.domain.model import Library, TextEdit
+    from dplanner.domain.model import Library, Project, TextEdit
     from dplanner.domain.ordering import placed
     from dplanner.domain.relocate import move_project
     from dplanner.domain.repositories import RepositoryFacts, repository_facts
@@ -276,6 +276,13 @@ def default_modules(services: "AppServices") -> list["Module"]:
     def create_repository(name: str, dest: Path) -> str:
         GitHubStorage.create(name, dest)
         return origin_url(dest)
+
+    def connect_project(directory: Path, checkout: Path | None) -> Project:
+        from dplanner.modules.library.membership import LIBRARY_ORIGIN
+
+        project = store.attach(directory, checkout)
+        library.add_child(library.id, project, origin=LIBRARY_ORIGIN)
+        return project
 
     repos = RepositoryServices(
         facts_of=facts_of,
@@ -976,14 +983,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 status=services.window,
                 window=services.window,
                 library_path=store.library_path,
-                # The store's membership face: attach/detach track directories, the model
-                # change itself is the caller's, applied off the undo stack.
-                attach=store.attach,
-                detach=store.detach,
-                project_dirs=lambda: (
-                    [store.project_dir(project.id).resolve() for project in library.projects]
-                    + [problem.path.resolve() for problem in store.problems()]
-                ),
                 problems=store.problems,
             )
         ),
@@ -1091,7 +1090,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 repos=repos,
                 # The index opens a project without knowing what an editor is.
                 open_project=project_editor.open,
+                # The store's membership face: attach/detach track directories, the
+                # model change itself is applied here, off the undo stack, with the
+                # membership origin the `library add` verb uses too.
                 detach=store.detach,
+                connect_project=connect_project,
+                project_dirs=lambda: (
+                    [store.project_dir(project.id).resolve() for project in library.projects]
+                    + [problem.path.resolve() for problem in store.problems()]
+                ),
                 problems=store.problems,
                 # Rows under each project — a project row itself only folds; these are
                 # what opens. Each renders the Project menu: the row stands for its

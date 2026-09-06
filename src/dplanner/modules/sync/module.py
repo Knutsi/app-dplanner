@@ -10,7 +10,7 @@ Branch operations are different: a branch belongs to one repository, so New Bran
 Switch Branch act on the repository of the *focused project* and are disabled — with the
 reason in the label — until a project is focused.
 
-Membership changes at runtime (File ▸ New/Open Project), so the service re-pulls its
+Membership changes at runtime (File ▸ New Project, Open Projects), so the service re-pulls its
 repository groups whenever the library's structure changes.
 
 **A branch switched underneath the window is taken in, and said.** A checkout is one

@@ -130,8 +130,12 @@ class RepoPicker(QWidget):
         layout.addLayout(row)
         layout.addWidget(self.note)
 
+        # The repository last picked leads, and is offered even when no library project
+        # lives there yet — a browsed-to repository is worth remembering once.
         last = str(get_global(MODULE_ID, LAST_ROOT_KEY, ""))
         roots = services.plan_roots()
+        if last and Path(last) not in roots and (Path(last) / ".git").exists():
+            roots.insert(0, Path(last))
         for root in sorted(roots, key=lambda root: str(root) != last):
             self._add(PlanTarget(root))
         if theme is not None:
