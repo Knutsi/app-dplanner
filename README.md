@@ -60,9 +60,13 @@ app bundle in `~/Applications` on macOS, a Start Menu shortcut on Windows — op
 launcher still opens this build, and `desktop uninstall` takes it out.
 
 The library file lists your projects and lives per user (`$DPLANNER_LIBRARY` also names
-one). *File ▸ New Project* creates a project folder inside a git repository — offering
-`git init` when there is none — and *Open Project* adds an existing one; both update the
-library live. *New/Open Project Library* starts a separate instance.
+one). A plan lives in a **plan repository** — a git repository holding several projects,
+listed in its `.dplanner` index — and records the **code repository** it is about, so an
+agent works in the code and every `dplanner` call reaches the plan. *File ▸ New Project…*
+starts one in a plan repository you pick, initialise or clone; *Open Projects…* browses a
+plan repository and adds the projects you work on; *Project ▸ Settings…* shows both
+repositories, their logs and open pull requests, and *Move Plan…* takes a plan out of the
+code it was kept in. *New/Open Project Library* starts a separate instance.
 
 ## Working with an agent
 
@@ -237,8 +241,10 @@ src/dplanner/
 │
 ├── modules/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
-│   ├── library/             membership: File ▸ New/Open Project and New/Open Project Library
-│   ├── projects/            the Projects folder in the index, and the project verbs
+│   ├── library/             which library: File ▸ New/Open Project Library, the title; `library …` verbs
+│   ├── projects/            the Projects folder in the index, the project verbs, New Project…, Open
+│   │                        Projects…, the Project dialog (settings, both logs), the Repositories
+│   │                        card, Move Plan, and the repositories folder clones land in
 │   ├── project_editor/      a project in a tab: the canvas, its modes (connect, lasso, regions, resize) and renderers,
 │   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid;
 │   │                        ground.py paints the background)

@@ -2085,8 +2085,10 @@ fails on the pathspec, and that failure would have failed a move whose files wer
 where they belonged. **Upstream?** Yes: a scoped commit that cannot fail on an absent
 scope is what every caller wants.
 
-- **`GitHubStorage.create(name, dest)`** — the third classmethod beside `clone` and
-  `publish`: `gh repo create --clone` for a repository nobody has started yet, cloned
-  into a chosen directory (gh lands the clone under the repository's own name beside
-  where it runs, so it runs in the parent and renames). The Project dialog's *new code
-  repository* button. Belongs upstream with the other two.
+### `core/storage/github.py` — `GitHubStorage.create(name, dest)` (new)
+
+**What.** The third classmethod beside `clone` and `publish`: `gh repo create --clone`
+for a repository nobody has started yet, cloned into a chosen directory (gh lands the
+clone under the repository's own name beside where it runs, so it runs in the parent and
+renames). **Why.** The Project dialog's *new code repository* glyph: a plan that names
+code nobody has started. **Upstream?** Yes, with the other two.

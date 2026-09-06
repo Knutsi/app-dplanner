@@ -1,6 +1,9 @@
 # Plan repositories and code repositories
 
-*Proposal, 2026-09-05. Status: for decision. Written from a full read of the code at `main`
+*Proposal, 2026-09-05. Status: **implemented** on this branch, 2026-09-06 — phases 1 to 3
+and the window, in the rollout order below; `ARCHITECTURE.md`'s *Two repositories, two
+questions* is now the rule's home and `FORMAT.md` the shapes'. Phase 2 (plan repository
+roots as library entries) stays parked. Written from a full read of the code at `main`
 (4fd3759); every file and line named below is on that commit.*
 
 ## The short version

@@ -36,9 +36,13 @@ git repository, opened through its own storage provider. A **Step** is a node in
 
 **Why membership changes bypass the undo stack.** Creating a project may `git init` a
 repository and always writes files outside any store; removing one only forgets it. Neither
-is something Ctrl+Z could honestly reverse, so File ▸ New/Open Project and Remove from
-Library apply their model change directly with their own origin — the same discipline as
-syncing an external fact, below.
+is something Ctrl+Z could honestly reverse, so File ▸ New Project, Open Projects and Remove
+from Library apply their model change directly with their own origin — the same discipline
+as syncing an external fact, below. The membership verbs live with the project verbs
+(`modules/projects/`): New Project is the Project dialog in create mode and Open Projects
+browses a plan repository, and both start from the same question — *which plan
+repository?* — answered by one picker. The library module keeps only the question of
+*which library*.
 
 **Why opening another library is another process.** Every registry refuses a duplicate id,
 so two libraries in one process was never implementable — and unlike the old
@@ -1410,6 +1414,12 @@ a decision, not a leak:
 - **Save at quit** (`service.save_sync()` in the close guard). The window is closing; there
   is no task centre left to watch a task in, and returning to the event loop mid-teardown
   is exactly the window a lost write needs.
+- **Moving a plan** (`ProjectsModule.move_plan` over `domain/relocate.move_project`). The
+  project's files leave one directory for another and the store is re-pointed; the reload
+  that follows discards the build, so there is no runner to come back to. The publish that
+  may follow a move or a New Project into a fresh GitHub repository rides the same
+  exception, under a wait cursor: the repository was written a moment ago and the person
+  is waiting on it.
 
 The boundary to keep: an operation whose completion the *running* application must observe
 before doing anything else at all may be synchronous; anything the user merely waits on goes
@@ -2230,26 +2240,70 @@ never does that: its `-e` forces a fresh process (`gtk-single-instance=false`) w
 window of its own. So tmux is the last resort — what Automatic reaches for over ssh with
 no terminal installed — and a desktop application's agent gets a desktop window.
 
-## Repository facts are derived from the project's directory
+## Two repositories, two questions
 
-A project *lives in* its repository now, so "which repository does this project's work
-belong to" stopped being a stored association and became a derivation: the repo root is
-`find_repo_root(project directory)`, and the remote URL is git's own answer
-(`origin_url`). This retired a whole module (`project_repo`) and the recorded trade that
-funded it — per-machine checkout paths stored in shared files so the Qt-free CLI could
-resolve them. Nothing stored can now disagree with git, which is the same argument as
-never storing the topological order.
+A project answers two questions about repositories, and for a year the code let one
+answer serve both. *Where does the plan live?* was the git repository enclosing the
+project directory — derived, never stored, and still is. *Which code does it plan?* was
+assumed to be the same repository, and that assumption is what field testing kept
+reporting as "main drifting": *Save* committed plan files to the code repository's
+`main`, every agent worktree carried a copy of the plan, and a `git checkout` in the code
+repository swapped the plan under the window. A plan and the code it plans have different
+rhythms — the plan changes on every `dplanner status set`, the code on every merge — and
+one branch cannot carry both without each getting in the other's way.
 
-Two readers, both wired by the composition root: Run Agent receives `workdir_for`
-(step → its project's repo root — where the terminal opens), and the github module
-receives `repository_for` (step → the remote URL its PRs live under). `dplanner project
-show` prints the same derived facts. A project directory whose repository has vanished
-disables Run Agent with the reason in the label rather than guessing.
+So the second question became a stored fact. `Project.repository` is the **code
+repository**, the remote URL as git prints it, in `project.dproj` where everyone who opens
+the plan sees it; a repository with no remote is stored as its resolved path — the only
+identity a repository that cannot be shared has. The **plan repository** stays derived:
+`find_repo_root(project directory)`, exactly as before, so the plan's history is still the
+repository's history and nothing stored can disagree with git. A third question — *where is
+that code on this machine?* — is per user, per machine, and goes to the library file's
+`checkout` column (`FORMAT.md`), written straight into the file rather than through the
+flush, because the first `dplanner` call from a checkout records it and a read verb's
+transaction must never be refused over a per-machine fact. `domain/repositories.py` is the
+one derivation over the three — `RepositoryFacts`, with three states: **separated**, the
+shape the application wants; **colocated**, the same remote or either checkout inside the
+other; and **legacy**, no code repository recorded, read as colocated so nothing breaks on
+the day the build updates. *Warns* is one predicate — not separated and not accepted —
+asked by lint (`repo.unset`, `repo.colocated`, exit 1), by the briefing's preamble
+(WARNING: leave the plan files alone), by the Project dialog and the Repositories card,
+and by the opening status line; `colocation: "accepted"` silences all of them at once,
+because it is the people on the project saying the shape is on purpose.
 
-The git requirement is **gating at membership, honest afterwards**: File ▸ New Project
-offers to `git init`, Open Project refuses a non-repo (the plan's history *is* the repo's
-history now), but a project whose repository breaks later degrades to disabled verbs, not
-a broken library.
+The readers are seams the composition root wires. The agent module is handed
+`facts_for(step)` and decides *where an agent works*: the code checkout for a project
+that records its code, the plan's own repository for one that does not, greyed with the
+reason ("not checked out on this machine — Project ▸ Settings…") until a checkout is
+recorded — and `store.checkout_changed` refreshes the context, since nothing in the
+context graph changed. A conflict handed to an agent is about plan files and opens in the
+plan repository whatever the code is. The github module's `repository_for` is the code
+repository, the plan's origin only for the older shape. `dplanner project show`, `agent
+prompt --json` and the Repositories card print the same facts. Discovery (`cli/discovery.py`)
+gained one rule: a `dplanner` call from a checkout — or a worktree of it — whose `origin`
+is a project's code repository finds that project, spelt however git spells it
+(`canonical_remote`), so an agent in the code needs no configuration; the wrapper script
+also exports `DPLANNER_PROJECT`, so nothing is even looked up.
+
+**A plan repository holds several projects for several people.** Its root carries the
+`.dplanner` index (`FORMAT.md`), which is what lets *Open Projects…* and `dplanner library
+browse` list what a clone holds, with who worked on each and when (`activity`, one git log
+per project). It may be local-only — `git init` from New Project or Move Plan — or on
+GitHub, published from the same dialogs through `gh`; clones land in one *repositories
+folder*, asked for once from the likely candidates on disk and kept per user.
+
+**Moving a plan is a storage operation that rewrites the working tree**, and so is
+synchronous (below): `domain/relocate.move_project` copies the plan entries, rewrites the
+meta with the code repository it left, maintains both indexes, removes the source,
+re-points the store and commits on both sides, best-effort; the window pauses autosave
+around it and reloads after, because every view that cached a directory is rebuilt rather
+than patched. It is the one place colocation is *refused* rather than warned about: moving
+a plan into its own code repository is the shape the move exists to end.
+
+The git requirement is **gating at membership, honest afterwards**: New Project initialises
+or picks a plan repository, Open Projects lists only what is inside one (the plan's history
+*is* the repository's history), but a project whose repository breaks later degrades to
+disabled verbs, not a broken library.
 
 ## Save spans repositories; the exit dialog says what it records
 
