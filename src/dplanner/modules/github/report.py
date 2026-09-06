@@ -1,8 +1,8 @@
 """What the GitHub refs say in a report: the pull request and the branch a step lands in.
 
-The repository slug comes from the plan repository's own remote, derived from the module's
-file area the way every repository fact is derived (``ARCHITECTURE.md``'s *Repository facts
-are derived from the project's directory*) — never stored beside the refs.
+The repository slug is the code repository the project records (``project.repository``),
+else — the older, colocated shape — the plan directory's own origin, derived from the
+module's file area; the same answer ``dplanner github`` and the GitHub tab give.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
@@ -24,8 +24,11 @@ def report_source() -> ReportSource:
             if refs is None:
                 continue
             if repo is None:
+                # The code repository the project records; else — the older shape — the
+                # plan's own origin, as `dplanner github` and the GitHub tab read it.
                 root = find_repo_root(files(project.id, MODULE_ID).absolute(""))
-                repo = (parse_repo(origin_url(root)) if root is not None else None) or ""
+                url = project.repository or (origin_url(root) if root is not None else "")
+                repo = parse_repo(url) or ""
             found = []
             if refs.pr_number is not None or refs.pr_url:
                 words = pr_label(refs)
