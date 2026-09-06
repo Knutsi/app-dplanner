@@ -23,10 +23,10 @@ from dplanner.domain.relocate import target_in
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
+from dplanner.modules.projects.project_dialog import glyph_label
 from dplanner.modules.projects.repo_picker import PlanTarget, RepoPicker
 from dplanner.modules.projects.repos import RepositoryServices
 from dplanner.modules.projects.repositories_folder import shown_path
-from dplanner.modules.projects.project_dialog import glyph_label
 from dplanner.theme.icons import ICON_SIZE, folder_icon
 
 

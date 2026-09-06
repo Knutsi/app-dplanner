@@ -52,9 +52,9 @@ from dplanner.modules.projects.index import ProjectEntry as ProjectEntry
 from dplanner.modules.projects.index import ProjectsSegment
 from dplanner.modules.projects.move_dialog import MovePlanDialog
 from dplanner.modules.projects.open_dialog import OpenProjectsDialog
+from dplanner.modules.projects.project_dialog import CREATE, ProjectDialog
 from dplanner.modules.projects.repos import MODULE_ID, RepositoryServices
 from dplanner.modules.projects.repositories_folder import shown_path
-from dplanner.modules.projects.project_dialog import CREATE, ProjectDialog
 from dplanner.modules.projects.settings_page import build_page
 from dplanner.modules.projects.verbs import ProjectVerbs
 from dplanner.theme.icons import branch_icon, container_icon

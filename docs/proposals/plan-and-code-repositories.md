@@ -410,7 +410,7 @@ operations that rewrite the working tree* exception `ARCHITECTURE.md` already do
 | `core/storage/git.py`, `locations.py` | — | `canonical_remote()` |
 | `core/storage/pointer.py`, `_walk_up`, `_follow_pointer` | one line, never clobbered | an index: append and remove lines; several lines answer "several" |
 | `core/storage/github.py` `pull`, `push` | ff-only; plain push | rebase before push, rebase on pull |
-| `modules/projects/verbs.py`, new `settings_dialog.py`, `card.py` | Rename Project… | Project Settings…, the Repositories card, the Move wizard |
+| `modules/projects/verbs.py`, new `project_dialog.py`, `card.py` | Rename Project… | Project Settings…, the Repositories card, the Move wizard |
 | `modules/projects/cli.py` | `create --dir`, `rename`, `show` | + `--repository`/`--checkout`, `set`, `move`; `show` prints three facts; lint `repo.*` |
 | `modules/library/module.py`, `cli.py` | New/Open Project | New Project in the dialog's create mode; `library add <index root>` |
 | `domain/relocate.py` (new) | — | `move_project`, one function for both surfaces |

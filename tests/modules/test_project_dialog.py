@@ -20,6 +20,7 @@ from dplanner.domain.relocate import Moved
 from dplanner.domain.repositories import ACCEPTED, repository_facts
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.projects import repositories_folder as folders
+from dplanner.modules.projects.project_dialog import CREATE, ProjectDialog
 from dplanner.modules.projects.repos import (
     LogEntry,
     PullRequest,
@@ -27,7 +28,6 @@ from dplanner.modules.projects.repos import (
     RepositoryServices,
     candidate_repositories_folders,
 )
-from dplanner.modules.projects.project_dialog import CREATE, ProjectDialog
 
 CODE_URL = "https://github.com/acme/widget"
 

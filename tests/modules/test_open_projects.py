@@ -17,8 +17,8 @@ from dplanner.domain.seed import seed_project
 from dplanner.domain.store import PROJECT_META
 from dplanner.modules.projects import module as projects_module
 from dplanner.modules.projects.open_dialog import OpenProjectsDialog
-from dplanner.modules.projects.repo_picker import PlanTarget
 from dplanner.modules.projects.project_dialog import NewProjectSpec
+from dplanner.modules.projects.repo_picker import PlanTarget
 
 
 def run(services, action_id):
