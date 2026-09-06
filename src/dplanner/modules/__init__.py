@@ -57,6 +57,10 @@ __all__ = [
 def default_modules(services: "AppServices") -> list["Module"]:
     from pathlib import Path
 
+    from dplanner.core.storage.git import GitStorage
+    from dplanner.core.storage.github import GitHubStorage
+    from dplanner.core.storage.locations import find_repo_root, origin_url, repo_storage
+    from dplanner.core.storage.provider import StorageError, VersionedStorage
     from dplanner.domain.commands import (
         Command,
         CompositeCommand,
@@ -65,6 +69,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
     from dplanner.domain.model import Library, TextEdit
     from dplanner.domain.ordering import placed
+    from dplanner.domain.relocate import move_project
     from dplanner.domain.repositories import RepositoryFacts, repository_facts
     from dplanner.domain.schedule import format_date, format_days, schedule
     from dplanner.domain.scope import gatherers
@@ -111,6 +116,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
+    from dplanner.modules.projects.repos import (
+        LogEntry,
+        PullRequest,
+        RepoLog,
+        RepositoryServices,
+    )
     from dplanner.modules.reopen_tabs.module import ReopenTabsDeps, ReopenTabsModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
@@ -175,13 +186,17 @@ def default_modules(services: "AppServices") -> list["Module"]:
     def project_dir_of(step_id: str) -> "Path":
         return store.project_dir(library.project_of(step_id).id)
 
-    def facts_for(step_id: str) -> RepositoryFacts:
-        """Both repositories of a step's project — where the plan lives, which code it
-        plans, where that code is here — the one derivation every seam below reads."""
-        project = library.project_of(step_id)
+    def facts_of(project_id: str) -> RepositoryFacts:
+        """Both repositories of a project — where the plan lives, which code it plans,
+        where that code is here — the one derivation every seam below reads."""
         return repository_facts(
-            project, store.project_dir(project.id), store.checkout_of(project.id)
+            library.project(project_id),
+            store.project_dir(project_id),
+            store.checkout_of(project_id),
         )
+
+    def facts_for(step_id: str) -> RepositoryFacts:
+        return facts_of(library.project_of(step_id).id)
 
     def repository_for(step_id: str) -> str:
         """Which repository a step's GitHub refs belong to: the code repository the
@@ -194,6 +209,92 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # `dplanner` call from the code and adopted through the library file — is what turns
     # Run Agent from greyed to runnable, and nothing in the context graph changed.
     store.checkout_changed.connect(lambda _project_id: services.context.refresh())
+
+    # -- git and GitHub for the project surfaces ----------------------------------------
+    # The Project dialog, the Repositories card, Open Projects and Move Plan reach both
+    # repositories through this one bundle; the root names the providers (rule 8) and
+    # the github module's gh door (rule 5) so the projects module names neither.
+
+    def plan_roots() -> list[Path]:
+        roots: list[Path] = []
+        for project in library.projects:
+            root = find_repo_root(store.project_dir(project.id))
+            if root is not None and root not in roots:
+                roots.append(root)
+        return roots
+
+    def pr_steps(project_id: str) -> dict[int, str]:
+        from dplanner.modules.github.aspect import read as github_read
+
+        named: dict[int, str] = {}
+        for step in library.project(project_id).steps:
+            refs = github_read(step)
+            if refs is not None and refs.pr_number is not None:
+                named[refs.pr_number] = f"{_step_key(step)} {step.title}".strip()
+        return named
+
+    def history_for(root: Path, scope: str, limit: int) -> RepoLog:
+        storage = repo_storage(root, (scope,) if scope else ())
+        if not isinstance(storage, VersionedStorage):
+            raise StorageError(f"{root} has no history")
+        return RepoLog(
+            branch=storage.current_branch(),
+            entries=tuple(
+                LogEntry(id=rev.id, subject=rev.message, author=rev.author, when=rev.when)
+                for rev in storage.history(limit)
+            ),
+        )
+
+    def gh_refusal() -> str | None:
+        from dplanner.modules.github.gh import gh_refusal as refusal
+
+        return refusal(check_auth=True)
+
+    def open_prs(remote: str) -> list[PullRequest]:
+        from dplanner.modules.github.gh import GhError, list_prs, parse_repo
+
+        repo = parse_repo(remote)
+        if repo is None:
+            return []
+        try:
+            rows = list_prs(repo)
+        except GhError as error:
+            raise StorageError(str(error)) from error
+        return [
+            PullRequest(number=row.number, title=row.title, head_ref=row.head_ref, url=row.url)
+            for row in rows
+            if row.state == "open"
+        ]
+
+    def publish(root: Path, name: str) -> str:
+        storage = repo_storage(root)
+        assert isinstance(storage, GitStorage)
+        storage.commit("Start the plan repository")  # gh needs a commit to push.
+        GitHubStorage.publish(storage, name)
+        return origin_url(root)
+
+    def create_repository(name: str, dest: Path) -> str:
+        GitHubStorage.create(name, dest)
+        return origin_url(dest)
+
+    repos = RepositoryServices(
+        facts_of=facts_of,
+        project_dir=store.project_dir,
+        set_checkout=store.set_checkout,
+        checkout_changed=store.checkout_changed,
+        plan_roots=plan_roots,
+        pr_steps=pr_steps,
+        history_for=history_for,
+        gh_refusal=gh_refusal,
+        list_repositories=GitHubStorage.list_repositories,
+        clone=lambda repo, dest: (GitHubStorage.clone(repo, dest), None)[1],
+        publish=publish,
+        create_repository=create_repository,
+        open_prs=open_prs,
+        move_project=lambda project_id, target, init: move_project(
+            store, project_id, target, init_repo=init
+        ),
+    )
 
     def read_absolute(path: str) -> bytes | None:
         """Asset bytes by absolute path — module file areas hand those out now."""
@@ -979,6 +1080,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 segments=services.index_segments,
                 theme=services.theme,
                 parent=services.window,
+                status=services.window,
+                tasks=services.tasks,
+                autosave=services.autosave,
+                switcher=services.switcher,
+                settings_sections=services.settings_sections,
+                # The Repositories card: registered here, before project_editor builds
+                # the project panel from whatever has registered by then.
+                cards=services.detail_cards,
+                repos=repos,
                 # The index opens a project without knowing what an editor is.
                 open_project=project_editor.open,
                 detach=store.detach,

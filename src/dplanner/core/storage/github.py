@@ -121,6 +121,32 @@ class GitHubStorage(GitStorage):
         return cls(dest)
 
     @classmethod
+    def create(cls, name: str, dest: Path, *, private: bool = True) -> "GitHubStorage":
+        """Create ``name`` on GitHub, empty, and clone it into ``dest``. BLOCKING.
+
+        The Project dialog's *new code repository*: a plan that names code nobody has
+        started yet. ``gh repo create --clone`` lands the clone beside where it runs, under
+        the repository's own name, so it runs in ``dest``'s parent and renames after.
+        """
+        dest = dest.expanduser()
+        if dest.exists():
+            raise StorageError(f"{dest} already exists")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _run_gh(
+            "repo",
+            "create",
+            name,
+            "--private" if private else "--public",
+            "--clone",
+            cwd=dest.parent,
+            timeout=300,
+        )
+        landed = dest.parent / name.rsplit("/", 1)[-1]
+        if landed != dest:
+            landed.rename(dest)
+        return cls(dest)
+
+    @classmethod
     def publish(cls, storage: GitStorage, name: str, *, private: bool = True) -> "GitHubStorage":
         """Create ``name`` on GitHub with ``storage``'s repository as its source. BLOCKING."""
         _run_gh(

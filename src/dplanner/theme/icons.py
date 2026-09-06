@@ -678,3 +678,69 @@ GLYPH_ICONS: dict[str, Callable[[str | QColor], QIcon]] = {
 def glyph_painter(kind: str) -> Callable[[QColor], QIcon] | None:
     """The painter for one kind name, or None for a name this build has no glyph for."""
     return GLYPH_ICONS.get(kind)
+
+
+# -- repositories ------------------------------------------------------------------------------
+#
+# The Project dialog's and the Repositories card's vocabulary: the code repository, a pull
+# request, a clone arriving, a plan moving out.
+
+
+def code_icon(color: str | QColor) -> QIcon:
+    """Two angle brackets: the code repository."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.3))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawPolyline(QPolygonF([QPointF(6.0, 4.5), QPointF(2.5, 8.0), QPointF(6.0, 11.5)]))
+    painter.drawPolyline(QPolygonF([QPointF(10.0, 4.5), QPointF(13.5, 8.0), QPointF(10.0, 11.5)]))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def pull_request_icon(color: str | QColor) -> QIcon:
+    """A pull request: a branch's node arriving on the trunk — GitHub's own shape."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(QPointF(4.5, 3.5), 1.8, 1.8)
+    painter.drawEllipse(QPointF(4.5, 12.5), 1.8, 1.8)
+    painter.drawEllipse(QPointF(11.5, 12.5), 1.8, 1.8)
+    painter.drawLine(QPointF(4.5, 5.3), QPointF(4.5, 10.7))
+    arm = QPainterPath(QPointF(8.0, 3.5))
+    arm.lineTo(QPointF(9.5, 3.5))
+    arm.quadTo(QPointF(11.5, 3.5), QPointF(11.5, 5.5))
+    arm.lineTo(QPointF(11.5, 10.7))
+    painter.drawPath(arm)
+    painter.drawLine(QPointF(8.0, 3.5), QPointF(9.6, 1.9))
+    painter.drawLine(QPointF(8.0, 3.5), QPointF(9.6, 5.1))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def clone_icon(color: str | QColor) -> QIcon:
+    """An arrow coming down into a tray: bring a repository onto this machine."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.3))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawLine(QPointF(8.0, 2.5), QPointF(8.0, 9.5))
+    painter.drawPolyline(QPolygonF([QPointF(5.0, 6.8), QPointF(8.0, 9.8), QPointF(11.0, 6.8)]))
+    painter.drawPolyline(
+        QPolygonF(
+            [QPointF(3.0, 10.0), QPointF(3.0, 13.0), QPointF(13.0, 13.0), QPointF(13.0, 10.0)]
+        )
+    )
+    painter.end()
+    return QIcon(pixmap)
+
+
+def move_icon(color: str | QColor) -> QIcon:
+    """A box with an arrow leaving it: move the plan into a repository of its own."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(2.5, 4.5, 5.5, 7.0), 1.0, 1.0)
+    painter.drawLine(QPointF(9.0, 8.0), QPointF(13.5, 8.0))
+    painter.drawLine(QPointF(11.3, 5.8), QPointF(13.5, 8.0))
+    painter.drawLine(QPointF(11.3, 10.2), QPointF(13.5, 8.0))
+    painter.end()
+    return QIcon(pixmap)
