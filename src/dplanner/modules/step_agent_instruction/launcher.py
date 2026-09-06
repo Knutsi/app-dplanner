@@ -103,6 +103,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from dplanner.cli.discovery import PROJECT_ENV
 from dplanner.core.fsio import slugify
 
 # Where a step's worktree lives, under the repository root: a sibling of the `.dplanner`
@@ -383,13 +384,16 @@ def prepare(
     directory: Path | None = None,
     step_title: str = "",
     session: str = "",
+    project_id: str = "",
 ) -> LaunchFiles:
     """Write the prompt and a wrapper script to ``directory``, or a fresh temp directory.
 
     ``worktree`` is a run name (:func:`run_name`); when non-empty the script prepares
     :func:`worktree_path` on :func:`branch_name` and moves into it before starting — or
     stops with git's reason when it cannot. Empty means the checkout itself. ``session``
-    is the run's session id, minted here when not given.
+    is the run's session id, minted here when not given. ``project_id`` is exported into
+    the shell as ``$DPLANNER_PROJECT``, so every ``dplanner`` call the agent makes is
+    scoped to its project — two projects may plan the code repository it works in.
     """
     if directory is None:
         directory = new_run_dir()
@@ -405,14 +409,18 @@ def prepare(
         session=session or new_session(),
     )
     if platform.startswith("win"):
-        files.script.write_text(_windows_script(files, workdir, agent_command, worktree))
+        files.script.write_text(
+            _windows_script(files, workdir, agent_command, worktree, project_id)
+        )
     else:
-        files.script.write_text(_posix_script(files, workdir, agent_command, worktree))
+        files.script.write_text(_posix_script(files, workdir, agent_command, worktree, project_id))
         files.script.chmod(0o755)
     return files
 
 
-def _posix_script(files: LaunchFiles, workdir: Path, agent_command: str, worktree: str) -> str:
+def _posix_script(
+    files: LaunchFiles, workdir: Path, agent_command: str, worktree: str, project_id: str = ""
+) -> str:
     title = shlex.quote(files.title)
     shell, exit_file = shlex.quote(str(files.shell_file)), shlex.quote(str(files.exit_file))
     resume = resume_command(agent_command, files.session)
@@ -426,6 +434,8 @@ def _posix_script(files: LaunchFiles, workdir: Path, agent_command: str, worktre
         f"trap 'echo closed > {exit_file}; exit 129' HUP",
         f'cd "{workdir}"',
     ]
+    if project_id:
+        lines.append(f"export {PROJECT_ENV}={shlex.quote(project_id)}")
     if worktree:
         tree = worktree_path(workdir, worktree)
         branch = branch_name(worktree)
@@ -485,8 +495,12 @@ def _powershell_quoted(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
-def _windows_script(files: LaunchFiles, workdir: Path, agent_command: str, worktree: str) -> str:
+def _windows_script(
+    files: LaunchFiles, workdir: Path, agent_command: str, worktree: str, project_id: str = ""
+) -> str:
     lines = ["@echo off", f"title {files.title}", f'cd /d "{workdir}"']
+    if project_id:
+        lines.append(f"set {PROJECT_ENV}={project_id}")
     if worktree:
         tree = worktree_path(workdir, worktree)
         branch = branch_name(worktree)

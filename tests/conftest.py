@@ -260,7 +260,8 @@ def _default_project_dir(argv, workspace):
     """
     from dplanner.core.fsio import slugify
 
-    if list(argv[:2]) not in (["project", "create"], ["project", "import"]) or "--dir" in argv:
+    creating = list(argv[:2]) in (["project", "create"], ["project", "import"])
+    if not creating or "--dir" in argv or "--in" in argv:
         return list(argv)
     title = next((word for word in argv[2:] if not word.startswith("-")), "imported")
     return [*argv, "--dir", str(workspace / slugify(title, fallback="imported"))]

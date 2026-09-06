@@ -21,7 +21,7 @@ from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor
-from dplanner.cli.lint import LintCheck, LintFinding
+from dplanner.cli.lint import LintCheck, LintFinding, repository_finding
 from dplanner.cli.lookup import (
     find_project,
     find_step,
@@ -30,7 +30,14 @@ from dplanner.cli.lookup import (
     project_of_step,
     step_arg,
 )
-from dplanner.core.storage.locations import find_repo_root, init_repo, origin_url
+from dplanner.core.fsio import slugify
+from dplanner.core.storage.locations import (
+    canonical_remote,
+    find_repo_root,
+    init_repo,
+    origin_url,
+)
+from dplanner.core.storage.pointer import remove_from_index
 from dplanner.domain.commands import (
     AddNodeCommand,
     CompositeCommand,
@@ -43,6 +50,8 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import EDGE_KINDS, Library, Project, Step, StepId, TextEdit
 from dplanner.domain.ordering import placed
+from dplanner.domain.relocate import RelocateError, move_project, target_in
+from dplanner.domain.repositories import ACCEPTED, RepositoryFacts, repository_facts
 from dplanner.domain.seed import seed_project
 from dplanner.domain.store import FilesFor
 
@@ -148,6 +157,26 @@ def commands(
             configure=_configure_rename,
             run=_project_rename,
             examples=("dplanner project rename discovery --title 'Discovery phase'",),
+        ),
+        CliCommand(
+            path=("project", "set"),
+            summary="Say which code repository a project plans, where that code is checked "
+            "out on this machine, or that the plan stays inside its code on purpose.",
+            configure=_configure_set,
+            run=_project_set,
+            examples=(
+                "dplanner project set discovery --repository https://github.com/acme/widget",
+                "dplanner project set discovery --checkout ~/src/widget",
+                "dplanner project set discovery --accept-colocation",
+            ),
+        ),
+        CliCommand(
+            path=("project", "move"),
+            summary="Move a plan out of the repository it is in — usually the code it plans "
+            "— into a plan repository, committing both sides.",
+            configure=_configure_move,
+            run=_project_move,
+            examples=("dplanner project move discovery --into ~/plans",),
         ),
         CliCommand(
             path=("project", "delete"),
@@ -297,19 +326,51 @@ def project_document(library: Library, project: Project) -> dict[str, Any]:
     }
 
 
+def _facts(context: CliContext, project: Project) -> RepositoryFacts:
+    return repository_facts(
+        project, context.store.project_dir(project.id), context.store.checkout_of(project.id)
+    )
+
+
 def _project_row(context: CliContext, project: Project) -> dict[str, Any]:
     directory = context.store.project_dir(project.id)
-    repo_root = find_repo_root(directory)
+    facts = _facts(context, project)
     return {
         "id": project.id,
         "title": project.title,
         "summary": project.summary,
         "steps": len(project.steps),
-        # Derived, never stored: the directory decides its repository, git its remote.
         "dir": str(directory),
-        "repo_root": str(repo_root) if repo_root else "",
-        "remote": origin_url(directory),
+        # The plan repository is derived — the directory decides it, git its remote; the
+        # code repository is the project's own word; where the code is checked out is
+        # this machine's, from the library file.
+        "plan_root": str(facts.plan_root) if facts.plan_root else "",
+        "plan_remote": facts.plan_remote,
+        "repository": project.repository,
+        "checkout": str(facts.checkout) if facts.checkout else "",
+        "colocation": project.colocation,
+        "state": facts.state,
     }
+
+
+def _repository_lines(context: CliContext, project: Project) -> list[str]:
+    """Where the plan and the code are, as ``project show`` and the setting verbs say it."""
+    facts = _facts(context, project)
+    title = project.title or project.folder_name
+    plan = facts.plan_label or "not in a git repository"
+    lines = [f"  plan: {plan}" + (f" ({facts.plan_root})" if facts.plan_root else "")]
+    if project.repository:
+        lines.append(f"  code: {facts.code_label}")
+    else:
+        lines.append(f"  code: not set — `dplanner project set '{title}' --repository URL`")
+    if facts.checkout:
+        lines.append(f"  checkout: {facts.checkout}")
+    else:
+        lines.append("  checkout: not on this machine")
+    finding = repository_finding(project, facts)
+    if finding is not None:
+        lines.append(f"  ! {finding.message}")
+    return lines
 
 
 def _step_row(
@@ -353,7 +414,12 @@ def _project_show(
     data = _project_row(context, project) | {
         "steps": [_step_row(library, step, key_of) for step in project.steps]
     }
-    lines = [project.title, f"  {project.summary}" if project.summary else "", "  Steps:"]
+    lines = [
+        project.title,
+        f"  {project.summary}" if project.summary else "",
+        *_repository_lines(context, project),
+        "  Steps:",
+    ]
     for step in project.steps:
         waiting = library.requires(step.id)
         after = ", ".join(key_of(other) or other.title for other in waiting)
@@ -379,9 +445,14 @@ def _configure_create(parser: ArgumentParser) -> None:
     parser.add_argument("title", help="what the project is called")
     parser.add_argument(
         "--dir",
-        required=True,
         dest="directory",
-        help="the project's directory, inside a git repository",
+        help="the project's directory, inside a plan repository",
+    )
+    parser.add_argument(
+        "--in",
+        dest="plan_repo",
+        metavar="PLAN_REPO",
+        help="a plan repository; the project lands in a folder named after its title",
     )
     parser.add_argument(
         "--init-repo",
@@ -389,6 +460,26 @@ def _configure_create(parser: ArgumentParser) -> None:
         help="run git init on the directory when no repository encloses it",
     )
     parser.add_argument("--summary", default="", help="one line on what it delivers")
+    parser.add_argument(
+        "--repository",
+        metavar="URL",
+        default="",
+        help="the code repository this project plans, as git names its remote",
+    )
+    parser.add_argument(
+        "--checkout",
+        metavar="PATH",
+        default="",
+        help="where this machine has that code checked out",
+    )
+
+
+def _create_target(args: Namespace) -> Path:
+    if bool(args.directory) == bool(args.plan_repo):
+        raise CliError("say where the project goes — exactly one of --dir DIR and --in PLAN_REPO")
+    if args.directory:
+        return Path(args.directory)
+    return Path(args.plan_repo).expanduser() / slugify(args.title, fallback="project")
 
 
 def _materialize(
@@ -415,10 +506,23 @@ def _materialize(
 
 
 def _project_create(context: CliContext, args: Namespace) -> int:
-    project = _materialize(context, Path(args.directory), args.title, init=args.init_repo)
+    project = _materialize(
+        context,
+        _create_target(args),
+        args.title,
+        init=args.init_repo,
+        repository=args.repository.strip(),
+    )
+    if args.checkout:
+        context.store.set_checkout(project.id, Path(args.checkout).expanduser().resolve())
     if args.summary:
         context.apply(SetFieldCommand(project.id, "summary", args.summary))
-    context.report(_project_row(context, project), f"Created {project.title!r}  {project.id}")
+    context.report(
+        _project_row(context, project),
+        "\n".join(
+            [f"Created {project.title!r}  {project.id}", *_repository_lines(context, project)]
+        ),
+    )
     return 0
 
 
@@ -440,12 +544,136 @@ def _project_rename(context: CliContext, args: Namespace) -> int:
     return 0
 
 
+def _configure_set(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument(
+        "--repository",
+        metavar="URL",
+        help="the code repository this project plans, as git names its remote",
+    )
+    parser.add_argument(
+        "--checkout", metavar="PATH", help="where this machine has that code checked out"
+    )
+    parser.add_argument(
+        "--forget-checkout",
+        action="store_true",
+        help="drop the checkout recorded on this machine",
+    )
+    parser.add_argument(
+        "--accept-colocation",
+        action="store_true",
+        help="the plan stays inside its code repository on purpose: stop warning",
+    )
+    parser.add_argument(
+        "--warn-colocation", action="store_true", help="warn again about the plan's place"
+    )
+
+
+def _project_set(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.library, args.project)
+    asked = (
+        args.repository is not None,
+        bool(args.checkout),
+        args.forget_checkout,
+        args.accept_colocation,
+        args.warn_colocation,
+    )
+    if not any(asked):
+        raise CliError(
+            "nothing to set — pass --repository, --checkout, --forget-checkout, "
+            "--accept-colocation or --warn-colocation"
+        )
+    notes: list[str] = []
+    if args.repository is not None:
+        context.apply(SetFieldCommand(project.id, "repository", args.repository.strip()))
+    if args.checkout:
+        checkout = Path(args.checkout).expanduser().resolve()
+        context.store.set_checkout(project.id, checkout)
+        origin = origin_url(checkout)
+        if (
+            project.repository
+            and origin
+            and canonical_remote(origin) != canonical_remote(project.repository)
+        ):
+            notes.append(f"  ! {checkout} has origin {origin}, not the project's code repository")
+    elif args.forget_checkout:
+        context.store.set_checkout(project.id, None)
+    if args.accept_colocation:
+        context.apply(SetFieldCommand(project.id, "colocation", ACCEPTED))
+    elif args.warn_colocation:
+        context.apply(SetFieldCommand(project.id, "colocation", ""))
+    context.report(
+        _project_row(context, project) | {"notes": notes},
+        "\n".join([project.title, *_repository_lines(context, project), *notes]),
+    )
+    return 0
+
+
+def _configure_move(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument(
+        "--to", metavar="DIR", help="the plan's new directory, inside a plan repository"
+    )
+    parser.add_argument(
+        "--into",
+        metavar="PLAN_REPO",
+        help="a plan repository; the plan lands in a folder named as its folder is now",
+    )
+    parser.add_argument(
+        "--init-repo",
+        action="store_true",
+        help="run git init on the target's parent when no repository encloses it",
+    )
+
+
+def _project_move(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.library, args.project)
+    if bool(args.to) == bool(args.into):
+        raise CliError("say where the plan goes — exactly one of --to DIR and --into PLAN_REPO")
+    target = (
+        Path(args.to).expanduser()
+        if args.to
+        else target_in(Path(args.into).expanduser(), project.folder_name)
+    )
+    try:
+        moved = move_project(context.store, project.id, target, init_repo=args.init_repo)
+    except RelocateError as error:
+        raise CliError(str(error)) from error
+    committed = [
+        name
+        for name, done in (
+            ("the repository it left", moved.source_committed),
+            ("the plan repository", moved.target_committed),
+        )
+        if done
+    ]
+    lines = [
+        f"Moved the plan of {project.title!r} to {moved.target}",
+        "  committed in " + " and ".join(committed) if committed else "  nothing committed",
+        *[f"  ! {note}" for note in moved.notes],
+        *_repository_lines(context, project),
+    ]
+    context.report(
+        {
+            "project": project.id,
+            "from": str(moved.source),
+            "to": str(moved.target),
+            "source_committed": moved.source_committed,
+            "target_committed": moved.target_committed,
+            "notes": list(moved.notes),
+        },
+        "\n".join(lines),
+    )
+    return 0
+
+
 def _project_delete(context: CliContext, args: Namespace) -> int:
     project = find_project(context.library, args.project)
     directory = context.store.project_dir(project.id)
     title, steps = project.title, len(project.steps)
     context.library.remove_child(project.id)
     context.store.detach(project.id)
+    remove_from_index(directory)  # A line that leads nowhere is a refusal on every walk.
     shutil.rmtree(directory, ignore_errors=True)
     context.report(
         {"deleted": project.id, "steps": steps, "dir": str(directory)},

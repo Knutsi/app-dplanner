@@ -1217,3 +1217,30 @@ def test_a_step_without_a_worktree_is_briefed_to_stay_in_the_checkout(cli_stdin)
     shown = json.loads(cli_stdin("agent", "prompt", "Cut the release", "--json"))
     assert ".dplanner-worktrees" not in shown["prompt"]
     assert "works in the checkout itself" in shown["prompt"]
+
+
+# -- the agent's shell names its project ---------------------------------------------------------
+
+
+def test_the_wrapper_exports_the_project_id_for_every_verb_in_the_shell(tmp_path):
+    posix = prepare("p", tmp_path, platform="linux", project_id="abc123").script.read_text()
+    assert "export DPLANNER_PROJECT=abc123" in posix
+    windows = prepare("p", tmp_path, platform="win32", project_id="abc123").script.read_text()
+    assert "set DPLANNER_PROJECT=abc123" in windows
+    assert "DPLANNER_PROJECT" not in prepare("p", tmp_path, platform="linux").script.read_text()
+
+
+def test_the_launch_names_the_steps_project_for_the_shell(services, step, monkeypatch):
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    seen: dict[str, object] = {}
+    real = launcher.prepare
+
+    def capture(*args, **kwargs):
+        seen.update(kwargs)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(launcher, "prepare", capture)
+    _fake_terminal(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert seen["project_id"] == services.document.project_of(step.id).id

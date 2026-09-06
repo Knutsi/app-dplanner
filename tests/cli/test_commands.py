@@ -907,3 +907,115 @@ def test_a_document_from_before_text_existed_still_imports(cli, monkeypatch):
 def test_import_refuses_something_that_is_not_a_document(cli, monkeypatch):
     monkeypatch.setattr("sys.stdin", StringIO("not json"))
     assert "not valid JSON" in cli("project", "import", expect=1)
+
+
+# -- the code repository: an agent in the code checkout needs no configuration -----------------
+
+
+def _origin(repo, url):
+    import subprocess
+
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", url], check=True)
+
+
+@pytest.fixture
+def separated(tmp_path):
+    """A plan in its own repository, planning a code repository checked out beside it."""
+    plans = init_repo(tmp_path / "plans")
+    directory = seed_project(
+        plans / "search", "Search", repository="git@github.com:acme/widget.git"
+    )
+    code = init_repo(tmp_path / "widget")
+    _origin(code, "https://github.com/acme/widget.git")
+    (code / "src").mkdir()
+    (code / "src" / "main.py").write_text("print()\n")
+    library, store = open_library_of(tmp_path, directory)
+    return library, store, code, plans
+
+
+def test_a_code_checkout_resolves_the_project_by_its_origin_and_records_itself(separated, tmp_path):
+    library, store, code, _plans = separated
+    project = library.projects[0]
+    assert store.checkout_of(project.id) is None
+
+    found = find_current_project(library, store, start=code / "src")
+
+    assert found is not None and found.id == project.id
+    assert store.checkout_of(project.id) == code.resolve()
+    # A second clone of the code resolves too, and never takes the recorded checkout over.
+    other = init_repo(tmp_path / "elsewhere")
+    _origin(other, "git@github.com:Acme/Widget.git")
+    again = find_current_project(library, store, start=other)
+    assert again is not None and again.id == project.id
+    assert store.checkout_of(project.id) == code.resolve()
+
+
+def test_a_worktree_of_the_code_repository_resolves_by_its_main_checkout(separated):
+    import subprocess
+
+    library, store, code, _plans = separated
+    _commit_all(code)
+    worktree = code / ".dplanner-worktrees" / "s1-search"
+    subprocess.run(
+        ["git", "-C", str(code), "worktree", "add", str(worktree), "-b", "agent/s1-search"],
+        check=True,
+        capture_output=True,
+    )
+    found = find_current_project(library, store, start=worktree)
+    assert found is not None and found.id == library.projects[0].id
+    assert store.checkout_of(found.id) == code.resolve()
+
+
+def test_a_remote_less_code_repository_is_matched_by_its_path(tmp_path):
+    plans = init_repo(tmp_path / "plans")
+    code = init_repo(tmp_path / "widget")
+    directory = seed_project(plans / "search", "Search", repository=str(code))
+    library, store = open_library_of(tmp_path, directory)
+    found = find_current_project(library, store, start=code)
+    assert found is not None and found.id == library.projects[0].id
+    assert store.checkout_of(found.id) == code.resolve()
+
+
+def test_two_projects_planning_one_repository_ask_for_the_project(separated, tmp_path):
+    library, store, code, plans = separated
+    first = store.project_dir(library.projects[0].id)
+    second = seed_project(plans / "billing", "Billing", repository="git@github.com:acme/widget.git")
+    library, store = open_library_of(tmp_path, first, second)
+    with pytest.raises(CliError, match="pass --project"):
+        find_current_project(library, store, start=code)
+
+
+def test_the_environment_names_the_project(separated, monkeypatch, tmp_path):
+    library, store, _code, _plans = separated
+    monkeypatch.setenv("DPLANNER_PROJECT", "Search")
+    found = find_current_project(library, store, start=tmp_path)
+    assert found is not None and found.id == library.projects[0].id
+
+
+def test_an_index_with_several_lines_answers_the_one_in_the_library(tmp_path):
+    plans = init_repo(tmp_path / "plans")
+    first = seed_project(plans / "search", "Search")
+    seed_project(plans / "billing", "Billing")  # Indexed, not in this library.
+    library, store = open_library_of(tmp_path, first)
+    found = find_current_project(library, store, start=plans)
+    assert found is not None and found.id == library.projects[0].id
+
+
+def test_an_index_with_several_library_projects_asks_outside_any_of_them(tmp_path):
+    plans = init_repo(tmp_path / "plans")
+    first = seed_project(plans / "search", "Search")
+    second = seed_project(plans / "billing", "Billing")
+    library, store = open_library_of(tmp_path, first, second)
+    with pytest.raises(CliError, match="pass --project"):
+        find_current_project(library, store, start=plans)
+    found = find_current_project(library, store, start=second / "steps")
+    assert found is not None and found.id == library.projects[1].id
+
+
+def test_a_dangling_index_line_is_skipped_while_another_resolves(tmp_path):
+    plans = init_repo(tmp_path / "plans")
+    first = seed_project(plans / "search", "Search")
+    (plans / ".dplanner").write_text("gone\nsearch\n")
+    library, store = open_library_of(tmp_path, first)
+    found = find_current_project(library, store, start=plans)
+    assert found is not None and found.id == library.projects[0].id

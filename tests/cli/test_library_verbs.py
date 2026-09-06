@@ -100,3 +100,57 @@ def test_remove_forgets_the_project_but_keeps_its_files(cli, cli_library, worksp
 def test_path_prints_the_library_file_this_invocation_uses(cli, cli_library):
     assert cli("library", "path").strip() == str(cli_library)
     assert data(cli("library", "path", "--json"))["path"] == str(cli_library)
+
+
+# -- a plan repository: add every project it lists, and browse it first ------------------------
+
+
+def test_add_over_a_plan_repository_adds_every_listed_project(cli, tmp_path):
+    plans = init_repo(tmp_path / "plans")
+    seed_project(plans / "search", "Search")
+    seed_project(plans / "billing", "Billing")
+
+    said = cli("library", "add", str(plans))
+    assert "Added 2 projects" in said and "+ Search" in said and "+ Billing" in said
+    titles = [row["title"] for row in data(cli("project", "list", "--json"))["projects"]]
+    assert titles == ["Search", "Billing"]
+
+    again = data(cli("library", "add", str(plans), "--json"))
+    assert again["added"] == []
+    assert [row["reason"] for row in again["skipped"]] == ["already in the library"] * 2
+
+
+def test_add_skips_a_project_already_here_from_another_clone_by_its_id(cli, tmp_path):
+    import shutil
+
+    plans = init_repo(tmp_path / "plans")
+    directory = seed_project(plans / "search", "Search")
+    cli("library", "add", str(directory))
+    clone = tmp_path / "clone"
+    shutil.copytree(plans, clone)
+    said = data(cli("library", "add", str(clone), "--json"))
+    assert said["added"] == [] and said["skipped"][0]["reason"] == "already in the library"
+
+
+def test_browse_lists_projects_with_activity_and_library_state(cli, tmp_path):
+    import subprocess
+
+    plans = init_repo(tmp_path / "plans")
+    directory = seed_project(plans / "search", "Search")
+    seed_project(plans / "billing", "Billing")
+    git = ["git", "-C", str(plans)]
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run(
+        [*git, "-c", "user.name=Anna", "-c", "user.email=a@example.com", "commit", "-qm", "plans"],
+        check=True,
+    )
+    cli("library", "add", str(directory))
+
+    rows = data(cli("library", "browse", str(plans / "billing"), "--json"))["projects"]
+    assert [(r["title"], r["in_library"], r["last_author"], r["commits"]) for r in rows] == [
+        ("Search", True, "Anna", 1),
+        ("Billing", False, "Anna", 1),
+    ]
+    text = cli("library", "browse", str(plans))
+    assert "Search" in text and "[in library]" in text and "Anna, just now" in text
+    assert "not inside a git repository" in cli("library", "browse", str(tmp_path), expect=1)

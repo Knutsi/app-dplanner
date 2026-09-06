@@ -13,6 +13,7 @@ loss that shows up months later, in a project nobody can reconstruct.
 """
 
 import json
+import os
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,12 +22,21 @@ from typing import TextIO
 from dplanner.cli.command import CliContext, CliError
 from dplanner.cli.lookup import find_project
 from dplanner.core.module_data import ModuleDataFormat, migrate_module_data
-from dplanner.core.storage.locations import find_repo_root, main_checkout
+from dplanner.core.storage.locations import (
+    canonical_remote,
+    find_repo_root,
+    main_checkout,
+    origin_url,
+)
 from dplanner.core.storage.pointer import POINTER_FILE, resolve_index
 from dplanner.domain.library_file import LIBRARY_ENV, resolve_library_path
 from dplanner.domain.model import Library, Project
 from dplanner.domain.shelf import migrate_shelved
 from dplanner.domain.store import PROJECT_META, LibraryStore, StaleWorkspaceError
+
+# Names the current project for every verb in a shell — what Run Agent's wrapper sets, so
+# an agent's calls are scoped without the briefing saying `--project` on each line.
+PROJECT_ENV = "DPLANNER_PROJECT"
 
 
 def find_library(explicit: str | None = None) -> Path:
@@ -55,54 +65,109 @@ def find_current_project(
 
     In the order a person would expect — and this docstring is the contract:
 
-    1. ``--project`` names one, by id, folder name, or part of its title.
-    2. **Upwards from the working directory** for a ``project.dproj`` — or a ``.dplanner``
-       pointer file whose one line is the project directory's path, relative to the
-       pointer's own directory. That walk is the whole point: an agent is already sitting
-       in the project's checkout, so the CLI needs no configuration at all. **Inside an
-       agent's worktree the walk finds the branch's copy of the plan**, and the answer is
-       the library project with the same id — the plan of record, the one the window
-       shows — never the copy: a status written into a branch's copy reaches nobody until
-       the branch merges. A directory found this way that is *not* in the library, and
-       is not such a copy, is refused rather than half-served.
-    3. Failing that, every library project whose repository contains the working
-       directory — a linked worktree counting as its main checkout: exactly one is the
-       answer, several is a refusal naming them, none means there is no current project —
-       verbs that need one say so.
+    1. ``--project`` names one, by id, folder name, or part of its title — or
+       ``$DPLANNER_PROJECT`` does, which Run Agent's wrapper sets in the agent's shell.
+    2. **Upwards from the working directory** for a ``project.dproj``, or for the
+       ``.dplanner`` index a plan repository keeps at its root — one project directory
+       per line, relative to the file. That walk is what lets a person in the plan
+       repository need no configuration. **Inside an agent's worktree of a code
+       repository that still carries its plan** the walk finds the branch's copy, and the
+       answer is the library project with the same id — the plan of record, the one the
+       window shows — never the copy. A directory found this way that is no library
+       project, and no such copy, is refused rather than half-served; an index naming
+       several library projects asks for ``--project``.
+    3. **The working directory's repository is one a library project plans**: its
+       ``origin`` is the project's code repository, spelt however git spells it — or, for
+       a repository with no origin, it is the checkout recorded for the project. An agent
+       in the code checkout, or in a worktree of it, therefore needs no configuration at
+       all; and the first call from a checkout the library did not know **records it**,
+       so the window's Run Agent finds the code too. Several projects planning one
+       repository is a refusal naming them.
+    4. Failing that, every library project whose *plan* repository contains the working
+       directory — a linked worktree counting as its main checkout — which is the older
+       shape, a plan kept beside its code: exactly one is the answer, several a refusal,
+       none means there is no current project, and verbs that need one say so.
     """
+    explicit = explicit or os.environ.get(PROJECT_ENV, "")
     if explicit:
         return find_project(library, explicit)
     start = (start or Path.cwd()).resolve()
     found = _walk_up(start)
-    if found is not None:
-        for project in library.projects:
-            if _dir_of(store, project) == found:
-                return project
-        same = _project_id_at(found)
-        for project in library.projects:
-            if project.id == same:
-                return project
-        raise CliError(
-            f"{found} is a DPlanner project, but it is not in your library — "
-            f"run: dplanner library add {found}"
-        )
+    if found:
+        return _among(library, store, found)
     root = find_repo_root(start)
     if root is None:
         return None
-    root = main_checkout(root)
+    main = main_checkout(root).resolve()
+    planned = _planning(library, store, main)
+    if len(planned) == 1:
+        project = planned[0]
+        if store.checkout_of(project.id) is None:
+            store.set_checkout(project.id, main)
+        return project
+    if planned:
+        raise CliError(
+            "this code repository is planned by several library projects — pass --project: "
+            + _names(planned)
+        )
     matches = [
         project
         for project in library.projects
         if (directory := _dir_of(store, project)) is not None
         and (project_root := find_repo_root(directory)) is not None
-        and main_checkout(project_root) == root
+        and main_checkout(project_root).resolve() == main
     ]
     if len(matches) == 1:
         return matches[0]
     if matches:
-        names = ", ".join(sorted(project.title or project.folder_name for project in matches))
-        raise CliError(f"this repository holds several library projects — pass --project: {names}")
+        raise CliError(
+            f"this repository holds several library projects — pass --project: {_names(matches)}"
+        )
     return None
+
+
+def _planning(library: Library, store: LibraryStore, main: Path) -> list[Project]:
+    """The library projects whose code repository is the one checked out at ``main``:
+    by its origin, by the checkout recorded for the project, or — for a code repository
+    with no remote, stored as its path — by that path."""
+    origin = canonical_remote(origin_url(main))
+    found: list[Project] = []
+    for project in library.projects:
+        code = canonical_remote(project.repository) if project.repository else ""
+        checkout = store.checkout_of(project.id)
+        if (
+            (origin and code == origin)
+            or (checkout is not None and checkout.expanduser().resolve() == main)
+            or (code and Path(code).is_absolute() and Path(code) == main)
+        ):
+            found.append(project)
+    return found
+
+
+def _among(library: Library, store: LibraryStore, candidates: list[Path]) -> Project:
+    """The library project among the directories the walk found — by directory, or by
+    the id its ``project.dproj`` declares (a branch's copy of the plan)."""
+    ids = {_project_id_at(candidate) for candidate in candidates} - {""}
+    mine = [
+        project
+        for project in library.projects
+        if _dir_of(store, project) in candidates or project.id in ids
+    ]
+    if len(mine) == 1:
+        return mine[0]
+    if mine:
+        raise CliError(
+            "this plan repository holds several library projects — pass --project: " + _names(mine)
+        )
+    first = candidates[0]
+    raise CliError(
+        f"{first} is a DPlanner project, but it is not in your library — "
+        f"run: dplanner library add {first}"
+    )
+
+
+def _names(projects: Sequence[Project]) -> str:
+    return ", ".join(sorted(project.title or project.folder_name for project in projects))
 
 
 def _project_id_at(directory: Path) -> str:
@@ -122,35 +187,39 @@ def _dir_of(store: LibraryStore, project: Project) -> Path | None:
         return None
 
 
-def _walk_up(start: Path) -> Path | None:
+def _walk_up(start: Path) -> list[Path]:
+    """The project directories the nearest level of the walk names: the directory itself
+    when it holds a ``project.dproj``, else what its index lists, else the next level up."""
     for directory in [start, *start.parents]:
-        # A real project wins over a pointer beside it.
+        # A real project wins over an index beside it.
         if (directory / PROJECT_META).is_file():
-            return directory.resolve()
-        pointed = _follow_pointer(directory)
-        if pointed is not None:
-            return pointed
-    return None
+            return [directory.resolve()]
+        found = _index_candidates(directory)
+        if found:
+            return found
+    return []
 
 
-def _follow_pointer(directory: Path) -> Path | None:
-    """The project the ``.dplanner`` index here names, or None when there is no index.
+def _index_candidates(directory: Path) -> list[Path]:
+    """The project directories the ``.dplanner`` index here leads to; [] when there is no
+    index, or an empty one.
 
-    An index may list several projects, one per line; the first that leads to a
-    ``project.dproj`` answers. An index none of whose lines leads anywhere raises rather
-    than letting the walk continue past it: silently acting on some project further up
-    when the user explicitly named this one is the failure they cannot see.
+    A line that leads nowhere is skipped while another resolves — a project somebody
+    deleted by hand must not hide its neighbours. An index none of whose lines leads
+    anywhere raises rather than letting the walk continue past it: silently acting on
+    some project further up when the user explicitly named this one is the failure they
+    cannot see.
     """
-    pointer = directory / POINTER_FILE
-    if not pointer.is_file():
-        return None
+    if not (directory / POINTER_FILE).is_file():
+        return []
     entries = resolve_index(directory)
-    for _line, target in entries:
-        if (target / PROJECT_META).is_file():
-            return target
-    if not entries:
-        return None
-    raise CliError(f"{pointer} points at {entries[0][1]}, but there is no {PROJECT_META} there")
+    live = [target for _line, target in entries if (target / PROJECT_META).is_file()]
+    if live or not entries:
+        return live
+    raise CliError(
+        f"{directory / POINTER_FILE} points at {entries[0][1]}, "
+        f"but there is no {PROJECT_META} there"
+    )
 
 
 @contextmanager

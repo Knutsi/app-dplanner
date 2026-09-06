@@ -3,9 +3,10 @@
 No ``qapp`` fixture — ``aspect.py``, ``cli.py`` and ``gh.py`` are Qt-free by rule. Every
 gh call is monkeypatched: these tests must pass with no ``gh`` installed and no network.
 
-Which repository a step's refs belong to is **derived** from its project directory's
-``origin`` remote — nothing stores a URL — so the tests that need one add a real remote
-with git rather than setting anything through the CLI.
+Which repository a step's refs belong to is the **code repository its project records**;
+a project that records none — the older shape, a plan kept beside its code — falls back to
+its own directory's ``origin`` remote, so most tests here add a real remote with git and
+one sets the repository through the CLI.
 """
 
 import json
@@ -211,6 +212,22 @@ def test_each_projects_own_repository_answers_for_its_steps(
     monkeypatch.setattr(github_cli, "view_pr", view_pr)
     cli("github", "set", "Wire the antenna", "--pr", "7")
     assert asked == ["acme/satellite"]
+
+
+def test_the_projects_code_repository_answers_over_the_directorys_origin(
+    cli, origin, gh_present, monkeypatch
+):
+    """A separated plan: the repository recorded on the project, not the plan's own."""
+    asked = []
+
+    def list_prs(repo):
+        asked.append(repo)
+        return []
+
+    monkeypatch.setattr(github_cli, "list_prs", list_prs)
+    cli("project", "set", "Discovery", "--repository", "https://github.com/acme/other")
+    cli("github", "prs", "--project", "Discovery")
+    assert asked == ["acme/other"]
 
 
 def test_prs_can_ask_a_named_projects_repository(cli, tmp_path, gh_present, monkeypatch):

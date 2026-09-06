@@ -162,9 +162,7 @@ def test_content_edits_are_never_gated(gated_cli):
     gated_cli("describe", "set", "Ship", "--file", "-", stdin="The release step.")
     gated_cli("feature", "edit", "Discovery 2", "f1", "--title", "CSV import")
     gated_cli("estimate", "set", "Ship", "--days", "1")
-    assert "changed since you read it" in gated_cli(
-        "step", "add", "Discovery 2", "Test", expect=1
-    )
+    assert "changed since you read it" in gated_cli("step", "add", "Discovery 2", "Test", expect=1)
 
 
 def test_nothing_is_written_when_the_gate_refuses(gated_cli, workspace):

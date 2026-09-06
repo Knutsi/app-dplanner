@@ -14,6 +14,7 @@ one file that says what a project is called and how many steps it has.
 import json
 import os
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -90,6 +91,35 @@ def scan_projects(root: Path, depth: int = SCAN_DEPTH) -> list[Path]:
 
     walk(root, 0)
     return found
+
+
+_UNITS = (
+    ("year", 365 * 86400),
+    ("month", 30 * 86400),
+    ("week", 7 * 86400),
+    ("day", 86400),
+    ("hour", 3600),
+    ("minute", 60),
+)
+
+
+def ago(iso: str, now: datetime | None = None) -> str:
+    """``2 days ago`` from an ISO-8601 stamp — how a row says when a plan last moved.
+    "" for no stamp; the stamp itself when it cannot be read."""
+    if not iso:
+        return ""
+    try:
+        when = datetime.fromisoformat(iso)
+    except ValueError:
+        return iso
+    if now is None:
+        now = datetime.now(UTC) if when.tzinfo is not None else datetime.now()
+    seconds = max(0.0, (now - when).total_seconds())
+    for unit, size in _UNITS:
+        count = int(seconds // size)
+        if count >= 1:
+            return f"{count} {unit}{'s' if count != 1 else ''} ago"
+    return "just now"
 
 
 def _describe(root: Path, directory: Path, *, indexed: bool) -> PlanProject:

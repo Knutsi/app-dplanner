@@ -19,6 +19,7 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
+from dplanner.core.storage.locations import find_repo_root
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Node, Project, Step, TextEdit
 from dplanner.domain.shelf import turn_off, turn_on
@@ -147,9 +148,16 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             project_files=asset_paths(context.store.files, project.id),
             instruction_files=instruction.files,
         )
+        directory = context.store.project_dir(project.id)
+        checkout = context.store.checkout_of(project.id)
         data = {
             "step": step.id,
-            "root": str(context.store.project_dir(project.id)),
+            "root": str(directory),
+            # Where the plan lives, which code it plans, and where that code is here —
+            # so an agent that wants to know never derives them.
+            "plan": str(find_repo_root(directory) or ""),
+            "repository": project.repository,
+            "checkout": str(checkout) if checkout is not None else "",
             "prompt": assembled.text,
             "files": list(assembled.files),
         }

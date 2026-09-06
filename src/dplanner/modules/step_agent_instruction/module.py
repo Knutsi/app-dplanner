@@ -431,6 +431,7 @@ class StepAgentInstructionModule:
             worktree=worktree,
             directory=run_dir,
             step_title=f"{key} {step.title}".strip(),
+            project_id=deps.library.project_of(step.id).id,
         )
         command = None
         if workdir.is_dir():
