@@ -25,6 +25,7 @@ The signals here are the Qt-free :class:`dplanner.core.signals.Signal`, so this 
 testable with plain pytest; the framework re-emits them on the GUI thread.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Protocol, runtime_checkable
@@ -121,8 +122,13 @@ class VersionedStorage(Protocol):
         """Uncommitted changes as a unified diff, for the user to review before saving."""
         ...
 
-    def commit(self, message: str) -> bool:
-        """Record the current state. False when there was nothing to record. BLOCKING."""
+    def commit(self, message: str, also: Sequence[str] = ()) -> bool:
+        """Record the current state. False when there was nothing to record. BLOCKING.
+
+        ``also`` names extra root-relative paths to record in the same version, beside the
+        workspace the provider is scoped to — what a publication written next to the plan
+        needs. A provider without scopes may ignore it.
+        """
         ...
 
     def history(self, limit: int = 50) -> list[Revision]:

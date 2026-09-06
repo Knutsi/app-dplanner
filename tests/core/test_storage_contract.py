@@ -225,6 +225,35 @@ def test_commits_are_scoped_to_the_workspace(versioned):
     assert "unrelated.txt" not in listing
 
 
+def test_commit_also_records_the_named_paths_without_widening_the_scope(versioned):
+    """``also`` is how a publication beside the plan rides in the same version.
+
+    The extra path is committed, the neighbour outside both is not, and afterwards the
+    dirty count still counts only the workspace: a stale publication is never unsaved work.
+    """
+    published = versioned.repo_root / "reports" / "index.html"
+    published.parent.mkdir()
+    published.write_text("<h1>site</h1>")
+    (versioned.repo_root / "unrelated.txt").write_text("not mine")
+    versioned.write_text("note.md", "mine")
+    assert versioned.commit("with the site", also=("reports",)) is True
+    listing = subprocess.run(
+        ["git", "-C", str(versioned.repo_root), "show", "--name-only", "--format=", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "note.md" in listing
+    assert "reports/index.html" in listing
+    assert "unrelated.txt" not in listing
+
+    published.write_text("<h1>site v2</h1>")
+    versioned.refresh_dirty()
+    assert versioned.is_dirty() is False
+    # Nothing in the workspace changed, so the publication alone is not a version either.
+    assert versioned.commit("only the site", also=("reports",)) is True
+
+
 def test_branches_start_from_the_current_state(versioned):
     versioned.write_text("note.md", "first")
     versioned.commit("one")
