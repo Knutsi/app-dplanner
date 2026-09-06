@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from dplanner.cli.command import CliCommand, CliContext
 from dplanner.cli.lookup import find_project
 from dplanner.domain.model import Library, Project
+from dplanner.domain.repositories import LEGACY, RepositoryFacts, repository_facts
 from dplanner.domain.store import FilesFor
 
 
@@ -33,12 +34,45 @@ class LintFinding:
 LintCheck = Callable[[Library, Project, FilesFor], Sequence[LintFinding]]
 
 
+def repository_finding(project: Project, facts: RepositoryFacts) -> LintFinding | None:
+    """The plan's own repository question, asked before any module's: a plan kept inside
+    the code it plans is what drifts, and the finding names the way out — or the way to
+    keep it there on purpose, which silences it. ``project show`` prints the same line."""
+    if not facts.warns:
+        return None
+    title = project.title or project.folder_name
+    if facts.state == LEGACY:
+        check = "repo.unset"
+        what = (
+            "no code repository is recorded, so the plan reads as living inside the code it plans"
+        )
+    else:
+        check = "repo.colocated"
+        what = "the plan lives inside the code it plans"
+    return LintFinding(
+        check=check,
+        subject_id=project.id,
+        subject=title,
+        message=(
+            f"{what} — `dplanner project move '{title}' --into PLAN_REPO`, or "
+            f"`dplanner project set '{title}' --accept-colocation`"
+        ),
+    )
+
+
 def commands(checks: Sequence[LintCheck]) -> list[CliCommand]:
     def _lint(context: CliContext, args: Namespace) -> int:
         library = context.library
+        store = context.store
         projects = [find_project(library, args.project)] if args.project else list(library.projects)
         found: list[tuple[Project, LintFinding]] = []
         for project in projects:
+            facts = repository_facts(
+                project, store.project_dir(project.id), store.checkout_of(project.id)
+            )
+            finding = repository_finding(project, facts)
+            if finding is not None:
+                found.append((project, finding))
             for check in checks:
                 found += [
                     (project, finding) for finding in check(library, project, context.store.files)

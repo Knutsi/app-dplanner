@@ -10,7 +10,7 @@ Branch operations are different: a branch belongs to one repository, so New Bran
 Switch Branch act on the repository of the *focused project* and are disabled — with the
 reason in the label — until a project is focused.
 
-Membership changes at runtime (File ▸ New/Open Project), so the service re-pulls its
+Membership changes at runtime (File ▸ New Project, Open Projects), so the service re-pulls its
 repository groups whenever the library's structure changes.
 
 **A branch switched underneath the window is taken in, and said.** A checkout is one
@@ -255,10 +255,11 @@ class SyncModule:
         QMessageBox.warning(
             deps.parent,
             "Branch changed",
-            "The checkout switched branches outside DPlanner:\n\n"
+            "The plan repository switched branches outside DPlanner:\n\n"
             + "\n".join(f"• {line}" for line in lines)
             + "\n\nThe plan shown is now the one on the new branch, and so is every edit"
-            " from here on. If an agent is working in this checkout, it did this.",
+            " from here on. A plan kept inside its code repository switches with the"
+            " code — an agent working in that checkout may have done this.",
         )
 
     # -- quitting ------------------------------------------------------------------------------

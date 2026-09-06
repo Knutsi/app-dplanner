@@ -6,9 +6,9 @@ URL, and refuse with one line when either is missing. ``show`` prints a step's r
 recorded and, with ``gh``, where they stand now: the PR's state and title, and whether
 the branch is still on the remote — the GitHub tab's standing line, for the terminal.
 
-Which repository a step belongs to is **derived from its project's directory**: the
-enclosing git repository's ``origin`` remote. Nothing stores a URL, so nothing can
-disagree with git.
+Which repository a step belongs to is **the code repository its project records** — the
+one fact a plan stores about the code it plans — and, for a project that records none
+(the older shape, a plan kept beside its code), its own directory's ``origin`` remote.
 """
 
 from argparse import ArgumentParser, Namespace
@@ -288,8 +288,9 @@ def _need_gh() -> None:
 
 
 def _repo_url(context: CliContext, project: Project) -> str:
-    """The remote URL a project's work belongs to — its directory's repository, from git."""
-    return origin_url(context.store.project_dir(project.id))
+    """The remote URL a project's work belongs to: the code repository it records, else —
+    the older shape — its own directory's origin, from git."""
+    return project.repository or origin_url(context.store.project_dir(project.id))
 
 
 def _step_repo(context: CliContext, step: Step) -> str | None:

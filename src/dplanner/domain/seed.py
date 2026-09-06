@@ -10,7 +10,7 @@ from pathlib import Path
 
 from dplanner.core.formats import FORMAT_KEY
 from dplanner.core.fsio import write_atomic
-from dplanner.core.storage.pointer import write_pointer
+from dplanner.core.storage.pointer import add_to_index
 from dplanner.domain.library_file import write_library_file
 from dplanner.domain.migrations import FORMAT
 from dplanner.domain.model import Project
@@ -22,12 +22,15 @@ def create_library(path: Path) -> None:
     write_library_file(path, [])
 
 
-def seed_project(directory: Path, title: str) -> Path:
-    """Write a brand-new project: its ``project.dproj`` and the repo-root pointer.
+def seed_project(directory: Path, title: str, *, summary: str = "", repository: str = "") -> Path:
+    """Write a brand-new project: its ``project.dproj`` and its line in the repo-root index.
 
-    A project born inside a git checkout leaves a ``.dplanner`` pointer at the repository
-    root, so the CLI's walk finds the plan from anywhere in the checkout — for everyone who
-    clones it — without a line of configuration.
+    ``repository`` is the code repository the project plans, as git names its remote;
+    left empty, the project reads as planning the repository it was created in.
+
+    A project born inside a git checkout is listed in the ``.dplanner`` index at the
+    repository root, so the CLI's walk finds the plan from anywhere in the checkout — for
+    everyone who clones it — without a line of configuration.
 
     The meta written here is deliberately the same shape ``LibraryStore._write_meta``
     produces for a project, and ``LibraryStore.create_project`` loads it straight back —
@@ -39,10 +42,14 @@ def seed_project(directory: Path, title: str) -> Path:
     meta: dict[str, object] = {"id": project.id, "created": project.created}
     if title:
         meta["title"] = title
+    if summary:
+        meta["summary"] = summary
+    if repository:
+        meta["repository"] = repository
     meta[FORMAT_KEY] = FORMAT.current_version
     write_atomic(
         directory / PROJECT_META,
         json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
     )
-    write_pointer(directory)
+    add_to_index(directory)
     return directory

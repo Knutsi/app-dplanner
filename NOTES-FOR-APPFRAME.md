@@ -2039,3 +2039,82 @@ caution against an editable install into a worktree, which had the parse inline.
 **Upstream?** Yes, with `find_repo_root`: any template application that opens a
 repository and can be run from a linked worktree wants the same answer, and the `.git`
 file's format is git's contract, not ours.
+
+## 18. From the plan-repository pass
+
+### `core/storage/git.py` — `canonical_remote`, `remote_label`, `activity` (new)
+
+**What.** `canonical_remote(url)` folds every spelling git accepts for one remote — https,
+ssh, scp-like, with a user, a port, `.git` — into `host/owner/repo`, lowercased, and a
+local path into its resolved self. `remote_label(url)` is the same split kept readable
+(`Acme/Widget` for GitHub, `host/…` elsewhere), and `GitHubStorage.remote_label()` now
+delegates to it instead of parsing on its own. `activity(root, path, limit)` reads the last
+commits under one directory: who touched it last and when, everyone who did, how many.
+**Why.** A project's code repository is stored as its remote URL and matched against a
+checkout's `origin` on every `dplanner` call, so two spellings of one repository must
+compare equal; the project browser lists a plan repository's projects with who is on each.
+**Upstream?** Yes: any application that records a repository by its remote needs the first
+two, and the third is one `git log` format worth keeping.
+
+### `core/storage/locations.py` — `repo_storage(repo_root, scopes)` (new)
+
+**What.** The whole-repository provider `grouped_by_repo` already builds, exposed at the
+front door with explicit pathspecs. **Why.** Moving a plan commits in two repositories the
+store holds no project in, and the Project dialog reads a code repository's log; both live
+above the storage layer and may not name a provider class. **Upstream?** Yes, with
+`grouped_by_repo`.
+
+### `core/storage/pointer.py` — the `.dplanner` file is an index, and `WORKTREES_DIR` lives beside it
+
+**What.** `write_pointer` became `add_to_index`: one line per project directory,
+appended, never rewriting a hand-written line; `remove_from_index`, `read_index`,
+`resolve_index` and `write_index` beside it. A one-line file is exactly the pointer it was.
+`WORKTREES_DIR` moved here from the agent launcher, because the plan repository scan in
+`domain/` has to skip that directory and may not import a module. **Why.** A plan
+repository holds several projects for several people, and the committed list of them is
+what a clone needs to say which projects it holds. **Upstream?** The index, yes, with the
+pointer it grew from; the constant is DPlanner's.
+
+### `core/storage/git.py` — `GitStorage.commit` leaves out a scope nothing matches
+
+**What.** Before staging, each scope is checked to exist in the tree or to be known to
+the index; one that is neither is dropped, and a commit with no scope left answers False.
+**Why.** Moving a plan commits its removal from the repository it left; when the plan was
+never tracked there — created and moved before anybody saved — `git add -A -- planning`
+fails on the pathspec, and that failure would have failed a move whose files were already
+where they belonged. **Upstream?** Yes: a scoped commit that cannot fail on an absent
+scope is what every caller wants.
+
+### `core/storage/github.py` — `GitHubStorage.create(name, dest)` (new)
+
+**What.** The third classmethod beside `clone` and `publish`: `gh repo create --clone`
+for a repository nobody has started yet, cloned into a chosen directory (gh lands the
+clone under the repository's own name beside where it runs, so it runs in the parent and
+renames). **Why.** The Project dialog's *new code repository* glyph: a plan that names
+code nobody has started. **Upstream?** Yes, with the other two.
+
+### `core/storage/github.py` — `push` rebases onto origin first, `pull` rebases instead of fast-forwarding
+
+**What.** Both fetch, then rebase the checkout onto `origin/<branch>` when the two
+diverged (`--autostash`, so an uncommitted edit rides along); a conflict is aborted —
+the stash restored — and refused with the tree as it was, the same refusal the old
+`--ff-only` gave. `push` emits `worktree_changed` when the rebase brought commits in,
+so the window reads them the way it reads a pull. **Why.** A plan repository is written
+by several people and every *Save* is a commit, so two clones' branches diverge on an
+ordinary afternoon, and the second Save used to be rejected by the remote for being
+second. Two Saves are commits to different files far more often than a conflict. It
+applies to a code repository holding its plan as well, and the failure mode — a real
+conflict — is exactly what the old refusal was. **Upstream?** Yes: any application whose
+Save is a push wants the second writer's push to land.
+
+### `framework/window_watch.py` — `WorkspaceWatcher` takes a parent
+
+**What.** The watcher's constructor takes the window as its parent, and the library-watch
+module hands it over. **Why.** A reload discards a build with `deleteLater` on the window
+but stopped nothing the modules had started: the watcher's poll timer kept firing every
+two seconds against the discarded build, and its adoption ran into the deleted status-bar
+button (`libshiboken: Internal C++ object (OutsideChangesButton) already deleted`, once
+per poll, after a Move Plan reload and at close). A QObject owned by the window dies with
+it, timer and all — the same reason the module's ask-soon timer was already the window's.
+**Upstream?** Yes: a watcher that outlives what it watches for is a bug in any host.
+

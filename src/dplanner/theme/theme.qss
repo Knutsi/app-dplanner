@@ -984,7 +984,9 @@ QSplitter::handle:vertical:pressed {
 
 /* Dialog footer buttons: quiet bordered secondaries, at most one accent primary. */
 #EditReviewDialog QPushButton, #TaskBrowserDialog QPushButton, #CardPreviewDialog QPushButton,
-#AgentSkillDialog QPushButton, #CommandInstallDialog QPushButton {
+#AgentSkillDialog QPushButton, #CommandInstallDialog QPushButton, #ProjectDialog QPushButton,
+#MovePlanDialog QPushButton, #RepositoriesFolderDialog QPushButton, #GhRepoListDialog QPushButton,
+#OpenProjectsDialog QPushButton {
     background-color: $BG_OVERLAY;
     color: $TEXT_PRIMARY;
     border: 1px solid $BORDER;
@@ -996,7 +998,12 @@ QSplitter::handle:vertical:pressed {
 #TaskBrowserDialog QPushButton:hover,
 #CardPreviewDialog QPushButton:hover,
 #AgentSkillDialog QPushButton:hover,
-#CommandInstallDialog QPushButton:hover {
+#CommandInstallDialog QPushButton:hover,
+#ProjectDialog QPushButton:hover,
+#MovePlanDialog QPushButton:hover,
+#RepositoriesFolderDialog QPushButton:hover,
+#GhRepoListDialog QPushButton:hover,
+#OpenProjectsDialog QPushButton:hover {
     border-color: $BORDER_STRONG;
 }
 
@@ -1004,12 +1011,20 @@ QSplitter::handle:vertical:pressed {
 #TaskBrowserDialog QPushButton:disabled,
 #CardPreviewDialog QPushButton:disabled,
 #AgentSkillDialog QPushButton:disabled,
-#CommandInstallDialog QPushButton:disabled {
+#CommandInstallDialog QPushButton:disabled,
+#ProjectDialog QPushButton:disabled,
+#MovePlanDialog QPushButton:disabled,
+#RepositoriesFolderDialog QPushButton:disabled,
+#GhRepoListDialog QPushButton:disabled,
+#OpenProjectsDialog QPushButton:disabled {
     color: $TEXT_DISABLED;
 }
 
 #EditReviewDialog #PrimaryButton, #CardPreviewDialog #PrimaryButton,
-#AgentSkillDialog #PrimaryButton, #CommandInstallDialog #PrimaryButton {
+#AgentSkillDialog #PrimaryButton, #CommandInstallDialog #PrimaryButton,
+#ProjectDialog #PrimaryButton, #MovePlanDialog #PrimaryButton,
+#RepositoriesFolderDialog #PrimaryButton, #GhRepoListDialog #PrimaryButton,
+#OpenProjectsDialog #PrimaryButton {
     background-color: $ACCENT;
     color: $ON_ACCENT;
     border-color: $ACCENT;
@@ -1018,13 +1033,18 @@ QSplitter::handle:vertical:pressed {
 }
 
 #EditReviewDialog #PrimaryButton:hover, #CardPreviewDialog #PrimaryButton:hover,
-#AgentSkillDialog #PrimaryButton:hover, #CommandInstallDialog #PrimaryButton:hover {
+#AgentSkillDialog #PrimaryButton:hover, #CommandInstallDialog #PrimaryButton:hover,
+#ProjectDialog #PrimaryButton:hover, #MovePlanDialog #PrimaryButton:hover,
+#RepositoriesFolderDialog #PrimaryButton:hover, #GhRepoListDialog #PrimaryButton:hover,
+#OpenProjectsDialog #PrimaryButton:hover {
     background-color: $ACCENT_HOVER;
     border-color: $ACCENT_HOVER;
 }
 
 #EditReviewDialog #PrimaryButton:disabled, #AgentSkillDialog #PrimaryButton:disabled,
-#CommandInstallDialog #PrimaryButton:disabled {
+#CommandInstallDialog #PrimaryButton:disabled, #ProjectDialog #PrimaryButton:disabled,
+#MovePlanDialog #PrimaryButton:disabled, #RepositoriesFolderDialog #PrimaryButton:disabled,
+#GhRepoListDialog #PrimaryButton:disabled, #OpenProjectsDialog #PrimaryButton:disabled {
     background-color: $BG_OVERLAY;
     color: $TEXT_DISABLED;
     border-color: $BORDER;
@@ -1083,4 +1103,32 @@ QSplitter::handle:vertical:pressed {
 #TaskBrowserDialog QProgressBar::chunk {
     background-color: $ACCENT;
     border-radius: 2px;
+}
+
+/* ---- Projects: the Project dialog, Move Plan, Open Projects (DESIGN.md: settings above a
+ * rule, log wells below; a glyph button beside each field; one primary per surface) ---- */
+
+/* A glyph button beside a field: the quiet bordered look, the verb in its tooltip. */
+QToolButton[repoTool="true"] {
+    background-color: $BG_OVERLAY;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    padding: 4px;
+}
+
+QToolButton[repoTool="true"]:hover {
+    border-color: $BORDER_STRONG;
+}
+
+/* The wells: a log column, the folder candidates, the GitHub list, the projects to add. */
+#LogWell, #RepositoriesFolderList, #GhRepoList, #OpenProjectsList {
+    background-color: $BG_BASE;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
+}
+
+/* Secondary text: a column's branch, an empty column, a remark, a path preview. */
+#LogBranch, #LogEmpty, #GhNote, #ProjectNote, #ColocationWarningText, #RepoPickerNote,
+#MoveTargetPath, #MovePlanSummary, #OpenProjectsEmpty, #OpenProjectsNote {
+    color: $TEXT_SECONDARY;
 }

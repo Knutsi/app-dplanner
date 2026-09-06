@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QMessageBox, QWidget
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Node, Step, StepId
 from dplanner.domain.progression import DONE
+from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import Conflict, FilesFor
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -94,6 +95,26 @@ def _all_done(_step: Step) -> str:
     return DONE
 
 
+def _workdir(facts: RepositoryFacts) -> Path | None:
+    """Where an agent on the step works: the code checkout when the project records a
+    code repository, else the plan's own repository — the older shape, a plan kept beside
+    its code. None when neither is here."""
+    return facts.checkout if facts.repository else facts.plan_root
+
+
+def _workdir_refusal(facts: RepositoryFacts) -> str:
+    """Why Run Agent cannot open a shell for the step; "" when it can."""
+    if facts.repository:
+        if facts.checkout is None:
+            return "the code repository is not checked out on this machine — Project ▸ Settings…"
+        if not facts.checkout.expanduser().is_dir():
+            return f"the code checkout is gone from {facts.checkout} — Project ▸ Settings…"
+        return ""
+    if facts.plan_root is None:
+        return "the project's folder is not in a git repository"
+    return ""
+
+
 def _no_key(_step: Step) -> str:
     return ""
 
@@ -106,6 +127,9 @@ def _our_version(node: Node, entry: str) -> str:
             meta["edges"] = node.edges
         else:
             meta["summary"] = getattr(node, "summary", "")
+            for key in ("repository", "colocation"):
+                if value := getattr(node, key, ""):
+                    meta[key] = value
         return json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     module_id, suffix = entry.rsplit(".", 1)
     if suffix == "json":
@@ -129,9 +153,11 @@ class StepAgentInstructionDeps:
     # the prompt and staged beside it at launch.
     files: FilesFor
     read_asset: Callable[[str], bytes | None]
-    # Where the agent runs: the project's git repository root, resolved by the composition
-    # root from the step's project directory. "" when the repository cannot be found.
-    workdir_for: Callable[[StepId], str]
+    # Both repositories of the step's project as this machine sees them — the one
+    # derivation ``domain/repositories.py`` makes, handed over by the composition root.
+    # Which of the two an agent works in is this module's decision (``_workdir``); a
+    # conflict is settled in the plan's own repository, whatever the step's code is.
+    facts_for: Callable[[StepId], RepositoryFacts]
     # The project panel's card registry; None is a build without a project panel.
     cards: InspectorSectionRegistry | None = None
     # The cross-module half of the prompt, assembled by the composition root — the one
@@ -299,11 +325,8 @@ class StepAgentInstructionModule:
                 enabled=False,
                 label="Run Agent — describe the step, or write an agent instruction first",
             )
-        if not deps.workdir_for(step.id):
-            return ActionState(
-                enabled=False,
-                label="Run Agent — the project's folder is not in a git repository",
-            )
+        if refusal := _workdir_refusal(deps.facts_for(step.id)):
+            return ActionState(enabled=False, label=f"Run Agent — {refusal}")
         return ENABLED
 
     def _can_preview(self, context: Context) -> ActionState:
@@ -348,7 +371,7 @@ class StepAgentInstructionModule:
             sections=sections,
             project_sections=deps.briefing.project_sections(deps.library, step, deps.files),
             epilogue=deps.briefing.epilogue(step),
-            preamble=deps.briefing.preamble(step, uses_worktree(step)),
+            preamble=deps.briefing.preamble(step, uses_worktree(step), deps.facts_for(step.id)),
             project_instruction=read_project(project),
             project_files=project_files,
             instruction_files=place(instruction.files),
@@ -370,7 +393,8 @@ class StepAgentInstructionModule:
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
         worktree = self._run_name(step) if uses_worktree(step) else ""
-        spawned, prepared = self._launch(step, assembled.text, run_dir, worktree)
+        workdir = _workdir(deps.facts_for(step.id))
+        spawned, prepared = self._launch(step, assembled.text, run_dir, worktree, workdir)
         if not spawned:
             # No shell was started, so nothing is stamped: the fallback hands over the prompt.
             PromptFallbackDialog(assembled.text, str(prepared.prompt_file), deps.parent).exec()
@@ -416,13 +440,13 @@ class StepAgentInstructionModule:
         return box.clickedButton() is run_anyway
 
     def _launch(
-        self, step: Step, text: str, run_dir: Path, worktree: str
+        self, step: Step, text: str, run_dir: Path, worktree: str, workdir: Path | None
     ) -> tuple[bool, launcher.LaunchFiles]:
-        """Open the configured terminal on ``text`` for ``step``; the run is recorded only
-        when a shell was actually spawned. Both prompts this module launches come through
-        here, so a change to how a terminal opens is made once."""
+        """Open the configured terminal on ``text`` for ``step`` in ``workdir``; the run
+        is recorded only when a shell was actually spawned. Both prompts this module
+        launches come through here, so a change to how a terminal opens is made once."""
         deps = self._deps
-        workdir = Path(deps.workdir_for(step.id)).expanduser()
+        workdir = (workdir or Path()).expanduser()
         key = deps.step_key(step)
         prepared = launcher.prepare(
             text,
@@ -431,6 +455,7 @@ class StepAgentInstructionModule:
             worktree=worktree,
             directory=run_dir,
             step_title=f"{key} {step.title}".strip(),
+            project_id=deps.library.project_of(step.id).id,
         )
         command = None
         if workdir.is_dir():
@@ -448,8 +473,8 @@ class StepAgentInstructionModule:
         """Why a conflict on ``step_id`` cannot be handed to an agent; "" when it can."""
         if not self._deps.library.has(step_id):
             return "the step is gone"
-        if not self._deps.workdir_for(step_id):
-            return "the project's folder is not in a git repository"
+        if self._deps.facts_for(step_id).plan_root is None:
+            return "the plan's folder is not in a git repository"
         return ""
 
     def hand_conflicts(self, step_id: StepId, conflicts: Sequence[Conflict]) -> bool:
@@ -458,12 +483,14 @@ class StepAgentInstructionModule:
 
         The window's version of every entry is written beside the prompt first, because the
         window yields to the plan on disk once the agent is on its way — the run directory
-        is the one place the unsaved version survives. No worktree: the agent must write to
-        the checkout the window is showing, or its merge lands somewhere nobody is looking.
+        is the one place the unsaved version survives. No worktree, and the shell opens in
+        the **plan's** repository rather than the code's: the agent must write to the plan
+        the window is showing, or its merge lands somewhere nobody is looking.
         """
         deps = self._deps
         library = deps.library
         step = library.step(step_id)
+        facts = deps.facts_for(step_id)
         run_dir = launcher.new_run_dir()
         entries: list[tuple[str, str]] = []
         for conflict in conflicts:
@@ -476,10 +503,10 @@ class StepAgentInstructionModule:
         text = conflict_prompt(
             step_title=step.title or "Untitled step",
             project_title=library.project_of(step_id).title or "Untitled project",
-            preamble=deps.briefing.preamble(step, False),
+            preamble=deps.briefing.preamble(step, False, facts),
             entries=entries,
         )
-        spawned, prepared = self._launch(step, text, run_dir, worktree="")
+        spawned, prepared = self._launch(step, text, run_dir, "", facts.plan_root)
         if not spawned:
             PromptFallbackDialog(
                 text, str(prepared.prompt_file), deps.parent, title="Resolve Conflict"

@@ -4,18 +4,19 @@ Every one is a pure function of the :class:`Context`, which is what lets the sam
 correct in the menu bar, the command palette and the index tree's right-click menu without
 any of them coordinating — and lets a test evaluate one by handing it a constructed context.
 
-Each verb builds a command from ``domain/commands.py`` and pushes it. The CLI builds the
-same commands from ``cli.py``; that shared vocabulary is what keeps the two surfaces
-honest with each other.
+Settings… opens the module's Project dialog, where every edit is live and undoable; Move
+Plan… opens its wizard. Removal is a membership change, not an edit: it leaves the undo
+stack alone (a removed project's files stay on disk, and Ctrl+Z could not honestly
+re-attach them), so it carries its own origin like any directly-applied external change.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtWidgets import QInputDialog, QWidget
+from PySide6.QtWidgets import QWidget
 
-from dplanner.domain.commands import SetFieldCommand
 from dplanner.domain.model import Library, NodeId, Project, ProjectId
+from dplanner.domain.repositories import SEPARATED, RepositoryFacts
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -26,10 +27,8 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import Context
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
+from dplanner.theme.icons import move_icon
 
-# Removal is a membership change, not an edit: it leaves the undo stack alone (a removed
-# project's files stay on disk, and Ctrl+Z could not honestly re-attach them), so it
-# carries its own origin like any directly-applied external change.
 _MEMBERSHIP_ORIGIN: object = object()
 
 
@@ -41,6 +40,11 @@ class ProjectVerbs:
     open_project: Callable[[NodeId], None]
     # The store's half of removal, wired by the composition root.
     detach: Callable[[ProjectId], None]
+    # The module's two dialogs, on a project.
+    settings: Callable[[ProjectId], None]
+    move: Callable[[ProjectId], None]
+    # Where the project's plan and code live — Move Plan stands down once they are apart.
+    facts_of: Callable[[ProjectId], RepositoryFacts]
 
     def register_into(self, actions: ActionRegistry) -> None:
         for spec in self._specs():
@@ -49,14 +53,26 @@ class ProjectVerbs:
     def _specs(self) -> list[ActionSpec]:
         return [
             ActionSpec(
-                id="projects.rename",
-                label="&Rename Project…",
+                id="projects.settings",
+                label="Project &Settings…",
                 menu="Project",
                 group="edit",
                 order=20,
-                tip="Change what this project is called",
+                tip="The project's name and summary, where its plan and its code live, "
+                "and what both repositories have been up to",
                 state=self._on_a_project,
-                run=self._rename,
+                run=self._settings,
+            ),
+            ActionSpec(
+                id="projects.move",
+                label="&Move Plan…",
+                menu="Project",
+                group="edit",
+                order=25,
+                tip="Move the plan into a repository of its own",
+                state=self._can_move,
+                run=self._move,
+                icon=move_icon,
             ),
             ActionSpec(
                 id="projects.remove",
@@ -83,9 +99,18 @@ class ProjectVerbs:
     # -- state ---------------------------------------------------------------------------------
 
     def _on_a_project(self, context: Context) -> ActionState:
-        project_id = context.focus_entity("project")
-        if project_id is None or not self.library.has(project_id):
+        return DISABLED if self._focused(context) is None else ENABLED
+
+    def _can_move(self, context: Context) -> ActionState:
+        """The window moves a plan out of its code, once; a plan already apart from its
+        code is moved between plan repositories from the CLI, when somebody asks."""
+        project = self._focused(context)
+        if project is None:
             return DISABLED
+        if self.facts_of(project.id).state == SEPARATED:
+            return ActionState(
+                enabled=False, label="Move Plan — the plan already has a repository of its own"
+            )
         return ENABLED
 
     def _focused(self, context: Context) -> Project | None:
@@ -96,15 +121,15 @@ class ProjectVerbs:
 
     # -- run -----------------------------------------------------------------------------------
 
-    def _rename(self, context: Context) -> None:
+    def _settings(self, context: Context) -> None:
         project = self._focused(context)
-        if project is None:
-            return  # The state gate already prevents this; stay honest.
-        title, accepted = QInputDialog.getText(
-            self.parent, "Rename Project", "Project name:", text=project.title
-        )
-        if accepted and title.strip():
-            self.undo.push(SetFieldCommand(project.id, "title", title.strip()))
+        if project is not None:
+            self.settings(project.id)
+
+    def _move(self, context: Context) -> None:
+        project = self._focused(context)
+        if project is not None:
+            self.move(project.id)
 
     def _remove(self, context: Context) -> None:
         project = self._focused(context)

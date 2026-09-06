@@ -101,6 +101,16 @@ def test_a_failed_fetch_leaves_the_fields_typeable_and_says_why(editor):
     assert editor.pr_edit.isEditable() and editor.branch_edit.isEditable()
 
 
+def test_the_projects_code_repository_answers_over_the_plans_origin(services, project, editor):
+    """A separated plan: the refs belong to the code repository the project records,
+    whatever the plan's own repository is called."""
+    from dplanner.domain.commands import SetFieldCommand
+
+    assert editor._repository_for(project.steps[0].id) == ""
+    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/other"))
+    assert editor._repository_for(project.steps[0].id) == "https://github.com/acme/other"
+
+
 def test_no_repository_means_no_fetch_and_a_hint(editor):
     """The fixture library has no repository URL, so showing a step must not have started
     a loader — the status explains what to set instead."""

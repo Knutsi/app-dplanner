@@ -327,14 +327,14 @@ def test_a_problem_entry_is_a_greyed_row_that_selects_nothing(services, project)
 
 def test_project_verbs_grey_without_a_project(services):
     context = services.context.current()
-    for action_id in ("projects.rename", "projects.remove", "projects.open"):
+    for action_id in ("projects.settings", "projects.move", "projects.remove", "projects.open"):
         found = state(services, action_id, context)
         assert found.visible and not found.enabled
 
 
 def test_project_verbs_enable_on_a_selected_project(services, project):
     context = select(services, "project", project.id)
-    for action_id in ("projects.rename", "projects.remove", "projects.open"):
+    for action_id in ("projects.settings", "projects.move", "projects.remove", "projects.open"):
         assert state(services, action_id, context).enabled
 
 
@@ -368,10 +368,35 @@ def test_remove_takes_the_project_out_of_model_and_store_but_leaves_its_files(
     assert (directory / PROJECT_META).is_file()  # The files really did stay.
 
 
-def test_rename_reaches_the_tab_title(services, project, monkeypatch):
-    from PySide6.QtWidgets import QInputDialog
+def test_move_plan_stands_down_once_the_plan_has_its_own_repository(services, project, tmp_path):
+    """The window's Move Plan is the migration out of the code; apart from it, the verb is
+    greyed with the reason and the CLI keeps the rare move between plan repositories."""
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.commands import SetFieldCommand
 
+    context = select(services, "project", project.id)
+    assert state(services, "projects.move", context).enabled
+    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
+    services.repo.set_checkout(project.id, init_repo(tmp_path / "widget"))
+    found = state(services, "projects.move", context)
+    assert found.visible and not found.enabled
+    assert found.label is not None and "own" in found.label
+
+
+def test_a_rename_in_the_project_dialog_reaches_the_tab_title_through_undo(services, project):
+    """Settings… replaces Rename: the name is a live field of the Project dialog, one
+    instance per window, and the write is the same undoable command."""
+    module = next(m for m in services.modules if m.id == "projects")
     services.tabs.open("project", project.id)
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Discovery Phase", True))
-    services.actions.run("projects.rename", select(services, "project", project.id))
+    services.actions.run("projects.settings", select(services, "project", project.id))
+    dialog = module._dialog
+    assert dialog is not None and dialog.isVisible() and dialog.project_id() == project.id
+    services.actions.run("projects.settings", select(services, "project", project.id))
+    assert module._dialog is dialog  # Re-aimed, never a second one.
+
+    dialog.name_edit.setText("Discovery Phase")
+    dialog.name_edit.editingFinished.emit()
     assert [a.title for a in services.tabs.activities()] == ["Discovery Phase"]
+    services.undo.undo()
+    assert [a.title for a in services.tabs.activities()] == ["Discovery"]
+    assert dialog.name_edit.text() == "Discovery"  # The echo of an undo reaches the field.

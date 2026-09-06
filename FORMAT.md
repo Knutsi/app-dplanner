@@ -40,18 +40,28 @@ into another would be nonsense. Anything in the scoped row is written **keyed by
 so a value naming something that has since been deleted restores nothing — which is why
 neither needs a version stamp or a migration.
 
-An earlier format stored per-machine checkout paths *in* the shared workspace as the least
-bad way to let the Qt-free CLI resolve them. That trade is resolved: where a project's code
-lives is now **derived** — the project directory sits inside its repository, so the repo
-root comes from `find_repo_root` and the remote URL from git itself — and the one per-user
-value both halves need, the library file, lives in the Qt-free config directory.
+**A project answers two repository questions, and they go to different rows.** *Where does
+the plan live?* — the **plan repository** — is never stored: it is the git repository
+enclosing the project directory, `find_repo_root`'s answer. *Which code does it plan?* —
+the **code repository** — is `"repository"` in `project.dproj`, the remote URL as git
+prints it (or, for a repository with no remote, its resolved path), shared with everyone
+who opens the plan. *Where is that code on this machine?* is the library file's `checkout`
+column, per user, per machine, below. `ARCHITECTURE.md`'s *Two repositories, two
+questions* has the reasoning; `domain/repositories.py` is the one derivation over the three.
 
 ## The library file
 
-`library.json` records **membership**: which project directories this user is planning.
+`library.json` records **membership**: which project directories this user is planning —
+and, per project, where this machine has the code that project plans.
 
 ```json
-{"format": 1, "projects": [{"path": "/home/anna/code/widget/planning"}]}
+{
+  "format": 2,
+  "projects": [
+    {"path": "/home/anna/plans/widget", "checkout": "/home/anna/code/widget"},
+    {"path": "/home/anna/code/gadget/planning"}
+  ]
+}
 ```
 
 - The default lives at `$XDG_CONFIG_HOME/dplanner/library.json` (platform equivalents on
@@ -59,6 +69,12 @@ value both halves need, the library file, lives in the Qt-free config directory.
   another. It is per user and per machine, and never belongs in version control.
 - Paths are absolute (`~` is allowed) and the array order is the order the Projects panel
   shows.
+- `checkout` is optional: where this machine has the project's code repository. It is
+  written by the Project dialog, by `dplanner project set --checkout`, and by the first
+  `dplanner` call that runs inside a checkout whose `origin` is the project's code
+  repository — **straight into the file** (`LibraryStore.set_checkout`, read-modify-write
+  and re-stamp), never through a dirty mark, because a read verb's transaction must never
+  be refused over a per-machine fact. A format-1 file reads as format 2 with no checkouts.
 - Reading is tolerant: a malformed row is skipped, and an entry that cannot be opened — the
   folder is gone, holds no `project.dproj`, or is not inside a git repository — becomes an
   *unavailable* row in the panel rather than a refusal, and keeps its place in the file
@@ -95,9 +111,10 @@ A project is one directory **inside a git repository**, one directory per node b
 nested exactly like the model:
 
 ```
-<repository>/
-└── planning/                  the project directory — any folder in the repo
-    ├── project.dproj          id, title, summary, created, format, children
+<plan repository>/
+├── .dplanner                  the index: one project directory per line, relative
+└── widget/                    the project directory — any folder in the repo
+    ├── project.dproj          id, title, summary, repository, colocation, created, format, children
     ├── modules/               module data belonging to the project itself
     └── steps/
         └── read-the-spec/     folder name, frozen at creation
@@ -130,6 +147,15 @@ Four conventions, and each one is a lesson about diffs:
   reader the shape of the model at a glance. It also means children never sit beside
   `modules/`, so there are no reserved folder names to trip over.
 
+**Two keys on the project say where it stands with its code.** `"repository"` is the code
+repository the plan is about, as git names its remote (a resolved path for a remote-less
+one); absent, the project reads as planning the repository it sits in — the older shape,
+warned about by lint, the briefing and the window until it is moved or accepted.
+`"colocation": "accepted"` is that acceptance: the people on the project decided the plan
+stays inside its code on purpose, and every warning stands down. Both are set by the
+Project dialog and `dplanner project set`; `project move` writes the first and drops the
+second as it goes.
+
 **Edges are keyed by kind**: `"edges": {"requires": ["<step id>", …]}`. One line per edge
 rather than an object per edge, and the direction cannot be read the wrong way round —
 `requires` is what *this* step waits on. The kind vocabulary is the domain's
@@ -148,22 +174,27 @@ looks there. It is a sibling of the `.dplanner` pointer below rather than a dire
 under it, because the pointer is a *file* — which is exactly where the earlier
 `.dplanner/worktrees/` path failed for every project kept in a subfolder.
 
-### The `.dplanner` pointer file
+### The `.dplanner` index
 
-The CLI finds the current project by walking up from the working directory for
-`project.dproj`. A plan kept in a subdirectory the walk would never enter — `planning/`
-beside the code, say — is reachable through a `.dplanner` file: one line, the project
-directory's path relative to the pointer's own directory (an absolute path also works). A
-`project.dproj` in the same directory wins over a pointer beside it, and a pointer that
-leads to no `project.dproj` is an error rather than a fallthrough — the walk never quietly
-acts on some other project above one the user explicitly named. The file is meant to be
-committed, so everyone who clones the repository — people and agents alike — gets the
-discovery for free.
+A **plan repository** is a git repository whose root carries a `.dplanner` file: one
+project directory per line, relative to the file (an absolute path also works), in the
+order they were added. A one-line file is the pointer it grew from — a plan kept in a
+subdirectory beside its code is still reached the same way. The CLI finds the current
+project by walking up from the working directory for `project.dproj`, and at each level
+for this index; a `project.dproj` in the same directory wins over an index beside it. A
+line that leads nowhere is skipped while another resolves — a project somebody deleted by
+hand must not hide its neighbours — and an index none of whose lines leads anywhere is an
+error rather than a fallthrough: the walk never quietly acts on some other project above
+one the user explicitly named. The file is meant to be committed, so everyone who clones
+the repository — people and agents alike — gets the discovery, and *Open Projects…* and
+`dplanner library browse` get their list, for free. A repository with no index is scanned
+three levels deep instead, skipping `.git`, `steps/`, `modules/` and the worktrees.
 
-Creating a project inside a git checkout writes the pointer at the repository root
-automatically (a relative path, one line). A pointer that already exists is never
-overwritten — a hand-written one is the user's word — and a project that *is* the
-repository root needs none, so none is written.
+Creating a project inside a git checkout appends its line to the index at the repository
+root (`seed_project`, `add_to_index`); moving one out drops the line and adds it where the
+plan arrives; deleting one drops it. An existing line is never rewritten — a hand-written
+one is the user's word — and a project that *is* the repository root needs none, so none
+is written.
 
 ### Changing it
 

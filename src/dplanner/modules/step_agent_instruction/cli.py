@@ -21,6 +21,7 @@ from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Node, Project, Step, TextEdit
+from dplanner.domain.repositories import repository_facts
 from dplanner.domain.shelf import turn_off, turn_on
 from dplanner.domain.store import FilesFor
 from dplanner.modules.step_agent_instruction.aspect import (
@@ -127,6 +128,8 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             )
         instruction = briefing.instruction(context.library, step, context.store.files)
         project_instruction = read_project(project)
+        directory = context.store.project_dir(project.id)
+        facts = repository_facts(project, directory, context.store.checkout_of(project.id))
         if not instruction.body and not instruction.files and not project_instruction:
             raise CliError(
                 f"{step.title!r} has nothing to brief an agent with — describe it with "
@@ -142,14 +145,19 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             sections=briefing.sections(context.library, step, context.store.files),
             project_sections=briefing.project_sections(context.library, step, context.store.files),
             epilogue=briefing.epilogue(step),
-            preamble=briefing.preamble(step, uses_worktree(step)),
+            preamble=briefing.preamble(step, uses_worktree(step), facts),
             project_instruction=project_instruction,
             project_files=asset_paths(context.store.files, project.id),
             instruction_files=instruction.files,
         )
         data = {
             "step": step.id,
-            "root": str(context.store.project_dir(project.id)),
+            "root": str(directory),
+            # Where the plan lives, which code it plans, and where that code is here —
+            # so an agent that wants to know never derives them.
+            "plan": str(facts.plan_root or ""),
+            "repository": facts.repository,
+            "checkout": str(facts.checkout) if facts.checkout is not None else "",
             "prompt": assembled.text,
             "files": list(assembled.files),
         }

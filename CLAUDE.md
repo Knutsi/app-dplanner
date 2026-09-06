@@ -618,10 +618,12 @@ root, stop and look for the registry or capability you have not found yet.
   dispatch the deferred deletes itself (`sendPostedEvents(None, DeferredDelete)` — never
   `processEvents`, which skips them); `AppSession.close()` is the only place that does.
   `ARCHITECTURE.md`'s *Closing a window is not discarding it* has the measurements.
-- **Project membership changes bypass the undo stack.** New/Open Project may `git init` and
-  always writes outside any store; Remove from Library only forgets. Neither is honestly
-  reversible, so they apply directly with `LIBRARY_ORIGIN` and the library file is
-  rewritten by the ordinary flush (a structure mark on the library root).
+- **Project membership changes bypass the undo stack.** New Project may `git init` and
+  always writes outside any store; Open Projects and Remove from Library only remember and
+  forget. Neither is honestly reversible, so they apply directly with `LIBRARY_ORIGIN` —
+  the root's `connect_project` — and the library file is rewritten by the ordinary flush
+  (a structure mark on the library root). The verbs live in `modules/projects/`; the
+  library module keeps New/Open Project Library and the title.
 - **Blocking work runs through `TaskRunner`**, never on the GUI thread: storage operations,
   LLM calls, anything that touches the network. It appears in the task centre for free.
   The one documented exception — storage operations that rewrite the working tree, which
@@ -1062,12 +1064,29 @@ root, stop and look for the registry or capability you have not found yet.
   the panel is built from whatever has registered by then. The agent instruction's card is
   the example; `ARCHITECTURE.md`'s *The project panel hosts the same contract, as cards*
   has the reasoning.
-- **Repository facts are derived, never stored.** A project lives in its repository, so the
-  repo root is `find_repo_root(project dir)` and the remote URL is git's own answer
-  (`origin_url`) — both re-exported through `core/storage/locations.py`, the one import
-  path allowed above the storage layer. Run Agent and the github module read them through
-  seams wired by the composition root; never store a URL beside them. `ARCHITECTURE.md`'s
-  *Repository facts are derived from the project's directory* has the reasoning.
+- **Two repositories, two questions.** *Where does the plan live?* — the **plan
+  repository** — is derived: `find_repo_root(project dir)`, never stored. *Which code does
+  it plan?* — the **code repository** — is `Project.repository`, the remote URL as git
+  prints it (a resolved path for a remote-less one), shared in `project.dproj`. *Where is
+  that code here?* is the library file's per-machine `checkout`, written straight into the
+  file by `store.set_checkout`. `domain/repositories.py` is the one derivation
+  (`RepositoryFacts`: separated, colocated, legacy; `warns` unless `colocation ==
+  "accepted"`), and every reader asks it — lint's `repo.unset`/`repo.colocated`, the
+  briefing's preamble, the Project dialog, the Repositories card, the opening status line.
+  The root hands the agent module `facts_for` and it decides where an agent works: the
+  code checkout, or the plan's own repository for the older shape; a conflict is settled in
+  the plan repository whatever the code is. `cli/discovery.py` finds the project from a
+  checkout whose `origin` is its code repository (`canonical_remote`) and records the
+  checkout the first time; the wrapper exports `DPLANNER_PROJECT`. A plan repository holds
+  several projects for several people under a `.dplanner` index (`FORMAT.md`); *File ▸ New
+  Project…* is the Project dialog in create mode over a picked plan repository, *Open
+  Projects…* browses one and adds the chosen projects, *Move Plan…* takes a plan out of
+  its code through `domain/relocate.py` and reloads — and stands down (greyed with the
+  reason; the card's and dialog's buttons hidden) once the plan is apart from its code;
+  from there `dplanner project move` is the verb, the briefing and the skill tell an agent
+  to run it when the developer asks and never unasked. Never store
+  a plan root, and never compare paths where `RepositoryFacts` already answers.
+  `ARCHITECTURE.md`'s *Two repositories, two questions* has the reasoning.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.

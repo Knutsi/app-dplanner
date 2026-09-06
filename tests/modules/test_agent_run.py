@@ -112,12 +112,45 @@ def test_the_preflight_names_the_worktree_for_this_run_not_for_the_step(services
     from dplanner.modules import _default_briefing
 
     briefing = _default_briefing()
-    isolated = briefing.preamble(step, True)
+    isolated = briefing.preamble(step, True, None)
     assert ".dplanner-worktrees/s1-deploy" in isolated and "agent/s1-deploy" in isolated
     assert "STOP" in isolated
-    shared = briefing.preamble(step, False)
+    shared = briefing.preamble(step, False, None)
     assert ".dplanner-worktrees" not in shared and "checkout itself" in shared
     assert "dplanner skill status" in isolated and "dplanner skill status" in shared
+
+
+def test_the_preflight_says_where_the_plan_lives(services, step):
+    """Apart from the code: the agent is told the verbs write elsewhere. Inside it: a
+    warning to leave the plan files alone — dropped, not the paragraph, once the people
+    on the project accepted the colocation."""
+    from dataclasses import replace
+
+    from dplanner.domain.repositories import RepositoryFacts
+    from dplanner.modules import _default_briefing
+
+    briefing = _default_briefing()
+    apart = RepositoryFacts(
+        plan_root=Path("/plans"),
+        plan_remote="git@github.com:acme/plans.git",
+        repository="https://github.com/acme/widget",
+        checkout=None,
+        colocation="",
+    )
+    text = briefing.preamble(step, True, apart)
+    assert "own repository, acme/plans" in text and "acme/widget" in text
+    assert "WARNING" not in text
+
+    inside = RepositoryFacts(
+        plan_root=Path("/widget"), plan_remote="", repository="", checkout=None, colocation=""
+    )
+    text = briefing.preamble(step, True, inside)
+    assert "WARNING" in text and "do not stage or commit" in text
+    assert "dplanner project move" in text and "when the developer asks" in text
+
+    text = briefing.preamble(step, True, replace(inside, colocation="accepted"))
+    assert "WARNING" not in text and "by the developer's choice" in text
+    assert "project move" not in text
 
 
 # -- staging -----------------------------------------------------------------------------------
@@ -804,6 +837,51 @@ def test_each_projects_own_repository_root_is_the_workdir(
     assert cwd == second_repo
 
 
+def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_path, monkeypatch):
+    """A project that records its code repository: the shell opens in that code's
+    checkout on this machine, never in the plan's own repository."""
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.commands import SetFieldCommand
+
+    code = init_repo(tmp_path / "widget")
+    project = services.document.project_of(step.id)
+    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
+    services.repo.set_checkout(project.id, code)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+
+    calls: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+    services.actions.run("agent.run", services.context.current())
+    ((_command, cwd),) = calls
+    assert cwd == code
+
+
+def test_a_code_repository_not_checked_out_here_greys_run_agent_and_says_so(
+    services, step, tmp_path
+):
+    """Greyed with the reason — and recording the checkout (the Project dialog, or an
+    agent's first call adopted from the library file) re-evaluates every presenter,
+    though nothing in the context graph changed."""
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.commands import SetFieldCommand
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
+    select(services, step)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.visible and not state.enabled
+    assert state.label is not None and "not checked out" in state.label
+
+    refreshed: list[bool] = []
+    services.context.changed.connect(lambda _context: refreshed.append(True))
+    services.repo.set_checkout(project.id, init_repo(tmp_path / "widget"))
+    assert refreshed
+    assert services.actions.spec("agent.run").state(services.context.current()).enabled
+
+
 def _agent_section(services):
     spec = next(
         s for s in services.inspector_sections.sections() if s.id == "step_agent_instruction.tab"
@@ -1210,6 +1288,22 @@ def test_agent_prompt_carries_handoffs_and_the_epilogue(cli_stdin, workspace):
     assert shown["root"] == str(workspace / "discovery")
 
 
+def test_agent_prompt_says_where_the_plan_lives(cli_stdin):
+    """The verb hands the briefing the same facts the window does: a plan with no code
+    repository recorded is warned about, one with its own repository is not."""
+    cli_stdin("project", "create", "Discovery")
+    cli_stdin("step", "add", "Discovery", "Deploy", "--agent")
+    cli_stdin("describe", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    shown = json.loads(cli_stdin("agent", "prompt", "Deploy", "--json"))
+    assert "WARNING: this plan lives inside the code repository" in shown["prompt"]
+
+    cli_stdin("project", "set", "Discovery", "--repository", "https://github.com/acme/widget")
+    shown = json.loads(cli_stdin("agent", "prompt", "Deploy", "--json"))
+    assert "WARNING" not in shown["prompt"]
+    assert "apart from the code you are working in (acme/widget)" in shown["prompt"]
+    assert shown["repository"] == "https://github.com/acme/widget"
+
+
 def test_a_step_without_a_worktree_is_briefed_to_stay_in_the_checkout(cli_stdin):
     cli_stdin("project", "create", "Discovery")
     cli_stdin("step", "add", "Discovery", "Cut the release", "--no-worktree")
@@ -1217,3 +1311,30 @@ def test_a_step_without_a_worktree_is_briefed_to_stay_in_the_checkout(cli_stdin)
     shown = json.loads(cli_stdin("agent", "prompt", "Cut the release", "--json"))
     assert ".dplanner-worktrees" not in shown["prompt"]
     assert "works in the checkout itself" in shown["prompt"]
+
+
+# -- the agent's shell names its project ---------------------------------------------------------
+
+
+def test_the_wrapper_exports_the_project_id_for_every_verb_in_the_shell(tmp_path):
+    posix = prepare("p", tmp_path, platform="linux", project_id="abc123").script.read_text()
+    assert "export DPLANNER_PROJECT=abc123" in posix
+    windows = prepare("p", tmp_path, platform="win32", project_id="abc123").script.read_text()
+    assert "set DPLANNER_PROJECT=abc123" in windows
+    assert "DPLANNER_PROJECT" not in prepare("p", tmp_path, platform="linux").script.read_text()
+
+
+def test_the_launch_names_the_steps_project_for_the_shell(services, step, monkeypatch):
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    seen: dict[str, object] = {}
+    real = launcher.prepare
+
+    def capture(*args, **kwargs):
+        seen.update(kwargs)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(launcher, "prepare", capture)
+    _fake_terminal(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert seen["project_id"] == services.document.project_of(step.id).id

@@ -18,7 +18,7 @@ def test_the_app_scope_exists_before_modules_register(services):
 
 def test_every_shipped_module_registered_something(services):
     action_ids = {spec.id for spec in services.actions.all_specs()}
-    expected = {"appshell.quit", "library.open_project", "settings.open", "projects.remove"}
+    expected = {"appshell.quit", "library.open_library", "projects.browse", "projects.remove"}
     assert expected <= action_ids
 
 

@@ -13,7 +13,7 @@ from dplanner.core.storage.locations import init_repo
 from dplanner.domain.library_file import read_library_file, write_library_file
 from dplanner.domain.model import Step
 from dplanner.domain.seed import seed_project
-from dplanner.domain.store import LibraryStore, StaleWorkspaceError
+from dplanner.domain.store import PROJECT_META, LibraryStore, StaleWorkspaceError
 
 
 @pytest.fixture
@@ -416,7 +416,7 @@ def test_adding_a_project_rewrites_the_library_file(tmp_path):
     loaded.add_child(loaded.id, project)
     store.flush({(loaded.id, "structure")})
 
-    assert read_library_file(path) == [first, second, missing]
+    assert [entry.path for entry in read_library_file(path)] == [first, second, missing]
 
 
 def test_two_projects_in_one_repo_share_one_scoped_provider(tmp_path):
@@ -496,3 +496,73 @@ def test_an_unlisted_directory_holding_a_step_is_adopted(store, library, project
     (stray / "step.json").write_text('{"id": "abc123", "title": "Found by hand"}\n')
     reopened = LibraryStore(store.library_path).load()
     assert "Found by hand" in [step.title for step in reopened.projects[0].steps]
+
+
+# -- the code repository and the checkout ----------------------------------------------------
+
+
+def test_repository_and_colocation_round_trip_and_stay_absent_by_default(store, library):
+    project = library.projects[0]
+    assert (project.repository, project.colocation) == ("", "")
+    library.set_field(project.id, "repository", "git@github.com:acme/widget.git")
+    library.set_field(project.id, "colocation", "accepted")
+    store.flush({(project.id, "meta")})
+    meta = read(store.project_dir(project.id) / PROJECT_META)
+    assert meta["repository"] == "git@github.com:acme/widget.git"
+    assert meta["colocation"] == "accepted"
+
+    reloaded = LibraryStore(store.library_path).load().projects[0]
+    assert (reloaded.repository, reloaded.colocation) == (
+        "git@github.com:acme/widget.git",
+        "accepted",
+    )
+
+    library.set_field(project.id, "colocation", "")
+    store.flush({(project.id, "meta")})
+    assert "colocation" not in read(store.project_dir(project.id) / PROJECT_META)
+
+
+def test_a_checkout_is_recorded_in_the_library_file_without_a_flush(store, library, tmp_path):
+    project = library.projects[0]
+    checkout = tmp_path / "src" / "widget"
+    assert store.checkout_of(project.id) is None
+    marks = []
+    store.dirty.connect(lambda owner, aspect: marks.append((owner, aspect)))
+    seen: list[str] = []
+    store.checkout_changed.connect(seen.append)
+
+    store.set_checkout(project.id, checkout)
+
+    assert store.checkout_of(project.id) == checkout and seen == [project.id]
+    assert marks == []  # Not a dirty mark: a read verb's transaction is never refused over it.
+    assert not store.changed_underneath()  # Our own write, stamped as seen.
+    assert read_library_file(store.library_path)[0].checkout == checkout
+    store.flush({(library.id, "structure")})  # A membership flush keeps what was recorded.
+    assert read_library_file(store.library_path)[0].checkout == checkout
+    store.set_checkout(project.id, None)
+    assert read_library_file(store.library_path)[0].checkout is None
+
+
+def test_a_relocated_project_is_followed_by_the_store(store, library, tmp_path):
+    """The store's half of a move: the record opens where the files went, the node map is
+    kept, and the library file is marked for rewriting."""
+    import shutil
+
+    project = library.projects[0]
+    old = store.project_dir(project.id)
+    target = init_repo(tmp_path / "plans") / "discovery"
+    shutil.copytree(old, target)
+    marks = []
+    store.dirty.connect(lambda owner, aspect: marks.append((owner, aspect)))
+
+    store.relocate(project.id, target, tmp_path / "src")
+
+    assert store.project_dir(project.id) == target.resolve()
+    assert store.checkout_of(project.id) == tmp_path / "src"
+    assert marks == [(library.id, "structure")]
+    step = find(library, "Read the spec")
+    area = store.files(step.id, "step_description")
+    assert area.absolute("x").is_relative_to(target.resolve())
+    store.flush({(library.id, "structure"), (step.id, "meta")})
+    assert read_library_file(store.library_path)[0].path == target.resolve()
+    assert (target / "steps" / "read-the-spec" / "step.json").is_file()

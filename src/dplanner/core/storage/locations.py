@@ -25,11 +25,21 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-# find_repo_root, main_checkout, init_repo and origin_url are re-exported (the `as` form marks it
-# deliberate): this module is the storage layer's public front door, and callers above it
-# may not name a provider module.
+# Everything below in the `as` form is re-exported on purpose: this module is the storage
+# layer's public front door, and callers above it may not name a provider module. The
+# repository facts (find_repo_root, main_checkout, origin_url, canonical_remote, remote_label,
+# activity) and init_repo are what the domain, the CLI and the modules reach for.
+from dplanner.core.storage.git import (
+    Activity as Activity,
+)
 from dplanner.core.storage.git import (
     GitStorage,
+)
+from dplanner.core.storage.git import (
+    activity as activity,
+)
+from dplanner.core.storage.git import (
+    canonical_remote as canonical_remote,
 )
 from dplanner.core.storage.git import (
     find_repo_root as find_repo_root,
@@ -42,6 +52,9 @@ from dplanner.core.storage.git import (
 )
 from dplanner.core.storage.git import (
     origin_url as origin_url,
+)
+from dplanner.core.storage.git import (
+    remote_label as remote_label,
 )
 from dplanner.core.storage.github import GitHubStorage
 from dplanner.core.storage.local import LocalStorage
@@ -138,6 +151,23 @@ def _open_git(path: Path) -> GitStorage:
 def open_project_storage(directory: Path) -> StorageProvider:
     """Open one project directory with the most capable provider it supports."""
     return open_storage(str(directory))
+
+
+def repo_storage(repo_root: Path, scopes: Sequence[str] = ()) -> StorageProvider:
+    """A provider over one whole repository, its history operations covering ``scopes`` —
+    repo-root-relative pathspecs; none means the whole tree.
+
+    For a caller above the storage layer that must commit, or read the log, at a
+    repository root it holds no project in: moving a plan commits the directory it left
+    and the one it arrived in, and the Project dialog shows a code repository's log.
+    Named here so nobody above names a provider class.
+    """
+    root = repo_root.expanduser().resolve()
+    wanted = tuple(scopes) or None
+    storage = GitStorage(root, repo_root=root, scopes=wanted)
+    if storage.has_origin():
+        return GitHubStorage(root, repo_root=root, scopes=wanted)
+    return storage
 
 
 def repo_group_for(

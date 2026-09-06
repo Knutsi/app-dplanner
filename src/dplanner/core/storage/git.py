@@ -14,8 +14,10 @@ blocking rather than accidentally so.
 Everything here blocks. Callers run it through ``TaskRunner``.
 """
 
+import re
 import subprocess
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -75,6 +77,101 @@ def origin_url(path: Path) -> str:
         check=False,
     )
     return result.stdout.strip() if result.returncode == 0 else ""
+
+
+_SCHEME = re.compile(r"^(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*)://")
+# git's scp-like form, `user@host:path`. Two characters of host at least, so a Windows drive
+# letter (`C:\code`) reads as the path it is.
+_SCP_LIKE = re.compile(r"^(?:[^@/\\]+@)?(?P<host>[^:/\\]{2,}):(?P<path>[^/\\].*)$")
+
+
+def _split_remote(url: str) -> tuple[str, str] | None:
+    """``(host, path)`` of a remote URL in any of git's spellings; None for a local path."""
+    scheme = _SCHEME.match(url)
+    if scheme is not None:
+        if scheme.group("scheme").lower() == "file":
+            return None
+        host, _, path = url[scheme.end() :].partition("/")
+        host = host.rsplit("@", 1)[-1].split(":", 1)[0]
+    else:
+        scp = _SCP_LIKE.match(url)
+        if scp is None:
+            return None
+        host, path = scp.group("host"), scp.group("path")
+    path = path.strip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    return host, path.rstrip("/")
+
+
+def _local_path(text: str) -> str:
+    scheme = _SCHEME.match(text)
+    if scheme is not None:  # file://…
+        text = text[scheme.end() :]
+    return str(Path(text).expanduser().resolve())
+
+
+def canonical_remote(url: str) -> str:
+    """One spelling for a remote, so two clones can be told to be the same repository.
+
+    ``https://github.com/Acme/widget.git``, ``git@github.com:acme/widget`` and
+    ``ssh://git@github.com:22/acme/widget/`` all become ``github.com/acme/widget`` —
+    scheme, user, port, ``.git`` and trailing slashes dropped, the whole lowercased, since
+    a host treats its names case-insensitively. A local path — a bare repository on disk,
+    a ``file://`` URL — becomes its resolved path, case kept. "" stays "".
+    """
+    text = url.strip()
+    if not text:
+        return ""
+    split = _split_remote(text)
+    if split is None:
+        return _local_path(text)
+    host, path = split
+    return f"{host}/{path}".lower().rstrip("/")
+
+
+def remote_label(url: str) -> str:
+    """How a remote is named to a person: ``Acme/Widget`` for a GitHub repository as its
+    owner spelt it, ``host/owner/repo`` for any other host, the path for a local one."""
+    text = url.strip()
+    if not text:
+        return ""
+    split = _split_remote(text)
+    if split is None:
+        return _local_path(text)
+    host, path = split
+    return path if host.lower() == "github.com" else f"{host.lower()}/{path}"
+
+
+@dataclass(frozen=True)
+class Activity:
+    """What git says about one directory: who touched it last and when, everyone who has,
+    and how many commits — over the last ``limit`` commits the reader looked at."""
+
+    last_author: str
+    last_when: str  # ISO-8601; "" when nothing has been committed there.
+    authors: tuple[str, ...]  # Most recent first, each once.
+    commits: int
+
+
+def activity(root: Path, path: str = "", limit: int = 30) -> Activity:
+    """Who has been working under ``path`` of the repository at ``root``, from its log.
+
+    ``path`` is repository-relative ("" for the whole tree). Only the last ``limit``
+    commits are read — enough to say who is on it and when it last moved, without walking
+    a long history on every look. A directory with no commits, or no repository at all,
+    answers an empty activity rather than an error.
+    """
+    args = ["git", "-C", str(root), "log", f"-{limit}", "--format=%an%x1f%aI"]
+    if path and path != ".":
+        args += ["--", path]
+    result = subprocess.run(args, capture_output=True, text=True, check=False)
+    lines = [line for line in result.stdout.splitlines() if line] if result.returncode == 0 else []
+    if not lines:
+        return Activity("", "", (), 0)
+    author, _, when = lines[0].partition("\x1f")
+    authors = tuple(dict.fromkeys(line.partition("\x1f")[0] for line in lines))
+    return Activity(author, when, authors, len(lines))
 
 
 class GitStorage(LocalStorage):
@@ -175,14 +272,29 @@ class GitStorage(LocalStorage):
     # -- history -------------------------------------------------------------------------------
 
     def commit(self, message: str = "") -> bool:
-        """Stage and commit the workspace directory only. False when nothing had changed."""
-        self._git("add", "-A", "--", *self._scopes)
-        staged = self._git("diff", "--cached", "--quiet", "--", *self._scopes, check=False)
+        """Stage and commit the workspace directory only. False when nothing had changed.
+
+        A scope nothing matches — a directory that was never tracked and is gone now — is
+        left out rather than failing the whole commit on git's *did not match any files*:
+        moving a plan out of a repository commits its removal, which is only a change
+        where the plan was tracked.
+        """
+        scopes = [scope for scope in self._scopes if self._matches(scope)]
+        if not scopes:
+            return False
+        self._git("add", "-A", "--", *scopes)
+        staged = self._git("diff", "--cached", "--quiet", "--", *scopes, check=False)
         if staged.returncode == 0:
             return False
-        self._git("commit", "-m", message or self._timestamped("Save"), "--", *self._scopes)
+        self._git("commit", "-m", message or self._timestamped("Save"), "--", *scopes)
         self.refresh_dirty()
         return True
+
+    def _matches(self, scope: str) -> bool:
+        """Whether a pathspec names anything: present in the tree, or known to the index."""
+        if (self.repo_root / scope).exists():
+            return True
+        return bool(self._git("ls-files", "--", scope, check=False).stdout.strip())
 
     def history(self, limit: int = 50) -> list[Revision]:
         # A unit separator between fields and a record separator between commits: commit

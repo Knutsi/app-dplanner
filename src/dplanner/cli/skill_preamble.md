@@ -1,9 +1,9 @@
-DPlanner plans **projects**: each one a directory inside a git repository, listed in the
-user's per-user project library.
+DPlanner plans **projects**: each one a folder in a **plan repository** — a git repository
+of plans, kept apart from the code it plans — listed in the user's per-user project library.
 
 ```
 Library  ── the account level: the projects a user is planning
-└── Project  ── a unit of work with a beginning and an end, in its own repository
+└── Project  ── a unit of work with a beginning and an end, in a plan repository, planning one code repository
     └── Step  ── a node in that project's graph
 ```
 
@@ -11,6 +11,32 @@ Steps are a **graph**, not a list. An edge lives on the step that waits: `requir
 the graph and refuses cycles, `relates` is a plain link. Steps also carry **aspects** — an
 estimate, a ticket, a description — which the graph itself knows nothing about. Run
 `dplanner aspect list` to see which exist in this build.
+
+## Where the plan lives
+
+A project's plan lives in a **plan repository** — a git repository that holds plans and
+nothing else, one folder per project, often several projects for several people — and it
+plans a **code repository** named on the project. `dplanner project show` prints both, and
+where the code is checked out on this machine. Three rules follow:
+
+- **`dplanner` writes to the plan wherever it is run from.** Status, handoffs, docs, tests,
+  GitHub refs: every verb reaches the plan repository. Never create, edit or commit plan
+  files by hand, and never in the code repository — a plan file on a code branch is what
+  drifts.
+- **A plan kept inside its code repository is a warning, not a shape to build on.** The
+  window, `project lint` (`repo.unset`, `repo.colocated`) and every briefing say so. The
+  way to keep it there on purpose is `project set <project> --accept-colocation`. While it
+  stays there, do not touch anything under the plan's directory on your branch, and merge
+  or rebase `main` before opening a PR — planning commits land on `main` while you work.
+- **Moving a plan is yours to run when the developer asks, never unasked.** `dplanner
+  project move <project> --into <plan repository>` (`--init-repo` to start one there;
+  `--to DIR` for an exact folder) copies the plan, lists it in the new repository's
+  `.dplanner`, commits the departure and the arrival, and re-points the library — the
+  window reloads on its own, and every verb keeps reaching the plan where it landed, so
+  nothing about your run changes. Say what moved where when you report back.
+- **A plan repository is joined in two commands.** Clone it, then `dplanner library add
+  <root>` adds every project it lists; `library browse <root>` shows them first, with who
+  worked on each and when.
 
 ## How to work
 
@@ -441,5 +467,6 @@ then authored `step add`s.
   window or another run wrote to it. Run the command again — you will be working from what
   is actually there. A window open on the project shows your changes as they land; only an
   entry the user was editing at that very moment is held back and put to them.
-- **A project created inside a git checkout announces itself**: a `.dplanner` pointer
-  file is written at the repository root, so discovery works from anywhere in the clone.
+- **A plan repository lists its projects**: the `.dplanner` index at its root, one project
+  directory per line, is what `library add <root>` reads and what discovery follows from
+  anywhere in the clone; a project created there adds its own line.

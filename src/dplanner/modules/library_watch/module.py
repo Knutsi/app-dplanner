@@ -74,7 +74,8 @@ class LibraryWatchModule:
 
     def __init__(self, deps: LibraryWatchDeps) -> None:
         self._deps = deps
-        self._watcher = WorkspaceWatcher(deps.repo)
+        # Owned by the window, like the timer below: a discarded build stops polling.
+        self._watcher = WorkspaceWatcher(deps.repo, parent=deps.parent)
         self._conflicts: tuple[Conflict, ...] = ()
         # The set the dialog was last raised for: a tick that finds the same conflicts
         # again — every tick, while they wait — must not raise it again.
@@ -112,6 +113,8 @@ class LibraryWatchModule:
 
     def _on_changed(self) -> None:
         """Something wrote to the folder: take it."""
+        if not self._deps.parent.isVisible():
+            return  # A window on its way out takes nothing in; its widgets are going.
         self._settle(self._deps.switcher.refresh())
 
     def _on_refused(self, error: Exception) -> None:
