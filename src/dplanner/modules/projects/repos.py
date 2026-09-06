@@ -7,6 +7,11 @@ so a dialog test hands over lambdas and never spawns ``git`` or ``gh``, and the 
 never names a storage provider (architecture rule 8) or imports the github module (rule
 5). Every member marked BLOCKING is run inside a task body off the GUI thread and reads
 nothing but its arguments; the rest read the model and stay on the GUI thread.
+
+The other shape here is what those surfaces *say*. A repository answers two questions —
+which repository it is, and where it is on this machine — and :func:`code_lines` and
+:func:`plan_lines` are the one derivation of both, so the dialog's columns and the panel's
+card cannot word the same fact two ways.
 """
 
 from collections.abc import Callable
@@ -38,6 +43,12 @@ CODE_FOLDER_CANDIDATES = (
 
 LOG_LIMIT = 30  # Commits per column in the Project dialog.
 
+# Move Plan reads as two different offers and every surface must word them the same way: a
+# plan still inside its code is being *set up* with a repository, a plan that has one is
+# being *moved* to another. The verb behind both is `projects.move`.
+SET_UP_PLAN = "Set up a plan repository…"
+MOVE_PLAN = "Move Plan…"
+
 
 def candidate_repositories_folders(home: Path) -> list[Path]:
     """The folders under ``home`` a person likely clones into — those that exist, in the
@@ -49,6 +60,64 @@ def candidate_repositories_folders(home: Path) -> list[Path]:
 def github_url(repo: str) -> str:
     """The https URL of ``owner/repo`` — what a project records as its code repository."""
     return f"https://github.com/{repo}"
+
+
+def shown_path(path: Path) -> str:
+    """A path as a person writes it: ``~`` for the home directory."""
+    try:
+        return "~/" + path.relative_to(Path.home()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+@dataclass(frozen=True)
+class RepoLines:
+    """One repository as a surface states it: which repository it is, and where it is on
+    this machine.
+
+    Both lines always say something. Where nothing is recorded the line says what is
+    missing instead of standing blank, and ``missing`` is what a reader greys — the same
+    words, greyed the same way, in the Project dialog and on the Repositories card.
+    """
+
+    identity: str
+    location: str
+    identity_missing: bool = False
+    location_missing: bool = False
+
+
+def code_lines(facts: RepositoryFacts) -> RepoLines:
+    """The code repository: its remote, and the checkout this machine has.
+
+    With no code repository recorded the plan's own repository is where the code is — the
+    older shape — so the location says that rather than nothing.
+    """
+    if not facts.repository:
+        root = facts.plan_root
+        return RepoLines(
+            identity="no code repository recorded",
+            location=shown_path(root) if root is not None else "not in a git repository",
+            identity_missing=True,
+            location_missing=root is None,
+        )
+    checkout = facts.checkout
+    return RepoLines(
+        identity=facts.code_label,
+        location=(
+            shown_path(checkout) if checkout is not None else "not checked out on this machine"
+        ),
+        location_missing=checkout is None,
+    )
+
+
+def plan_lines(facts: RepositoryFacts) -> RepoLines:
+    """The plan repository: its remote or folder name, and its root on this machine."""
+    root = facts.plan_root
+    if root is None:
+        # Nothing true to say about where a repository that is not there lives: the line
+        # stays empty rather than inventing a second way to say the first one.
+        return RepoLines(identity="not in a git repository", location="", identity_missing=True)
+    return RepoLines(identity=facts.plan_label, location=shown_path(root))
 
 
 @dataclass(frozen=True)

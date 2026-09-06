@@ -1,4 +1,5 @@
-"""Moving a plan out of the code it plans, in the one function both surfaces call."""
+"""Moving a plan — out of the code it plans, and on from a plan repository picked
+wrongly — in the one function both surfaces call."""
 
 import json
 import subprocess
@@ -100,6 +101,43 @@ def test_moving_into_the_code_repository_is_refused(colocated):
     store, library, code, _plans = colocated
     with pytest.raises(RelocateError, match="code repository"):
         move_project(store, library.projects[0].id, code / "elsewhere")
+
+
+def test_a_plan_moves_on_between_plan_repositories_and_keeps_its_code(colocated, tmp_path):
+    """The second move is the one that puts a wrong pick right. What it must not do is
+    inherit: the repository it leaves this time is a plan repository, not the code's, so
+    the code repository and the checkout are the ones already recorded."""
+    store, library, code, plans = colocated
+    project = library.projects[0]
+    move_project(store, project.id, plans / "search-rewrite")
+    elsewhere = _repo(tmp_path / "elsewhere")
+
+    moved = move_project(store, project.id, elsewhere / "search-rewrite")
+
+    target = (elsewhere / "search-rewrite").resolve()
+    assert moved.target.resolve() == target and not (plans / "search-rewrite").exists()
+    assert (target / "steps" / "read-the-spec" / "step.json").is_file()
+    assert read_index(elsewhere) == ["search-rewrite"] and read_index(plans) == []
+    assert canonical_remote(project.repository) == "github.com/acme/widget"
+    # Not the plan repository it happened to leave: the checkout it already had.
+    assert store.checkout_of(project.id) == code.resolve()
+    [entry] = read_library_file(store.library_path)
+    assert entry.path == target and entry.checkout == code.resolve()
+
+
+def test_a_plan_that_never_had_a_checkout_here_gains_none_by_moving(colocated, tmp_path):
+    """A move must not invent a code checkout out of the plan repository it left."""
+    store, library, _code, plans = colocated
+    project = library.projects[0]
+    move_project(store, project.id, plans / "search-rewrite")
+    store.set_checkout(project.id, None)
+    elsewhere = _repo(tmp_path / "elsewhere")
+
+    move_project(store, project.id, elsewhere / "search-rewrite")
+
+    assert store.checkout_of(project.id) is None
+    [entry] = read_library_file(store.library_path)
+    assert entry.checkout is None
 
 
 def test_unsaved_edits_refuse_the_move(colocated):

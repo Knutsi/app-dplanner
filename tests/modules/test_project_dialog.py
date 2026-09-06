@@ -2,9 +2,10 @@
 
 The dialog is built over a ``RepositoryServices`` of lambdas — git and gh never run — and
 its task bodies are run inline, so what a worker thread would deliver arrives on the line
-after the request. What is under test is everything around the fakes: which field commits
-which fact through which path, what the two columns show, and what the plan column offers
-while the plan has no repository of its own.
+after the request. What is under test is everything around the fakes: what each column
+says it is and where it is, what its ⋯ menu offers and why an entry is greyed, which verb
+commits which fact through which path, and what the plan column offers while the plan has
+no repository of its own.
 """
 
 from datetime import UTC, datetime
@@ -22,6 +23,8 @@ from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_u
 from dplanner.modules.projects import repositories_folder as folders
 from dplanner.modules.projects.project_dialog import CREATE, ProjectDialog
 from dplanner.modules.projects.repos import (
+    MOVE_PLAN,
+    SET_UP_PLAN,
     LogEntry,
     PullRequest,
     RepoLog,
@@ -144,42 +147,136 @@ def separate(services, project, tmp_path):
     return code
 
 
-# -- the settings -------------------------------------------------------------------------------
+# -- what each column says it is and where it is --------------------------------------------
 
 
-def test_the_code_repository_is_committed_through_the_undo_stack(services, dialog, project):
-    dialog.repository_combo.setEditText(CODE_URL)
-    dialog.repository_combo.lineEdit().editingFinished.emit()
+def entry(column, label):
+    """One entry of a column's ⋯ menu, by its label — the menu is asked afresh, so this
+    reads the state the user would see on opening it now."""
+    return next(e for e in column.entries() if e is not None and e.label == label)
+
+
+def labels(column):
+    return [None if e is None else e.label for e in column.entries()]
+
+
+def test_each_column_names_its_repository_and_where_it_is_here(
+    services, dialog, project, tmp_path, library_repo
+):
+    """The two lines under a column are the whole answer to *which repository is this*
+    and *where is it on this machine* — the same pair on both sides of the divide."""
+    assert dialog.code_column.identity.text() == "no code repository recorded"
+    assert dialog.code_column.location.text().endswith(library_repo.name)  # The older shape.
+    assert dialog.plan_column.identity.text() == "repo"  # No origin yet: the folder.
+    assert dialog.plan_column.location.text().endswith(library_repo.name)
+
+    code = separate(services, project, tmp_path)
+    assert dialog.code_column.identity.text() == "acme/widget"
+    assert dialog.code_column.location.text().endswith(code.name)
+    assert dialog.plan_column.location.text().endswith(library_repo.name)
+
+
+def test_a_fact_nobody_recorded_is_said_and_greyed(services, dialog, project):
+    assert dialog.code_column.identity.objectName() == "RepoLineMissing"
+    services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
+    assert dialog.code_column.identity.objectName() == "RepoIdentity"
+    assert dialog.code_column.location.text() == "not checked out on this machine"
+    assert dialog.code_column.location.objectName() == "RepoLineMissing"
+
+
+# -- the ⋯ menus ------------------------------------------------------------------------------
+
+
+def test_both_menus_keep_their_shape_and_grey_what_cannot_run(services, dialog, project):
+    """DESIGN.md: an entry that exists but does not apply is greyed with the reason, never
+    dropped — so the menu is the same list to learn whatever the project's state."""
+    before = labels(dialog.code_column)
+    assert entry(dialog.code_column, "Create on GitHub…").reason == ""
+    assert entry(dialog.code_column, "Clone into Repositories Folder").reason == (
+        "no code repository recorded"
+    )
+    assert entry(dialog.code_column, "Open on GitHub").reason == "not a GitHub repository"
+
+    services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
+    assert entry(dialog.code_column, "Open on GitHub").reason == ""
+    assert entry(dialog.code_column, "Clone into Repositories Folder").reason == ""
+    assert entry(dialog.code_column, "Create on GitHub…").reason == (
+        "this project already records one"
+    )
+    # Nothing appeared and nothing went: only the reasons changed. (The plan column's
+    # first entry is the exception, and it is worded by the offer, not by what exists.)
+    assert labels(dialog.code_column) == before
+
+
+def test_a_greyed_entry_carries_its_reason_in_its_words(dialog):
+    assert entry(dialog.plan_column, "Open on GitHub").text == (
+        "Open on GitHub — not a GitHub repository"
+    )
+    assert entry(dialog.plan_column, SET_UP_PLAN).text == SET_UP_PLAN
+
+
+def test_the_move_entry_is_worded_as_the_offer_this_project_needs(
+    services, dialog, project, tmp_path
+):
+    """One verb, two offers: a plan inside its code is being given a repository, a plan
+    that has one is being moved to another — and the setup button says the same words."""
+    assert dialog.plan_column.setup_button.text() == SET_UP_PLAN
+    assert entry(dialog.plan_column, SET_UP_PLAN).reason == ""
+    separate(services, project, tmp_path)
+    assert entry(dialog.plan_column, MOVE_PLAN).reason == ""
+
+
+def test_the_menu_renders_what_the_entries_say(dialog):
+    """The pop-up is the entries, rendered: the greyed rows are the ones with a reason,
+    the separator is there, and every row carries a glyph."""
+    menu = dialog.code_column.menu()
+    try:
+        rows = [
+            (action.text(), action.isEnabled(), not action.icon().isNull())
+            for action in menu.actions()
+            if not action.isSeparator()
+        ]
+        assert [action.isSeparator() for action in menu.actions()].count(True) == 1
+        assert rows[0] == ("Set Code Repository…", True, True)
+        assert rows[1] == ("Open on GitHub — not a GitHub repository", False, True)
+        assert all(icon for _text, _enabled, icon in rows)
+    finally:
+        menu.deleteLater()
+
+
+def test_set_code_repository_commits_through_the_undo_stack(services, dialog, project, monkeypatch):
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: (CODE_URL, True))
+    entry(dialog.code_column, "Set Code Repository…").run()
     assert services.document.project(project.id).repository == CODE_URL
     assert services.undo.undo_text() == "Set Code Repository"
     services.undo.undo()
     assert services.document.project(project.id).repository == ""
-    assert dialog.repository_combo.currentText() == ""  # The undo's echo reaches the field.
+    assert dialog.code_column.identity.text() == "no code repository recorded"
 
 
-def test_a_typed_checkout_is_recorded_in_the_library_file_not_the_undo_stack(
-    services, dialog, project, tmp_path
+def test_choosing_a_checkout_records_it_in_the_library_file_not_the_undo_stack(
+    services, dialog, project, tmp_path, monkeypatch
 ):
-    code = init_repo(tmp_path / "widget")
+    code = init_repo(tmp_path / "widget")  # No origin: nothing but the checkout is learnt.
     services.autosave.flush_now()
     before = services.undo.undo_text()
-    dialog.checkout_edit.setText(str(code))
-    dialog.checkout_edit.editingFinished.emit()
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(code))
+    entry(dialog.code_column, "Choose Checkout…").run()
     assert services.repo.checkout_of(project.id) == code
     assert services.undo.undo_text() == before
     assert not services.autosave.has_pending()  # Written directly, nothing left to flush.
 
 
-def test_browse_records_the_checkout_and_fills_an_empty_repository_from_its_origin(
+def test_a_chosen_checkout_fills_an_empty_code_repository_from_its_origin(
     services, dialog, project, tmp_path, monkeypatch
 ):
     import subprocess
 
     code = init_repo(tmp_path / "widget")
     subprocess.run(["git", "-C", str(code), "remote", "add", "origin", CODE_URL], check=True)
-    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(code / "src"))
     (code / "src").mkdir()
-    dialog.browse_button.click()
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(code / "src"))
+    entry(dialog.code_column, "Choose Checkout…").run()
     assert services.repo.checkout_of(project.id) == code  # The repository root, not src/.
     assert services.document.project(project.id).repository == CODE_URL
 
@@ -194,9 +291,9 @@ def test_keep_it_here_accepts_the_colocation_and_quiets_the_warning(services, di
     assert dialog.plan_column.pages.currentWidget() is dialog.plan_column.setup
 
 
-def test_the_setup_button_and_the_move_glyph_both_open_the_move_wizard(dialog, project):
+def test_the_setup_button_and_the_plan_menu_both_open_the_move_wizard(dialog, project):
     dialog.plan_column.setup_button.click()
-    dialog.move_button.click()
+    entry(dialog.plan_column, SET_UP_PLAN).run()
     assert dialog.moved == [project.id, project.id]
 
 
@@ -209,7 +306,6 @@ def test_a_plan_beside_its_code_shows_one_log_and_offers_setup(dialog, fakes, li
     assert dialog.code_column.rows() == [("Add the login form", "anna · just now")]
     assert dialog.code_column.branch.text() == "main"
     assert dialog.plan_column.pages.currentWidget() is dialog.plan_column.setup
-    assert dialog.move_button.isVisibleTo(dialog)
 
 
 def test_a_separated_plan_fills_both_columns_and_prs_lead_the_code_column(
@@ -225,7 +321,9 @@ def test_a_separated_plan_fills_both_columns_and_prs_lead_the_code_column(
     assert dialog.plan_column.rows() == [("Add the login form", "anna · just now")]
     assert dialog.plan_column.pages.currentWidget() is dialog.plan_column.well
     assert not dialog.warning_row.isVisibleTo(dialog)
-    assert not dialog.move_button.isVisibleTo(dialog)  # Nothing to move out of any more.
+    # A plan already apart from its code is still moved from here: the offer that put it
+    # on the wrong repository is the one that has to be able to put it right.
+    assert entry(dialog.plan_column, MOVE_PLAN).reason == ""
 
 
 def test_an_answer_for_a_project_the_dialog_left_is_dropped(
@@ -273,19 +371,23 @@ def test_a_missing_checkout_is_said_in_the_code_column(services, fakes, dialog, 
 # -- gh ---------------------------------------------------------------------------------------
 
 
-def test_without_gh_clone_and_new_are_greyed_and_the_note_says_why(
+def test_without_gh_every_entry_that_needs_it_is_greyed_and_the_note_says_why(
     services, fakes, project, dialog
 ):
     _repos, _calls, state = fakes
     state["gh"] = "gh not found on PATH — GitHub features need the GitHub CLI"
     dialog.show_project(project.id)
     assert dialog.gh_note.isVisibleTo(dialog) and "gh not found" in dialog.gh_note.text()
-    assert not dialog.clone_button.isEnabled() and not dialog.new_code_button.isEnabled()
+    for column, label in (
+        (dialog.code_column, "Create on GitHub…"),
+        (dialog.code_column, "Clone into Repositories Folder"),
+        (dialog.plan_column, "Publish to GitHub…"),
+    ):
+        assert "gh not found" in entry(column, label).reason
     state["gh"] = None
     dialog.show_project(project.id)
     assert not dialog.gh_note.isVisibleTo(dialog)
-    assert dialog.new_code_button.isEnabled()  # No repository yet: create one.
-    assert not dialog.clone_button.isEnabled()  # Nothing to clone yet.
+    assert entry(dialog.code_column, "Create on GitHub…").reason == ""  # No repository yet.
 
 
 def test_clone_lands_in_the_repositories_folder_and_records_the_checkout(
@@ -294,8 +396,7 @@ def test_clone_lands_in_the_repositories_folder_and_records_the_checkout(
     _repos, calls, _state = fakes
     folders.set_repositories_folder(tmp_path / "Code")
     services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
-    assert dialog.clone_button.isEnabled()
-    dialog.clone_button.click()
+    entry(dialog.code_column, "Clone into Repositories Folder").run()
     assert calls["clone"] == [(CODE_URL, tmp_path / "Code" / "widget")]
     assert services.repo.checkout_of(project.id) == tmp_path / "Code" / "widget"
     assert "Cloned into" in dialog.note.text()
@@ -307,21 +408,21 @@ def test_a_new_code_repository_is_created_cloned_and_recorded(
     _repos, calls, _state = fakes
     folders.set_repositories_folder(tmp_path / "Code")
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("widget", True))
-    dialog.new_code_button.click()
+    entry(dialog.code_column, "Create on GitHub…").run()
     assert calls["create"] == [("widget", tmp_path / "Code" / "widget")]
     assert services.document.project(project.id).repository == "https://github.com/acme/widget"
     assert services.repo.checkout_of(project.id) == tmp_path / "Code" / "widget"
 
 
-def test_publish_is_offered_only_for_a_plan_repository_without_an_origin(
+def test_publish_runs_for_a_plan_repository_without_an_origin_and_is_greyed_after(
     services, fakes, dialog, project, library_repo, monkeypatch
 ):
     import subprocess
 
     _repos, calls, _state = fakes
-    assert dialog.publish_button.isVisibleTo(dialog)
+    assert entry(dialog.plan_column, "Publish to GitHub…").reason == ""
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("plans", True))
-    dialog.publish_button.click()
+    entry(dialog.plan_column, "Publish to GitHub…").run()
     assert calls["publish"] == [(library_repo, "plans")]
     assert "Published as acme/plans" in dialog.note.text()
 
@@ -338,8 +439,8 @@ def test_publish_is_offered_only_for_a_plan_repository_without_an_origin(
         check=True,
     )
     dialog.show_project(project.id)
-    assert not dialog.publish_button.isVisibleTo(dialog)
-    assert dialog.plan_label.text() == "acme/plans"
+    assert entry(dialog.plan_column, "Publish to GitHub…").reason == "already published"
+    assert dialog.plan_column.identity.text() == "acme/plans"
 
 
 # -- the card -------------------------------------------------------------------------------
@@ -358,13 +459,15 @@ def test_the_card_states_both_repositories_and_follows_the_facts(
     assert card.plan_text.text() == "repo"  # The plan repository's folder: no origin yet.
     assert card.code_text.text() == "no code repository recorded"
     assert card.note.isVisibleTo(card) and "inside the code" in card.note.text()
-    assert card.move_button.text() == "Set up a plan repository…"
+    assert card.move_button.text() == SET_UP_PLAN
 
     separate(services, project, tmp_path)
     assert card.code_text.text() == "acme/widget"
     assert card.checkout_text.text().endswith("widget")
     assert not card.note.isVisibleTo(card)
-    assert not card.move_button.isVisibleTo(card)  # Apart from its code: nothing to set up.
+    # Apart from its code there is nothing to set *up* — but a plan repository picked
+    # wrongly is still moved, and the button says which offer this is.
+    assert card.move_button.text() == MOVE_PLAN
 
 
 def test_the_cards_buttons_run_the_registry_verbs(services, project, monkeypatch):
@@ -455,10 +558,10 @@ def test_create_mode_answers_a_spec_once_a_name_and_a_home_are_given(
         parent=services.window,
     )
     assert dialog.plan_picker is not None and dialog.folder_edit is not None
+    assert dialog.repository_combo is not None and dialog.checkout_edit is not None
     assert not dialog.create_button.isEnabled()
-    assert not dialog.plan_label.isVisibleTo(dialog) and not dialog.publish_button.isVisibleTo(
-        dialog
-    )
+    # A form, not a surface with menus: nothing exists yet to read a log of or act on.
+    assert not dialog.code_column.isVisibleTo(dialog)
 
     dialog.name_edit.setText("Alpha Search")
     assert dialog.folder_edit.text() == "alpha-search"

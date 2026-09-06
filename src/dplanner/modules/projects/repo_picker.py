@@ -35,11 +35,10 @@ from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.user_config import get_global, set_global
-from dplanner.modules.projects.repos import MODULE_ID, RepositoryServices
+from dplanner.modules.projects.repos import MODULE_ID, RepositoryServices, shown_path
 from dplanner.modules.projects.repositories_folder import (
     ensure_repositories_folder,
     repositories_folder,
-    shown_path,
 )
 from dplanner.theme.icons import ICON_SIZE, clone_icon, external_icon, folder_icon, plus_icon
 from dplanner.theme.themes import Theme

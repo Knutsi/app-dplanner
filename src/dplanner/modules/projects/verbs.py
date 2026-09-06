@@ -5,9 +5,11 @@ correct in the menu bar, the command palette and the index tree's right-click me
 any of them coordinating — and lets a test evaluate one by handing it a constructed context.
 
 Settings… opens the module's Project dialog, where every edit is live and undoable; Move
-Plan… opens its wizard. Removal is a membership change, not an edit: it leaves the undo
-stack alone (a removed project's files stay on disk, and Ctrl+Z could not honestly
-re-attach them), so it carries its own origin like any directly-applied external change.
+Plan… opens its wizard, on any project — the plan's repository is a choice that can be
+made again, and the one that got it wrong the first time is the one that needs to.
+Removal is a membership change, not an edit: it leaves the undo stack alone (a removed
+project's files stay on disk, and Ctrl+Z could not honestly re-attach them), so it carries
+its own origin like any directly-applied external change.
 """
 
 from collections.abc import Callable
@@ -16,7 +18,6 @@ from dataclasses import dataclass
 from PySide6.QtWidgets import QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, ProjectId
-from dplanner.domain.repositories import SEPARATED, RepositoryFacts
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -43,8 +44,6 @@ class ProjectVerbs:
     # The module's two dialogs, on a project.
     settings: Callable[[ProjectId], None]
     move: Callable[[ProjectId], None]
-    # Where the project's plan and code live — Move Plan stands down once they are apart.
-    facts_of: Callable[[ProjectId], RepositoryFacts]
 
     def register_into(self, actions: ActionRegistry) -> None:
         for spec in self._specs():
@@ -69,8 +68,9 @@ class ProjectVerbs:
                 menu="Project",
                 group="edit",
                 order=25,
-                tip="Move the plan into a repository of its own",
-                state=self._can_move,
+                tip="Move the plan into a plan repository — out of the code it plans, "
+                "or on to another one",
+                state=self._on_a_project,
                 run=self._move,
                 icon=move_icon,
             ),
@@ -100,18 +100,6 @@ class ProjectVerbs:
 
     def _on_a_project(self, context: Context) -> ActionState:
         return DISABLED if self._focused(context) is None else ENABLED
-
-    def _can_move(self, context: Context) -> ActionState:
-        """The window moves a plan out of its code, once; a plan already apart from its
-        code is moved between plan repositories from the CLI, when somebody asks."""
-        project = self._focused(context)
-        if project is None:
-            return DISABLED
-        if self.facts_of(project.id).state == SEPARATED:
-            return ActionState(
-                enabled=False, label="Move Plan — the plan already has a repository of its own"
-            )
-        return ENABLED
 
     def _focused(self, context: Context) -> Project | None:
         project_id = context.focus_entity("project")

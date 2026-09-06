@@ -1128,8 +1128,27 @@ QToolButton[repoTool="true"]:hover {
     border-radius: ${RADIUS_MD}px;
 }
 
-/* Secondary text: a column's branch, an empty column, a remark, a path preview. */
+/* Secondary text: a column's branch, an empty column, a remark, a path preview — and the
+ * footer line under a column that names a fact nobody has recorded. */
 #LogBranch, #LogEmpty, #GhNote, #ProjectNote, #ColocationWarningText, #RepoPickerNote,
-#MoveTargetPath, #MovePlanSummary, #OpenProjectsEmpty, #OpenProjectsNote {
+#MoveTargetPath, #MovePlanSummary, #OpenProjectsEmpty, #OpenProjectsNote, #RepoLocation,
+#RepoLineMissing {
     color: $TEXT_SECONDARY;
+}
+
+/* A missing fact is stated, not left blank — and reads as the placeholder it is. */
+#RepoLineMissing {
+    font-style: italic;
+}
+
+/* Under a repository's column: which repository it is (the thing itself), over where it
+ * is on this machine (secondary, above). */
+#RepoIdentity {
+    color: $TEXT_PRIMARY;
+}
+
+/* The ⋯ that carries a column's verbs: the glyph-button look, with the character centred
+ * where an icon would be. */
+#RepoMenuButton {
+    padding: 2px 6px;
 }

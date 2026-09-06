@@ -1091,13 +1091,27 @@ root, stop and look for the registry or capability you have not found yet.
   checkout the first time; the wrapper exports `DPLANNER_PROJECT`. A plan repository holds
   several projects for several people under a `.dplanner` index (`FORMAT.md`); *File ▸ New
   Project…* is the Project dialog in create mode over a picked plan repository, *Open
-  Projects…* browses one and adds the chosen projects, *Move Plan…* takes a plan out of
-  its code through `domain/relocate.py` and reloads — and stands down (greyed with the
-  reason; the card's and dialog's buttons hidden) once the plan is apart from its code;
-  from there `dplanner project move` is the verb, the briefing and the skill tell an agent
-  to run it when the developer asks and never unasked. Never store
-  a plan root, and never compare paths where `RepositoryFacts` already answers.
+  Projects…* browses one and adds the chosen projects, and *Move Plan…* moves a plan
+  through `domain/relocate.py` and reloads. **It is offered on every project**: picking a
+  plan repository is a choice that can be got wrong, and the surface that made it is the
+  one that has to be able to change it — so the second move is not a special case, and the
+  only thing it must not do is *inherit* (a plan leaving a plan repository keeps the
+  checkout it had, and gains none it never had). The card's button says which offer this
+  is — *Set up a plan repository…* inside the code, *Move Plan…* once out. `dplanner
+  project move` is the same function from the terminal; the briefing and the skill tell an
+  agent to run it when the developer asks and never unasked. Never store a plan root, and
+  never compare paths where `RepositoryFacts` already answers.
   `ARCHITECTURE.md`'s *Two repositories, two questions* has the reasoning.
+- **The Project dialog is two columns, not three fields.** A repository answers two
+  questions — *which repository is it* and *where is it on this machine* — and the dialog
+  asks both of both, under the column each belongs to, parted by the vertical rule that
+  says they are two. `repos.code_lines`/`plan_lines` are the one derivation of those lines
+  and the Repositories card reads them too, so neither surface can word a fact the other
+  way; a line with nothing to name says what is missing rather than standing blank. Every
+  verb of a column is an entry in its **⋯ menu**, built when it opens (a glyph carries the
+  colour it was painted in) and greyed *with its reason in its words* rather than dropped,
+  so the list to learn never changes shape. `ARCHITECTURE.md`'s *The Project dialog is two
+  columns, not three fields* has the reasoning.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.

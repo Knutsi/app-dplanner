@@ -2300,6 +2300,42 @@ is a project's code repository finds that project, spelt however git spells it
 (`canonical_remote`), so an agent in the code needs no configuration; the wrapper script
 also exports `DPLANNER_PROJECT`, so nothing is even looked up.
 
+### The Project dialog is two columns, not three fields
+
+(`DESIGN.md`'s *Facts under the thing they are about* and the `⋯` rule under *Buttons* are
+the standard this settled.)
+
+The dialog stated three things above its logs: the plan repository, the code repository,
+and the code's checkout. Nobody could say why there were three, and the reason is that the
+code was allowed two facts — *which code* (shared, in `project.dproj`) and *where it is
+here* (per machine, in the library file) — while the plan was allowed one. The count was
+an artefact of which facts happened to be stored, not of what a reader is asking, and the
+two log columns underneath were already saying the true thing: there are **two**
+repositories.
+
+So the facts moved under the columns they belong to. Each column now answers the same two
+questions — `repos.code_lines` and `repos.plan_lines`, one derivation with two readers, so
+the dialog and the Repositories card cannot word the same fact differently — printed small
+under the well, with the vertical rule between them doing the work of saying which is
+which. A line with nothing to name says what is missing (*not checked out on this
+machine*) rather than standing blank, and `#RepoLineMissing` is what greys it: the shape
+of the footer is then constant, and a reader learns where to look once.
+
+What used to be four glyph buttons scattered across three rows is one ⋯ per column
+(`RepoAction`, `RepositoryColumn.entries`). The menu is **built when it opens** — the same
+reason `action_menu` builds one fresh: a glyph carries the colour it was painted in — and
+an entry that cannot run right now is **greyed with its reason in its words**, never
+dropped, so the list to learn is the same list whatever the project's state. These verbs
+are dialog-local rather than registered actions, which is why `RepoAction` restates the
+presenter policy in four lines instead of reaching for `append_action`; if a second
+surface ever needs one, that is the moment it becomes a spec. *Move Plan…* is the
+exception that proves it — it has a spec, and the dialog reaches it through the `move`
+callback the module hands in, which is the very function `projects.move` runs, so the
+menu and the card cannot mean different things by it.
+
+Create mode keeps its form: with nothing on disk yet there is no log to read and no verb
+to run, so the fields *are* the answer.
+
 **A plan repository holds several projects for several people.** Its root carries the
 `.dplanner` index (`FORMAT.md`), which is what lets *Open Projects…* and `dplanner library
 browse` list what a clone holds, with who worked on each and when (`activity`, one git log
@@ -2313,12 +2349,21 @@ meta with the code repository it left, maintains both indexes, removes the sourc
 re-points the store and commits on both sides, best-effort; the window pauses autosave
 around it and reloads after, because every view that cached a directory is rebuilt rather
 than patched. It is the one place colocation is *refused* rather than warned about: moving
-a plan into its own code repository is the shape the move exists to end. **The window's
-Move Plan exists for that migration and stands down once it is done**: on a plan apart
-from its code the verb is greyed with the reason and the card's and dialog's buttons are
-gone — a control that teaches nothing is left out (`DESIGN.md`). Moving a plan *between*
-plan repositories is rare and CLI-shaped, so `dplanner project move` keeps it, and the
-briefing and the skill tell an agent to run it when the developer asks, never unasked.
+a plan into its own code repository is the shape the move exists to end.
+
+**Move Plan is offered on every project, because picking a plan repository is a choice
+that can be got wrong.** It stood down once the plan was apart from its code — the verb
+read as a one-time migration — and the first plan put on the wrong repository had no way
+back but the CLI, which is the wrong answer for a mistake made in a dialog: the surface
+that made a choice is the surface that has to be able to change it. Nothing in the move
+was a special case of the first one; the only thing the second move must not do is
+*inherit*. `move_project` used to fall back to the source repository's main checkout when
+no checkout was recorded — true when the plan was leaving the code, and wrong the moment
+the repository it leaves is a plan repository — so the fallback now asks
+`_is_code_repository` first and a plan with no checkout here gains none by moving. The
+card's button says which of the two offers this is (*Set up a plan repository…* while the
+plan is inside its code, *Move Plan…* once it is out), and the skill still tells an agent
+to run `dplanner project move` when the developer asks and never unasked.
 
 The git requirement is **gating at membership, honest afterwards**: New Project initialises
 or picks a plan repository, Open Projects lists only what is inside one (the plan's history

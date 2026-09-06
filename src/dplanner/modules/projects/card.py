@@ -1,10 +1,9 @@
 """The Repositories card on the project panel: where the plan lives, which code it plans,
-where that code is on this machine — three glyph rows — a remark while the plan lives
-inside its code, and the two verbs that change any of it, run through the registry so
-the palette and the Project menu agree with the card.
+where that code is on this machine — three glyph rows, worded by ``repos.code_lines`` and
+``repos.plan_lines`` so the card and the Project dialog cannot say the same fact two ways
+— a remark while the plan lives inside its code, and the two verbs that change any of it,
+run through the registry so the palette and the Project menu agree with the card.
 """
-
-from pathlib import Path
 
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
@@ -14,8 +13,13 @@ from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.modules.projects.project_dialog import glyph_label, restyle
-from dplanner.modules.projects.repos import RepositoryServices
-from dplanner.modules.projects.repositories_folder import shown_path
+from dplanner.modules.projects.repos import (
+    MOVE_PLAN,
+    SET_UP_PLAN,
+    RepositoryServices,
+    code_lines,
+    plan_lines,
+)
 from dplanner.theme.icons import ICON_SIZE, branch_icon, code_icon, folder_icon
 from dplanner.theme.themes import Theme
 
@@ -73,7 +77,7 @@ class RepositoriesCard(QWidget):
         self.settings_button.clicked.connect(
             lambda: actions.run("projects.settings", context.current())
         )
-        self.move_button = QPushButton("Set up a plan repository…", self)
+        self.move_button = QPushButton(SET_UP_PLAN, self)
         self.move_button.setObjectName("RepoCardMove")
         self.move_button.clicked.connect(lambda: actions.run("projects.move", context.current()))
         buttons = QHBoxLayout()
@@ -124,22 +128,15 @@ class RepositoriesCard(QWidget):
             return
         self.setEnabled(True)
         facts = self._services.facts_of(project_id)
-        self._set(
-            self.plan_text, facts.plan_label or "not in a git repository", not facts.plan_root
-        )
-        self.plan_text.setToolTip(str(facts.plan_root or ""))
-        self._set(
-            self.code_text, facts.code_label or "no code repository recorded", not facts.repository
-        )
-        if facts.repository:
-            checkout = facts.checkout
-            where = shown_path(checkout) if checkout else "not checked out on this machine"
-            self._set(self.checkout_text, where, checkout is None)
-        else:  # The older shape: the plan's repository is where the code is.
-            root = facts.plan_root or Path()
-            self._set(self.checkout_text, shown_path(root) if facts.plan_root else "", False)
+        plan, code = plan_lines(facts), code_lines(facts)
+        self._set(self.plan_text, plan.identity, plan.identity_missing)
+        self.plan_text.setToolTip(plan.location)
+        self._set(self.code_text, code.identity, code.identity_missing)
+        self._set(self.checkout_text, code.location, code.location_missing)
         self.note.setVisible(facts.warns)
-        self.move_button.setVisible(facts.state != SEPARATED)  # Nothing to set up once apart.
+        # A plan apart from its code is not set up again — but it can still be moved, and
+        # the button says which of the two this project is asking for.
+        self.move_button.setText(MOVE_PLAN if facts.state == SEPARATED else SET_UP_PLAN)
 
     def _set(self, label: QLabel, text: str, muted: bool) -> None:
         label.setText(text)
