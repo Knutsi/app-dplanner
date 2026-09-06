@@ -2495,15 +2495,15 @@ decisions worth writing down:
 ### Progress against the plan: the promise is derived, the past is recorded
 
 The calendar says when each milestone lands; a person working the plan wants the other
-half — how far it has come, and whether it is on the curve it promised. The chart under
-the milestone list answers with the shape a trip planner's energy graph has: the plan's
-curve, what actually landed, and, faintly behind them, every earlier promise. Three
+half — how far it has come, and whether it is on the curve it promised. The plots under
+the calendar answer with the shape a trip planner's energy graph has: the plan's curve,
+what actually landed, and the plan as it stood on the day you compare against. Four
 decisions carry it:
 
 - **Two measures, both honest, neither hidden.** By steps (done over steps) and by
   estimated days (the days of done steps over the days of all); the toggle above the
-  chart picks which the chart and the rows read, and the figure beside the caption
-  always prints both. A count never lies about what it is, and a weighted share
+  plots picks which the plots and the rows read, and a row's tooltip always prints
+  both. A count never lies about what it is, and a weighted share
   answers "how much of the *work*"; picking one for everybody would have been a claim
   the numbers do not carry. Both are `time_estimates/progress.py` over `status_for` —
   the status aspect's reader handed in like `days_for`, so this module never learns
@@ -2532,43 +2532,62 @@ decisions carry it:
   terminal — the skill says when. Each row also carries the stretch's **landing knots**
   — what the simulation landed on each date — so the plan as it stood on any recorded
   day is drawn *exactly*, never reconstructed from what the graph looks like now.
-- **Three lines: the plan then, the plan now, and what landed — and the delta is the
-  band between the first two.** The first cut drew every earlier promise as its own
-  dashed segment; the walk that redesigned it wanted one question answered clearly:
-  *how has the plan moved since we started?* So there is one **baseline** — the plan as
-  recorded on the **basis** day, the project's start unless a day is picked beside the
-  chart (`progress show --basis`) — chosen as the last row on or before the basis, or
-  the earliest row for a project older than its history, and the chart draws it dashed,
-  the plan now solid, and the change since as a wash between them; a landing that moved
-  is the gap between the hollow mark and the filled one on the 100 % line. The baseline
-  is painted *last*, in a paler shade mixed opaque: a plan unchanged since the basis
-  has a baseline that coincides with it, and a translucent dash of the same hue under
-  the solid line was invisible — the first cut showed one line under a caption saying
-  *unchanged*, and the reader took the other for a line that had failed to draw.
-  Dashes riding on the solid line say *two lines in the same place*, which is the
-  fact. The axis is marked at calendar boundaries (`chart.axis_ticks`: every day,
-  every Monday or every month's first, the finest whose labels fit the width) because
-  a reader places a point by the nearest mark; two labels at the ends of the span were
-  not a scale. Milestones stand on the chart as hairlines in their shades where the
-  plan lands them, named at the top — the marks a reader was placing the curve against
-  in their head — and a span the plan leaves empty (a milestone's own start date holding
-  its work back past the previous landing) is dotted and pulled toward the surface, with
-  a knot in the expected line at the day work resumes so the gap is flat rather than a
-  slope through days nothing is planned for. `progress.marks` and `progress.idle`
-  derive both from the snapshot's stretches, so `progress show` prints the same gaps.
-  The figure
-  under the caption says the delta in words — steps and days added, the landing shifted
-  in working days — and its tip names **why**: the steps born after the baseline's day
-  (the model's `created` stamp) and the estimates changed after it. That second list
-  needed a fact nobody kept: **an estimate now remembers what it was** — every write of
-  the aspect carries the value it replaced with the day, one row per day (the value that
-  stood when the day began), format 2 so an older build refuses to rewrite rather than
-  drop it; `dplanner estimate show` prints it, the Estimate block's field wears it as a
-  tooltip. Both the delta and the change list are measured **from the baseline's
-  recorded day**, not from the basis: the record is what the delta compares against, so
-  what the list names is what moved it, and a change on the record's own day is inside
-  that day's record (last-wins). The basis is a way of looking — view state, never
-  stored.
+- **One baseline, and the delta is the band between it and the plan now.** The first
+  cut drew every earlier promise as its own dashed segment; the walk that redesigned it
+  wanted one question answered clearly: *how has the plan moved since we started?* So
+  there is one **baseline** — the plan as recorded on the **basis** day, the project's
+  start unless a day is picked beside the plots (`progress show --basis`) — chosen as
+  the last row on or before the basis, or the earliest row for a project older than its
+  history. The baseline is painted *last*, in a paler shade mixed opaque: a plan
+  unchanged since the basis has a baseline that coincides with it, and a translucent
+  dash of the same hue under the solid line was invisible — the first cut showed one
+  line under a caption saying *unchanged*, and the reader took the other for a line
+  that had failed to draw. Dashes riding on the solid line say *two lines in the same
+  place*, which is the fact. A span the plan leaves empty (a milestone's own start date
+  holding its work back past the previous landing) is dotted and pulled toward the
+  surface, with a knot in the expected line at the day work resumes so the gap is flat
+  rather than a slope through days nothing is planned for; `progress.idle` derives it
+  from the snapshot's stretches, so `progress show` prints the same gaps. The change
+  list behind the delta needed a fact nobody kept: **an estimate now remembers what it
+  was** — every write of the aspect carries the value it replaced with the day, one row
+  per day (the value that stood when the day began), format 2 so an older build refuses
+  to rewrite rather than drop it; `dplanner estimate show` prints it, the Estimate
+  block's field wears it as a tooltip. Both the delta and the change list are measured
+  **from the baseline's recorded day**, not from the basis: the record is what the
+  delta compares against, so what the list names is what moved it, and a change on the
+  record's own day is inside that day's record (last-wins). The basis is a way of
+  looking — view state, never stored.
+- **Three plots on one locked axis, not three lines on one plot.** The baseline, the
+  plan now and what actually landed shared a plot for a while, and a reader had to
+  untangle three curves and a legend to answer any one question. Each question now
+  has a plot of its own, stacked (`chart.py`): *Progress* — the plan now against what
+  landed, with *ahead 5 %* or *behind 12 %* in words beside today's dot, because the
+  gap between two curves is the thing a reader was estimating by eye; *Scope change* —
+  the baseline against the plan now, with the band between them; *Milestones* — a row
+  per milestone, its landing then hollow, its landing now filled, an arrow between
+  them saying which way it went, because a landing that moved was the hardest thing to
+  read off the 100 % line. What makes three plots one chart is the **axis**: the same
+  dates run under all three, the marks (`axis_ticks`: every day, every Monday or every
+  month's first, the finest whose labels fit the width — a reader places a point by the
+  nearest mark, and two labels at the ends of a span were not a scale) drop as
+  hairlines through every plot, the labels are printed once under the last, and the
+  edges are the earliest and latest date any of the three has to show — so a point
+  placed in one plot is placed in all of them. The plan line runs in each stretch's
+  shade, the calendar's colours on the curve, and **picking a milestone highlights, it
+  never hides**: the whole project stays on every plot and everything outside the
+  picked stretch fades to a third, which is what the calendar already did with its
+  bands. Scoping the plots to the pick was tried first and lost the comparison the
+  reader came for — where this milestone sits in the plan it is part of. The delta in
+  words and the list of what moved it left the screen with that redesign: the plots say
+  it, the rows say the percentages, and the sentence is the terminal's and the
+  report's (`delta_words`, `changes_since`). The same pass moved the milestone list
+  under the staffing grid with a **Start dates** table above it — the project's own
+  start and each milestone's *Begin…* are what you set, and they now sit on the side of
+  the seam that holds what you set — put the focus factor, the lens, the palette and
+  Export in one control strip over the page, and gave the answer a banner: *n steps
+  unestimated · counted as 0d*, with *Estimate missing* opening the Estimates tab on
+  exactly those rows through a callback on the module's Deps, so the Time tab never
+  names the estimation module.
 
 ## A test belongs to a step, and a step carries several
 

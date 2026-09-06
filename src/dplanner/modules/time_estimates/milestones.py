@@ -1,26 +1,33 @@
-"""The milestone list under the calendar, and the palette picker that colours it.
+"""The milestones in sequence, the start dates they are given, and the palette picker.
 
-One list, where there were two: every stretch of work in the order the graph lands
-them — its shade, its label, where it begins and where it lands. A milestone with no date
-of its own begins when the previous one lands; the *Begin…* button turns that into a date
-field pre-filled with that very day, so choosing a date is one click and an edit, and the
-cross beside it hands the decision back to the sequence. Beside the field, the date the
-milestone lands for the chosen team and how long its stretch took — so what you set and
-what it answers sit on one line, and a reader never crosses from one list to another.
-The work after the last milestone is a row too, without controls; the whole closes the
-list under a rule.
+Two lists under the staffing grid, both fed from one :class:`MilestoneEntry` per stretch.
+**Start dates** is what you set: the project's own start, and for each milestone the
+sequence's day or a date of its own — the *Begin…* button turns the one into a field
+pre-filled with the other, so choosing a date is one click and an edit, and the cross
+beside it hands the decision back to the sequence. **Milestones** is what that answers:
+every stretch of work in the order the graph lands them — its shade, its label, where it
+lands, how long its stretch took and how much of it has landed. The work after the last
+milestone is a row too, without a swatch menu; and the row that leads the list is *All
+milestones*, the whole plan on one line, picked when no milestone is.
+
+Picking a row emphasises that milestone everywhere on the right — its stretch in the
+calendar, its segment in the charts — and picking *All milestones* shows them all alike.
+Double-clicking opens the step's details, the one gesture every table in the application
+answers. Nothing here writes: a row reports the date or the colour it was given through a
+signal, the picker reports a palette id, and the hosting page turns each into the undoable
+command — the contract every input here keeps.
+
+Rows are reconciled by key rather than rebuilt (:func:`reconcile`): the field the user is
+typing in is the one the model change came from, and destroying it mid-signal is how a
+widget dies with its C++ side already gone. Gone milestones leave, new ones join, and
+the order follows the graph.
 
 Milestones are shaded from one colour map — the project's :class:`Palette` — and the
 picker offers the maps by name with a strip of each. The swatch on a row offers the map's
 shades, a custom colour, and *Automatic*, which hands the shade back to the sequence.
-
-Picking a row emphasises that milestone's stretch in the calendar; picking it again lets
-go. Double-clicking opens the step's details, the one gesture every table in the
-application answers. Nothing here writes: a row reports the date or the colour it was
-given through a signal, the picker reports a palette id, and the hosting page turns each
-into the undoable command — the contract every input here keeps.
 """
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -51,7 +58,6 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.model import StepId
 from dplanner.domain.schedule import format_date, format_days
-from dplanner.framework.cards import card_rule
 from dplanner.modules.time_estimates.progress import Tally
 from dplanner.modules.time_estimates.schedule import (
     PALETTES,
@@ -70,6 +76,8 @@ COLUMN_GAP = 12
 ROW_RADIUS = 4
 SELECTION_PEN = 1.5
 SELECTION_FILL_ALPHA = 20
+# A start-date row is a label and one control: half the padding of a rich row.
+DATE_ROW_PAD_V = 4
 
 DOT = 10
 SWATCH = 24  # A hit target comfortably past the 24 px minimum.
@@ -82,12 +90,17 @@ STRIP_RADIUS = 3
 # English explicitly, for ``format_date``'s reason.
 DATE_FORMAT = "d MMM yyyy"
 
+# The row that stands for the whole plan — every milestone at once.
+ALL_KEY = "*"
+ALL_LABEL = "All milestones"
+
 
 @dataclass(frozen=True)
 class MilestoneEntry:
-    """One stretch as the list shows it: a milestone, or the work after the last one."""
+    """One stretch as the lists show it: a milestone, the work after the last one (key
+    ``""``), or the whole (:data:`ALL_KEY`)."""
 
-    key: str  # The milestone's step id, or "" for the work after the last one.
+    key: str
     label: str
     title: str
     color: QColor
@@ -105,7 +118,7 @@ class MilestoneEntry:
 
     @property
     def is_milestone(self) -> bool:
-        return bool(self.key)
+        return bool(self.key) and self.key != ALL_KEY
 
     @property
     def share(self) -> float | None:
@@ -123,6 +136,38 @@ def landed_words(landed: Tally) -> str:
         f"{landed.done} of {landed.steps} steps done · "
         f"{format_days(landed.done_days)} of {format_days(landed.days)} estimated"
     )
+
+
+def reconcile[W: QWidget, E](
+    layout: QVBoxLayout,
+    rows: dict[str, W],
+    entries: Sequence[E],
+    key_of: Callable[[E], str],
+    make: Callable[[E], W],
+    *,
+    first: int = 0,
+) -> dict[str, W]:
+    """The rows for ``entries``, in their order, from ``first`` in the layout: gone keys
+    leave, new keys are made, the rest move. Returns the rows keyed in layout order, so
+    a reader never asks the layout — a QLayoutItem wrapper ``itemAt()`` hands out is a
+    double delete waiting for a gc pass (CLAUDE.md's crash notes)."""
+    wanted = {key_of(entry) for entry in entries}
+    for key in tuple(rows):
+        if key not in wanted:
+            gone = rows.pop(key)
+            layout.removeWidget(gone)
+            gone.hide()
+            gone.deleteLater()
+    kept: dict[str, W] = {}
+    for index, entry in enumerate(entries):
+        key = key_of(entry)
+        row = rows.get(key)
+        if row is None:
+            row = make(entry)
+        layout.removeWidget(row)
+        layout.insertWidget(first + index, row)
+        kept[key] = row
+    return kept
 
 
 def dot_icon(color: QColor) -> QIcon:
@@ -259,17 +304,152 @@ def _secondary(text: str, parent: QWidget) -> QLabel:
     return label
 
 
+def _date_edit(parent: QWidget, tip: str) -> QDateEdit:
+    edit = QDateEdit(parent)
+    edit.setCalendarPopup(True)
+    edit.setLocale(QLocale(QLocale.Language.English))
+    edit.setDisplayFormat(DATE_FORMAT)
+    edit.setToolTip(tip)
+    # Arrow steps commit as they land; typing commits on Enter or focus-out, so a
+    # half-typed year never reaches the model.
+    edit.setKeyboardTracking(False)
+    return edit
+
+
+def _to_date(picked: QDate) -> date:
+    return date(picked.year(), picked.month(), picked.day())
+
+
+class StartRow(QWidget):
+    """One start date: a name, and the sequence's day or a date of its own.
+
+    ``start_changed`` carries the key and the date, or None for *begin when the previous
+    milestone lands*. A row that is always dated — the project's own start — shows the
+    field alone, with neither *Begin…* nor the cross.
+    """
+
+    start_changed = Signal(str, object)  # (key, date | None)
+
+    def __init__(self, key: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.key = key
+        self._loading = False
+        self._default_start = date.today()
+
+        self.name = QLabel(self)
+
+        self.controls = QWidget(self)
+        self.date = _date_edit(self.controls, "The day this work begins")
+        self.date.dateChanged.connect(self._commit_date)
+
+        self.clear = QToolButton(self.controls)
+        self.clear.setAutoRaise(True)
+        self.clear.setIcon(close_icon(self.palette().text().color().name()))
+        self.clear.setToolTip("Begin when the previous milestone lands")
+        self.clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear.clicked.connect(lambda: self.start_changed.emit(self.key, None))
+
+        self.set_date = QToolButton(self.controls)
+        self.set_date.setObjectName("ToolbarButton")
+        self.set_date.setText("Begin…")
+        self.set_date.setToolTip("Begin this milestone's work on a date of its own")
+        self.set_date.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.set_date.clicked.connect(
+            lambda: self.start_changed.emit(self.key, self._default_start)
+        )
+        controls = QHBoxLayout(self.controls)
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(LINE_GAP)
+        controls.addStretch(1)
+        controls.addWidget(self.set_date)
+        controls.addWidget(self.date)
+        controls.addWidget(self.clear)
+        # One width whichever control shows, so the column lines up down the table.
+        self.controls.setFixedWidth(
+            self.date.sizeHint().width() + LINE_GAP + self.clear.sizeHint().width()
+        )
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(ROW_PAD_H, DATE_ROW_PAD_V, ROW_PAD_H, DATE_ROW_PAD_V)
+        row.setSpacing(COLUMN_GAP)
+        row.addWidget(self.name, 1)
+        row.addWidget(self.controls)
+
+    def load(
+        self, label: str, start: date | None, default_start: date, *, optional: bool = True
+    ) -> None:
+        """``optional`` rows may hand the date back to the sequence; the project's start
+        cannot, so it shows the field alone."""
+        self._loading = True
+        try:
+            self.name.setText(label)
+            self._default_start = default_start
+            dated = start is not None
+            self.date.setVisible(dated)
+            self.clear.setVisible(dated and optional)
+            self.set_date.setVisible(not dated)
+            if start is not None:
+                self.date.setDate(QDate(start.year, start.month, start.day))
+        finally:
+            self._loading = False
+
+    def _commit_date(self) -> None:
+        if not self._loading:
+            self.start_changed.emit(self.key, _to_date(self.date.date()))
+
+
+class StartDates(QWidget):
+    """The start dates in sequence: the project's, then one row per milestone.
+
+    ``project_changed`` carries the project's new start; ``start_changed`` a milestone's
+    (the step id, and the date or None). Kept across refreshes like the milestone list.
+    """
+
+    project_changed = Signal(object)  # a datetime.date
+    start_changed = Signal(str, object)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._rows: dict[str, StartRow] = {}
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+        self.project = StartRow("", self)
+        self.project.start_changed.connect(lambda _key, when: self.project_changed.emit(when))
+        self._layout.addWidget(self.project)
+
+    def show_entries(self, entries: Sequence[MilestoneEntry], project_start: date) -> None:
+        self.project.load("Project", project_start, project_start, optional=False)
+        milestones = [entry for entry in entries if entry.is_milestone]
+        self._rows = reconcile(
+            self._layout, self._rows, milestones, lambda e: e.key, self._make, first=1
+        )
+        for entry in milestones:
+            self._rows[entry.key].load(entry.label, entry.start, entry.default_start)
+
+    def _make(self, entry: MilestoneEntry) -> StartRow:
+        row = StartRow(entry.key, self)
+        row.start_changed.connect(self.start_changed)
+        return row
+
+    def row(self, step_id: StepId) -> StartRow:
+        return self._rows[step_id]
+
+    @property
+    def keys(self) -> tuple[StepId, ...]:
+        return tuple(self._rows)
+
+
 class MilestoneRow(QWidget):
-    """One stretch: swatch, label over title, where it begins, where it lands, how long.
+    """One stretch: swatch, label over title, where it lands, how long, how much landed.
 
     A selection ring when it is the emphasised one, and the two gestures — press to pick,
-    double-click to open. The remainder row (key "") has no swatch menu and no date
-    controls: there is no milestone to colour or to date.
+    double-click to open. The whole (:data:`ALL_KEY`) and the remainder (key "") have a
+    dot in place of the swatch menu: there is no milestone to colour.
     """
 
     picked = Signal(str)
     activated = Signal(str)
-    start_changed = Signal(str, object)  # (step id, date | None)
     color_changed = Signal(str, object)  # (step id, hex | None)
 
     def __init__(
@@ -278,67 +458,25 @@ class MilestoneRow(QWidget):
         super().__init__(parent)
         self.key = key
         self._selected = False
-        self._loading = False
-        self._default_start = date.today()
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self.swatch = Swatch(self)
         self.swatch.color_picked.connect(lambda color: self.color_changed.emit(self.key, color))
-        self.dot = QLabel(self)  # The remainder's colour, with no menu behind it.
+        self.dot = QLabel(self)  # The whole's and the remainder's colour, with no menu.
         self.dot.setFixedSize(SWATCH, SWATCH)
         self.dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.name = QLabel(self)
         self.title = _secondary("", self)
 
-        # -- where it begins: the sequence's day, or a date of its own --------------------
-        self.begin = QWidget(self)
-        self.date = QDateEdit(self.begin)
-        self.date.setCalendarPopup(True)
-        self.date.setLocale(QLocale(QLocale.Language.English))
-        self.date.setDisplayFormat(DATE_FORMAT)
-        self.date.setToolTip("The day this milestone's work begins")
-        # Arrow steps commit as they land; typing commits on Enter or focus-out, so a
-        # half-typed year never reaches the model.
-        self.date.setKeyboardTracking(False)
-        self.date.dateChanged.connect(self._commit_date)
-
-        self.clear = QToolButton(self.begin)
-        self.clear.setAutoRaise(True)
-        self.clear.setIcon(close_icon(self.palette().text().color().name()))
-        self.clear.setToolTip("Begin when the previous milestone lands")
-        self.clear.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.clear.clicked.connect(lambda: self.start_changed.emit(self.key, None))
-
-        self.set_date = QToolButton(self.begin)
-        self.set_date.setObjectName("ToolbarButton")
-        self.set_date.setText("Begin…")
-        self.set_date.setToolTip("Begin this milestone's work on a date of its own")
-        self.set_date.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.set_date.clicked.connect(
-            lambda: self.start_changed.emit(self.key, self._default_start)
-        )
-        begin = QHBoxLayout(self.begin)
-        begin.setContentsMargins(0, 0, 0, 0)
-        begin.setSpacing(LINE_GAP)
-        begin.addStretch(1)
-        begin.addWidget(self.set_date)
-        begin.addWidget(self.date)
-        begin.addWidget(self.clear)
-        # One width whichever control shows, so the columns to the right line up.
-        self.begin.setFixedWidth(
-            self.date.sizeHint().width() + LINE_GAP + self.clear.sizeHint().width()
-        )
-
-        # -- where it lands, and how long it took ---------------------------------------
+        # -- where it lands, how long it took, how much of it has landed ------------------
         self.when = QLabel(self)
         self.when.setMinimumWidth(date_width)
         self.when.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.days = _secondary("", self)
         self.days.setMinimumWidth(days_width)
         self.days.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        # How much of the work through this milestone has landed.
         self.progress = QLabel(self)
         self.progress.setMinimumWidth(days_width)
         self.progress.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -355,50 +493,37 @@ class MilestoneRow(QWidget):
         row.addWidget(self.swatch)
         row.addWidget(self.dot)
         row.addLayout(words, 1)
-        row.addWidget(self.begin)
         row.addWidget(self.when)
         row.addWidget(self.days)
         row.addWidget(self.progress)
 
     def load(self, entry: MilestoneEntry, found: Palette) -> None:
-        self._loading = True
-        try:
-            milestone = entry.is_milestone
-            self.swatch.setVisible(milestone)
-            self.dot.setVisible(not milestone)
-            self.swatch.show_color(entry.color, entry.chosen, found)
-            self.dot.setPixmap(dot_icon(entry.color).pixmap(ICON, ICON))
-            self.name.setText(entry.label)
-            self.name.setObjectName("" if milestone else "InspectorNote")
-            self.title.setText(entry.title)
-            self.title.setVisible(bool(entry.title) and entry.title != entry.label)
-            self._default_start = entry.default_start
-            dated = entry.start is not None
-            self.begin.setVisible(milestone)
-            self.date.setVisible(dated)
-            self.clear.setVisible(dated)
-            self.set_date.setVisible(not dated)
-            if entry.start is not None:
-                self.date.setDate(QDate(entry.start.year, entry.start.month, entry.start.day))
-            self.when.setText(format_date(entry.finish) if entry.finish else "—")
-            self.days.setText(format_days(entry.days))
-            self.progress.setText(percent(entry.share))
-            self.progress.setToolTip(landed_words(entry.landed))
-            steps = f"{entry.steps} step{'s' if entry.steps != 1 else ''}"
-            tip = (
-                f"{steps} — nothing estimated, so no date"
-                if entry.finish is None
-                else f"{steps} · lands {format_date(entry.finish)}"
+        milestone = entry.is_milestone
+        self.swatch.setVisible(milestone)
+        self.dot.setVisible(not milestone)
+        self.swatch.show_color(entry.color, entry.chosen, found)
+        self.dot.setPixmap(dot_icon(entry.color).pixmap(ICON, ICON))
+        self.name.setText(entry.label)
+        self.name.setObjectName("InspectorNote" if not entry.key else "")
+        self.title.setText(entry.title)
+        self.title.setVisible(bool(entry.title) and entry.title != entry.label)
+        self.when.setText(format_date(entry.finish) if entry.finish else "—")
+        self.days.setText(format_days(entry.days))
+        self.progress.setText(percent(entry.share))
+        self.progress.setToolTip(landed_words(entry.landed))
+        steps = f"{entry.steps} step{'s' if entry.steps != 1 else ''}"
+        tip = (
+            f"{steps} — nothing estimated, so no date"
+            if entry.finish is None
+            else f"{steps} · lands {format_date(entry.finish)}"
+        )
+        if entry.asked is not None:
+            self.when.setText(f"⚠ {self.when.text()}")
+            tip += (
+                f"\nAsked to begin {format_date(entry.asked)}, but the previous milestone "
+                "lands later — it runs after that instead."
             )
-            if entry.asked is not None:
-                self.when.setText(f"⚠ {self.when.text()}")
-                tip += (
-                    f"\nAsked to begin {format_date(entry.asked)}, but the previous milestone "
-                    "lands later — it runs after that instead."
-                )
-            self.setToolTip(tip)
-        finally:
-            self._loading = False
+        self.setToolTip(tip)
 
     def set_selected(self, selected: bool) -> None:
         if selected != self._selected:
@@ -431,30 +556,20 @@ class MilestoneRow(QWidget):
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
-        if event.button() == Qt.MouseButton.LeftButton and self.key:
+        if event.button() == Qt.MouseButton.LeftButton and self.key and self.key != ALL_KEY:
             self.activated.emit(self.key)
         super().mouseDoubleClickEvent(event)
 
-    def _commit_date(self) -> None:
-        if self._loading:
-            return
-        picked = self.date.date()
-        self.start_changed.emit(self.key, date(picked.year(), picked.month(), picked.day()))
-
 
 class MilestoneList(QWidget):
-    """The stretches in sequence, one row each, kept across refreshes; the whole under a
-    rule.
+    """The stretches in sequence, one row each, kept across refreshes.
 
-    Rows are reconciled by key rather than rebuilt: the field the user is typing in is
-    the one the model change came from, and destroying it mid-signal is how a widget dies
-    with its C++ side already gone. Gone milestones leave, new ones join, and the order
-    follows the graph.
+    ``selected`` is the key whose row wears the ring: a milestone's id, or
+    :data:`ALL_KEY` when the whole is what is being looked at.
     """
 
     picked = Signal(str)
     activated = Signal(str)
-    start_changed = Signal(str, object)
     color_changed = Signal(str, object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -465,77 +580,28 @@ class MilestoneList(QWidget):
         self._layout.setSpacing(0)
         self.empty = _secondary("No milestones yet · Step ▸ Type ▸ Milestone", self)
         self.empty.setWordWrap(True)
-        self.total = QWidget(self)
-        self.total_rule = card_rule(self.total)
-        self.total_when = QLabel(self.total)
-        self.total_days = _secondary("", self.total)
-        self.total_progress = QLabel(self.total)
-        total_row = QHBoxLayout()
-        total_row.setContentsMargins(ROW_PAD_H, ROW_PAD_V, ROW_PAD_H, ROW_PAD_V)
-        total_row.setSpacing(COLUMN_GAP)
-        total_row.addSpacing(SWATCH)
-        total_row.addWidget(_secondary("All work", self.total), 1)
-        total_row.addWidget(self.total_when)
-        total_row.addWidget(self.total_days)
-        total_row.addWidget(self.total_progress)
-        total_layout = QVBoxLayout(self.total)
-        total_layout.setContentsMargins(0, 0, 0, 0)
-        total_layout.setSpacing(0)
-        total_layout.addWidget(self.total_rule)
-        total_layout.addLayout(total_row)
-        self._layout.addWidget(self.total)
         self._layout.addWidget(self.empty)
 
     def show_entries(
-        self,
-        entries: list[MilestoneEntry],
-        selected: str | None,
-        *,
-        found: Palette,
-        finish: date | None,
-        days: float,
-        share: float | None = None,
+        self, entries: Sequence[MilestoneEntry], selected: str, *, found: Palette
     ) -> None:
-        wanted = {entry.key for entry in entries}
-        for key in tuple(self._rows):
-            if key not in wanted:
-                gone = self._rows.pop(key)
-                self._layout.removeWidget(gone)
-                gone.hide()
-                gone.deleteLater()
-        # Both answer columns are as wide as their widest plausible text, so the Begin
-        # controls line up down the list whatever each row's numbers happen to be.
+        # Both answer columns are as wide as their widest plausible text, so the columns
+        # line up down the list whatever each row's numbers happen to be.
         date_width = self.fontMetrics().horizontalAdvance("⚠ 30 September") + COLUMN_GAP
         days_width = self.fontMetrics().horizontalAdvance("99.9w")
-        for index, entry in enumerate(entries):
-            row = self._rows.get(entry.key)
-            if row is None:
-                row = MilestoneRow(entry.key, date_width, days_width, self)
-                row.picked.connect(self.picked)
-                row.activated.connect(self.activated)
-                row.start_changed.connect(self.start_changed)
-                row.color_changed.connect(self.color_changed)
-                self._rows[entry.key] = row
-            self._layout.removeWidget(row)
-            self._layout.insertWidget(index, row)
+
+        def make(entry: MilestoneEntry) -> MilestoneRow:
+            row = MilestoneRow(entry.key, date_width, days_width, self)
+            row.picked.connect(self.picked)
+            row.activated.connect(self.activated)
+            row.color_changed.connect(self.color_changed)
+            return row
+
+        self._rows = reconcile(self._layout, self._rows, entries, lambda e: e.key, make)
+        for entry in entries:
+            row = self._rows[entry.key]
             row.load(entry, found)
-            row.set_selected(entry.is_milestone and entry.key == selected)
-        # Kept in layout order, so ``keys`` reads the dict and never the layout: a
-        # QLayoutItem wrapper ``itemAt()`` hands out is a double delete waiting for a gc
-        # pass (CLAUDE.md's crash notes).
-        self._rows = {entry.key: self._rows[entry.key] for entry in entries}
-        # The whole is worth a line of its own only when it is more than one stretch.
-        self.total.setVisible(len(entries) > 1)
-        self.total_when.setText(format_date(finish) if finish else "—")
-        self.total_when.setMinimumWidth(date_width)
-        self.total_when.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.total_days.setMinimumWidth(days_width)
-        self.total_days.setText(format_days(days))
-        self.total_progress.setMinimumWidth(days_width)
-        self.total_progress.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-        self.total_progress.setText(percent(share))
+            row.set_selected(entry.key == selected)
         self.empty.setVisible(not any(entry.is_milestone for entry in entries))
 
     def row(self, step_id: StepId) -> MilestoneRow:
@@ -543,10 +609,10 @@ class MilestoneList(QWidget):
 
     @property
     def rows(self) -> tuple[MilestoneRow, ...]:
-        """Top to bottom, as laid out — the remainder row included."""
+        """Top to bottom, as laid out — the whole and the remainder included."""
         return tuple(self._rows.values())
 
     @property
     def keys(self) -> tuple[StepId, ...]:
         """The milestones top to bottom, as laid out."""
-        return tuple(key for key in self._rows if key)
+        return tuple(key for key in self._rows if key and key != ALL_KEY)

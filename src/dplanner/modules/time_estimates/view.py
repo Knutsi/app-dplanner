@@ -1,4 +1,5 @@
-"""The staffing heatmap, and the focus control the calendar lens is priced with.
+"""The staffing heatmap, the focus control the calendar lens is priced with, and the
+banner over the answer.
 
 One custom-painted grid instead of two tables of strings, because the report's job is
 *magnitude*: which staffings are fast, where the floor is, which axis still buys time.
@@ -17,6 +18,10 @@ landings for it. The widget itself only renders and reports, like every input he
 
 Rebuilt whole whenever the model changes — twelve simulations over tens of steps, cheaper
 to redo than to diff (the order table's argument).
+
+:class:`Banner` is the one line at the top of the answer that changes with the data — a
+plan that cannot be dated, steps counted as zero — and, when there is something to do
+about it, the button that does it. It is off screen when it has nothing to say.
 """
 
 from collections.abc import Callable
@@ -32,7 +37,7 @@ from PySide6.QtGui import (
     QPaintEvent,
     QPen,
 )
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QSpinBox, QToolTip, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSpinBox, QToolButton, QToolTip, QWidget
 
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, ProjectId
@@ -76,7 +81,8 @@ class FocusBar(QWidget):
     """The focus factor: how much of a person's working day this project gets.
 
     ``StartDateBar``'s twin, one module over — committed as an undoable command, echoes
-    suppressed by origin, reloaded when anything else writes the factor.
+    suppressed by origin, reloaded when anything else writes the factor. It sits in the
+    page's control strip, so its caption wears the strip's label look.
     """
 
     def __init__(
@@ -93,7 +99,7 @@ class FocusBar(QWidget):
         self._loading = False
 
         caption = QLabel("Human focus", self)
-        caption.setObjectName("InspectorCaption")
+        caption.setObjectName("ToolbarLabel")
 
         self.percent = QSpinBox(self)
         self.percent.setRange(10, 100)
@@ -109,7 +115,6 @@ class FocusBar(QWidget):
         row.setSpacing(ROW_GAP)
         row.addWidget(caption)
         row.addWidget(self.percent)
-        row.addStretch(1)
 
         self._unsubscribe = library.module_data_changed.connect(self._on_module_data)
         self._load()
@@ -144,6 +149,38 @@ class FocusBar(QWidget):
         if node_id != self._project_id or module_id != MODULE_ID or origin is self:
             return
         self._load()
+
+
+class Banner(QWidget):
+    """What changes with the data, over the answer — and the button that acts on it.
+
+    ``say`` with words shows the line; with an ``action`` it shows the button too, and
+    ``acted`` fires when it is pressed. Without words the banner leaves the screen.
+    """
+
+    acted = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.note = QLabel(self)
+        self.note.setObjectName("InspectorNote")
+        self.note.setWordWrap(True)
+        self.button = QToolButton(self)
+        self.button.setObjectName("ToolbarButton")
+        self.button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.button.clicked.connect(self.acted)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(ROW_GAP)
+        row.addWidget(self.note, 1)
+        row.addWidget(self.button)
+        self.hide()
+
+    def say(self, words: str, *, action: str = "") -> None:
+        self.note.setText(words)
+        self.button.setText(action)
+        self.button.setVisible(bool(action))
+        self.setVisible(bool(words))
 
 
 def _agent_header(count: int, collapsed: bool) -> str:

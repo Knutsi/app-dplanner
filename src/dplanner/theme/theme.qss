@@ -774,10 +774,11 @@ QSplitter::handle:vertical:pressed {
     color: $TEXT_DISABLED;
 }
 
-/* A strip of controls on a tab page, not application chrome: no frame, no ground of its
-   own. It is a QToolBar purely for the » overflow button, which is the only widget in Qt
-   that degrades a full control row gracefully instead of squeezing it. */
-#TestsToolBar, #AspectBarTools {
+/* A strip of controls on a tab page (framework/toolbar.py's control_bar), not application
+   chrome: no frame, no ground of its own. It is a QToolBar purely for the » overflow button,
+   which is the only widget in Qt that degrades a full control row gracefully instead of
+   squeezing it. */
+#ControlBar, #AspectBarTools {
     background: transparent;
     border: none;
     padding: 0px;
@@ -790,7 +791,7 @@ QSplitter::handle:vertical:pressed {
     padding: 5px 4px;
 }
 
-#TestsToolBar::separator {
+#ControlBar::separator {
     background-color: $BORDER;
     width: 1px;
     margin: 2px 4px;

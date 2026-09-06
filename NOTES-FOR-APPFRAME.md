@@ -2156,3 +2156,22 @@ written beside the plan (the reports site) must land in the plan's own commit wi
 becoming "unsaved work" when stale, and the sync module may not name the concrete
 provider, so the parameter belongs to the protocol. **Upstream?** Yes: any application
 that generates an artefact beside what it versions has this need.
+
+## 20. From the Time tab refinements
+
+### `framework/toolbar.py` — `control_bar(parent)` (new)
+
+**What.** The `QToolBar` a tab page uses as a strip of its *own* controls — movable and
+floatable off, the icon size set, the inner layout's spacing and margins set, object name
+`#ControlBar` (was `#TestsToolBar`; `theme.qss`'s rule renamed with it). **Why.** The tests
+page and the docs page each hand-rolled the same ten lines, and the Time tab was about to
+be the third: a `QToolBar` is the one widget in Qt that degrades a full control row
+gracefully (the » overflow menu) instead of overlapping it, so every page that has a row
+of controls wants exactly this. **Upstream?** Yes, beside `ActionToolbar`; the QSS rule
+with it.
+
+### `framework/cards.py` — `card_rule(parent, *, vertical=False)`
+
+**What.** The 1 px rule can stand up: `vertical=True` fixes the width instead of the
+height. **Why.** The estimate input parts *Does not add time* from the size chips with a
+rule in one row. **Upstream?** Yes, trivially.

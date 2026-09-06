@@ -17,17 +17,45 @@ when its group is not the active one, not a context per group.
 verb on a click and renders that child menu on the arrow — through ``fill_menu``, so it is
 the menu, never a copy of it, and it is refilled on every open against the context and the
 palette of that moment.
+
+:func:`control_bar` is the other strip a tab page carries: a row of *its own* controls — a
+selector, a toggle, a spin box — that overflows into a » menu when the width is short.
 """
 
 from collections.abc import Mapping, Sequence
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QHBoxLayout, QMenu, QSizePolicy, QToolButton, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QMenu, QSizePolicy, QToolBar, QToolButton, QWidget
 
 from dplanner.framework.action_menu import fill_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import Context, ContextService
+from dplanner.theme.icons import ICON_SIZE
+
+CONTROL_GAP = 8
+
+
+def control_bar(parent: QWidget | None = None) -> QToolBar:
+    """A strip of controls on a tab page, not application chrome.
+
+    A ``QToolBar`` rather than a row of widgets because it is the one widget in Qt that
+    degrades a full control row gracefully: too narrow for its contents it grows the »
+    overflow button and puts the tail in a menu, where a plain row simply overlaps. The
+    ``#ControlBar`` rule in ``theme.qss`` takes its frame and ground away. A widget added
+    to it is wrapped in an action, and it is the *action* that carries visibility — hold
+    what ``addWidget`` returns when a control comes and goes.
+    """
+    bar = QToolBar(parent)
+    bar.setObjectName("ControlBar")
+    bar.setMovable(False)
+    bar.setFloatable(False)
+    bar.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+    inner = bar.layout()
+    if inner is not None:
+        inner.setSpacing(CONTROL_GAP)
+        inner.setContentsMargins(0, 0, 0, 0)
+    return bar
 
 
 class ActionToolbar(QWidget):

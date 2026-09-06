@@ -177,6 +177,17 @@ class BulkEstimateActivity(EntityActivity):
         self._rebuild()
         self._focus_first_row()
 
+    def set_filter(self, key: str) -> None:
+        """Which of the scope's rows to look at: one of ``FILTERS``' keys."""
+        index = next(index for index, (found, _label) in enumerate(FILTERS) if found == key)
+        self._filters.button(index).setChecked(True)
+        self._apply_filter()
+        self._focus_first_row()
+
+    @property
+    def filter_key(self) -> str:
+        return FILTERS[max(self._filters.checkedId(), 0)][0]
+
     # -- building ------------------------------------------------------------------------------
 
     def _build_toolbar(self, page: QWidget) -> QHBoxLayout:
@@ -299,7 +310,7 @@ class BulkEstimateActivity(EntityActivity):
             description.setForeground(faded)
 
     def _apply_filter(self) -> None:
-        wanted = FILTERS[max(self._filters.checkedId(), 0)][0]
+        wanted = self.filter_key
         for row in range(self.table.rowCount()):
             step_id = self._step_at(row)
             if step_id is None or not self._product.has(step_id):

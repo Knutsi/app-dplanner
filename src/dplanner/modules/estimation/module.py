@@ -32,7 +32,11 @@ from dplanner.framework.inspector import InspectorSection, InspectorSectionRegis
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
 from dplanner.modules.estimation.aspect import DATA_FORMAT, MODULE_ID, SPEC, enabled, write
-from dplanner.modules.estimation.bulk import ESTIMATE_KIND, BulkEstimateActivity
+from dplanner.modules.estimation.bulk import (
+    ESTIMATE_KIND,
+    FILTER_UNESTIMATED,
+    BulkEstimateActivity,
+)
 from dplanner.modules.estimation.section import EstimateSection
 from dplanner.modules.estimation.start_bar import StartDateBar
 from dplanner.theme.icons import gauge_icon
@@ -70,12 +74,19 @@ class EstimationModule:
         """One project's start date, for whichever surface wants to show the schedule."""
         return StartDateBar(self._deps.library, self._deps.undo, project_id, parent)
 
-    def open_for_steps(self, project_id: ProjectId, step_ids: Sequence[StepId] = ()) -> None:
-        """Open the project's Estimates tab, scoped to ``step_ids`` (or the whole project).
+    def open_for_steps(
+        self,
+        project_id: ProjectId,
+        step_ids: Sequence[StepId] = (),
+        *,
+        unestimated: bool = False,
+    ) -> None:
+        """Open the project's Estimates tab, scoped to ``step_ids`` (or the whole project),
+        showing only the unsized rows when asked — the Time tab's *Estimate missing*.
 
         On its first open the tab is moved to the pane beside the one it was opened from,
         so the list sits next to the canvas that selected the steps. On a re-run it stays
-        wherever the user has since put it — only the scope changes.
+        wherever the user has since put it — only the scope and the filter change.
         """
         tabs = self._deps.tabs
         uri = activity_uri(ESTIMATE_KIND, project_id)
@@ -88,6 +99,8 @@ class EstimationModule:
                 tabs.move_current_left()
         assert isinstance(activity, BulkEstimateActivity)
         activity.set_scope(tuple(step_ids))
+        if unestimated:
+            activity.set_filter(FILTER_UNESTIMATED)
 
     def register(self) -> None:
         deps = self._deps
