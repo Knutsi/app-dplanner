@@ -12,9 +12,9 @@ from dplanner.modules.time_estimates.chart import (
     ChartData,
     ProgressChart,
     Segment,
-    shift_words,
-    standing_words,
+    segment_words,
 )
+from dplanner.modules.time_estimates.progress import standing_words
 
 
 def test_the_axis_marks_the_finest_calendar_unit_that_fits():
@@ -171,23 +171,25 @@ def test_the_words_beside_the_dot_and_on_a_milestone_row():
     later = Segment(
         "m", "v1", TEAL, now=(FIRST, date(2026, 9, 23)), then=(FIRST, date(2026, 9, 18))
     )
-    assert shift_words(later, FIRST, today) == (
+    assert segment_words(later, FIRST, today) == (
         "v1 lands 23 September — 3 working days later than planned on 1 September (18 September)"
     )
     earlier = Segment(
         "m", "v1", TEAL, now=(FIRST, date(2026, 9, 17)), then=(FIRST, date(2026, 9, 18))
     )
-    assert shift_words(earlier, FIRST, today).endswith(
+    assert segment_words(earlier, FIRST, today).endswith(
         "1 working day earlier than planned on 1 September (18 September)"
     )
     same = Segment("m", "v1", TEAL, now=(FIRST, date(2026, 9, 18)), then=(FIRST, date(2026, 9, 18)))
-    assert shift_words(same, FIRST, today) == "v1 lands 18 September — unchanged since 1 September"
+    assert segment_words(same, FIRST, today) == (
+        "v1 lands 18 September — unchanged since 1 September"
+    )
     new = Segment("m", "v1", TEAL, now=(FIRST, date(2026, 9, 18)))
     assert (
-        shift_words(new, FIRST, today) == "v1 lands 18 September — not in the plan at 1 September"
+        segment_words(new, FIRST, today) == "v1 lands 18 September — not in the plan at 1 September"
     )
     undated = Segment("m", "v1", TEAL)
-    assert shift_words(undated, FIRST, today) == "v1 — nothing estimated, so no date"
+    assert segment_words(undated, FIRST, today) == "v1 — nothing estimated, so no date"
     plan = ((FIRST, 0.0), (LAST, 1.0))
     on_the_line = ChartData(
         date(2026, 9, 16), expected=plan, actual=((FIRST, 0.0), (date(2026, 9, 16), 0.6))

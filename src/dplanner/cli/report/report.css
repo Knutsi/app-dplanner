@@ -45,7 +45,9 @@
   svg .body { fill: var(--surface); stroke: var(--border); }
   svg .shadow { fill: var(--ink); }
   svg .title, svg .key, svg .stat, svg .label { fill: var(--ink); }
-  svg .axis, svg .date, svg .legend text, svg .mark text, svg .region text { fill: var(--secondary); }
+  svg .axis, svg .date, svg .legend text, svg .shift .label, svg .region text { fill: var(--secondary); }
+  svg .plot-title, svg .standing { fill: var(--ink); }
+  svg .then[fill="#fcfbf9"] { fill: var(--surface); }
   svg .grid, svg .today, svg .region rect, svg .edge path, svg .edge polygon { stroke: var(--ink); }
   svg .edge polygon { fill: var(--ink); }
   svg .series-actual, svg .marker[fill="#23262b"], svg .legend-actual line { stroke: var(--ink); }
@@ -127,8 +129,9 @@ figure.chart .tooltip {
   box-shadow: var(--shadow); padding: 8px 10px; font-size: 12px; white-space: nowrap;
 }
 figure.chart .tooltip b { font-weight: 600; }
-svg .mark { cursor: pointer; }
-svg .span[data-step]:not([data-step=""]) { cursor: pointer; }
+svg .shift[data-step]:not([data-step=""]), svg .span[data-step]:not([data-step=""]) { cursor: pointer; }
+/* Every plot answers the pointer, so the whole stack takes it. */
+svg.chart { touch-action: none; }
 
 /* The graph: a viewport the script pans and zooms. */
 figure.graph-frame { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }

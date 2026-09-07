@@ -48,6 +48,9 @@ ColumnKind = Literal["text", "number", "days", "date", "status", "key"]
 FacetKind = Literal["text", "markdown", "link", "status", "days", "date"]
 EdgeKind = Literal["requires", "relates"]
 SeriesRole = Literal["plan", "baseline", "actual"]
+# Which of a chart's stacked plots a series belongs to: where the work stands against
+# the plan, how the plan itself changed, and where each milestone moved.
+PlotKind = Literal["status", "scope", "shift"]
 
 
 @dataclass(frozen=True)
@@ -99,26 +102,64 @@ class Series:
 
 
 @dataclass(frozen=True)
-class Mark:
-    """A named hairline on a chart: where the plan lands a milestone."""
+class Stretch:
+    """One milestone's stretch of work: its shade, where the plan now runs it, and where
+    the plan on the basis day ran it.
 
-    day: date
+    One shape, three readers, as in the window: the status plot colours the plan line by
+    the stretch it is crossing, the scope plot compares the two spans, and the shift plot
+    gives each a row. ``note`` is the row's sentence — worded by the module that owns the
+    plan, never here.
+    """
+
     label: str
+    color: str  # "#rrggbb"
+    start: date | None = None  # Where the plan now runs it.
+    finish: date | None = None
+    was_start: date | None = None  # Where the plan on the basis day ran it.
+    was_finish: date | None = None
     step_id: StepId = ""
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class Plot:
+    """One of a chart's stacked plots: what it draws and what it is called.
+
+    A ``shift`` plot draws the chart's stretches and carries no series of its own.
+    ``standing`` is the word beside the status plot's last reading — "ahead 5%",
+    "behind 12%", "on plan".
+    """
+
+    kind: PlotKind
+    title: str
+    series: tuple[Series, ...] = ()
+    standing: str = ""
+    note: str = ""
 
 
 @dataclass(frozen=True)
 class Chart:
-    """Shares over dates — the progress chart. ``idle`` names the spans the plan leaves
-    empty, drawn flat and dotted."""
+    """Stacked plots on **one locked time axis** — the window's chart, as plain data.
+
+    The renderer takes the axis from every plot at once: the same dates run under all of
+    them, the date marks fall as hairlines through each, the labels are printed once
+    under the last, and the edges are the earliest and latest date anything here has to
+    show. ``idle`` names the spans the plan leaves empty, drawn flat and dotted.
+    """
 
     id: str
     title: str
     today: date
-    series: tuple[Series, ...]
-    marks: tuple[Mark, ...] = ()
+    plots: tuple[Plot, ...] = ()
+    stretches: tuple[Stretch, ...] = ()
     idle: tuple[tuple[date, date], ...] = ()
     note: str = ""
+
+    @property
+    def milestones(self) -> tuple[Stretch, ...]:
+        """The stretches a milestone closes — the shift plot's rows."""
+        return tuple(stretch for stretch in self.stretches if stretch.step_id)
 
 
 @dataclass(frozen=True)

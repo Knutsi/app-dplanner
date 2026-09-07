@@ -2602,6 +2602,19 @@ decisions carry it:
   delta compares against, so what the list names is what moved it, and a change on the
   record's own day is inside that day's record (last-wins). The basis is a way of
   looking — view state, never stored.
+- **The scope plot fills the area between the two plans, by direction.** Drawing both
+  curves and washing the space between them in one hue said *something moved* and left
+  the reader to work out which way. The fill now carries the answer: where the plan now
+  runs **above** the plan at the basis day it promises the same work sooner — pulled in —
+  and the area wears the attention amber; **below** it, work has slipped, and the area
+  wears the bad red; where the two agree there is no area to fill at all, so that run is
+  drawn as a line in the good green, which is also the only way "unchanged" can be a
+  visible state on an area chart. Muted throughout (a region tint, DESIGN.md's exception
+  #2) because the two curves are still what a reader measures against. The runs come from
+  `domain/schedule.py`'s `change_runs`, which samples the two lines together and closes a
+  run **at the day they cross** rather than at the next knot — so the colour changes
+  exactly where the plan did — and both surfaces read it, because an area that changed
+  colour a day apart on screen and on paper would be two answers to one question.
 - **Three plots on one locked axis, not three lines on one plot.** The baseline, the
   plan now and what actually landed shared a plot for a while, and a reader had to
   untangle three curves and a legend to answer any one question. Each question now
@@ -2625,7 +2638,13 @@ decisions carry it:
   reader came for — where this milestone sits in the plan it is part of. The delta in
   words and the list of what moved it left the screen with that redesign: the plots say
   it, the rows say the percentages, and the sentence is the terminal's and the
-  report's (`delta_words`, `changes_since`). The same pass moved the milestone list
+  report's (`delta_words`, `changes_since`). **The report draws the same three plots**,
+  from the same data: `cli/report/parts.py`'s `Chart` carries `Plot`s and the `Stretch`es
+  all three read, `drawings.py` stacks them in one SVG, and what the two surfaces must
+  agree on lives below both — `share_at` and `change_runs` in `domain/schedule.py`,
+  `standing_words` and `shift_words` in `progress.py`. The renderer *slices* the plan
+  polyline per stretch instead of clipping it: `clipPath` is not something QtSvg honours,
+  and the PDF is rendered through it. The same pass moved the milestone list
   under the staffing grid with a **Start dates** table above it — the project's own
   start and each milestone's *Begin…* are what you set, and they now sit on the side of
   the seam that holds what you set — put the focus factor, the lens, the palette and

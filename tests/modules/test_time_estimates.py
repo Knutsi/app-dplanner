@@ -22,7 +22,7 @@ from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
 from dplanner.modules.step_agent_instruction.aspect import write_state
 from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
 from dplanner.modules.step_milestone.aspect import write as write_milestone_label
-from dplanner.modules.time_estimates.chart import shift_words
+from dplanner.modules.time_estimates.chart import segment_words
 from dplanner.modules.time_estimates.milestones import ALL_KEY
 from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
@@ -766,7 +766,7 @@ def test_the_plots_compare_against_the_plan_at_the_basis(services, staged):
         ((date(2026, 9, 7), date(2026, 9, 14)), (date(2026, 9, 7), date(2026, 9, 16))),
         ((date(2026, 9, 15), date(2026, 9, 18)), (date(2026, 9, 17), date(2026, 9, 23))),
     ]
-    assert shift_words(data.segments[1], data.baseline_day, data.today) == (
+    assert segment_words(data.segments[1], data.baseline_day, data.today) == (
         "v2 lands 23 September — 3 working days later than planned on 1 September (18 September)"
     )
     assert "plan at 1 September" in tab.chart.tooltip_at(date(2026, 9, 10), "scope")
@@ -776,7 +776,7 @@ def test_the_plots_compare_against_the_plan_at_the_basis(services, staged):
     tab.basis.setDate(QDate(2030, 1, 1))
     data = tab.chart._data
     assert data.baseline_day == date.today()
-    assert shift_words(data.segments[1], data.baseline_day, data.today) == (
+    assert segment_words(data.segments[1], data.baseline_day, data.today) == (
         f"v2 lands 23 September — unchanged since {format_date(date.today())}"
     )
     tab.basis_reset.click()

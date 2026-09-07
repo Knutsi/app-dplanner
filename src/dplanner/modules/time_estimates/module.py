@@ -84,7 +84,7 @@ from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import CONTROL_GAP, ActionToolbar, control_bar
 from dplanner.framework.undo import UndoService
-from dplanner.modules.time_estimates.chart import ChartData, ProgressChart, Segment, Span
+from dplanner.modules.time_estimates.chart import ChartData, ProgressChart, Segment
 from dplanner.modules.time_estimates.cli import Readers
 from dplanner.modules.time_estimates.milestones import (
     ALL_KEY,
@@ -109,6 +109,7 @@ from dplanner.modules.time_estimates.progress import (
     idle,
     landings,
     read_history,
+    span_of,
     tally,
 )
 from dplanner.modules.time_estimates.recorder import ProgressRecorder
@@ -202,14 +203,6 @@ def _toggle(parent: QWidget, label: str, tip: str = "") -> QToolButton:
     button.setCheckable(True)
     button.setCursor(Qt.CursorShape.PointingHandCursor)
     return button
-
-
-def _span_of(snapshot: Snapshot, key: str) -> Span | None:
-    """Where the stretch ``key`` closes runs in a snapshot: its start and its landing."""
-    for stretch in snapshot.stretches:
-        if stretch.key == key:
-            return (stretch.start, stretch.finish) if stretch.finish is not None else None
-    return None
 
 
 class TimeEstimatesActivity(EntityActivity):
@@ -679,8 +672,8 @@ class TimeEstimatesActivity(EntityActivity):
                     key=key,
                     label=self._label(phase, stretches),
                     color=shade,
-                    now=_span_of(now, key),
-                    then=_span_of(then, key) if then is not None else None,
+                    now=span_of(now, key),
+                    then=span_of(then, key),
                 )
             )
         self.chart.show_data(

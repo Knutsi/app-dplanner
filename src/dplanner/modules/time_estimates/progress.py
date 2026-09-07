@@ -52,6 +52,7 @@ from dplanner.domain.schedule import (
     format_days,
     next_working_day,
     phases,
+    share_at,
     working_days_between,
 )
 from dplanner.modules.time_estimates.schedule import stretched
@@ -59,6 +60,9 @@ from dplanner.modules.time_estimates.schedule import stretched
 HISTORY_ID = "progress_history"
 DATA_FORMAT = ModuleDataFormat(HISTORY_ID)
 ROWS_KEY = "days"
+
+# Two shares within this of each other are "on plan" — a chart's line width, in share.
+ON_PLAN = 0.005
 
 
 @dataclass(frozen=True)
@@ -173,6 +177,51 @@ def landing_shift(then: date, now: date) -> int:
     if now >= then:
         return working_days_between(then, now) - 1
     return -(working_days_between(now, then) - 1)
+
+
+def span_of(snapshot: "Snapshot | None", key: str) -> tuple[date, date] | None:
+    """Where the stretch ``key`` closes ran in a snapshot: its start and its landing, or
+    None when that plan never knew it or could not date it."""
+    if snapshot is None:
+        return None
+    for stretch in snapshot.stretches:
+        if stretch.key == key:
+            return (stretch.start, stretch.finish) if stretch.finish is not None else None
+    return None
+
+
+def standing_words(standing: float | None) -> str:
+    """Ahead or behind, in one short phrase — actual against plan, as a share.
+
+    Beside today's reading in the window and in the report; here rather than in either
+    because a chart on paper and a chart on screen may not word one fact two ways.
+    """
+    if standing is None:
+        return ""
+    if abs(standing) < ON_PLAN:
+        return "on plan"
+    return f"{'ahead' if standing > 0 else 'behind'} {abs(standing):.0%}"
+
+
+def shift_words(
+    label: str, then: date | None, now: date | None, basis: date | None, today: date
+) -> str:
+    """A milestone's row in words: where it lands, and how that moved since the basis."""
+    if now is None:
+        return f"{label} — nothing estimated, so no date"
+    said = f"{label} lands {format_date(now, today=today)}"
+    if basis is None:
+        return said
+    if then is None:
+        return f"{said} — not in the plan at {format_date(basis, today=today)}"
+    moved = landing_shift(then, now)
+    if moved == 0:
+        return f"{said} — unchanged since {format_date(basis, today=today)}"
+    direction = "later" if moved > 0 else "earlier"
+    return (
+        f"{said} — {abs(moved)} working day{'' if abs(moved) == 1 else 's'} {direction} "
+        f"than planned on {format_date(basis, today=today)} ({format_date(then, today=today)})"
+    )
 
 
 # -- taking a snapshot ------------------------------------------------------------------------
@@ -631,6 +680,9 @@ class ScopeView:
     moved: Delta | None
     marks: tuple[tuple[date, str], ...]  # (the day it lands, the milestone's step id)
     idle: tuple[tuple[date, date], ...]
+    # Actual against plan today, as a share: positive ahead, negative behind, None when
+    # either line has nothing to say for today.
+    standing: float | None = None
 
 
 def view_scope(
@@ -653,4 +705,16 @@ def view_scope(
         moved=delta(then, now, key) if then is not None else None,
         marks=tuple(marks(now, key)),
         idle=tuple(idle(now, key)),
+        standing=_standing(
+            tuple(expected(now, key, by_days=by_days)),
+            tuple(actual(history, now, key, by_days=by_days)),
+            now.day,
+        ),
     )
+
+
+def _standing(
+    plan: tuple[tuple[date, float], ...], landed: tuple[tuple[date, float], ...], today: date
+) -> float | None:
+    promised, reached = share_at(plan, today), share_at(landed, today)
+    return None if promised is None or reached is None else reached - promised
