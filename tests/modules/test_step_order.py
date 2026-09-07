@@ -264,9 +264,11 @@ def test_the_bar_opens_on_today_and_writes_nothing(services, project, tab):
 
 
 def test_the_start_date_is_written_to_the_project_and_undoable(services, project, tab):
-    """The bar belongs to another module; the order view only lends it a place to stand."""
-    tab.start_bar.date.setDate(QDate(2026, 9, 7))
-    assert project.module_data["estimation"]["start"] == "2026-09-07"
+    """The bar belongs to another module; the order view only lends it a place to stand.
+    A date a year out, so the day this runs on is never the one set — the bar opens on
+    today, and setting today again changes nothing."""
+    tab.start_bar.date.setDate(QDate(2027, 9, 6))
+    assert project.module_data["estimation"]["start"] == "2027-09-06"
 
     services.undo.undo()
     assert "estimation" not in project.module_data

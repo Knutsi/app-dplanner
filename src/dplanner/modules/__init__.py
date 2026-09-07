@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from dplanner.modules.coverage.trace import Trace
     from dplanner.modules.feature.catalogue import FeatureSource
     from dplanner.modules.project_editor.clipboard import PastePolicy
+    from dplanner.modules.spec.source_kind import DocumentSourceKind
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
     from dplanner.modules.sync.service import Publication
 
@@ -682,7 +683,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
 
     # Constructed before the list because the projects index opens Specs through it — the
-    # same seam as open_project, one level down.
+    # same seam as open_project, one level down. The document source kinds it runs are
+    # named here — ``_source_kinds`` — and nowhere else; a test hands in a fake through
+    # the same function.
     spec = SpecModule(
         SpecDeps(
             library=library,
@@ -694,6 +697,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             parent=services.window,
             files=lambda node_id: store.files(node_id, SPEC_ID),
             details=services.step_details,
+            tasks=services.tasks,
+            kinds=_source_kinds(),
             passages_of=lambda project_id, document: [
                 source.quote
                 for record in read_catalogue(library.project(project_id))
@@ -2099,6 +2104,12 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
     from dplanner.modules.testing.aspect import remint_for_paste
 
     return (remint_for_paste, forget_for_paste, drop_marker_for_paste)
+
+
+def _source_kinds() -> tuple["DocumentSourceKind", ...]:
+    """The document source kinds the Specs tab offers: none yet in this step of the
+    build — the Confluence kind arrives with its module."""
+    return ()
 
 
 def _asset_sources() -> tuple["AssetSource", ...]:

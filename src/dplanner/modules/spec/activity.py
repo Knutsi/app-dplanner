@@ -1,12 +1,15 @@
 """The Specs tab: one project's documents on the left, the chosen one beside — a PDF
-rendered, plain text shown, markdown open for editing.
+rendered, plain text shown, markdown open for editing, and a page a source fetched
+shown read-only under a strip that says where it came from.
 
-The list and the viewers are dumb: everything they show comes from :mod:`.documents`, the
-same functions the CLI answers with, and every change arrives back through the model's
-``module_data_changed`` — the tab never assumes it caused what it sees.
+The list and the viewers are dumb: everything they show comes from :mod:`.documents` and
+:mod:`.sourced`, the same functions the CLI answers with, and every change arrives back
+through the model's ``module_data_changed`` — the tab never assumes it caused what it
+sees. The list is a tree because a source's pages nest under it; the project's own
+documents sit at the top level as they always did.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -15,13 +18,14 @@ from PySide6.QtGui import QColor, QIcon, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
+    QPushButton,
     QSizePolicy,
     QSplitter,
     QStackedWidget,
     QTextEdit,
     QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -55,6 +59,7 @@ from dplanner.modules.spec.documents import (
     KIND_MARKDOWN,
     KIND_PDF,
     SpecDocument,
+    SpecSource,
     prune_blob,
     read_index,
     referenced_assets,
@@ -62,6 +67,9 @@ from dplanner.modules.spec.documents import (
     write_index,
 )
 from dplanner.modules.spec.editor import SpecMarkdownEditor
+from dplanner.modules.spec.refresh import SourceRefresher
+from dplanner.modules.spec.source_kind import DocumentSourceKind
+from dplanner.modules.spec.sourced import Applied, Row, documents_of, source_of, tree
 from dplanner.modules.spec.viewer import PdfPageView
 from dplanner.theme.icons import (
     external_icon,
@@ -75,16 +83,26 @@ from dplanner.theme.icons import (
 
 SPECS_KIND = "specs"
 
-# The selection-URI kind this tab publishes while it is the active pane.
+# The selection-URI kinds this tab publishes while it is the active pane: the document
+# under the cursor, and the source it belongs to (a source's own row names only the source).
 DOCUMENT_ENTITY = "spec_document"
+SOURCE_ENTITY = "spec_source"
 
-TOOLBAR_ACTIONS = ("spec.new", "spec.add", "spec.remove", "spec.open_external")
+# The child menu the + button drops down: every way to add a spec, built-ins and kinds.
+ADD_SUBMENU = "Add Spec"
+
+TOOLBAR_ACTIONS = ("spec.new", "spec.remove", "spec.open_external")
 BUTTON_TEXT = dict.fromkeys(TOOLBAR_ACTIONS, "")  # Glyph-only; label → tooltip.
 ICONS: dict[str, Callable[[str], QIcon]] = {
     "spec.new": plus_icon,
-    "spec.add": folder_icon,
     "spec.remove": trash_icon,
     "spec.open_external": external_icon,
+}
+SOURCE_ACTIONS = ("spec.refresh_source", "spec.open_source", "spec.remove_source")
+SOURCE_BUTTON_TEXT = {
+    "spec.refresh_source": "Refresh",
+    "spec.open_source": "Open",
+    "spec.remove_source": "Remove",
 }
 
 PANEL_MARGIN = 16
@@ -93,6 +111,7 @@ BLOCK_GAP = 12
 STRIP_MARGIN = 8  # DESIGN.md's 4-point scale: a toolbar strip breathes at 8.
 
 NAME_ROLE = int(Qt.ItemDataRole.UserRole) + 1
+SOURCE_ROLE = int(Qt.ItemDataRole.UserRole) + 6  # The source a row belongs to, by id.
 
 # A cited passage is washed in the accent at low alpha — DESIGN.md's exception #2 — and
 # the one somebody jumped to a little stronger, so the eye lands on it among the others.
@@ -136,12 +155,19 @@ class SpecsActivity(EntityActivity):
         passages_of: PassagesOf | None = None,
         open_coverage: OpenCoverage | None = None,
         cite: Cite | None = None,
+        kinds: Mapping[str, DocumentSourceKind] | None = None,
+        refresher: SourceRefresher | None = None,
+        connect: Callable[[NodeId, str], None] | None = None,
     ) -> None:
         super().__init__(context, "project", project_id)
         self._product = library
         self._passages_of = passages_of
         self._open_coverage = open_coverage
         self._cite = cite
+        self._kinds = dict(kinds or {})
+        self._refresher = refresher
+        self._connect = connect
+        self._last_applied: tuple[str, str] | None = None  # (source id, what a fetch did)
         # What is lit: the document, its quotes, the focused one — and whether the wash is
         # every citation of the document (the Cited toggle) or a jump's few.
         self._lit: tuple[str, tuple[str, ...], str] | None = None
@@ -181,7 +207,14 @@ class SpecsActivity(EntityActivity):
         side_layout = QVBoxLayout(side)
         side_layout.setContentsMargins(0, 0, 0, 0)
         side_layout.setSpacing(BLOCK_GAP)
-        self.toolbar = ActionToolbar(actions, context, TOOLBAR_ACTIONS, BUTTON_TEXT, side)
+        self.toolbar = ActionToolbar(
+            actions,
+            context,
+            TOOLBAR_ACTIONS,
+            BUTTON_TEXT,
+            side,
+            menus={"spec.new": ("Project", ADD_SUBMENU)},
+        )
         # A trailing stretch keeps the buttons left — without it the row's spare width
         # spreads the fixed-size buttons apart (same move as CanvasToolbar's row).
         toolbar_row = QHBoxLayout()
@@ -189,7 +222,11 @@ class SpecsActivity(EntityActivity):
         toolbar_row.addWidget(self.toolbar)
         toolbar_row.addStretch(1)
         side_layout.addLayout(toolbar_row)
-        self.list = QListWidget(side)
+        self.list = QTreeWidget(side)
+        self.list.setObjectName("SpecTree")
+        self.list.setHeaderHidden(True)
+        self.list.setUniformRowHeights(True)
+        self.list.setIndentation(16)
         self.list.setItemDelegate(TwoLineDelegate(self.list))
         self.list.currentItemChanged.connect(lambda *_a: self._on_selection())
         side_layout.addWidget(self.list, 1)
@@ -226,6 +263,7 @@ class SpecsActivity(EntityActivity):
         self._editor.textChanged.connect(self._forget_spans)
         self._text.selectionChanged.connect(self._refresh_strip)
         self._text.cursorPositionChanged.connect(self._refresh_strip)
+        reader_layout.addWidget(self._build_source_strip(reader, actions, context))
         reader_layout.addWidget(self._build_document_strip(reader))
         reader_layout.addWidget(self._views, 1)
 
@@ -237,7 +275,7 @@ class SpecsActivity(EntityActivity):
 
         self._widget = page
         # No `field_changed` subscription: nothing here reads a field — the list shows
-        # index data, and retitling the tab is `SpecModule._retitle_tabs`'s job.
+        # index data, and the tab's title follows the project through `follow_entity_tabs`.
         self._theme = theme
         self._unsubscribes = [
             library.module_data_changed.connect(self._on_module_data),
@@ -245,6 +283,15 @@ class SpecsActivity(EntityActivity):
             theme.changed.connect(lambda _theme: self._paint_toolbar(theme)),
             # The rows carry ink-coloured icons, which a copied colour would leave stale.
             theme.changed.connect(lambda _theme: self._refresh()),
+        ]
+        if refresher is not None:
+            self._unsubscribes += [
+                refresher.changed.connect(self._refresh_source_strip),
+                refresher.applied.connect(self._on_applied),
+                refresher.failed.connect(self._on_failed),
+            ]
+        self._unsubscribes += [
+            kind.config_changed.connect(self._refresh_source_strip) for kind in self._kinds.values()
         ]
         self._paint_toolbar(theme)
         self._refresh()
@@ -273,16 +320,23 @@ class SpecsActivity(EntityActivity):
         # Remove and Open Externally stay pure functions of the context.
         super().on_activated()
         self._publish_selection()
+        if self._refresher is not None:
+            self._refresher.watch(self.project_id)  # Check the sources now and on the interval.
 
     def on_deactivated(self) -> None:
         self._flush_edit()  # The session survives a pane switch; unsaved typing does not wait.
+        if self._refresher is not None:
+            self._refresher.unwatch(self.project_id)
         super().on_deactivated()
 
     def close(self) -> None:
         self.end_session()
         self._flush_timer.stop()  # Nothing fires between close and the widget's deletion.
+        if self._refresher is not None:
+            self._refresher.unwatch(self.project_id)
         self.topology.dispose()
         self.toolbar.dispose()
+        self.source_toolbar.dispose()
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
@@ -300,10 +354,67 @@ class SpecsActivity(EntityActivity):
         return self._editing is not None
 
     def select_document(self, name: str) -> None:
-        for row in range(self.list.count()):
-            if self.list.item(row).data(NAME_ROLE) == name:
-                self.list.setCurrentRow(row)
+        for item in self._items():
+            if item.data(0, NAME_ROLE) == name:
+                self.list.setCurrentItem(item)
                 return
+
+    def select_source(self, source_id: str) -> None:
+        """Land on a source's own row — where its strip says how it stands."""
+        for item in self._items():
+            if item.data(0, SOURCE_ROLE) == source_id and item.data(0, NAME_ROLE) is None:
+                self.list.setCurrentItem(item)
+                return
+
+    # -- the list, read back ---------------------------------------------------------------
+    # The tree is never read back through Qt's item API by anything but these; a test
+    # reads rows, and selects by position, through them too.
+
+    def rows(self) -> list[tuple[str, int]]:
+        """Every row as (what it names, depth): a document's name, a source's id, or the
+        topology row's marker."""
+        return [(self._row_key(item), self._depth(item)) for item in self._items()]
+
+    def select_row(self, position: int) -> None:
+        self.list.setCurrentItem(self._items()[position])
+
+    def current_row(self) -> int:
+        current = self.list.currentItem()
+        return self._items().index(current) if current is not None else -1
+
+    def row_item(self, position: int) -> QTreeWidgetItem:
+        return self._items()[position]
+
+    def _items(self) -> list[QTreeWidgetItem]:
+        found: list[QTreeWidgetItem] = []
+
+        def walk(item: QTreeWidgetItem | None) -> None:
+            if item is None:
+                return
+            found.append(item)
+            for index in range(item.childCount()):
+                walk(item.child(index))
+
+        for index in range(self.list.topLevelItemCount()):
+            walk(self.list.topLevelItem(index))
+        return found
+
+    @staticmethod
+    def _row_key(item: QTreeWidgetItem) -> str:
+        name = item.data(0, NAME_ROLE)
+        if isinstance(name, str):
+            return name
+        source = item.data(0, SOURCE_ROLE)
+        return source if isinstance(source, str) else ""
+
+    @staticmethod
+    def _depth(item: QTreeWidgetItem) -> int:
+        depth = 0
+        parent = item.parent()
+        while parent is not None:
+            depth += 1
+            parent = parent.parent()
+        return depth
 
     def _open_session(self, document: SpecDocument, area: ModuleFileArea, data: bytes) -> None:
         """Show ``document`` in the editor, starting its session."""
@@ -510,13 +621,16 @@ class SpecsActivity(EntityActivity):
         # itself reaches the editor through its own binding.
         if edit.node_id == self.project_id and edit.key == MODULE_ID:
             written = bool(read_topology(self._project()).strip())
-            self.list.item(0).setData(
-                DETAIL_ROLE,
-                "how this project's graph is shaped" if written else "not written yet",
-            )
+            pinned = self.list.topLevelItem(0)
+            if pinned is not None:
+                pinned.setData(
+                    0,
+                    DETAIL_ROLE,
+                    "how this project's graph is shaped" if written else "not written yet",
+                )
 
     def _on_selection(self) -> None:
-        self._topology_chosen = self._current_name() == TOPOLOGY_ROW and self.list.count() > 1
+        self._topology_chosen = self._current_name() == TOPOLOGY_ROW and len(self._items()) > 1
         if self.is_editing and self._current_name() != self._editing:
             self.end_session()
         if self._lit is not None and self._lit[0] != self._current_name():
@@ -524,59 +638,107 @@ class SpecsActivity(EntityActivity):
         if not self.is_editing:
             self._show_current()  # Which opens a session when the row is markdown.
         self._apply_wash()
+        self._refresh_source_strip()
         self._publish_selection()
 
     def _publish_selection(self) -> None:
         name = self._current_name()
-        nodes: tuple[ContextNode, ...] = ()
+        nodes: list[ContextNode] = []
         if name is not None and name != TOPOLOGY_ROW:
-            nodes = (ContextNode(selection_uri(DOCUMENT_ENTITY, name)),)
-        self.publish_selection(nodes)
+            nodes.append(ContextNode(selection_uri(DOCUMENT_ENTITY, name)))
+        source_id = self._current_source()
+        if source_id is not None:
+            nodes.append(ContextNode(selection_uri(SOURCE_ENTITY, source_id)))
+        self.publish_selection(tuple(nodes))
 
     def _refresh(self) -> None:
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         keep = self._current_name()
-        documents = read_index(self._project()).documents
+        keep_source = self._current_source() if keep is None else None
+        index = read_index(self._project())
+        documents = index.documents
         self.list.blockSignals(True)
         self.list.clear()
         # The topology is not one more document: it wears the graph's glyph in the accent,
         # a bold name, and a rule under it — a header over the list rather than a row in it.
-        pinned = QListWidgetItem(graph_icon(self._theme.current.accent), TOPOLOGY_TITLE)
+        pinned = QTreeWidgetItem([TOPOLOGY_TITLE])
+        pinned.setIcon(0, graph_icon(self._theme.current.accent))
         written = bool(read_topology(self._project()).strip())
         pinned.setData(
-            DETAIL_ROLE,
-            "how this project's graph is shaped" if written else "not written yet",
+            0, DETAIL_ROLE, "how this project's graph is shaped" if written else "not written yet"
         )
-        pinned.setData(NAME_ROLE, TOPOLOGY_ROW)
-        pinned.setData(EMPHASIS_ROLE, True)
-        pinned.setData(RULE_ROLE, True)
-        self.list.addItem(pinned)
-        ink = self._theme.current.text_secondary
+        pinned.setData(0, NAME_ROLE, TOPOLOGY_ROW)
+        pinned.setData(0, EMPHASIS_ROLE, True)
+        pinned.setData(0, RULE_ROLE, True)
+        self.list.addTopLevelItem(pinned)
         if keep == TOPOLOGY_ROW and (self._topology_chosen or not documents):
             self.list.setCurrentItem(pinned)
-        for doc in documents:
-            page = spec_icon if doc.kind == KIND_PDF else read_icon
-            item = QListWidgetItem(page(ink), doc.name)
-            detail = f"{doc.kind} · imported {doc.imported}"
-            if doc.previous:
-                detail += " · previous kept"
-            item.setData(DETAIL_ROLE, detail)
-            item.setData(NAME_ROLE, doc.name)
-            self.list.addItem(item)
-            if doc.name == keep:
+        ink = self._theme.current.text_secondary
+        # A source's pages nest under it, and a page's children under the page — the
+        # parents a row names are rows already made, so a dict of items by key suffices.
+        parents: dict[str, QTreeWidgetItem] = {}
+        for row in tree(index):
+            item = self._row_widget(row, ink)
+            if row.document is None and row.source is not None:
+                self.list.addTopLevelItem(item)
+                parents[f"source:{row.source.id}"] = item
+            elif row.document is not None and row.source is None:
+                self.list.addTopLevelItem(item)
+            elif row.document is not None and row.source is not None:
+                above = parents.get(row.document.parent) or parents[f"source:{row.source.id}"]
+                above.addChild(item)
+                parents[row.document.name] = item
+            chosen = (row.document is not None and row.document.name == keep) or (
+                row.document is None and row.source is not None and row.source.id == keep_source
+            )
+            if chosen:
                 self.list.setCurrentItem(item)
+        self.list.expandAll()
         if self.list.currentItem() is None:
             # A reader arriving lands on the first document; the topology leads only
             # while there is nothing else to read.
-            self.list.setCurrentRow(1 if documents else 0)
+            items = self._items()
+            self.list.setCurrentItem(items[1] if len(items) > 1 else items[0])
         self.list.blockSignals(False)
         self._on_selection()
 
+    def _row_widget(self, row: Row, ink: str) -> QTreeWidgetItem:
+        if row.document is None:
+            assert row.source is not None
+            item = QTreeWidgetItem([row.source.title])
+            kind = self._kinds.get(row.source.kind)
+            item.setIcon(0, kind.icon(ink) if kind is not None else folder_icon(ink))
+            pages = len(documents_of(read_index(self._project()), row.source.id))
+            fetched = f"fetched {row.source.fetched}" if row.source.fetched else "not fetched yet"
+            item.setData(0, DETAIL_ROLE, f"{kind.name if kind else row.source.kind} · {fetched}")
+            item.setData(0, SOURCE_ROLE, row.source.id)
+            item.setData(0, EMPHASIS_ROLE, pages > 0)
+            return item
+        doc = row.document
+        page = spec_icon if doc.kind == KIND_PDF else read_icon
+        item = QTreeWidgetItem([doc.label])
+        item.setIcon(0, page(ink))
+        detail = f"{doc.kind} · imported {doc.imported}"
+        if doc.sourced:
+            detail = f"page · fetched {doc.imported}"
+        if doc.previous:
+            detail += " · previous kept"
+        item.setData(0, DETAIL_ROLE, detail)
+        item.setData(0, NAME_ROLE, doc.name)
+        if row.source is not None:
+            item.setData(0, SOURCE_ROLE, row.source.id)
+        return item
+
     def _current_name(self) -> str | None:
         item = self.list.currentItem()
-        name = item.data(NAME_ROLE) if item is not None else None
+        name = item.data(0, NAME_ROLE) if item is not None else None
         return name if isinstance(name, str) else None
+
+    def _current_source(self) -> str | None:
+        item = self.list.currentItem()
+        source = item.data(0, SOURCE_ROLE) if item is not None else None
+        return source if isinstance(source, str) else None
 
     def _show_current(self) -> None:
         if self._current_name() == TOPOLOGY_ROW:
@@ -585,6 +747,9 @@ class SpecsActivity(EntityActivity):
                 self._views.setCurrentWidget(self._topology_page)
             return
         document = self._current_document()
+        if document is None and self._current_source() is not None:
+            self._show_source_row()
+            return
         if document is None:
             self._say("No spec documents yet — add one, or `dplanner spec import` from a shell.")
             return
@@ -610,11 +775,38 @@ class SpecsActivity(EntityActivity):
         except UnicodeDecodeError:
             self._say(f"{document.filename} is not UTF-8 text.")
             return
+        if document.sourced:
+            # A page a source fetched is the source's to change: shown, never edited.
+            self._text.show_markdown(body, [area])
+            self._views.setCurrentWidget(self._text)
+            return
         if document.kind == KIND_MARKDOWN:
             self._open_session(document, area, data)
             return
         self._text.show_text(body)
         self._views.setCurrentWidget(self._text)
+
+    def _show_source_row(self) -> None:
+        """A source's own row: the first page it fetched, or where it stands."""
+        source_id = self._current_source()
+        index = read_index(self._project())
+        source = source_of(index, source_id) if source_id else None
+        pages = documents_of(index, source_id) if source_id else []
+        if source is None:
+            self._say("This source is no longer in the index.")
+        elif not pages:
+            self._say("Not fetched yet." if not source.fetched else "This source fetched no pages.")
+        else:
+            root = next((doc for doc in pages if not doc.parent), pages[0])
+            if self._shown == (root.name, root.file):
+                return
+            area = self._files(self.project_id)
+            data = area.read_bytes(root.file)
+            if data is None:
+                self._say(f"{root.file} is missing from the workspace.")
+                return
+            self._show_document(root, area, data)
+            self._shown = (root.name, root.file)
 
     def _say(self, message: str) -> None:
         self._shown = None
@@ -645,6 +837,112 @@ class SpecsActivity(EntityActivity):
     def lit_passages(self) -> tuple[str, ...]:
         """The quotes washed right now — a test's and the strip's one reading."""
         return self._lit[1] if self._lit is not None else ()
+
+    # -- the source strip: where a page came from, and what to do about it ------------------
+    # Above the document strip, for any row inside a source. The verbs are the registry's,
+    # rendered through a toolbar so a greyed Refresh carries its reason; the one primary
+    # button is the kind's Connect, shown only while the source cannot be fetched.
+
+    def _build_source_strip(
+        self, parent: QWidget, actions: ActionRegistry, context: ContextService
+    ) -> QWidget:
+        strip = QWidget(parent)
+        strip.setObjectName("SpecSourceStrip")
+        column = QVBoxLayout(strip)
+        column.setContentsMargins(STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN)
+        column.setSpacing(CAPTION_GAP)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        column.addLayout(row)
+        self.source_facts = QLabel(strip)
+        self.source_facts.setObjectName("InspectorNote")
+        self.source_facts.setTextFormat(Qt.TextFormat.PlainText)
+        row.addWidget(self.source_facts)
+        row.addStretch(1)
+        self.connect_button = QPushButton(strip)
+        self.connect_button.setObjectName("PrimaryButton")
+        self.connect_button.clicked.connect(self._connect_source)
+        row.addWidget(self.connect_button)
+        self.source_toolbar = ActionToolbar(
+            actions, context, SOURCE_ACTIONS, SOURCE_BUTTON_TEXT, strip
+        )
+        row.addWidget(self.source_toolbar)
+        # What changes with the data: the last check's answer, a fetch's outcome, a refusal.
+        # Plain text always — every word of it may have come from the source.
+        self.source_note = QLabel(strip)
+        self.source_note.setObjectName("InspectorNote")
+        self.source_note.setTextFormat(Qt.TextFormat.PlainText)
+        self.source_note.setWordWrap(True)
+        column.addWidget(self.source_note)
+        self._source_strip = strip
+        strip.setVisible(False)
+        return strip
+
+    def _refresh_source_strip(self) -> None:
+        source_id = self._current_source()
+        index = read_index(self._project()) if self._product.has(self.project_id) else None
+        source = source_of(index, source_id) if index is not None and source_id else None
+        self._source_strip.setVisible(source is not None)
+        if source is None or index is None:
+            return
+        kind = self._kinds.get(source.kind)
+        name = kind.name if kind is not None else source.kind
+        pages = len(documents_of(index, source.id))
+        facts = [f"from {name}"]
+        facts.append(f"fetched {source.fetched}" if source.fetched else "not fetched yet")
+        if pages:
+            facts.append(f"{pages} page{'' if pages == 1 else 's'}")
+        self.source_facts.setText(" · ".join(facts))
+        status = self._refresher.status(source) if self._refresher is not None else None
+        ready = status is None or status.ready
+        can_connect = kind is not None and self._connect is not None and self._refresher is not None
+        self.connect_button.setVisible(not ready and can_connect)
+        if not ready and can_connect and self._refresher is not None:
+            again = self._refresher.needs_reconnect(source.id)
+            self.connect_button.setText(f"{'Reconnect' if again else 'Connect'} to {name}…")
+        self.source_note.setText(self._source_words(source, status.message if status else ""))
+        self.source_note.setVisible(bool(self.source_note.text()))
+
+    def _source_words(self, source: SpecSource, message: str) -> str:
+        if message:
+            return message
+        if self._refresher is not None and self._refresher.is_fetching():
+            kind = self._kinds.get(source.kind)
+            return f"Fetching from {kind.name if kind is not None else source.kind}…"
+        fresh = self._refresher.freshness(source.id) if self._refresher is not None else None
+        if fresh is not None and fresh.stale:
+            changed = len(fresh.changed) + len(fresh.added)
+            parts = []
+            if changed:
+                parts.append(f"{changed} page{'' if changed == 1 else 's'} changed")
+            if fresh.removed:
+                parts.append(f"{len(fresh.removed)} gone")
+            return ", ".join(parts) + " at the source — Refresh to take them in"
+        if self._last_applied is not None and self._last_applied[0] == source.id:
+            return self._last_applied[1]
+        return ""
+
+    def _connect_source(self) -> None:
+        source_id = self._current_source()
+        if source_id is not None and self._connect is not None:
+            self._connect(self.project_id, source_id)
+            self._refresh_source_strip()
+
+    def _on_applied(self, project_id: str, source_id: str, applied: Applied) -> None:
+        if project_id != self.project_id:
+            return
+        words = applied.summary
+        if applied.notes:
+            words += f" · {len(applied.notes)} note{'' if len(applied.notes) == 1 else 's'}: "
+            words += "; ".join(applied.notes[:3])
+        self._last_applied = (source_id, words)
+        self._refresh_source_strip()
+
+    def _on_failed(self, project_id: str, source_id: str, message: str) -> None:
+        if project_id == self.project_id:
+            self._last_applied = (source_id, message)
+            self._refresh_source_strip()
 
     def _build_document_strip(self, parent: QWidget) -> QWidget:
         strip = QWidget(parent)

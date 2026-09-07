@@ -72,7 +72,7 @@ def test_the_cited_toggle_washes_every_passage_a_feature_cites(tab):
 
 def test_the_strip_is_off_screen_on_the_topology_row(tab):
     assert not tab._strip.isHidden()
-    tab.list.setCurrentRow(0)
+    tab.select_row(0)
     assert tab._strip.isHidden()
     tab.select_document("guide")
     assert not tab._strip.isHidden()
