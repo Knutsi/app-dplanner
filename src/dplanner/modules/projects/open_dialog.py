@@ -35,8 +35,7 @@ from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.modules.projects.repo_picker import RepoPicker
-from dplanner.modules.projects.repos import RepoLog, RepositoryServices
-from dplanner.modules.projects.repositories_folder import shown_path
+from dplanner.modules.projects.repos import RepoLog, RepositoryServices, shown_path
 
 # Past the delegate's own roles (DETAIL, MUTED, EMPHASIS, RULE sit at UserRole + 2..5).
 PATH_ROLE = int(Qt.ItemDataRole.UserRole) + 10

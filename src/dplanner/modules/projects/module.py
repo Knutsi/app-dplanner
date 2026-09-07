@@ -5,10 +5,11 @@ an activity is. It is handed an ``open_project`` callback and calls it, which is
 seam the plan tree used before it and the reason two features can render the same thing
 without meeting.
 
-Where a project lives is this module's other subject: the Project dialog (settings above,
-the plan's and the code's logs below), the Repositories card on the project panel, Move
-Plan, and the *Settings ▸ Repositories* page. Git and GitHub reach it only through the
-:class:`RepositoryServices` the composition root fills in.
+Where a project lives is this module's other subject: the Project dialog (a column per
+repository — its log, what it is and where it is here, and a ⋯ menu of everything that
+changes either), the Repositories card on the project panel, Move Plan, and the *Settings
+▸ Repositories* page. Git and GitHub reach it only through the :class:`RepositoryServices`
+the composition root fills in.
 
 Membership is here too — *File ▸ New Project…* (the Project dialog in create mode) and
 *Open Projects…* (a plan repository browsed, its projects picked) — because both start
@@ -53,8 +54,7 @@ from dplanner.modules.projects.index import ProjectsSegment
 from dplanner.modules.projects.move_dialog import MovePlanDialog
 from dplanner.modules.projects.open_dialog import OpenProjectsDialog
 from dplanner.modules.projects.project_dialog import CREATE, ProjectDialog
-from dplanner.modules.projects.repos import MODULE_ID, RepositoryServices
-from dplanner.modules.projects.repositories_folder import shown_path
+from dplanner.modules.projects.repos import MODULE_ID, RepositoryServices, shown_path
 from dplanner.modules.projects.settings_page import build_page
 from dplanner.modules.projects.verbs import ProjectVerbs
 from dplanner.theme.icons import branch_icon, container_icon
@@ -137,7 +137,6 @@ class ProjectsModule:
             detach=deps.detach,
             settings=self.show_project,
             move=self.move_plan,
-            facts_of=deps.repos.facts_of,
         ).register_into(deps.actions)
 
         deps.cards.register(

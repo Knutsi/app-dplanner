@@ -1,4 +1,5 @@
-"""Moving a plan out of the repository it was born in, into a plan repository of its own.
+"""Moving a plan into a plan repository — out of the code it was born in, or on from the
+plan repository it landed in the first time.
 
 One function, :func:`move_project`, and both surfaces call it: ``dplanner project move``
 and the window's Move Plan wizard. The window pauses autosave around it and rebuilds
@@ -87,7 +88,14 @@ def move_project(
             "the project has unsaved edits in this window — let them reach disk, then try again"
         )
     code = project.repository or origin_url(source) or str(main_checkout(source_root))
-    checkout = store.checkout_of(project_id) or main_checkout(source_root)
+    recorded = store.checkout_of(project_id)
+    # A plan leaving the repository that also held its code leaves *from* the checkout, so
+    # that is where the code is from now on. A plan already apart from its code leaves a
+    # repository that is not the code's, and inherits nothing: it keeps what was recorded,
+    # or stays uncheckedout here.
+    checkout = recorded or (
+        main_checkout(source_root) if _is_code_repository(source_root, code, recorded) else None
+    )
     if _is_code_repository(target_root, code, checkout):
         raise RelocateError(
             f"{target_root} is the code repository — the plan would still live inside the "

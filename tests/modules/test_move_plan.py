@@ -2,7 +2,8 @@
 
 The wizard is stood in for at the name the module reads; what is under test is the move
 itself — the files, the library file, the two commits — and the two refusals that leave
-everything where it was, with autosave running again.
+everything where it was, with autosave running again. The verb is offered on every
+project, so a plan already in a repository of its own moves on from the same wizard.
 """
 
 from pathlib import Path
@@ -104,6 +105,32 @@ def test_a_refused_move_leaves_everything_and_resumes_autosave(
     assert services.autosave._paused == 0
     assert services.document.has(project.id)  # No reload happened.
     FakeWizard.folder = "discovery"
+
+
+def test_a_plan_already_in_its_own_repository_moves_on_to_another(
+    session, services, make_project, library_file, tmp_path, boxes
+):
+    """The mistake this verb has to be able to undo: a plan put in the wrong plan
+    repository. Nothing about the second move is a special case of the first."""
+    project = make_project("Discovery")
+    services.autosave.flush_now()
+    first = init_repo(tmp_path / "wrong-plans")
+    FakeWizard.chosen = PlanTarget(first)
+    services.actions.run("projects.move", select(services, "project", project.id))
+
+    assert session.services is not None
+    moved_services = session.services
+    assert (first / "discovery" / PROJECT_META).is_file()
+
+    second = init_repo(tmp_path / "right-plans")
+    FakeWizard.chosen = PlanTarget(second)
+    moved_services.actions.run("projects.move", select(moved_services, "project", project.id))
+
+    assert (second / "discovery" / PROJECT_META).is_file()
+    assert not (first / "discovery").exists()
+    entries = read_library_file(library_file)
+    assert [entry.path for entry in entries] == [second / "discovery"]
+    assert session.services is not None and session.services.document.has(project.id)
 
 
 def test_cancelling_the_wizard_moves_nothing(services, make_project, library_repo):

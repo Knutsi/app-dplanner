@@ -25,7 +25,11 @@ from PySide6.QtWidgets import (
 
 from dplanner.framework.list_rows import DETAIL_ROLE, TwoLineDelegate
 from dplanner.framework.user_config import get_global, set_global
-from dplanner.modules.projects.repos import MODULE_ID, candidate_repositories_folders
+from dplanner.modules.projects.repos import (
+    MODULE_ID,
+    candidate_repositories_folders,
+    shown_path,
+)
 
 FOLDER_KEY = "repositories_folder"
 PATH_ROLE = int(Qt.ItemDataRole.UserRole) + 1
@@ -55,14 +59,6 @@ def ensure_repositories_folder(parent: QWidget | None, home: Path | None = None)
     chosen.mkdir(parents=True, exist_ok=True)
     set_repositories_folder(chosen)
     return chosen
-
-
-def shown_path(path: Path) -> str:
-    """A path as a person writes it: ``~`` for the home directory."""
-    try:
-        return "~/" + path.relative_to(Path.home()).as_posix()
-    except ValueError:
-        return str(path)
 
 
 def describe_folder(folder: Path) -> str:

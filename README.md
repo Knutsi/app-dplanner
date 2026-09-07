@@ -70,9 +70,11 @@ one). A plan lives in a **plan repository** — a git repository holding several
 listed in its `.dplanner` index — and records the **code repository** it is about, so an
 agent works in the code and every `dplanner` call reaches the plan. *File ▸ New Project…*
 starts one in a plan repository you pick, initialise or clone; *Open Projects…* browses a
-plan repository and adds the projects you work on; *Project ▸ Settings…* shows both
-repositories, their logs and open pull requests, and *Move Plan…* takes a plan out of the
-code it was kept in. *New/Open Project Library* starts a separate instance.
+plan repository and adds the projects you work on; *Project ▸ Settings…* is one column per
+repository — its log and open pull requests over what the repository is and where it is on
+this machine, with a ⋯ menu of everything you can do to either — and *Move Plan…* moves a
+plan into a plan repository, out of the code it was kept in or on from one picked wrongly.
+*New/Open Project Library* starts a separate instance.
 
 ## Working with an agent
 
@@ -277,8 +279,8 @@ src/dplanner/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
 │   ├── library/             which library: File ▸ New/Open Project Library, the title; `library …` verbs
 │   ├── projects/            the Projects folder in the index, the project verbs, New Project…, Open
-│   │                        Projects…, the Project dialog (settings, both logs), the Repositories
-│   │                        card, Move Plan, and the repositories folder clones land in
+│   │                        Projects…, the Project dialog (a column per repository: log, facts, ⋯ menu),
+│   │                        the Repositories card, Move Plan, and the repositories folder clones land in
 │   ├── project_editor/      a project in a tab: the canvas, its modes (connect, lasso, divide, regions, resize) and renderers,
 │   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid;
 │   │                        ground.py paints the background)

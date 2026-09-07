@@ -182,6 +182,27 @@ would not; the Covers tab's New/Cumulative switch is the worked example.
   there is nothing to confirm and nothing to cancel, and a Close button under a form that
   has already saved is a line of chrome saying so. Escape and the title bar close it; the
   step details dialog is the worked example.
+- **Past two or three verbs on one thing, the glyph buttons become a `⋯` menu.** A row of
+  bordered glyphs is a row of riddles — each says its verb only in a tooltip, and the row
+  grows with every feature. One `⋯` beside the thing, dropping a menu of *glyph plus
+  words*, says all of them at once and costs one control. Build the menu when it opens
+  (a glyph carries the colour it was painted in) and grey what cannot run right now, with
+  the reason in the entry's own words — never drop it, or the list changes shape and stops
+  being learnable. The Project dialog's repository columns are the worked example.
+
+## Facts under the thing they are about
+
+Where a surface shows a thing and some facts about it, the facts go **under** it, a step
+down in size, not into a row of fields above it. Two surfaces side by side then read as a
+pair — the same lines in the same places under each — and the divide between them does the
+work a caption would otherwise have to. A fact nobody has recorded still gets its line,
+saying what is missing (*not checked out on this machine*), greyed and italic: the shape of
+the block is then constant and a reader learns where to look once. A line too long for its
+column elides in the **paint**, never in a resize — a widget that rewrites its own text
+while being resized can drive the layout in a circle — with the full text as the tooltip,
+and a path elides from the left, because a path's tail is what names it.
+`ARCHITECTURE.md`'s *The Project dialog is two columns, not three fields* has the
+reasoning, including why the count of fields was the symptom rather than the disease.
 
 ## Colour
 
