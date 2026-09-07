@@ -36,8 +36,19 @@ from dplanner.domain.commands import (
     Command,
     CompositeCommand,
     SetModuleDataCommand,
+    redirect_edges_command,
 )
-from dplanner.domain.model import Library, NodeId, Project, Step, StepId
+from dplanner.domain.model import (
+    SOURCE,
+    WAITER,
+    EdgeEnd,
+    Library,
+    NodeId,
+    Project,
+    Redirection,
+    Step,
+    StepId,
+)
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
@@ -75,6 +86,8 @@ from dplanner.modules.project_editor.modes import (
     DIVIDE_HORIZONTAL,
     DIVIDE_VERTICAL,
     LASSO,
+    REDIRECT_FROM,
+    REDIRECT_TO,
     REGION_CREATE,
     CanvasDeps,
     ConnectMode,
@@ -82,6 +95,7 @@ from dplanner.modules.project_editor.modes import (
     IdleMode,
     LassoMode,
     ModeBase,
+    RedirectMode,
     RegionCreateMode,
 )
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
@@ -125,6 +139,8 @@ SWITCHABLE_MODES: dict[str, Callable[[CanvasDeps], ModeBase]] = {
     REGION_CREATE: RegionCreateMode,
     DIVIDE_VERTICAL: lambda deps: DivideMode(deps, Qt.Orientation.Vertical),
     DIVIDE_HORIZONTAL: lambda deps: DivideMode(deps, Qt.Orientation.Horizontal),
+    REDIRECT_TO: lambda deps: RedirectMode(deps, WAITER),
+    REDIRECT_FROM: lambda deps: RedirectMode(deps, SOURCE),
 }
 
 
@@ -191,7 +207,7 @@ class ProjectActivity(EntityActivity):
         self._layout_verbs = layout_verbs
         self.project_id = project_id
 
-        self._scene = GraphScene(self._link_refusal)
+        self._scene = GraphScene(self._link_refusal, self._redirection)
         self._view = GraphView(
             self._scene,
             base_mode=IdleMode,
@@ -214,6 +230,7 @@ class ProjectActivity(EntityActivity):
         self._scene.region_resized.connect(self._on_region_resized)
         self._scene.node_resized.connect(self._on_node_resized)
         self._scene.graph_divided.connect(self._on_graph_divided)
+        self._scene.redirect_requested.connect(self._on_redirect_requested)
         self._view.modes.changed.connect(lambda _name: self._publish_activity())
 
         # Once per event-loop turn, not once per signal: a paste of forty steps is forty
@@ -339,6 +356,15 @@ class ProjectActivity(EntityActivity):
     def _link_refusal(self, waiter: StepId, source: StepId) -> str | None:
         return self._product.link_refusal(waiter, "requires", source)
 
+    def _redirection(self, edges: Sequence[EdgeRef], anchor: StepId, end: EdgeEnd) -> Redirection:
+        """The model's answer about a redirect, in the canvas's own terms.
+
+        The scene picks arrows and the domain names edges; this is the whole of the
+        translation, and it is here rather than in the scene because the scene holds no
+        library — the same seam ``_link_refusal`` is.
+        """
+        return self._product.redirection([edge.as_edge() for edge in edges], anchor, end)
+
     def _sync(self) -> None:
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
@@ -458,6 +484,36 @@ class ProjectActivity(EntityActivity):
         commands = [self._move_command(step_id, x, y) for step_id, x, y in moved]
         self._deps.undo.push(CompositeCommand("Divide Graph", commands))
         self._deps.undo.break_coalescing()
+
+    def _on_redirect_requested(self, anchor: StepId, end: EdgeEnd) -> None:
+        """A redirect gesture finished: one command, however many arrows moved.
+
+        Its shape is the divide's — the mode reports, this turns it into a command. All the
+        gesture reports is *where*; which links may move is the model's to say, and it is
+        asked here rather than the mode's answer being carried over, so a plan that changed
+        under a slow hand is never applied stale.
+        """
+        plan = self._redirection(self._scene.selection().edges, anchor, end)
+        if plan.moving:
+            self._deps.undo.push(
+                redirect_edges_command(self._product, plan, _redirect_label(len(plan.moving)))
+            )
+            self._deps.undo.break_coalescing()
+        self._deps.status.show_status(self._redirect_words(plan), 4000)
+
+    def _redirect_words(self, plan: Redirection) -> str:
+        """What the status bar says. A refusal is per link, so the count and the reason
+        both belong in it — the one thing a redirect can do halfway."""
+        title = self._product.step(plan.anchor).title
+        way = "point to" if plan.end == WAITER else "come from"
+        if not plan.moving:
+            if plan.refused:
+                return f"Nothing to redirect — {plan.refused[0][1]}"
+            return "Nothing to redirect"
+        moved = f"{len(plan.moving)} link{'' if len(plan.moving) == 1 else 's'} now {way} {title!r}"
+        if not plan.refused:
+            return moved
+        return f"{moved}; {len(plan.refused)} left alone — {plan.refused[0][1]}"
 
     def _on_link_requested(self, source: StepId, target: StepId) -> None:
         """A drop is not a special case: it selects both ends and runs the same verb the
@@ -587,7 +643,7 @@ class ProjectActivity(EntityActivity):
             if region.region_id not in self._scene.selection().regions:
                 self._scene.select_region(region.region_id)
             menu: QMenu = build_menu(
-                self._deps.actions, self._deps.context, "Project", self._view, submenu="Region"
+                self._deps.actions, self._deps.context, "Graph", self._view, submenu="Region"
             )
         else:
             # New places a node where the menu was raised, so the right-click counts as a
@@ -597,6 +653,11 @@ class ProjectActivity(EntityActivity):
             self._select_for_menu(node)
             menu = build_menu(self._deps.actions, self._deps.context, "Step", self._view)
         menu.exec(self._view.viewport().mapToGlobal(position))
+
+
+def _redirect_label(count: int) -> str:
+    """The undo entry's name — a gesture is named for itself, not for the moves it is made of."""
+    return "Redirect Link" if count == 1 else f"Redirect {count} Links"
 
 
 class ProjectEditorModule:

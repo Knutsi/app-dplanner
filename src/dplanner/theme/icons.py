@@ -7,7 +7,7 @@ dark binder and the light corkboard cards alike.
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QLineF, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 
 ICON_SIZE = 16
@@ -253,7 +253,7 @@ def plus_icon(color: str | QColor) -> QIcon:
     return QIcon(pixmap)
 
 
-def trash_icon(color: str) -> QIcon:
+def trash_icon(color: str | QColor) -> QIcon:
     """A waste basket: delete."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 1.2))
@@ -319,6 +319,130 @@ def isolate_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
+def _arrow(painter: QPainter, start: QPointF, end: QPointF, head: float = 3.4) -> None:
+    """A line with a chevron at ``end``: what every "goes there" glyph is made of."""
+    painter.drawLine(start, end)
+    back = QLineF(end, start)
+    for turn in (-26.0, 26.0):
+        wing = QLineF(back)
+        wing.setAngle(back.angle() + turn)
+        wing.setLength(head)
+        painter.drawLine(wing.p1(), wing.p2())
+
+
+def link_icon(color: str | QColor) -> QIcon:
+    """Two nodes joined: ``unlink_icon`` without the cut."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(QPointF(3.6, 8.0), 2.2, 2.2)
+    painter.drawEllipse(QPointF(12.4, 8.0), 2.2, 2.2)
+    painter.drawLine(QPointF(5.8, 8.0), QPointF(10.2, 8.0))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def connect_icon(color: str | QColor) -> QIcon:
+    """An arrow being drawn from one node to another: the linking mode."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(QPointF(3.4, 8.0), 2.2, 2.2)
+    painter.drawEllipse(QPointF(12.6, 8.0), 2.2, 2.2)
+    _arrow(painter, QPointF(6.0, 8.0), QPointF(10.0, 8.0))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def redirect_to_icon(color: str | QColor) -> QIcon:
+    """Arrows converging on one node: the picked links come to point here."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(QPointF(12.6, 8.0), 2.2, 2.2)
+    _arrow(painter, QPointF(1.8, 3.0), QPointF(9.6, 6.6))
+    _arrow(painter, QPointF(1.8, 13.0), QPointF(9.6, 9.4))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def redirect_from_icon(color: str | QColor) -> QIcon:
+    """The same arrows fanning out of one node: the picked links come to start here."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(QPointF(3.4, 8.0), 2.2, 2.2)
+    _arrow(painter, QPointF(6.4, 6.6), QPointF(14.2, 3.0))
+    _arrow(painter, QPointF(6.4, 9.4), QPointF(14.2, 13.0))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def _divide_icon(color: str | QColor, upright: bool) -> QIcon:
+    pixmap, painter = _canvas()
+    if not upright:
+        painter.translate(ICON_SIZE, 0.0)
+        painter.rotate(90.0)
+    dashes = _pen(color, 1.1)
+    dashes.setStyle(Qt.PenStyle.DashLine)
+    painter.setPen(dashes)
+    painter.drawLine(QPointF(8.0, 1.4), QPointF(8.0, 14.6))
+    painter.setPen(_pen(color, 1.2))
+    _arrow(painter, QPointF(6.2, 8.0), QPointF(2.2, 8.0))
+    _arrow(painter, QPointF(9.8, 8.0), QPointF(13.8, 8.0))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def divide_vertical_icon(color: str | QColor) -> QIcon:
+    """An upright cut with the two sides pushed apart: make room left or right."""
+    return _divide_icon(color, upright=True)
+
+
+def divide_horizontal_icon(color: str | QColor) -> QIcon:
+    """The same cut on its side: make room above or below."""
+    return _divide_icon(color, upright=False)
+
+
+def sort_icon(color: str | QColor) -> QIcon:
+    """Two feeders and what they lead to: laying the graph out by dependency."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(1.5, 2.0, 4.6, 3.6), 1.0, 1.0)
+    painter.drawRoundedRect(QRectF(1.5, 10.4, 4.6, 3.6), 1.0, 1.0)
+    painter.drawRoundedRect(QRectF(9.9, 6.2, 4.6, 3.6), 1.0, 1.0)
+    painter.drawLine(QPointF(6.1, 3.8), QPointF(9.9, 7.2))
+    painter.drawLine(QPointF(6.1, 12.2), QPointF(9.9, 8.8))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def region_icon(color: str | QColor) -> QIcon:
+    """A titled area drawn behind the graph."""
+    pixmap, painter = _canvas()
+    dashes = _pen(color, 1.2)
+    dashes.setStyle(Qt.PenStyle.DashLine)
+    painter.setPen(dashes)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(2.0, 4.0, 12.0, 9.5), 1.5, 1.5)
+    painter.setPen(_pen(color, 1.4))
+    painter.drawLine(QPointF(2.4, 2.4), QPointF(7.6, 2.4))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def grid_icon(color: str | QColor) -> QIcon:
+    """Ruled lines: what a drag, a resize and a placed card land on."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.1))
+    for at in (5.5, 10.5):
+        painter.drawLine(QPointF(at, 2.0), QPointF(at, 14.0))
+        painter.drawLine(QPointF(2.0, at), QPointF(14.0, at))
+    painter.end()
+    return QIcon(pixmap)
+
+
 def undo_icon(color: str) -> QIcon:
     """An arrow curving back on itself, anticlockwise."""
     return _turn_icon(color, mirrored=False)
@@ -342,7 +466,7 @@ def _turn_icon(color: str, mirrored: bool) -> QIcon:
     return QIcon(pixmap)
 
 
-def frame_icon(color: str) -> QIcon:
+def frame_icon(color: str | QColor) -> QIcon:
     """Four corners: fit the whole graph in the window."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 1.4))

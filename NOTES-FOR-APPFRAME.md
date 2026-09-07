@@ -2199,3 +2199,47 @@ up wanting.
 protocol only names what an absorption is allowed to touch. **Why.** The absorb pass moves
 a module's files with its data, and the framework's protocol was the only face it had.
 **Upstream?** With the absorption, yes.
+
+## 22. From the redirect and menu pass
+
+### `framework/palette.py` — a palette row is the two-line row, and the path is searchable
+
+**What.** The command palette renders `list_rows.TwoLineDelegate` instead of
+`label\tshortcut` in a plain item: the label on line one with the shortcut right-aligned
+beside it, the verb's **menu path** (`Graph ▸ Divide`) on line two, and the spec's `icon`
+as the row's decoration. `menu_path(spec)` is the one place that path is built. Filtering
+scores the label first and the path second — a match that needed the path ranks below every
+match on a name, as a `(where, -score)` sort key rather than a fudged constant.
+
+**Why.** Submenu entries are written for their submenu, so the palette listed *Vertical* and
+*Horizontal* with nothing to say which pair they were. The label cannot be lengthened — the
+menu would then read *Divide ▸ Divide Vertically* — so the missing half is the path, and once
+it is on the row it may as well be searchable: somebody who remembers the submenu and not
+the entry types "divide vertical". The glyph is free and correct here for the same reason it
+is in a pop-up: the palette is built fresh on every open, so a colour baked into it cannot
+go stale the way the menu bar's QActions can.
+
+**Upstream?** Yes, whole. Nothing in it is DPlanner's vocabulary.
+
+### `framework/list_rows.py` — `TRAILING_ROLE`, a note at the right of the first line
+
+**What.** A fourth role on `TwoLineDelegate`: text drawn right-aligned on the *first* line in
+the secondary tone. It is measured before the name is drawn, so the name elides against what
+is left rather than under it.
+
+**Why.** A shortcut is a fact about the row, not part of its name, and every command palette
+in every application puts it in that exact place. The delegate already owned the row's two
+lines; this is the only spot on them that was unspoken for. **Upstream?** Yes, with the row.
+
+### `theme/icons.py` — `_arrow(painter, start, end)`, and seven glyphs on it
+
+**What.** A shared painter for "a line with a chevron at the end", plus `link_icon`,
+`connect_icon`, `redirect_to_icon`, `redirect_from_icon`, `divide_vertical_icon` /
+`divide_horizontal_icon` (one `_divide_icon` rotated), `sort_icon`, `region_icon` and
+`grid_icon`. `trash_icon` and `frame_icon` widened from `str` to `str | QColor` like their
+neighbours, because an `ActionSpec.icon` is handed a `QColor`.
+
+**Why.** Three of the new glyphs are arrows and were about to hand-roll the same trigonometry.
+The widening is the older half of the file catching up with `ActionSpec`'s signature — mypy
+found it the moment those verbs were given icons. **Upstream?** The `_arrow` helper and the
+signature fix; the glyphs are this application's vocabulary.

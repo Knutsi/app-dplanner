@@ -44,6 +44,10 @@ CANVAS_KEYS: Final[dict[Binding, tuple[str, ...]]] = {
     (Qt.Key.Key_Return, _NONE): ("steps.details",),
     (Qt.Key.Key_Enter, _NONE): ("steps.details",),
     (Qt.Key.Key_C, _NONE): ("steps.connect",),
+    # The redirect pair, on ``E`` for the *edges* it moves — ``R`` is Rename's — with
+    # Shift turning the arrow round, the way Shift turns the divide's cut on its side.
+    (Qt.Key.Key_E, _NONE): ("steps.redirect_to",),
+    (Qt.Key.Key_E, _SHIFT): ("steps.redirect_from",),
     # The divide pair: D cuts upright, and Shift turns the line on its side.
     (Qt.Key.Key_D, _NONE): ("canvas.divide_vertical",),
     (Qt.Key.Key_D, _SHIFT): ("canvas.divide_horizontal",),

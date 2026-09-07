@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.core.signals import Signal
-from dplanner.domain.model import StepId
+from dplanner.domain.model import EdgeEnd, Redirection, StepId
 from dplanner.framework.widgets import install_ctrl_wheel_zoom
 from dplanner.modules.project_editor.ground import paint_ground
 from dplanner.modules.project_editor.items import (
@@ -101,9 +101,14 @@ class NodeSpec:
 class GraphScene(QGraphicsScene):
     """Items and what is picked. Everything it decides, it decides by asking the model."""
 
-    def __init__(self, link_refusal: Callable[[StepId, StepId], str | None]) -> None:
+    def __init__(
+        self,
+        link_refusal: Callable[[StepId, StepId], str | None],
+        redirection: Callable[[Sequence[EdgeRef], StepId, EdgeEnd], Redirection],
+    ) -> None:
         super().__init__()
         self._link_refusal = link_refusal
+        self._redirection = redirection
         self._hints = RenderHints()
         self._marks = Marks()
         # Whether gestures land on the grid — the user's setting, pushed by the module.
@@ -152,6 +157,8 @@ class GraphScene(QGraphicsScene):
         self.node_resized: Signal[StepId, float, float, float, float] = Signal()
         # The cards a divide pushed aside, at their new seats — one gesture, one command.
         self.graph_divided: Signal[list[tuple[StepId, float, float]]] = Signal()
+        # The step the picked links are to hang off, and which of their ends moves.
+        self.redirect_requested: Signal[StepId, EdgeEnd] = Signal()
 
         self.selectionChanged.connect(self._on_selection)
 
@@ -305,6 +312,9 @@ class GraphScene(QGraphicsScene):
 
     def link_refusal(self, waiter: StepId, source: StepId) -> str | None:
         return self._link_refusal(waiter, source)
+
+    def redirection(self, edges: Sequence[EdgeRef], anchor: StepId, end: EdgeEnd) -> Redirection:
+        return self._redirection(edges, anchor, end)
 
     def aim_preview(self, origin: QPointF, cursor: QPointF, ok: bool) -> None:
         self._preview.aim(origin, cursor, ok)

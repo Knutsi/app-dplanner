@@ -2,7 +2,7 @@
 
 import pytest
 
-from dplanner.domain.model import EDGE_KINDS, Library, Project, Step, TextEdit
+from dplanner.domain.model import EDGE_KINDS, SOURCE, WAITER, Library, Project, Step, TextEdit
 
 
 @pytest.fixture
@@ -271,6 +271,100 @@ def test_removing_edges_is_one_command_per_list_and_one_undo_step(library):
     assert second.edges["relates"] == [first.id]
     command.undo(library)
     assert third.edges["requires"] == [first.id, second.id]
+
+
+# -- redirecting -------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def four(library):
+    """Read → Draft → Review, plus a spare step nothing is linked to."""
+    library.add_child(find(library, "Discovery").id, Step(title="Ship"))
+    read, draft, review, ship = (
+        find(library, "Read the spec"),
+        find(library, "Draft the model"),
+        find(library, "Review"),
+        find(library, "Ship"),
+    )
+    library.set_edges(draft.id, "requires", [read.id])
+    library.set_edges(review.id, "requires", [draft.id])
+    return read, draft, review, ship
+
+
+def test_edges_of_names_a_bundle_by_the_end_it_hangs_off(four, library):
+    read, draft, review, ship = four
+    assert library.edges_of([draft.id], WAITER) == [(draft.id, "requires", read.id)]
+    assert library.edges_of([draft.id], SOURCE) == [(review.id, "requires", draft.id)]
+    assert library.edges_of([ship.id], WAITER) == []
+
+
+def test_redirecting_the_waiter_end_moves_the_links_onto_the_anchor(four, library):
+    """The user's case: what a step waits on becomes what another step waits on."""
+    from dplanner.domain.commands import redirect_edges_command
+
+    _read, draft, review, ship = four
+    plan = library.redirection([(review.id, "requires", draft.id)], ship.id, WAITER)
+    assert plan.moving == ((review.id, "requires", draft.id),) and not plan.refused
+    redirect_edges_command(library, plan, "Redirect Link").redo(library)
+    assert ship.edges["requires"] == [draft.id]
+    assert "requires" not in review.edges
+
+
+def test_redirecting_the_source_end_rewrites_one_list_once(four, library):
+    """Both halves of the move land on the waiter's own list, so it is replaced once —
+    two commands over it would each be built from the state before either ran."""
+    from dplanner.domain.commands import redirect_edges_command
+
+    read, draft, _review, ship = four
+    plan = library.redirection([(draft.id, "requires", read.id)], ship.id, SOURCE)
+    command = redirect_edges_command(library, plan, "Redirect Link")
+    assert len(command.commands) == 1
+    command.redo(library)
+    assert draft.edges["requires"] == [ship.id]
+    command.undo(library)
+    assert draft.edges["requires"] == [read.id]
+
+
+def test_a_redirect_that_would_make_a_cycle_is_refused_and_the_rest_still_move(four, library):
+    """Every refusal is ``link_refusal``'s, per edge: one bad arrow does not strand the rest."""
+    from dplanner.domain.commands import redirect_edges_command
+
+    read, draft, review, ship = four
+    library.set_edges(review.id, "requires", [draft.id, ship.id])
+    # Read waiting on Draft would be a cycle — Draft already waits on Read — but Read
+    # waiting on Ship, which waits on nothing, is fine.
+    plan = library.redirection(
+        [(review.id, "requires", draft.id), (review.id, "requires", ship.id)], read.id, WAITER
+    )
+    assert plan.moving == ((review.id, "requires", ship.id),)
+    assert [edge for edge, _why in plan.refused] == [(review.id, "requires", draft.id)]
+    assert "cycle" in plan.refused[0][1]
+    redirect_edges_command(library, plan, "Redirect Link").redo(library)
+    assert read.edges["requires"] == [ship.id]
+    assert review.edges["requires"] == [draft.id]
+
+
+def test_an_edge_already_anchored_there_is_neither_moved_nor_refused(four, library):
+    read, draft, _review, _ship = four
+    plan = library.redirection([(draft.id, "requires", read.id)], draft.id, WAITER)
+    assert plan.moving == () and plan.refused == ()
+
+
+def test_redirecting_onto_a_step_that_already_has_the_link_leaves_one_arrow(four, library):
+    from dplanner.domain.commands import redirect_edges_command
+
+    read, draft, _review, ship = four
+    library.set_edges(ship.id, "requires", [read.id])
+    plan = library.redirection([(draft.id, "requires", read.id)], ship.id, WAITER)
+    redirect_edges_command(library, plan, "Redirect Link").redo(library)
+    assert ship.edges["requires"] == [read.id]
+    assert "requires" not in draft.edges
+
+
+def test_redirection_skips_an_arrow_the_model_no_longer_draws(four, library):
+    read, draft, _review, ship = four
+    library.remove_child(read.id)
+    assert library.redirection([(draft.id, "requires", read.id)], ship.id, WAITER).moving == ()
 
 
 # -- prose -------------------------------------------------------------------------------------

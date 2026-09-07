@@ -2,7 +2,7 @@
 
 Builds a throwaway library and repository under a temporary directory — a plan with three
 milestones, features, estimates, statuses, a description with a picture, tests with a run,
-decisions, a ticket — and runs the real ``dplanner report`` verbs over it: the page, the
+notes, a ticket — and runs the real ``dplanner report`` verbs over it: the page, the
 workbook, one CSV, the table list and the site. Nothing touches the user's config or
 library.
 
@@ -32,11 +32,11 @@ from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleD
 from dplanner.domain.model import Library, Step
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.modules import default_cli_commands, default_module_formats
-from dplanner.modules.decisions.log import Decision, write_log
 from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.estimation.schedule import write_start
 from dplanner.modules.feature.aspect import write as feature_marker
 from dplanner.modules.feature.catalogue import FeatureRecord, write_catalogue
+from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.spec.aspect import read_topology
 from dplanner.modules.step_milestone.aspect import write as milestone
 from dplanner.modules.step_status.aspect import write as status
@@ -94,23 +94,25 @@ def build(root: Path) -> tuple[Path, Path]:
         jira = Ticket("Jira", "SRCH-42", "https://example.invalid/SRCH-42")
         SetModuleDataCommand(steps[7].id, "step_ticket", ticket(jira)).redo(library)
         _tests(library, project.id, steps)
-        decisions = [
-            Decision(
-                "D1",
-                "One index per tenant",
-                "Cross-tenant queries are rare; isolation wins.",
-                "2026-08-12",
-                steps[3].id,
+        notes = [
+            Note(
+                id="N1",
+                label="decision",
+                title="One index per tenant",
+                body="Cross-tenant queries are rare; isolation wins.",
+                made="2026-08-12",
+                step=steps[3].id,
             ),
-            Decision(
-                "D2",
-                "Keep BM25 as the fallback ranker",
-                "The learned ranker degrades on cold tenants.\n\n- Revisit after launch",
-                "2026-09-01",
-                steps[6].id,
+            Note(
+                id="N2",
+                label="decision",
+                title="Keep BM25 as the fallback ranker",
+                body="The learned ranker degrades on cold tenants.\n\n- Revisit after launch",
+                made="2026-09-01",
+                step=steps[6].id,
             ),
         ]
-        SetModuleDataCommand(project.id, "decisions", write_log(decisions)).redo(library)
+        SetModuleDataCommand(project.id, "notes", write_log(notes)).redo(library)
     return library_file, project_dir
 
 

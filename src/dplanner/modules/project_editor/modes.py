@@ -32,7 +32,7 @@ what each one claims is what the next one therefore never sees. Split it when a 
 outgrows a screen, not when the file does.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -41,13 +41,13 @@ from PySide6.QtGui import QPainterPath
 from PySide6.QtWidgets import QGraphicsView
 
 from dplanner.core.signals import Signal
-from dplanner.domain.model import StepId
+from dplanner.domain.model import SOURCE, WAITER, EdgeEnd, Redirection, StepId
 from dplanner.modules.project_editor.items import HANDLE_GRAB, StepNodeItem
 from dplanner.modules.project_editor.positions import MIN_NODE_H, MIN_NODE_W, centred_on
 from dplanner.modules.project_editor.region_items import REGION_RADIUS, RegionItem
 from dplanner.modules.project_editor.regions import MIN_REGION
 from dplanner.modules.project_editor.renderers import RenderHints
-from dplanner.modules.project_editor.selection import CanvasSelection
+from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef
 
 # How the current mode reaches the context, so an action's ``state`` can read it as a pure
 # function — which is what makes the Connect toolbar button check itself for free.
@@ -64,6 +64,13 @@ NODE_RESIZE = "node-resize"
 LASSO = "lasso"
 DIVIDE_VERTICAL = "divide-vertical"
 DIVIDE_HORIZONTAL = "divide-horizontal"
+REDIRECT_TO = "redirect-to"
+REDIRECT_FROM = "redirect-from"
+
+# The redirect modes by the end of the arrow they move. An arrow runs from the step waited
+# on to the step that waits, so moving the waiter end aims the picked links *at* a step and
+# moving the source end makes them come *from* one.
+REDIRECT_NAMES: dict[EdgeEnd, str] = {WAITER: REDIRECT_TO, SOURCE: REDIRECT_FROM}
 
 # The divide modes by the line they cut with: a vertical line parts left from right and
 # pushes along x; a horizontal one parts top from bottom and pushes along y.
@@ -91,6 +98,8 @@ HINTS_BY_MODE = {
     LASSO: RenderHints(handles="hidden"),
     DIVIDE_VERTICAL: RenderHints(handles="hidden"),
     DIVIDE_HORIZONTAL: RenderHints(handles="hidden"),
+    REDIRECT_TO: RenderHints(handles="hidden"),
+    REDIRECT_FROM: RenderHints(handles="hidden"),
 }
 
 # With Space held, an arrow or a vim key moves the view by this share of the viewport in
@@ -167,6 +176,8 @@ class Canvas(Protocol):
     node_resized: Signal[StepId, float, float, float, float]
     # The cards a divide pushed, at their new seats — one gesture, one emission.
     graph_divided: Signal[list[tuple[StepId, float, float]]]
+    # The step the picked links are to hang off, and which end of them moves.
+    redirect_requested: Signal[StepId, EdgeEnd]
 
     def node_at(self, scene_pos: QPointF) -> StepNodeItem | None: ...
 
@@ -186,6 +197,13 @@ class Canvas(Protocol):
     def nodes_touching(self, path: QPainterPath) -> list[StepNodeItem]: ...
 
     def link_refusal(self, waiter: StepId, source: StepId) -> str | None: ...
+
+    # What moving one end of these edges onto a step would do. The model's answer, so the
+    # ring under the cursor and the command that follows cannot disagree — the same reason
+    # ``link_refusal`` is here rather than a rule of the mode's own.
+    def redirection(
+        self, edges: Sequence[EdgeRef], anchor: StepId, end: EdgeEnd
+    ) -> Redirection: ...
 
     def aim_preview(self, origin: QPointF, cursor: QPointF, ok: bool) -> None: ...
 
@@ -475,6 +493,78 @@ class ConnectMode(_LinkingMode):
         self._propose(self._source, target)
         if self.stack is not None:
             self.stack.pop()
+
+
+class RedirectMode(ModeBase):
+    """Pick the step the selected links should hang off, and move that end of every one.
+
+    The other half of linking. Connect makes one arrow between two steps; this takes a
+    bundle of arrows already drawn and moves one of their ends somewhere else — which is
+    what "these six things now wait on the new step instead" looks like as a gesture,
+    rather than as six unlinks and six links.
+
+    Which end travels is the mode's, not something inferred from what was picked: an
+    arrow has two ends and a bundle spanning several steps agrees on neither, so guessing
+    would be a rule nobody could predict. :data:`REDIRECT_NAMES` names the two.
+
+    The links are taken at entry — every press is consumed, so nothing can change the
+    selection underneath — and the step under the cursor wears the same valid/invalid ring
+    a link drag paints, because the answer is per step: an arrow that would close a cycle
+    cannot go there while the rest of the bundle still can. Like a divide, the mode reports
+    and the activity commands, and one redirect ends the mode.
+    """
+
+    def __init__(self, deps: CanvasDeps, end: EdgeEnd) -> None:
+        super().__init__(deps)
+        self._end = end
+        self.name = REDIRECT_NAMES[end]
+        self._edges: tuple[EdgeRef, ...] = ()
+
+    def enter(self) -> None:
+        self._edges = self.deps.canvas.selection().edges
+        self.deps.view.viewport().setCursor(Qt.CursorShape.CrossCursor)
+        self.deps.status(
+            f"Redirect: click the step {self._count()} should"
+            f" {'point to' if self._end == WAITER else 'come from'}. Esc leaves."
+        )
+
+    def exit(self) -> None:
+        self.deps.view.viewport().unsetCursor()
+        self.deps.canvas.set_link_states(None, None)
+
+    def mouse_press(self, event: CanvasEvent) -> bool:
+        node = self.deps.canvas.node_at(event.scene_pos)
+        if node is not None:
+            plan = self._plan(node.step_id)
+            if plan.moving:
+                self.deps.canvas.redirect_requested.emit(node.step_id, self._end)
+                if self.stack is not None:
+                    self.stack.pop()
+            elif plan.refused:
+                self.deps.status(f"Cannot redirect there — {plan.refused[0][1]}")
+        return True  # Consumed either way: no node dragging and no rubber band in here.
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        node = self.deps.canvas.node_at(event.scene_pos)
+        if node is None:
+            self.deps.canvas.set_link_states(None, None)
+        elif self._plan(node.step_id).moving:
+            self.deps.canvas.set_link_states(node.step_id, None)
+        else:
+            self.deps.canvas.set_link_states(None, node.step_id)
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        return True
+
+    def double_click(self, event: CanvasEvent) -> bool:
+        return True  # A second click is still a target, never a new step.
+
+    def _plan(self, anchor: StepId) -> Redirection:
+        return self.deps.canvas.redirection(self._edges, anchor, self._end)
+
+    def _count(self) -> str:
+        return "this link" if len(self._edges) == 1 else f"these {len(self._edges)} links"
 
 
 class PanMode(ModeBase):
