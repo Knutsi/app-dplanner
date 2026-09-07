@@ -477,10 +477,18 @@ root, stop and look for the registry or capability you have not found yet.
   the status line says what did not. The verb is enabled exactly while links are picked,
   greyed with the reason otherwise. `ARCHITECTURE.md`'s *Redirecting a link moves one end*
   has the reasoning.
-- **Marks are a way of looking, remembered per user.** Starts, Ends and Orphans
-  (`project_editor/marks.py`, Qt-free) are the `marks` of the module's one `Look`
-  (`look.py`, with the background and Snap to Grid beside them), written to `user_config`
-  and fanned to every scene like `RenderHints`; a tab opened later wears them.
+- **Marks are a way of looking, remembered per user — and all three are on.** Starts, Ends
+  and Orphans (`project_editor/marks.py`, Qt-free) are the `marks` of the module's one
+  `Look` (`look.py`, with the background and Snap to Grid beside them), written to
+  `user_config` and fanned to every scene like `RenderHints`; a tab opened later wears
+  them. **On by default**: a socket with nothing on it and a node with nothing at all are
+  the two things a graph can be wrong about, and a preference that has to be found before
+  it can help is one that helps nobody — so switching one *off* is the deliberate act, and
+  `Marks.from_json` gives an absent name the default rather than False, which is what lets
+  a default change reach somebody who never touched that switch. The orphan's ring is the
+  refusal red at **full strength and `ORPHAN_RING_W`**, twice the agent ring's weight: it
+  is the one mark that says *something is wrong here* rather than *this is where the graph
+  ends*. It is measured into `PAINT_MARGIN` like every other decoration.
   Which sockets a node has connected is `marks.ports()` over the drawn edges, derived every
   sync. The toggles' `checked` reads the module and the module calls `context.refresh()` —
   the theme-toggle pattern, deliberately not an edge on the activity node, because a

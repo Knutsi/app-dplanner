@@ -72,11 +72,17 @@ HANDLE_EMPHASIS = 1.5
 # A marked socket: a disc a touch larger than the handle, in a hue the canvas already uses
 # for something of the same feeling — the valid green for where the graph starts, the
 # attention amber for where it ends — with a hairline of window colour so it reads on any
-# body. An orphan wears a solid ring in the refusal red, outside the body like the agent
-# ring, since a node nothing touches is nearly always a mistake.
+# body. An orphan wears a solid ring outside the body like the agent ring, since a node
+# nothing touches is nearly always a mistake.
 MARK_R = HANDLE_R + 1.0
 START_MARK = QColor(120, 200, 140)
 END_MARK = QColor(220, 170, 90)
+# The orphan's ring is the refusal red at full strength and twice the agent ring's weight:
+# it is the one mark that says *something is wrong here* rather than *this is where the
+# graph ends*, and at the tint's alpha over a toned body it read as a shadow of the border
+# rather than as a warning. It is on by default now, so it has to earn the glance it gets.
+ORPHAN_RING = QColor(224, 82, 82)
+ORPHAN_RING_W = 3.0
 
 # Low-alpha semantic tints that read on every theme (DESIGN.md exception #2).
 VALID_TINT = QColor(120, 200, 140, 180)
@@ -149,7 +155,7 @@ PAINT_MARGIN = max(
     BADGE_H / 2 + 1.0 + LIFT,
     ICON_D / 2 + 1.0 + LIFT,
     CHIP_H / 2 + 1.0,
-    RING_GAP + RING_W + 1.0 + LIFT,
+    RING_GAP + max(RING_W, ORPHAN_RING_W) + 1.0 + LIFT,
     LIFTED_SHADOW.drop + LIFTED_SHADOW.spread + 1.0,
 )
 
@@ -319,7 +325,7 @@ def paint_marks(painter: QPainter, palette: QPalette, body: QRectF, state: NodeS
     incoming, outgoing = state.ports
     marks = state.marks
     if marks.orphans and not (incoming or outgoing):
-        painter.setPen(QPen(INVALID_TINT, RING_W))
+        painter.setPen(QPen(ORPHAN_RING, ORPHAN_RING_W))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         ring = body.adjusted(-RING_GAP, -RING_GAP, RING_GAP, RING_GAP)
         painter.drawRoundedRect(ring, RADIUS + RING_GAP, RADIUS + RING_GAP)

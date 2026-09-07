@@ -214,7 +214,10 @@ def test_the_ring_is_painted_outside_the_body_and_moves_with_the_phase(app):
         painter = QPainter(image)
         painter.translate(margin, margin)
         body = QRectF(0, 0, NODE_W, NODE_H)
-        paint_node(painter, QPalette(), body, "T", accent, NodeState(ring_phase=phase))
+        # Linked at both sockets: the orphan mark is on by default and rings the same few
+        # pixels, and this is about the ring an agent run wears.
+        state = NodeState(ring_phase=phase, ports=(True, True))
+        paint_node(painter, QPalette(), body, "T", accent, state)
         painter.end()
         row = int(-RING_GAP) + margin
         columns = range(margin + 20, margin + int(NODE_W) - 20)

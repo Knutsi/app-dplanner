@@ -1195,6 +1195,27 @@ agreeing; the toggle's state reads the module's value and the module calls
 `context.refresh()` when it changes — the pattern the theme and panel toggles already use for
 state that lives outside the context graph.
 
+**All three are on, and switching one off is what gets remembered.** They shipped off, on
+the reasonable-sounding ground that a mark is a preference and a preference starts quiet.
+The trouble is what they mark: a socket with nothing on it and a node with nothing at all
+are the two things a graph can be *wrong* about, and both are invisible in a drawing of it —
+a card with no arrow reads exactly like a card whose arrow is off screen. A preference that
+has to be found before it can help is one that helps nobody, so the graph arrives saying
+what it knows and the deliberate act is telling it to stop.
+
+That makes the stored value's absence rule matter: `Marks.from_json` gives a name the
+stored value does not mention the *class* default rather than False, which is `FORMAT.md`'s
+absence rule and the only reason this change reaches anybody who already has a look on
+disk. A stored `false` still wins — somebody who switched a mark off keeps it off.
+
+The orphan's ring is the one mark drawn at full strength (`ORPHAN_RING`, and
+`ORPHAN_RING_W`, twice the agent ring's weight): the socket discs say *this is where the
+graph ends*, which is often correct, while a ring says *nothing touches this at all*, which
+almost never is. At the tint's alpha it read as a shadow of the border rather than as a
+warning. Being heavier than the ring it shares a gap with, it is the term `PAINT_MARGIN`
+takes — a decoration that reaches further than the bounding rect is clipped, and nothing
+says so.
+
 ### The palette a painter is handed is a snapshot
 
 `QStyleOptionGraphicsItem.palette` is filled once, when the scene is constructed, and Qt never

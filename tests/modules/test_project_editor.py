@@ -973,8 +973,13 @@ def test_selecting_a_node_deepens_the_fill_it_already_had(themed, services, proj
 def test_every_card_rests_on_a_shadow_and_a_selected_one_casts_a_deeper_one(services, project, tab):
     """A card on the table darkens the ground just under it; the lift reads because the
     picked card's seat darkens more. Rendered over white, where a low-alpha black actually
-    says something."""
-    step = project.steps[0]
+    says something.
+
+    Over a *linked* step: the orphan ring is on by default and falls in the same few pixels
+    under the body, which is the shadow's own ground.
+    """
+    step, other = project.steps[:2]
+    services.undo.push(SetEdgesCommand(other.id, "requires", [step.id]))
     resting = painted_under(tab, step.id, "white").lightness()
     assert resting < QColor("white").lightness()
     scene(tab).select_step(step.id)
@@ -1983,34 +1988,42 @@ def close_to(colour: QColor, wanted: QColor) -> bool:
     )
 
 
-def test_marks_are_off_until_asked_and_then_colour_the_bare_sockets(services, project, tab):
+def test_the_bare_sockets_are_coloured_from_the_start_and_switch_off(services, project, tab):
+    """On by default: a socket with nothing on it is one of the two things a graph can be
+    wrong about, and a preference that has to be found first helps nobody."""
     from dplanner.modules.project_editor.renderers import END_MARK, START_MARK
 
-    first, second, _third = chain(services, project)
-    assert not close_to(painted_at(tab, first.id, 0.0, NODE_H / 2), START_MARK)
-
-    services.actions.run("canvas.mark_starts", services.context.current())
-    services.actions.run("canvas.mark_ends", services.context.current())
+    first, second, third = chain(services, project)
     assert close_to(painted_at(tab, first.id, 0.0, NODE_H / 2), START_MARK)
     # Something follows the first step, so its right socket is not an end.
     assert not close_to(painted_at(tab, first.id, NODE_W, NODE_H / 2), END_MARK)
     assert not close_to(painted_at(tab, second.id, 0.0, NODE_H / 2), START_MARK)
-    assert close_to(painted_at(tab, _third.id, NODE_W, NODE_H / 2), END_MARK)
+    assert close_to(painted_at(tab, third.id, NODE_W, NODE_H / 2), END_MARK)
+
+    services.actions.run("canvas.mark_starts", services.context.current())
+    assert not close_to(painted_at(tab, first.id, 0.0, NODE_H / 2), START_MARK)
+    assert close_to(painted_at(tab, third.id, NODE_W, NODE_H / 2), END_MARK)  # Its own switch.
 
 
-def test_an_orphan_wears_a_red_ring_only_while_the_mark_is_on(services, project, tab):
+def test_an_orphan_wears_a_red_ring_until_something_links_it(services, project, tab):
+    """The one mark that says *something is wrong here* rather than *this is an edge of the
+    graph*, so it is on from the start and painted at full strength."""
     from dplanner.modules.project_editor.renderers import RING_GAP
 
     lonely = Step(title="Alone")
     services.undo.push(AddNodeCommand(project.id, lonely))
-    ring = lambda: painted_at(tab, lonely.id, -RING_GAP, NODE_H / 2)  # noqa: E731
-    assert ring().red() <= ring().green() + 20
-
-    services.actions.run("canvas.mark_orphans", services.context.current())
+    # Sampled over the top edge, not the sides: the socket discs are on by default too, and
+    # a start disc at the left edge reaches past the ring's gap.
+    ring = lambda: painted_at(tab, lonely.id, NODE_W / 2, -RING_GAP)  # noqa: E731
     assert ring().red() > ring().green() + 40
 
     first = project.steps[0]
     services.undo.push(SetEdgesCommand(lonely.id, "relates", [first.id]))  # Any link will do.
+    assert ring().red() <= ring().green() + 20
+
+    services.undo.undo()
+    assert ring().red() > ring().green() + 40
+    services.actions.run("canvas.mark_orphans", services.context.current())  # Switched off.
     assert ring().red() <= ring().green() + 20
 
 
@@ -2018,25 +2031,32 @@ def test_a_mark_is_remembered_and_every_canvas_wears_it(services, project, tab, 
     from dplanner.modules.project_editor.marks import Marks
 
     button = toolbar_button(tab, "canvas.mark_ends")
-    assert not button.isChecked()
+    assert button.isChecked()  # On by default; switching one off is the deliberate act.
     services.actions.run("canvas.mark_ends", services.context.current())
-    assert button.isChecked()
-    assert look_of(services).marks == Marks(ends=True)
+    assert not button.isChecked()
+    assert look_of(services).marks == Marks(ends=False)
 
     other = services.tabs.open("project", make_project("Later").id)
-    assert other._scene._marks == Marks(ends=True)
-    assert scene(tab)._marks == Marks(ends=True)
+    assert other._scene._marks == Marks(ends=False)
+    assert scene(tab)._marks == Marks(ends=False)
 
     services.actions.run("canvas.mark_ends", services.context.current())
-    assert not button.isChecked()
+    assert button.isChecked()
     assert other._scene._marks == Marks()
 
 
 def test_a_mark_reaches_out_no_further_than_the_item_paints():
-    from dplanner.modules.project_editor.renderers import MARK_R, RING_GAP, RING_W
+    from dplanner.modules.project_editor.renderers import (
+        MARK_R,
+        ORPHAN_RING_W,
+        RING_GAP,
+        RING_W,
+    )
 
     assert MARK_R + 1.0 <= PAINT_MARGIN
     assert RING_GAP + RING_W + 1.0 <= PAINT_MARGIN
+    # The orphan's ring is the heavier of the two that share the gap.
+    assert RING_GAP + ORPHAN_RING_W + 1.0 <= PAINT_MARGIN
 
 
 # -- the node's top edge, which two decorations share -------------------------------------------
