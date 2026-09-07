@@ -2690,14 +2690,19 @@ decisions carry it:
   there is one **baseline** — the plan as recorded on the **basis** day, the project's
   start unless a day is picked beside the plots (`progress show --basis`) — chosen as
   the last row on or before the basis, or the earliest row for a project older than its
-  history. The baseline is painted *last*, in a paler shade mixed opaque: a plan
-  unchanged since the basis has a baseline that coincides with it, and a translucent
-  dash of the same hue under the solid line was invisible — the first cut showed one
-  line under a caption saying *unchanged*, and the reader took the other for a line
-  that had failed to draw. Dashes riding on the solid line say *two lines in the same
-  place*, which is the fact. A span the plan leaves empty (a milestone's own start date
-  holding its work back past the previous landing) is dotted and pulled toward the
-  surface, with a knot in the expected line at the day work resumes so the gap is flat
+  history. That fallback stops at **today's own record**: a project whose history begins
+  today has no earlier plan, and standing today's record in for one drew the plan now
+  over itself and called the pair a comparison — two lines in one place under a heading
+  saying *scope change*, which is a claim nobody recorded. `baseline()` takes `today` and
+  all three surfaces pass it, so the window, the report and `progress show` agree on when
+  there is nothing to compare with. The baseline is painted *last*, in a paler shade
+  mixed opaque: a plan unchanged since the basis has a baseline that coincides with it,
+  and a translucent dash of the same hue under the solid line was invisible — the first
+  cut showed one line under a caption saying *unchanged*, and the reader took the other
+  for a line that had failed to draw. Dashes riding on the solid line say *two lines in
+  the same place*, which is the fact. A span the plan leaves empty (a milestone's own
+  start date holding its work back past the previous landing) is dotted and pulled toward
+  the surface, with a knot in the expected line at the day work resumes so the gap is flat
   rather than a slope through days nothing is planned for; `progress.idle` derives it
   from the snapshot's stretches, so `progress show` prints the same gaps. The change
   list behind the delta needed a fact nobody kept: **an estimate now remembers what it
@@ -2759,6 +2764,70 @@ decisions carry it:
   unestimated · counted as 0d*, with *Estimate missing* opening the Estimates tab on
   exactly those rows through a callback on the module's Deps, so the Time tab never
   names the estimation module.
+- **The milestones are one list, not a table of names above a list of the same names.**
+  *Start dates* and *Milestones* listed the same stretches one under the other: a reader
+  had to match a name in the first against a name in the second, and the panel spent
+  twice its height saying it. One row now carries the cause and the effect — *begins
+  21 Jun · lands 3 Aug* — with the step's own title beside the label, so the list says
+  which step each milestone is without a second column of names. The row that leads the
+  list is the whole plan, and what *it* begins on is the project's own start (a row
+  declares that with `MilestoneEntry.sets_project` rather than the list inferring it from
+  the position). Under an undated row the caption says the day the sequence gives it, so
+  every row says when its work runs and not only when it ends. **The list scrolls under
+  the staffing grid**, which stays: the grid is the question the whole page answers, and
+  a plan with thirty milestones would scroll it away exactly when the answers are being
+  compared. That is why the left half is no longer a scroll area of its own — it is a
+  pinned head and a scrolling list, and only the answer side scrolls whole.
+- **The measure is estimated days, and the count is what you ask for.** By steps was the
+  default because it needs no estimates; it also calls a two-hour step and a two-week one
+  the same thing, which is the one comparison a plan priced in days must not make. Days
+  leads the toggle and is what the window opens on, and the report and its exports are
+  drawn the same way, so a page mailed to somebody says what the window said.
+- **The plots name the day the reader asked for, not the record that stood in for it.**
+  The scope plot used to be headed *Scope change since 7 September* while the control a
+  finger's width above it said *Plan at 1 Jun 2026* — the heading was naming the day the
+  baseline happened to be recorded on, and the two dates read as a contradiction rather
+  than as a fact and its bookkeeping. The heading is now *Scope change — versus plan at
+  1 June*: the basis, which is the question the plot answers and the day the control
+  holds, and *Scope change — no plan recorded at 1 June* when nothing was recorded that
+  early. Which daily record stood in for the basis is real but secondary, and it is
+  reported where a reader can act on it — `dplanner progress show`'s `baseline_day` and
+  the report's *Since the plan of…* figure. `progress.scope_words` words it for the
+  window and the report at once, beside `standing_words` and `shift_words`, for the same
+  reason those live there.
+- **A plot is given the room the window has, up to a ceiling.** The two share plots were
+  a fixed 112 px whatever the screen, so a tall window ran out of page and a laptop
+  ran out of plot. They now take whatever height the host gives the chart over its
+  minimum, in equal parts, and stop at twice their floor: past that a line stretches
+  into a wall and says no more than it did. The milestone rows never grow — a row is a
+  row. The bound is set from the *data* (`_bound_height`), never from a resize, because
+  a widget that resizes itself inside its own resize event is what put a scroll area
+  into the loop `months.py` documents. And a plot's name is set **bold** with air above
+  it, so the three read as three headings rather than as captions under the plot above.
+- **Expanding the plots is the same widget with more room.** *⤢* beside the basis opens
+  `ChartDialog` — a second `ProgressChart` fed the same `ChartData` the tab feeds the
+  inline one, so a plan that changes while the window is open redraws in both and there
+  is no second rendering to drift. It holds no state, so closing it loses nothing: the
+  text dialog's rule (*expanding an editor is a second binding, not a copy*) applied to
+  a view that has nothing to bind.
+- **A milestone row dates both its marks and drops a line to the axis.** The axis marks
+  weeks or months, and the shift a row draws is often days: the size a reader wants is in
+  figures, so each mark carries its own date — the landing now on the far side of the
+  pair, the plan then's on its own, outside them where there is room and inside where
+  there is not, and left out rather than squeezed (`row_dates`, the landing names' rule
+  applied to a row). A hairline falls from the landing to the axis, so the day it lands
+  can be read off the scale under the plot rather than estimated by eye. Both surfaces
+  draw them: `drawings.py`'s shift plot does the same, with the report's own
+  character-width estimate standing in for font metrics.
+- **Every milestone landing is marked and named on the progress line.** The plan line
+  already changes shade at each landing; what it could not say was *which* milestone
+  that was, and a reader had to count rows in the plot below to find out. Each landing
+  now carries a mark in its stretch's shade with the milestone's name in secondary ink
+  a gap to its left, above the line where a rising curve leaves the room. A name is
+  elided past 90 px and **dropped** when the name before it reaches that far: two names
+  squeezed together say less than one, and the milestone plot below names every one of
+  them anyway. Only the first plot carries them — the milestone plot's rows are its
+  subject, and a name beside every mark there would be the row header said twice.
 
 ## A test belongs to a step, and a step carries several
 

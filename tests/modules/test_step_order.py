@@ -264,12 +264,14 @@ def test_the_bar_opens_on_today_and_writes_nothing(services, project, tab):
 
 
 def test_the_start_date_is_written_to_the_project_and_undoable(services, project, tab):
-    """The bar belongs to another module; the order view only lends it a place to stand."""
-    # Tomorrow, never a literal: the bar opens on today, so setting today changes nothing
-    # and the test passed every day but one.
-    tomorrow = date.today() + timedelta(days=1)
-    tab.start_bar.date.setDate(QDate(tomorrow.year, tomorrow.month, tomorrow.day))
-    assert project.module_data["estimation"]["start"] == tomorrow.isoformat()
+    """The bar belongs to another module; the order view only lends it a place to stand.
+
+    The day picked is a week out rather than a fixed one: the bar opens on today and
+    writes nothing for the date it already holds, so a fixed day makes the test pass or
+    fail depending on the day it is run — it failed on 7 September 2026."""
+    picked = date.today() + timedelta(days=7)
+    tab.start_bar.date.setDate(QDate(picked.year, picked.month, picked.day))
+    assert project.module_data["estimation"]["start"] == picked.isoformat()
 
     services.undo.undo()
     assert "estimation" not in project.module_data

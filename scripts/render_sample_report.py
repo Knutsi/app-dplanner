@@ -36,6 +36,7 @@ from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.estimation.schedule import write_start
 from dplanner.modules.feature.aspect import write as feature_marker
 from dplanner.modules.feature.catalogue import FeatureRecord, write_catalogue
+from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
 from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.spec.aspect import read_topology
 from dplanner.modules.step_milestone.aspect import write as milestone
@@ -96,23 +97,23 @@ def build(root: Path) -> tuple[Path, Path]:
         _tests(library, project.id, steps)
         notes = [
             Note(
-                id="N1",
-                label="decision",
-                title="One index per tenant",
-                body="Cross-tenant queries are rare; isolation wins.",
-                made="2026-08-12",
-                step=steps[3].id,
+                "N1",
+                "decision",
+                "One index per tenant",
+                "Cross-tenant queries are rare; isolation wins.",
+                "2026-08-12",
+                steps[3].id,
             ),
             Note(
-                id="N2",
-                label="decision",
-                title="Keep BM25 as the fallback ranker",
-                body="The learned ranker degrades on cold tenants.\n\n- Revisit after launch",
-                made="2026-09-01",
-                step=steps[6].id,
+                "N2",
+                "decision",
+                "Keep BM25 as the fallback ranker",
+                "The learned ranker degrades on cold tenants.\n\n- Revisit after launch",
+                "2026-09-01",
+                steps[6].id,
             ),
         ]
-        SetModuleDataCommand(project.id, "notes", write_log(notes)).redo(library)
+        SetModuleDataCommand(project.id, NOTES_ID, write_log(notes)).redo(library)
     return library_file, project_dir
 
 
