@@ -479,6 +479,46 @@ will wear, and it is what lets the aspect bar paint the same glyphs (through the
 they are the registry's and not a copy) instead of the panel hand-building a list of
 aspects it is not allowed to know.
 
+### View is the window; Graph is the canvas
+
+The graph editor's own verbs — Sort, Layout, Divide, Region, Frame, the marks, Snap to Grid
+and the Background — used to be a `canvas` group inside **View**, and one inside **Project**
+for regions. That made View half a window menu (panels, tabs, theme, zoom) and half a
+drawing-surface menu, and it left the surface this application is mostly *about* with no
+heading of its own: the fastest way to a divide was the command palette, which then said
+only *Vertical*.
+
+They are a top-level **Graph** menu now, in three groups: `arrange` (the Sort, Layout and
+Divide child menus — moving cards, from the wholesale to one cut at a time), `regions`, and
+`look` (what is drawn without moving anything). View went back to being about the window.
+
+**What did *not* move is the point of the split.** Connect, Link, Unlink, Isolate and the
+Redirect pair stayed on **Step**, because a link is a fact about the steps it joins, and
+because the canvas's right-click renders the Step menu (*A right-click renders a menu, never
+a copy of one*) — moving them would have taken the graph's most-used verbs off the graph's
+own context menu to file them more tidily. Lasso stayed in Step's `navigate` group for the
+same reason: it selects steps. The test is not "which surface does this run on" — every one
+of these runs on the canvas — but "what is it about": a step, or the drawing of them.
+
+### The command palette says where a verb lives
+
+A palette row used to be the spec's label and its shortcut. That works for *Frame Graph* and
+fails completely for *Vertical* and *Horizontal*, which are written to be read under the word
+*Divide* and say nothing without it. The label cannot absorb the missing half — the menu
+would then read *Divide ▸ Divide Vertically* — so the row carries the **menu path** instead,
+on a second line under the name, with the shortcut right-aligned beside the name and the
+verb's glyph at the left (`framework/list_rows.py`'s two-line row, the same one every rich
+list here uses).
+
+The path is the menu and the submenu, never the group: a group is a module's word for a band
+of entries and is not a heading anybody ever sees, so printing it would name something that
+does not exist on screen.
+
+Once the path is on the row it is worth searching, and the ranking is the whole design: a
+match on the *label* always outranks one that needed the path, as a `(where, -score)` sort
+key. So "vertical" still puts *Vertical* first, and "divide vertical" — how somebody who
+remembers the submenu and not the entry looks for it — finds it at all.
+
 ### Edit verbs belong to the surface whose things they act on
 
 The Edit menu holds Undo and Redo from the app shell, and then Cut, Copy, Paste, Duplicate,
@@ -1001,7 +1041,7 @@ link ends connect; Shift on the release folds the catch into what was already se
 Nothing in it is new machinery: the outline it draws is the same `OutlinePreviewItem` the
 region mode drags out, reached through one `aim_outline` on the `Canvas` protocol.
 
-The divide is the stack used twice over. `DivideMode` is switchable like the lasso — View ▸
+The divide is the stack used twice over. `DivideMode` is switchable like the lasso — Graph ▸
 Divide ▸ Vertical or Horizontal, `D` or `Shift+D` on the canvas — and does nothing but lay a
 cut under the cursor from edge to edge; the press hands over to `DivideDragMode`, a
 `GestureMode` in the card resize's mould, which *takes the divide mode's place* on the stack
@@ -1015,6 +1055,54 @@ one `Divide Graph` command, so a whole side comes back with one Ctrl+Z. Nothing 
 about the cut itself — a divide is a move of many cards, and what makes it a tool rather than
 a drag of a selection is that it names the side by geometry, not by what was picked — and the
 band it draws while it lasts, the room being made, is the outline item the lasso already had.
+
+### Redirecting a link moves one end, and which end is the tool's, not a guess
+
+Connect makes one arrow between two steps. The other half of linking is taking a *bundle* of
+arrows already drawn and moving one of their ends somewhere else — "these six things wait on
+the new step now" — which without a tool is six unlinks and six links, six chances to lose one.
+
+`RedirectMode` is that tool, and it is the divide's shape exactly: it is switchable, it takes
+what it needs at entry (the picked arrows — every press is consumed, so the selection cannot
+move underneath), the step under the cursor wears the same valid/invalid ring a link drag
+paints, and one redirect ends the mode. The mode reports where; the activity makes the command.
+
+**Which end travels is a property of the verb, and there are two verbs.** It is tempting to
+infer it — move whichever end the picked arrows have in common — and the case the tool exists
+for is exactly the one where that fails: two steps' incoming dependencies agree on *neither*
+end. A rule with a special case is a rule nobody can predict, so the two ends are two entries
+in one *Redirect* child menu: **To Step** moves the arrowhead (`WAITER`; the links come to
+point at the step you click) and **From Step** moves the tail (`SOURCE`). The arrow on the
+canvas already runs from the step waited on to the step that waits, so *to* and *from* are the
+picture, not jargon.
+
+**Both are gated on the same fact: are any arrows picked?** A greyed entry rather than a
+hidden one, because the precondition *is* the thing to learn — that arrows are things you can
+select at all.
+
+The model does the rest. `Library.redirection(edges, anchor, end)` answers one question about
+each arrow — may this end sit there? — through `link_refusal` and nothing else, and returns
+what will move beside what was refused and why. That one answer is read four times: the ring
+under the cursor, the click, the status line, and `dplanner step redirect`. Asking it against
+the graph as it *stands* rather than as it will be is sound and not merely convenient: every
+edge a redirect creates touches the anchor at the moving end, so none of them can open a new
+path *into* the anchor and the removals can only break paths — the check can decline a
+redirect that would in fact have been legal (when the moved edges were themselves the cycle),
+never allow one that is not.
+
+**A redirect can therefore half-happen, and says so.** Four arrows move and one would close a
+cycle: the four move and the status line names the refusal. Refusing the whole gesture for one
+bad arrow would make the tool useless on exactly the tangled graphs it is for.
+
+`redirect_edges_command` writes one `SetEdgesCommand` per affected `(waiter, kind)` list
+carrying that list's *final* content — never one command to remove and another to add, which
+would each be built from the state before either ran (the trap `remove_edges_command`
+documents). For a source-end move both halves land on the same list, which is why the content
+is computed per list rather than per edge.
+
+The terminal cannot pick arrows, so `dplanner step redirect` names them by the steps they hang
+off: `--to` takes every link pointing at the named steps, `--from` every link leaving them
+(`Library.edges_of`). Different way of saying *which*; same `Redirection`, same command.
 
 ### An explicit sort persists; the ambient layout never does
 
@@ -1106,6 +1194,27 @@ mark outlives any tab, so publishing it per activity would be a copy that has to
 agreeing; the toggle's state reads the module's value and the module calls
 `context.refresh()` when it changes — the pattern the theme and panel toggles already use for
 state that lives outside the context graph.
+
+**All three are on, and switching one off is what gets remembered.** They shipped off, on
+the reasonable-sounding ground that a mark is a preference and a preference starts quiet.
+The trouble is what they mark: a socket with nothing on it and a node with nothing at all
+are the two things a graph can be *wrong* about, and both are invisible in a drawing of it —
+a card with no arrow reads exactly like a card whose arrow is off screen. A preference that
+has to be found before it can help is one that helps nobody, so the graph arrives saying
+what it knows and the deliberate act is telling it to stop.
+
+That makes the stored value's absence rule matter: `Marks.from_json` gives a name the
+stored value does not mention the *class* default rather than False, which is `FORMAT.md`'s
+absence rule and the only reason this change reaches anybody who already has a look on
+disk. A stored `false` still wins — somebody who switched a mark off keeps it off.
+
+The orphan's ring is the one mark drawn at full strength (`ORPHAN_RING`, and
+`ORPHAN_RING_W`, twice the agent ring's weight): the socket discs say *this is where the
+graph ends*, which is often correct, while a ring says *nothing touches this at all*, which
+almost never is. At the tint's alpha it read as a shadow of the border rather than as a
+warning. Being heavier than the ring it shares a gap with, it is the term `PAINT_MARGIN`
+takes — a decoration that reaches further than the bounding rect is clipped, and nothing
+says so.
 
 ### The palette a painter is handed is a snapshot
 
@@ -1237,7 +1346,7 @@ one that says where.
 
 ### The ground is a preference; snapping belongs to the gesture
 
-*View ▸ Background* (plain, dots, lines, crosses) and *View ▸ Snap to Grid* are two fields
+*Graph ▸ Background* (plain, dots, lines, crosses) and *Graph ▸ Snap to Grid* are two fields
 of the same per-user `Look` the marks live on (`look.py`), so they are kept, fanned out and
 read by their toggles exactly as the marks are — the view draws the background
 (`ground.py` paints it by name), the scene answers `snap()` — and a tab opened later wears

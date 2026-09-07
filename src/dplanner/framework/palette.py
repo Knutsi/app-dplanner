@@ -2,10 +2,21 @@
 
 Reads the same registry as the menu bar, filtered through the same context, so the palette
 can never offer something the menus would refuse.
+
+**A row says where the verb lives.** Two entries called *Vertical* and *Horizontal* are two
+riddles; *Graph ▸ Divide ▸ Vertical* is a verb you can act on. So the row is the two-line
+one every rich list here uses (``list_rows.TwoLineDelegate``): the label, the menu path
+under it, the shortcut at the right, and the verb's glyph where it has one — the same
+glyph the pop-up menus paint, because a palette is built fresh on every open and a colour
+baked into it cannot go stale.
+
+**And the path is searchable.** A label match still wins — typing "vertical" puts *Vertical*
+first — but "divide vertical" matches through the path, which is the way somebody who
+remembers the submenu and not the entry would look for it.
 """
 
-from PySide6.QtCore import QEvent, QObject, Qt
-from PySide6.QtGui import QKeyEvent, QKeySequence
+from PySide6.QtCore import QEvent, QObject, QSize, Qt
+from PySide6.QtGui import QKeyEvent, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QDialog,
     QLineEdit,
@@ -17,6 +28,11 @@ from PySide6.QtWidgets import (
 
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec, key_sequences
 from dplanner.framework.context import ContextService
+from dplanner.framework.list_rows import DETAIL_ROLE, TRAILING_ROLE, TwoLineDelegate
+from dplanner.theme.icons import ICON_SIZE
+
+# Between the menus of a path. The same mark the documentation uses for one.
+PATH_SEPARATOR = " ▸ "
 
 
 def fuzzy_score(query: str, text: str) -> int | None:
@@ -42,6 +58,15 @@ def fuzzy_score(query: str, text: str) -> int | None:
     return score
 
 
+def menu_path(spec: ActionSpec) -> str:
+    """Where the verb sits in the menu bar: ``Graph ▸ Divide``, or just ``Step``.
+
+    The group is left out on purpose — it is a module's word for a band of entries, not a
+    heading anybody sees, so printing it would name something the menus never show.
+    """
+    return spec.menu if spec.submenu is None else spec.menu + PATH_SEPARATOR + spec.submenu
+
+
 def _plain_label(spec: ActionSpec, label: str | None) -> str:
     return (label if label is not None else spec.label).replace("&", "")
 
@@ -52,14 +77,14 @@ class CommandPalette(QDialog):
         self.setObjectName("CommandPalette")
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setModal(True)
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(480)
 
         self._registry = registry
         self._context = context
         # Snapshot at open: the context cannot change while a modal palette is up, and a
         # stable list keeps filtering pure.
         self._entries = [
-            (spec, _plain_label(spec, state.label))
+            (spec, _plain_label(spec, state.label), menu_path(spec))
             for spec, state in registry.runnable(context.current())
             if spec.palette
         ]
@@ -73,6 +98,8 @@ class CommandPalette(QDialog):
 
         self._list = QListWidget(self)
         self._list.setObjectName("PaletteList")
+        self._list.setItemDelegate(TwoLineDelegate(self._list))
+        self._list.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self._list.itemActivated.connect(lambda _item: self._run_selected())
 
         layout = QVBoxLayout(self)
@@ -83,21 +110,39 @@ class CommandPalette(QDialog):
         self._refilter("")
         self._line.setFocus()
 
+    def _score(self, query: str, label: str, path: str) -> tuple[int, int] | None:
+        """How well the row matches, as ``(where, -score)`` — lower sorts first.
+
+        ``where`` is 0 for a match on the label and 1 for one that needed the path, so a
+        verb actually called what was typed is never pushed under one merely filed there.
+        """
+        direct = fuzzy_score(query, label)
+        if direct is not None:
+            return (0, -direct)
+        through = fuzzy_score(query, f"{path}{PATH_SEPARATOR}{label}")
+        return None if through is None else (1, -through)
+
     def _refilter(self, query: str) -> None:
         scored = []
-        for spec, label in self._entries:
-            score = fuzzy_score(query, label)
-            if score is not None:
-                scored.append((-score, label, spec))
-        scored.sort(key=lambda t: (t[0], t[1]))
+        for spec, label, path in self._entries:
+            rank = self._score(query, label, path)
+            if rank is not None:
+                scored.append((rank, label, path, spec))
+        scored.sort(key=lambda row: (row[0], row[1]))
 
+        ink = self.palette().color(QPalette.ColorRole.Text)
         self._list.clear()
-        for _neg_score, label, spec in scored:
+        for _rank, label, path, spec in scored:
             sequences = key_sequences(spec.shortcut)
-            shortcut = (
-                sequences[0].toString(QKeySequence.SequenceFormat.NativeText) if sequences else ""
-            )
-            item = QListWidgetItem(f"{label}\t{shortcut}" if shortcut else label)
+            item = QListWidgetItem(label)
+            item.setData(DETAIL_ROLE, path)
+            if sequences:
+                item.setData(
+                    TRAILING_ROLE,
+                    sequences[0].toString(QKeySequence.SequenceFormat.NativeText),
+                )
+            if spec.icon is not None:
+                item.setIcon(spec.icon(ink))
             item.setData(Qt.ItemDataRole.UserRole, spec.id)
             self._list.addItem(item)
         if self._list.count():

@@ -27,6 +27,8 @@ from dplanner.modules.project_editor.modes import (
     IDLE,
     LASSO,
     PAN,
+    REDIRECT_FROM,
+    REDIRECT_TO,
     REGION_CREATE,
 )
 from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
@@ -649,6 +651,88 @@ def test_a_picked_edge_reaches_the_context(services, project, tab):
     assert picked == [EdgeRef(second.id, "requires", first.id).entity_id()]
 
 
+def redirect_state(services, action_id):
+    return services.actions.spec(action_id).state(services.context.current())
+
+
+def test_redirect_is_available_exactly_while_links_are_picked(services, project, tab):
+    """The tool's own precondition, and it says so rather than vanishing: a greyed entry is
+    how somebody learns that arrows are things you can pick."""
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    for action_id in ("steps.redirect_to", "steps.redirect_from"):
+        state = redirect_state(services, action_id)
+        assert not state.enabled and "pick links first" in (state.label or "")
+
+    edge_item(tab, second, first).setSelected(True)
+    for action_id in ("steps.redirect_to", "steps.redirect_from"):
+        assert redirect_state(services, action_id).enabled
+
+
+def test_redirect_to_moves_the_picked_links_onto_the_step_clicked(app, services, project, tab):
+    """The gesture the tool exists for: two steps' requirements become one step's, in one
+    undo entry — and the arrows keep the far end they had."""
+    first, second, third = chain(services, project)
+    fourth = Step(title="Rewrite it")
+    services.undo.push(AddNodeCommand(project.id, fourth))
+    services.undo.push(SetEdgesCommand(third.id, "requires", [second.id, first.id]))
+    for source in (first, second):
+        edge_item(tab, third, source).setSelected(True)
+
+    services.actions.run("steps.redirect_to", services.context.current())
+    assert modes(tab).current().name == REDIRECT_TO
+    click(app, tab, centre_of(scene(tab).node(fourth.id)))
+
+    # A set: which order the canvas reports two picked arrows in is the scene's business.
+    assert set(services.document.step(fourth.id).edges["requires"]) == {second.id, first.id}
+    assert "requires" not in services.document.step(third.id).edges
+    assert services.undo.undo_text() == "Redirect 2 Links"
+    assert modes(tab).current().name == IDLE  # One redirect ends the mode, like one divide.
+
+    services.undo.undo()
+    assert services.document.step(third.id).edges["requires"] == [second.id, first.id]
+
+
+def test_redirect_from_moves_the_other_end(app, services, project, tab):
+    first, second, _third = chain(services, project)
+    fourth = Step(title="Rewrite it")
+    services.undo.push(AddNodeCommand(project.id, fourth))
+    edge_item(tab, second, first).setSelected(True)
+
+    press_key(app, tab, Qt.Key.Key_E, Qt.KeyboardModifier.ShiftModifier)
+    assert modes(tab).current().name == REDIRECT_FROM
+    click(app, tab, centre_of(scene(tab).node(fourth.id)))
+
+    assert services.document.step(second.id).edges["requires"] == [fourth.id]
+
+
+def test_a_redirect_the_model_refuses_leaves_the_link_and_the_mode(app, services, project, tab):
+    """The ring under the cursor is the model's answer, and so is the click: a step the
+    arrow cannot reach is not a target, and the gesture is still going."""
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    edge_item(tab, second, first).setSelected(True)
+
+    services.actions.run("steps.redirect_to", services.context.current())
+    click(app, tab, centre_of(scene(tab).node(first.id)))  # Would be a self-link.
+
+    assert services.document.step(second.id).edges["requires"] == [first.id]
+    assert modes(tab).current().name == REDIRECT_TO
+
+
+def test_leaving_the_redirect_mode_changes_nothing(app, services, project, tab):
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    edge_item(tab, second, first).setSelected(True)
+    before = services.undo.undo_text()
+
+    press_key(app, tab, Qt.Key.Key_E)
+    assert modes(tab).current().name == REDIRECT_TO
+    press_key(app, tab, Qt.Key.Key_Escape)
+    assert modes(tab).current().name == IDLE
+    assert services.undo.undo_text() == before
+
+
 def test_delete_removes_the_picked_edges_as_one_step(app, services, project, tab):
     """Two edges on the same waiting step are one command: two SetEdgesCommands would each
     be built from the state before either ran, and the second would put the first one back."""
@@ -889,8 +973,13 @@ def test_selecting_a_node_deepens_the_fill_it_already_had(themed, services, proj
 def test_every_card_rests_on_a_shadow_and_a_selected_one_casts_a_deeper_one(services, project, tab):
     """A card on the table darkens the ground just under it; the lift reads because the
     picked card's seat darkens more. Rendered over white, where a low-alpha black actually
-    says something."""
-    step = project.steps[0]
+    says something.
+
+    Over a *linked* step: the orphan ring is on by default and falls in the same few pixels
+    under the body, which is the shadow's own ground.
+    """
+    step, other = project.steps[:2]
+    services.undo.push(SetEdgesCommand(other.id, "requires", [step.id]))
     resting = painted_under(tab, step.id, "white").lightness()
     assert resting < QColor("white").lightness()
     scene(tab).select_step(step.id)
@@ -1235,11 +1324,68 @@ def test_the_toolbar_carries_verbs_from_other_modules(services, project, tab):
     assert any(a.uri.startswith("app://activity/order") for a in services.tabs.activities())
 
 
-def test_no_button_carries_an_arrow(services, project, tab):
+def test_new_carries_no_arrow(services, project, tab):
     """New is one click: the kinds are chosen in the details dialog it opens, not from a
     dropdown of their own."""
     assert toolbar_button(tab, "steps.new").menu() is None
     assert toolbar_button(tab, "steps.delete").menu() is None
+
+
+def dropdown(tab, action_id):
+    popup = tab._toolbar.menu_for(action_id)
+    assert popup is not None, f"{action_id} carries no arrow"
+    return {
+        action.text().replace("&", "") for action in popup.actions() if not action.isSeparator()
+    }
+
+
+def test_a_family_of_verbs_is_one_button_and_its_arrow(services, project, tab):
+    """Sort, Divide and Redirect are each several verbs and one seat on the strip. The
+    arrow renders the child menu out of the action table rather than a copy of it, so a
+    sort added to the menus appears here having touched nothing."""
+    services.actions.run("steps.select_all", services.context.current())
+    assert dropdown(tab, "canvas.sort_flow") >= {"Layered Flow", "Spine", "Radial"}
+    assert dropdown(tab, "canvas.divide_vertical") == {"Vertical", "Horizontal"}
+
+
+def test_the_redirect_button_drops_both_ends(services, project, tab):
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    edge_item(tab, second, first).setSelected(True)
+    assert dropdown(tab, "steps.redirect_to") == {"To Step", "From Step"}
+
+
+def test_a_strip_too_narrow_for_its_verbs_overflows_rather_than_squeezing(services, project, tab):
+    """A canvas can always be dragged narrower than its own strip. A plain row answers that
+    by shrinking every button until "Divide" reads "D…e"; a toolbar answers it by moving the
+    groups that no longer fit into its » menu, so what is on screen stays readable."""
+    bar = tab._toolbar
+    bar.resize(400, bar.sizeHint().height())
+    bar.layout().activate()
+    assert bar.sizeHint().width() > 400  # It really does not fit.
+
+    for action_id in ("steps.new", "steps.lasso", "steps.redirect_to"):
+        button = toolbar_button(tab, action_id)
+        if button.isVisible():
+            assert button.width() >= button.sizeHint().width(), action_id
+
+
+def test_the_graph_verbs_live_on_the_graph_menu_and_the_link_verbs_on_step(services):
+    """View is the window; Graph is the canvas — and what is *about a step* stays on Step,
+    which is also what keeps it on the canvas's right-click."""
+    where = {spec.id: (spec.menu, spec.submenu) for spec in services.actions.all_specs()}
+    assert where["canvas.sort_flow"] == ("Graph", "Sort")
+    assert where["canvas.divide_vertical"] == ("Graph", "Divide")
+    assert where["canvas.snap"] == ("Graph", None)
+    assert where["regions.new"] == ("Graph", "Region")
+    assert where["steps.redirect_to"] == ("Step", "Redirect")
+    assert where["steps.link"] == ("Step", None)
+    strays = [
+        spec.id
+        for spec in services.actions.all_specs()
+        if spec.id.startswith(("canvas.", "regions.")) and spec.menu != "Graph"
+    ]
+    assert strays == []
 
 
 def test_closing_the_tab_lets_its_toolbars_go(services, project, tab):
@@ -1842,34 +1988,42 @@ def close_to(colour: QColor, wanted: QColor) -> bool:
     )
 
 
-def test_marks_are_off_until_asked_and_then_colour_the_bare_sockets(services, project, tab):
+def test_the_bare_sockets_are_coloured_from_the_start_and_switch_off(services, project, tab):
+    """On by default: a socket with nothing on it is one of the two things a graph can be
+    wrong about, and a preference that has to be found first helps nobody."""
     from dplanner.modules.project_editor.renderers import END_MARK, START_MARK
 
-    first, second, _third = chain(services, project)
-    assert not close_to(painted_at(tab, first.id, 0.0, NODE_H / 2), START_MARK)
-
-    services.actions.run("canvas.mark_starts", services.context.current())
-    services.actions.run("canvas.mark_ends", services.context.current())
+    first, second, third = chain(services, project)
     assert close_to(painted_at(tab, first.id, 0.0, NODE_H / 2), START_MARK)
     # Something follows the first step, so its right socket is not an end.
     assert not close_to(painted_at(tab, first.id, NODE_W, NODE_H / 2), END_MARK)
     assert not close_to(painted_at(tab, second.id, 0.0, NODE_H / 2), START_MARK)
-    assert close_to(painted_at(tab, _third.id, NODE_W, NODE_H / 2), END_MARK)
+    assert close_to(painted_at(tab, third.id, NODE_W, NODE_H / 2), END_MARK)
+
+    services.actions.run("canvas.mark_starts", services.context.current())
+    assert not close_to(painted_at(tab, first.id, 0.0, NODE_H / 2), START_MARK)
+    assert close_to(painted_at(tab, third.id, NODE_W, NODE_H / 2), END_MARK)  # Its own switch.
 
 
-def test_an_orphan_wears_a_red_ring_only_while_the_mark_is_on(services, project, tab):
+def test_an_orphan_wears_a_red_ring_until_something_links_it(services, project, tab):
+    """The one mark that says *something is wrong here* rather than *this is an edge of the
+    graph*, so it is on from the start and painted at full strength."""
     from dplanner.modules.project_editor.renderers import RING_GAP
 
     lonely = Step(title="Alone")
     services.undo.push(AddNodeCommand(project.id, lonely))
-    ring = lambda: painted_at(tab, lonely.id, -RING_GAP, NODE_H / 2)  # noqa: E731
-    assert ring().red() <= ring().green() + 20
-
-    services.actions.run("canvas.mark_orphans", services.context.current())
+    # Sampled over the top edge, not the sides: the socket discs are on by default too, and
+    # a start disc at the left edge reaches past the ring's gap.
+    ring = lambda: painted_at(tab, lonely.id, NODE_W / 2, -RING_GAP)  # noqa: E731
     assert ring().red() > ring().green() + 40
 
     first = project.steps[0]
     services.undo.push(SetEdgesCommand(lonely.id, "relates", [first.id]))  # Any link will do.
+    assert ring().red() <= ring().green() + 20
+
+    services.undo.undo()
+    assert ring().red() > ring().green() + 40
+    services.actions.run("canvas.mark_orphans", services.context.current())  # Switched off.
     assert ring().red() <= ring().green() + 20
 
 
@@ -1877,25 +2031,32 @@ def test_a_mark_is_remembered_and_every_canvas_wears_it(services, project, tab, 
     from dplanner.modules.project_editor.marks import Marks
 
     button = toolbar_button(tab, "canvas.mark_ends")
-    assert not button.isChecked()
+    assert button.isChecked()  # On by default; switching one off is the deliberate act.
     services.actions.run("canvas.mark_ends", services.context.current())
-    assert button.isChecked()
-    assert look_of(services).marks == Marks(ends=True)
+    assert not button.isChecked()
+    assert look_of(services).marks == Marks(ends=False)
 
     other = services.tabs.open("project", make_project("Later").id)
-    assert other._scene._marks == Marks(ends=True)
-    assert scene(tab)._marks == Marks(ends=True)
+    assert other._scene._marks == Marks(ends=False)
+    assert scene(tab)._marks == Marks(ends=False)
 
     services.actions.run("canvas.mark_ends", services.context.current())
-    assert not button.isChecked()
+    assert button.isChecked()
     assert other._scene._marks == Marks()
 
 
 def test_a_mark_reaches_out_no_further_than_the_item_paints():
-    from dplanner.modules.project_editor.renderers import MARK_R, RING_GAP, RING_W
+    from dplanner.modules.project_editor.renderers import (
+        MARK_R,
+        ORPHAN_RING_W,
+        RING_GAP,
+        RING_W,
+    )
 
     assert MARK_R + 1.0 <= PAINT_MARGIN
     assert RING_GAP + RING_W + 1.0 <= PAINT_MARGIN
+    # The orphan's ring is the heavier of the two that share the gap.
+    assert RING_GAP + ORPHAN_RING_W + 1.0 <= PAINT_MARGIN
 
 
 # -- the node's top edge, which two decorations share -------------------------------------------

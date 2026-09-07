@@ -198,7 +198,7 @@ standard, `FORMAT.md` the on-disk one.
 ```
 src/dplanner/
 ├── identity.py            what this application calls itself
-├── menus.py               the menu bar's shape, including the Project menu
+├── menus.py               the menu bar's shape: File, Edit, View (the window), Project, Graph (the canvas), Step, Tools
 ├── app.py                 bootstrap: QApplication, the session, the first open
 ├── entry.py               the one `dplanner` command: the CLI, or `dplanner window` (`dpw`)
 ├── assets/                what the application ships: the icon, one PNG per size, read by the window and the launcher alike
@@ -281,7 +281,7 @@ src/dplanner/
 │   ├── projects/            the Projects folder in the index, the project verbs, New Project…, Open
 │   │                        Projects…, the Project dialog (a column per repository: log, facts, ⋯ menu),
 │   │                        the Repositories card, Move Plan, and the repositories folder clones land in
-│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, lasso, divide, regions, resize) and renderers,
+│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, regions, resize) and renderers,
 │   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid;
 │   │                        ground.py paints the background)
 │   │                        (clipboard.py is what a copied step is; clipboard_verbs.py the Edit menu's

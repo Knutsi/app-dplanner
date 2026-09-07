@@ -142,3 +142,12 @@ def project_of(context: "CliContext", args: Namespace) -> Project:
 def project_of_step(context: "CliContext", args: Namespace) -> Project:
     """The project a step verb's step belongs to, resolved the way the verb itself does."""
     return context.library.project_of(find_step(context.library, args.step, context.current).id)
+
+
+def project_of_steps(context: "CliContext", args: Namespace) -> Project:
+    """The same, for a verb whose steps are a list — the first one names the project.
+
+    A verb reshaping several steps at once reshapes one graph: the model refuses a link
+    across projects, so the rest can only be in the same one.
+    """
+    return context.library.project_of(find_step(context.library, args.steps[0], context.current).id)

@@ -28,6 +28,7 @@ from dplanner.modules.project_editor.regions import (
     set_regions_command,
 )
 from dplanner.modules.project_editor.selection import REGION_KIND
+from dplanner.theme.icons import edit_icon, region_icon, trash_icon
 
 
 @dataclass(frozen=True)
@@ -48,10 +49,11 @@ class RegionVerbs:
             ActionSpec(
                 id="regions.new",
                 label="&Add Region",
-                menu="Project",
-                group="canvas",
+                menu="Graph",
+                group="regions",
                 submenu="Region",
                 order=10,
+                icon=region_icon,
                 tip="Drag out a titled area behind the graph. Esc leaves",
                 state=self._can_add,
                 run=self._add,
@@ -59,10 +61,11 @@ class RegionVerbs:
             ActionSpec(
                 id="regions.rename",
                 label="&Rename Region…",
-                menu="Project",
-                group="canvas",
+                menu="Graph",
+                group="regions",
                 submenu="Region",
                 order=20,
+                icon=edit_icon,
                 tip="Change what this region is called",
                 state=self._one_selected,
                 run=self._rename,
@@ -70,10 +73,11 @@ class RegionVerbs:
             ActionSpec(
                 id="regions.delete",
                 label="&Delete Region",
-                menu="Project",
-                group="canvas",
+                menu="Graph",
+                group="regions",
                 submenu="Region",
                 order=30,
+                icon=trash_icon,
                 tip="Remove these regions. The steps inside stay where they are",
                 state=self._can_delete,
                 run=self._delete,

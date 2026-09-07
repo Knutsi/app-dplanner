@@ -91,6 +91,23 @@ def chosen_steps(library: Library, context: Context) -> list[StepId]:
     return [step_id] if step_id is not None and library.has(step_id) else []
 
 
+def picked_edges(library: Library, context: Context) -> list[EdgeRef]:
+    """The selected arrows the model still agrees exist — :func:`chosen_steps` for links.
+
+    Unlink acts on them and so does a redirect, which lives next door in ``canvas_verbs``
+    because it switches a mode rather than pushing a command; one definition, so no verb
+    can come to a different view of what "these links" means.
+    """
+    found = [parse_edge_id(entity) for entity in context.selected_entities(EDGE_KIND)]
+    return [
+        ref
+        for ref in found
+        if ref is not None
+        and library.has(ref.waiter)
+        and ref.source in library.step(ref.waiter).edges.get(ref.kind, [])
+    ]
+
+
 @dataclass(frozen=True)
 class StepVerbs:
     library: Library
@@ -261,19 +278,8 @@ class StepVerbs:
         waiting = self.library.step(waiter).edges.get("requires", [])
         self.undo.push(SetEdgesCommand(waiter, "requires", [*waiting, source]))
 
-    def _picked_edges(self, context: Context) -> list[EdgeRef]:
-        """The selected edges that the model still agrees exist."""
-        found = [parse_edge_id(entity) for entity in context.selected_entities(EDGE_KIND)]
-        return [
-            ref
-            for ref in found
-            if ref is not None
-            and self.library.has(ref.waiter)
-            and ref.source in self.library.step(ref.waiter).edges.get(ref.kind, [])
-        ]
-
     def _can_unlink(self, context: Context) -> ActionState:
-        picked = self._picked_edges(context)
+        picked = picked_edges(self.library, context)
         if picked:
             if len(picked) == 1:
                 return ActionState(label="Remove &Link")
@@ -281,7 +287,7 @@ class StepVerbs:
         return ENABLED if self._existing_link(context) is not None else DISABLED
 
     def _unlink(self, context: Context) -> None:
-        picked = self._picked_edges(context)
+        picked = picked_edges(self.library, context)
         if picked:
             self.undo.push(self._removal_of(picked))
             return
@@ -295,9 +301,7 @@ class StepVerbs:
 
     def _removal_of(self, refs: list[EdgeRef]) -> Command:
         label = "Remove Link" if len(refs) == 1 else f"Remove {len(refs)} Links"
-        return remove_edges_command(
-            self.library, [(ref.waiter, ref.kind, ref.source) for ref in refs], label
-        )
+        return remove_edges_command(self.library, [ref.as_edge() for ref in refs], label)
 
     # -- isolating ------------------------------------------------------------------------------
 

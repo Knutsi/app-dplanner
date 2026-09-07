@@ -20,11 +20,17 @@ MARK_NAMES = ("starts", "ends", "orphans")
 @dataclass(frozen=True)
 class Marks:
     """Which marks are on. ``starts`` colours a socket nothing arrives at, ``ends`` one
-    nothing leaves from, and ``orphans`` rings a node with neither."""
+    nothing leaves from, and ``orphans`` rings a node with neither.
 
-    starts: bool = False
-    ends: bool = False
-    orphans: bool = False
+    **All three are on by default.** A socket with nothing on it and a node with nothing
+    at all are the two things a graph can be wrong about, and both are invisible until
+    somebody thinks to look — a preference that has to be found before it can help is one
+    that helps nobody. Switching one off is the deliberate act, and it is remembered.
+    """
+
+    starts: bool = True
+    ends: bool = True
+    orphans: bool = True
 
     def is_on(self, name: str) -> bool:
         return bool(getattr(self, name))
@@ -39,10 +45,15 @@ class Marks:
 
     @classmethod
     def from_json(cls, data: object) -> "Marks":
-        """Tolerant: anything that is not a mapping of the known names reads as all off."""
+        """Tolerant: anything that is not a mapping of the known names reads as the default.
+
+        A name the stored value does not mention takes the default rather than False —
+        ``FORMAT.md``'s absence rule, and what lets a default change reach somebody who
+        never touched that switch.
+        """
         if not isinstance(data, dict):
             return cls()
-        return cls(**{name: bool(data.get(name, False)) for name in MARK_NAMES})
+        return cls(**{name: bool(data[name]) for name in MARK_NAMES if name in data})
 
 
 def ports(steps: Sequence[Step]) -> dict[StepId, tuple[bool, bool]]:

@@ -110,11 +110,19 @@ class ActionToolbar(QWidget):
         New makes a plain step in one click and the arrow is only for the other kinds. The
         popup is refilled on every open — a verb's state, its label and the theme's ink can
         all have changed since the last one.
+
+        Two targets in one button means the arrow has to *be* one: Qt sizes it from
+        ``PM_MenuButtonIndicator`` — about ten pixels — which is both unaimable and reads
+        as a rendering fault. ``hasMenu`` is what lets the theme widen it and leave the
+        words room; the hairline down its left edge is what says the halves differ.
         """
         popup = QMenu(button)
         popup.aboutToShow.connect(lambda: self._refill(popup, menu, submenu))
         button.setMenu(popup)
         button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        # The theme widens the arrow into a target and steps the words aside for it; a
+        # styled subcontrol is outside Qt's size hint, so the room has to be asked for.
+        button.setProperty("hasMenu", True)
 
     def _refill(self, popup: QMenu, menu: str, submenu: str) -> None:
         popup.clear()
