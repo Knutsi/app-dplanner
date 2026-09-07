@@ -144,7 +144,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             parts=briefing.parts(context.library, step, context.store.files),
             sections=briefing.sections(context.library, step, context.store.files),
             project_sections=briefing.project_sections(context.library, step, context.store.files),
-            epilogue=briefing.epilogue(step),
+            epilogue=briefing.epilogue(context.library, step),
             preamble=briefing.preamble(step, uses_worktree(step), facts),
             project_instruction=project_instruction,
             project_files=asset_paths(context.store.files, project.id),

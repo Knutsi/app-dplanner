@@ -557,7 +557,7 @@ Four rules, each a decision:
   pasted steps without a collision — an id is per project, and a copy that kept `T100` would
   make "T100 failed" name two things. `step_agent_run` drops its entry: a chip and a marching
   ring on a step nobody is running would be a lie. Everything else — status, estimate,
-  handoff, spec figures, the milestone label, the PR ref — copies as it is, and two of those
+  spec figures, the milestone label, the PR ref — copies as it is, and two of those
   are judgment calls worth naming: a duplicated milestone shares its label, and a duplicated
   step keeps its PR ref, because a cut-and-paste move must keep both and a duplicate is rarer
   than a move. If that proves wrong, `github` is one more entry in the tuple. `feature` is
@@ -885,8 +885,9 @@ body names it. A documentation image is used project-wide by *name*: a compiled 
 renders images from its source steps' areas (`framework/markdown_view.py` asks each in
 turn), so a fragment's image may be needed by a collector's compiled text long after the
 fragment dropped it — content-addressing makes the name-match exact, not a heuristic.
-Handoff files and instruction files are used *by existence*: both areas are
-handed to agents wholesale, so an unreferenced file there is payload, not litter. The pool
+Instruction files are used *by existence*: the area is handed to agents wholesale, so an
+unreferenced file there is payload, not litter; a note's file is used while a note's body
+links it, and `note attach` writes the link as it copies the file in. The pool
 is `prunable=False` — a staging shelf swept for being a staging shelf would punish the
 workflow it exists for. `asset prune` deletes per *location*, only what its own source
 called unused, dry-run first, and never enters a directory no source scanned — which is
@@ -1824,7 +1825,7 @@ still one registration in one package.
 
 What the bar adds to the submenu is a *reading*. Its right half is every toggle as a glyph.
 Its left half is **templates**: a name and the set of toggles that are on — *Milestone* is
-milestone and description, *Agent* is agent, description, estimate and handoff, *Step* is
+milestone and description, *Agent* is agent, description and estimate, *Step* is
 the estimate and description every step is born with — worded, and wearing their body tone
 when selected, so a selected Feature button and a feature node are one identity (which is
 why the tones moved to `theme/tones.py`, where both can reach them). Clicking a template
@@ -1987,21 +1988,18 @@ brief a step differently. One consequence worth naming for existing plans: a des
 uninstructed step that used to render `## Description` now renders that text as
 `## Instructions` — the same words, under the heading the executing agent actually obeys.
 
-## Pass-forward is derived at read time
+## What reaches a step is derived at read time
 
-A handoff (`modules/step_handoff/`) stores only what the step itself says: a note, a scope
-(`downstream` by default, `project` to reach everyone), files. Who *receives* it is never
-written down. `handoff.inherited()` walks the topological order collecting the transitive
-`requires` ancestors plus every project-scoped entry — the same rule as ordering, for the
-same reason: `dplanner step link` rewires inheritance with no window running to notice, and
-a stored answer would be wrong exactly when an agent is driving. The Handoff tab, `dplanner
-handoff show --inherited` and the assembled agent prompt are three readers of that one
-function, sharing even the text rendering, so no surface can describe an inheritance
-another surface would dispute.
-
-The seam repeats one level down: `inherited()` is handed a `files(step_id, module_id)`
-function rather than a store, so the derivation runs headless and never learns where a
-project lives.
+A note (`modules/notes/`) stores only what was said: a label, a title, a body, the step it
+was made on, the steps it is *for*, and — only as the exception — a reach. Who *sees* it
+is never written down. `reach.reaching()` walks the cone behind a step and answers with
+two sets — the notes addressed to it, and the rest that reach it — the same rule as
+ordering, for the same reason: `dplanner step link` rewires the cone with no window running
+to notice, and a stored answer would be wrong exactly when an agent is driving. The Agent
+tab's Notes pane, `dplanner note index` and the assembled agent prompt are three readers of
+that one function and one `briefing_blocks` rendering, so no surface can describe what a
+step inherits another surface would dispute. *A note is a record with a label* below has
+the shape and why the index is an index.
 
 ## Running an agent launches a peer, not a task
 
@@ -2010,13 +2008,13 @@ would dirty it and end up in version control — and spawns a terminal detached
 (`start_new_session`). Deliberately **not** through `TaskRunner`: a task promises progress,
 cancellation and a completion that returns to the GUI thread, and none of those are honest
 about a terminal the user owns from the moment it opens. The agent reports back through the
-CLI instead (`status set`, `handoff set`), which the two-writers machinery already handles.
+CLI instead (`status set`, `note add`), which the two-writers machinery already handles.
 
 The briefing opens with the **project's standing instruction** — the same module's prose on
 the project node, edited in the project panel's Agent card and in the Agent tab's Project
 part (two bindings over one field, one undo stack) — ahead of the step's `## Instructions`
 (its description, unless a separate instruction exists — see *The description is the
-instructions*) and the inherited context.
+instructions*) and, after it, the notes index.
 
 The briefing is deliberately **self-contained**: between the standing instruction and the
 step's own sit the step's facts — its description as a section of its own only when a
@@ -2058,7 +2056,7 @@ rule.
 
 **The briefing was the command line.** The wrapper ran `claude … "$(cat prompt.md)"`, so
 every agent's argv was its whole briefing — and every briefing in that project mentioned
-`Web.Host` in the inherited handoff. An agent restarting its own .NET host by pattern
+`Web.Host` in an inherited handoff. An agent restarting its own .NET host by pattern
 matched every other agent on the machine. The opening prompt is now one line
 (`launcher.opening_prompt`): *read your briefing in `<file>` in full, then follow it*. The
 line carries a path and nothing the project is about, so no pattern drawn from the work can
@@ -3069,37 +3067,73 @@ paint with the primitives the canvas paints with (`theme/cards.py`, moved there 
 modules can share them without importing each other), and every colour is read from the
 scene's palette at paint time, so a theme switch costs nothing.
 
-## A decision is a record, and the briefing carries it
+## A note is a record with a label, and the briefing carries an index
 
-A plan says what; a decision says why the plan went one way and not another — the
-trade-off taken, the convention settled, the option rejected. Until now that reasoning
-lived in commit messages and agent transcripts, and the first real project with four
-agents in worktrees showed the cost: the fourth agent re-argued what the first three had
-settled, because nothing it was handed said so. Three decisions:
+A plan says what; what it does not say is everything a project learns as it goes — why it
+went one way and not another, what a finished step's worker wants the next one to know,
+where the work had to depart from the spec, what was noticed and put off. Two modules
+used to hold two of those: a *decision log* beside the project, carried in full into every
+briefing, and a *handoff* aspect on each step, inherited down the graph and carried in full
+too. The first project to run forty agent steps showed what that costs: the briefing grew
+with every step, an agent starting the thirtieth read twenty handoffs and a page of
+decisions before its own instructions, and lost its focus in them — while the two record
+kinds were the same thing wearing two shapes. Five decisions:
 
-- **A record list beside the project, not a prose document and not a spec.** The
-  obvious homes were the spec module (the topology is already the project's prose there)
-  or one markdown log. Neither fits: a decision is *addressed* — a later one supersedes an
-  earlier one by id, a briefing lists them one by one, a card shows them as rows — so it
-  is a record with an id (`D1, D2, …`, minted per project and never reused, the feature
-  catalogue's precedent), a title, markdown reasoning inside the record (the shape
-  `testing` and `feature` settled on for N documents per node), the day, and the step it
-  was made on. `modules/decisions/` is its own module because it is its own concern: the
-  spec is what the project *answers to*, a decision is what the project *chose*.
-- **Adding twice is one decision, and reversing is a new one.** An agent re-runs a verb
-  after a stale-workspace refusal, or an epilogue runs again; a title already in the log
-  *is* that decision, reported with the verb that revises it and never duplicated. A
-  reversal is a new record `--supersedes` the old — the history stays, `decision list`
-  shows what stands, `--all` shows what did — because a decision edited into its
-  opposite is the one kind of history nobody can reconstruct.
-- **The briefing carries what stands.** `_briefing_project_sections` lists the standing
-  decisions beside the topology, title and reasoning, superseded ones left out, and
-  names the verb to record a new one — so an agent builds on what was settled rather
-  than around it, and records what it settles in the same breath as its status. The
-  window's half is the project panel's Decisions card: rows, a double-click into a
-  buttonless live editor (every field undoable, per-record undo labels), and *Add
-  Decision…* that records a fresh one and opens it on the title, the way Step ▸ New
-  opens the details on the name.
+- **One log, and a closed list of labels.** A decision and a handoff are both *a note the
+  project made along the way*; what differs is what the note *is*, and that is a word on
+  the record — `decision`, `handoff`, `spec-change`, `later`, `post-project` — from a
+  list this build owns (`log.LABELS`, a row each with its meaning, its default reach and
+  the index's heading over it). Closed on purpose: an agent reading an index line must
+  know what the line is without opening it, and a free tag vocabulary is what every agent
+  invents differently. A new kind is a row, and `note add --help`, the skill and the
+  index follow. The record is the decision log's shape kept — `N1, N2, …` minted per
+  project and never reused, a title, markdown in the record, the day, the step it was made
+  on, what it supersedes — with two fields the handoff needed: the steps it is *for*, and
+  a *reach*. `modules/notes/` replaced both packages rather than sitting beside them,
+  because two record kinds with one meaning is the entropy CLAUDE.md asks every pass to
+  remove.
+- **The briefing carries an index, and only what is addressed in full.** What the
+  hundredth agent needs is to *find* what is relevant, not to read everything ever
+  written. So a briefing's notes block is one line per standing note that reaches the
+  step — id, title, when and where — grouped under the labels' headings, with the verb
+  that opens one (`dplanner note show`); the bodies stay in the log. The exception is a
+  note *addressed* to the step (`--for S12`, the editor's *For* field): that is one agent
+  pointing the next at exactly what it must read, so it is printed in full, files and all,
+  under *Notes for this step* ahead of the index. The block sits after the instructions,
+  where the inherited context sat, because it is read once the work is understood. The
+  title therefore carries the weight — the skill and the epilogue both say *title it as
+  the fact it is* — and the agent that skims a line and does not open it has made a
+  choice the old briefing never let it make.
+- **Who sees a note is its label's business, with one stored exception.** A handoff
+  reaches the steps *after* the one it was made on (the cone the old aspect walked, plus
+  the step itself — a re-run is a pick-up too); every other label reaches the whole
+  project, because a decision or a deferred item is the project's, not a branch's. A
+  handoff everyone should see is `--reach project`, stored only when it differs from the
+  label's default (`FORMAT.md`'s absence rule), and a note made on no step has nothing to
+  be downstream of, so it reaches everyone whatever it wears. `reach.reaching()` is the
+  one derivation.
+- **Adding twice is one note, and reversing is a new one — on the same step.** The
+  decision log's retry safety kept, narrowed: a title already in the log *on the same
+  step* is that note, reported with the verb that revises it and never duplicated. The
+  narrowing is the handoff's doing — two agents each ending their step with a note titled
+  *Done* must not have the second silently discarded. A reversal is a new record
+  `--supersedes` the old; the history stays, `note list` shows what stands and `--all`
+  what did, and a superseded note leaves every index.
+- **The retired modules reach the log at open, one by takeover and one by absorption.**
+  The decision log was already a record list on the project, so it is a `Takeover`
+  (`D<n>` becomes `N<n>` wearing `decision`, supersedes links with it). A handoff was prose
+  and files on a *step*, and a per-entry converter never sees the project the record
+  belongs on — so `ModuleDataFormat` grew an `absorb` pass, run once per open over the
+  whole repository with the loaded aggregate (`core/module_data.py`; `NOTES-FOR-APPFRAME.md`
+  §21), and `migrate.absorb_handoffs` turns each step's handoff into a `handoff` note on
+  that step, moves its files into the project's notes area with links written into the
+  body, and clears the step. Idempotent, so a second open finds nothing. A handoff a
+  person had turned *off* stays on the step's shelf under the retired id, untouched: that
+  is what turning it off meant. The Handoff tab, its Type toggle and its place in the
+  *Agent* template went with the aspect; the window's surfaces are the project panel's
+  Notes card (rows, the buttonless live editor with a label, a step, addressees, the
+  reach box and the body, *Add Note…* opening on the title) and the Agent tab's Notes
+  pane, which renders the same blocks the briefing carries.
 
 ## The topology is read before the graph is edited
 

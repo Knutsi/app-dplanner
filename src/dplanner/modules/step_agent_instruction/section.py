@@ -9,8 +9,8 @@ keystroke would fight the person typing on the other tab.
 **Components** is the editing surface: four collapsible parts in the order the prompt is
 assembled — the project's standing instruction (editable here and in the project panel's
 Agent card — one field, one undo stack), the step's own facts rendered by the same
-``prompt.section_lines`` the prompt is built with, what earlier steps handed forward
-(via ``part_lines`` — the same no-drift rule), and this step's own instruction.
+``prompt.section_lines`` the prompt is built with, what the project's notes hold for this
+step (the same function — the same no-drift rule), and this step's own instruction.
 
 The buttons are not second implementations of anything — each evaluates and runs the same
 ``ActionSpec`` the menus do, so the tab and the menu can never disagree about when a run
@@ -54,7 +54,6 @@ from dplanner.modules.step_agent_instruction.prompt import (
     AssembledPrompt,
     PromptPart,
     PromptSegment,
-    part_lines,
     section_lines,
 )
 from dplanner.theme.icons import ICON_SIZE, graph_icon, leaf_icon, project_icon, read_icon
@@ -227,9 +226,9 @@ class AgentSection(QWidget):
         self.inherited_view.setObjectName("InspectorNotes")
         self.inherited_view.setReadOnly(True)
         self.inherited_view.setFrameShape(QPlainTextEdit.Shape.NoFrame)
-        self.inherited_view.setPlaceholderText("Nothing handed forward to this step yet.")
+        self.inherited_view.setPlaceholderText("No notes reach this step yet.")
         make_text_well(self.inherited_view)
-        self.inherited_part = PartRow("Inherited", graph_icon, self.inherited_view)
+        self.inherited_part = PartRow("Notes", graph_icon, self.inherited_view)
 
         # -- This step: the instruction itself, expanded by default — it is why you came.
         self.edit = ProseEdit(self, undo=undo)
@@ -451,7 +450,7 @@ class AgentSection(QWidget):
         parts: Sequence[PromptPart] = ()
         if self._step_id is not None and self._product.has(self._step_id):
             parts = self._prompt_parts(self._step_id)
-        lines = [line for part in parts for line in part_lines(part)]
+        lines = [line for part in parts for line in section_lines(part)]
         self.inherited_view.setPlainText("\n".join(lines).strip())
         make_text_well(self.inherited_view)
         space_lines(self.inherited_view)
@@ -510,7 +509,7 @@ class AgentSection(QWidget):
             for origin, label in (
                 ("project", "Project"),
                 ("context", "Step context"),
-                ("inherited", "Inherited"),
+                ("inherited", "Notes"),
                 ("instruction", "This step"),
             )
         )

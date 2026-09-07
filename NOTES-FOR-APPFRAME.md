@@ -2175,3 +2175,27 @@ with it.
 **What.** The 1 px rule can stand up: `vertical=True` fixes the width instead of the
 height. **Why.** The estimate input parts *Does not add time* from the size chips with a
 rule in one row. **Upstream?** Yes, trivially.
+
+## 21. From the notes pass
+
+### `core/module_data.py` — `ModuleDataFormat.absorb`, and `migrate_module_data` takes the document
+
+**What.** A format may declare an `absorb(repo, document) -> changed owner ids` pass, run
+once per open after every per-entry migration and takeover; `migrate_module_data` grew a
+third argument, the loaded aggregate, which it hands through untyped. The builder and the
+CLI's `open_library` pass it, and the builder flushes `module_text` beside `module_data`
+for every owner the pass names. **Why.** A `Takeover` converts one entry on one owner; it
+cannot move a step's prose into a record on its project, which is what retiring the
+handoff aspect into the notes log needed. Only the aggregate knows how owners relate, and
+only the module knows the record it is building, so the pass is the module's and the
+document is its argument. **Upstream?** Yes: the shape (per-entry chain, takeover,
+absorption) is complete now, and the third is the one a merge of two features always ends
+up wanting.
+
+### `core/repository.py` — `FileArea`, and `Repository.files(owner_id, module_id)`
+
+**What.** A `FileArea` protocol (`names`, `read_bytes`, `write_bytes`, `remove`) and a
+`files` accessor on the repository protocol. `ModuleFileArea` already satisfied it; the
+protocol only names what an absorption is allowed to touch. **Why.** The absorb pass moves
+a module's files with its data, and the framework's protocol was the only face it had.
+**Upstream?** With the absorption, yes.

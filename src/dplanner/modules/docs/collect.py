@@ -1,7 +1,7 @@
 """What a collector compiles from, and whether what it compiled is still true.
 
 One function with three readers — the Docs tab, ``dplanner docs collect`` and the compile
-prompt — for the same reason ``step_handoff/handoff.py`` is one: an accumulation that three
+prompt — for the same reason ``notes/reach.py`` is one: an accumulation that three
 surfaces each computed would be three answers to one question. Nothing is stored;
 ``dplanner step link`` relinks a graph with no window running to notice a stored list going
 stale.

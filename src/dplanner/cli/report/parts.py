@@ -31,15 +31,15 @@ from dplanner.domain.store import FilesFor, ModuleFileArea
 
 # Where on the page a part goes, in page order. A module places a part into a slot and
 # ranks it there with ``order`` (10/20/30…), the way an action names a menu and a group.
-Slot = Literal["overview", "plan", "timeline", "order", "steps", "decisions"]
-SLOTS: Final[tuple[Slot, ...]] = ("overview", "plan", "timeline", "order", "steps", "decisions")
+Slot = Literal["overview", "plan", "timeline", "order", "steps", "notes"]
+SLOTS: Final[tuple[Slot, ...]] = ("overview", "plan", "timeline", "order", "steps", "notes")
 SLOT_TITLES: Final[dict[Slot, str]] = {
     "overview": "Overview",
     "plan": "Plan",
     "timeline": "Timeline",
     "order": "Order",
     "steps": "Steps",
-    "decisions": "Decisions",
+    "notes": "Notes",
 }
 
 # The window's tones, by name: busy blue, bad red, good green, and quiet ("").
@@ -185,7 +185,7 @@ class Timeline:
 
 @dataclass(frozen=True)
 class Prose:
-    """A markdown document with a title: a decision, a compiled note."""
+    """A markdown document with a title: a note, a compiled document."""
 
     id: str
     title: str

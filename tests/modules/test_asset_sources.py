@@ -16,6 +16,10 @@ from dplanner.domain.store import LibraryStore
 from dplanner.modules.docs.aspect import COMPILED_ID
 from dplanner.modules.docs.aspect import MODULE_ID as DOCS_ID
 from dplanner.modules.docs.aspect import asset_source as docs_source
+from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
+from dplanner.modules.notes.log import Note
+from dplanner.modules.notes.log import asset_source as notes_source
+from dplanner.modules.notes.log import write_log as write_notes
 from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
 from dplanner.modules.spec.documents import (
     SpecIndex,
@@ -37,12 +41,6 @@ from dplanner.modules.step_description.aspect import (
 )
 from dplanner.modules.step_description.aspect import (
     asset_source as description_source,
-)
-from dplanner.modules.step_handoff.aspect import (
-    MODULE_ID as HANDOFF_ID,
-)
-from dplanner.modules.step_handoff.aspect import (
-    asset_source as handoff_source,
 )
 from dplanner.modules.testing.aspect import (
     MODULE_ID as TESTING_ID,
@@ -106,13 +104,17 @@ def test_an_archived_tests_image_is_still_used(store, library, project, step):
     assert [use.where for use in entry.uses] == ["test T100 — Rejects an empty query"]
 
 
-def test_a_handoff_file_is_always_used(store, library, project, step):
-    attach(store.files(step.id, HANDOFF_ID), b"anything", "notes.txt")
+def test_a_note_file_is_used_while_a_note_links_it(store, library, project, step):
+    name = attach(store.files(project.id, NOTES_ID), b"anything", "notes.txt")
+    orphan = attach(store.files(project.id, NOTES_ID), b"nothing links me", "old.txt")
+    log = write_notes([Note("N1", "handoff", "Keys", body=f"See [notes.txt]({name}).")])
+    library.set_module_data(project.id, NOTES_ID, log)
 
-    (entry,) = catalog(library, project, store.files, [handoff_source()])
+    entries = catalog(library, project, store.files, [notes_source()])
 
-    assert [use.where for use in entry.uses] == ["handoff"]
-    assert prunable([entry]) == []
+    by_name = {entry.name: entry for entry in entries}
+    assert [use.where for use in by_name[name].uses] == ["note N1 — Keys"]
+    assert [location.name for _source, location in prunable(entries)] == [orphan]
 
 
 def test_an_instruction_file_is_used_without_a_link_because_briefings_carry_it(

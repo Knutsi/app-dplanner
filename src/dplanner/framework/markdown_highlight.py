@@ -1,6 +1,6 @@
 """Markdown structure, visible while the source stays plain text.
 
-Every prose document in this application — a description, a handoff, a test body — is
+Every prose document in this application — a description, a note, a test body — is
 markdown on disk, and the editors over them are ``QPlainTextEdit``s bound positionally
 through :class:`TextBinding`. A rich-text editor (``setMarkdown``/``toMarkdown``) would
 break that binding: it edits a *document tree* and writes back a normalised serialisation,

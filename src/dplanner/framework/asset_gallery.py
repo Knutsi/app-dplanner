@@ -11,7 +11,7 @@ Two source modes, two path vocabularies — never mixed:
 - :meth:`set_area` shows a node's content-addressed module area (``domain/assets.py``),
   with names like ``assets/<sha>.png`` read through the area. Only this mode can be
   ``editable``: Attach and remove write the area directly and are deliberately not
-  undoable — the same trade the handoff's attachments made, because an orphaned blob is
+  undoable — the same trade every attachment makes, because an orphaned blob is
   recoverable where a dangling link is not. The gallery is handed a *provider* of the
   area, not the area itself: a node created moments ago has no directory until autosave
   flushes it, and the store says so with a ``KeyError`` at resolve time — answered here

@@ -643,23 +643,6 @@ def ticket_icon(color: str | QColor) -> QIcon:
     return QIcon(pixmap)
 
 
-def handoff_icon(color: str | QColor) -> QIcon:
-    """A note leaving a box: what this step passes forward to whoever comes next."""
-    pixmap, painter = _canvas()
-    painter.setPen(_pen(color, 1.2))
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    box = QPainterPath(QPointF(7.5, 3.0))
-    box.lineTo(QPointF(2.5, 3.0))
-    box.lineTo(QPointF(2.5, 13.0))
-    box.lineTo(QPointF(7.5, 13.0))
-    painter.drawPath(box)
-    painter.drawLine(QPointF(6.0, 8.0), QPointF(13.5, 8.0))
-    painter.drawLine(QPointF(10.5, 5.0), QPointF(13.5, 8.0))
-    painter.drawLine(QPointF(10.5, 11.0), QPointF(13.5, 8.0))
-    painter.end()
-    return QIcon(pixmap)
-
-
 # The medallion vocabulary the canvas painted first, as row and menu icons: one painter per
 # kind name a step can wear ("tag" a milestone, "layers" a feature, "spark" an agent step,
 # "beaker" one carrying tests, "shield" a check). It lives here, beside the glyphs, so a
@@ -671,7 +654,6 @@ GLYPH_ICONS: dict[str, Callable[[str | QColor], QIcon]] = {
     "beaker": beaker_icon,
     "shield": shield_icon,
     "ticket": ticket_icon,
-    "handoff": handoff_icon,
 }
 
 

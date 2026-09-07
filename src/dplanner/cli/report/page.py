@@ -14,7 +14,7 @@ printable, and a search finds every step.
 
 The information architecture answers four readers in order: the sponsor's "on track?"
 (the overview's figures and chart), the product owner's "what is in each milestone and
-what was decided" (timeline, decisions), the tester's "what is ready and what did the
+what was decided" (timeline, notes), the tester's "what is ready and what did the
 last run say" (steps, tests), the developer's "how does it hang together" (plan, order),
 and the last section tells anyone how to get the tool and open the plan.
 """

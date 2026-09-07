@@ -39,8 +39,9 @@ def attach_description_image(cli, cli_stdin, tmp_path, *, referenced):
 
 def test_asset_list_names_every_location_and_its_uses(cli, cli_stdin, tmp_path, project, workspace):
     described = attach_description_image(cli, cli_stdin, tmp_path, referenced=True)
+    cli("note", "add", project, "handoff", "Keys", "--step", "Deploy")
     carried = data(
-        cli("handoff", "attach", "Deploy", source(tmp_path, "notes.txt", b"bytes"), "--json")
+        cli("note", "attach", project, "N1", source(tmp_path, "notes.txt", b"bytes"), "--json")
     )["asset"]
 
     report = data(cli("asset", "list", project, "--json"))
@@ -54,12 +55,13 @@ def test_asset_list_names_every_location_and_its_uses(cli, cli_stdin, tmp_path, 
     assert (workspace / "discovery" / location["path"].split("discovery/")[1]).exists()
     assert [use["where"] for use in location["uses"]] == ["description"]
     assert [use["title"] for use in location["uses"]] == ["Deploy"]
-    assert [use["where"] for use in by_name[carried]["locations"][0]["uses"]] == ["handoff"]
+    assert [use["where"] for use in by_name[carried]["locations"][0]["uses"]] == ["note N1 — Keys"]
 
 
 def test_asset_list_filters_to_the_unused(cli, cli_stdin, tmp_path, project):
     attach_description_image(cli, cli_stdin, tmp_path, referenced=False)
-    cli("handoff", "attach", "Deploy", source(tmp_path, "notes.txt", b"bytes"))
+    cli("note", "add", project, "handoff", "Keys", "--step", "Deploy")
+    cli("note", "attach", project, "N1", source(tmp_path, "notes.txt", b"bytes"))
 
     report = data(cli("asset", "list", project, "--unused", "--json"))
 

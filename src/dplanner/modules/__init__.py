@@ -81,7 +81,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.coverage.activity import CoverageDeps
     from dplanner.modules.coverage.module import CoverageModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
-    from dplanner.modules.decisions.module import DecisionsDeps, DecisionsModule
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
     from dplanner.modules.estimation.aspect import read as estimated_days
@@ -110,6 +109,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.llm.module import LlmDeps, LlmModule
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
+    from dplanner.modules.notes.module import NotesDeps, NotesModule
     from dplanner.modules.progression.module import ProgressionDeps, ProgressionModule
     from dplanner.modules.project_assets.module import (
         ProjectAssetsDeps,
@@ -154,7 +154,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepDescriptionModule,
     )
     from dplanner.modules.step_description.section import SeparateInstructionLink
-    from dplanner.modules.step_handoff.module import StepHandoffDeps, StepHandoffModule
     from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_milestone.module import StepMilestoneDeps, StepMilestoneModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
@@ -519,14 +518,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 ),
                 AspectTemplate(
                     "Agent",
-                    frozenset(
-                        {
-                            "agent.toggle",
-                            "description.toggle",
-                            "estimate.toggle",
-                            "handoff.toggle",
-                        }
-                    ),
+                    frozenset({"agent.toggle", "description.toggle", "estimate.toggle"}),
                     tone="info",
                     glyph="spark",
                 ),
@@ -1264,25 +1256,16 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         # Declares the compiled-document format only; DocsModule and the CLI write it.
         DocsCompiledModule(),
-        # Its project-level card: the decisions the project made, which every briefing
-        # carries. Before project_editor, whose panel is built from the cards registered
-        # by then; the key rule is the root's, handed over like every row's.
-        DecisionsModule(
-            DecisionsDeps(
+        # Its project-level card: the notes the project made along the way, which every
+        # briefing indexes. Before project_editor, whose panel is built from the cards
+        # registered by then; the key rule is the root's, handed over like every row's.
+        NotesModule(
+            NotesDeps(
                 library=library,
                 undo=services.undo,
                 cards=services.detail_cards,
                 parent=services.window,
                 step_key=_step_key,
-            )
-        ),
-        StepHandoffModule(
-            StepHandoffDeps(
-                actions=services.actions,
-                library=library,
-                undo=services.undo,
-                sections=services.inspector_sections,
-                files=store.files,
             )
         ),
         StepMilestoneModule(
@@ -1397,18 +1380,28 @@ def _module_asset_paths(
     return tuple(str(area.absolute(name)) for name in assets(area))
 
 
-def _handoff_parts(
+def _note_parts(
     library: "Library", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
 ) -> "list[PromptPart]":
-    """The briefing's inherited blocks: handoffs become prompt parts here, and neither the
-    agent module nor the handoff module learns the other's name. Both surfaces call this
-    one function, so the window and the CLI cannot brief a step two ways."""
+    """The briefing's blocks after the instructions: the notes addressed to this step in
+    full, and the index of everything else that reaches it — the notes module's own
+    blocks, made prompt parts here so neither module learns the other's name. Both
+    surfaces and ``dplanner note index`` read the same blocks, so the window, the verb
+    and the CLI cannot brief a step two ways."""
+    from dplanner.modules.notes.log import note_files
+    from dplanner.modules.notes.reach import briefing_blocks, reaching
     from dplanner.modules.step_agent_instruction.prompt import PromptPart
-    from dplanner.modules.step_handoff.handoff import inherited
 
+    project = library.project_of(step.id)
     return [
-        PromptPart(heading=h.title, body=h.note, files=h.assets)
-        for h in inherited(library, step, files)
+        PromptPart(
+            heading=block.heading,
+            body=block.body,
+            files=tuple(
+                path for note in block.carried for path in note_files(files, project.id, note)
+            ),
+        )
+        for block in briefing_blocks(project, reaching(library, step), _step_key)
     ]
 
 
@@ -1524,9 +1517,10 @@ def _briefing_project_sections(
     library: "Library", step: "Step", _files: "Callable[[str, str], ModuleFileArea]"
 ) -> "list[PromptPart]":
     """The project's own facts as briefing sections: its topology — how the graph is
-    shaped, which every step is read against — and the decisions still in force. Root
-    prose for the same reason as the step's sections: it names other modules' vocabulary."""
-    from dplanner.modules.decisions.log import read_log, standing
+    shaped, which every step is read against. (What the project recorded along the way
+    — decisions included — is the notes index after the instructions, ``_note_parts``.)
+    Root prose for the same reason as the step's sections: it names other modules'
+    vocabulary."""
     from dplanner.modules.spec.aspect import read_topology
     from dplanner.modules.step_agent_instruction.prompt import PromptPart
 
@@ -1536,26 +1530,6 @@ def _briefing_project_sections(
     if topology.strip():
         sections.append(
             PromptPart(heading="Topology — how this project's graph is shaped", body=topology)
-        )
-    # The decisions still in force, so an agent builds on what was settled rather than
-    # re-deciding it; a superseded one is history and stays out of the briefing.
-    decided = standing(read_log(project))
-    if decided:
-        lines = []
-        for record in decided:
-            where = project.step(record.step) if record.step else None
-            facts = [record.made] if record.made else []
-            if where is not None:
-                facts.append(f"on {_step_key(where) or where.title}")
-            when = f" ({', '.join(facts)})" if facts else ""
-            lines.append(f"- **{record.id} {record.title}**{when}")
-            lines += [f"  {line}" if line else "" for line in record.body.rstrip().splitlines()]
-        sections.append(
-            PromptPart(
-                heading="Decisions so far — build on these; record a new one with "
-                "`dplanner decision add`",
-                body="\n".join(lines),
-            )
         )
     return sections
 
@@ -1597,7 +1571,7 @@ def _default_briefing() -> "Briefing":
     from dplanner.modules.step_agent_instruction.prompt import Briefing
 
     return Briefing(
-        parts=_handoff_parts,
+        parts=_note_parts,
         sections=_briefing_sections,
         project_sections=_briefing_project_sections,
         epilogue=_agent_epilogue,
@@ -1728,7 +1702,6 @@ def _report_sources() -> tuple["ReportSource", ...]:
     functions, the way the CLI verbs get theirs; the order is the order parts land in
     their slots when two modules place at the same rank.
     """
-    from dplanner.modules.decisions.report import report_source as decisions
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.aspect import read_history as estimate_history
@@ -1736,11 +1709,11 @@ def _report_sources() -> tuple["ReportSource", ...]:
     from dplanner.modules.estimation.schedule import project_schedule, start_of
     from dplanner.modules.feature.report import report_source as features
     from dplanner.modules.github.report import report_source as github
+    from dplanner.modules.notes.report import report_source as notes
     from dplanner.modules.progression.report import report_source as progression
     from dplanner.modules.project_editor.report import report_source as graph
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_description.report import report_source as descriptions
-    from dplanner.modules.step_handoff.report import report_source as handoffs
     from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_milestone.report import report_source as milestones
     from dplanner.modules.step_order.report import report_source as order
@@ -1782,10 +1755,9 @@ def _report_sources() -> tuple["ReportSource", ...]:
         features(),
         descriptions(),
         tests(key_of=_step_key),
-        handoffs(),
         tickets(),
         github(),
-        decisions(key_of=_step_key),
+        notes(key_of=_step_key),
     )
 
 
@@ -1892,17 +1864,21 @@ def _plan_whereabouts(facts: "RepositoryFacts") -> str:
     return text
 
 
-def _agent_epilogue(step: "Step") -> str:
+def _agent_epilogue(library: "Library", step: "Step") -> str:
     """The briefing's closing words: how the agent reports back through the CLI.
 
-    Cross-module prose — it names the status and handoff verbs — so it is written here, in
+    Cross-module prose — it names the status and note verbs — so it is written here, in
     the one file allowed to know every module's vocabulary, and handed to the agent module
     as a callback on both surfaces. Every verb names the step by its key: a key is
     unambiguous where a title may match two steps, and it is what the branch and the
-    PR are named after.
+    PR are named after; the note verbs name the project too, since a note is the
+    project's record.
     """
+    from dplanner.modules.notes.reach import project_ref
+
     key = _step_key(step) or step.title or "Untitled step"
     ref = f"'{key}'" if " " in key else key
+    project = project_ref(library.project_of(step.id))
     return (
         f"This step is {key}. Its branch and worktree carry that key; open the PR title"
         f" with it (`{key}: …`) and record the branch and the PR on the step as they"
@@ -1916,13 +1892,25 @@ def _agent_epilogue(step: "Step") -> str:
         " approval\n"
         f"- `dplanner agent-state set {ref} needs-input` when you have a question the"
         " developer must answer before you can go on\n"
+        "As you go, leave notes — the project's record, indexed into every later"
+        " briefing; `dplanner note add --help` lists the labels:\n"
+        f"- `dplanner note add {project} decision '<what you chose>' --step {ref}"
+        " --text '<why>'` for each choice the plan should remember (`--supersedes N3`"
+        " when it reverses an earlier one)\n"
+        f"- `dplanner note add {project} spec-change '<what differs>' --step {ref}"
+        " --text '<what and why>'` where the work had to depart from the spec\n"
+        f"- `dplanner note add {project} later '<what>' --step {ref}` for work you"
+        " noticed and did not do\n"
         "When the work is finished, record it in DPlanner:\n"
         f"- `dplanner status set {ref} done` and `dplanner agent-state clear {ref}`\n"
-        f"- `dplanner handoff set {ref} --file -` with anything later steps should"
-        " know (add `--scope project` to reach the whole project;"
-        f" `dplanner handoff attach {ref} <file>` for files).\n"
+        f"- `dplanner note add {project} handoff '<one line the next worker needs>'"
+        f" --step {ref} --file -` with what whoever picks up after you must know —"
+        " where things are, what is half done, what bit you. Title it as the fact it"
+        " is; the body carries the detail. Add `--for S12` for a step that must read it"
+        " in full, `--reach project` if every step should see it;"
+        f" `dplanner note attach {project} <id> <file>` for files.\n"
         f"If you cannot finish, `dplanner status set {ref} blocked` and say why in the"
-        " handoff."
+        " handoff note."
     )
 
 
@@ -2124,11 +2112,11 @@ def _asset_sources() -> tuple["AssetSource", ...]:
     """
     from dplanner.modules.docs.aspect import asset_source as documentation
     from dplanner.modules.feature.catalogue import asset_source as feature_images
+    from dplanner.modules.notes.log import asset_source as notes
     from dplanner.modules.project_assets.cli import asset_source as pool
     from dplanner.modules.spec.documents import asset_source as spec_figures
     from dplanner.modules.step_agent_instruction.aspect import asset_source as instructions
     from dplanner.modules.step_description.aspect import asset_source as descriptions
-    from dplanner.modules.step_handoff.aspect import asset_source as handoffs
     from dplanner.modules.testing.aspect import asset_source as tests
 
     return (
@@ -2136,7 +2124,7 @@ def _asset_sources() -> tuple["AssetSource", ...]:
         tests(),
         documentation(),
         instructions(),
-        handoffs(),
+        notes(),
         spec_figures(),
         feature_images(),
         pool(),
@@ -2168,7 +2156,6 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.core.config_dir import config_dir
     from dplanner.core.telemetry import crash_log_path, journal_path
     from dplanner.modules.coverage import cli as coverage_cli
-    from dplanner.modules.decisions import cli as decision_cli
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
@@ -2178,6 +2165,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.github import cli as github_cli
     from dplanner.modules.library import cli as library_cli
+    from dplanner.modules.notes import cli as note_cli
     from dplanner.modules.progression import cli as progression_cli
     from dplanner.modules.project_assets import cli as assets_cli
     from dplanner.modules.project_assets.cli import read_titles
@@ -2192,7 +2180,6 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_description.aspect import read as description_read
-    from dplanner.modules.step_handoff import cli as handoff_cli
     from dplanner.modules.step_milestone import cli as milestone_cli
     from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_order import cli as order_cli
@@ -2239,7 +2226,6 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         # one derivation, handed across here — `feature add`, `cite`, `reanchor` and lint
         # all judge a quote the same way.
         *feature_cli.commands(anchor=spec_cli.anchor_sources),
-        *handoff_cli.commands(),
         *testing_cli.commands(),
         *check_cli.commands(),
         # What any collector gathers is one derivation asked three ways, so it is one verb
@@ -2279,9 +2265,9 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
             key_of=_step_key,
         ),
         *github_cli.commands(),
-        # A decision names the step it was made on by id and prints it by key — the
+        # A note names the step it was made on by id and prints it by key — the
         # same rule every row prints, handed over rather than imported.
-        *decision_cli.commands(key_of=_step_key),
+        *note_cli.commands(key_of=_step_key),
         # The report is every module's Qt-free say, assembled once (`_report_sources`) for
         # the terminal and the window alike; the readers every step row needs come with it.
         *report_commands(
@@ -2344,7 +2330,6 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.step_agent_run import aspect as agent_run
     from dplanner.modules.step_check import aspect as check
     from dplanner.modules.step_description import aspect as description
-    from dplanner.modules.step_handoff import aspect as handoff
     from dplanner.modules.step_milestone import aspect as milestone
     from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
@@ -2360,7 +2345,6 @@ def aspect_specs() -> list["AspectSpec"]:
         estimation.SPEC,
         feature.SPEC,
         github.SPEC,
-        handoff.SPEC,
         milestone.SPEC,
         spec.SPEC,
         status.SPEC,
@@ -2383,7 +2367,6 @@ _PHRASE_ORDER = (
     "spec",
     "step_description",
     "step_agent_instruction",
-    "step_handoff",
 )
 
 
@@ -2410,7 +2393,7 @@ def default_module_formats() -> list[ModuleDataFormat]:
     format missing here is data the CLI silently declines to bring forward.
     """
     from dplanner.domain import shelf
-    from dplanner.modules.decisions import log as decisions
+    from dplanner.modules.notes import migrate as notes
     from dplanner.modules.project_assets import cli as project_assets
     from dplanner.modules.project_editor import positions
     from dplanner.modules.time_estimates import progress as time_progress
@@ -2422,13 +2405,14 @@ def default_module_formats() -> list[ModuleDataFormat]:
     # needs no entry: it rides on the estimation aspect's format, which is the same module
     # writing under the same id on another node.
     # The shelf is the fourth: the domain's own, holding turned-off aspects' data. The
-    # decision log and the progress history are the fifth and sixth — project records
-    # no step aspect declares.
+    # note log and the progress history are the fifth and sixth — project records no
+    # step aspect declares; the log's format also carries the takeover of the retired
+    # decision log and the absorption of the retired handoff aspect.
     return [spec.data_format for spec in aspect_specs()] + [
         positions.DATA_FORMAT,
         time_schedule.DATA_FORMAT,
         time_progress.DATA_FORMAT,
         project_assets.DATA_FORMAT,
         shelf.DATA_FORMAT,
-        decisions.DATA_FORMAT,
+        notes.DATA_FORMAT,
     ]

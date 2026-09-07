@@ -15,6 +15,12 @@ A retired module's data is migrated the same way by whoever takes it over: the n
 package carries the old module's id and frozen migration chain (a :class:`Takeover`) — the
 on-disk schema was always the contract between them, and no module imports another. Data
 nobody declares (a future module, a plugin) is left exactly as found. See ``FORMAT.md``.
+
+A takeover converts one entry on one owner. Data that changes *owner* — a step's prose
+becoming a record on its project — needs the whole repository and the aggregate that says
+how owners relate, so a format may also declare an ``absorb`` pass: run once per open,
+after every per-entry migration, over the repository and the loaded document, returning
+the owners it changed. It must be idempotent, because it runs on every open.
 """
 
 import logging
@@ -31,6 +37,11 @@ FORMAT_KEY = "format"
 # One step of a module's chain: format k → k+1. Pure — takes the dict, returns the dict.
 type DataMigration = Callable[[dict[str, Any]], dict[str, Any]]
 
+# (repository, the loaded document) → the owner ids it changed. The document is whatever
+# ``Repository.load()`` returned; the framework never names your aggregate, so an
+# absorption is the module's to type.
+type Absorption = Callable[[Repository[Any], Any], Sequence[str]]
+
 
 @dataclass(frozen=True)
 class ModuleDataFormat:
@@ -38,6 +49,7 @@ class ModuleDataFormat:
     version: int = 1
     migrations: tuple[DataMigration, ...] = ()  # migrations[k] takes format k+1 to k+2.
     takeovers: tuple["Takeover", ...] = ()  # Retired modules whose data this one absorbs.
+    absorb: Absorption | None = None  # Data moving between owners; see the module docstring.
 
     def __post_init__(self) -> None:
         if len(self.migrations) != self.version - 1:
@@ -68,7 +80,9 @@ def stamped(data: dict[str, Any], version: int) -> dict[str, Any]:
     return {**data, FORMAT_KEY: version}
 
 
-def migrate_module_data(repo: Repository[Any], formats: Sequence[ModuleDataFormat]) -> list[str]:
+def migrate_module_data(
+    repo: Repository[Any], formats: Sequence[ModuleDataFormat], document: Any = None
+) -> list[str]:
     """Bring every owner's declared module data to its current format.
 
     Returns the owner ids that changed, so the caller can persist exactly those. Entries
@@ -76,6 +90,10 @@ def migrate_module_data(repo: Repository[Any], formats: Sequence[ModuleDataForma
     read, and an older build of the application must never overwrite a newer one's data —
     in a workspace shared through git that is the difference between "this feature looks
     empty until I update" and "my colleague's work is gone".
+
+    ``document`` is the loaded aggregate, handed to every declared ``absorb`` once the
+    per-entry passes are done. An owner an absorption changed may have changed in its
+    prose as well as its data; the caller persists both.
     """
     changed: list[str] = []
     for owner in repo.owners():
@@ -86,6 +104,10 @@ def migrate_module_data(repo: Repository[Any], formats: Sequence[ModuleDataForma
             touched |= _bring_current(repo, owner, declared)
         if touched:
             changed.append(owner.id)
+    for declared in formats:
+        if declared.absorb is not None:
+            absorbed = declared.absorb(repo, document)
+            changed += [owner_id for owner_id in absorbed if owner_id not in changed]
     return changed
 
 

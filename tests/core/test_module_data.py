@@ -100,3 +100,22 @@ def test_unknown_entries_survive_a_round_trip(tmp_path):
         "anything": [1, 2],
         "format": 7,
     }
+
+
+def test_an_absorption_runs_after_every_entry_pass_with_the_document(repo):
+    """Data moving between owners needs the whole repository and the aggregate; the pass
+    runs last, and the owners it names join the ones the entry passes changed."""
+    child = repo.owners()[0]
+    repo.set_module_data(child.id, "m", {"old": 1})
+    seen = []
+
+    def absorb(seen_repo, document):
+        seen.append((seen_repo, document, dict(child.module_data["m"])))
+        return [child.id, "elsewhere"]
+
+    fmt = ModuleDataFormat("m", version=2, migrations=(lambda d: {"new": d["old"]},), absorb=absorb)
+    changed = migrate_module_data(repo, [fmt], "the document")
+    assert changed == [child.id, "elsewhere"]
+    ((seen_repo, document, entry),) = seen
+    assert seen_repo is repo and document == "the document"
+    assert entry == {"new": 1, "format": 2}  # The entry passes ran first.
