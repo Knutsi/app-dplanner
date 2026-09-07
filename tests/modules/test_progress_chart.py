@@ -173,6 +173,34 @@ def test_a_milestone_name_with_no_room_beside_it_is_dropped_not_squeezed(app):
     chart.deleteLater()
 
 
+def test_a_milestone_row_dates_both_its_marks_and_drops_a_line_to_the_axis(app):
+    """The axis marks weeks; the shift a row draws is days, so each mark is dated beside
+    itself — the landing now on the far side of the pair, the plan then's on its own —
+    and a line falls from the landing to the axis so the day can be read off the scale."""
+    plan = ((FIRST, 0.0), (LAST, 1.0))
+    moved = Segment(
+        "m1", "v1", VIOLET, now=(FIRST, date(2026, 9, 18)), then=(FIRST, date(2026, 9, 11))
+    )
+    still = Segment("m2", "v2", TEAL, now=(FIRST, LAST), then=(FIRST, LAST))
+    chart = _chart(ChartData(FIRST, expected=plan, segments=(moved, still)), width=900)
+    shift = chart.panel("shift")
+    dates = chart.row_dates(shift)
+    assert [text for _s, text, _r in dates] == ["18 Sep", "11 Sep", "1 Oct"]
+    # The pair is dated on the outside: the earlier landing to the left of its mark, the
+    # later one to the right of its own, so neither sits on the arrow between them.
+    _s, _text, then_at = dates[1]
+    _s, _text, now_at = dates[0]
+    assert then_at.right() < chart._x(date(2026, 9, 11))
+    assert now_at.left() > chart._x(date(2026, 9, 18))
+    # A row that did not move is dated once, not twice with the same day.
+    assert [text for segment, text, _r in dates if segment is still] == ["1 Oct"]
+    image = chart.grab().toImage()
+    x = round(chart._x(date(2026, 9, 18)))
+    below = round(chart._row_y(shift, 0) + ROW_HEIGHT * 0.75)
+    assert image.pixelColor(x, below) != image.pixelColor(x - 6, below)
+    chart.deleteLater()
+
+
 def _colours_along_the_line(chart: ProgressChart, kind: str, first: date, last: date) -> set[str]:
     image = chart.grab().toImage()
     panel = chart.panel(kind)

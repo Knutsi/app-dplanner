@@ -131,6 +131,18 @@ def format_date(when: date, today: date | None = None) -> str:
     return f"{when.day} {MONTHS[when.month - 1][:ABBREVIATION]} '{when.year % 100:02d}"
 
 
+def short_date(when: date, today: date | None = None) -> str:
+    """A date where a column has no room for the month spelled out: "23 Sep", with the
+    year when it is not this one — :func:`format_date`'s rule, one size down. It is what
+    the axis marks are labelled with, so a date printed inside a plot reads as the same
+    kind of thing as the scale under it."""
+    today = today or date.today()
+    month = MONTHS[when.month - 1][:ABBREVIATION]
+    if when.year == today.year:
+        return f"{when.day} {month}"
+    return f"{when.day} {month} '{when.year % 100:02d}"
+
+
 def as_weeks(days: float) -> float:
     """``days`` of work as working weeks. A week is five days, because a day is a working one."""
     return days / WORKING_DAYS_PER_WEEK

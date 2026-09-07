@@ -112,7 +112,7 @@ def report_source(
             return NOTHING
         history = read_history(project)
         then = baseline(history, dated.start, today=today)
-        view = view_scope(now, history, then, None, by_days=False)
+        view = view_scope(now, history, then, None, by_days=True)
         colors = phase_colors(team.phases, read_color, read_palette(project))
         labels = dated.labels
         placed = [
@@ -136,9 +136,9 @@ def report_source(
                     plots=_plots(view, then, dated.start, today),
                     stretches=_stretches(team, colors, labels, now, then, dated.start, today),
                     idle=view.idle,
-                    note="Three plots on one time axis, by steps: where the work stands "
-                    "against the plan, how the plan itself has moved since it was recorded, "
-                    "and where each milestone has slid.",
+                    note="Three plots on one time axis, by estimated days: where the work "
+                    "stands against the plan, how the plan itself has moved since it was "
+                    "recorded, and where each milestone has slid.",
                 ),
             ),
             Placed(
@@ -157,7 +157,7 @@ def report_source(
                             step_id=phase.milestone.id if phase.milestone else "",
                             asked=phase.asked,
                             share=tally(phase.steps, readers.days_for, readers.status_for).share(
-                                by_days=False
+                                by_days=True
                             ),
                         )
                         for phase, color in zip(team.phases, colors, strict=True)
@@ -321,7 +321,7 @@ def _milestones_table(dated: _Dated, readers: Readers) -> Table:
     for phase in team.phases:
         key = phase.milestone.id if phase.milestone else None
         reached = tally(phase.steps, readers.days_for, readers.status_for)
-        share = reached.share(by_days=False)
+        share = reached.share(by_days=True)
         rows.append(
             Row(
                 (
@@ -350,8 +350,9 @@ def _milestones_table(dated: _Dated, readers: Readers) -> Table:
             Column(""),
         ),
         tuple(rows),
-        note=f"Dated for {_people(team)} at {efficiency:.0%} focus; a milestone whose set "
-        "date the work cannot meet is pushed, never overlapped.",
+        note=f"Dated for {_people(team)} at {efficiency:.0%} focus; *Done* is the share of "
+        "the stretch's estimated days that has landed. A milestone whose set date the work "
+        "cannot meet is pushed, never overlapped.",
     )
 
 

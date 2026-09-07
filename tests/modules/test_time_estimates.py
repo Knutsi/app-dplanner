@@ -22,7 +22,7 @@ from dplanner.modules.step_agent_instruction.aspect import write_state
 from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
 from dplanner.modules.step_milestone.aspect import write as write_milestone_label
 from dplanner.modules.time_estimates.chart import segment_words
-from dplanner.modules.time_estimates.milestones import ALL_KEY
+from dplanner.modules.time_estimates.milestones import ALL_KEY, ALL_LABEL
 from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
     PALETTES,
@@ -320,7 +320,6 @@ def test_the_milestones_land_in_sequence_and_the_whole_leads_the_list(services, 
     whole = tab.milestones.rows[0]
     assert whole.key == ALL_KEY and whole.selected  # nothing picked: the whole is
     assert not whole.swatch.isVisibleTo(tab.widget)
-    assert tab.start_dates.keys == (draft.id, ship.id)
     assert tab.landing == date(2026, 9, 23)
 
 
@@ -340,7 +339,12 @@ def test_each_milestone_wears_its_shade_of_the_palette(services, staged):
     assert tab.milestones.row(draft.id).swatch.color.name() == first
     assert tab.milestones.row(ship.id).swatch.color.name() == second
     assert tab.milestones.row(draft.id).name.text() == "v1"
-    assert tab.milestones.row(draft.id).title.text() == "Draft the model"
+    # The step's own title stands beside the label, whole where there is room and elided
+    # where there is not — the column is as wide as the panel leaves it.
+    row = tab.milestones.row(draft.id)
+    assert row.title.full == "Draft the model"
+    row.title.resize(40, row.title.height())
+    assert row.title.text().endswith("…") and row.title.full == "Draft the model"
 
 
 def test_the_dealt_shades_spread_along_the_map_as_milestones_are_added(services, staged):
@@ -408,21 +412,24 @@ def test_the_calendar_paints_each_stretch_and_marks_the_landing(services, staged
 
 
 def test_dating_a_milestone_starts_with_the_day_the_sequence_gave_it(services, staged):
-    """*Begin…* in the start-dates table pre-fills the stretch's own start, so choosing a
+    """*Begin…* under a milestone's name pre-fills the stretch's own start, so choosing a
     date is one click and an edit; the cross hands the decision back to the sequence.
-    Both undo — and the landing date in the milestone list answers each edit."""
+    Both undo — and the landing date on the same row answers each edit."""
     tab = services.tabs.open("time", staged.id)
     _read, _draft, _docs, ship = staged.steps
-    row = tab.start_dates.row(ship.id)
-    assert row.name.text() == "v2"
+    row = tab.milestones.row(ship.id).start
+    assert tab.milestones.row(ship.id).name.text() == "v2"
     assert row.set_date.isVisibleTo(tab.widget) and not row.date.isVisibleTo(tab.widget)
+    # Until it is given one, the row says the day the sequence begins it — so a row says
+    # when its work runs, not only when it ends.
+    assert row.caption.text() == "Begins 17 Sep"
     row.set_date.click()
     assert ship.module_data[MODULE_ID] == {"start": "2026-09-17", "format": 1}
     assert row.date.isVisibleTo(tab.widget) and not row.set_date.isVisibleTo(tab.widget)
     row.date.setDate(QDate(2026, 10, 5))
     assert ship.module_data[MODULE_ID]["start"] == "2026-10-05"
     assert _landings(tab)[2] == ("v2", "9 October", "5d")
-    assert tab.start_dates.row(ship.id) is row  # the row the edit came from survives
+    assert tab.milestones.row(ship.id).start is row  # the row the edit came from survives
     row.clear.click()
     assert MODULE_ID not in ship.module_data
     assert _landings(tab)[2] == ("v2", "23 September", "5d")
@@ -432,12 +439,14 @@ def test_dating_a_milestone_starts_with_the_day_the_sequence_gave_it(services, s
     assert MODULE_ID not in ship.module_data
 
 
-def test_the_project_start_is_the_first_start_date(services, staged, project):
-    """The table leads with the project's own start — always dated, never handed back —
-    and setting it is the calendar click's twin: one undoable write of the same entry."""
+def test_the_project_start_is_the_leading_row_of_the_list(services, staged, project):
+    """The list leads with the whole plan, and what it begins on is the project's own
+    start — always dated, never handed back — and setting it is the calendar click's
+    twin: one undoable write of the same entry."""
     tab = services.tabs.open("time", staged.id)
-    row = tab.start_dates.project
-    assert row.name.text() == "Project"
+    leading = tab.milestones.rows[0]
+    assert leading.key == ALL_KEY and leading.name.text() == ALL_LABEL
+    row = leading.start
     assert row.date.isVisibleTo(tab.widget)
     assert not row.clear.isVisibleTo(tab.widget) and not row.set_date.isVisibleTo(tab.widget)
     assert row.date.date() == QDate(2026, 9, 7)
@@ -451,8 +460,8 @@ def test_the_project_start_is_the_first_start_date(services, staged, project):
 def test_a_date_the_sequence_cannot_keep_is_pushed_and_flagged(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, _draft, _docs, ship = staged.steps
-    tab.start_dates.row(ship.id).date.setDate(QDate(2026, 9, 10))
-    tab.start_dates.row(ship.id).start_changed.emit(ship.id, date(2026, 9, 10))
+    tab.milestones.row(ship.id).start.date.setDate(QDate(2026, 9, 10))
+    tab.milestones.row(ship.id).start.start_changed.emit(date(2026, 9, 10))
     v2 = tab.milestones.row(ship.id)
     assert v2.when.text() == "⚠ 23 September"
     assert "Asked to begin 10 September" in v2.toolTip()
@@ -475,7 +484,7 @@ def test_a_dated_milestone_keeps_its_colour_and_vice_versa(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, _ship = staged.steps
     tab.milestones.row(draft.id).swatch.color_picked.emit("#c98500")
-    tab.start_dates.row(draft.id).start_changed.emit(draft.id, date(2026, 9, 1))
+    tab.milestones.row(draft.id).start.start_changed.emit(date(2026, 9, 1))
     assert draft.module_data[MODULE_ID] == {
         "start": "2026-09-01",
         "color": "#c98500",
@@ -515,7 +524,6 @@ def test_removing_a_milestone_step_takes_its_row_with_it(services, staged):
         "v1",
         "Remaining work",
     ]
-    assert tab.start_dates.keys == (draft.id,)
 
 
 def test_the_milestone_rows_are_never_read_back_out_of_the_layout(monkeypatch, services, staged):
@@ -534,18 +542,42 @@ def test_the_milestone_rows_are_never_read_back_out_of_the_layout(monkeypatch, s
     services.undo.push(SetEdgesCommand(ship.id, "requires", [read.id]))
     services.undo.push(SetEdgesCommand(draft.id, "requires", [ship.id]))
     assert tab.milestones.keys == (ship.id, draft.id)
-    assert tab.start_dates.keys == (ship.id, draft.id)
 
 
-def test_without_milestones_the_list_says_where_to_make_one(tab):
-    """The whole is still one row — dated, without controls — and the note says how to
-    add a milestone under it."""
+def test_the_list_scrolls_under_the_staffing_grid(services, staged, app):
+    """A plan with more milestones than the panel is tall scrolls its list; the grid the
+    whole page answers stays where it is, because scrolling the page away with it would
+    take the question off the screen exactly when the answers are being compared."""
+    library = services.document
+    for index in range(12):
+        step = Step(title=f"Ship {index}")
+        AddNodeCommand(staged.id, step).redo(library)
+        SetModuleDataCommand(step.id, ESTIMATION_ID, write_days(1.0)).redo(library)
+        SetModuleDataCommand(step.id, MILESTONE_ID, write_milestone_label(f"m{index}")).redo(
+            library
+        )
+    tab = services.tabs.open("time", staged.id)
+    window = services.window
+    window.resize(1100, 620)
+    window.show()
+    app.processEvents()
+    assert tab.milestone_scroll.verticalScrollBar().maximum() > 0  # there is more than fits
+    assert tab.matrix.visibleRegion().boundingRect().height() == tab.matrix.height()
+    window.hide()
+
+
+def test_without_milestones_the_list_says_where_to_make_one(tab, project):
+    """The one row there is leads the list, so it is what carries the project's start —
+    and the note under it says how to add a milestone."""
     assert tab.milestones.empty.isVisibleTo(tab.widget)
     assert "Step ▸ Type ▸ Milestone" in tab.milestones.empty.text()
     (whole,) = tab.milestones.rows
     assert whole.name.text() == "All work" and whole.key == ""
     assert not whole.swatch.isVisibleTo(tab.widget)
-    assert tab.start_dates.keys == ()  # the project's own start is the whole table
+    assert whole.start.date.date() == QDate(2026, 9, 7)
+    assert not whole.start.clear.isVisibleTo(tab.widget)  # it can never be handed back
+    whole.start.date.setDate(QDate(2026, 9, 14))
+    assert project.module_data[ESTIMATION_ID]["start"] == "2026-09-14"
 
 
 # -- what breaks, said plainly ---------------------------------------------------------------
@@ -574,7 +606,7 @@ def test_a_stepless_project_says_so_instead_of_a_grid_of_zeros(services, make_pr
     tab = services.tabs.open("time", empty.id)
     assert tab.banner.note.text() == "No steps yet"
     assert not tab.matrix.isVisibleTo(tab.widget)
-    assert not tab.start_dates.isVisibleTo(tab.widget)
+    assert not tab.milestone_scroll.isVisibleTo(tab.widget)
     assert not tab.months.isVisibleTo(tab.widget)
     assert tab.controls.isVisibleTo(tab.widget)  # the strip is chrome, and stays
 
@@ -623,15 +655,19 @@ def test_each_row_says_how_much_of_the_work_through_it_has_landed(services, stag
     tab = services.tabs.open("time", staged.id)
     assert [row.progress.text() for row in tab.milestones.rows] == ["0%", "0%", "0%"]
     services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
-    # The whole, then v1, then v2 — everything through its stretch.
-    assert [row.progress.text() for row in tab.milestones.rows] == ["25%", "50%", "25%"]
+    # By estimated days, which is what the page reads unless the count is asked for: the
+    # whole (2 of 7), then v1 (2 of 4), then v2 (2 of 7) — everything through its stretch.
+    assert tab.by_days
+    assert [row.progress.text() for row in tab.milestones.rows] == ["29%", "50%", "29%"]
     assert tab.milestones.row(ship.id).progress.toolTip() == (
         "1 of 4 steps done · 2d of 7d estimated"
     )
-    tab.days_button.click()  # by estimated days: 2 of 7, 2 of 4, then 2 of 7
-    assert tab.by_days
-    assert [row.progress.text() for row in tab.milestones.rows] == ["29%", "50%", "29%"]
+    tab.steps_button.click()  # by count: 1 of 4, 1 of 2, then 1 of 4
+    assert not tab.by_days
+    assert [row.progress.text() for row in tab.milestones.rows] == ["25%", "50%", "25%"]
     SetModuleDataCommand(draft.id, STATUS_ID, write_status("done")).redo(library)
+    assert [row.progress.text() for row in tab.milestones.rows] == ["50%", "100%", "50%"]
+    tab.days_button.click()
     assert [row.progress.text() for row in tab.milestones.rows] == ["57%", "100%", "57%"]
 
 
@@ -667,7 +703,7 @@ def test_the_plots_show_the_whole_plan_and_follow_the_measure(services, staged):
     assert data.finish == date(2026, 9, 23) and data.emphasis is None
     assert data.expected[0] == (date(2026, 9, 7), 0.0)
     assert data.expected[-1] == (date(2026, 9, 23), 1.0)
-    assert data.actual[-1] == (date.today(), 0.25)
+    assert data.by_days and data.actual[-1] == (date.today(), pytest.approx(2 / 7))
     assert [(s.key, s.label, s.now) for s in data.segments] == [
         (draft.id, "v1", (date(2026, 9, 7), date(2026, 9, 16))),
         (ship.id, "v2", (date(2026, 9, 17), date(2026, 9, 23))),
@@ -677,12 +713,13 @@ def test_the_plots_show_the_whole_plan_and_follow_the_measure(services, staged):
     data = tab.chart._data
     assert data.emphasis == draft.id and data.emphasised is data.segments[0]
     assert data.finish == date(2026, 9, 23) and len(data.segments) == 2  # nothing hidden
-    tab.days_button.click()
-    data = tab.chart._data
-    assert data.by_days and data.actual[-1] == (date.today(), pytest.approx(2 / 7))
     assert "plan now:" in tab.chart.tooltip_at(date(2026, 9, 10))
     assert "of days" in tab.chart.tooltip_at(date(2026, 9, 10))
     assert "actual: 29% of days" in tab.chart.tooltip_at(date.today())
+    tab.steps_button.click()
+    data = tab.chart._data
+    assert not data.by_days and data.actual[-1] == (date.today(), 0.25)
+    assert "actual: 25% of steps" in tab.chart.tooltip_at(date.today())
     assert tab.chart.tooltip_at(date(2026, 9, 16)).startswith("16 September")
     assert tab.chart.span[0] <= date(2026, 9, 7) and tab.chart.span[1] >= date(2026, 9, 23)
 

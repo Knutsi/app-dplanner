@@ -94,7 +94,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.domain.schedule import Tick, axis_ticks, change_runs, format_date, share_at
+from dplanner.domain.schedule import (
+    Tick,
+    axis_ticks,
+    change_runs,
+    format_date,
+    share_at,
+    short_date,
+)
 from dplanner.modules.time_estimates.progress import scope_words, shift_words, standing_words
 from dplanner.modules.time_estimates.schedule import WHOLE_COLOR
 from dplanner.modules.time_estimates.view import SECONDARY_ALPHA
@@ -122,6 +129,10 @@ GUTTER_NAME_MAX = 120
 # rather than drawn over it — the milestone plot below names every one of them.
 LANDING_NAME_MAX = 90
 LANDING_NAME_GAP = 6
+# A milestone row's dates sit this far from the mark they belong to, and the line that
+# drops from its landing to the axis wears its shade at this alpha.
+DATE_GAP = 6
+DROP_ALPHA = 90
 # Air between two tick labels: a unit is offered only when every label has this much.
 TICK_LABEL_GAP = 16
 # The dataviz mark grammar: 2 px lines, a marker of at least 8 px ringed in the surface.
@@ -720,20 +731,84 @@ class ProgressChart(QWidget):
                 LANDING_MARK / 2,
             )
 
+    def row_dates(self, panel: _Panel) -> tuple[tuple[Segment, str, QRectF], ...]:
+        """Every date the milestone plot prints, row by row: where the plan now lands the
+        milestone, and — when it moved — where the plan at the basis day landed it.
+
+        The axis under the plot places a mark to the nearest week or month; the shift a
+        row draws is often a few days, and that is the size a reader wants in figures.
+        A date is set beside its own mark, outside the pair when there is room and inside
+        it otherwise, and is **left out rather than squeezed**: it needs to fall inside
+        the plot and clear of the row's other mark. Nothing is lost when it goes — the
+        row's tooltip says the move in words.
+        """
+        data = self._data
+        if data is None:
+            return ()
+        metrics = self.fontMetrics()
+        height = metrics.height()
+        found: list[tuple[Segment, str, QRectF]] = []
+        for index, segment in enumerate(data.milestones):
+            y = self._row_y(panel, index)
+            then = segment.then[1] if segment.then else None
+            now = segment.now[1] if segment.now else None
+            spots = [(now, then)] if now is not None else []
+            if then is not None and then != now:
+                spots.append((then, now))
+            for when, other in spots:
+                text = short_date(when, today=data.today)
+                width = metrics.horizontalAdvance(text) + 2
+                place = self._date_spot(panel, when, other, width)
+                if place is not None:
+                    found.append((segment, text, QRectF(place, y - height / 2, width, height)))
+        return tuple(found)
+
+    def _date_spot(
+        self, panel: _Panel, when: date, other: date | None, width: float
+    ) -> float | None:
+        """Where a row's date starts: away from the row's other mark if there is room on
+        that side, else on the near side, else nowhere. The clearance a mark keeps is its
+        own radius and the gap every label here keeps."""
+        mark = self._x(when)
+        away = -1.0 if other is not None and self._x(other) > mark else 1.0
+        for way in (away, -away):
+            left = mark + MARKER / 2 + DATE_GAP if way > 0 else mark - MARKER / 2 - DATE_GAP - width
+            if left < panel.rect.left() or left + width > panel.rect.right():
+                continue
+            if other is not None:
+                keep = self._x(other)
+                if (
+                    left < keep + MARKER / 2 + DATE_GAP
+                    and keep - MARKER / 2 - DATE_GAP < left + width
+                ):
+                    continue
+            return left
+        return None
+
     def _draw_shift(
         self, painter: QPainter, panel: _Panel, data: ChartData, ink: QColor, surface: QColor
     ) -> None:
         """A row per milestone: its name in the gutter (in secondary ink — a palette's
-        darkest shade is not a text colour), a hollow mark where the plan then landed it,
-        a filled one where the plan now does, and an arrow between them. Rows other than
+        darkest shade is not a text colour), a line dropping from where it lands to the
+        axis, a hollow mark where the plan then landed it, a filled one where the plan
+        now does, an arrow between them and the two dates beside them. Rows other than
         the picked one fade."""
         metrics = painter.fontMetrics()
         secondary = QColor(ink)
         secondary.setAlpha(SECONDARY_ALPHA)
+        # The drops first, so every mark and every date is painted over them.
+        for index, segment in enumerate(data.milestones):
+            if segment.now is None:
+                continue
+            painter.setOpacity(self._row_opacity(data, segment))
+            drop = QColor(segment.color)
+            drop.setAlpha(DROP_ALPHA)
+            painter.setPen(QPen(drop, 1.0))
+            x = self._x(segment.now[1])
+            painter.drawLine(QPointF(x, self._row_y(panel, index)), QPointF(x, panel.rect.bottom()))
         for index, segment in enumerate(data.milestones):
             y = self._row_y(panel, index)
-            faded = data.emphasis is not None and segment.key != data.emphasis
-            painter.setOpacity(FADE if faded else 1.0)
+            painter.setOpacity(self._row_opacity(data, segment))
             name = metrics.elidedText(segment.label, Qt.TextElideMode.ElideRight, GUTTER_NAME_MAX)
             painter.setPen(secondary)
             painter.drawText(
@@ -758,7 +833,18 @@ class ProgressChart(QWidget):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(segment.color)
                 painter.drawEllipse(QPointF(self._x(now), y), LANDING_MARK / 2, LANDING_MARK / 2)
+        for segment, text, place in self.row_dates(panel):
+            painter.setOpacity(self._row_opacity(data, segment))
+            painter.setPen(secondary)
+            painter.drawText(
+                place, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text
+            )
         painter.setOpacity(1.0)
+
+    @staticmethod
+    def _row_opacity(data: ChartData, segment: Segment) -> float:
+        """Everything a row draws fades together when another milestone is picked."""
+        return FADE if data.emphasis is not None and segment.key != data.emphasis else 1.0
 
     def _draw_arrow(self, painter: QPainter, start: QPointF, end: QPointF, color: QColor) -> None:
         """A shaft from ``start`` stopping short of the mark at ``end``, with a head

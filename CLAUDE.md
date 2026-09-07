@@ -907,9 +907,13 @@ root, stop and look for the registry or capability you have not found yet.
   `Chart` of `Plot`s and `Stretch`es on the page and the PDF — so what they share is
   `domain/schedule.py`: `share_at` reads a line at a date and `change_runs` cuts two
   plans into the runs the fill is coloured by, and `progress.py` words `standing_words`
-  and `shift_words` once. **Every milestone's landing is marked and named on the
-  progress line** — a name elided, and dropped rather than squeezed when its neighbour's
-  reaches that far — the two share plots grow with the window to a ceiling of twice
+  and `shift_words` once. **The measure is estimated days** — the count of steps is the
+  other half of the toggle, never the default, in the window and in the report alike: a
+  share of steps calls a two-hour step and a two-week one the same thing. **Every
+  milestone's landing is marked and named on the progress line** — a name elided, and
+  dropped rather than squeezed when its neighbour's reaches that far — **a milestone row
+  dates both its marks and drops a hairline to the axis** (`row_dates`, the same fit
+  rule, both surfaces), the two share plots grow with the window to a ceiling of twice
   their floor (bounds set from the data, never from a resize), their names are set bold,
   and *⤢* beside the basis opens `ChartDialog`: the same widget fed the same record, so
   both redraw together. The delta in words (`delta`, `delta_words`) and

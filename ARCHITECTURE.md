@@ -2655,6 +2655,25 @@ decisions carry it:
   unestimated · counted as 0d*, with *Estimate missing* opening the Estimates tab on
   exactly those rows through a callback on the module's Deps, so the Time tab never
   names the estimation module.
+- **The milestones are one list, not a table of names above a list of the same names.**
+  *Start dates* and *Milestones* listed the same stretches one under the other: a reader
+  had to match a name in the first against a name in the second, and the panel spent
+  twice its height saying it. One row now carries the cause and the effect — *begins
+  21 Jun · lands 3 Aug* — with the step's own title beside the label, so the list says
+  which step each milestone is without a second column of names. The row that leads the
+  list is the whole plan, and what *it* begins on is the project's own start (a row
+  declares that with `MilestoneEntry.sets_project` rather than the list inferring it from
+  the position). Under an undated row the caption says the day the sequence gives it, so
+  every row says when its work runs and not only when it ends. **The list scrolls under
+  the staffing grid**, which stays: the grid is the question the whole page answers, and
+  a plan with thirty milestones would scroll it away exactly when the answers are being
+  compared. That is why the left half is no longer a scroll area of its own — it is a
+  pinned head and a scrolling list, and only the answer side scrolls whole.
+- **The measure is estimated days, and the count is what you ask for.** By steps was the
+  default because it needs no estimates; it also calls a two-hour step and a two-week one
+  the same thing, which is the one comparison a plan priced in days must not make. Days
+  leads the toggle and is what the window opens on, and the report and its exports are
+  drawn the same way, so a page mailed to somebody says what the window said.
 - **The plots name the day the reader asked for, not the record that stood in for it.**
   The scope plot used to be headed *Scope change since 7 September* while the control a
   finger's width above it said *Plan at 1 Jun 2026* — the heading was naming the day the
@@ -2682,6 +2701,15 @@ decisions carry it:
   is no second rendering to drift. It holds no state, so closing it loses nothing: the
   text dialog's rule (*expanding an editor is a second binding, not a copy*) applied to
   a view that has nothing to bind.
+- **A milestone row dates both its marks and drops a line to the axis.** The axis marks
+  weeks or months, and the shift a row draws is often days: the size a reader wants is in
+  figures, so each mark carries its own date — the landing now on the far side of the
+  pair, the plan then's on its own, outside them where there is room and inside where
+  there is not, and left out rather than squeezed (`row_dates`, the landing names' rule
+  applied to a row). A hairline falls from the landing to the axis, so the day it lands
+  can be read off the scale under the plot rather than estimated by eye. Both surfaces
+  draw them: `drawings.py`'s shift plot does the same, with the report's own
+  character-width estimate standing in for font metrics.
 - **Every milestone landing is marked and named on the progress line.** The plan line
   already changes shade at each landing; what it could not say was *which* milestone
   that was, and a reader had to count rows in the plot below to find out. Each landing

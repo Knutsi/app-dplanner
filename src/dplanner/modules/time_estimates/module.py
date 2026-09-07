@@ -2,24 +2,27 @@
 
 A strip across the top holds what the whole page is priced with: the focus factor, the
 calendar-or-project-days lens, the colour map the milestones are shaded from, and Export.
-Under it the page is split at a seam, the answer taking the wider side. On the left, what
-you set: the staffing picker (one heatmap of every team, clicking a tile re-asks the
-question), the **start dates** — the project's own and, for each milestone, the
-sequence's day or a date of its own — and the **milestones** in one list, each with its
-swatch, where it lands and how much of it has landed, led by *All milestones*, the whole
-plan on one line. On the right, what that answers: a banner when something needs saying
-(steps counted as zero, with the button that goes and sizes them; a plan that cannot be
-dated), a calendar with every milestone's stretch of work lit in its shade, and under it
-**three plots on one time axis** (``chart.py``): the plan now against what actually
-landed, the plan as it stood on the basis day against the plan now, and each milestone's
-landing then and now with an arrow between them — by steps or by estimated days, the
-toggle above them, against the project's start or any day picked beside it — the day the
-plots' headings name. The plots take whatever height the window has left, up to a ceiling
-of their own, and *⤢* beside that control opens them in a window of their own, fed the
-same record. Picking a milestone on the left highlights it on the right, in the calendar
-and in every plot, and fades the rest; nothing is hidden by a pick. Calendar days and
-project days are two lenses on one simulation, so they are a toggle over one grid rather
-than two tables side by side. Nothing on the page explains itself; the tooltips do.
+Under it the page is split at a seam, the answer taking the wider side. On the left, the
+staffing picker (one heatmap of every team, clicking a tile re-asks the question) and,
+under it, **the milestones in one list** — a row each, in the order the graph lands them:
+its swatch, its label and the step's full title, when it begins (the sequence's day or a
+date of its own, set right there), where it lands, how long its stretch takes and how much
+of it has landed. *All milestones* leads the list, the whole plan on one line, and its
+beginning is the project's own start. The list scrolls under the staffing grid rather than
+taking it off the page. On the right, what all that answers: a banner when something needs
+saying (steps counted as zero, with the button that goes and sizes them; a plan that cannot
+be dated), a calendar with every milestone's stretch of work lit in its shade, and under it
+**three plots on one time axis** (``chart.py``): the plan now against what actually landed,
+the plan as it stood on the basis day against the plan now, and each milestone's landing
+then and now with an arrow between them — by estimated days, or by the count of steps if
+that is asked for, the toggle above them, against the project's start or any day picked
+beside it, which is the day the plots' headings name. The plots take whatever height the
+window has left, up to a ceiling of their own, and *⤢* beside that control opens them in a
+window of their own, fed the same record. Picking a milestone on the left highlights it on
+the right, in the calendar and in every plot, and fades the rest; nothing is hidden by a
+pick. Calendar days and project days are two lenses on one simulation, so they are a toggle
+over one grid rather than two tables side by side. Nothing on the page explains itself; the
+tooltips do.
 
 The simulation is the domain's (``phases`` over ``parallel_finish``); this module renders
 it and stores only assumptions — the focus factor, the palette, the team a tile click
@@ -39,7 +42,7 @@ picture of a plan that has since changed.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 
@@ -95,7 +98,6 @@ from dplanner.modules.time_estimates.milestones import (
     MilestoneEntry,
     MilestoneList,
     PalettePicker,
-    StartDates,
 )
 from dplanner.modules.time_estimates.months import Band, MonthsView
 from dplanner.modules.time_estimates.progress import (
@@ -144,7 +146,8 @@ BLOCK_GAP = 12
 BUTTON_GAP = 4
 
 # Where the seam falls to begin with; the splitter keeps the proportion after. The left
-# holds the staffing grid and the two lists and nothing wider, so the calendar gets the rest.
+# holds the staffing grid and the milestone list and nothing wider, so the calendar gets
+# the rest.
 LEFT_WIDTH = 440
 RIGHT_WIDTH = 560
 
@@ -219,7 +222,10 @@ class TimeEstimatesActivity(EntityActivity):
         self._report: TimeReport | None = None
         self._calendar_lens = True
         self._picked: StepId | None = None
-        self._by_days = False
+        # By estimated days, not by count: a plan is sized in days, and a share of steps
+        # calls a two-hour step and a two-week one the same thing. The toggle offers the
+        # count beside it.
+        self._by_days = True
         self._basis: date | None = None  # None: the project's start.
         self._loading_basis = False
         # The plots as data, and the window showing them larger while one is open: the
@@ -283,22 +289,24 @@ class TimeEstimatesActivity(EntityActivity):
         left.addWidget(self.matrix, 0, Qt.AlignmentFlag.AlignLeft)
 
         left.addSpacing(BLOCK_GAP)
-        self.dates_caption = _caption("Start dates", settings)
-        left.addWidget(self.dates_caption)
-        self.start_dates = StartDates(settings)
-        self.start_dates.project_changed.connect(self._on_start_picked)
-        self.start_dates.start_changed.connect(self._on_start_changed)
-        left.addWidget(self.start_dates)
-
-        left.addSpacing(BLOCK_GAP)
         self.milestones_caption = _caption("Milestones", settings)
         left.addWidget(self.milestones_caption)
         self.milestones = MilestoneList(settings)
         self.milestones.picked.connect(self._on_picked)
         self.milestones.activated.connect(self._on_activated)
         self.milestones.color_changed.connect(self._on_color_changed)
-        left.addWidget(self.milestones)
-        left.addStretch(1)
+        self.milestones.project_changed.connect(self._on_start_picked)
+        self.milestones.start_changed.connect(self._on_start_changed)
+        # The list scrolls under the staffing grid rather than taking it off the top of
+        # the page: the grid is the question the whole page answers, and a plan with
+        # thirty milestones would scroll it away exactly when it is being compared.
+        self.milestone_scroll = QScrollArea(settings)
+        self.milestone_scroll.setWidget(self.milestones)
+        self.milestone_scroll.setWidgetResizable(True)
+        self.milestone_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.milestone_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.milestone_scroll.setMinimumWidth(self.milestones.minimumSizeHint().width())
+        left.addWidget(self.milestone_scroll, 1)
 
         # -- right: what it answers ----------------------------------------------------------
         answer = QWidget()
@@ -334,16 +342,16 @@ class TimeEstimatesActivity(EntityActivity):
         progress_row.setSpacing(BUTTON_GAP)
         self._measures = QButtonGroup(answer)
         self._measures.setExclusive(True)
-        self.steps_button = _toggle(self.progress_bar, "By steps", "Done steps over steps")
         self.days_button = _toggle(
             self.progress_bar,
             "By days",
             "Estimated days of done steps over the estimated days of all",
         )
-        for index, button in enumerate((self.steps_button, self.days_button)):
+        self.steps_button = _toggle(self.progress_bar, "By steps", "Done steps over steps")
+        for index, button in enumerate((self.days_button, self.steps_button)):
             self._measures.addButton(button, index)
             progress_row.addWidget(button)
-        self.steps_button.setChecked(True)
+        self.days_button.setChecked(True)
         self._measures.idClicked.connect(self._on_measure)
         progress_row.addStretch(1)
         # The basis: the plan the scope is compared against — the start unless picked.
@@ -386,7 +394,9 @@ class TimeEstimatesActivity(EntityActivity):
         # -- the seam ------------------------------------------------------------------------
         self.split = QSplitter(Qt.Orientation.Horizontal)
         self.split.setChildrenCollapsible(False)
-        self.split.addWidget(self._scrolling(settings))
+        # Only the answer side scrolls whole: the left half pins the grid and scrolls
+        # its list inside itself.
+        self.split.addWidget(settings)
         self.split.addWidget(self._scrolling(answer))
         self.split.setStretchFactor(0, 1)
         self.split.setStretchFactor(1, 1)
@@ -416,8 +426,9 @@ class TimeEstimatesActivity(EntityActivity):
 
     @staticmethod
     def _scrolling(page: QWidget) -> QScrollArea:
-        """Each half scrolls on its own when the window is short; neither ever scrolls
-        sideways — the calendar takes the width it is given."""
+        """The answer side scrolls whole when the window is short, and never sideways —
+        the calendar takes the width it is given. The other half pins the staffing grid
+        and scrolls its list inside itself instead."""
         scroller = QScrollArea()
         scroller.setWidget(page)
         scroller.setWidgetResizable(True)
@@ -504,7 +515,7 @@ class TimeEstimatesActivity(EntityActivity):
         self._render()
 
     def _on_measure(self, chosen: int) -> None:
-        self._by_days = chosen == 1
+        self._by_days = chosen == 0
         self._render()
 
     def _on_basis(self, picked: QDate) -> None:
@@ -622,10 +633,8 @@ class TimeEstimatesActivity(EntityActivity):
         datable = report is not None and not report.cycle
         for widget in (
             self.matrix,
-            self.dates_caption,
-            self.start_dates,
             self.milestones_caption,
-            self.milestones,
+            self.milestone_scroll,
             self.pager,
             self.months,
             self.progress_bar,
@@ -676,7 +685,6 @@ class TimeEstimatesActivity(EntityActivity):
         self.months.show_bands(report.start, self._bands(stretches))
         self.months.emphasise(self._picked)
         entries = self._entries(stretches, now, calendar)
-        self.start_dates.show_entries(entries, report.start)
         self.milestones.show_entries(entries, self._picked or ALL_KEY, found=found)
         self._render_progress(stretches, now)
 
@@ -746,7 +754,10 @@ class TimeEstimatesActivity(EntityActivity):
         self, stretches: list[tuple[Phase, QColor]], now: Snapshot, calendar: Cell
     ) -> list[MilestoneEntry]:
         """The whole first — when there is a milestone to set it against — then every
-        stretch in sequence."""
+        stretch in sequence. The row that leads the list carries the project's own start,
+        whichever row that is: the whole when there are milestones, the one stretch there
+        is when there are none."""
+        start = self._deps.start_of(self.project_id)
         found = [
             MilestoneEntry(
                 key=phase.milestone.id if phase.milestone else "",
@@ -775,16 +786,19 @@ class TimeEstimatesActivity(EntityActivity):
                     title="",
                     color=QColor(WHOLE_COLOR),
                     chosen=False,
-                    start=None,
-                    default_start=self._report.start if self._report else date.today(),
+                    start=start,
+                    default_start=start,
                     finish=calendar.finish,
                     days=calendar.days,
                     steps=sum(len(phase.steps) for phase, _ in stretches),
                     asked=None,
+                    sets_project=True,
                     landed=now.toward(None),
                     by_days=self._by_days,
                 ),
             )
+        elif found:
+            found[0] = replace(found[0], start=start, default_start=start, sets_project=True)
         return found
 
     @staticmethod

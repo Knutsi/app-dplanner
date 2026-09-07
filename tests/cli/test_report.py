@@ -130,9 +130,16 @@ def test_the_progress_chart_is_three_plots_on_one_axis(cli_library, plan):
     assert [stretch.label for stretch in chart.stretches] == ["v1"]
     (v1,) = chart.milestones
     assert v1.step_id and v1.note.startswith("v1 lands ")
+    assert "by estimated days" in chart.note  # the measure the whole report reads
     svg = chart_svg(chart, LIGHT)
     assert svg.count('class="plot ') == 2
     assert 'data-kind="status"' in svg and 'data-kind="shift"' in svg
+    # The window's decorations, drawn the same way here: the milestone's landing named on
+    # the progress line, and on its own row a date beside the mark with a line dropping
+    # from it to the axis.
+    assert 'class="landing-name"' in svg and ">v1</text>" in svg
+    assert svg.count('class="drop"') == 1
+    assert svg.count('class="row-date"') == 1
     # One axis under every plot: the dates are labelled once, under the last plot's box —
     # a plot in the middle of the stack prints none of its own.
     last_plot = max(float(value) for value in re.findall(r'data-bottom="([\d.]+)"', svg))
