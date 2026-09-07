@@ -193,6 +193,12 @@ class ConfluenceClient:
                     found[page.id] = page.version
         return found
 
+    def ping(self) -> str:
+        """Whether the credentials open the site at all — a listing of one page. What it
+        returns is the site's host, for a Connect dialog with no page to name."""
+        self._listing(f"{API}/pages?limit=1")
+        return self._host
+
     def attachments(self, page_id: str) -> list[Attachment]:
         rows = self._listing(f"{API}/pages/{_digits(page_id)}/attachments?limit={PAGE_LIMIT}")
         return [row for row in (_attachment(raw) for raw in rows) if row is not None]

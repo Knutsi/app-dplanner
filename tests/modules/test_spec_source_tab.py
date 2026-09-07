@@ -109,7 +109,7 @@ def fake_kind(kind, monkeypatch):
     application is built, and fixture order is what guarantees that."""
     import dplanner.modules as root
 
-    monkeypatch.setattr(root, "_source_kinds", lambda: (kind,))
+    monkeypatch.setattr(root, "_source_kinds", lambda *_real: (kind,))
     return kind
 
 
@@ -336,6 +336,7 @@ def test_a_check_says_what_changed_and_writes_nothing(app, fetched, fake_kind, s
 
 def test_a_check_is_not_started_for_a_source_that_is_not_ready(app, fake_kind, services, project):
     activity = added(services, project)
+    assert activity._refresher is not None
     activity._refresher.check(project.id)
     app.processEvents()
     assert fake_kind.checks == []

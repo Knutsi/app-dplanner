@@ -65,6 +65,15 @@ class Snapshot:
 
 
 @dataclass(frozen=True)
+class SourceStatus:
+    """Whether a source can be fetched right now, and if not, why — the words beside a
+    Connect button and a greyed verb's reason."""
+
+    ready: bool
+    message: str = ""
+
+
+@dataclass(frozen=True)
 class Freshness:
     """What a cheap check found, as keys — nothing was downloaded."""
 

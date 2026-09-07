@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from dplanner.modules.feature.catalogue import FeatureSource
     from dplanner.modules.project_editor.clipboard import PastePolicy
     from dplanner.modules.spec.source_kind import DocumentSourceKind
+    from dplanner.modules.spec_confluence.module import SecretStore
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
     from dplanner.modules.sync.service import Publication
 
@@ -133,6 +134,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.spec.cli import digest_of as spec_digest_of
     from dplanner.modules.spec.cli import document_names as spec_document_names
     from dplanner.modules.spec.module import SpecDeps, SpecModule
+    from dplanner.modules.spec.module import open_url as open_in_browser
+    from dplanner.modules.spec_confluence.module import SpecConfluenceDeps, SpecConfluenceModule
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_INSTRUCTION_ID
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_agent_instruction.aspect import read as agent_instruction_read
@@ -682,6 +685,18 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
     )
 
+    # Constructed before spec: it is the Confluence document source kind the Specs tab
+    # runs, and the credential's four doors are the keychain's, handed over as callables
+    # so a test can hand in a dict instead.
+    confluence = SpecConfluenceModule(
+        SpecConfluenceDeps(
+            parent=services.window,
+            tasks=services.tasks,
+            settings_sections=services.settings_sections,
+            secrets=_keychain(),
+            open_url=open_in_browser,
+        )
+    )
     # Constructed before the list because the projects index opens Specs through it — the
     # same seam as open_project, one level down. The document source kinds it runs are
     # named here — ``_source_kinds`` — and nowhere else; a test hands in a fake through
@@ -698,7 +713,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             files=lambda node_id: store.files(node_id, SPEC_ID),
             details=services.step_details,
             tasks=services.tasks,
-            kinds=_source_kinds(),
+            kinds=_source_kinds(confluence),
             passages_of=lambda project_id, document: [
                 source.quote
                 for record in read_catalogue(library.project(project_id))
@@ -1191,6 +1206,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 ),
             )
         ),
+        # Before spec: the Specs tab's + menu lists this kind, and its settings section
+        # must exist before the settings dialog is built.
+        confluence,
         spec,
         coverage,
         project_assets,
@@ -2106,10 +2124,25 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
     return (remint_for_paste, forget_for_paste, drop_marker_for_paste)
 
 
-def _source_kinds() -> tuple["DocumentSourceKind", ...]:
-    """The document source kinds the Specs tab offers: none yet in this step of the
-    build — the Confluence kind arrives with its module."""
-    return ()
+def _source_kinds(confluence: "DocumentSourceKind") -> tuple["DocumentSourceKind", ...]:
+    """The document source kinds the Specs tab offers, in the + menu's order. One seam:
+    a test patches this to hand in a fake, so the whole tab is proven without Confluence."""
+    return (confluence,)
+
+
+def _keychain() -> "SecretStore":
+    """The OS keychain as the Confluence module's four doors — the only place the
+    framework's secret store is named for it."""
+    from dplanner.framework import secrets_store
+    from dplanner.modules.spec_confluence.module import SecretStore
+
+    class Keychain(SecretStore):
+        get = staticmethod(secrets_store.get_secret)
+        set = staticmethod(secrets_store.set_secret)
+        delete = staticmethod(secrets_store.delete_secret)
+        problem = staticmethod(secrets_store.backend_problem)
+
+    return Keychain()
 
 
 def _asset_sources() -> tuple["AssetSource", ...]:

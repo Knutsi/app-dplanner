@@ -12,34 +12,29 @@ second consumer appears.
 """
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from typing import Protocol
 
 from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.signals import Signal
-from dplanner.domain.document_source import Freshness, Locator, Snapshot
+from dplanner.domain.document_source import Freshness, Locator, Snapshot, SourceStatus
 
 # What a fetch reports as it goes: a fraction — TaskRunner.report_progress's shape.
 type Progress = Callable[[float], None]
 
-
-@dataclass(frozen=True)
-class SourceStatus:
-    """Whether a source can be fetched right now, and if not, why — the words beside the
-    Connect button and the greyed verb's reason."""
-
-    ready: bool
-    message: str = ""
+__all__ = ["DocumentSourceKind", "Progress", "SourceStatus"]
 
 
 class DocumentSourceKind(Protocol):
     id: str  # "confluence" — also the index's ``kind`` on a source record.
     name: str  # "Confluence" — how prose names it: "from Confluence", "Refresh Confluence".
     label: str  # "Confluence Page or Folder…" — the + menu's entry.
-    icon: Callable[[str | QColor], QIcon]  # One painter for the menu (QColor) and a row (str).
     config_changed: Signal[()]  # After connect or forget: hosts re-ask status.
+
+    def icon(self, color: str | QColor) -> QIcon:
+        """One painter for the menu (a QColor) and a row (a colour string)."""
+        ...
 
     def locate(self, parent: QWidget) -> tuple[str, Locator] | None:
         """Ask the person where the source is: (title, locator), or None. No network."""

@@ -184,7 +184,11 @@ def test_the_toolbar_replaced_the_add_button(services, project):
     entries = [
         entry.text().replace("&", "") for entry in popup.actions() if not entry.isSeparator()
     ]
-    assert entries == ["New Spec Document…", "Import Spec Document…"]
+    assert entries == [
+        "New Spec Document…",
+        "Import Spec Document…",
+        "Confluence Page or Folder…",
+    ]
     assert activity._source_strip.isHidden()
 
 
