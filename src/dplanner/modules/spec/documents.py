@@ -16,7 +16,7 @@ surfaces cannot disagree about what a document or a figure is.
 
 import hashlib
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -29,6 +29,7 @@ from dplanner.domain.assets import (
     AssetSource,
     AssetUse,
     area_assets,
+    asset_name,
     asset_references,
     attach,
 )
@@ -60,6 +61,35 @@ class SpecDocument:
     file: str  # documents/<sha256[:16]><suffix> in the module file area.
     previous: str | None  # The blob the last replace superseded, kept for diffing.
     imported: str  # ISO date of the last import or replace.
+    title: str = ""  # What a person reads; "" means the name is the title.
+    # A document a source fetched: the source's id, the source's own key for the page,
+    # the version stamp it was fetched at, and the document it hangs under. Absence means
+    # project-owned and editable — no existing reader had to learn a key.
+    source: str = ""
+    key: str = ""
+    version: str = ""
+    parent: str = ""
+
+    @property
+    def label(self) -> str:
+        return self.title or self.name
+
+    @property
+    def sourced(self) -> bool:
+        return bool(self.source)
+
+
+@dataclass(frozen=True)
+class SpecSource:
+    """An external place documents come from — a Confluence page or folder — as the
+    index records it: the kind, a title, the kind's own locator and when it was last
+    fetched. Never a credential, never an error: those are the person's and the window's."""
+
+    id: str  # "src1", "src2", … — what every document's ``source`` names.
+    kind: str  # A document source kind's id: "confluence".
+    title: str
+    locator: dict[str, str]
+    fetched: str = ""  # ISO date of the last fetch; "" until the first.
 
 
 @dataclass(frozen=True)
@@ -79,6 +109,7 @@ class SpecIndex:
 
     documents: list[SpecDocument]
     assets: list[SpecAsset]
+    sources: list[SpecSource] = field(default_factory=list)
 
 
 def read_index(project: Project) -> SpecIndex:
@@ -87,14 +118,48 @@ def read_index(project: Project) -> SpecIndex:
     documents = [
         SpecDocument(
             name=raw["name"],
-            filename=raw.get("filename", raw["name"]),
-            kind=raw.get("kind", KIND_TEXT),
+            filename=_text(raw.get("filename")) or raw["name"],
+            kind=_text(raw.get("kind")) or KIND_TEXT,
             file=raw["file"],
-            previous=raw.get("previous"),
-            imported=raw.get("imported", ""),
+            previous=raw.get("previous") if isinstance(raw.get("previous"), str) else None,
+            imported=_text(raw.get("imported")),
+            title=_text(raw.get("title")),
+            source=_text(raw.get("source")),
+            key=_text(raw.get("key")),
+            version=_text(raw.get("version")),
+            parent=_text(raw.get("parent")),
         )
         for raw in _dicts(entry.get("documents"))
         if isinstance(raw.get("name"), str) and isinstance(raw.get("file"), str)
+    ]
+    sources = [
+        SpecSource(
+            id=raw["id"],
+            kind=raw["kind"],
+            title=_text(raw.get("title")) or raw["id"],
+            locator={
+                str(key): value for key, value in raw["locator"].items() if isinstance(value, str)
+            },
+            fetched=_text(raw.get("fetched")),
+        )
+        for raw in _dicts(entry.get("sources"))
+        if isinstance(raw.get("id"), str)
+        and isinstance(raw.get("kind"), str)
+        and isinstance(raw.get("locator"), dict)
+    ]
+    known = {source.id for source in sources}
+    names = {doc.name for doc in documents}
+    # A document whose source or parent the index no longer names reads as its own:
+    # top-level, and project-owned rather than pointing at nothing.
+    documents = [
+        replace(
+            doc,
+            source=doc.source if doc.source in known else "",
+            key=doc.key if doc.source in known else "",
+            version=doc.version if doc.source in known else "",
+            parent=doc.parent if doc.parent in names and doc.parent != doc.name else "",
+        )
+        for doc in documents
     ]
     assets = [
         SpecAsset(
@@ -107,7 +172,11 @@ def read_index(project: Project) -> SpecIndex:
         for raw in _dicts(entry.get("assets"))
         if isinstance(raw.get("id"), str) and isinstance(raw.get("file"), str)
     ]
-    return SpecIndex(documents=documents, assets=assets)
+    return SpecIndex(documents=documents, assets=assets, sources=sources)
+
+
+def _text(value: Any) -> str:
+    return value if isinstance(value, str) else ""
 
 
 def _dicts(value: Any) -> list[dict[str, Any]]:
@@ -132,8 +201,24 @@ def write_index(index: SpecIndex) -> dict[str, Any]:
                 "file": doc.file,
                 **({"previous": doc.previous} if doc.previous else {}),
                 "imported": doc.imported,
+                **({"title": doc.title} if doc.title else {}),
+                **({"source": doc.source} if doc.source else {}),
+                **({"key": doc.key} if doc.source else {}),
+                **({"version": doc.version} if doc.source else {}),
+                **({"parent": doc.parent} if doc.parent else {}),
             }
             for doc in index.documents
+        ]
+    if index.sources:
+        data["sources"] = [
+            {
+                "id": source.id,
+                "kind": source.kind,
+                "title": source.title,
+                "locator": dict(source.locator),
+                **({"fetched": source.fetched} if source.fetched else {}),
+            }
+            for source in index.sources
         ]
     if index.assets:
         data["assets"] = [
@@ -185,14 +270,16 @@ def blob_name(data: bytes, filename: str) -> str:
 
 
 def attach_asset(area: ModuleFileArea, data: bytes, filename: str) -> str:
-    """Put an image beside the spec documents; returns the path markdown links to."""
-    name = _addressed(ASSETS_DIR, data, filename)
-    area.write_bytes(name, data)
-    return name
+    """Put an image beside the spec documents; returns the path markdown links to — the
+    one asset naming every module shares, so a source kind that names an image before
+    the spec module writes it names the very same file."""
+    return attach(area, data, filename)
 
 
 def _addressed(directory: str, data: bytes, filename: str) -> str:
     """Content-addressed so the same bytes land once and a pointer never churns."""
+    if directory == ASSETS_DIR:
+        return asset_name(data, filename)
     suffix = PurePosixPath(filename).suffix.lower()
     return f"{directory}/{hashlib.sha256(data).hexdigest()[:16]}{suffix}"
 
@@ -330,12 +417,13 @@ def remove_document(documents: Sequence[SpecDocument], name: str) -> list[SpecDo
 
 
 def matching_documents(documents: Sequence[SpecDocument], needle: str) -> list[SpecDocument]:
-    """Exact name or filename first, then partial names — the caller decides how to refuse."""
-    exact = [doc for doc in documents if needle in (doc.name, doc.filename)]
+    """Exact name, title or filename first, then partial names and titles — the caller
+    decides how to refuse."""
+    exact = [doc for doc in documents if needle in (doc.name, doc.title, doc.filename)]
     if exact:
         return exact[:1]
     lowered = needle.lower()
-    return [doc for doc in documents if lowered in doc.name.lower()]
+    return [doc for doc in documents if lowered in doc.name.lower() or lowered in doc.title.lower()]
 
 
 def record_asset(

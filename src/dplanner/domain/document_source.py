@@ -54,6 +54,14 @@ class Snapshot:
     kept: tuple[str, ...] = ()
     images: tuple[FetchedImage, ...] = ()
     notes: tuple[str, ...] = ()
+    # Every key — fetched and kept — in the source's own order, parents before children;
+    # empty means the fetched documents first, then the kept ones.
+    order: tuple[str, ...] = ()
+
+    def keys(self) -> tuple[str, ...]:
+        if self.order:
+            return self.order
+        return (*(document.key for document in self.documents), *self.kept)
 
 
 @dataclass(frozen=True)

@@ -176,7 +176,11 @@ def fetch(
         )
     progress(1.0)
     return Snapshot(
-        documents=tuple(documents), kept=tuple(kept), images=tuple(images), notes=tuple(notes)
+        documents=tuple(documents),
+        kept=tuple(kept),
+        images=tuple(images),
+        notes=tuple(notes),
+        order=tuple(entry.row.id for entry in found),
     )
 
 

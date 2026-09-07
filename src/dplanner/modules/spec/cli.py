@@ -41,6 +41,7 @@ from dplanner.modules.spec.aspect import (
 from dplanner.modules.spec.documents import (
     KIND_PDF,
     SpecDocument,
+    SpecIndex,
     attach_asset,
     binary_refusal,
     blob_bytes,
@@ -58,6 +59,7 @@ from dplanner.modules.spec.documents import (
 )
 from dplanner.modules.spec.documents import anchor_sources as anchor_sources
 from dplanner.modules.spec.pdf import render_page, split_pages
+from dplanner.modules.spec.sourced import owned_by_source, tree
 
 
 def step_author() -> StepAuthor:
@@ -103,7 +105,25 @@ def lint_checks() -> list[LintCheck]:
             )
         ]
 
-    return [topology_missing]
+    def source_unfetched(
+        _product: Library, project: Project, _files: FilesFor
+    ) -> list[LintFinding]:
+        """A source added but never fetched — connected to nothing yet, so the plan cites
+        a place it has not read."""
+        index = read_index(project)
+        return [
+            LintFinding(
+                check="spec.source.unfetched",
+                subject_id=project.id,
+                subject=project.title,
+                message=f"source {source.title!r} ({source.kind}) has never been fetched — "
+                "connect and refresh it from the Specs tab",
+            )
+            for source in index.sources
+            if not any(doc.source == source.id for doc in index.documents)
+        ]
+
+    return [topology_missing, source_unfetched]
 
 
 def document_names(project: Project) -> list[str]:
@@ -320,6 +340,17 @@ def _document(project: Project, needle: str) -> SpecDocument:
     raise CliError(f"{needle!r} matches several spec documents — use a name: {names}")
 
 
+def _refuse_sourced(index: SpecIndex, name: str) -> None:
+    """A document a source fetched is the source's to change: refresh or remove the
+    source from the Specs tab, where the credential is."""
+    owner = owned_by_source(index, name)
+    if owner is not None:
+        raise CliError(
+            f"{name!r} is part of {owner.kind} source {owner.title!r} — refresh or remove "
+            "the source from the Specs tab"
+        )
+
+
 def _blob(document: SpecDocument, previous: bool) -> str:
     if not previous:
         return document.file
@@ -367,6 +398,7 @@ def _import(context: CliContext, args: Namespace) -> int:
 
     project = find_project(context.library, args.project)
     index = read_index(project)
+    _refuse_sourced(index, name)
     today = datetime.now(UTC).date().isoformat()
     area = context.store.files(project.id, MODULE_ID)
     docs, document, outcome = import_document(area, index.documents, name, data, source.name, today)
@@ -388,27 +420,58 @@ def _import(context: CliContext, args: Namespace) -> int:
 def _list(context: CliContext, args: Namespace) -> int:
     project = find_project(context.library, args.project)
     index = read_index(project)
-    docs = index.documents
+    lines: list[str] = []
+    for row in tree(index):
+        indent = "  " * row.depth
+        if row.document is None and row.source is not None:
+            source = row.source
+            fetched = f"fetched {source.fetched}" if source.fetched else "never fetched"
+            lines.append(f"{indent}[{source.kind}] {source.title}  ({source.id}, {fetched})")
+            continue
+        doc = row.document
+        assert doc is not None
+        title = f" — {doc.title}" if doc.title and doc.title != doc.name else ""
+        lines.append(
+            f"{indent}{doc.name}{title}  ({doc.kind}, imported {doc.imported}, {doc.filename})"
+            + ("  [previous kept]" if doc.previous else "")
+        )
     context.report(
         {
             "project": project.id,
             "documents": [
                 {
                     "name": doc.name,
+                    "title": doc.label,
                     "filename": doc.filename,
                     "kind": doc.kind,
                     "imported": doc.imported,
                     "has_previous": doc.previous is not None,
+                    **(
+                        {
+                            "source": doc.source,
+                            "key": doc.key,
+                            "version": doc.version,
+                            "parent": doc.parent,
+                        }
+                        if doc.source
+                        else {}
+                    ),
                 }
-                for doc in docs
+                for doc in index.documents
+            ],
+            "sources": [
+                {
+                    "id": source.id,
+                    "kind": source.kind,
+                    "title": source.title,
+                    "locator": dict(source.locator),
+                    "fetched": source.fetched,
+                    "documents": len([doc for doc in index.documents if doc.source == source.id]),
+                }
+                for source in index.sources
             ],
         },
-        "\n".join(
-            f"{doc.name}  ({doc.kind}, imported {doc.imported}, {doc.filename})"
-            + ("  [previous kept]" if doc.previous else "")
-            for doc in docs
-        )
-        or "(no spec documents — add one with `dplanner spec import`)",
+        "\n".join(lines) or "(no spec documents — add one with `dplanner spec import`)",
     )
     return 0
 
@@ -450,6 +513,7 @@ def _remove(context: CliContext, args: Namespace) -> int:
     project = find_project(context.library, args.project)
     document = _document(project, args.document)
     index = read_index(project)
+    _refuse_sourced(index, document.name)
     docs = remove_document(index.documents, document.name)
     context.apply(
         SetModuleDataCommand(project.id, MODULE_ID, write_index(replace(index, documents=docs)))
