@@ -8,6 +8,8 @@ from dplanner.domain.schedule import axis_ticks
 from dplanner.modules.time_estimates.chart import (
     BOTTOM_GUTTER,
     LABEL_GAP,
+    MAX_PANEL_HEIGHT,
+    PANEL_HEIGHT,
     ROW_HEIGHT,
     ChartData,
     ProgressChart,
@@ -91,6 +93,86 @@ def test_three_plots_share_one_axis_and_the_dates_print_once(app):
     chart.deleteLater()
 
 
+def test_the_share_plots_take_the_height_they_are_given_up_to_a_ceiling(app):
+    """A tall host grows the two share plots in equal parts; a short one gets the floor;
+    past the ceiling neither grows again, and the milestone rows never do."""
+    plan = ((FIRST, 0.0), (LAST, 1.0))
+    chart = _chart(
+        ChartData(
+            FIRST,
+            expected=plan,
+            segments=(Segment("m1", "v1", VIOLET, now=(FIRST, LAST)),),
+        )
+    )
+    chart.resize(700, chart.compact_height())
+    status, scope, shift = chart.panels()
+    assert status.rect.height() == scope.rect.height() == PANEL_HEIGHT
+    assert shift.rect.height() == ROW_HEIGHT
+    assert chart.minimumHeight() == chart.compact_height()
+    chart.resize(700, chart.compact_height() + 200)
+    status, scope, shift = chart.panels()
+    assert status.rect.height() == scope.rect.height() == PANEL_HEIGHT + 100
+    assert shift.rect.height() == ROW_HEIGHT  # a row is a row
+    chart.resize(700, chart.tall_height() + 400)
+    status, scope, _shift = chart.panels()
+    assert status.rect.height() == scope.rect.height() == MAX_PANEL_HEIGHT
+    assert chart.maximumHeight() == chart.tall_height()
+    chart.deleteLater()
+
+
+def test_the_scope_heading_names_the_basis_and_every_landing_carries_its_milestone(app):
+    """The heading names the day the reader asked for, whichever record answered it; the
+    keys carry no second date; and each milestone's landing on the progress line sits on
+    the plan at its own share, named."""
+    plan = ((FIRST, 0.0), (date(2026, 9, 16), 0.5), (LAST, 1.0))
+    segments = (
+        Segment("m1", "v1", VIOLET, now=(FIRST, date(2026, 9, 16))),
+        Segment("m2", "v2", TEAL, now=(date(2026, 9, 17), LAST)),
+    )
+    chart = _chart(ChartData(FIRST, expected=plan, basis_day=FIRST, segments=segments), width=900)
+    assert chart.title(chart.panel("scope")) == "Scope change — no plan recorded at 1 September"
+    assert chart.title(chart.panel("status")) == "Progress"
+    status = chart.panel("status")
+    marks = chart.landing_marks(status)
+    assert [(segment.key, name) for segment, name, _ in marks] == [("m1", "v1"), ("m2", "v2")]
+    assert [round(at.x()) for _s, _n, at in marks] == [
+        round(chart._x(date(2026, 9, 16))),
+        round(chart._x(LAST)),
+    ]
+    assert marks[0][2].y() == chart._y(status, 0.5) and marks[1][2].y() == chart._y(status, 1.0)
+    image = chart.grab().toImage()
+    for segment, _name, at in marks:
+        assert image.pixelColor(round(at.x()), round(at.y())).name() == segment.color.name()
+    chart.show_data(
+        ChartData(FIRST, expected=plan, baseline=plan, basis_day=FIRST, segments=segments)
+    )
+    assert chart.title(chart.panel("scope")) == "Scope change — versus plan at 1 September"
+    keys = [label for label, _ in chart.legend(chart.panel("scope"))]
+    assert keys[:2] == ["Plan then", "Plan now"]  # the heading holds the only date
+    chart.deleteLater()
+
+
+def test_a_milestone_name_with_no_room_beside_it_is_dropped_not_squeezed(app):
+    """Two long names a day apart cannot both be printed: the second comes back empty,
+    and its mark is drawn all the same."""
+    close = (date(2026, 9, 20), date(2026, 9, 21))
+    plan = ((FIRST, 0.0), (close[0], 0.5), (close[1], 0.75), (LAST, 1.0))
+    crowded = (
+        Segment("m1", "a milestone with a long name", VIOLET, now=(FIRST, close[0])),
+        Segment("m2", "another long milestone name", TEAL, now=(close[0], close[1])),
+    )
+    chart = _chart(ChartData(FIRST, expected=plan, segments=crowded), width=700)
+    named = [bool(name) for _s, name, _at in chart.landing_marks(chart.panel("status"))]
+    assert named == [True, False]
+    apart = (crowded[0], Segment("m2", crowded[1].label, TEAL, now=(close[0], LAST)))
+    chart.show_data(ChartData(FIRST, expected=plan, segments=apart))
+    assert [bool(name) for _s, name, _at in chart.landing_marks(chart.panel("status"))] == [
+        True,
+        True,
+    ]
+    chart.deleteLater()
+
+
 def _colours_along_the_line(chart: ProgressChart, kind: str, first: date, last: date) -> set[str]:
     image = chart.grab().toImage()
     panel = chart.panel(kind)
@@ -106,7 +188,7 @@ def test_a_baseline_the_plan_still_agrees_with_shows_as_dashes_on_the_line(app):
     plan = ((FIRST, 0.5), (LAST, 0.5))
     chart = _chart(ChartData(FIRST, expected=plan))
     alone = _colours_along_the_line(chart, "scope", FIRST, LAST)
-    chart.show_data(ChartData(FIRST, expected=plan, baseline=plan, baseline_day=FIRST))
+    chart.show_data(ChartData(FIRST, expected=plan, baseline=plan, basis_day=FIRST))
     together = _colours_along_the_line(chart, "scope", FIRST, LAST)
     assert len(alone) == 1
     assert len(together) >= 2

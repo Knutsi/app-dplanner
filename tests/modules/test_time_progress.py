@@ -23,6 +23,7 @@ from dplanner.modules.time_estimates.progress import (
     expected,
     read_history,
     recorded,
+    scope_words,
     take,
     write_history,
 )
@@ -199,6 +200,21 @@ def test_the_baseline_is_the_last_record_on_or_before_the_basis(plan):
     # A project older than its history compares against the first day recorded.
     assert baseline([first, later], date(2026, 9, 1)) is first
     assert baseline([], date(2026, 9, 7)) is None
+    # …but never against today's own record, which is the plan now: a surface that shows
+    # a comparison passes today, and is told there is nothing to compare with.
+    assert baseline([first, later], date(2026, 9, 1), today=date(2026, 9, 8)) is first
+    assert baseline([later], date(2026, 9, 1), today=date(2026, 9, 9)) is None
+    assert baseline([later], date(2026, 9, 1), today=date(2026, 9, 10)) is later
+
+
+def test_the_scope_heading_names_the_basis_the_reader_asked_for():
+    """The day the control holds, not the record that stood in for it — and it says so
+    plainly when nothing was recorded that early."""
+    basis, today = date(2026, 9, 1), date(2026, 9, 10)
+    assert scope_words(basis, today, compared=True) == "Scope change — versus plan at 1 September"
+    assert scope_words(basis, today, compared=False) == (
+        "Scope change — no plan recorded at 1 September"
+    )
 
 
 def test_the_delta_says_what_was_added_and_how_the_landing_moved(plan):

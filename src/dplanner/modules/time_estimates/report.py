@@ -41,6 +41,7 @@ from dplanner.modules.time_estimates.progress import (
     baseline,
     delta_words,
     read_history,
+    scope_words,
     shift_words,
     span_of,
     standing_words,
@@ -110,7 +111,7 @@ def report_source(
         if now is None:
             return NOTHING
         history = read_history(project)
-        then = baseline(history, dated.start)
+        then = baseline(history, dated.start, today=today)
         view = view_scope(now, history, then, None, by_days=False)
         colors = phase_colors(team.phases, read_color, read_palette(project))
         labels = dated.labels
@@ -132,8 +133,8 @@ def report_source(
                     CHART_ID,
                     "Progress against the plan",
                     today,
-                    plots=_plots(view, then, today),
-                    stretches=_stretches(team, colors, labels, now, then, today),
+                    plots=_plots(view, then, dated.start, today),
+                    stretches=_stretches(team, colors, labels, now, then, dated.start, today),
                     idle=view.idle,
                     note="Three plots on one time axis, by steps: where the work stands "
                     "against the plan, how the plan itself has moved since it was recorded, "
@@ -249,7 +250,7 @@ def _change_figure(moved: Delta | None, then: Snapshot | None, today: date) -> F
     return Figure(label, words, tone=tone)
 
 
-def _plots(view: ScopeView, then: Snapshot | None, today: date) -> tuple[Plot, ...]:
+def _plots(view: ScopeView, then: Snapshot | None, basis: date, today: date) -> tuple[Plot, ...]:
     """The three plots the chart stacks — the window's, said as data.
 
     The scope plot is left out when there is no earlier plan to compare against: an empty
@@ -265,12 +266,11 @@ def _plots(view: ScopeView, then: Snapshot | None, today: date) -> tuple[Plot, .
         )
     ]
     if then is not None and view.baseline:
-        was = format_date(then.day, today=today)
         found.append(
             Plot(
                 "scope",
-                f"Scope change since {was}",
-                (plan, Series(f"Plan at {was}", view.baseline, "baseline")),
+                scope_words(basis, today, compared=True),
+                (plan, Series("Plan then", view.baseline, "baseline")),
                 note="Amber where the plan now promises more by a date than it did then, "
                 "red where it promises less, green where the two agree.",
             )
@@ -285,6 +285,7 @@ def _stretches(
     labels: dict[int, str],
     now: Snapshot,
     then: Snapshot | None,
+    basis: date,
     today: date,
 ) -> tuple[Stretch, ...]:
     """Every stretch of the plan: its shade, where it runs now and where it ran on the
@@ -306,7 +307,7 @@ def _stretches(
                     labels[id(phase)],
                     was[1] if was else None,
                     span[1] if span else None,
-                    then.day if then is not None else None,
+                    basis if then is not None else None,
                     today,
                 ),
             )

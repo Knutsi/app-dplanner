@@ -14,7 +14,6 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Step, TextEdit
-from dplanner.domain.schedule import format_date
 from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
 from dplanner.modules.estimation.aspect import write as write_days
 from dplanner.modules.estimation.schedule import write_start
@@ -713,6 +712,30 @@ def test_the_recorder_writes_the_day_once_off_the_undo_stack(services, staged):
     assert entry["format"] == 1 and len(entry["days"]) == 1
 
 
+def test_the_plots_open_in_a_window_of_their_own_and_follow_the_plan(
+    services, staged, tab, monkeypatch
+):
+    """⤢ opens the same plots with the same record, and a change made while the window is
+    open reaches both charts — one ``ChartData``, two views of it."""
+    from dplanner.modules.time_estimates.chart import ChartDialog
+
+    seen = []
+
+    def fake_exec(dialog):
+        seen.append((dialog.chart._data, dialog.windowTitle()))
+        ship = staged.steps[-1]
+        services.undo.push(SetModuleDataCommand(ship.id, ESTIMATION_ID, write_days(9.0)))
+        seen.append((dialog.chart._data, tab.chart._data))
+        return 0
+
+    monkeypatch.setattr(ChartDialog, "exec", fake_exec)
+    tab.expand.click()
+    (opened, title), (expanded, inline) = seen
+    assert opened is not None and title == tab.title
+    assert expanded is inline and expanded is not opened  # both redrew, from one record
+    assert tab._expanded is None  # closing it leaves nothing behind
+
+
 def test_the_plots_compare_against_the_plan_at_the_basis(services, staged):
     """The baseline is the plan as recorded on the basis day — the start unless picked —
     drawn against the plan now in the scope plot, and milestone by milestone in the
@@ -756,7 +779,7 @@ def test_the_plots_compare_against_the_plan_at_the_basis(services, staged):
     tab.basis.setDate(QDate(2026, 9, 1))
     assert tab.basis_day == date(2026, 9, 1) and tab.basis_reset.isVisibleTo(tab.widget)
     data = tab.chart._data
-    assert data.baseline_day == date(2026, 9, 1) and data.baseline_finish == date(2026, 9, 18)
+    assert data.basis_day == date(2026, 9, 1) and data.baseline_finish == date(2026, 9, 18)
     assert data.baseline[0] == (date(2026, 9, 7), 0.0) and data.baseline[-1] == (
         date(2026, 9, 18),
         1.0,
@@ -766,18 +789,20 @@ def test_the_plots_compare_against_the_plan_at_the_basis(services, staged):
         ((date(2026, 9, 7), date(2026, 9, 14)), (date(2026, 9, 7), date(2026, 9, 16))),
         ((date(2026, 9, 15), date(2026, 9, 18)), (date(2026, 9, 17), date(2026, 9, 23))),
     ]
-    assert segment_words(data.segments[1], data.baseline_day, data.today) == (
+    assert segment_words(data.segments[1], data.basis_day, data.today) == (
         "v2 lands 23 September — 3 working days later than planned on 1 September (18 September)"
     )
+    # The heading names the day the reader asked for, which is what the control holds.
+    assert tab.chart.title(tab.chart.panel("scope")) == "Scope change — versus plan at 1 September"
     assert "plan at 1 September" in tab.chart.tooltip_at(date(2026, 9, 10), "scope")
     assert "plan now" in tab.chart.tooltip_at(date(2026, 9, 10), "scope")
     assert "plan at" not in tab.chart.tooltip_at(date(2026, 9, 10))  # the status plot's words
     # A basis after every record compares against the last one — today's own.
     tab.basis.setDate(QDate(2030, 1, 1))
     data = tab.chart._data
-    assert data.baseline_day == date.today()
-    assert segment_words(data.segments[1], data.baseline_day, data.today) == (
-        f"v2 lands 23 September — unchanged since {format_date(date.today())}"
+    assert data.basis_day == date(2030, 1, 1) and data.compared
+    assert segment_words(data.segments[1], data.basis_day, data.today) == (
+        "v2 lands 23 September — unchanged since 1 Jan '30"
     )
     tab.basis_reset.click()
     assert tab.basis_day == date(2026, 9, 7) and not tab.basis_reset.isVisibleTo(tab.widget)

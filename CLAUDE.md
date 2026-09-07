@@ -885,7 +885,12 @@ root, stop and look for the registry or capability you have not found yet.
   refresher's rule — Ctrl+Z undoes the status, not the record). **The baseline is the
   plan as recorded on the basis day** — the project's start, or the day picked beside
   the chart / `progress show --basis` — the last row on or before it (the earliest row
-  for a project older than its history), drawn exactly from its knots. The progress
+  for a project older than its history, but **never today's own record**, which is the
+  plan now and no comparison at all), drawn exactly from its knots. **The plots name the
+  basis, never the record that stood in for it** (`progress.scope_words`, worded once for
+  the window and the report): *Scope change — versus plan at 1 June* is the day the
+  control beside them holds, and *no plan recorded at 1 June* when there is none;
+  `progress show`'s `baseline_day` is where the record itself is reported. The progress
   chart is **three plots on one locked time axis** — the same dates under all three, the
   date marks (days, Mondays or month firsts, `axis_ticks`) as hairlines through every
   plot, the labels printed once under the last, the edges the earliest and latest date
@@ -902,7 +907,12 @@ root, stop and look for the registry or capability you have not found yet.
   `Chart` of `Plot`s and `Stretch`es on the page and the PDF — so what they share is
   `domain/schedule.py`: `share_at` reads a line at a date and `change_runs` cuts two
   plans into the runs the fill is coloured by, and `progress.py` words `standing_words`
-  and `shift_words` once. The delta in words (`delta`, `delta_words`) and
+  and `shift_words` once. **Every milestone's landing is marked and named on the
+  progress line** — a name elided, and dropped rather than squeezed when its neighbour's
+  reaches that far — the two share plots grow with the window to a ceiling of twice
+  their floor (bounds set from the data, never from a resize), their names are set bold,
+  and *⤢* beside the basis opens `ChartDialog`: the same widget fed the same record, so
+  both redraw together. The delta in words (`delta`, `delta_words`) and
   `changes_since` — the steps born and the estimates changed after the baseline's
   recorded day, from the step's `created` stamp and the estimate aspect's own history
   (`estimation`'s `read_history`; every `write` carries the value it replaced, one row

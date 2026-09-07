@@ -2,7 +2,7 @@
 
 Builds a throwaway library and repository under a temporary directory — a plan with three
 milestones, features, estimates, statuses, a description with a picture, tests with a run,
-decisions, a ticket — and runs the real ``dplanner report`` verbs over it: the page, the
+notes, a ticket — and runs the real ``dplanner report`` verbs over it: the page, the
 workbook, one CSV, the table list and the site. Nothing touches the user's config or
 library.
 
@@ -32,11 +32,12 @@ from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleD
 from dplanner.domain.model import Library, Step
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.modules import default_cli_commands, default_module_formats
-from dplanner.modules.decisions.log import Decision, write_log
 from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.estimation.schedule import write_start
 from dplanner.modules.feature.aspect import write as feature_marker
 from dplanner.modules.feature.catalogue import FeatureRecord, write_catalogue
+from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
+from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.spec.aspect import read_topology
 from dplanner.modules.step_milestone.aspect import write as milestone
 from dplanner.modules.step_status.aspect import write as status
@@ -94,23 +95,25 @@ def build(root: Path) -> tuple[Path, Path]:
         jira = Ticket("Jira", "SRCH-42", "https://example.invalid/SRCH-42")
         SetModuleDataCommand(steps[7].id, "step_ticket", ticket(jira)).redo(library)
         _tests(library, project.id, steps)
-        decisions = [
-            Decision(
-                "D1",
+        notes = [
+            Note(
+                "N1",
+                "decision",
                 "One index per tenant",
                 "Cross-tenant queries are rare; isolation wins.",
                 "2026-08-12",
                 steps[3].id,
             ),
-            Decision(
-                "D2",
+            Note(
+                "N2",
+                "decision",
                 "Keep BM25 as the fallback ranker",
                 "The learned ranker degrades on cold tenants.\n\n- Revisit after launch",
                 "2026-09-01",
                 steps[6].id,
             ),
         ]
-        SetModuleDataCommand(project.id, "decisions", write_log(decisions)).redo(library)
+        SetModuleDataCommand(project.id, NOTES_ID, write_log(notes)).redo(library)
     return library_file, project_dir
 
 
