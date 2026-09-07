@@ -36,8 +36,9 @@ MAX_PAGES = 500
 MAX_DEPTH = 20
 MAX_FETCH_BYTES = 200 * 1024 * 1024
 
-_PAGE_URL = re.compile(r"^/wiki/spaces/[^/]+/pages/(\d+)(?:/([^/?#]*))?/?$")
-_FOLDER_URL = re.compile(r"^/wiki/spaces/[^/]+/folder/(\d+)/?$")
+_PAGE_URL = re.compile(r"^/wiki/spaces/([A-Za-z0-9~._-]+)/pages/(\d+)(?:/([^/?#]*))?/?$")
+_FOLDER_URL = re.compile(r"^/wiki/spaces/([A-Za-z0-9~._-]+)/folder/(\d+)/?$")
+_SPACE_KEY = re.compile(r"^[A-Za-z0-9~._-]+$")
 _VIEWPAGE = re.compile(r"^/wiki/pages/viewpage\.action$")
 _SHORT = re.compile(r"^/wiki/x/")
 
@@ -66,11 +67,13 @@ def parse_url(text: str) -> tuple[str, Locator]:
         )
     page = _PAGE_URL.match(parts.path)
     if page is not None:
-        slug = (page.group(2) or "").replace("+", " ").replace("-", " ").strip()
-        return slug or f"Page {page.group(1)}", {"site": site, "id": page.group(1), "type": "page"}
+        slug = (page.group(3) or "").replace("+", " ").replace("-", " ").strip()
+        locator = {"site": site, "id": page.group(2), "type": "page", "space": page.group(1)}
+        return slug or f"Page {page.group(2)}", locator
     folder = _FOLDER_URL.match(parts.path)
     if folder is not None:
-        return f"Folder {folder.group(1)}", {"site": site, "id": folder.group(1), "type": "folder"}
+        locator = {"site": site, "id": folder.group(2), "type": "folder", "space": folder.group(1)}
+        return f"Folder {folder.group(2)}", locator
     if _VIEWPAGE.match(parts.path):
         page_id = parse_qs(parts.query).get("pageId", [""])[0]
         if page_id.isdigit():
@@ -88,7 +91,11 @@ def valid_locator(locator: Mapping[str, object]) -> Locator | None:
         return None
     if kind not in ("page", "folder"):
         return None
-    return {"site": site, "id": content_id, "type": str(kind)}
+    valid = {"site": site, "id": content_id, "type": str(kind)}
+    space = locator.get("space")
+    if isinstance(space, str) and _SPACE_KEY.match(space):
+        valid["space"] = space
+    return valid
 
 
 def page_url(site: str, page_id: str) -> str:
@@ -96,8 +103,10 @@ def page_url(site: str, page_id: str) -> str:
     return f"{site}/wiki/pages/viewpage.action?pageId={page_id}"
 
 
-def folder_url(site: str, folder_id: str) -> str:
-    return f"{site}/wiki/spaces/~/folder/{folder_id}"
+def folder_url(site: str, folder_id: str, space: str = "") -> str:
+    """A folder has no canonical address without its space key; a locator from a pasted
+    URL carries the key, one from elsewhere opens the site's folder view by id."""
+    return f"{site}/wiki/spaces/{space or '~'}/folder/{folder_id}"
 
 
 @dataclass(frozen=True)

@@ -36,6 +36,7 @@ from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
 from dplanner.modules.spec.activity import (
+    ADD_SUBMENU,
     DOCUMENT_ENTITY,
     SOURCE_ENTITY,
     SPECS_KIND,
@@ -62,7 +63,6 @@ from dplanner.modules.spec.source_kind import DocumentSourceKind
 from dplanner.modules.spec.sourced import add_source, owned_by_source, remove_source, source_of
 
 FILE_FILTER = "Spec documents (*.pdf *.md *.markdown *.txt);;All files (*)"
-ADD_SUBMENU = "Add Spec"
 
 
 def open_url(url: str) -> None:

@@ -1,6 +1,10 @@
 # Spec sources: pluggable importers, Confluence first
 
-*Proposal, 2026-09-07. Status: **planned**, not implemented. Written from a full read of the code at `main` (0fbfa01) and a review pass against it; every file and line named below is on that commit. Decisions taken with the author: fetching is window-only, the tab checks and asks, Cloud only, one document per page nested; macOS and Linux are first-class and Windows if viable, so §4.1 covers key storage on all three.*
+*Proposal, 2026-09-07. Status: **implemented** on this branch the same day, in the §6
+order; `ARCHITECTURE.md`'s *A spec source is a kind the spec module runs* is now the rule's
+home and `FORMAT.md` the shapes'. Two things moved during the build: `SourceStatus` lives
+in `domain/document_source.py` beside the other shapes (a Protocol method must return a
+type both modules can name), and the kind's `icon` is a method. Originally: Written from a full read of the code at `main` (0fbfa01) and a review pass against it; every file and line named below is on that commit. Decisions taken with the author: fetching is window-only, the tab checks and asks, Cloud only, one document per page nested; macOS and Linux are first-class and Windows if viable, so §4.1 covers key storage on all three.*
 
 
 ## Context

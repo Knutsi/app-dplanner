@@ -96,7 +96,10 @@ def locator(content_id="1", kind="page"):
 
 def test_a_page_url_in_its_three_shapes_becomes_a_locator():
     title, found = parse_url("https://acme.atlassian.net/wiki/spaces/ENG/pages/12345/Auth+Overview")
-    assert (title, found) == ("Auth Overview", {"site": SITE, "id": "12345", "type": "page"})
+    assert (title, found) == (
+        "Auth Overview",
+        {"site": SITE, "id": "12345", "type": "page", "space": "ENG"},
+    )
     assert parse_url("https://acme.atlassian.net/wiki/spaces/ENG/pages/12345")[1]["id"] == "12345"
     assert parse_url("https://acme.atlassian.net/wiki/pages/viewpage.action?pageId=77")[1] == {
         "site": SITE,
@@ -107,6 +110,7 @@ def test_a_page_url_in_its_three_shapes_becomes_a_locator():
         "site": SITE,
         "id": "5",
         "type": "folder",
+        "space": "ENG",
     }
 
 
@@ -127,6 +131,9 @@ def test_other_addresses_are_refused_with_a_sentence(text):
 
 def test_a_locator_read_off_disk_is_validated_again():
     assert valid_locator({"site": SITE, "id": "1", "type": "page"}) == locator()
+    assert valid_locator({"site": SITE, "id": "1", "type": "page", "space": "../x"}) == locator()
+    keyed = valid_locator({**locator(), "space": "ENG"})
+    assert keyed is not None and keyed["space"] == "ENG"
     assert valid_locator({"site": "https://evil.example", "id": "1", "type": "page"}) is None
     assert valid_locator({"site": SITE, "id": "../x", "type": "page"}) is None
     assert valid_locator({"site": SITE, "id": "1", "type": "space"}) is None

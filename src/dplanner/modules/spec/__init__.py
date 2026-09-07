@@ -7,6 +7,10 @@ feature module, whose passages this module anchors in the text on every read
 (``documents.anchor_sources`` over ``core/anchors.py``) and washes in the Specs tab
 (``show_passages``). Figures rendered from a page travel beside a step with its briefing.
 
-``documents.py``, ``pdf.py``, ``aspect.py`` and ``cli.py`` are Qt-free; the composition
-root imports the Qt half from ``module``.
+A document may also come from a **source** — a Confluence page or folder — through a
+document source kind the module runs (``source_kind.py`` is the contract, ``sourced.py``
+applies what a kind fetched, ``refresh.py`` fetches and checks off the GUI thread).
+
+``documents.py``, ``sourced.py``, ``pdf.py``, ``aspect.py`` and ``cli.py`` are Qt-free;
+the composition root imports the Qt half from ``module``.
 """

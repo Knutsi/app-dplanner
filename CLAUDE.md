@@ -754,6 +754,36 @@ root, stop and look for the registry or capability you have not found yet.
   the session. Markdown only — PDFs and plain text stay view-only — and the editor prunes
   only blobs its own session superseded. `ARCHITECTURE.md`'s *Editing a spec in-app is a
   replace* has the reasoning.
+- **A spec source is a kind the spec module runs.** A document may come from outside —
+  a Confluence page or folder first — and *where it came from* is a source record in the
+  spec index (format 4: `sources`, and `source`/`key`/`version`/`parent`/`title` on a
+  document; absence still means project-owned and editable). A **document source kind**
+  is the Protocol in `modules/spec/source_kind.py`: it locates, says whether it is
+  connected, connects, fetches and checks; the spec module owns the records, the nested
+  tree, the write (`sourced.apply_snapshot`, through `import_document`, so a refreshed
+  page keeps `previous` and `spec diff` answers per page), the task (`spec/refresh.py`),
+  the undo entry and the freshness note. The + button's arrow renders the Project ▸ *Add
+  Spec* child menu, so a kind contributes one `ActionSpec` and nothing else; the root
+  names the kinds in `_source_kinds`, which is also the test seam. **Refresh is a
+  person's gesture and lands on the undo stack** (`break_coalescing` first, so two
+  refreshes are two entries); **a check writes nothing** — it compares versions on the
+  interval and the strip says "N pages changed — Refresh". A sourced page is shown
+  read-only, `spec import`/`spec remove` refuse it, and fetching is **window-only**:
+  the CLI reads the snapshot and never the credential. `ARCHITECTURE.md`'s *A spec
+  source is a kind the spec module runs* has the reasoning.
+- **An external source's credential is the person's, never the plan's.** The Confluence
+  token lives only in the OS keychain (`secrets_store`, keyed by site — macOS Keychain,
+  Linux Secret Service, Windows Credential Manager; `backend_problem()` refuses with the
+  remedy when none can keep it, never a plaintext fallback); the site → email row in
+  `user_config` is *the fact that a site is connected* and the only thing `status()`
+  reads — a state callback runs on every context change and must never make a keychain
+  round trip. The token is read inside `fetch`, `check` and the Connect dialog's probe,
+  handed to `client.py` as a value; the client has one request method and it is GET,
+  talks only to the source's `*.atlassian.net` origin, follows one redirect to an
+  Atlassian host without the credential, caps every body, count and wait, and composes
+  every error from the status code — never from a library's own message. Content is
+  data: `html.parser`, no raw HTML in the markdown, only http(s)/mailto links, images
+  only from bytes sniffed as raster and named by their content.
 - **Running an agent launches a peer, never a task.** *Run Agent* spawns a detached terminal
   the user owns — not a `TaskRunner` body, which would promise cancel and progress nobody
   can honestly deliver. The terminal opens at the project's **git repository root** (via

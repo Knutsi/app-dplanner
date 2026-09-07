@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 
 import pytest
-from PySide6.QtWidgets import QInputDialog
+from PySide6.QtWidgets import QInputDialog, QMessageBox
 
 from dplanner.domain.document_source import Snapshot, SourceStatus, SourceUnavailableError
 from dplanner.framework.user_config import get_global, set_global
@@ -220,8 +220,11 @@ def test_locate_asks_for_an_address_and_refuses_what_is_not_one(confluence, serv
     )
     warnings = []
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: next(answers))
-    monkeypatch.setattr(module_mod.QMessageBox, "warning", lambda *a: warnings.append(a[2]))
-    assert confluence.locate(services.window) == ("Auth", {"site": SITE, "id": "7", "type": "page"})
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warnings.append(a[2]))
+    assert confluence.locate(services.window) == (
+        "Auth",
+        {"site": SITE, "id": "7", "type": "page", "space": "E"},
+    )
     assert len(warnings) == 1 and "short link" in warnings[0]
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("", False))
     assert confluence.locate(services.window) is None
@@ -229,7 +232,8 @@ def test_locate_asks_for_an_address_and_refuses_what_is_not_one(confluence, serv
 
 def test_open_url_names_the_page_or_the_folder(confluence):
     assert confluence.open_url(LOCATOR) == f"{SITE}/wiki/pages/viewpage.action?pageId=12345"
-    assert confluence.open_url({"site": SITE, "id": "5", "type": "folder"}).endswith("/folder/5")
+    folder = {"site": SITE, "id": "5", "type": "folder", "space": "ENG"}
+    assert confluence.open_url(folder).endswith("/spaces/ENG/folder/5")
     assert confluence.open_url({"site": "https://evil.example", "id": "5", "type": "page"}) == ""
 
 

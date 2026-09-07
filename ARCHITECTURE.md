@@ -1619,6 +1619,85 @@ reopens the document as it now is: the model is the authority, unflushed keystro
 and anything already flushed survives as a recoverable blob. An agent replacing the document under an open window resolves through
 *Two writers, one folder* like every other write.
 
+## A spec source is a kind the spec module runs
+
+The spec was always a file somebody put beside the project. Now it may live somewhere
+else and change there — a Confluence page or folder first, other systems later — and the
+question was where the machinery for that belongs. Two shapes were on the table: each
+source module owns its own tree, task and index writes and the spec module hands it a
+writer seam; or the spec module runs every source and a source module is nothing but a
+*kind* — how to ask for a location, whether it is connected, how to connect, how to fetch
+and how to check. The second won, for the reason the asset catalog and the report
+sources did: the interesting logic (records, nesting, the write, the undo entry, the
+freshness note, the strip) is the same for every source, and writing it once in the
+consumer is what makes the second kind a fetcher and a dialog. The contract is a
+`Protocol` in `modules/spec/source_kind.py`, consumer-owned like `CanvasDrop`; the
+Confluence module satisfies it structurally and the composition root hands the kinds in
+as `SpecDeps.kinds`. The Qt-free shapes they exchange — `Snapshot`, `FetchedDocument`,
+`Freshness`, `SourceStatus`, `SourceUnavailableError` — sit in
+`domain/document_source.py`, beside `AssetSource`, because the spec module's headless
+core reads them and the kind's headless half constructs them and neither may import the
+other.
+
+**A fetched page is an ordinary spec document.** Its markdown is a content-addressed
+blob under `documents/`, its images are `assets/<sha16><suffix>` in the same area, and
+the index row carries what makes it a *sourced* one: `source` (the record), `key` (the
+kind's own id for the page), `version` (the kind's stamp, compared and never
+interpreted), `parent` (the document above it, by name) and `title`. Absence keeps its
+old meaning — a row without `source` is project-owned and editable — so no existing
+reader learned a key. The consequence is the one that mattered: `spec show`, `spec
+diff`, citations, coverage and the briefing needed no change at all, because
+`apply_snapshot` writes every page through the same `import_document` a replace uses, and
+a refreshed page therefore keeps `previous`. A page's **name is minted once** from its
+title and kept across refreshes even when the title changes — a citation keys on the
+name, and a title is a thing people edit — with the page matched by `(source, key)`.
+
+**Refresh lands on the undo stack; a check writes nothing.** A person pressed Refresh
+(or added the source), so Ctrl+Z must put the documents back — the Compile Docs
+precedent, not the PR refresher's off-stack write, and `break_coalescing()` runs first
+because the toolbar's buttons take no focus and two refreshes would otherwise merge into
+one entry. The check is the other half of "check, then ask": on the interval, while a
+Specs tab shows the project, the kind compares versions (two or three requests for a tree,
+no bodies) and the strip says "3 pages changed at the source — Refresh"; nothing is
+downloaded until the person asks. Both run on `TaskRunner`s in `spec/refresh.py`, the
+`github/refresh.py` shape; a refusal that names the credential (a 401) is remembered per
+window as *needs reconnect* until the kind's `config_changed` says otherwise.
+
+**Fetching is window-only.** The token could be read by the CLI too — it is in the OS
+keychain, which a shell can reach — and the decision was that it must not be: an agent's
+shell runs with the person's keychain but not the person's judgement, and a spec source
+is the one place the plan touches a credential that opens something outside the plan.
+So `spec list` shows the tree and its provenance, `spec show` and `spec diff` read the
+snapshot, `spec import` and `spec remove` refuse a sourced page with a pointer to the
+tab, and adding, refreshing and removing a source are window acts. The LLM service's
+rule (*An LLM call is a task*) is the same rule from the other side.
+
+**The credential is the person's, per site, per machine, and `status()` never touches
+the keychain.** The token goes through `framework/secrets_store.py` under
+`spec_confluence.token:<host>`; the site → email row in `user_config` is *the fact that
+a site is connected*. That split is not tidiness: an action's `state` runs on every
+context change, and `keyring.get_password` is a D-Bus round trip that can raise a
+keychain prompt in the middle of a menu opening. So `status()` reads the row, and the
+token is read only inside `fetch`, `check` and the Connect dialog's probe, handed to the
+client as a value. The dialog stores nothing until its probe read the page, and refuses
+up front when `backend_problem()` says this machine cannot keep a secret — a plaintext
+file is never the fallback, which is the lesson `gh auth login` learned in public.
+Tokens expire within a year, so *Reconnect* is the same dialog and a normal event.
+
+**Read-only against Confluence by construction, and every byte from it is data.** The
+client has one request method and it is GET; the fake transport the tests hand in has no
+other verb to call. Requests go only to the source's `*.atlassian.net` origin — the
+locator is re-validated on every read from disk, because a plan is shared and a
+colleague's `spec.json` is input — and a download's one redirect is followed only to an
+Atlassian host, without the credential when the host changes. Bodies, attachment sizes,
+page counts, depth, retries and `Retry-After` are all capped. The storage XHTML is parsed
+by `html.parser` (no entity or DTD expansion, no network) into a depth-capped tree, and
+the markdown it becomes carries no raw HTML, links only `http(s)`/`mailto`, and names only
+images the fetch sniffed as raster and content-addressed itself; dynamic macros, whose
+content is not in storage, become a labelled placeholder. Every error a person sees is
+composed here from the status code — a library's own message is where a credential would
+leak into a log.
+
 ## A step has a number, and the letter in front of it is derived
 
 A uuid is the right identity for files that link to each other across renames and

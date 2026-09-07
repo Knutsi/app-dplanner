@@ -335,7 +335,12 @@ src/dplanner/
 │   │                        `dplanner note`, and the project panel's Notes card
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
-│   │                        and page rendering; editor.py: the in-app markdown editor)
+│   │                        and page rendering; editor.py: the in-app markdown editor); and the
+│   │                        documents a *source* fetched (source_kind.py: the kind contract,
+│   │                        sourced.py: applying a snapshot, refresh.py: fetch and check)
+│   ├── spec_confluence/     Confluence Cloud as a spec source: a GET-only client (client.py),
+│   │                        storage XHTML to markdown (convert.py), the walk and its caps
+│   │                        (source.py), the guided Connect dialog, Settings ▸ Confluence
 │   ├── coverage/            the spec and what became of it: passages → features → milestones →
 │   │                        tests and docs (trace.py, one derived picture), the Coverage tab's
 │   │                        four lanes (scene.py), and `dplanner coverage show|spec|review`

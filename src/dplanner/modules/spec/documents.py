@@ -29,7 +29,6 @@ from dplanner.domain.assets import (
     AssetSource,
     AssetUse,
     area_assets,
-    asset_name,
     asset_references,
     attach,
 )
@@ -277,9 +276,8 @@ def attach_asset(area: ModuleFileArea, data: bytes, filename: str) -> str:
 
 
 def _addressed(directory: str, data: bytes, filename: str) -> str:
-    """Content-addressed so the same bytes land once and a pointer never churns."""
-    if directory == ASSETS_DIR:
-        return asset_name(data, filename)
+    """Content-addressed so the same bytes land once and a pointer never churns — the
+    document blobs' naming; an asset's is :func:`dplanner.domain.assets.asset_name`."""
     suffix = PurePosixPath(filename).suffix.lower()
     return f"{directory}/{hashlib.sha256(data).hexdigest()[:16]}{suffix}"
 

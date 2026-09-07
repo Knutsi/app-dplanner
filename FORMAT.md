@@ -29,7 +29,7 @@ Four places, and the choice is not stylistic:
 
 | Per user, per machine (GUI only) | preferences: panel layout, model choices, agent command | `framework/user_config.py`'s `get_global` (QSettings) | no |
 | Per user, per machine, per library | where the user left off: open index folders, open tabs | `framework/user_config.py`'s `get_scoped`, under `library_scope(path)` | no |
-| The OS keychain | credentials, API keys | `framework/secrets_store.py` | no, and never on disk |
+| The OS keychain | credentials, API keys — the LLM keys, a Confluence token per site (`spec_confluence.token:<host>`) | `framework/secrets_store.py` | no, and never on disk |
 
 If you are unsure, ask who the value belongs to. A colleague opening the project should
 see its conventions and none of your preferences.
@@ -310,7 +310,17 @@ in-app editor and `spec import` replaces a document with no window running to no
 — the same shape as `docs_compiled`'s — so "the spec moved on since this was read" is a
 comparison, and a passage read before stamps existed (`""`) is judged by its match alone. `spec` spans three ways: the document index beside
 the project, the figures beside a step, and the project's **topology** — how its graph is
-shaped — as `modules/spec.md`, the project's one prose document under that id.
+shaped — as `modules/spec.md`, the project's one prose document under that id. **A
+document may come from a source** (format 4): the index gains `"sources": [{"id":
+"src1", "kind": "confluence", "title": "Auth Overview", "locator": {"site":
+"https://acme.atlassian.net", "id": "12345", "type": "page"}, "fetched": "2026-09-07"}]`,
+and a fetched document's row carries `"source": "src1"`, `"key": "12345"` (the kind's own
+id), `"version": "7"` (the kind's stamp, a string compared for equality), `"parent":
+"auth-overview"` (the document above it, by name; siblings in list order) and `"title"`.
+A row without `source` is the project's own and editable — absence kept its meaning, so
+no reader learned a key. The locator is the kind's and JSON-safe; it never carries a
+credential (the token is the keychain's, the connected sites `user_config`'s) and it is
+re-validated on every read, because a plan is shared.
 `step_agent_instruction` does the same with prose: the
 step's own instruction beside the step, the project's standing instruction (prepended to
 every briefing) as `modules/step_agent_instruction.md` beside the project, images in the

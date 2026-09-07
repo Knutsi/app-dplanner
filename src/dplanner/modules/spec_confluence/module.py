@@ -130,7 +130,7 @@ class SpecConfluenceModule:
         if valid is None:
             return ""
         if valid["type"] == "folder":
-            return folder_url(valid["site"], valid["id"])
+            return folder_url(valid["site"], valid["id"], valid.get("space", ""))
         return page_url(valid["site"], valid["id"])
 
     def fetch(
