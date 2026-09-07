@@ -54,6 +54,20 @@ class DataOwner(Protocol):
     module_data: dict[str, dict[str, Any]]
 
 
+class FileArea(Protocol):
+    """The files one module keeps beside one owner — what an absorption may read and
+    write (see :class:`~dplanner.core.module_data.ModuleDataFormat`). Names are
+    area-relative; ``read_bytes`` answers None for a name the area does not hold."""
+
+    def names(self, subdirectory: str = "") -> list[str]: ...
+
+    def read_bytes(self, name: str) -> bytes | None: ...
+
+    def write_bytes(self, name: str, data: bytes) -> None: ...
+
+    def remove(self, name: str) -> None: ...
+
+
 class Persister(Protocol):
     """The write half of a repository — all ``AutosaveService`` is allowed to see."""
 
@@ -94,6 +108,11 @@ class Repository[DocT](Protocol):
 
     def set_module_data(self, owner_id: str, module_id: str, data: dict[str, Any]) -> None:
         """Replace one module's entry on one owner. An empty dict removes it."""
+        ...
+
+    def files(self, owner_id: str, module_id: str) -> FileArea:
+        """The files ``module_id`` keeps beside ``owner_id`` — for an absorption that
+        moves a module's files along with its data."""
         ...
 
     def flush(self, marks: set[DirtyMark]) -> None: ...

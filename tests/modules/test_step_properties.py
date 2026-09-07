@@ -75,12 +75,11 @@ def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
         "Agent",
         "Feature",
         "Milestone",
-        "Handoff",
         "GitHub",
     ]
     assert all_labels == expected
     # Every other tab follows an aspect; Details always shows, because the name leads it
-    # and a step always has one. Handoff and GitHub stay off until somebody asks.
+    # and a step always has one. GitHub stays off until somebody asks.
     assert visible_labels(panel) == ["Details"]
 
 
@@ -100,8 +99,6 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
     )
     from dplanner.modules.step_check.aspect import MODULE_ID as CHECK_ID
     from dplanner.modules.step_check.aspect import write as check_write
-    from dplanner.modules.step_handoff.aspect import MODULE_ID as HANDOFF_ID
-    from dplanner.modules.step_handoff.aspect import write_state as handoff_write
     from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
     from dplanner.modules.step_milestone.aspect import write as milestone_write
     from dplanner.modules.step_ticket.aspect import MODULE_ID as TICKET_ID
@@ -119,7 +116,6 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
         SetModuleDataCommand(step.id, TESTING_ID, tests_write([Test("t1", "A test")]))
     )
     services.undo.push(SetModuleDataCommand(step.id, CHECK_ID, check_write(True)))
-    services.undo.push(SetModuleDataCommand(step.id, HANDOFF_ID, handoff_write(True)))
     services.undo.push(SetModuleDataCommand(step.id, GITHUB_ID, github_write(True)))
     services.undo.push(SetModuleDataCommand(step.id, DOCS_ID, docs_write(True)))
     assert visible_labels(panel) == [
@@ -130,7 +126,6 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
         "Covers",
         "Agent",
         "Milestone",
-        "Handoff",
         "GitHub",
     ]
 

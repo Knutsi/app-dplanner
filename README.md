@@ -28,9 +28,8 @@ learning anything about it. `dplanner aspect list` says which exist in a build.
 ## Status
 
 Early, and honest about it. The model, the storage layer, the index tree, the whole CLI, the
-graph editor and the order view are in place and tested. Fifteen aspects ship — estimate,
-ticket, description, agent instruction, agent run, status, milestone, feature, handoff,
-GitHub refs,
+graph editor and the order view are in place and tested. Fourteen aspects ship — estimate,
+ticket, description, agent instruction, agent run, status, milestone, feature, GitHub refs,
 spec figures, tests, checks and the two documentation ones — each with verbs in the CLI and most with an editor in the step panel
 (`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: a project start date and
 the estimates give every step a running total and a date, in the order table and in
@@ -44,9 +43,10 @@ and any prose editor can reuse one with Insert from Assets…. The Time Estimate
 also says how far each milestone has come against the plan as it stood at the start —
 the plan then, the plan now with the change between them, and what actually landed — and
 `dplanner progress show` prints the same, with the steps and estimates that moved it.
-The decisions a project made along the way
-are a log beside it (`dplanner decision add`, the project panel's Decisions card) that
-every agent's briefing carries.
+What a project learns along the way — decisions, handoffs, spec changes, what was
+deferred — is one labelled log beside it (`dplanner note add`, the project panel's Notes
+card), and every agent's briefing carries an index of the notes that reach its step, with
+the ones addressed to it in full.
 
 ## Running
 
@@ -316,7 +316,6 @@ src/dplanner/
 │   ├── step_check/          a step that gathers every test it waits on — the Type ▸ Check toggle
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, the project's Tests tab and the library-wide roll call
-│   ├── step_handoff/        what a step passes forward, and who inherits it
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, where
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │
@@ -330,8 +329,10 @@ src/dplanner/
 │   ├── reporting/           the window's half of the report: File ▸ Export's HTML, PDF (paper.py) and Excel,
 │   │                        Project ▸ Preview Report, the publisher that writes `reports/` on every Save,
 │   │                        Settings ▸ Reports
-│   ├── decisions/           the decisions a project made along the way: the log (log.py), `dplanner decision`,
-│   │                        the project panel's Decisions card — and every briefing's *Decisions so far*
+│   ├── notes/               what a project records along the way — decisions, handoffs, spec changes,
+│   │                        deferrals — one labelled log (log.py), what reaches a step and the briefing's
+│   │                        index (reach.py), how the two retired modules reach it (migrate.py),
+│   │                        `dplanner note`, and the project panel's Notes card
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
 │   │                        and page rendering; editor.py: the in-app markdown editor)

@@ -116,6 +116,8 @@ nested exactly like the model:
 └── widget/                    the project directory — any folder in the repo
     ├── project.dproj          id, title, summary, repository, colocation, created, format, children
     ├── modules/               module data belonging to the project itself
+    │   ├── notes.json         the notes the project made along the way
+    │   └── notes/assets/      files those notes link
     └── steps/
         └── read-the-spec/     folder name, frozen at creation
             ├── step.json      id, title, edges
@@ -124,8 +126,7 @@ nested exactly like the model:
                 ├── step_status.json        {"status": "done"} — absent means pending
                 ├── testing.json            the tests this step keeps, one record each
                 ├── step_description.md     prose
-                ├── step_handoff.md         what this step passes forward
-                └── step_handoff/           files this module owns
+                └── step_description/       files this module owns
                     └── assets/diagram.png
 ```
 
@@ -410,11 +411,17 @@ handed over the entry it replaced, and gone with the entry when a step is unsize
 asset browser's display titles are the third: `modules/project_assets.json` beside the
 project, `{"titles": {"assets/<sha16>.png": "Login mock"}}` — presentation for
 content-addressed files, keyed by content name so one title covers every copy and no link
-ever carries it. The **decision log** is the fourth: `modules/decisions.json` beside the
-project, `{"decisions": [{"id": "D1", "title": "…", "body": "…", "made": "2026-09-05",
-"step": "<step id>", "supersedes": "D0"}]}` — a record list like the feature catalogue
-(every key but `id` and `title` omitted when empty), ids minted per project and never
-reused so a later decision can name the one it replaces. The distinction has one
+ever carries it. The **note log** is the fourth: `modules/notes.json` beside the project,
+`{"notes": [{"id": "N1", "label": "handoff", "title": "…", "body": "…", "made":
+"2026-09-05", "step": "<step id>", "for": ["<step id>"], "reach": "project",
+"supersedes": "N0"}]}` — a record list like the feature catalogue (every key but `id`,
+`label` and `title` omitted when empty; `reach` written only when it differs from the
+label's default), ids minted per project and never reused so a later note can name the one
+it replaces, the label one of the closed list in `modules/notes/log.py`. It absorbed two
+earlier shapes at open — `modules/decisions.json` by takeover, and each step's
+`step_handoff.md`, `step_handoff.json` and `step_handoff/assets/` by the format's
+`absorb` pass (*Retiring a module* below) — so neither is written any more. The
+distinction has one
 practical consequence worth knowing: the CLI's migration list is built from the aspects
 *plus* anything like this, and a format missing from it is data the CLI silently
 declines to bring forward.
@@ -470,3 +477,10 @@ the project and so cannot mint the record; the entry passes through and reads as
 - **A takeover is one-way.** The old file is deleted at the first open by a build that has
   the change, so an older build opening the project afterwards sees that feature as empty.
   That is the same trade as any format change, and worth saying out loud before a rename.
+- **Data that changes owner is an absorption, not a takeover.** A converter sees one entry
+  on one owner; a step's prose becoming a record on its project needs the whole
+  repository and the aggregate that says how owners relate. `ModuleDataFormat.absorb` is
+  that pass — run once per open after every per-entry migration, handed the repository
+  and the loaded library, returning the owners it changed, and idempotent because it runs
+  on every open. `modules/notes/migrate.py` is the worked example: the retired handoff
+  aspect's prose, scope and files become a `handoff` note on the step.

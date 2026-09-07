@@ -327,7 +327,7 @@ root, stop and look for the registry or capability you have not found yet.
   step whose how-to-execute differs from what-it-is. `ARCHITECTURE.md`'s *The description
   is the instructions* has the reasoning.
 - **Every step tab follows a toggle, and absence encodes the default — in both directions.**
-  Estimate, Description, Handoff and GitHub are toggles too now. For most aspects absence
+  Estimate, Description and GitHub are toggles too now. For most aspects absence
   means *off* and the stored `{"on": true}` marker records the claim; for **Estimate and
   Description absence means *on*** and the marker (`{"off": true}`) records the opt-out,
   because most steps are work and work has a size and a name. That is one `FORMAT.md` rule
@@ -381,7 +381,7 @@ root, stop and look for the registry or capability you have not found yet.
   reasoning; never copy text out into a dialog and back.
 - **A file pasted or dropped into a prose editor is attached, then linked.** `ProseEdit`
   (`framework/prose_edit.py`) content-addresses it into the module's file area — the same
-  place `describe attach`, `handoff attach` and `test attach` write — and types
+  place `describe attach`, `note attach` and `test attach` write — and types
   `![alt](assets/…)` at the caret, or `[name](assets/…)` when it is not an image. A plain-text
   markdown editor cannot embed a picture without breaking `TextBinding`, so it does not
   pretend to; the gallery under it shows the thumbnail. The link is undoable and the blob is
@@ -390,11 +390,9 @@ root, stop and look for the registry or capability you have not found yet.
   `AssetGallery.attach_bytes`, and `ProseSection.set_area` aims both — called by the host,
   because a test's body is keyed by the test while its images belong to the step. What counts
   as an arriving file is `framework/mime_files.py`, shared with the spec module's rich-text
-  editor so the two cannot disagree about a drop. The Description, test bodies and both agent
-  instructions have it; **`modules/step_handoff/section.py` does not** — it predates
-  `ProseSection` and still hand-rolls its own Attach button and file list, so it is the one
-  prose editor that takes no paste. That is a gap, not a rule. `ARCHITECTURE.md`'s *A pasted
-  image is an attachment and a link, not an embed* has the reasoning.
+  editor so the two cannot disagree about a drop. Every prose editor in the application has
+  it. `ARCHITECTURE.md`'s *A pasted image is an attachment and a link, not an embed* has the
+  reasoning.
 - **The asset library is a derived union, and reuse is a copy.** Every file-carrying module
   exports an `asset_source()` from its Qt-free half saying what its areas hold and what
   still uses each file; `domain/assets.catalog()` is one derivation with three readers —
@@ -406,8 +404,8 @@ root, stop and look for the registry or capability you have not found yet.
   directory; identical bytes carry identical content-addressed names, which is what lets
   the browser group them as one asset. Display names are the browser module's project
   metadata (`{"titles": …}`), never part of a link — renaming cannot break a reference.
-  Handoff and agent-instruction files are used *by existence* (briefings carry those areas
-  wholesale); the pool (`asset attach`) is `prunable=False`; `asset prune` is dry-run by
+  Agent-instruction files are used *by existence* (briefings carry the area wholesale)
+  and a note's file while a note links it; the pool (`asset attach`) is `prunable=False`; `asset prune` is dry-run by
   default and never enters a directory no source scanned. `ARCHITECTURE.md`'s *An asset
   library is a view, not a store* and *Inserting an existing asset is a paste with a
   different source* have the reasoning.
@@ -761,7 +759,7 @@ root, stop and look for the registry or capability you have not found yet.
   can honestly deliver. The terminal opens at the project's **git repository root** (via
   the `workdir_for` seam the composition root wires from `find_repo_root`). The prompt goes
   to a per-run temp directory, never the project. The agent reports back through the CLI
-  (`status set`, `agent-state set`, `handoff set`). **The graph gates launching**: a step
+  (`status set`, `agent-state set`, `note add`). **The graph gates launching**: a step
   whose `requires` do not all read done (through `status_for` on the module's Deps, the
   progression board's seam) gets a confirmation naming them before a shell opens — the
   person may know the work landed unrecorded, so it asks rather than refuses.
@@ -834,9 +832,10 @@ root, stop and look for the registry or capability you have not found yet.
   right now". One `QTimer` on the scene advances every ring and runs only while a node
   wears one — `GraphScene._settle_ring_timer` after every sync. The ring is derived from the
   chip (`NodeAccent.chip_text`), so one field says both.
-- **Inherited handoffs are computed, never stored** — `step_handoff/handoff.py` is one
-  function with three readers (tab, CLI, agent prompt). Same rule as the ordering, and the
-  reasoning is in `ARCHITECTURE.md`'s *Pass-forward is derived at read time*.
+- **What reaches a step is computed, never stored** — `notes/reach.py` is one function
+  with three readers (the Agent tab's Notes pane, `dplanner note index`, the briefing).
+  Same rule as the ordering, and the reasoning is in `ARCHITECTURE.md`'s *What reaches a
+  step is derived at read time*.
 - **Progression is derived, never stored** — `domain/progression.py` is the graph's
   readiness with a `status_for(step)` handed in like `days_for`; the board, `dplanner
   progression show` and `--json` are three readers of one function, and the frontier is a
@@ -910,16 +909,21 @@ root, stop and look for the registry or capability you have not found yet.
   per day, format 2; `dplanner estimate show` reads it back) — are the terminal's and
   the report's prose; the charts say it with the plots. `ARCHITECTURE.md`'s *Progress
   against the plan* has the reasoning.
-- **A decision is a record beside the project, and every briefing carries the standing
-  ones.** `modules/decisions/` — `log.py` (Qt-free; `D1, D2, …` minted per project, a
-  title, markdown reasoning, the day, the step it was made on, what it supersedes),
-  `dplanner decision add|set|remove|list|show`, and the project panel's Decisions card.
-  **Adding a title already in the log is that decision**, reported and not duplicated,
-  so an agent's retry never leaves two; a reversal is a new record `--supersedes` the
-  old, never an edit. The briefing's *Decisions so far* (`_briefing_project_sections`)
-  lists what stands, so the fourth agent builds on what the first three settled.
-  `ARCHITECTURE.md`'s *A decision is a record, and the briefing carries it* has the
-  reasoning.
+- **A note is a record beside the project with a label, and every briefing carries an
+  index.** `modules/notes/` — `log.py` (Qt-free; `N1, N2, …` minted per project, a
+  **label** from the closed `LABELS` list — `decision`, `handoff`, `spec-change`, `later`,
+  `post-project` — a title, markdown body, the day, the step it was made on, the steps it
+  is `for`, what it supersedes), `dplanner note add|set|remove|list|show|attach|index`,
+  and the project panel's Notes card. It replaced the decision log and the handoff aspect
+  (both reach it at open — `migrate.py`). **The briefing's notes block is an index**: one
+  line per standing note that reaches the step, grouped by label, with `note show` to
+  open one — and a note **addressed** to the step (`--for S12`) in full ahead of it, which
+  is how one agent points the next at what it must read. Who a note reaches is the
+  label's (`reach.py`: a handoff reaches the steps after its own, everything else the
+  project; `--reach project` lifts one). **Adding a title already on the same step is that
+  note**, reported and not duplicated, so an agent's retry never leaves two; a reversal is
+  a new record `--supersedes` the old, never an edit. `ARCHITECTURE.md`'s *A note is a
+  record with a label, and the briefing carries an index* has the reasoning.
 - **The GitHub tab's standing line is the picker fetch.** Showing a step fetches the
   repository's branches and PRs (again past `LISTS_TTL_S`), and the answer says where
   the refs stand — the PR's state and title now, whether the branch is still on the

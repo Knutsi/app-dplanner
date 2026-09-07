@@ -1,6 +1,6 @@
 """Content-addressed files in a module's file area.
 
-Shared by every aspect that keeps files beside a node — descriptions with images, handoffs
+Shared by every aspect that keeps files beside a node — descriptions with images, notes
 with reference material. Files are named by the hash of their content, so attaching the same
 file twice is a no-op and a rename upstream never churns a link. The suffix is kept because
 a browser and a person both use it to tell what the file is.

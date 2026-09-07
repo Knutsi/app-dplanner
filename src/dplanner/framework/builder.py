@@ -238,10 +238,12 @@ class AppBuilder:
         # takeover's remove-and-write lands in one save.
         formats = [m.data_format for m in modules if isinstance(m, PersistsModuleData)]
         # The shelf is the domain's, not a module's; what it holds is theirs.
-        changed = migrate_module_data(repo, [*formats, SHELF_FORMAT])
+        changed = migrate_module_data(repo, [*formats, SHELF_FORMAT], document)
         changed += migrate_shelved(repo, formats)
         if changed:
-            repo.flush({(owner_id, "module_data") for owner_id in changed})
+            # Prose too: an absorption may have moved an owner's text, not only its data.
+            aspects = ("module_data", "module_text")
+            repo.flush({(owner_id, aspect) for owner_id in changed for aspect in aspects})
         for module in modules:
             module.register()
 

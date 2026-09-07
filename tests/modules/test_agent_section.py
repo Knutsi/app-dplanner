@@ -2,7 +2,7 @@
 
 Three parts over one briefing: the project's standing instruction (one field, two editors,
 one undo stack), the inherited context (derived, read-only, rendered by the prompt's own
-``part_lines``), and the step's instruction. The card is the same project field again.
+``section_lines``), and the step's instruction. The card is the same project field again.
 """
 
 import pytest
@@ -199,22 +199,32 @@ def test_the_project_part_edits_the_projects_own_text(services, step, section):
     assert project.module_text[MODULE_ID] == "House rules."
 
 
-def test_the_inherited_part_shows_what_earlier_steps_handed_forward(services, step, section):
+def test_the_notes_part_shows_the_index_of_what_reaches_the_step(services, step, section):
+    from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
+    from dplanner.modules.notes.log import Note, write_log
+
     library = services.document
     project = library.project_of(step.id)
     earlier = Step(title="Set up CI", edges={"requires": []})
     AddNodeCommand(project.id, earlier).redo(library)
     library.set_edges(step.id, "requires", [earlier.id])
-    library.set_text(earlier.id, "step_handoff", "Keys in vault.")
+    keys = Note("N1", "handoff", "Keys in vault", body="Ask ops.", step=earlier.id)
+    library.set_module_data(project.id, NOTES_ID, write_log([keys]))
 
     section.show_target(step.id)
     text = section.inherited_view.toPlainText()
-    assert 'From "Set up CI"' in text and "Keys in vault." in text
+    assert "## Notes so far" in text and "N1 · Keys in vault" in text
     assert "1 block" in section.inherited_part.summary.text()
 
-    # A handoff edited while the tab is open reaches the pane without a reselect.
-    library.set_text(earlier.id, "step_handoff", "Keys moved to 1Password.")
-    assert "1Password" in section.inherited_view.toPlainText()
+    # A note edited while the tab is open reaches the pane without a reselect — and one
+    # addressed to this step arrives in full.
+    moved = Note(
+        "N2", "handoff", "Keys moved", body="1Password.", step=earlier.id, for_steps=(step.id,)
+    )
+    library.set_module_data(project.id, NOTES_ID, write_log([keys, moved]))
+    text = section.inherited_view.toPlainText()
+    assert "## Notes for this step" in text and "1Password." in text
+    assert "2 blocks" in section.inherited_part.summary.text()
 
 
 def test_the_summaries_follow_the_text(services, step, section):

@@ -19,7 +19,7 @@ nothing else, one folder per project, often several projects for several people 
 plans a **code repository** named on the project. `dplanner project show` prints both, and
 where the code is checked out on this machine. Three rules follow:
 
-- **`dplanner` writes to the plan wherever it is run from.** Status, handoffs, docs, tests,
+- **`dplanner` writes to the plan wherever it is run from.** Status, notes, docs, tests,
   GitHub refs: every verb reaches the plan repository. Never create, edit or commit plan
   files by hand, and never in the code repository — a plan file on a code branch is what
   drifts.
@@ -397,34 +397,63 @@ says where the code is:
 - Without `gh`, recording still works — the refs are stored as written, and the state
   fills in when a machine with `gh` refreshes.
 
-## Recording decisions
+## Notes: what the project learns as it goes
 
-A plan says *what*; the decisions say *why it went this way and not another* — a
-trade-off taken, a convention settled, an option rejected. Left in a commit message or a
-transcript they are gone by the next session, and the next agent re-argues them. So they
-are a log beside the project, and **every briefing carries the ones still in force**,
-under *Decisions so far*:
+A plan says *what*. Everything a project learns on the way — why it went one way and not
+another, what a finished step's worker wants the next one to know, where the work had to
+depart from the spec, what was noticed and put off — is a **note**: one labelled log
+beside the project, and the record every later agent starts from. Left in a commit
+message or a transcript it is gone by the next session.
 
 ```
-dplanner decision add <project> 'Keep the index in SQLite' --step S7 \
+dplanner note add <project> decision 'Keep the index in SQLite' --step S7 \
   --text 'Read-mostly and one operator; Postgres would cost an ops step for nothing.'
-dplanner decision list <project>          # what stands; --all includes the superseded
-dplanner decision show <project> D3       # the reasoning in full
+dplanner note add <project> handoff 'Auth middleware is stubbed' --step S7 --for S9 --file -
+dplanner note list <project>              # what stands; --label handoff; --all for the superseded
+dplanner note show <project> N3           # one in full
+dplanner note index S9                    # what S9's briefing carries
 ```
 
-- **Record a decision when you make one** — while executing a step as much as while
-  planning — with the step it was made on (`--step`) and the reasoning (`--text`, or
-  `--file -` for more than a line). A decision with no reasoning is a rule nobody can
-  revisit.
-- **Safe to run twice.** A title already in the log *is* that decision: `decision add`
+**The label says what a note is** — pick the one that fits, and only these five exist:
+
+| label | what it is | who sees it |
+|---|---|---|
+| `decision` | a choice and why; stands until a later note supersedes it | every step |
+| `handoff` | what whoever picks up after this step needs to know | the steps after `--step` |
+| `spec-change` | where the work departed from the spec, so the spec can follow | every step |
+| `later` | work noticed and deferred inside this project | every step |
+| `post-project` | to do once the project has shipped | every step |
+
+**Your briefing carries an index, not the log.** Under *Notes so far* every standing note
+that reaches your step is one line — id, title, when and where — grouped by label; the
+bodies stay in the log, and `note show` opens one. Read the lines that touch your work
+before you start, and open those. Under *Notes for this step*, ahead of the index, sit
+the notes an earlier agent **addressed to your step** in full — read every one of them.
+The rules that follow from that shape:
+
+- **Title a note as the fact it is.** The title is what the next agent sees; the body is
+  what it opens. *Keys live in the vault* is a title; *Handoff* is not. The body carries
+  the detail — the reasoning, the gotcha, the path — with `--text`, or `--file -` for more
+  than a line. A note with no body is a headline nobody can act on.
+- **Record as you go, and hand off when you finish.** A `decision` the moment you make
+  one, a `spec-change` where you found the spec wrong, a `later` for what you saw and did
+  not do — each on the step you were on (`--step`). Your last act on a step is its
+  `handoff`: where things are, what is half done, what bit you, for whoever comes next.
+- **Address what must be read.** `--for S12` puts a note into S12's briefing in full —
+  use it when the next step cannot do its work without this, and only then; an index that
+  is all addressed notes is no index. `--reach project` lifts a handoff into every step's
+  index when the whole project needs it (keys, an environment fact); a note made on no
+  step reaches everyone already.
+- **Safe to run twice.** A title already on the same step *is* that note: `note add`
   reports it and writes nothing, so a retry after a stale-workspace refusal never leaves
-  two. To change one, `decision set`.
-- **Reverse by superseding, never by editing away.** `decision add <project> 'Move the
-  index to Postgres' --supersedes D3` keeps the history and takes D3 out of every later
-  briefing. Only a decision recorded by mistake is `decision remove`d.
-- **Build on what stands.** Your briefing's *Decisions so far* is the list; read it before
-  proposing something one of them already settled, and say so if you think one is wrong
-  rather than quietly working around it.
+  two. To change one, `note set`.
+- **Reverse by superseding, never by editing away.** `note add <project> decision 'Move
+  the index to Postgres' --supersedes N3` keeps the history and takes N3 out of every
+  later index. Only a note recorded by mistake is `note remove`d.
+- **Build on what stands.** Read the standing decisions in your index before proposing
+  something one of them already settled, and say so if you think one is wrong rather than
+  quietly working around it. `note attach <project> N3 <file>` puts a file beside a note
+  and links it; a note addressed to a step carries its files into the briefing.
 
 Prefer building the project up with authored `step add`s: the user sees each step arrive
 whole and can stop you. To move an agreed plan into a **new** project in one command,
@@ -453,11 +482,10 @@ then authored `step add`s.
   its project itself — from the working directory or `--project` — never as a second
   positional.
 - **Already clear is success.** State-clearing verbs (`status clear`, `estimate clear`,
-  `milestone clear`, `feature clear`, `feature uncite`, `ticket clear`, `handoff clear`,
-  `github clear`, `agent off`, `agent set --clear`, `decision remove`) exit 0 when there
-  is nothing to clear — safe to batch; so does `feature cite` of a passage already cited,
-  `decision add` of a title already recorded, and `progress record` of a day nothing
-  changed on.
+  `milestone clear`, `feature clear`, `feature uncite`, `ticket clear`, `github clear`,
+  `agent off`, `agent set --clear`, `note remove`) exit 0 when there is nothing to clear —
+  safe to batch; so does `feature cite` of a passage already cited, `note add` of a title
+  already recorded on that step, and `progress record` of a day nothing changed on.
 - **A verb marked *reads the topology first*** refuses until `topology show` has printed
   the project's current topology on this machine. Read it once per session, and again
   after `topology set`; it costs one command and it is the shape of everything you add.

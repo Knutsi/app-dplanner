@@ -1,6 +1,6 @@
 """Assembling the prompt an agent starts a step with.
 
-The module never learns what the context sections *are* — a handoff, a global note — it is
+The module never learns what the context sections *are* — a note index, a topology — it is
 handed finished :class:`PromptPart`s by the composition root, which is the one file allowed
 to know every module's vocabulary. The project's standing instruction and the step's own are
 this module's data, so they arrive as plain arguments. The same assembly answers the GUI's
@@ -53,12 +53,14 @@ class Briefing:
     agent prompt`` used to declare these four members separately, in two different
     callable shapes, with two adapter closures in the root bridging them.
 
-    ``parts`` is handed-forward context (a handoff, a global note); ``sections`` the
-    step's own facts (description, the feature it realises, the PR);
+    ``parts`` is what the project recorded for whoever works this step (the notes
+    addressed to it, the index of the rest), rendered after the instructions;
+    ``sections`` the step's own facts (description, the feature it realises, the PR);
     ``project_sections`` the project's — its topology — rendered beside the standing
     instruction; ``instruction`` the block the ``## Instructions`` heading carries — the
     step's separate instruction when one exists, the description otherwise, decided by
-    the root; ``epilogue`` closes the prompt with the report-back protocol and
+    the root; ``epilogue`` closes the prompt with the report-back protocol (handed the
+    library, since the verbs it names address the project as well as the step) and
     ``preamble`` opens it — per step, told whether *this run* gets a worktree, since
     the preflight names the worktree the launcher prepares and a conflict run never has
     one whatever the step says, and handed the project's repository facts so it can say
@@ -69,7 +71,7 @@ class Briefing:
     parts: PartsFor = _no_parts
     sections: PartsFor = _no_parts
     project_sections: PartsFor = _no_parts
-    epilogue: Callable[[Step], str] = field(default=lambda _step: "")
+    epilogue: Callable[[Library, Step], str] = field(default=lambda _library, _step: "")
     preamble: Callable[[Step, bool, RepositoryFacts | None], str] = field(
         default=lambda _step, _worktree, _facts: ""
     )
@@ -84,7 +86,8 @@ class PromptSegment:
     """A stretch of the assembled text and where it came from.
 
     ``origin`` is one of ``header``, ``protocol`` (preamble and epilogue), ``project``,
-    ``context``, ``instruction``, ``inherited``. Concatenating the segment texts
+    ``context``, ``instruction``, ``inherited`` (the parts after the instructions).
+    Concatenating the segment texts
     reproduces ``AssembledPrompt.text`` exactly — a display that colours by origin can
     never show something other than what is sent.
     """
@@ -106,19 +109,10 @@ def _files_lines(files: Sequence[str]) -> list[str]:
     return ["Files:", *[f"- {path}" for path in files], ""]
 
 
-def part_lines(part: PromptPart) -> list[str]:
-    """One context block as markdown — also how the Agent tab renders its Inherited pane,
-    so the pane and the prompt cannot describe the same context two ways."""
-    lines = [f'### From "{part.heading}"', ""]
-    if part.body:
-        lines += [part.body.rstrip(), ""]
-    lines += _files_lines(part.files)
-    return lines
-
-
 def section_lines(section: PromptPart) -> list[str]:
-    """A fact about the step itself as a first-class block — its description, its
-    requirements — where ``part_lines`` frames context handed forward from elsewhere."""
+    """One block as markdown — a fact about the step, a project section, a part handed in
+    after the instructions. Also how the Agent tab renders its Context and Inherited
+    panes, so a pane and the prompt cannot describe the same block two ways."""
     lines = [f"## {section.heading}", ""]
     if section.body:
         lines += [section.body.rstrip(), ""]
@@ -150,7 +144,9 @@ def assemble(
     worded by the composition root and rendered here as opaque blocks, between the standing
     instruction and the step's, so the agent reads what the step *is* before how to do it.
     ``project_sections`` are the project's own facts — its topology — rendered right after
-    the standing instruction, because they frame every step the same way.
+    the standing instruction, because they frame every step the same way. ``parts`` come
+    after the instructions: what the project recorded for this step's worker, read once
+    the work is understood.
     """
     blocks: list[tuple[str, list[str]]] = [
         ("header", [f"# Step: {step_title}", "", f"Project: {project_title}", ""])
@@ -181,10 +177,7 @@ def assemble(
         instruction_lines += _files_lines(instruction_files)
         blocks.append(("instruction", instruction_lines))
     if parts:
-        inherited_lines = ["## Context handed forward from earlier steps", ""]
-        for part in parts:
-            inherited_lines += part_lines(part)
-        blocks.append(("inherited", inherited_lines))
+        blocks.append(("inherited", [line for part in parts for line in section_lines(part)]))
     if epilogue:
         blocks.append(("protocol", ["## When you are done", "", epilogue.rstrip(), ""]))
     files = (

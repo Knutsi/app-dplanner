@@ -2,8 +2,7 @@
 
 All three editors are :class:`~dplanner.framework.prose_section.ProseSection` — the editor,
 its image gallery, paste-and-drop, markdown highlighting and the expand-to-modal button all
-come from it. Nothing here hand-rolls an Attach button; ``step_handoff/section.py`` still
-does, and ``CLAUDE.md`` calls that a gap rather than a pattern.
+come from it. Nothing here hand-rolls an Attach button.
 
 **The banner is one widget with three sentences**, shared by the step panel's Docs tab and
 the Docs view, so "this needs recompiling" is worded once and greyed for one reason. It is

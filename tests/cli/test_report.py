@@ -26,8 +26,8 @@ from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleD
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.seed import seed_project
 from dplanner.modules import _report_sources, _step_key, _step_kind, default_module_formats
-from dplanner.modules.decisions.log import Decision, write_log
 from dplanner.modules.estimation.aspect import write as estimate
+from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.step_milestone.aspect import write as milestone
 from dplanner.modules.step_status.aspect import read as status_for
 from dplanner.modules.step_status.aspect import write as status
@@ -55,8 +55,10 @@ def plan(cli_library, workspace):
         area = context.store.files(steps[0].id, "step_description")
         picture = attach(area, encode_rgb(2, 2, 6, bytes(12)), "dot.png")
         library.set_text(steps[0].id, "step_description", f"Ask **everyone**.\n\n![dot]({picture})")
-        log = write_log([Decision("D1", "Talk first", "Because.", "2026-09-01", steps[0].id)])
-        SetModuleDataCommand(project.id, "decisions", log).redo(library)
+        log = write_log(
+            [Note("N1", "decision", "Talk first", "Because.", "2026-09-01", steps[0].id)]
+        )
+        SetModuleDataCommand(project.id, "notes", log).redo(library)
         project_id = project.id
     return project_id
 
@@ -93,7 +95,7 @@ def test_every_source_speaks_plain_data(cli_library, plan):
         )
     assert _plain(report)
     assert [card.key for card in report.steps] == ["S1", "S2", "M3"]
-    assert set(report.sections) >= {"overview", "plan", "order", "steps", "decisions"}
+    assert set(report.sections) >= {"overview", "plan", "order", "steps", "notes"}
     graph = next(p for p in report.sections["plan"] if isinstance(p, Graph))
     assert len(graph.nodes) == 3 and len(graph.edges) == 2
     steps = next(t for t in report.tables() if t.id == "steps")
@@ -153,7 +155,7 @@ def test_report_html_carries_every_step_and_escapes_what_people_typed(cli, plan,
     assert "data:image/png;base64," in text  # The description's picture travels inline.
     assert "<strong>everyone</strong>" in text
     assert 'id="about"' in text and "git clone" not in text  # No remote: no clone line.
-    for section in ("overview", "plan", "timeline", "order", "steps", "decisions"):
+    for section in ("overview", "plan", "timeline", "order", "steps", "notes"):
         assert f'<section id="{section}">' in text
 
 
@@ -233,4 +235,4 @@ def test_the_steps_table_marks_milestones_and_carries_facet_columns(cli_library,
     assert by_key["S1"].cells[3] == "done" and by_key["S1"].cells[4] == "2d"
     card = report.step(by_key["S1"].step_id)
     assert card is not None
-    assert [facet.label for facet in card.facets] == ["Estimate", "Description"]
+    assert [facet.label for facet in card.facets] == ["Estimate", "Description", "Decision"]

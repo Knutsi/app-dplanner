@@ -240,7 +240,7 @@ def open_library(
 
     context = CliContext(out=out, as_json=as_json, opened=library, opened_store=store)
     store.dirty.connect(lambda owner_id, aspect: context.marks.add((owner_id, aspect)))
-    migrate_module_data(store, formats)
+    migrate_module_data(store, formats, library)
     migrate_shelved(store, formats)
     try:
         yield context

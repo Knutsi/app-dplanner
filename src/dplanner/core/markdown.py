@@ -1,6 +1,6 @@
 """Rendering DPlanner's markdown subset as safe HTML, with nothing but the standard library.
 
-Descriptions, handoffs, decisions and test bodies are markdown, and a single-file HTML
+Descriptions, notes and test bodies are markdown, and a single-file HTML
 report needs them as HTML on a machine with no Qt and no markdown library — the CLI's
 rule. The window renders the same text through Qt's ``QTextDocument``
 (``framework/markdown_view.py``); this is its headless twin, written for a page that a

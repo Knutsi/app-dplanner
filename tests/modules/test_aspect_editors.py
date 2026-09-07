@@ -59,7 +59,6 @@ def test_every_registered_aspect_became_a_tab_or_a_details_block(services, panel
         "Agent",
         "Feature",
         "Milestone",
-        "Handoff",
         "GitHub",
     ]
     details = panel._pages.widget(0)

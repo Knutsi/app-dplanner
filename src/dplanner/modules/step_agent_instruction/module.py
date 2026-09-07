@@ -2,12 +2,12 @@
 panel's Agent card, and Run Agent.
 
 The tab is the writing half — :class:`AgentSection` stacks the briefing's three parts
-(the project's standing instruction, what earlier steps handed forward, this step's own)
+(the project's standing instruction, what the project's notes hold for it, this step's own)
 and ``ModuleTextField`` does the binding work. The card is the same project field in the
 project panel, registered into ``deps.cards`` like any other project-level section.
 
 Run Agent is the reading half: assemble the step's briefing (both instructions, plus
-whatever context the composition root hands in — this module never learns what a handoff
+whatever context the composition root hands in — this module never learns what a note
 is), stage its attached files beside the prompt in a per-run temp directory, and open a
 terminal on it. The terminal is a **peer process the user owns**, deliberately not a
 TaskRunner task — see ``launcher.py``. Preview Prompt and the no-terminal fallback show
@@ -370,7 +370,7 @@ class StepAgentInstructionModule:
             parts=parts,
             sections=sections,
             project_sections=deps.briefing.project_sections(deps.library, step, deps.files),
-            epilogue=deps.briefing.epilogue(step),
+            epilogue=deps.briefing.epilogue(deps.library, step),
             preamble=deps.briefing.preamble(step, uses_worktree(step), deps.facts_for(step.id)),
             project_instruction=read_project(project),
             project_files=project_files,

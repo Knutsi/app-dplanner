@@ -27,7 +27,7 @@ def test_the_prompt_carries_instruction_context_and_epilogue():
     text = assembled.text
     assert "# Step: Deploy" in text
     assert "## Instructions" in text and "Ship it." in text
-    assert '### From "Set up CI"' in text and "Keys in vault." in text
+    assert "## Set up CI" in text and "Keys in vault." in text
     assert "- a/b.png" in text
     assert "## When you are done" in text and "Report back." in text
     assert assembled.files == ("a/b.png",)
@@ -60,7 +60,7 @@ def test_segments_reproduce_the_text_exactly_and_name_their_origins():
 
 def test_an_empty_context_leaves_no_empty_section():
     assembled = assemble("Deploy", "Discovery", "Ship it.", [], "")
-    assert "Context handed forward" not in assembled.text
+    assert "Notes" not in assembled.text
     assert "When you are done" not in assembled.text
     assert "Before you start" not in assembled.text
 
@@ -1264,17 +1264,32 @@ def test_the_ticket_toggle_adds_the_empty_aspect_and_shelves_a_filled_one(servic
     assert SHELF_ID not in step.module_data
 
 
-def test_agent_prompt_carries_handoffs_and_the_epilogue(cli_stdin, workspace):
+def test_agent_prompt_carries_the_note_index_and_the_epilogue(cli_stdin, workspace):
     cli_stdin("project", "create", "Discovery")
     cli_stdin("step", "add", "Discovery", "Set up CI")
     cli_stdin("step", "add", "Discovery", "Deploy", "--after", "Set up CI")
     cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
-    cli_stdin("handoff", "set", "Set up CI", "--file", "-", stdin="Keys in vault.")
+    cli_stdin(
+        "note",
+        "add",
+        "Discovery",
+        "handoff",
+        "Keys in vault",
+        "--step",
+        "S1",
+        "--file",
+        "-",
+        stdin="Under ci/, ask ops for the token.",
+    )
 
     shown = json.loads(cli_stdin("agent", "prompt", "Deploy", "--json"))
     assert "Ship it." in shown["prompt"]
-    assert 'From "Set up CI"' in shown["prompt"]
-    assert "Keys in vault." in shown["prompt"]
+    assert "## Notes so far" in shown["prompt"]
+    assert "- N1 · Keys in vault" in shown["prompt"]
+    assert "ask ops" not in shown["prompt"]  # Indexed, not carried: `note show` reads it.
+    assert "dplanner note show Discovery <id>" in shown["prompt"]
+    assert "dplanner note add Discovery handoff" in shown["prompt"]
+    assert "dplanner note add Discovery decision" in shown["prompt"]
     # Every verb names the step by its key: unambiguous where a title may not be.
     assert "dplanner status set S2 done" in shown["prompt"]
     assert "dplanner agent-state set S2 plan-for-review" in shown["prompt"]

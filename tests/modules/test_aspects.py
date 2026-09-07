@@ -52,7 +52,6 @@ def test_aspect_list_names_every_aspect(cli):
         "step_agent_run",
         "step_status",
         "step_milestone",
-        "step_handoff",
         "step_check",
         "feature",
         "testing",
