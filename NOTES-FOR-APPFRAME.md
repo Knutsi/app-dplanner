@@ -2243,3 +2243,22 @@ neighbours, because an `ActionSpec.icon` is handed a `QColor`.
 The widening is the older half of the file catching up with `ActionSpec`'s signature — mypy
 found it the moment those verbs were given icons. **Upstream?** The `_arrow` helper and the
 signature fix; the glyphs are this application's vocabulary.
+
+
+### `framework/toolbar.py` + `theme/theme.qss` — a button's dropdown arrow is a target
+
+**What.** `ActionToolbar._attach_menu` sets `hasMenu` on the buttons it gives a menu, and the
+stylesheet turns Qt's `::menu-button` into a real half: `ARROW_W` (20 px) wide, parted from
+the button half by a `$BORDER` hairline (`$ON_ACCENT` while the button is checked, where a
+border-coloured line would vanish into the accent fill), with `ARROW_ROOM` of right padding
+on the button so the words step aside for it.
+
+**Why.** Qt sizes that arrow from `PM_MenuButtonIndicator` — about ten pixels — and a styled
+`QToolButton` renders it as a thin raised sliver at the button's edge: unaimable, and it
+reads as a rendering fault rather than as an arrow. The padding is the other half of the
+same fact, and the trap worth writing down: **a styled subcontrol sits outside Qt's size
+hint**, so widening `::menu-button` alone paints the arrow over the last letter — which
+looks exactly like a rule that did not apply. `tests/test_theme.py` renders the button and
+asserts both, in the splitter seam's spirit: it fails when either half is removed.
+
+**Upstream?** Yes, both. Any application whose toolbar buttons carry menus hits it.

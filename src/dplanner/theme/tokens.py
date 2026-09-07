@@ -17,6 +17,13 @@ from dplanner.theme.themes import Theme
 # Metrics.
 RADIUS_SM: Final = 5
 RADIUS_MD: Final = 8
+# The arrow half of a button that drops a child menu down. Qt's own metric is about ten
+# pixels — a sliver too thin to aim at, and one that reads as a fault beside the button it
+# is attached to. Wide enough to be a target, narrow enough that the words still lead.
+ARROW_W: Final = 20
+# The room a worded button leaves for it: the arrow's width and DESIGN.md's 4 px beside it.
+# A styled subcontrol is outside Qt's size hint, so the text runs under the arrow without it.
+ARROW_ROOM: Final = ARROW_W + 4
 
 
 def as_qss_mapping(theme: Theme) -> dict[str, str]:

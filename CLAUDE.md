@@ -679,7 +679,10 @@ root, stop and look for the registry or capability you have not found yet.
   `control_bar`) because a canvas can always be dragged narrower than its own strip: a
   layout answers that by shrinking every button until *Divide* reads *D…e*, a toolbar by
   moving the groups that no longer fit into its » menu. The layout picker sits outside it
-  and never overflows — it names what the canvas is showing, and is not a verb.
+  and never overflows — it names what the canvas is showing, and is not a verb. **The arrow
+  is a target of its own**: `ARROW_W` wide with a hairline parting it from the button half,
+  and `ARROW_ROOM` of padding so the words step aside — a styled subcontrol is outside Qt's
+  size hint, so widening the arrow without the padding paints it over the last letter.
 - **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
   `MENU_STRUCTURE`, so anything with a context menu owns a menu in that table — the canvas has
   `Step`, the index tree has `Project`, the tab bar renders View's Tabs submenu (via
