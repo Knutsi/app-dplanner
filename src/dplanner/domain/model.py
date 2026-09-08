@@ -421,20 +421,27 @@ class Library(Node):
     ) -> None:
         """Replace one kind of incoming edge, refusing anything that cannot be true.
 
-        The refusals are :meth:`link_refusal`'s; catching them at the model means everything
-        above it never has to.
+        The refusals are :meth:`link_refusal`'s, asked of what the write *adds*; catching
+        them at the model means everything above it never has to. An entry already in the
+        list — a ghost a delete or a merge left behind, a cycle a hand edit smuggled in —
+        is carried, never re-judged: the write cannot make the graph worse by keeping it,
+        and carrying is the only way a list holding one can ever change again. Judging the
+        whole list froze every survivor of a deleted step until somebody edited the file.
         """
         if kind not in EDGE_KINDS:
             # Checked here as well as in link_refusal: clearing an unknown kind passes no
             # targets, so the loop below would never look at it.
             raise ValueError(f"{kind!r} is not an edge kind: {', '.join(sorted(EDGE_KINDS))}")
         step = self.step(step_id)
+        current = step.edges.get(kind, [])
         wanted = list(dict.fromkeys(targets))  # De-duplicate, keep the given order.
         for target in wanted:
+            if target in current:
+                continue
             refusal = self.link_refusal(step_id, kind, target)
             if refusal is not None:
                 raise ValueError(refusal)
-        if step.edges.get(kind, []) == wanted:
+        if current == wanted:
             return
         if wanted:
             step.edges[kind] = wanted
@@ -583,7 +590,9 @@ class Library(Node):
 
         Edges pointing at a removed step are left alone on purpose. Undo has to restore the
         graph exactly, and silently rewriting other steps' edge lists would make
-        delete-then-undo lossy. :meth:`requires` already skips ids it cannot resolve.
+        delete-then-undo lossy. :meth:`requires` already skips ids it cannot resolve, and
+        the tidying belongs one layer up: :func:`~dplanner.domain.commands.remove_steps_command`
+        takes the links into a step along with it, as one undo step.
         """
         node = self._nodes[node_id]
         parent = self.parent_of(node_id)

@@ -40,11 +40,11 @@ from dplanner.domain.commands import (
     AddNodeCommand,
     Command,
     CompositeCommand,
-    RemoveNodeCommand,
     SetEdgesCommand,
     SetFieldCommand,
     SetModuleDataCommand,
     remove_edges_command,
+    remove_steps_command,
 )
 from dplanner.domain.model import Library, NodeId, Step, StepId
 from dplanner.framework.action_registry import (
@@ -391,13 +391,4 @@ class StepVerbs:
     def _delete(self, context: Context) -> None:
         doomed = chosen_steps(self.library, context)
         if doomed:
-            self.undo.push(removal_of(doomed, "Delete"))
-
-
-def removal_of(step_ids: Sequence[StepId], verb: str) -> Command:
-    """Remove these steps as one undo step, named for the verb that asked — Cut removes
-    the same way Delete does, and reads "Cut 3 Steps" on the Edit menu."""
-    removals: list[Command] = [RemoveNodeCommand(step_id) for step_id in step_ids]
-    if len(removals) == 1:
-        return removals[0]
-    return CompositeCommand(f"{verb} {len(removals)} Steps", removals)
+            self.undo.push(remove_steps_command(self.library, doomed, "Delete"))

@@ -376,6 +376,36 @@ def test_unlink_removes_only_that_edge(cli):
     assert len(data(cli("step", "show", "C", "--json"))["requires"]) == 1
 
 
+def test_removing_a_step_takes_the_links_into_it_along(cli, workspace):
+    """The survivor's list is clean on disk, and it can still be linked — it once kept the
+    deleted id, and every later link on that step failed "no such step"."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "A")
+    cli("step", "add", "Discovery", "B", "--after", "A")
+    cli("step", "add", "Discovery", "C")
+    cli("step", "remove", "A")
+    record = workspace / "discovery" / "steps" / "b" / "step.json"
+    assert "edges" not in json.loads(record.read_text())
+    cli("step", "link", "B", "C")
+    assert len(data(cli("step", "show", "B", "--json"))["requires"]) == 1
+
+
+def test_a_ghost_id_left_by_an_outside_edit_does_not_freeze_the_list(cli, workspace):
+    """A merge or a hand edit can still leave one; the model carries it and judges only
+    what the verb adds. `step show` resolves what it can, the file keeps what it was given."""
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "A")
+    cli("step", "add", "Discovery", "B")
+    record = workspace / "discovery" / "steps" / "b" / "step.json"
+    raw = json.loads(record.read_text())
+    raw["edges"] = {"requires": ["0" * 32]}
+    record.write_text(json.dumps(raw))
+
+    cli("step", "link", "B", "A")
+    assert len(data(cli("step", "show", "B", "--json"))["requires"]) == 1
+    assert len(json.loads(record.read_text())["edges"]["requires"]) == 2
+
+
 def test_isolate_cuts_the_links_that_cross_the_set_and_keeps_the_rest(cli):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "A")
