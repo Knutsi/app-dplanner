@@ -322,6 +322,25 @@ def test_resolving_with_an_agent_hands_over_both_versions_and_yields(
     assert not services.autosave.has_pending()
 
 
+def test_resolving_a_conflict_does_not_claim_the_step_is_in_progress(
+    session, step, library_file, monkeypatch
+):
+    """That agent merges two writers' plan files; it is not doing the step's work, so the
+    launch that starts it makes no claim about where the work stands."""
+    from dplanner.modules.step_status.aspect import read as status_of
+
+    services = session.services
+    services.undo.push(SetFieldCommand(step.id, "title", "Typed here"))
+    agent_edits_a_step(library_file, step.id)
+    services.autosave.flush_now()
+
+    monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["true"])
+    monkeypatch.setattr(launcher, "spawn", lambda _command, _workdir: None)
+    FakeDialog.answer = AGENT
+    module(session)._ask()
+    assert status_of(services.document.step(step.id)) == "pending"
+
+
 def test_a_conflict_is_settled_where_the_plan_lives_not_in_the_code_checkout(
     session, step, library_file, library_repo, tmp_path, monkeypatch
 ):

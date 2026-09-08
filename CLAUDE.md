@@ -810,6 +810,13 @@ root, stop and look for the registry or capability you have not found yet.
   whose `requires` do not all read done (through `status_for` on the module's Deps, the
   progression board's seam) gets a confirmation naming them before a shell opens — the
   person may know the work landed unrecorded, so it asks rather than refuses.
+  **A launch that opened a shell claims the step is in progress** — `mark_started`, the
+  writer half of that same seam, applied off the undo stack the way the launch stamp is
+  (`step_status`'s `record_started`), because Ctrl+Z must not file a step as pending while
+  an agent works in it. It is the *Agent ▸ On launch* switch, on by default: the agent's
+  own first report is minutes away and a step somebody is working on that still reads
+  pending is a lie the plan was never asked to tell. Only Run Agent passes it — a
+  conflict handed to an agent is a merge of two writers' plan files, not the step's work.
   **The briefing never rides in argv, and the peer is a top-level session.** The
   agent's opening line is `launcher.opening_prompt` — a pointer at `prompt.md`, carrying
   nothing the project is about — because the whole briefing as one argument was every

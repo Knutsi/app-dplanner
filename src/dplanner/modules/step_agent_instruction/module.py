@@ -12,7 +12,9 @@ is), stage its attached files beside the prompt in a per-run temp directory, and
 terminal on it. The terminal is a **peer process the user owns**, deliberately not a
 TaskRunner task — see ``launcher.py``. Preview Prompt and the no-terminal fallback show
 the same assembled text, because the prompt is the library and the terminal was only one
-way to hand it over.
+way to hand it over. A launch that opened a shell also claims the step is *in progress*
+— through ``deps.mark_started``, unless the person switched that off on the settings page,
+since the agent's own first report may be minutes away.
 """
 
 import json
@@ -74,6 +76,7 @@ from dplanner.modules.step_agent_instruction.settings_page import (
     agent_command,
     build_page,
     launch_command,
+    start_in_progress,
 )
 from dplanner.theme.icons import spark_icon, typewriter_icon
 
@@ -88,6 +91,11 @@ PREVIEW_NOTE = (
 
 def _no_record(_step_id: StepId, _files: launcher.LaunchFiles) -> None:
     return None
+
+
+def _no_start(_step_id: StepId) -> bool:
+    """A build with nobody to tell that work started: nothing is claimed."""
+    return False
 
 
 def _all_done(_step: Step) -> str:
@@ -175,6 +183,11 @@ class StepAgentInstructionDeps:
     # progression board's seam. Run Agent asks before launching on a step whose
     # prerequisites do not all read done; this module never learns the vocabulary's shape.
     status_for: Callable[[Step], str] = field(default=_all_done)
+    # The writer half of the same seam: work on the step has begun. Run Agent calls it as
+    # the terminal opens, when the person leaves *On launch* on; True when it wrote. The
+    # status aspect owns the word and the fact that the write skips the undo stack — this
+    # module only knows a run has started.
+    mark_started: Callable[[StepId], bool] = field(default=_no_start)
     # The step's readable key ("F7") and its ticket key ("PROJ-12"), both composed by the
     # root from aspects this module never reads. They name the run — the worktree, the
     # branch, the terminal's title — through ``launcher.run_name``, which the briefing's
@@ -394,7 +407,9 @@ class StepAgentInstructionModule:
         assembled = self._assembled(step, staged)
         worktree = self._run_name(step) if uses_worktree(step) else ""
         workdir = _workdir(deps.facts_for(step.id))
-        spawned, prepared = self._launch(step, assembled.text, run_dir, worktree, workdir)
+        spawned, prepared = self._launch(
+            step, assembled.text, run_dir, worktree, workdir, claim_started=start_in_progress()
+        )
         if not spawned:
             # No shell was started, so nothing is stamped: the fallback hands over the prompt.
             PromptFallbackDialog(assembled.text, str(prepared.prompt_file), deps.parent).exec()
@@ -440,11 +455,23 @@ class StepAgentInstructionModule:
         return box.clickedButton() is run_anyway
 
     def _launch(
-        self, step: Step, text: str, run_dir: Path, worktree: str, workdir: Path | None
+        self,
+        step: Step,
+        text: str,
+        run_dir: Path,
+        worktree: str,
+        workdir: Path | None,
+        *,
+        claim_started: bool = False,
     ) -> tuple[bool, launcher.LaunchFiles]:
         """Open the configured terminal on ``text`` for ``step`` in ``workdir``; the run
         is recorded only when a shell was actually spawned. Both prompts this module
-        launches come through here, so a change to how a terminal opens is made once."""
+        launches come through here, so a change to how a terminal opens is made once.
+
+        ``claim_started`` is the *caller's* answer, not the setting read here: Run Agent
+        passes what the person chose, and a conflict handed over by the window passes
+        nothing — that agent is merging two writers' plan files, not doing the step's work.
+        """
         deps = self._deps
         workdir = (workdir or Path()).expanduser()
         key = deps.step_key(step)
@@ -464,7 +491,9 @@ class StepAgentInstructionModule:
             return False, prepared
         launcher.spawn(command, workdir)
         deps.record_launch(step.id, prepared)
-        deps.status.show_status(f"Agent launched on “{step.title}”", 4000)
+        started = claim_started and deps.mark_started(step.id)
+        note = " — marked in progress" if started else ""
+        deps.status.show_status(f"Agent launched on “{step.title}”{note}", 4000)
         return True, prepared
 
     # -- reconciling a conflict ----------------------------------------------------------------

@@ -1,4 +1,5 @@
-"""The "Agent" settings page: which agent Run Agent starts, and which terminal it opens in.
+"""The "Agent" settings page: which agent Run Agent starts, which terminal it opens in,
+and what a launch records on the step.
 
 **Sane defaults, options laid out.** Both choices are a dropdown of known rows over an
 editable field: the agent is one of the known CLIs — Claude Code, Codex, OpenCode — and
@@ -8,6 +9,12 @@ use the feature; the free-text field exists for the person who already knows exa
 they want. The defaults work untouched: Claude Code, in plan mode, in the platform's own
 default terminal.
 
+The third choice is *On launch*: a launch claims the step is in progress, unless the
+person says otherwise. On by default for the reason the marks are — a preference that has
+to be found before it can help is one that helps nobody — and a switch rather than a rule
+because a plan whose statuses somebody else keeps by hand should not have the window
+writing into it.
+
 Per user, per machine — a colleague's terminal is not the workspace's business, which is
 why this is a GLOBAL-scope section and never a file in the plan. Whether a step's agent
 gets a fresh worktree is *not* here: that is a fact about the step, kept on its agent
@@ -16,7 +23,7 @@ aspect and switched on the Agent tab.
 
 import sys
 
-from PySide6.QtWidgets import QComboBox, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QComboBox, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
@@ -31,6 +38,7 @@ from dplanner.modules.step_agent_instruction.launcher import (
 
 AGENT_COMMAND_KEY = "agent_command"
 LAUNCH_COMMAND_KEY = "launch_command"
+START_IN_PROGRESS_KEY = "start_in_progress"
 
 CUSTOM_LABEL = "Custom"
 AUTOMATIC_LABEL = "Automatic"
@@ -46,6 +54,13 @@ def agent_command() -> str:
 def launch_command() -> str:
     """The terminal template; "" means Automatic — the first installed preset."""
     return str(get_global(MODULE_ID, LAUNCH_COMMAND_KEY, ""))
+
+
+def start_in_progress() -> bool:
+    """On unless the user turned it off: a launch is the moment the work starts, and a
+    step somebody is working on that still reads *pending* is the plan telling a lie
+    nobody asked it to tell. Switching it off is the deliberate act."""
+    return bool(get_global(MODULE_ID, START_IN_PROGRESS_KEY, True))
 
 
 def terminal_label(preset: TerminalPreset, installed: bool) -> str:
@@ -129,6 +144,11 @@ def build_page(parent: QWidget | None, platform: str = sys.platform) -> QWidget:
         AUTOMATIC_LABEL,
     )
 
+    started_box = QCheckBox("Mark the step in progress when a run starts", page)
+    started_box.setObjectName("AgentStartInProgressBox")
+    started_box.setChecked(start_in_progress())
+    started_box.toggled.connect(lambda on: set_global(MODULE_ID, START_IN_PROGRESS_KEY, bool(on)))
+
     layout = QVBoxLayout(page)
     layout.addWidget(QLabel("Agent", page))
     layout.addWidget(agent_combo)
@@ -154,6 +174,17 @@ def build_page(parent: QWidget | None, platform: str = sys.platform) -> QWidget:
             " terminal above, always a new window — tmux only when nothing else is"
             " installed; picking one fills in its command, which can be edited."
             " Placeholders: {script}, {workdir}, {title}.",
+            page,
+        )
+    )
+    layout.addWidget(QLabel("On launch", page))
+    layout.addWidget(started_box)
+    layout.addWidget(
+        _note(
+            "Run Agent sets the step's status to in progress as the terminal opens, so"
+            " the board shows the work has started without waiting for the agent to say"
+            " so. It is not undone when the agent stops: finishing is the agent's own"
+            " claim, or yours from Step ▸ Status.",
             page,
         )
     )
