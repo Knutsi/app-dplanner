@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QByteArray, QSettings
+from PySide6.QtCore import QByteArray, QSettings, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QMainWindow, QWidget
 
@@ -65,6 +65,11 @@ class AppWindow(QMainWindow):
 
     def add_status_widget(self, widget: QWidget) -> None:
         self.statusBar().addPermanentWidget(widget)
+
+    # -- the menu bar's corner (MenuCornerHost) ----------------------------------------------
+
+    def set_menu_corner_widget(self, widget: QWidget) -> None:
+        self.menuBar().setCornerWidget(widget, Qt.Corner.TopRightCorner)
 
     # -- panels (PanelHost) ------------------------------------------------------------------
 

@@ -3094,6 +3094,57 @@ hundred ids and no statuses, and the file grows as the work is actually done.
 absent from yesterday's run has no answer from it, and reporting "not run" there would erase
 what last week established.
 
+## A notice is a standing condition, never a stored event
+
+Several things in this application deserve a look when there is time and none of them
+deserves an interruption: the installed agent skill is not this build's, pages changed at
+a spec's source, a compiled document is out of date. Each used to be said its own way —
+a modal, a status-bar button, a note computed only inside the dialog that fixes it — or
+not at all. `modules/notices/` is one quiet place for all of them: a bell in the menu
+bar's corner with a few words, and a tab listing what stands with the door to each.
+
+**What is listed is derived, and that is the whole design.** A source is asked "what is
+true right now" and answers with notices; the inbox stores none of them. That rules out a
+stored event log with read/unread and a timestamp — the shape every notification centre
+has — on purpose: a stored event can be true no longer (the PR it announced has since
+been merged, the skill has since been updated) and then it is a lie with a badge on it.
+A condition clears itself: fixed, it is absent from the next scan, and there is nothing
+to mark read. The same rule that keeps the topological order and the coverage out of the
+files (*Deriving rather than storing*) keeps attention honest.
+
+**Two things are the person's and are kept.** Which sources are on, and which notices
+are muted — both per user (`user_config`), never the plan. Every source is **off until
+switched on**: an inbox that arrives full teaches the person to ignore it, and the
+switches live on the tab, next to what they produce, rather than in a settings page
+nobody opens until something annoys them. A mute names one notice by its source and key
+and is **dropped the moment the notice is absent from a scan** — "mute until it changes"
+is the only mute a derived list can offer honestly, because a stored "never again" would
+silence a condition that came back for a new reason.
+
+**The bell is in the menu bar's corner, not the status bar.** The status bar is the
+*happening now* strip — the library, the branch, the unsaved count, the tasks, the
+agents — and every widget on it changes while you watch. A notice is the opposite: it
+waits. Putting it where nothing else moves is what lets it be glanced at and left alone,
+and the corner is a slot Qt already has (`QMenuBar.setCornerWidget`) that nothing was
+using. `MenuCornerHost` in `framework/window.py` is the narrow protocol that reaches it,
+one method, one owner by construction. The bell wears the secondary tone and no accent:
+it is an inbox count, not an alarm.
+
+**A source is a module's, and the inbox learns nothing about it.** `domain/notice.py`
+holds the data shape, beside the document-source vocabulary and for the same reason: the
+module that raises a notice and the module that lists them may not import each other.
+The contract (`notices/sources.py`'s `NoticeSource`: an id, a label, `changed`, `start`,
+`stop`, `scan`) is satisfied structurally, the way a spec source kind is, and the root's
+`_notice_sources` is the one assembly. `start`/`stop` exist for a source with a poller of
+its own — the spec sources' ten-minute version check will run for every project while its
+switch is on, not only while a Specs tab shows one — and `scan` **must be cheap**, because
+it runs on the GUI thread on a timer: the skill source reads the files the install module
+rendered once on a worker (rendering the skill from the registry costs 0.4 s) and stands
+for nothing until that render has landed. Open resolves `Notice.target` to one of three
+addresses the window already had — a step through `reveal_step`, a tab through
+`tabs.open`, a verb through the action registry — so a new source needs no new way to
+get anywhere.
+
 ## Pressure points, named before they hurt
 
 A whole-codebase review (2026-08) found the architecture holding; these are the places

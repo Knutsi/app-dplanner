@@ -75,6 +75,8 @@ HEADLESS_FILES = (
     "gh.py",
     "pdf.py",
     "report.py",
+    "sources.py",
+    "notices.py",
 )
 CONCRETE_STORAGE = (
     f"{PACKAGE}.core.storage.local",

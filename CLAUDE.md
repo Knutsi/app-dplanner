@@ -556,6 +556,24 @@ root, stop and look for the registry or capability you have not found yet.
   session without an end is visible afterwards. Never start any of it from the builder — a
   test build has no event loop, and pytest owns the hooks while a test runs.
 
+- **A notice is a standing condition, derived; the bell counts what stands.**
+  `modules/notices/` is the inbox: a tab (*View ▸ Notices…*) and a bell with a few words
+  in the **menu bar's top-right corner** (`MenuCornerHost`, the one new window surface —
+  the status bar says what is happening now, the corner what is waiting). A source is a
+  module's Qt-free answer to "what is true right now" (`domain/notice.py`'s `Notice`; the
+  `NoticeSource` contract in `notices/sources.py`, satisfied structurally like a spec
+  source kind), assembled by the root's `_notice_sources`, which is also the test seam.
+  Nothing is stored: a scan asks every switched-on source on a slow timer, on demand and
+  whenever a source says `changed`, so a condition that was dealt with is simply absent
+  next time. **Every source is opt-in**, from the toggles on the tab itself — no settings
+  page — and *Mute* hides one notice until it has cleared and come back (the mute is
+  dropped with the notice). Open goes to one of three places the window already reaches:
+  a step (`reveal`), a tab (`tabs.open`) or a verb (`actions.run`); a source names which
+  in `Notice.target`. A scan must be cheap — the skill source reads the files the install
+  module rendered **once, off the GUI thread** (0.4 s), never renders them itself. The
+  first source is the agent skill (`install/notices.py`: out of date, or not installed).
+  `ARCHITECTURE.md`'s *A notice is a standing condition, never a stored event* has the
+  reasoning.
 - **There is no Save-file action.** Autosave writes 1.5 s after the last change; *Save*
   means recording a version: **one commit per dirty repository, scoped to that repository's
   project directories** — several projects in one repo save as one commit, and the user's

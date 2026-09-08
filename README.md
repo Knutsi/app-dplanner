@@ -343,6 +343,8 @@ src/dplanner/
 │   │                        tab, the pool, display titles, and `dplanner asset`
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
 │   ├── install/             getting DPlanner onto this machine from the window: the agent skill, the `dplanner` command and the desktop launcher
+│   ├── notices/             the inbox of standing conditions: the bell in the menu bar's corner, the Notices tab,
+│   │                        the per-source switches (sources.py is the contract a module's source satisfies)
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
 │   ├── appshell/  sync/  settings/  taskcenter/  debug/
 │   └── llm/  llm_openai/  llm_anthropic/

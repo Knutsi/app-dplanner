@@ -571,15 +571,16 @@ QSplitter::handle:vertical:pressed {
     border-color: $ACCENT;
 }
 
-/* Status-bar buttons: quiet text that brightens on hover, no button chrome. */
-#ReadthroughStatus, #TaskStatusButton {
+/* Status-bar buttons, and the notices bell in the menu bar's corner: quiet text that
+   brightens on hover, no button chrome. */
+#ReadthroughStatus, #TaskStatusButton, #NoticeBell {
     background: transparent;
     color: $TEXT_SECONDARY;
     border: none;
     padding: 0 6px;
 }
 
-#ReadthroughStatus:hover, #TaskStatusButton:hover {
+#ReadthroughStatus:hover, #TaskStatusButton:hover, #NoticeBell:hover {
     color: $TEXT_PRIMARY;
 }
 

@@ -2262,3 +2262,28 @@ looks exactly like a rule that did not apply. `tests/test_theme.py` renders the 
 asserts both, in the splitter seam's spirit: it fails when either half is removed.
 
 **Upstream?** Yes, both. Any application whose toolbar buttons carry menus hits it.
+
+## 23. From the notices pass
+
+### `framework/window.py` — `MenuCornerHost`, and `AppWindow.set_menu_corner_widget`
+
+**What.** A fourth narrow protocol, one method: put a widget in the menu bar's top-right
+corner (`QMenuBar.setCornerWidget(widget, Qt.Corner.TopRightCorner)`). The notices module
+is its one owner — a corner holds one widget by Qt's construction — and modules reach it
+through the protocol, never `window.menuBar()`, which the architecture test forbids.
+
+**Why.** The status bar is the strip that changes while you watch; something that *waits*
+for the person wants a place where nothing else moves, and the corner was an unused slot.
+Three Qt facts worth knowing: a corner widget takes part in the bar's minimum height, so
+it stays a 16 px icon button with no frame; the bar wraps its menus onto a second line
+when narrow and the corner keeps its place; and PySide keeps the widget alive only while
+something references it, so the module holds it. The `#NoticeBell` rule in `theme.qss`
+shares the status-bar buttons' quiet look — transparent, secondary tone, no chrome.
+
+**Upstream?** Yes, the protocol and the method. Any application with a bell.
+
+### `theme/icons.py` — `bell_icon`
+
+**What.** A painted bell beside `branch_icon`: a cubic dome on a flared rim, a stub at
+the top, a clapper line under it. **Upstream?** With the corner, if it goes.
+

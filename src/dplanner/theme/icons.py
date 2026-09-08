@@ -235,6 +235,23 @@ def branch_icon(color: str | QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+def bell_icon(color: str | QColor) -> QIcon:
+    """A bell: the notices inbox — a dome on a flared rim, a clapper under it."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    body = QPainterPath(QPointF(4.8, 9.2))
+    body.cubicTo(QPointF(4.8, 4.5), QPointF(11.2, 4.5), QPointF(11.2, 9.2))
+    body.lineTo(QPointF(12.6, 11.6))
+    body.lineTo(QPointF(3.4, 11.6))
+    body.closeSubpath()
+    painter.drawPath(body)
+    painter.drawLine(QPointF(8.0, 3.6), QPointF(8.0, 5.6))
+    painter.drawLine(QPointF(6.6, 13.6), QPointF(9.4, 13.6))
+    painter.end()
+    return QIcon(pixmap)
+
+
 # -- canvas toolbar --------------------------------------------------------------------------
 #
 # One glyph per action id the graph editor's toolbar carries. They live here with the rest

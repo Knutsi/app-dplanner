@@ -44,6 +44,8 @@ if TYPE_CHECKING:
     from dplanner.framework.services import AppServices
     from dplanner.modules.coverage.trace import Trace
     from dplanner.modules.feature.catalogue import FeatureSource
+    from dplanner.modules.install.module import InstallModule
+    from dplanner.modules.notices.sources import NoticeSource
     from dplanner.modules.project_editor.clipboard import PastePolicy
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
     from dplanner.modules.sync.service import Publication
@@ -110,6 +112,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.notes.module import NotesDeps, NotesModule
+    from dplanner.modules.notices.module import NoticesDeps, NoticesModule
     from dplanner.modules.progression.module import ProgressionDeps, ProgressionModule
     from dplanner.modules.project_assets.module import (
         ProjectAssetsDeps,
@@ -913,6 +916,35 @@ def default_modules(services: "AppServices") -> list["Module"]:
             Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)}),
         )
 
+    # Built ahead of the list because the notices inbox lists its source — whether the
+    # installed agent skill is this build's.
+    install = InstallModule(
+        InstallDeps(
+            actions=services.actions,
+            tasks=services.tasks,
+            parent=services.window,
+            # The window writes exactly what `dplanner skill install` writes, from the
+            # same generator over the same registry.
+            skill_files=skill_files,
+        )
+    )
+
+    # The inbox of standing conditions: every source it can switch on is named in
+    # ``_notice_sources`` and nowhere else, the report sources' pattern.
+    notices = NoticesModule(
+        NoticesDeps(
+            actions=services.actions,
+            context=services.context,
+            tabs=services.tabs,
+            theme=services.theme,
+            corner=services.window,
+            debounce=services.debounce,
+            parent=services.window,
+            reveal=reveal_step,
+            sources=_notice_sources(install),
+        )
+    )
+
     # Built ahead of the list because Run Agent's module closes over it: every launch is
     # handed here, and this is the one place that keeps an eye on the shell afterwards.
     agent_runs = StepAgentRunModule(
@@ -1050,6 +1082,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 parent=services.window,
             )
         ),
+        # With the shell: it fills the menu bar's corner and nothing in the status bar, so
+        # its place in the list is only where a reader expects window chrome.
+        notices,
         # -- AI --------------------------------------------------------------------------
         # Providers before the llm module: its settings page lists whatever has registered.
         LlmOpenAIModule(
@@ -1331,16 +1366,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         reporting,
         # Declares the progress history's format only; the recorder above writes it.
         ProgressHistoryModule(),
-        InstallModule(
-            InstallDeps(
-                actions=services.actions,
-                tasks=services.tasks,
-                parent=services.window,
-                # The window writes exactly what `dplanner skill install` writes, from the
-                # same generator over the same registry.
-                skill_files=skill_files,
-            )
-        ),
+        install,
         # After every module that registers an activity factory: it reopens the tabs the
         # last session had, and a kind whose factory has not arrived yet is one it would
         # decide this build no longer has.
@@ -2099,6 +2125,12 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
     from dplanner.modules.testing.aspect import remint_for_paste
 
     return (remint_for_paste, forget_for_paste, drop_marker_for_paste)
+
+
+def _notice_sources(install: "InstallModule") -> tuple["NoticeSource", ...]:
+    """Every module's answer to "what stands", in the Notices tab's order. The one
+    assembly, and the test seam: a test patches this to hand in a fake source."""
+    return (install.notice_source(),)
 
 
 def _asset_sources() -> tuple["AssetSource", ...]:

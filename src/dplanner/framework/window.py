@@ -23,6 +23,17 @@ class StatusHost(Protocol):
     def add_status_widget(self, widget: QWidget) -> None: ...
 
 
+class MenuCornerHost(Protocol):
+    """The menu bar's top-right corner: one small widget that reads as chrome.
+
+    A single slot by Qt's construction, so the module that fills it owns it — the notices
+    bell today. It is not a second status bar: the status bar says what is happening now,
+    the corner what is waiting for the user when they have time.
+    """
+
+    def set_menu_corner_widget(self, widget: QWidget) -> None: ...
+
+
 class PanelHost(Protocol):
     """Which of the window's anchored panels the user has switched on.
 
