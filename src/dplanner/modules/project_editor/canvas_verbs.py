@@ -9,7 +9,8 @@ already uses.
 
 **A mode switch reads the context; the look reads the module.** The canvas publishes its
 mode as an edge on the activity node, so a mode button's ``checked`` is a pure function of
-the context. The look — the marks, Snap to Grid, the Background submenu — is a per-user
+the context. The look — the marks, the spotlight, Snap to Grid, the Background submenu — is
+a per-user
 preference that outlives any tab, so its ``checked`` reads the module's value and the module
 asks the context to refresh when it changes — the same shape the theme and panel toggles
 use, deliberately not a second thing published per tab.
@@ -88,7 +89,7 @@ class CanvasVerbs:
     # Enter or leave a named canvas mode (modes.CONNECT, modes.LASSO, the divide pair).
     set_mode: Callable[[str, bool], None]
     frame: Callable[[], None]
-    # The user's look — marks, background, snapping — and the setter for the whole value.
+    # The user's look — marks, spotlight, background, snapping — and a setter for the whole.
     look: Callable[[], Look]
     set_look: Callable[[Look], None]
 
@@ -255,6 +256,18 @@ class CanvasVerbs:
                 )
             ],
             ActionSpec(
+                id="canvas.spotlight",
+                label="&Spotlight Selection",
+                menu="Graph",
+                group="look",
+                # After the Mark submenu, which claims the 20s to the 40s: both are ways of
+                # looking at the graph itself. Snap to Grid below is about gestures.
+                order=45,
+                tip="Fade every step the selection is not linked to. Hold Alt for a moment of it",
+                state=self._spotlight_state,
+                run=self._spotlight_toggle,
+            ),
+            ActionSpec(
                 id="canvas.snap",
                 label="Snap to &Grid",
                 menu="Graph",
@@ -343,6 +356,15 @@ class CanvasVerbs:
             self.set_look(self.look().with_mark(name, not self.look().marks.is_on(name)))
 
         return run
+
+    def _spotlight_state(self, _context: Context) -> ActionState:
+        """A preference, like the marks: never disabled, and it reads the module rather than
+        the context. The held Alt does not show here — it lends the look, it does not set
+        it, and a switch that flickered under a key would be saying something untrue."""
+        return ActionState(checked=self.look().spotlight)
+
+    def _spotlight_toggle(self, _context: Context) -> None:
+        self.set_look(self.look().with_spotlight(not self.look().spotlight))
 
     def _snap_state(self, _context: Context) -> ActionState:
         return ActionState(checked=self.look().snap)

@@ -19,9 +19,9 @@ Three seams keep this module from knowing about anything else in the application
 ``steps.connect`` can decide whether it is checked from the context alone. That is the whole
 mechanism behind the toolbar's mode switch, and why there is no other one.
 
-**The look is the module's** — the marks, the background under the graph and whether
-gestures snap to its grid, one ``Look`` (``look.py``) — read from the per-user store once and
-pushed to every open canvas when it changes: a way of looking at graphs, not a fact about
+**The look is the module's** — the marks, the spotlight, the background under the graph and
+whether gestures snap to its grid, one ``Look`` (``look.py``) — read from the per-user store
+once and pushed to every open canvas when it changes: a way of looking at graphs, not a fact about
 one project, so a tab opened later wears the same look and a second window would too.
 """
 
@@ -286,8 +286,9 @@ class ProjectActivity(EntityActivity):
 
     def set_look(self, look: Look) -> None:
         """The user changed how graphs look; every canvas hears it, this one here. The
-        marks and the snapping are the scene's, the background the view's."""
+        marks, the spotlight and the snapping are the scene's, the background the view's."""
         self._scene.set_marks(look.marks)
+        self._scene.set_spotlight(look.spotlight)
         self._scene.set_snap(look.snap)
         self._view.set_background(look.background)
 

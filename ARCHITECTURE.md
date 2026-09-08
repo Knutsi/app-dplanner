@@ -1216,6 +1216,48 @@ warning. Being heavier than the ring it shares a gap with, it is the term `PAINT
 takes — a decoration that reaches further than the bounding rect is clipped, and nothing
 says so.
 
+### The spotlight is one derivation, and a held key lends the look
+
+A picked card says *this one*, and said nothing about what it is joined to — on a graph of
+any size, tracing a step's dependencies meant following curves by eye across cards that all
+looked equally present. Two answers, from one derivation.
+
+**Selection lights its arrows, always.** `selection.neighbourhood(edges, picked)` names the
+arrows with one end among the picked steps and the steps at their far ends; the scene
+re-derives it on every selection change and every sync, and every arrow it names is drawn in
+the accent the picked card's border already wears. Nothing is stored and nothing is
+configurable: it is the second half of *what is selected*, the way a picked node's lift is,
+and a graph relinked by a CLI run this window adopted lights correctly the moment the arrow
+is drawn — the same argument as `marks.ports()` and the ordering's.
+
+**The spotlight fades what the neighbourhood leaves out**, and that *is* a preference: it
+hides part of a true picture, and the part it hides is the one you need while you are
+drawing the graph. So it is a field on the one `Look` beside the marks — off by default,
+where the marks are on, because a mark says what the graph could be *wrong* about and this
+only chooses which of two true pictures you are shown. `Graph ▸ Spotlight Selection` is the
+switch, and **holding Alt lends the same look for as long as the key is down**: the thing
+you want nine times in ten is a glance, and a glance should not cost two menu trips.
+
+**Held is not a mode, and not the preference.** It handles no input — nothing about what a
+click means changes — so a mode would be a stack entry that declines every hook, and one
+that Space's pan would then have to nest inside correctly for no gain. It is not the
+preference either: a key that wrote the setting would leave the menu's tick flickering under
+the user's thumb. So the scene keeps the two sources apart and lights on either
+(`set_spotlight`, `hold_spotlight`), the view owns the held one — because only the view
+learns when the keyboard goes, and **Alt+Tab is precisely Alt held and then taken away**,
+which is why `focusOutEvent` ends it.
+
+**Nothing picked lights nothing.** The neighbourhood of an empty selection is empty, and the
+scene fades nobody when it is — a spotlight over an empty selection would dim the whole
+canvas to say nothing at all. That one rule is what makes the preference safe to leave on.
+
+The fade is `QGraphicsItem.setOpacity` at `DIM_OPACITY`, not a paint-level flag: one number
+fades a card's fill, border, title, medallions and the shadow under it together, which is
+what receding is, and `renderers.py` never learns that a spotlight exists. The coverage
+trace already dimmed its cards that way to light a path through its lanes, so the constant
+moved to `theme/cards.py` — the same argument that put the card primitives there. The ground
+and its regions stay as they are: they are the table, not the graph.
+
 ### The palette a painter is handed is a snapshot
 
 `QStyleOptionGraphicsItem.palette` is filled once, when the scene is constructed, and Qt never

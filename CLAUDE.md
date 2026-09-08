@@ -479,12 +479,12 @@ root, stop and look for the registry or capability you have not found yet.
   has the reasoning.
 - **Marks are a way of looking, remembered per user — and all three are on.** Starts, Ends
   and Orphans (`project_editor/marks.py`, Qt-free) are the `marks` of the module's one
-  `Look` (`look.py`, with the background and Snap to Grid beside them), written to
-  `user_config` and fanned to every scene like `RenderHints`; a tab opened later wears
-  them. **On by default**: a socket with nothing on it and a node with nothing at all are
-  the two things a graph can be wrong about, and a preference that has to be found before
-  it can help is one that helps nobody — so switching one *off* is the deliberate act, and
-  `Marks.from_json` gives an absent name the default rather than False, which is what lets
+  `Look` (`look.py`, with the spotlight, the background and Snap to Grid beside them),
+  written to `user_config` and fanned to every scene like `RenderHints`; a tab opened later
+  wears them. **On by default**: a socket with nothing on it and a node with nothing at all
+  are the two things a graph can be wrong about, and a preference that has to be found
+  before it can help is one that helps nobody — so switching one *off* is the deliberate
+  act, and `Marks.from_json` gives an absent name the default rather than False, which lets
   a default change reach somebody who never touched that switch. The orphan's ring is the
   refusal red at **full strength and `ORPHAN_RING_W`**, twice the agent ring's weight: it
   is the one mark that says *something is wrong here* rather than *this is where the graph
@@ -494,6 +494,19 @@ root, stop and look for the registry or capability you have not found yet.
   the theme-toggle pattern, deliberately not an edge on the activity node, because a
   preference outlives any tab. `ARCHITECTURE.md`'s *Marks are a way of looking* has the
   reasoning.
+- **A picked step lights its arrows, and the spotlight fades the rest.** One derivation —
+  `selection.neighbourhood(edges, picked)`, the arrows with an end among the picked steps and
+  the steps at their far ends, re-derived every selection change and every sync — read twice.
+  The arrows it names are drawn in the accent **always**: that is the second half of what
+  being selected means, not a setting. Fading everything else *is* a setting, because it
+  hides part of a true picture: `Look.spotlight` (*Graph ▸ Spotlight Selection*), off by
+  default where the marks are on, **and holding Alt lends it for a glance** — the view owns
+  the held half and ends it on `focusOutEvent`, since Alt+Tab is Alt held and then taken
+  away. Not a mode: it handles no input. **Nothing picked lights nothing**, so the
+  preference left on never dims a canvas to say nothing. The fade is item opacity at
+  `DIM_OPACITY` (`theme/cards.py`, shared with the coverage trace's lit path), never a
+  paint-level flag — a card recedes whole and `renderers.py` learns nothing.
+  `ARCHITECTURE.md`'s *The spotlight is one derivation* has the reasoning.
 - **A scrollable area's extent must never depend on what the user is moving.** The canvas is
   a *plane*: a constant scene rect centred on the origin, far larger than any graph. That is
   what lets panning go on for as long as anybody wants, and it is also the answer to the older

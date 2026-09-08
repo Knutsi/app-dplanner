@@ -1,5 +1,6 @@
-"""How this user looks at graphs: the marks, the ground under them, and whether a gesture
-snaps to its grid — one value, kept per user and pushed to every open canvas.
+"""How this user looks at graphs: the marks, the spotlight, the ground under them, and
+whether a gesture snaps to its grid — one value, kept per user and pushed to every open
+canvas.
 
 None of it is a fact about a project. Whether a graph's ends are lit, whether dots are
 drawn under it and whether a drag lands on the grid say nothing about the plan, so the
@@ -28,14 +29,26 @@ DEFAULT_BACKGROUND = "dots"
 
 @dataclass(frozen=True)
 class Look:
-    """Which marks are on, what is drawn under the graph, and whether gestures snap."""
+    """Which marks are on, whether the spotlight is, what is drawn under the graph, and
+    whether gestures snap.
+
+    **The spotlight is off by default**, where the marks are on. A mark says something the
+    graph could be *wrong* about and is invisible until it is drawn; the spotlight only
+    chooses which of two true pictures you are shown, and the one it hides — the whole graph
+    — is the one you need while you are drawing it. Holding Alt is the way in that costs
+    nothing to find, and this is for the spell of untangling where you want it to stay.
+    """
 
     marks: Marks = field(default_factory=Marks)
+    spotlight: bool = False
     background: str = DEFAULT_BACKGROUND
     snap: bool = True
 
     def with_mark(self, name: str, on: bool) -> "Look":
         return replace(self, marks=self.marks.with_(name, on))
+
+    def with_spotlight(self, on: bool) -> "Look":
+        return replace(self, spotlight=on)
 
     def with_background(self, name: str) -> "Look":
         if name not in BACKGROUNDS:
@@ -46,7 +59,12 @@ class Look:
         return replace(self, snap=on)
 
     def to_json(self) -> dict[str, object]:
-        return {"marks": self.marks.to_json(), "background": self.background, "snap": self.snap}
+        return {
+            "marks": self.marks.to_json(),
+            "spotlight": self.spotlight,
+            "background": self.background,
+            "snap": self.snap,
+        }
 
     @classmethod
     def from_json(cls, data: object) -> "Look":
@@ -56,6 +74,7 @@ class Look:
         background = data.get("background", DEFAULT_BACKGROUND)
         return cls(
             marks=Marks.from_json(data.get("marks")),
+            spotlight=bool(data.get("spotlight", False)),
             background=background if background in BACKGROUNDS else DEFAULT_BACKGROUND,
             snap=bool(data.get("snap", True)),
         )
