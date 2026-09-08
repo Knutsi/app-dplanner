@@ -976,6 +976,23 @@ model answers, `set_edges` asks it before writing, and the canvas asks it under 
 There is no error dialog anywhere in the interaction because there is never anything to
 apologise for.
 
+**The refusal is about the edge being added, never about the list it joins.** `set_edges`
+replaces a whole list, and the first version judged every entry in it. That read as thorough
+and was a trap: `remove_child` leaves the survivors' edges naming a deleted step on purpose
+(undo has to restore the graph exactly, and `requires()` skips what it cannot resolve), so
+after any delete of a step others waited on, every survivor's list held an id that could no
+longer pass "no such step" — and Link, Unlink, Redirect and Isolate, which all *replace* that
+list, were dead on those steps for the life of the project. On 2026-09-08 that surfaced two
+seconds after a Delete as a `ValueError` out of Connect, and the ghost was on disk by the next
+autosave. The rule now: an entry already in the list is carried, never re-judged — keeping it
+cannot make the graph worse, and carrying is the only way such a list can ever change again.
+The same reasoning moved the tidying up one layer: `remove_steps_command` (Delete, Cut, `step
+remove`, `clear-steps`) is one composite that drops the links *into* the doomed steps and then
+the steps, and because a composite undoes in reverse the steps come back before the lists that
+named them. Exact undo needed a composite, not an untouched list; the model's `remove_child`
+still rewrites nobody, and lint's `graph.requires-dangling` now only ever names a ghost that
+arrived from an edit outside the window or a merge.
+
 ### Who owns the canvas's input
 
 Interaction is a **stack of modes**. A mode is an object that handles input and has power over

@@ -41,14 +41,13 @@ from dplanner.core.storage.locations import (
 from dplanner.core.storage.pointer import remove_from_index
 from dplanner.domain.commands import (
     AddNodeCommand,
-    CompositeCommand,
     EditTextCommand,
-    RemoveNodeCommand,
     SetEdgesCommand,
     SetFieldCommand,
     SetModuleDataCommand,
     redirect_edges_command,
     remove_edges_command,
+    remove_steps_command,
 )
 from dplanner.domain.model import (
     EDGE_KINDS,
@@ -76,17 +75,18 @@ def lint_checks() -> list[LintCheck]:
     def dangling_requires(
         _product: Library, project: Project, _files: FilesFor
     ) -> list[LintFinding]:
-        # remove_child keeps edges naming a deleted step so undo restores the graph
-        # exactly, and requires()/depths() silently skip them — this is the one reader
-        # that says they are there.
+        # Every verb that deletes a step takes the links into it along, so a ghost id is
+        # what an edit outside the window or a merge left; requires()/depths() silently
+        # skip it, and this is the one reader that says it is there.
         ids = {step.id for step in project.steps}
         return [
             LintFinding(
                 check="graph.requires-dangling",
                 subject_id=step.id,
                 subject=step.title,
-                message=f"waits on {target[:8]}, a step that no longer exists "
-                "(the edge is kept so undo stays exact) — recreate the step, or ignore",
+                message=f"waits on {target[:8]}, a step that no longer exists — left by an "
+                "edit outside the window or a merge; take the id out of its step.json, "
+                "or ignore",
             )
             for step in project.steps
             for target in step.edges.get("requires", [])
@@ -271,7 +271,7 @@ def commands(
         ),
         CliCommand(
             path=("step", "remove"),
-            summary="Delete a step. Links naming it are left alone, so undo stays exact.",
+            summary="Delete a step. The links into it go with it, as one undoable change.",
             configure=step_arg,
             run=_step_remove,
             examples=("dplanner step remove read-the-spec",),
@@ -771,11 +771,7 @@ def _project_clear_steps(context: CliContext, args: Namespace) -> int:
     project = find_project(context.library, args.project)
     doomed = list(project.steps)
     if doomed:
-        context.apply(
-            CompositeCommand(
-                f"Clear {len(doomed)} Steps", [RemoveNodeCommand(step.id) for step in doomed]
-            )
-        )
+        context.apply(remove_steps_command(context.library, [step.id for step in doomed], "Clear"))
     context.report(
         {"project": project.id, "removed": [step.id for step in doomed]},
         f"Removed all {len(doomed)} steps from {project.title!r} — "
@@ -946,7 +942,7 @@ def _step_rename(context: CliContext, args: Namespace) -> int:
 def _step_remove(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step, context.current)
     title = step.title
-    context.apply(RemoveNodeCommand(step.id))
+    context.apply(remove_steps_command(context.library, [step.id], "Remove"))
     context.report({"deleted": step.id}, f"Removed {title!r}")
     return 0
 

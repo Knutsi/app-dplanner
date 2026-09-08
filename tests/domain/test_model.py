@@ -221,6 +221,31 @@ def test_deleting_a_step_leaves_the_edges_that_named_it(library):
     assert library.requires(second.id) == []
 
 
+def test_a_list_carrying_a_ghost_can_still_change(library):
+    """What a write *adds* is judged; what is already there is carried. Re-judging the
+    whole list froze every survivor of a deleted step: Link, Unlink, Redirect and Isolate
+    all replace the list, and the ghost failed "no such step" every time (2026-09-08)."""
+    first, second, third = (
+        find(library, "Read the spec"),
+        find(library, "Draft the model"),
+        find(library, "Review"),
+    )
+    library.set_edges(second.id, "requires", [first.id])
+    library.remove_child(first.id)
+
+    library.set_edges(second.id, "requires", [first.id, third.id])
+    assert second.edges["requires"] == [first.id, third.id]
+    assert library.requires(second.id) == [third]
+    # Carrying buys nothing new: an unknown id being *added* is still refused, and so is
+    # a cycle the addition would close — the walk steps over the ghost to find it.
+    with pytest.raises(ValueError, match="no such step"):
+        library.set_edges(third.id, "requires", ["not-a-step"])
+    with pytest.raises(ValueError, match="that is a cycle"):
+        library.set_edges(third.id, "requires", [second.id])
+    library.set_edges(second.id, "requires", [third.id])
+    assert second.edges["requires"] == [third.id]
+
+
 def test_boundary_edges_are_the_links_that_cross_a_set(library):
     """Both directions and both kinds count; links among the set stay out of it."""
     first, second, third = (
@@ -271,6 +296,47 @@ def test_removing_edges_is_one_command_per_list_and_one_undo_step(library):
     assert second.edges["relates"] == [first.id]
     command.undo(library)
     assert third.edges["requires"] == [first.id, second.id]
+
+
+def test_removing_steps_takes_the_links_into_them_along_and_undoes_exactly(library):
+    """Delete, Cut and `step remove` build this: the survivors' lists lose the doomed ids
+    before the nodes go, so no ghost reaches disk, and undo runs in reverse — the steps
+    are back before the lists that name them are put back."""
+    from dplanner.domain.commands import remove_steps_command
+
+    first, second, third = (
+        find(library, "Read the spec"),
+        find(library, "Draft the model"),
+        find(library, "Review"),
+    )
+    library.set_edges(second.id, "requires", [first.id])
+    library.set_edges(third.id, "requires", [second.id])
+    library.set_edges(first.id, "relates", [third.id])
+
+    one = remove_steps_command(library, [second.id], "Delete")
+    assert one.text() == "Delete Step"
+    one.redo(library)
+    assert not library.has(second.id)
+    assert "requires" not in third.edges
+    assert first.edges["relates"] == [third.id]  # Not a link into the doomed step: untouched.
+    one.undo(library)
+    assert library.has(second.id)
+    assert third.edges["requires"] == [second.id] and second.edges["requires"] == [first.id]
+
+    # Links among the doomed live on the doomed nodes and travel with them: of the three
+    # edges only first → third crosses in, so one list is rewritten.
+    both = remove_steps_command(library, [second.id, third.id], "Delete")
+    assert both.text() == "Delete 2 Steps"
+    assert [type(command).__name__ for command in both.commands] == [
+        "SetEdgesCommand",
+        "RemoveNodeCommand",
+        "RemoveNodeCommand",
+    ]
+    both.redo(library)
+    assert "relates" not in first.edges
+    assert [step.id for step in find(library, "Discovery").steps] == [first.id]
+    both.undo(library)
+    assert first.edges["relates"] == [third.id] and third.edges["requires"] == [second.id]
 
 
 # -- redirecting -------------------------------------------------------------------------------

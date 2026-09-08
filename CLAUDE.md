@@ -650,10 +650,17 @@ root, stop and look for the registry or capability you have not found yet.
   The one documented exception — storage operations that rewrite the working tree, which
   must complete before the app touches anything else — is `ARCHITECTURE.md`'s *Storage
   operations that rewrite the working tree are synchronous*.
-- **An edge lives on the step that waits**, is validated against the project, and is
-  deliberately *not* rewritten when a step is deleted — undo has to restore the graph
-  exactly. `Library.requires()` skips ids it cannot resolve. Edge kinds this build does not
-  know are loaded and written back untouched.
+- **An edge lives on the step that waits**, is validated against the project, and the
+  model deliberately does *not* rewrite it when a step is deleted — undo has to restore the
+  graph exactly. `Library.requires()` skips ids it cannot resolve. Edge kinds this build does
+  not know are loaded and written back untouched. **`set_edges` judges only what a write
+  adds**: an id already in the list — a ghost an outside edit or a merge left — is carried,
+  never re-judged, because re-judging the whole list froze every survivor of a deleted step
+  (Link, Unlink, Redirect and Isolate all replace that list; 2026-09-08). **And every verb
+  that deletes a step takes the links into it along**: Delete, Cut, `dplanner step remove`
+  and `project clear-steps` are one `remove_steps_command`, a composite that undoes in
+  reverse — steps back first, then the lists that named them — so nothing writes a ghost.
+  `graph.requires-dangling` in lint is what names one that arrived from outside.
 - **`Library.link_refusal()` is the only authority on a legal edge.** `set_edges` asks it
   before writing, and `steps.link`'s state asks it to decide whether the menu entry is enabled
   and what a greyed one says. Never write a second reachability check in a view — the one that

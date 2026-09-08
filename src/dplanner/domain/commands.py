@@ -22,7 +22,7 @@ the top of the stack.
 """
 
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Any, Protocol
 
 from dplanner.domain.model import (
@@ -332,6 +332,29 @@ def remove_edges_command(library: Library, edges: Iterable[Edge], label: str) ->
             [t for t in library.step(waiter).edges.get(kind, []) if t not in gone],
         )
         for (waiter, kind), gone in sorted(by_list.items())
+    ]
+    return CompositeCommand(label, commands)
+
+
+def remove_steps_command(
+    library: Library, step_ids: Sequence[StepId], verb: str
+) -> CompositeCommand:
+    """Remove these steps and every link into them as one undo step, named for the verb
+    that asked — "Delete Step", "Cut 3 Steps".
+
+    :meth:`Library.remove_child` leaves the survivors' lists alone so that undo can put the
+    graph back exactly. The tidying belongs here instead: a composite undoes in reverse, so
+    the steps come back before the lists that named them and the undo is just as exact —
+    and no ghost id reaches disk to freeze a survivor's list later. Links *among* the
+    doomed live on the doomed nodes and travel with them; only the ones crossing in go.
+    """
+    doomed = list(step_ids)
+    chosen = set(doomed)
+    incoming = [edge for edge in library.boundary_edges(doomed) if edge[0] not in chosen]
+    label = f"{verb} Step" if len(doomed) == 1 else f"{verb} {len(doomed)} Steps"
+    commands: list[Command] = [
+        *remove_edges_command(library, incoming, label).commands,
+        *(RemoveNodeCommand(step_id) for step_id in doomed),
     ]
     return CompositeCommand(label, commands)
 

@@ -134,13 +134,23 @@ def test_a_description_image_that_resolves_nothing_is_reported(cli, cli_stdin, t
     assert "description.image-missing" not in checks_in(report)
 
 
-def test_an_edge_kept_after_a_remove_is_finally_visible(cli):
+def test_a_ghost_id_is_named_and_a_remove_leaves_none(cli, workspace):
+    """Every verb that deletes a step takes the links into it along, so a ghost is what an
+    edit outside the window or a merge left — and lint is the one reader that says so."""
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "A")
     cli("step", "add", "Discovery", "B", "--after", "A")
     cli("step", "remove", "A")
     report = data(cli("project", "lint", "Discovery", "--json", expect=1))
-    assert "graph.requires-dangling" in checks_in(report)
+    assert "graph.requires-dangling" not in checks_in(report)
+
+    record = workspace / "discovery" / "steps" / "b" / "step.json"
+    raw = json.loads(record.read_text())
+    raw["edges"] = {"requires": ["0" * 32]}
+    record.write_text(json.dumps(raw))
+    report = data(cli("project", "lint", "Discovery", "--json", expect=1))
+    finding = next(row for row in report["findings"] if row["check"] == "graph.requires-dangling")
+    assert finding["title"] == "B" and "outside the window" in finding["message"]
 
 
 def test_lint_without_a_project_covers_them_all(cli):

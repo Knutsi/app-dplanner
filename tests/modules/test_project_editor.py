@@ -356,6 +356,26 @@ def test_a_drop_onto_an_already_linked_node_says_so(services, project, tab):
     assert services.window.statusBar().currentMessage() == "Already linked"
 
 
+def test_a_step_whose_list_holds_a_ghost_can_still_be_linked_and_unlinked(
+    app, services, project, tab
+):
+    """The 2026-09-08 fault: a bare removal — what a merge or an outside edit leaves — put a
+    ghost id in the waiter's list, and every later write of that list failed "no such step":
+    Connect from the canvas, then Unlink on a picked arrow. The model carries what is there."""
+    first, second, _third = chain(services, project)
+    spare = Step(title="Spare")
+    services.undo.push(AddNodeCommand(project.id, spare))
+    services.undo.push(RemoveNodeCommand(first.id))
+    assert services.document.step(second.id).edges["requires"] == [first.id]
+
+    scene(tab).link_requested.emit(spare.id, second.id)
+    assert services.document.step(second.id).edges["requires"] == [first.id, spare.id]
+
+    edge_item(tab, second, spare).setSelected(True)
+    press_key(app, tab, Qt.Key.Key_Delete)
+    assert services.document.step(second.id).edges["requires"] == [first.id]
+
+
 def test_the_selection_keeps_the_order_it_was_made_in(services, project, tab):
     """`Context.selected_entities` promises the selecting view's order, and a two-step verb
     is the reason that promise matters."""
@@ -770,6 +790,20 @@ def test_deleting_a_multiple_selection_is_one_undo_step(services, project, tab):
     assert services.undo.undo_text() == "Delete 2 Steps"
     services.undo.undo()
     assert len(project.steps) == 2
+
+
+def test_deleting_a_step_takes_the_links_into_it_along(services, project, tab):
+    """No ghost id reaches disk, and the undo is still exact: the step comes back first,
+    then the list that named it."""
+    first, second, third = chain(services, project)
+    scene(tab).select_step(second.id)
+    services.actions.run("steps.delete", services.context.current())
+
+    assert "requires" not in services.document.step(third.id).edges
+    assert services.undo.undo_text() == "Delete Step"
+    services.undo.undo()
+    assert services.document.step(third.id).edges["requires"] == [second.id]
+    assert services.document.step(second.id).edges["requires"] == [first.id]
 
 
 # -- the canvas holds still ----------------------------------------------------------------------
@@ -2654,6 +2688,17 @@ def test_cut_is_copy_then_delete_and_a_paste_after_it_brings_fresh_steps(service
     services.actions.run("steps.paste", services.context.current())
     assert len(project.steps) == 4
     assert {s.id for s in project.steps[2:]}.isdisjoint({first.id, second.id})
+
+
+def test_cut_takes_the_links_into_the_cut_steps_along(services, project, tab):
+    """Cut removes the way Delete does — the same command, so the same tidying."""
+    _first, second, third = chain(services, project)
+    services.actions.run("steps.cut", context_of(services, second.id))
+
+    assert "requires" not in services.document.step(third.id).edges
+    assert services.undo.undo_text() == "Cut Step"
+    services.undo.undo()
+    assert services.document.step(third.id).edges["requires"] == [second.id]
 
 
 def test_a_copy_carries_its_attachments(services, project, tab):
