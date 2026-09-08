@@ -243,9 +243,11 @@ def test_the_delta_says_what_was_added_and_how_the_landing_moved(plan):
 
 def test_the_change_report_names_steps_born_and_re_estimated_after_the_basis(plan):
     library, project = plan
-    a, b, _c, _d = project.steps
+    a, b, c, d = project.steps
     library.add_child(project.id, Step(title="E", created="2026-09-10T09:00:00+00:00"))
-    for step in (a, b):
+    # Every step but E was born before the basis — said so, rather than left to the day
+    # this runs on: an unstamped step is born today, and today is not always the 7th.
+    for step in (a, b, c, d):
         step.created = "2026-09-01T09:00:00+00:00"
     history = {a.id: [(date(2026, 9, 12), 3.0)], b.id: [(date(2026, 9, 2), 1.0)]}
     changes = changes_since(project, date(2026, 9, 7), days_for, lambda s: history.get(s.id, []))
