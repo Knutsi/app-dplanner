@@ -353,8 +353,10 @@ def test_the_basis_can_be_any_day_and_a_bad_one_is_refused(staged):
         "progress", "show", "Discovery", "--basis", "2030-01-01"
     )
     assert "YYYY-MM-DD" in staged("progress", "show", "Discovery", "--basis", "soon", expect=1)
+    # Nothing was recorded that early and the only record is today's own, which is the
+    # plan now: there is no earlier plan to compare with, and none is claimed.
     fresh = json.loads(staged("progress", "show", "Discovery", "--basis", "2020-01-01", "--json"))
-    assert fresh["baseline_day"] == date.today().isoformat()  # older than its history
+    assert fresh["baseline_day"] == "" and fresh["scopes"][0]["baseline"] is None
 
 
 def test_progress_on_a_stepless_project_says_so(cli):

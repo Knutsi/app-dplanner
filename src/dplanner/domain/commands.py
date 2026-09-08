@@ -27,10 +27,12 @@ from typing import Any, Protocol
 
 from dplanner.domain.model import (
     FIELD_LABELS,
+    Edge,
     Library,
     Node,
     NodeId,
     Project,
+    Redirection,
     StepId,
     TextEdit,
 )
@@ -312,9 +314,7 @@ class CompositeCommand:
         return False
 
 
-def remove_edges_command(
-    library: Library, edges: Iterable[tuple[StepId, str, StepId]], label: str
-) -> CompositeCommand:
+def remove_edges_command(library: Library, edges: Iterable[Edge], label: str) -> CompositeCommand:
     """Remove these ``(waiter, kind, source)`` edges as one undo step.
 
     One :class:`SetEdgesCommand` per ``(waiter, kind)``, because it replaces the list: two
@@ -332,5 +332,37 @@ def remove_edges_command(
             [t for t in library.step(waiter).edges.get(kind, []) if t not in gone],
         )
         for (waiter, kind), gone in sorted(by_list.items())
+    ]
+    return CompositeCommand(label, commands)
+
+
+def redirect_edges_command(
+    library: Library, redirection: Redirection, label: str
+) -> CompositeCommand:
+    """Move one end of :attr:`Redirection.moving` onto its anchor as one undo step.
+
+    One :class:`SetEdgesCommand` per affected ``(waiter, kind)`` list carrying that list's
+    *final* content — computed here rather than per edge, because a redirect takes an edge
+    off one list and puts it on another, and moving the source end is both on the same
+    list. Which order the commands run in cannot matter: every edge the redirect adds hangs
+    off the anchor at the moving end, so no half-applied state can hold a cycle the finished
+    one does not (:meth:`Library.redirection` has the argument).
+    """
+    lists: dict[tuple[StepId, str], list[StepId]] = {}
+
+    def held(waiter: StepId, kind: str) -> list[StepId]:
+        return lists.setdefault((waiter, kind), list(library.step(waiter).edges.get(kind, [])))
+
+    for waiter, kind, source in redirection.moving:
+        held(waiter, kind).remove(source)
+    for edge in redirection.moving:
+        new_waiter, kind, new_source = redirection.moved(edge)
+        targets = held(new_waiter, kind)
+        if new_source not in targets:
+            targets.append(new_source)
+    commands: list[Command] = [
+        SetEdgesCommand(waiter, kind, targets)
+        for (waiter, kind), targets in sorted(lists.items())
+        if targets != library.step(waiter).edges.get(kind, [])
     ]
     return CompositeCommand(label, commands)

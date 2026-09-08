@@ -449,7 +449,7 @@ root, stop and look for the registry or capability you have not found yet.
   edges. One lasso ends the mode, Shift on the release adds to the selection, and the mode
   switch is `steps.lasso` (`S` on the canvas), the same shape as `steps.connect`. Region and
   lasso share one `OutlinePreviewItem` through `Canvas.aim_outline`.
-- **Divide is a mode, and it pushes a side.** `DivideMode` (View ▸ Divide ▸ Vertical or
+- **Divide is a mode, and it pushes a side.** `DivideMode` (Graph ▸ Divide ▸ Vertical or
   Horizontal; `D` and `Shift+D` on the canvas) lays a cut under the cursor from edge to
   edge, and the press hands over to `DivideDragMode`, a `GestureMode` that holds every card
   and shifts the ones on the side dragged towards by the snapped distance. Which side a card
@@ -463,10 +463,32 @@ root, stop and look for the registry or capability you have not found yet.
   step, as the canvas skips them) and `remove_edges_command()` turns edges into one
   `CompositeCommand` of per-`(waiter, kind)` replacements — Unlink, `steps.isolate` and
   `dplanner step isolate` all build from those two, so the surfaces cannot drift.
-- **Marks are a way of looking, remembered per user.** Starts, Ends and Orphans
-  (`project_editor/marks.py`, Qt-free) are the `marks` of the module's one `Look`
-  (`look.py`, with the background and Snap to Grid beside them), written to `user_config`
-  and fanned to every scene like `RenderHints`; a tab opened later wears them.
+- **Redirect is a mode, and it moves one end of a bundle.** Pick arrows, run *Step ▸
+  Redirect ▸ To Step* (`E`) or *From Step* (`Shift+E`), click a step: every picked link
+  moves that end onto it, in one undo entry. **Which end travels is the verb's, never
+  inferred** — the case the tool exists for is a bundle that agrees on neither end — so
+  *To* moves the arrowhead (`WAITER`) and *From* the tail (`SOURCE`), matching the arrow
+  the canvas draws. `Library.redirection(edges, anchor, end)` is the one question, asked
+  through `link_refusal` alone and returning what moves beside what is refused and why;
+  `redirect_edges_command` writes one `SetEdgesCommand` per affected list with its *final*
+  content. Four readers of that one answer: the ring under the cursor, the click, the
+  status line and `dplanner step redirect --to/--from`, which names the arrows by the steps
+  they hang off (`Library.edges_of`). **A refusal is per link** — the rest still move, and
+  the status line says what did not. The verb is enabled exactly while links are picked,
+  greyed with the reason otherwise. `ARCHITECTURE.md`'s *Redirecting a link moves one end*
+  has the reasoning.
+- **Marks are a way of looking, remembered per user — and all three are on.** Starts, Ends
+  and Orphans (`project_editor/marks.py`, Qt-free) are the `marks` of the module's one
+  `Look` (`look.py`, with the background and Snap to Grid beside them), written to
+  `user_config` and fanned to every scene like `RenderHints`; a tab opened later wears
+  them. **On by default**: a socket with nothing on it and a node with nothing at all are
+  the two things a graph can be wrong about, and a preference that has to be found before
+  it can help is one that helps nobody — so switching one *off* is the deliberate act, and
+  `Marks.from_json` gives an absent name the default rather than False, which is what lets
+  a default change reach somebody who never touched that switch. The orphan's ring is the
+  refusal red at **full strength and `ORPHAN_RING_W`**, twice the agent ring's weight: it
+  is the one mark that says *something is wrong here* rather than *this is where the graph
+  ends*. It is measured into `PAINT_MARGIN` like every other decoration.
   Which sockets a node has connected is `marks.ports()` over the drawn edges, derived every
   sync. The toggles' `checked` reads the module and the module calls `context.refresh()` —
   the theme-toggle pattern, deliberately not an edge on the activity node, because a
@@ -644,6 +666,31 @@ root, stop and look for the registry or capability you have not found yet.
   while Unlink is offered). The palette filters on runnable; every other presenter — menu
   bar, toolbars, `build_menu` popups — shows the greyed entry. `ARCHITECTURE.md`'s *Hidden
   means absent; disabled means not now* has the reasoning.
+- **View is the window; Graph is the canvas.** The graph editor's own verbs are a
+  top-level **Graph** menu — `arrange` (Sort, Layout, Divide), `regions`, `look` (Frame,
+  Mark, Snap to Grid, Background) — not a group inside View, which is about panels, tabs,
+  theme and zoom. What is *about a step* stays on Step even though it runs on the canvas:
+  Connect, Link, Unlink, Isolate, Redirect and Lasso, which is also what keeps them on the
+  canvas's right-click (it renders the Step menu). `ARCHITECTURE.md`'s *View is the window;
+  Graph is the canvas* has the reasoning.
+- **A palette row says where the verb lives.** The command palette renders the two-line
+  row (`framework/list_rows.py`): the label, its **menu path** (`Graph ▸ Divide`) under it,
+  the shortcut at the right and the spec's glyph at the left — because a submenu entry's
+  label is written for its submenu and *Vertical* alone is a riddle. The path is
+  searchable, and a match on the label always outranks one that needed it.
+  `ARCHITECTURE.md`'s *The command palette says where a verb lives* has the reasoning.
+- **A family of verbs is one toolbar button and its arrow, and the strip overflows.**
+  `CanvasToolbar.MENUS` names the `(menu, submenu)` a button drops down — Sort, Divide,
+  Redirect — so the strip carries a family in one seat and the dropdown is the child menu
+  itself, rebuilt on every open, never a copy. Add a verb to the submenu and the button
+  offers it having touched nothing. The row is a `QToolBar` (`framework/toolbar.py`'s
+  `control_bar`) because a canvas can always be dragged narrower than its own strip: a
+  layout answers that by shrinking every button until *Divide* reads *D…e*, a toolbar by
+  moving the groups that no longer fit into its » menu. The layout picker sits outside it
+  and never overflows — it names what the canvas is showing, and is not a verb. **The arrow
+  is a target of its own**: `ARROW_W` wide with a hairline parting it from the button half,
+  and `ARROW_ROOM` of padding so the words step aside — a styled subcontrol is outside Qt's
+  size hint, so widening the arrow without the padding paints it over the last letter.
 - **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
   `MENU_STRUCTURE`, so anything with a context menu owns a menu in that table — the canvas has
   `Step`, the index tree has `Project`, the tab bar renders View's Tabs submenu (via
@@ -915,7 +962,12 @@ root, stop and look for the registry or capability you have not found yet.
   refresher's rule — Ctrl+Z undoes the status, not the record). **The baseline is the
   plan as recorded on the basis day** — the project's start, or the day picked beside
   the chart / `progress show --basis` — the last row on or before it (the earliest row
-  for a project older than its history), drawn exactly from its knots. The progress
+  for a project older than its history, but **never today's own record**, which is the
+  plan now and no comparison at all), drawn exactly from its knots. **The plots name the
+  basis, never the record that stood in for it** (`progress.scope_words`, worded once for
+  the window and the report): *Scope change — versus plan at 1 June* is the day the
+  control beside them holds, and *no plan recorded at 1 June* when there is none;
+  `progress show`'s `baseline_day` is where the record itself is reported. The progress
   chart is **three plots on one locked time axis** — the same dates under all three, the
   date marks (days, Mondays or month firsts, `axis_ticks`) as hairlines through every
   plot, the labels printed once under the last, the edges the earliest and latest date
@@ -932,7 +984,16 @@ root, stop and look for the registry or capability you have not found yet.
   `Chart` of `Plot`s and `Stretch`es on the page and the PDF — so what they share is
   `domain/schedule.py`: `share_at` reads a line at a date and `change_runs` cuts two
   plans into the runs the fill is coloured by, and `progress.py` words `standing_words`
-  and `shift_words` once. The delta in words (`delta`, `delta_words`) and
+  and `shift_words` once. **The measure is estimated days** — the count of steps is the
+  other half of the toggle, never the default, in the window and in the report alike: a
+  share of steps calls a two-hour step and a two-week one the same thing. **Every
+  milestone's landing is marked and named on the progress line** — a name elided, and
+  dropped rather than squeezed when its neighbour's reaches that far — **a milestone row
+  dates both its marks and drops a hairline to the axis** (`row_dates`, the same fit
+  rule, both surfaces), the two share plots grow with the window to a ceiling of twice
+  their floor (bounds set from the data, never from a resize), their names are set bold,
+  and *⤢* beside the basis opens `ChartDialog`: the same widget fed the same record, so
+  both redraw together. The delta in words (`delta`, `delta_words`) and
   `changes_since` — the steps born and the estimates changed after the baseline's
   recorded day, from the step's `created` stamp and the estimate aspect's own history
   (`estimation`'s `read_history`; every `write` carries the value it replaced, one row

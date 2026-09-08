@@ -33,11 +33,14 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     "Edit": ("history", "clipboard", "selection"),
     # "palette" is the command palette alone — the way to *any* verb, set off from the
     # panel toggles below it. "areas" is the whole-side collapse switches, ahead of the
-    # per-panel checkmarks in "panels". "canvas" is the graph editor's own view verbs —
-    # framing it is not the application's font zoom, which is what "zoom" means here.
-    # "tabs" holds the Tabs submenu, which is also what the tab bar's right-click renders
-    # (build_menu's submenu filter), so the two can never be a hand-maintained copy.
-    "View": ("palette", "areas", "panels", "zoom", "canvas", "theme", "tabs", "window"),
+    # per-panel checkmarks in "panels". "tabs" holds the Tabs submenu, which is also what
+    # the tab bar's right-click renders (build_menu's submenu filter), so the two can never
+    # be a hand-maintained copy.
+    #
+    # **View is about the window.** The graph editor's own verbs used to sit here in a
+    # "canvas" group, which made View half window and half drawing surface and left the
+    # graph with no home of its own; they are the Graph menu below now.
+    "View": ("palette", "areas", "panels", "zoom", "theme", "tabs", "window"),
     # The planner's own vocabulary. "Project" is what the index tree's right-click menu
     # renders and "Step" is what the graph canvas's does — see framework/action_menu.py.
     # "link" holds the two-step verbs: the canvas publishes both ends into the selection
@@ -46,7 +49,16 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "features" the feature module's: the catalogue of what it delivers, placed or not.
     # "tests" is the test run's two verbs — a run belongs to a project, spans its
     # steps, and there is at most one open at a time.
-    "Project": ("edit", "canvas", "documents", "features", "tests", "open"),
+    "Project": ("edit", "documents", "features", "tests", "open"),
+    # The canvas the plan is drawn on: how it is arranged and how it is looked at. Every
+    # verb here steers the graph editor and nothing else, which is what makes it a menu
+    # rather than a group inside View — and what tells the next person where to add one.
+    # "arrange" is the Sort, Layout and Divide child menus: three ways of moving cards
+    # about, from the wholesale to the one cut at a time. "regions" is the Region submenu —
+    # the titled areas drawn behind the graph, which the canvas's own right-click renders
+    # over one. "look" is what is drawn without moving anything: framing, the marks, the
+    # grid and the ground.
+    "Graph": ("arrange", "regions", "look"),
     # "edit" is New, Rename and Delete. New is one verb: a step is born plain and the
     # details dialog opens on it, where the aspect bar says what it is.
     # "open" is a surface about the selection — the Step-side mirror of Project's

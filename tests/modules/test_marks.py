@@ -23,7 +23,17 @@ def test_an_edge_to_a_step_that_is_not_there_connects_nothing():
 
 
 def test_marks_round_trip_through_json_and_forgive_junk():
-    marks = Marks().with_("ends", True).with_("orphans", True)
+    marks = Marks().with_("ends", False).with_("orphans", False)
     assert Marks.from_json(marks.to_json()) == marks
     assert Marks.from_json(None) == Marks()
-    assert Marks.from_json({"ends": 1, "nonsense": True}) == Marks(ends=True)
+    assert Marks.from_json({"ends": 0, "nonsense": True}) == Marks(ends=False)
+
+
+def test_every_mark_is_on_until_somebody_switches_one_off():
+    """A socket with nothing on it and a node with nothing at all are the two things a
+    graph can be wrong about; a preference that has to be found first helps nobody."""
+    assert Marks() == Marks(starts=True, ends=True, orphans=True)
+    # A name the stored value does not mention takes the default, so a default that changes
+    # reaches somebody who never touched that switch — FORMAT.md's absence rule.
+    assert Marks.from_json({"starts": False}) == Marks(starts=False)
+    assert Marks.from_json({}) == Marks()

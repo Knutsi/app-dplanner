@@ -1,7 +1,7 @@
 """The order view: waves and dates on screen, and the seams it reaches other features through."""
 
 import json
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from PySide6.QtCore import QDate
@@ -265,10 +265,13 @@ def test_the_bar_opens_on_today_and_writes_nothing(services, project, tab):
 
 def test_the_start_date_is_written_to_the_project_and_undoable(services, project, tab):
     """The bar belongs to another module; the order view only lends it a place to stand.
-    A date a year out, so the day this runs on is never the one set — the bar opens on
-    today, and setting today again changes nothing."""
-    tab.start_bar.date.setDate(QDate(2027, 9, 6))
-    assert project.module_data["estimation"]["start"] == "2027-09-06"
+
+    The day picked is a week out rather than a fixed one: the bar opens on today and
+    writes nothing for the date it already holds, so a fixed day makes the test pass or
+    fail depending on the day it is run — it failed on 7 September 2026."""
+    picked = date.today() + timedelta(days=7)
+    tab.start_bar.date.setDate(QDate(picked.year, picked.month, picked.day))
+    assert project.module_data["estimation"]["start"] == picked.isoformat()
 
     services.undo.undo()
     assert "estimation" not in project.module_data

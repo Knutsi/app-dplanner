@@ -9,9 +9,9 @@ turn light the moment the window loses focus.
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QSplitter, QStyle, QWidget
+from PySide6.QtWidgets import QMenu, QSplitter, QStyle, QToolButton, QWidget
 
-from dplanner.theme import load_stylesheet
+from dplanner.theme import load_stylesheet, tokens
 from dplanner.theme.palette import build_palette
 from dplanner.theme.style import build_style
 from dplanner.theme.themes import DARK, DEFAULT, LIGHT, THEMES
@@ -110,3 +110,46 @@ def test_a_splitter_seam_is_exactly_one_hairline(app, orientation):
     )
     border = QColor(DARK.border).rgb()
     assert sum(pixel == border for pixel in across) == 1
+
+
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=("dark", "light"))
+def test_a_buttons_dropdown_arrow_is_a_target_of_its_own(app, theme):
+    """A button whose arrow drops a family down is two targets, and both have to be aimable.
+
+    Rendered rather than read, for the reason the splitter seam is: a styled subcontrol sits
+    outside Qt's size hint, so a ``::menu-button`` width without the matching padding paints
+    the arrow over the last letter — which looks exactly like a rule that did not apply.
+    """
+    button = QToolButton()
+    button.setObjectName("ToolbarButton")
+    button.setText("Divide")
+    button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+    button.setMenu(QMenu(button))
+    button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+    button.setProperty("hasMenu", True)
+    button.setStyleSheet(load_stylesheet(theme))
+    button.resize(button.sizeHint())
+    button.show()
+    app.processEvents()
+
+    arrow = button.style().subControlRect(
+        QStyle.ComplexControl.CC_ToolButton,
+        _tool_option(button),
+        QStyle.SubControl.SC_ToolButtonMenu,
+        button,
+    )
+    assert arrow.width() >= tokens.ARROW_W
+
+    # And the words stop before it: the last column of the text half is background.
+    image = button.grab().toImage()
+    ground = QColor(theme.bg_overlay).rgb()
+    column = [image.pixel(arrow.left() - 2, y) for y in range(4, button.height() - 4)]
+    assert all(pixel == ground for pixel in column)
+
+
+def _tool_option(button):
+    from PySide6.QtWidgets import QStyleOptionToolButton
+
+    option = QStyleOptionToolButton()
+    button.initStyleOption(option)
+    return option

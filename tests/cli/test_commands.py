@@ -399,6 +399,52 @@ def test_isolating_a_step_with_no_links_is_already_done(cli):
     assert "Nothing links" in cli("step", "isolate", "A")
 
 
+def test_redirect_to_moves_what_these_steps_wait_on_onto_another_step(cli):
+    """The canvas gesture said in the terminal: A and B's requirements become D's."""
+    cli("project", "create", "Discovery")
+    for title in "ABCD":
+        cli("step", "add", "Discovery", title)
+    cli("step", "link", "A", "C")
+    cli("step", "link", "B", "C")
+    ids = {title: data(cli("step", "show", title, "--json"))["id"] for title in "ABCD"}
+    report = data(cli("step", "redirect", "A", "B", "--to", "D", "--json"))
+    assert [(edge["waiter"], edge["source"]) for edge in report["moved"]] == [
+        (ids["D"], ids["C"]),
+        (ids["D"], ids["C"]),
+    ]
+    assert data(cli("step", "show", "A", "--json"))["requires"] == []
+    assert data(cli("step", "show", "B", "--json"))["requires"] == []
+    assert len(data(cli("step", "show", "D", "--json"))["requires"]) == 1  # One arrow, not two.
+
+
+def test_redirect_from_moves_what_waits_on_these_steps_onto_another(cli):
+    cli("project", "create", "Discovery")
+    for title in "ABC":
+        cli("step", "add", "Discovery", title)
+    cli("step", "link", "B", "A")
+    ids = {title: data(cli("step", "show", title, "--json"))["id"] for title in "ABC"}
+    cli("step", "redirect", "A", "--from", "C")
+    assert data(cli("step", "show", "B", "--json"))["requires"] == [ids["C"]]
+
+
+def test_a_redirect_that_would_make_a_cycle_says_so_and_leaves_the_link(cli):
+    cli("project", "create", "Discovery")
+    for title in "AB":
+        cli("step", "add", "Discovery", title)
+    cli("step", "link", "B", "A")
+    report = data(cli("step", "redirect", "B", "--to", "A", "--json"))
+    assert report["moved"] == []
+    assert "itself" in report["refused"][0]["reason"]
+    assert len(data(cli("step", "show", "B", "--json"))["requires"]) == 1
+
+
+def test_redirect_needs_one_end_named(cli):
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "A")
+    with pytest.raises(SystemExit):
+        cli("step", "redirect", "A")
+
+
 # -- the agent instruction at both levels ------------------------------------------------------
 
 

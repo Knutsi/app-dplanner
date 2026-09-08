@@ -30,6 +30,11 @@ MUTED_ROLE = int(Qt.ItemDataRole.UserRole) + 3
 EMPHASIS_ROLE = int(Qt.ItemDataRole.UserRole) + 4
 # A hairline along the row's bottom edge — the pinned row's border with the list below.
 RULE_ROLE = int(Qt.ItemDataRole.UserRole) + 5
+# A note at the right of the first line, in the secondary tone: a shortcut, a count, a
+# date — a fact *about* the row that reads as a column rather than as part of the name.
+TRAILING_ROLE = int(Qt.ItemDataRole.UserRole) + 6
+
+TRAILING_GAP = 12  # Between the name and the note at the right, so neither crowds the other.
 
 
 def text_left(option: QStyleOptionViewItem) -> int:
@@ -68,16 +73,32 @@ class TwoLineDelegate(QStyledItemDelegate):
         elide = Qt.TextElideMode.ElideRight
         align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         painter.save()
+        name_font = QFont(opt.font)
         if index.data(EMPHASIS_ROLE):
-            font = QFont(opt.font)
-            font.setBold(True)
-            painter.setFont(font)
-            metrics = QFontMetrics(font)
+            name_font.setBold(True)
+            metrics = QFontMetrics(name_font)
+
+        # The note at the right is drawn and measured first, so the name elides against
+        # what is left rather than over it.
+        trailing = index.data(TRAILING_ROLE) or ""
+        name_width = rect.width()
+        if trailing:
+            note = opt.fontMetrics.horizontalAdvance(trailing)
+            painter.setFont(opt.font)
+            painter.setPen(secondary)
+            painter.drawText(
+                QRect(rect.right() - note, rect.top(), note, opt.fontMetrics.height()),
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                trailing,
+            )
+            name_width = max(0, name_width - note - TRAILING_GAP)
+
+        painter.setFont(name_font)
         painter.setPen(primary)
         painter.drawText(
-            QRect(rect.left(), rect.top(), rect.width(), metrics.height()),
+            QRect(rect.left(), rect.top(), name_width, metrics.height()),
             align,
-            metrics.elidedText(index.data(Qt.ItemDataRole.DisplayRole), elide, rect.width()),
+            metrics.elidedText(index.data(Qt.ItemDataRole.DisplayRole), elide, name_width),
         )
         painter.setFont(opt.font)
         metrics = opt.fontMetrics

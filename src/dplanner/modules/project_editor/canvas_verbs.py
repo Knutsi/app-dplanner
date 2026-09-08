@@ -31,7 +31,7 @@ from dataclasses import dataclass
 
 from PySide6.QtGui import QKeySequence
 
-from dplanner.domain.model import Library, NodeId, StepId
+from dplanner.domain.model import SOURCE, WAITER, EdgeEnd, Library, NodeId, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -47,10 +47,21 @@ from dplanner.modules.project_editor.modes import (
     DIVIDE_HORIZONTAL,
     DIVIDE_VERTICAL,
     LASSO,
+    REDIRECT_NAMES,
     mode_uri,
 )
 from dplanner.modules.project_editor.placement import positions
-from dplanner.theme.icons import lasso_icon
+from dplanner.modules.project_editor.verbs import picked_edges
+from dplanner.theme.icons import (
+    connect_icon,
+    divide_horizontal_icon,
+    divide_vertical_icon,
+    frame_icon,
+    grid_icon,
+    lasso_icon,
+    redirect_from_icon,
+    redirect_to_icon,
+)
 
 # Which way each verb looks, as (dx, dy) in scene coordinates — y grows downwards.
 DIRECTIONS: dict[str, tuple[float, float]] = {
@@ -94,9 +105,38 @@ class CanvasVerbs:
                 menu="Step",
                 group="link",
                 order=5,
+                icon=connect_icon,
                 tip="Pick a step, then the step that waits on it. Esc leaves",
                 state=self._mode_state(CONNECT),
                 run=self._mode_toggle(CONNECT),
+            ),
+            # The other half of linking, and a submenu of two because an arrow has two ends
+            # and which one travels cannot be guessed from a bundle that agrees on neither.
+            # Their seat is the link group, after Isolate, so the canvas's right-click — which
+            # renders the Step menu — offers them over a picked arrow.
+            ActionSpec(
+                id="steps.redirect_to",
+                label="&To Step",
+                menu="Step",
+                group="link",
+                submenu="Redirect",
+                order=40,
+                icon=redirect_to_icon,
+                tip="Move the picked links so they point to a step you click. Esc leaves",
+                state=self._can_redirect(WAITER),
+                run=self._mode_toggle(REDIRECT_NAMES[WAITER]),
+            ),
+            ActionSpec(
+                id="steps.redirect_from",
+                label="&From Step",
+                menu="Step",
+                group="link",
+                submenu="Redirect",
+                order=50,
+                icon=redirect_from_icon,
+                tip="Move the picked links so they come from a step you click. Esc leaves",
+                state=self._can_redirect(SOURCE),
+                run=self._mode_toggle(REDIRECT_NAMES[SOURCE]),
             ),
             ActionSpec(
                 id="steps.lasso",
@@ -152,8 +192,10 @@ class CanvasVerbs:
             ActionSpec(
                 id="canvas.frame",
                 label="&Frame Graph",
-                menu="View",
-                group="canvas",
+                menu="Graph",
+                group="look",
+                order=10,
+                icon=frame_icon,
                 tip="Zoom the canvas to the whole graph",
                 state=self._on_a_canvas,
                 run=lambda _context: self.frame(),
@@ -161,12 +203,13 @@ class CanvasVerbs:
             ActionSpec(
                 id="canvas.divide_vertical",
                 label="&Vertical",
-                menu="View",
-                group="canvas",
+                menu="Graph",
+                group="arrange",
                 submenu="Divide",
-                # Order 20: after the Sort and Layout child menus at 10 — a divide
-                # rearranges the graph as a sort does, one cut at a time.
-                order=20,
+                # The 30s: after the Sort and Layout child menus, which claim the 10s and
+                # the 20s — a divide rearranges the graph as a sort does, one cut at a time.
+                order=30,
+                icon=divide_vertical_icon,
                 tip="Cut the graph with an upright line and push one side left or right "
                 "to make room. Esc leaves",
                 state=self._mode_state(DIVIDE_VERTICAL),
@@ -175,10 +218,11 @@ class CanvasVerbs:
             ActionSpec(
                 id="canvas.divide_horizontal",
                 label="&Horizontal",
-                menu="View",
-                group="canvas",
+                menu="Graph",
+                group="arrange",
                 submenu="Divide",
-                order=30,
+                order=31,
+                icon=divide_horizontal_icon,
                 tip="Cut the graph with a level line and push one side up or down "
                 "to make room. Esc leaves",
                 state=self._mode_state(DIVIDE_HORIZONTAL),
@@ -188,11 +232,11 @@ class CanvasVerbs:
                 ActionSpec(
                     id=f"canvas.mark_{name}",
                     label=label,
-                    menu="View",
-                    group="canvas",
+                    menu="Graph",
+                    group="look",
                     submenu="Mark",
-                    # After Frame Graph; the Sort and Layout child menus sit at 10.
-                    order=60 + 10 * index,
+                    # After Frame Graph, and before the grid and the ground below it.
+                    order=20 + 10 * index,
                     tip=tip,
                     state=self._mark_state(name),
                     run=self._mark_toggle(name),
@@ -213,10 +257,11 @@ class CanvasVerbs:
             ActionSpec(
                 id="canvas.snap",
                 label="Snap to &Grid",
-                menu="View",
-                group="canvas",
-                # After the Mark submenu: the ground's two entries close the canvas group.
-                order=90,
+                menu="Graph",
+                group="look",
+                # After the Mark submenu: the ground's two entries close the menu.
+                order=50,
+                icon=grid_icon,
                 tip="Land a dragged, resized or newly placed card on the grid",
                 state=self._snap_state,
                 run=self._snap_toggle,
@@ -225,10 +270,10 @@ class CanvasVerbs:
                 ActionSpec(
                     id=f"canvas.ground_{name}",
                     label=label,
-                    menu="View",
-                    group="canvas",
+                    menu="Graph",
+                    group="look",
                     submenu="Background",
-                    order=100 + 10 * index,
+                    order=60 + 10 * index,
                     tip=tip,
                     state=self._ground_state(name),
                     run=self._ground_pick(name),
@@ -261,6 +306,28 @@ class CanvasVerbs:
             self.set_mode(name, context.edge("mode") != mode_uri(name))
 
         return run
+
+    def _can_redirect(self, end: EdgeEnd) -> Callable[[Context], ActionState]:
+        """Available exactly while links are picked — that is what there is to redirect.
+
+        A greyed entry says so rather than vanishing: the verb is how you learn that
+        picking arrows is a thing you can do. It stays enabled while the mode is on
+        whatever the selection has become, or there would be no way to leave from the menu.
+        """
+        name = REDIRECT_NAMES[end]
+
+        def state(context: Context) -> ActionState:
+            if self.current_project() is None:
+                return DISABLED
+            checked = context.edge("mode") == mode_uri(name)
+            if checked or picked_edges(self.library, context):
+                return ActionState(checked=checked)
+            where = "To" if end == WAITER else "From"
+            return ActionState(
+                enabled=False, checked=False, label=f"&{where} Step — pick links first"
+            )
+
+        return state
 
     def _mark_state(self, name: str) -> Callable[[Context], ActionState]:
         """A preference, so never disabled: switching it off a canvas is harmless and the

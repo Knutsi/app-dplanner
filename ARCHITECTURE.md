@@ -479,6 +479,46 @@ will wear, and it is what lets the aspect bar paint the same glyphs (through the
 they are the registry's and not a copy) instead of the panel hand-building a list of
 aspects it is not allowed to know.
 
+### View is the window; Graph is the canvas
+
+The graph editor's own verbs — Sort, Layout, Divide, Region, Frame, the marks, Snap to Grid
+and the Background — used to be a `canvas` group inside **View**, and one inside **Project**
+for regions. That made View half a window menu (panels, tabs, theme, zoom) and half a
+drawing-surface menu, and it left the surface this application is mostly *about* with no
+heading of its own: the fastest way to a divide was the command palette, which then said
+only *Vertical*.
+
+They are a top-level **Graph** menu now, in three groups: `arrange` (the Sort, Layout and
+Divide child menus — moving cards, from the wholesale to one cut at a time), `regions`, and
+`look` (what is drawn without moving anything). View went back to being about the window.
+
+**What did *not* move is the point of the split.** Connect, Link, Unlink, Isolate and the
+Redirect pair stayed on **Step**, because a link is a fact about the steps it joins, and
+because the canvas's right-click renders the Step menu (*A right-click renders a menu, never
+a copy of one*) — moving them would have taken the graph's most-used verbs off the graph's
+own context menu to file them more tidily. Lasso stayed in Step's `navigate` group for the
+same reason: it selects steps. The test is not "which surface does this run on" — every one
+of these runs on the canvas — but "what is it about": a step, or the drawing of them.
+
+### The command palette says where a verb lives
+
+A palette row used to be the spec's label and its shortcut. That works for *Frame Graph* and
+fails completely for *Vertical* and *Horizontal*, which are written to be read under the word
+*Divide* and say nothing without it. The label cannot absorb the missing half — the menu
+would then read *Divide ▸ Divide Vertically* — so the row carries the **menu path** instead,
+on a second line under the name, with the shortcut right-aligned beside the name and the
+verb's glyph at the left (`framework/list_rows.py`'s two-line row, the same one every rich
+list here uses).
+
+The path is the menu and the submenu, never the group: a group is a module's word for a band
+of entries and is not a heading anybody ever sees, so printing it would name something that
+does not exist on screen.
+
+Once the path is on the row it is worth searching, and the ranking is the whole design: a
+match on the *label* always outranks one that needed the path, as a `(where, -score)` sort
+key. So "vertical" still puts *Vertical* first, and "divide vertical" — how somebody who
+remembers the submenu and not the entry looks for it — finds it at all.
+
 ### Edit verbs belong to the surface whose things they act on
 
 The Edit menu holds Undo and Redo from the app shell, and then Cut, Copy, Paste, Duplicate,
@@ -1001,7 +1041,7 @@ link ends connect; Shift on the release folds the catch into what was already se
 Nothing in it is new machinery: the outline it draws is the same `OutlinePreviewItem` the
 region mode drags out, reached through one `aim_outline` on the `Canvas` protocol.
 
-The divide is the stack used twice over. `DivideMode` is switchable like the lasso — View ▸
+The divide is the stack used twice over. `DivideMode` is switchable like the lasso — Graph ▸
 Divide ▸ Vertical or Horizontal, `D` or `Shift+D` on the canvas — and does nothing but lay a
 cut under the cursor from edge to edge; the press hands over to `DivideDragMode`, a
 `GestureMode` in the card resize's mould, which *takes the divide mode's place* on the stack
@@ -1015,6 +1055,54 @@ one `Divide Graph` command, so a whole side comes back with one Ctrl+Z. Nothing 
 about the cut itself — a divide is a move of many cards, and what makes it a tool rather than
 a drag of a selection is that it names the side by geometry, not by what was picked — and the
 band it draws while it lasts, the room being made, is the outline item the lasso already had.
+
+### Redirecting a link moves one end, and which end is the tool's, not a guess
+
+Connect makes one arrow between two steps. The other half of linking is taking a *bundle* of
+arrows already drawn and moving one of their ends somewhere else — "these six things wait on
+the new step now" — which without a tool is six unlinks and six links, six chances to lose one.
+
+`RedirectMode` is that tool, and it is the divide's shape exactly: it is switchable, it takes
+what it needs at entry (the picked arrows — every press is consumed, so the selection cannot
+move underneath), the step under the cursor wears the same valid/invalid ring a link drag
+paints, and one redirect ends the mode. The mode reports where; the activity makes the command.
+
+**Which end travels is a property of the verb, and there are two verbs.** It is tempting to
+infer it — move whichever end the picked arrows have in common — and the case the tool exists
+for is exactly the one where that fails: two steps' incoming dependencies agree on *neither*
+end. A rule with a special case is a rule nobody can predict, so the two ends are two entries
+in one *Redirect* child menu: **To Step** moves the arrowhead (`WAITER`; the links come to
+point at the step you click) and **From Step** moves the tail (`SOURCE`). The arrow on the
+canvas already runs from the step waited on to the step that waits, so *to* and *from* are the
+picture, not jargon.
+
+**Both are gated on the same fact: are any arrows picked?** A greyed entry rather than a
+hidden one, because the precondition *is* the thing to learn — that arrows are things you can
+select at all.
+
+The model does the rest. `Library.redirection(edges, anchor, end)` answers one question about
+each arrow — may this end sit there? — through `link_refusal` and nothing else, and returns
+what will move beside what was refused and why. That one answer is read four times: the ring
+under the cursor, the click, the status line, and `dplanner step redirect`. Asking it against
+the graph as it *stands* rather than as it will be is sound and not merely convenient: every
+edge a redirect creates touches the anchor at the moving end, so none of them can open a new
+path *into* the anchor and the removals can only break paths — the check can decline a
+redirect that would in fact have been legal (when the moved edges were themselves the cycle),
+never allow one that is not.
+
+**A redirect can therefore half-happen, and says so.** Four arrows move and one would close a
+cycle: the four move and the status line names the refusal. Refusing the whole gesture for one
+bad arrow would make the tool useless on exactly the tangled graphs it is for.
+
+`redirect_edges_command` writes one `SetEdgesCommand` per affected `(waiter, kind)` list
+carrying that list's *final* content — never one command to remove and another to add, which
+would each be built from the state before either ran (the trap `remove_edges_command`
+documents). For a source-end move both halves land on the same list, which is why the content
+is computed per list rather than per edge.
+
+The terminal cannot pick arrows, so `dplanner step redirect` names them by the steps they hang
+off: `--to` takes every link pointing at the named steps, `--from` every link leaving them
+(`Library.edges_of`). Different way of saying *which*; same `Redirection`, same command.
 
 ### An explicit sort persists; the ambient layout never does
 
@@ -1106,6 +1194,27 @@ mark outlives any tab, so publishing it per activity would be a copy that has to
 agreeing; the toggle's state reads the module's value and the module calls
 `context.refresh()` when it changes — the pattern the theme and panel toggles already use for
 state that lives outside the context graph.
+
+**All three are on, and switching one off is what gets remembered.** They shipped off, on
+the reasonable-sounding ground that a mark is a preference and a preference starts quiet.
+The trouble is what they mark: a socket with nothing on it and a node with nothing at all
+are the two things a graph can be *wrong* about, and both are invisible in a drawing of it —
+a card with no arrow reads exactly like a card whose arrow is off screen. A preference that
+has to be found before it can help is one that helps nobody, so the graph arrives saying
+what it knows and the deliberate act is telling it to stop.
+
+That makes the stored value's absence rule matter: `Marks.from_json` gives a name the
+stored value does not mention the *class* default rather than False, which is `FORMAT.md`'s
+absence rule and the only reason this change reaches anybody who already has a look on
+disk. A stored `false` still wins — somebody who switched a mark off keeps it off.
+
+The orphan's ring is the one mark drawn at full strength (`ORPHAN_RING`, and
+`ORPHAN_RING_W`, twice the agent ring's weight): the socket discs say *this is where the
+graph ends*, which is often correct, while a ring says *nothing touches this at all*, which
+almost never is. At the tint's alpha it read as a shadow of the border rather than as a
+warning. Being heavier than the ring it shares a gap with, it is the term `PAINT_MARGIN`
+takes — a decoration that reaches further than the bounding rect is clipped, and nothing
+says so.
 
 ### The palette a painter is handed is a snapshot
 
@@ -1237,7 +1346,7 @@ one that says where.
 
 ### The ground is a preference; snapping belongs to the gesture
 
-*View ▸ Background* (plain, dots, lines, crosses) and *View ▸ Snap to Grid* are two fields
+*Graph ▸ Background* (plain, dots, lines, crosses) and *Graph ▸ Snap to Grid* are two fields
 of the same per-user `Look` the marks live on (`look.py`), so they are kept, fanned out and
 read by their toggles exactly as the marks are — the view draws the background
 (`ground.py` paints it by name), the scene answers `snap()` — and a tab opened later wears
@@ -2660,14 +2769,19 @@ decisions carry it:
   there is one **baseline** — the plan as recorded on the **basis** day, the project's
   start unless a day is picked beside the plots (`progress show --basis`) — chosen as
   the last row on or before the basis, or the earliest row for a project older than its
-  history. The baseline is painted *last*, in a paler shade mixed opaque: a plan
-  unchanged since the basis has a baseline that coincides with it, and a translucent
-  dash of the same hue under the solid line was invisible — the first cut showed one
-  line under a caption saying *unchanged*, and the reader took the other for a line
-  that had failed to draw. Dashes riding on the solid line say *two lines in the same
-  place*, which is the fact. A span the plan leaves empty (a milestone's own start date
-  holding its work back past the previous landing) is dotted and pulled toward the
-  surface, with a knot in the expected line at the day work resumes so the gap is flat
+  history. That fallback stops at **today's own record**: a project whose history begins
+  today has no earlier plan, and standing today's record in for one drew the plan now
+  over itself and called the pair a comparison — two lines in one place under a heading
+  saying *scope change*, which is a claim nobody recorded. `baseline()` takes `today` and
+  all three surfaces pass it, so the window, the report and `progress show` agree on when
+  there is nothing to compare with. The baseline is painted *last*, in a paler shade
+  mixed opaque: a plan unchanged since the basis has a baseline that coincides with it,
+  and a translucent dash of the same hue under the solid line was invisible — the first
+  cut showed one line under a caption saying *unchanged*, and the reader took the other
+  for a line that had failed to draw. Dashes riding on the solid line say *two lines in
+  the same place*, which is the fact. A span the plan leaves empty (a milestone's own
+  start date holding its work back past the previous landing) is dotted and pulled toward
+  the surface, with a knot in the expected line at the day work resumes so the gap is flat
   rather than a slope through days nothing is planned for; `progress.idle` derives it
   from the snapshot's stretches, so `progress show` prints the same gaps. The change
   list behind the delta needed a fact nobody kept: **an estimate now remembers what it
@@ -2729,6 +2843,70 @@ decisions carry it:
   unestimated · counted as 0d*, with *Estimate missing* opening the Estimates tab on
   exactly those rows through a callback on the module's Deps, so the Time tab never
   names the estimation module.
+- **The milestones are one list, not a table of names above a list of the same names.**
+  *Start dates* and *Milestones* listed the same stretches one under the other: a reader
+  had to match a name in the first against a name in the second, and the panel spent
+  twice its height saying it. One row now carries the cause and the effect — *begins
+  21 Jun · lands 3 Aug* — with the step's own title beside the label, so the list says
+  which step each milestone is without a second column of names. The row that leads the
+  list is the whole plan, and what *it* begins on is the project's own start (a row
+  declares that with `MilestoneEntry.sets_project` rather than the list inferring it from
+  the position). Under an undated row the caption says the day the sequence gives it, so
+  every row says when its work runs and not only when it ends. **The list scrolls under
+  the staffing grid**, which stays: the grid is the question the whole page answers, and
+  a plan with thirty milestones would scroll it away exactly when the answers are being
+  compared. That is why the left half is no longer a scroll area of its own — it is a
+  pinned head and a scrolling list, and only the answer side scrolls whole.
+- **The measure is estimated days, and the count is what you ask for.** By steps was the
+  default because it needs no estimates; it also calls a two-hour step and a two-week one
+  the same thing, which is the one comparison a plan priced in days must not make. Days
+  leads the toggle and is what the window opens on, and the report and its exports are
+  drawn the same way, so a page mailed to somebody says what the window said.
+- **The plots name the day the reader asked for, not the record that stood in for it.**
+  The scope plot used to be headed *Scope change since 7 September* while the control a
+  finger's width above it said *Plan at 1 Jun 2026* — the heading was naming the day the
+  baseline happened to be recorded on, and the two dates read as a contradiction rather
+  than as a fact and its bookkeeping. The heading is now *Scope change — versus plan at
+  1 June*: the basis, which is the question the plot answers and the day the control
+  holds, and *Scope change — no plan recorded at 1 June* when nothing was recorded that
+  early. Which daily record stood in for the basis is real but secondary, and it is
+  reported where a reader can act on it — `dplanner progress show`'s `baseline_day` and
+  the report's *Since the plan of…* figure. `progress.scope_words` words it for the
+  window and the report at once, beside `standing_words` and `shift_words`, for the same
+  reason those live there.
+- **A plot is given the room the window has, up to a ceiling.** The two share plots were
+  a fixed 112 px whatever the screen, so a tall window ran out of page and a laptop
+  ran out of plot. They now take whatever height the host gives the chart over its
+  minimum, in equal parts, and stop at twice their floor: past that a line stretches
+  into a wall and says no more than it did. The milestone rows never grow — a row is a
+  row. The bound is set from the *data* (`_bound_height`), never from a resize, because
+  a widget that resizes itself inside its own resize event is what put a scroll area
+  into the loop `months.py` documents. And a plot's name is set **bold** with air above
+  it, so the three read as three headings rather than as captions under the plot above.
+- **Expanding the plots is the same widget with more room.** *⤢* beside the basis opens
+  `ChartDialog` — a second `ProgressChart` fed the same `ChartData` the tab feeds the
+  inline one, so a plan that changes while the window is open redraws in both and there
+  is no second rendering to drift. It holds no state, so closing it loses nothing: the
+  text dialog's rule (*expanding an editor is a second binding, not a copy*) applied to
+  a view that has nothing to bind.
+- **A milestone row dates both its marks and drops a line to the axis.** The axis marks
+  weeks or months, and the shift a row draws is often days: the size a reader wants is in
+  figures, so each mark carries its own date — the landing now on the far side of the
+  pair, the plan then's on its own, outside them where there is room and inside where
+  there is not, and left out rather than squeezed (`row_dates`, the landing names' rule
+  applied to a row). A hairline falls from the landing to the axis, so the day it lands
+  can be read off the scale under the plot rather than estimated by eye. Both surfaces
+  draw them: `drawings.py`'s shift plot does the same, with the report's own
+  character-width estimate standing in for font metrics.
+- **Every milestone landing is marked and named on the progress line.** The plan line
+  already changes shade at each landing; what it could not say was *which* milestone
+  that was, and a reader had to count rows in the plot below to find out. Each landing
+  now carries a mark in its stretch's shade with the milestone's name in secondary ink
+  a gap to its left, above the line where a rising curve leaves the room. A name is
+  elided past 90 px and **dropped** when the name before it reaches that far: two names
+  squeezed together say less than one, and the milestone plot below names every one of
+  them anyway. Only the first plot carries them — the milestone plot's rows are its
+  subject, and a name beside every mark there would be the row header said twice.
 
 ## A test belongs to a step, and a step carries several
 

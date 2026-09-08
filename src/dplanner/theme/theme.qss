@@ -831,6 +831,38 @@ QSplitter::handle:vertical:pressed {
     width: 10px;
 }
 
+/* A button whose arrow drops a family down is two targets in one: the front half runs the
+   verb, the arrow opens the child menu. Qt sizes that arrow from PM_MenuButtonIndicator —
+   about ten pixels, a sliver nobody can aim at and which reads as a rendering fault beside
+   the button it is attached to. It gets a real width instead, and the hairline that parts
+   it from the button half is what says the two halves do different things. */
+#ToolbarButton::menu-button {
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    width: ${ARROW_W}px;
+    border-left: 1px solid $BORDER;
+    border-top-right-radius: ${RADIUS_SM}px;
+    border-bottom-right-radius: ${RADIUS_SM}px;
+}
+
+/* Checked, the button is filled with the accent and a $BORDER divider would vanish into it.
+   The arrow's own ink is what parts the halves there. */
+#ToolbarButton:checked::menu-button {
+    border-left-color: $ON_ACCENT;
+}
+
+#ToolbarButton::menu-arrow {
+    width: 8px;
+    height: 8px;
+}
+
+/* And the words step aside for it. A styled subcontrol is outside Qt's size hint, so
+   without this the arrow is painted over the last letter — which is what the ten-pixel
+   sliver was hiding. ActionToolbar sets the property on the buttons it gives a menu. */
+#ToolbarButton[hasMenu="true"] {
+    padding-right: ${ARROW_ROOM}px;
+}
+
 #LayoutButton {
     padding-right: 20px;
 }

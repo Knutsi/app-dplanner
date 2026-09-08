@@ -419,14 +419,41 @@ def actual(
     return points
 
 
-def baseline(history: Sequence[Snapshot], basis: date) -> Snapshot | None:
+def baseline(
+    history: Sequence[Snapshot], basis: date, *, today: date | None = None
+) -> Snapshot | None:
     """The plan as it stood on the basis day: the last row on or before it, else the
-    earliest row there is — a project older than its history compares against the
-    first day anybody recorded. None with no history at all."""
+    earliest row there is — a project older than its history compares against the first
+    day anybody recorded. None with no history at all.
+
+    That fallback stops at ``today``'s own record. A project whose history begins today
+    has no earlier plan, and standing today's record in for one draws the plan now over
+    itself and calls the pair a comparison — two lines in one place saying "nothing has
+    changed since the outset", which is a claim nobody recorded. Callers that show a
+    comparison pass ``today``; a caller that only reports the day it found need not.
+    """
     before = [row for row in history if row.day <= basis]
     if before:
         return before[-1]
-    return history[0] if history else None
+    first = history[0] if history else None
+    if first is None or (today is not None and first.day >= today):
+        return None
+    return first
+
+
+def scope_words(basis: date, today: date, *, compared: bool) -> str:
+    """The scope plot's heading: what the plan now is measured against.
+
+    The day named is the one the reader asked for — the project's start unless they
+    picked another — because that is the question the plot answers and the day the
+    control beside it holds. Which daily record stood in for it is bookkeeping, and
+    lives in ``dplanner progress show``. Worded here rather than in either surface
+    because the window and the report may not word one fact two ways.
+    """
+    when = format_date(basis, today=today)
+    if compared:
+        return f"Scope change — versus plan at {when}"
+    return f"Scope change — no plan recorded at {when}"
 
 
 def delta(then: Snapshot, now: Snapshot, key: str | None) -> Delta | None:

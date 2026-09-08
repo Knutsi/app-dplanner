@@ -626,7 +626,7 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
             basis = date.fromisoformat(args.basis)
         except ValueError as error:
             raise CliError(f"--basis is a date, YYYY-MM-DD: {args.basis!r}") from error
-    then = baseline(history, basis)
+    then = baseline(history, basis, today=today)
     # What moved the plan, since the day the baseline was recorded — the record the
     # delta measures from.
     changes = (

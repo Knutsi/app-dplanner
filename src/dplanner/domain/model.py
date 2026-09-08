@@ -41,7 +41,7 @@ import uuid
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from dplanner.core.fsio import slugify
 from dplanner.core.repository import Origin
@@ -50,6 +50,17 @@ from dplanner.core.signals import Signal
 type NodeId = str
 type ProjectId = str
 type StepId = str
+
+# One edge, as the model states it: ``waiter`` waits on ``source`` under ``kind``. Named
+# because four signatures pass it around and a bare triple of strings says nothing.
+type Edge = tuple[StepId, str, StepId]
+
+# Which end of an edge a redirect moves. The arrow runs from the step waited on to the step
+# that waits, so moving the waiter end aims the links *at* a step and moving the source end
+# makes them come *from* one.
+type EdgeEnd = Literal["waiter", "source"]
+WAITER: Final[EdgeEnd] = "waiter"
+SOURCE: Final[EdgeEnd] = "source"
 
 # Edge kind -> whether it orders the graph. An ordering kind cannot contain a cycle; a
 # non-ordering one is just a link and may point anywhere inside the project.
@@ -105,6 +116,33 @@ class TextEdit:
 
     def inverted(self) -> "TextEdit":
         return TextEdit(self.node_id, self.key, self.pos, removed=self.added, added=self.removed)
+
+
+@dataclass(frozen=True)
+class Redirection:
+    """What moving one end of a set of edges onto ``anchor`` would do.
+
+    A redirect is one question — *can this edge's* ``end`` *sit on that step?* — asked of
+    every picked edge, and :meth:`Library.redirection` is the only place it is asked. The
+    canvas mode's live feedback, the verb's state, the command it builds and the CLI's
+    report are four readers of this one answer, so none of them can come to a different
+    view of what is legal.
+
+    An edge already anchored where it is being sent appears in neither tuple: there is
+    nothing to move and nothing to refuse.
+    """
+
+    anchor: StepId
+    end: EdgeEnd
+    moving: tuple[Edge, ...] = ()
+    refused: tuple[tuple[Edge, str], ...] = ()
+
+    def moved(self, edge: Edge) -> Edge:
+        """``edge`` as it will read once its ``end`` sits on :attr:`anchor`."""
+        waiter, kind, source = edge
+        if self.end == WAITER:
+            return (self.anchor, kind, source)
+        return (waiter, kind, self.anchor)
 
 
 class Node:
@@ -436,7 +474,7 @@ class Library(Node):
         project = self.project_of(step_id)
         return [step for step in project.steps if step_id in step.edges.get("requires", [])]
 
-    def boundary_edges(self, step_ids: Iterable[StepId]) -> list[tuple[StepId, str, StepId]]:
+    def boundary_edges(self, step_ids: Iterable[StepId]) -> list[Edge]:
         """Every edge, of any kind, with exactly one end in ``step_ids``, as
         ``(waiter, kind, source)`` in project order.
 
@@ -451,7 +489,7 @@ class Library(Node):
             project = self.project_of(step_id)
             if project not in projects:
                 projects.append(project)
-        found: list[tuple[StepId, str, StepId]] = []
+        found: list[Edge] = []
         for project in projects:
             ids = {step.id for step in project.steps}
             for waiter in project.steps:
@@ -460,6 +498,56 @@ class Library(Node):
                         if (waiter.id in chosen) != (source in chosen) and source in ids:
                             found.append((waiter.id, kind, source))
         return found
+
+    def edges_of(self, step_ids: Iterable[StepId], end: EdgeEnd) -> list[Edge]:
+        """Every edge, of any kind, whose ``end`` is one of ``step_ids``, in project order.
+
+        The terminal's way of naming a bundle of links: a canvas picks arrows, a verb picks
+        the steps they hang off. An edge naming a step that no longer exists is skipped, as
+        in :meth:`boundary_edges` — the canvas draws none.
+        """
+        chosen = set(step_ids)
+        found: list[Edge] = []
+        for project in {self.project_of(step_id).id: None for step_id in chosen}:
+            steps = self.project(project).steps
+            ids = {step.id for step in steps}
+            for waiter in steps:
+                for kind, sources in waiter.edges.items():
+                    for source in sources:
+                        held = waiter.id if end == WAITER else source
+                        if held in chosen and source in ids:
+                            found.append((waiter.id, kind, source))
+        return found
+
+    def redirection(self, edges: Iterable[Edge], anchor: StepId, end: EdgeEnd) -> Redirection:
+        """Which of these edges can move their ``end`` onto ``anchor``, and why the rest cannot.
+
+        Every refusal is :meth:`link_refusal`'s, asked about the edge as it *would* read —
+        there is no second reachability rule here. Asking it against the graph as it stands
+        rather than as it will be is sound and not merely convenient: every edge a redirect
+        creates touches ``anchor`` at the moving end, so none of them can open a new path
+        *into* ``anchor``, and the removals can only break paths. The check therefore never
+        lets a cycle through; at worst it declines a redirect that would in fact have been
+        legal because the very edges being moved were the cycle.
+        """
+        moving: list[Edge] = []
+        refused: list[tuple[Edge, str]] = []
+        plan = Redirection(anchor=anchor, end=end)
+        for edge in dict.fromkeys(edges):
+            waiter, kind, source = edge
+            if not (self.has(waiter) and self.has(source)):
+                continue
+            if source not in self.step(waiter).edges.get(kind, []):
+                continue  # An arrow the model no longer draws.
+            moved = plan.moved(edge)
+            if moved == edge:
+                continue  # Already anchored there: nothing to do, nothing to refuse.
+            refusal = self.link_refusal(moved[0], kind, moved[2])
+            if refusal is None:
+                moving.append(edge)
+            else:
+                refused.append((edge, refusal))
+        return Redirection(anchor=anchor, end=end, moving=tuple(moving), refused=tuple(refused))
 
     # -- structure -----------------------------------------------------------------------------
 

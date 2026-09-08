@@ -21,8 +21,24 @@ from datetime import date, timedelta
 from html import escape
 from math import cos, pi, sin
 
-from dplanner.cli.report.parts import Chart, Graph, Node, Plot, PlotKind, Series, Timeline
-from dplanner.domain.schedule import Tick, axis_ticks, change_runs, format_date, share_at
+from dplanner.cli.report.parts import (
+    Chart,
+    Graph,
+    Node,
+    Plot,
+    PlotKind,
+    Series,
+    Stretch,
+    Timeline,
+)
+from dplanner.domain.schedule import (
+    Tick,
+    axis_ticks,
+    change_runs,
+    format_date,
+    share_at,
+    short_date,
+)
 
 
 @dataclass(frozen=True)
@@ -393,7 +409,7 @@ def chart_svg(chart: Chart, colors: Colors) -> str:
         elif panel.kind == "scope":
             out.append(_scope_plot(chart, plot, panel, x, y, colors))
         else:
-            out.append(_shift_plot(chart, panel, x, left, colors))
+            out.append(_shift_plot(chart, panel, x, left, left + plot_w, colors))
         out.append("</g>")
     # Today, and the dates: one line down every plot, one row of labels under the last.
     if first <= chart.today <= last:
@@ -548,6 +564,7 @@ def _status_plot(
     out = []
     if plan is not None and plan.points:
         out.append(_plan_line(chart, plan, panel, x, y, colors))
+        out.append(_landings(chart, plan, panel, x, y, colors))
         out.append(
             _marker(
                 x(plan.points[-1][0]), y(panel, plan.points[-1][1]), colors.plan, colors.surface
@@ -566,6 +583,44 @@ def _status_plot(
                 f'{'text-anchor="end" ' if flipped else ""}fill="{colors.ink}">'
                 f"{_t(plot.standing)}</text>"
             )
+    return "".join(out)
+
+
+def _landings(
+    chart: Chart,
+    plan: Series,
+    panel: _Panel,
+    x: Callable[[date], float],
+    y: Callable[[_Panel, float], float],
+    colors: Colors,
+) -> str:
+    """Where each milestone lands on the plan line: a mark in its stretch's shade with its
+    name above it, ending a gap short of the mark. The window's rule (``landing_marks``):
+    the line already changes shade at every landing, and what it cannot say is which
+    milestone that was — and a name is dropped rather than drawn over the one before it."""
+    out = []
+    reached = 0.0
+    for stretch in chart.milestones:
+        share = share_at(plan.points, stretch.finish) if stretch.finish else None
+        if stretch.finish is None or share is None:
+            continue
+        at, level = x(stretch.finish), y(panel, share)
+        out.append(
+            f'<circle class="landing" cx="{_n(at)}" cy="{_n(level)}" r="{_n(LANDING_MARK)}" '
+            f'fill="{stretch.color}"/>'
+        )
+        name = _clip(stretch.label, 16)
+        left = at - _text_width(name, 11.0) - 6
+        if left < reached:
+            continue
+        # Above the mark, where a rising line leaves the room — and inside the plot for a
+        # milestone that lands the whole thing at the top of it.
+        out.append(
+            f'<text class="landing-name" x="{_n(at - 6)}" y="{_n(max(panel.top + 6, level - 12))}" '
+            f'text-anchor="end" dominant-baseline="central" fill="{colors.secondary}">'
+            f"{_t(name)}</text>"
+        )
+        reached = at - 6
     return "".join(out)
 
 
@@ -686,15 +741,32 @@ def _scope_plot(
 
 
 def _shift_plot(
-    chart: Chart, panel: _Panel, x: Callable[[date], float], left: float, colors: Colors
+    chart: Chart,
+    panel: _Panel,
+    x: Callable[[date], float],
+    left: float,
+    right: float,
+    colors: Colors,
 ) -> str:
-    """A row per milestone: its name in the gutter, a hollow mark where the plan on the
-    basis day landed it, a filled one where the plan now does, and an arrow between."""
+    """A row per milestone: its name in the gutter, a line dropping from where it lands to
+    the axis, a hollow mark where the plan on the basis day landed it, a filled one where
+    the plan now does, an arrow between them and the dates beside them."""
     out = []
     for index, stretch in enumerate(chart.milestones):
         row = panel.top + (index + 0.5) * SHIFT_ROW_H
         out.append(
             f'<g class="shift" data-step="{_t(stretch.step_id)}" data-words="{_t(stretch.note)}">'
+        )
+        if stretch.finish is not None:
+            # Down to the axis, so the day it lands can be read off the scale. Drawn
+            # first: every mark and every date is painted over it.
+            drop = x(stretch.finish)
+            out.append(
+                f'<line class="drop" x1="{_n(drop)}" x2="{_n(drop)}" y1="{_n(row)}" '
+                f'y2="{_n(panel.bottom)}" stroke="{stretch.color}" stroke-opacity="0.35" '
+                f'stroke-width="1"/>'
+            )
+        out.append(
             f'<text class="label" x="{_n(left - 8)}" y="{_n(row)}" text-anchor="end" '
             f'dominant-baseline="central" fill="{colors.secondary}">'
             f"{_t(_clip(stretch.label, 20))}</text>"
@@ -713,10 +785,45 @@ def _shift_plot(
                 f'<circle class="now" cx="{_n(x(now))}" cy="{_n(row)}" r="{_n(LANDING_MARK)}" '
                 f'fill="{stretch.color}"/>'
             )
+        for text, spot in _row_dates(stretch, chart.today, x, left, right):
+            out.append(
+                f'<text class="row-date" x="{_n(spot)}" y="{_n(row)}" '
+                f'dominant-baseline="central" fill="{colors.secondary}">{_t(text)}</text>'
+            )
         if stretch.note:
             out.append(f"<title>{_t(stretch.note)}</title>")
         out.append("</g>")
     return "".join(out)
+
+
+def _row_dates(
+    stretch: Stretch, today: date, x: Callable[[date], float], left: float, right: float
+) -> list[tuple[str, float]]:
+    """A milestone row's dates and where they start: where the plan now lands it, and —
+    when it moved — where the plan then did. The window's rule, said in SVG: a date sits
+    beside its own mark, outside the pair when there is room and inside it otherwise, and
+    is left out rather than squeezed."""
+    found = []
+    spots = [(stretch.finish, stretch.was_finish)] if stretch.finish is not None else []
+    if stretch.was_finish is not None and stretch.was_finish != stretch.finish:
+        spots.append((stretch.was_finish, stretch.finish))
+    for when, other in spots:
+        assert when is not None
+        text = short_date(when, today=today)
+        width = _text_width(text, 11.0)
+        mark = x(when)
+        away = -1.0 if other is not None and x(other) > mark else 1.0
+        for way in (away, -away):
+            start = mark + LANDING_MARK + 5 if way > 0 else mark - LANDING_MARK - 5 - width
+            if start < left or start + width > right:
+                continue
+            if other is not None:
+                keep = x(other)
+                if start < keep + LANDING_MARK + 5 and keep - LANDING_MARK - 5 < start + width:
+                    continue
+            found.append((text, start))
+            break
+    return found
 
 
 def _arrow(start: float, end: float, row: float, color: str) -> str:

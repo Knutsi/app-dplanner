@@ -28,6 +28,7 @@ from dplanner.cli.lookup import (
     project_arg,
     project_of,
     project_of_step,
+    project_of_steps,
     step_arg,
 )
 from dplanner.core.fsio import slugify
@@ -46,9 +47,20 @@ from dplanner.domain.commands import (
     SetEdgesCommand,
     SetFieldCommand,
     SetModuleDataCommand,
+    redirect_edges_command,
     remove_edges_command,
 )
-from dplanner.domain.model import EDGE_KINDS, Library, Project, Step, StepId, TextEdit
+from dplanner.domain.model import (
+    EDGE_KINDS,
+    SOURCE,
+    WAITER,
+    EdgeEnd,
+    Library,
+    Project,
+    Step,
+    StepId,
+    TextEdit,
+)
 from dplanner.domain.ordering import placed
 from dplanner.domain.relocate import RelocateError, move_project, target_in
 from dplanner.domain.repositories import ACCEPTED, RepositoryFacts, repository_facts
@@ -290,6 +302,18 @@ def commands(
             configure=_configure_isolate,
             run=_step_isolate,
             examples=("dplanner step isolate draft-the-model review",),
+            edits_graph=project_of_steps,
+        ),
+        CliCommand(
+            path=("step", "redirect"),
+            summary="Move the links hanging off these steps onto another step.",
+            configure=_configure_redirect,
+            run=_step_redirect,
+            examples=(
+                "dplanner step redirect draft-the-model --to rewrite-the-model",
+                "dplanner step redirect s3 s4 --from review",
+            ),
+            edits_graph=project_of_steps,
         ),
     ]
 
@@ -961,6 +985,63 @@ def _step_unlink(context: CliContext, args: Namespace) -> int:
     targets = [target for target in step.edges.get(args.kind, []) if target != other_id]
     context.apply(SetEdgesCommand(step.id, args.kind, targets))
     context.report(_step_row(context.library, step), f"Unlinked from {step.title!r}")
+    return 0
+
+
+def _configure_redirect(parser: ArgumentParser) -> None:
+    parser.add_argument(
+        "steps",
+        nargs="+",
+        help="whose links move: id, folder name, or part of a title",
+    )
+    end = parser.add_mutually_exclusive_group(required=True)
+    end.add_argument(
+        "--to", metavar="STEP", help="the links pointing at these steps now point at STEP"
+    )
+    end.add_argument(
+        "--from", dest="source", metavar="STEP", help="the links leaving these steps now leave STEP"
+    )
+
+
+def _step_redirect(context: CliContext, args: Namespace) -> int:
+    """The canvas's Redirect, told which links by the steps they hang off.
+
+    A terminal cannot pick arrows, so it names the steps and the end: ``--to`` takes every
+    link *pointing at* them and ``--from`` every link *leaving* them. Both build the same
+    ``Redirection`` the canvas mode does, so the two surfaces cannot come to different
+    views of what is legal — a link that would close a cycle is reported and left alone.
+    """
+    library = context.library
+    end: EdgeEnd = WAITER if args.to is not None else SOURCE
+    anchor = find_step(library, args.to if args.to is not None else args.source, context.current)
+    chosen: list[StepId] = []
+    for needle in args.steps:
+        step_id = find_step(library, needle, context.current).id
+        if step_id not in chosen:
+            chosen.append(step_id)
+    plan = library.redirection(library.edges_of(chosen, end), anchor.id, end)
+    if plan.moving:
+        count = len(plan.moving)
+        label = "Redirect Link" if count == 1 else f"Redirect {count} Links"
+        context.apply(redirect_edges_command(library, plan, label))
+    lines = [
+        f"{library.step(waiter).title!r} now {kind} {library.step(source).title!r}"
+        for waiter, kind, source in (plan.moved(edge) for edge in plan.moving)
+    ]
+    lines += [f"left alone: {why}" for _edge, why in plan.refused]
+    data = {
+        "anchor": anchor.id,
+        "end": end,
+        "moved": [
+            {"waiter": waiter, "kind": kind, "source": source}
+            for waiter, kind, source in (plan.moved(edge) for edge in plan.moving)
+        ],
+        "refused": [
+            {"waiter": waiter, "kind": kind, "source": source, "reason": why}
+            for (waiter, kind, source), why in plan.refused
+        ],
+    }
+    context.report(data, "\n".join(lines) or "Nothing to redirect")
     return 0
 
 

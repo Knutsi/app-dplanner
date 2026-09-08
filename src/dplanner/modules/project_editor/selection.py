@@ -11,7 +11,7 @@ canvas that drew them, and so ``modes.py`` can report a selection without import
 
 from dataclasses import dataclass
 
-from dplanner.domain.model import StepId
+from dplanner.domain.model import Edge, StepId
 
 # The URI's entity kinds, beside "step" and "project".
 EDGE_KIND = "edge"
@@ -30,6 +30,10 @@ class EdgeRef:
     def entity_id(self) -> str:
         """The id half of ``app://selection/edge/<id>``."""
         return _SEPARATOR.join((self.waiter, self.kind, self.source))
+
+    def as_edge(self) -> Edge:
+        """The same arrow as the domain states it — what every edge verb hands over."""
+        return (self.waiter, self.kind, self.source)
 
 
 def parse_edge_id(entity_id: str) -> EdgeRef | None:
