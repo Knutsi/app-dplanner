@@ -34,7 +34,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.aspect_toggle import aspect_toggle, focused_step
+from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
@@ -43,6 +43,7 @@ from dplanner.framework.settings_registry import (
     SettingsSection,
     SettingsSectionRegistry,
 )
+from dplanner.framework.step_selection import focused_step
 from dplanner.framework.undo import UndoService
 from dplanner.framework.window import StatusHost
 from dplanner.modules.step_agent_instruction import launcher
