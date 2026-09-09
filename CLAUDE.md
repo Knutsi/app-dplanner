@@ -816,7 +816,16 @@ root, stop and look for the registry or capability you have not found yet.
   (`status set`, `agent-state set`, `note add`). **The graph gates launching**: a step
   whose `requires` do not all read done (through `status_for` on the module's Deps, the
   progression board's seam) gets a confirmation naming them before a shell opens — the
-  person may know the work landed unrecorded, so it asks rather than refuses.
+  person may know the work landed unrecorded, so it asks rather than refuses, **once for
+  the whole gesture** whichever of the chosen steps wait.
+  **It runs one agent per chosen step, and the count is the last precondition.** The verb
+  reads `chosen_steps` — the framework's one definition, the same Delete acts on — so
+  lassoing three agent steps is *Run 3 Agents…* and one gesture; a step in the
+  selection that cannot run greys the verb for all of them, naming that step and why,
+  because launching the subset that qualifies would run fewer agents than were asked for
+  and say nothing. Past *Settings ▸ Agent*'s **Agents at once** (four by default, per user
+  and per machine like the terminal beside it) the count itself is the refusal — a lasso
+  is one flick of the wrist, and a deskful of terminals is not what it meant.
   **The briefing never rides in argv, and the peer is a top-level session.** The
   agent's opening line is `launcher.opening_prompt` — a pointer at `prompt.md`, carrying
   nothing the project is about — because the whole briefing as one argument was every

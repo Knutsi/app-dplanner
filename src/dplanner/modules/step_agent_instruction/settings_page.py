@@ -1,4 +1,5 @@
-"""The "Agent" settings page: which agent Run Agent starts, and which terminal it opens in.
+"""The "Agent" settings page: which agent Run Agent starts, which terminal it opens in,
+and how many it may start at once.
 
 **Sane defaults, options laid out.** Both choices are a dropdown of known rows over an
 editable field: the agent is one of the known CLIs — Claude Code, Codex, OpenCode — and
@@ -8,6 +9,12 @@ use the feature; the free-text field exists for the person who already knows exa
 they want. The defaults work untouched: Claude Code, in plan mode, in the platform's own
 default terminal.
 
+**How many at once is here too**, because it is a fact about this desk rather than about
+the plan: how many terminals, worktrees and live sessions one machine can carry is the
+person's to say, and Run Agent over a multi-selection refuses past it. Four is the default
+— enough for the gesture the limit exists for, few enough that a stray lasso cannot fill
+the screen.
+
 Per user, per machine — a colleague's terminal is not the workspace's business, which is
 why this is a GLOBAL-scope section and never a file in the plan. Whether a step's agent
 gets a fresh worktree is *not* here: that is a fact about the step, kept on its agent
@@ -16,7 +23,15 @@ aspect and switched on the Agent tab.
 
 import sys
 
-from PySide6.QtWidgets import QComboBox, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
@@ -31,9 +46,15 @@ from dplanner.modules.step_agent_instruction.launcher import (
 
 AGENT_COMMAND_KEY = "agent_command"
 LAUNCH_COMMAND_KEY = "launch_command"
+MAX_AGENTS_KEY = "max_agents"
 
 CUSTOM_LABEL = "Custom"
 AUTOMATIC_LABEL = "Automatic"
+
+DEFAULT_MAX_AGENTS = 4
+# The ceiling the field offers. Not a judgement about hardware — a spin box needs a range,
+# and a number typed past this one is far likelier a slip than an intention.
+MAX_AGENTS_CEILING = 20
 
 
 def agent_command() -> str:
@@ -41,6 +62,16 @@ def agent_command() -> str:
     for a preset is that preset, so the dropdown shows it and the wrapper runs its
     current command."""
     return current_command(str(get_global(MODULE_ID, AGENT_COMMAND_KEY, DEFAULT_AGENT_COMMAND)))
+
+
+def max_agents() -> int:
+    """How many agents one Run Agent may launch. Anything unreadable or out of the field's
+    range reads as the default: a stored preference is not worth refusing the verb over."""
+    try:
+        stored = int(get_global(MODULE_ID, MAX_AGENTS_KEY, DEFAULT_MAX_AGENTS))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_AGENTS
+    return min(max(stored, 1), MAX_AGENTS_CEILING)
 
 
 def launch_command() -> str:
@@ -129,6 +160,15 @@ def build_page(parent: QWidget | None, platform: str = sys.platform) -> QWidget:
         AUTOMATIC_LABEL,
     )
 
+    limit = QSpinBox(page)
+    limit.setObjectName("AgentMaxAgentsSpin")
+    limit.setRange(1, MAX_AGENTS_CEILING)
+    limit.setValue(max_agents())
+    # Arrow steps commit as they land; typing commits on Enter or focus-out, so a
+    # half-typed "1" on the way to "12" never becomes the limit for an instant.
+    limit.setKeyboardTracking(False)
+    limit.valueChanged.connect(lambda value: set_global(MODULE_ID, MAX_AGENTS_KEY, value))
+
     layout = QVBoxLayout(page)
     layout.addWidget(QLabel("Agent", page))
     layout.addWidget(agent_combo)
@@ -154,6 +194,19 @@ def build_page(parent: QWidget | None, platform: str = sys.platform) -> QWidget:
             " terminal above, always a new window — tmux only when nothing else is"
             " installed; picking one fills in its command, which can be edited."
             " Placeholders: {script}, {workdir}, {title}.",
+            page,
+        )
+    )
+    layout.addWidget(QLabel("Agents at once", page))
+    limit_row = QHBoxLayout()
+    layout.addLayout(limit_row)  # Parented before it is filled — see CLAUDE.md's layout rule.
+    limit_row.addWidget(limit)
+    limit_row.addStretch(1)
+    layout.addWidget(
+        _note(
+            "How many agents Run Agent may launch from one selection. Each is a terminal,"
+            " a worktree and a session of its own; select more than this and the verb says"
+            " so instead of filling the desk.",
             page,
         )
     )
