@@ -43,6 +43,7 @@ from dplanner.framework.context import (
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.framework.undo_keys import install_undo_keys
 from dplanner.modules.feature.aspect import MODULE_ID
 from dplanner.modules.feature.catalogue import (
     FEATURE_MIME,
@@ -145,6 +146,7 @@ class FeatureDialog(QDialog):
             (r for r in read_catalogue(library.project(project_id)) if r.id == feature_id), None
         )
         self.setWindowTitle(f"Feature {feature_id}" + (f" — {record.title}" if record else ""))
+        install_undo_keys(self, undo)
         self.editor = FeatureEditor(library, undo, files, documents_of, self, digest_of=digest_of)
         self.editor.show_record(project_id, feature_id)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)

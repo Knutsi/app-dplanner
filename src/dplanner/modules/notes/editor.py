@@ -31,6 +31,7 @@ from dplanner.domain.commands import Command, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.undo import UndoService
+from dplanner.framework.undo_keys import install_undo_keys
 from dplanner.modules.notes.log import (
     DOWNSTREAM,
     LABELS,
@@ -336,6 +337,7 @@ class NoteDialog(QDialog):
         self._project_id = project_id
         self._note_id = note_id
         self.setWindowTitle(f"Note {note_id}")
+        install_undo_keys(self, undo)
         self.editor = NoteEditor(library, undo, step_key, self)
         self.editor.show_record(project_id, note_id)
 

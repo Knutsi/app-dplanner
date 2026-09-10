@@ -31,6 +31,7 @@ from dplanner.framework.markdown_highlight import MarkdownHighlighter
 from dplanner.framework.prose_edit import Attach, Pick, ProseEdit
 from dplanner.framework.text_binding import TextBinding, TextField
 from dplanner.framework.undo import UndoService
+from dplanner.framework.undo_keys import install_undo_keys
 from dplanner.framework.widgets import centered_column, make_text_well, space_lines
 
 # DESIGN.md: dialogs get 20 px outer margins and 12 px between sections.
@@ -57,6 +58,7 @@ class ExpandedTextDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
+        install_undo_keys(self, undo)
 
         self.edit = ProseEdit(self, undo=undo)
         self.edit.set_attach(attach)

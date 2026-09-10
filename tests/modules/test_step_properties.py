@@ -373,3 +373,50 @@ def test_the_details_dialog_never_outgrows_the_screen(services, project, monkeyp
     available = dialog.screen().availableGeometry()
     assert dialog.width() == min(DIALOG_WIDTH, available.width() - SCREEN_CLEARANCE)
     assert dialog.height() == min(DIALOG_HEIGHT, available.height() - SCREEN_CLEARANCE)
+
+
+def test_ctrl_z_in_the_dialogs_description_undoes_the_typing(services, project, monkeypatch):
+    """The user's undo reaches the application's stack from the dialog's own window.
+
+    The description editor's own history is off — the application's stack is the only one —
+    so a dialog that did not carry the Undo key left the most-used editor in the product
+    with no undo at all. A real key through the platform, so the whole path is exercised:
+    the binding declining the shortcut override, the shortcut map, the action.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from dplanner.modules.github import notice
+    from dplanner.modules.step_description.section import DescriptionSection
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    # A window-modal box over the window swallows every key event bound for it, and the
+    # missing-gh warning opens one on the first turn of the event loop after a build.
+    monkeypatch.setattr(notice, "_warned_this_process", True)
+    step = project.steps[0]
+
+    def edit_description(dialog):
+        dialog.show()
+        dialog.activateWindow()
+        editor = dialog.panel.findChild(DescriptionSection).edit
+        editor.setFocus()
+        editor.textCursor().insertText("Deploys the thing.")
+        assert services.document.text(step.id, "step_description") == "Deploys the thing."
+
+        QTest.keyClick(dialog.windowHandle(), Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+        QTest.qWait(1)
+        assert services.document.text(step.id, "step_description") == ""
+        assert editor.toPlainText() == ""
+
+        QTest.keyClick(
+            dialog.windowHandle(),
+            Qt.Key.Key_Z,
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+        )
+        QTest.qWait(1)
+        assert services.document.text(step.id, "step_description") == "Deploys the thing."
+        assert editor.toPlainText() == "Deploys the thing."
+
+    monkeypatch.setattr(StepDetailsDialog, "exec", edit_description)
+    select(services, step.id)
+    services.actions.run("steps.details", services.context.current())

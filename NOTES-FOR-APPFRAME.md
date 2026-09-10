@@ -835,6 +835,32 @@ block) pass 0; every existing caller keeps the default. Retires the
 margin, and double 16 px reads as a layout bug. One constructor parameter beats mutating
 the layout after the fact. Belongs upstream.
 
+### `framework/undo_keys.py` — a dialog carries the application's Undo keys
+
+**What.** New file, one export: `install_undo_keys(window, undo)` adds an Undo and a Redo
+QAction to a window of its own, bound to the same standard sequences the menu bar binds and
+calling `UndoService.undo`/`redo` directly. `text_dialog.py`'s `ExpandedTextDialog` calls it;
+so do DPlanner's four other dialogs that take an `UndoService`.
+
+**Why.** `TextBinding` deliberately declines the Ctrl+Z shortcut override so the
+application's Undo action can answer instead (its rule 5), and the widget's own history is
+off. That trade is only sound in a window where something *does* answer — and the menu bar's
+QAction is a `WindowShortcut` of the main window, so inside any dialog the key reached
+nobody. An expanded editor, and DPlanner's step details dialog, therefore had no undo at all:
+the most-used editor in the product, unreversible while it was open. Two QActions on the
+dialog cost nothing and cannot be ambiguous with the menu bar's, since only one window is
+active at a time.
+
+The rule DPlanner enforces around it is worth carrying too: *a dialog handed the undo stack
+carries its keys*, checked by parsing every `QDialog` subclass for an `UndoService` parameter
+(`tests/framework/test_undo_keys.py`). The argument list is what makes it mechanical — a
+list of "the live ones" is a habit the next dialog forgets.
+
+**Upstream?** Yes. Any application built on `TextBinding` has this hole the first time it
+puts a bound editor in a dialog, and it fails silently — a key that does nothing looks like
+a platform quirk, not a missing action. Worth considering whether `TextBinding` should
+assert its editor's window can answer, rather than leaving it to the dialog's author.
+
 ### `framework/text_dialog.py` — expand any bound editor into a modal
 
 **What.** New file, two exports. `ExpandedTextDialog(field, undo, *, title, placeholder,

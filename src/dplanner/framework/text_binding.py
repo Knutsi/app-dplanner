@@ -18,7 +18,10 @@ The five-step discipline, which is worth understanding before changing anything 
 5. **shortcut reclaim** — an editable text widget swallows Ctrl+Z for its own (disabled)
    undo history. Leaving the ``ShortcutOverride`` unaccepted lets the application's Undo
    action fire instead. :class:`AppUndoShortcutFilter` does the same for editors with no
-   binding of their own.
+   binding of their own. **The window the editor is in owes that action**: the menu bar's
+   is a window shortcut of the main window, so a dialog hosting a binding installs its own
+   — :func:`dplanner.framework.undo_keys.install_undo_keys`, one call — or the key this
+   step gives up is answered by nobody.
 
 **What a field is.** The framework does not know your model, so a binding takes a
 :class:`TextField`: read the value, watch it, and turn an edit into a command. Three small

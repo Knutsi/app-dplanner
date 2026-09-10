@@ -81,6 +81,7 @@ from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.framework.undo_keys import install_undo_keys
 from dplanner.framework.widgets import confirm
 from dplanner.modules.projects.repo_picker import PlanTarget, RepoPicker, tool_button
 from dplanner.modules.projects.repos import (
@@ -445,6 +446,7 @@ class ProjectDialog(QDialog):
         super().__init__(parent)
         self.setObjectName("ProjectDialog")
         self.setWindowTitle("Project")
+        install_undo_keys(self, undo)
         self.setMinimumSize(560, 460)
         self.resize(780, 640)
         self.mode = mode

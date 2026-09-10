@@ -21,6 +21,7 @@ from dplanner.framework.aspect_bar import AspectTemplate
 from dplanner.framework.inspector import InspectorSection
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.framework.undo_keys import install_undo_keys
 from dplanner.modules.step_properties.panel import StepPanel
 
 # Room for the Tests tab's list beside its editor, clamped to the screen with a margin
@@ -47,6 +48,7 @@ class StepDetailsDialog(QDialog):
         self._library = library
         self._step_id = step_id
         self._retitle()
+        install_undo_keys(self, undo)
 
         self.panel = StepPanel(
             library, undo, actions, sections=sections, templates=templates, theme=theme, parent=self

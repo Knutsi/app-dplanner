@@ -836,6 +836,43 @@ onto the editor itself, so every host — the Description block, the Agent tab's
 instruction editors, the project card — offers the same gesture without growing a header
 row.
 
+## Undo keys belong to the window the user is editing in
+
+There is one undo stack, and until this pass there was one *window* that could reach it.
+The menu bar's Undo is a QAction on the main window with Qt's default `WindowShortcut`
+context, so it fires while that window is active and nowhere else. A dialog is another
+window. Inside one, Ctrl+Z reached nobody — and a bound editor made that silence total,
+because `TextBinding` switches the widget's own history off and declines the shortcut
+override on purpose (rule 5 of its docstring: two histories fighting over one key is the
+bug that rule prevents). The result was the worst possible arrangement in the editor people
+use most: the step details dialog's Description field had **no undo at all**, neither the
+application's nor Qt's, and typing there was unreversible until the dialog was closed.
+
+`framework/undo_keys.py` closes it in one call. `install_undo_keys(dialog, undo)` puts two
+QActions on the dialog itself, bound to the same standard sequences the menu bar binds
+(`key_sequences`, so Cmd+Z and Cmd+Shift+Z on macOS and Ctrl+Y on Windows come along
+without a platform test anywhere). A window shortcut in a window of its own can never be
+Qt's *ambiguous shortcut* — the state that fires neither claimant — because only one of the
+two windows is ever the active one. The keys go straight to `UndoService` rather than
+through `ActionRegistry.run`: a verb's id belongs to a module and the framework knows none
+of them, `UndoService` opens the same telemetry span either way, and undoing nothing is
+already a no-op there, which is why these actions need no enabled state to keep current.
+
+**The rule is the argument list**: a dialog handed the `UndoService` is a surface that edits
+the document, so it carries the document's keys. That is mechanical enough for a test to
+read — `tests/framework/test_undo_keys.py` parses every `QDialog` subclass in the tree and
+fails the one that takes an undo stack without installing the keys — where "the dialogs that
+feel live" would have been a habit that the sixth dialog forgets. Five qualify today: the
+step details dialog, the expanded text editor, the note and feature dialogs, and the project
+dialog.
+
+The alternative was making the menu bar's own Undo an `ApplicationShortcut`, and it is the
+wrong shape twice over. It would fire under *every* modal — including the ones that exist
+precisely because the model must not move (the library-watch conflict dialog) and the ones
+that are transactions with a Cancel — and it would put the decision in the shell module,
+which knows nothing about which windows edit the document. The line drawn here is the honest
+one: whoever was handed the stack answers for it.
+
 ## A pasted image is an attachment and a link, not an embed
 
 Every prose document in the application is markdown kept as **plain text**, and

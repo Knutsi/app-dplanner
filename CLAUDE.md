@@ -374,6 +374,16 @@ root, stop and look for the registry or capability you have not found yet.
   (`stretch` on the section says who gets the leftover height, `shown_for` hides a block
   with nothing to say). `ARCHITECTURE.md`'s *The Details tab hosts the same contract, as
   blocks* has the reasoning — including why a host is a registry instance, never a flag.
+- **A dialog handed the undo stack carries Ctrl+Z.** The menu bar's Undo is a *window*
+  shortcut of the main window, so in a dialog nobody answers the key — and a bound editor's
+  own history is off on purpose, which left the step details dialog's Description field with
+  no undo at all. `framework/undo_keys.py`'s `install_undo_keys(dialog, undo)` puts the two
+  standard keys on the dialog itself; a window shortcut in a window of its own can never be
+  ambiguous with the menu bar's. **Taking an `UndoService` is what says a dialog edits the
+  document**, so that argument is the rule, and `tests/framework/test_undo_keys.py` reads
+  every dialog in the tree for it. `ARCHITECTURE.md`'s *Undo keys belong to the window the
+  user is editing in* has the reasoning, including why an application-wide shortcut is the
+  wrong shape.
 - **A large text field expands into a modal editor** — `framework/text_dialog.py`: a
   second `TextBinding` over the same `TextField`, live-synced through the foreign-change
   path, opened from the corner button `attach_expand` pins onto the editor.

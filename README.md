@@ -266,6 +266,7 @@ src/dplanner/
 │   ├── prose_edit.py        that section's editor: a pasted file becomes a markdown link
 │   ├── mime_files.py        the files a paste or a drop carries — both editors' one answer
 │   ├── text_dialog.py       the same document in a big modal editor — a second binding
+│   ├── undo_keys.py         Ctrl+Z inside a dialog: the window's own Undo/Redo, one stack
 │   ├── asset_gallery.py     a module's attached files as thumbnails; click to view
 │   ├── asset_picker.py      a modal picker over named files — Insert from Assets…'s dialog
 │   ├── image_preview.py     the modal lightbox the gallery (and anyone) opens
