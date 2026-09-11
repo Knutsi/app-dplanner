@@ -8,10 +8,15 @@ half of a launch — **the shell is a peer this window keeps an eye on**:
 - A two-second timer, running only while a run is live, reads each run's exit file and
   pid (``runs.settle``). When the shell has ended, the step's state is cleared the way the
   launch was stamped — directly, off the undo stack, with the launch origin — and the
-  status bar says how it ended. The write is skipped while the workspace has changed
-  underneath: the library watcher adopts the change into the live model first — or,
-  when the store cannot reconcile it, falls back to a rebuild whose new module re-adopts
-  its runs from the per-user store — and the next tick checks again on a plan this
+  status bar says how it ended. **The same tick reads what the run consumed**: the
+  harness that ran it is asked for its own record of the session (``deps.report``, the
+  composition root's reading of ``agent_harnesses()``), and the tokens land on the step's
+  ``agent_usage`` aspect (``usage.py``) the same way — a row per run, off the undo stack.
+  A harness that mints its own session id is found by directory and start time, which is
+  also what makes such a run resumable afterwards. Both writes are skipped while the
+  workspace has changed underneath: the library watcher adopts the change into the live
+  model first — or, when the store cannot reconcile it, falls back to a rebuild whose new
+  module re-adopts its runs from the per-user store — and the next tick checks again on a plan this
   window has seen, so the exit is never written over an agent's own last ``dplanner``
   call.
 - A status-bar button ("Agent on “X”", "2 agents running") opens the Agents browser —
@@ -31,11 +36,12 @@ pid are facts about this machine.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMenu, QWidget
 
+from dplanner.domain.agents import AgentHarness, Usage, harness_by_id
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, StepId
 from dplanner.framework.action_menu import append_action
@@ -60,7 +66,15 @@ from dplanner.modules.step_agent_run.aspect import (
     record_exit,
     record_launch,
 )
-from dplanner.modules.step_agent_run.runs import AgentRun, describe, new_run, read_shell, settle
+from dplanner.modules.step_agent_run.runs import (
+    AgentRun,
+    describe,
+    new_run,
+    read_shell,
+    run_facts,
+    settle,
+)
+from dplanner.modules.step_agent_run.usage import record, row_for, rows, words
 from dplanner.modules.step_agent_run.view import AgentBrowserDialog, AgentStatusButton
 
 POLL_MS = 2000
@@ -79,6 +93,9 @@ class StepAgentRunDeps:
     repo: WatchableRepository
     # Selects a step in its project — the ``steps.reveal`` verb, run against the row's step.
     reveal: Callable[[StepId], None]
+    # Every agent CLI this build knows: which one a run recorded is looked up here for
+    # its ``report`` (the session and the tokens) and its ``resume`` template.
+    harnesses: tuple[AgentHarness, ...] = ()
 
 
 class StepAgentRunModule:
@@ -170,10 +187,12 @@ class StepAgentRunModule:
     def runs(self) -> list[AgentRun]:
         return list(self._runs)
 
-    def track(self, step_id: StepId, shell_file: str, exit_file: str) -> None:
+    def track(
+        self, step_id: StepId, shell_file: str, exit_file: str, harness: str = "", session: str = ""
+    ) -> None:
         """A shell was just spawned on the step: stamp it, remember it, start watching."""
         record_launch(self._deps.library, step_id)
-        self._runs.append(new_run(step_id, shell_file, exit_file))
+        self._runs.append(new_run(step_id, shell_file, exit_file, harness, session))
         self._store()
         self._refresh()
 
@@ -198,13 +217,33 @@ class StepAgentRunModule:
         if deps.repo.changed_underneath():
             return  # The watcher takes the change first; the next tick checks again.
         for index, settled in ended:
+            settled, usage_words = self._read_back(settled)
             self._runs[index] = settled
             record_exit(deps.library, settled.step_id)
             deps.status.show_status(
-                f"Agent on “{self._title_of(settled.step_id)}” {describe(settled, '')}", 6000
+                f"Agent on “{self._title_of(settled.step_id)}” {describe(settled, '')}"
+                + usage_words,
+                6000,
             )
         self._store()
         self._refresh()
+
+    def _read_back(self, run: AgentRun) -> tuple[AgentRun, str]:
+        """The harness's own record of the ended run: the session it was, kept on the
+        run, and the tokens it consumed, recorded on the step. The words for the status
+        line come back beside the run; "" when there was nothing to read."""
+        harness = harness_by_id(self._deps.harnesses, run.harness)
+        if harness is None or harness.report is None:
+            return run, ""
+        report = harness.report(run_facts(run))
+        if report is None:
+            return run, ""
+        if report.session and not run.session:
+            run = replace(run, session=report.session)
+        if report.usage is None:
+            return run, ""
+        record(self._deps.library, run.step_id, row_for(run.harness, run.session, report.usage))
+        return run, f" — {words(report.usage)}"
 
     def _forget(self, run: AgentRun) -> None:
         self._runs = [other for other in self._runs if other.key != run.key]
@@ -224,7 +263,7 @@ class StepAgentRunModule:
             return
         self._button.show_runs(self._runs, self._title_of)
         if self._browser.isVisible():
-            self._browser.refresh(self._runs, self._focus_reason, self._resume_of)
+            self._browser.refresh(self._runs, self._focus_reason, self._resume_of, self._usage_of)
         live = any(run.live for run in self._runs)
         if live and not self._timer.isActive():
             self._timer.start()
@@ -233,7 +272,7 @@ class StepAgentRunModule:
 
     def _open_browser(self) -> None:
         assert self._browser is not None
-        self._browser.refresh(self._runs, self._focus_reason, self._resume_of)
+        self._browser.refresh(self._runs, self._focus_reason, self._resume_of, self._usage_of)
         self._browser.show()  # Non-modal: the agents keep working underneath.
         self._browser.raise_()
 
@@ -251,9 +290,31 @@ class StepAgentRunModule:
         return terminal.focus_reason(read_shell(run))
 
     def _resume_of(self, run: AgentRun) -> str:
-        """The command that picks an ended run up where it stopped, as the wrapper
-        recorded it, or "" for a live run or an agent that cannot resume."""
-        return "" if run.live else read_shell(run).get("resume", "")
+        """The command that picks an ended run up where it stopped: as the wrapper
+        recorded it, else composed from the session the harness found afterwards;
+        "" for a live run or an agent that cannot resume."""
+        if run.live:
+            return ""
+        shell = read_shell(run)
+        if shell.get("resume"):
+            return shell["resume"]
+        harness = harness_by_id(self._deps.harnesses, run.harness)
+        if harness is None or not harness.resume or not run.session:
+            return ""
+        command = harness.resume.replace("{session}", run.session)
+        directory = shell.get("dir", "")
+        return f'cd "{directory}" && {command}' if directory else command
+
+    def _usage_of(self, run: AgentRun) -> str:
+        """What the run consumed, as its step's row records it, or ""."""
+        library = self._deps.library
+        if not library.has(run.step_id):
+            return ""
+        step = library.step(run.step_id)
+        for row in rows(step):
+            if run.session and row.get("session") == run.session:
+                return words(Usage(int(row["input"]), int(row["output"])))
+        return ""
 
     # -- the verbs -----------------------------------------------------------------------------
 

@@ -303,7 +303,7 @@ def test_resolving_with_an_agent_hands_over_both_versions_and_yields(
 
     spawned = []
     monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["true"])
-    monkeypatch.setattr(launcher, "spawn", lambda command, _workdir: spawned.append(command))
+    monkeypatch.setattr(launcher, "spawn", lambda command, _workdir, **_kw: spawned.append(command))
     FakeDialog.answer = AGENT
     watch._ask()
 
@@ -343,7 +343,7 @@ def test_a_conflict_is_settled_where_the_plan_lives_not_in_the_code_checkout(
 
     opened = []
     monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["true"])
-    monkeypatch.setattr(launcher, "spawn", lambda _command, workdir: opened.append(workdir))
+    monkeypatch.setattr(launcher, "spawn", lambda _command, workdir, **_kw: opened.append(workdir))
     FakeDialog.answer = AGENT
     watch._ask()
     assert FakeDialog.refusals == [""]

@@ -6,13 +6,24 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QSpinBox
 
+from dplanner.modules import agent_harnesses
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.launcher import (
     LaunchFiles,
-    prepare,
     resolve_command,
 )
+from dplanner.modules.step_agent_instruction.launcher import prepare as _prepare
 from dplanner.modules.step_agent_instruction.prompt import PromptPart, assemble
+
+HARNESSES = agent_harnesses()
+
+
+def prepare(*args, **kwargs):
+    """The launcher's ``prepare`` over this build's harnesses, so a blank command is
+    the default one — what the window passes."""
+    kwargs.setdefault("harnesses", HARNESSES)
+    return _prepare(*args, **kwargs)
+
 
 # -- assembly ----------------------------------------------------------------------------------
 
@@ -388,10 +399,13 @@ def test_the_claude_preset_names_the_session_and_the_script_says_how_to_resume(t
     ) in script
     assert f'To pick it up again: cd "%s" && claude --resume {session}' in script
     assert resume_command(
-        "claude --add-dir {run_dir} --permission-mode plan --session-id {session} {prompt}", "x"
+        "claude --add-dir {run_dir} --permission-mode plan --session-id {session} {prompt}",
+        "x",
+        HARNESSES,
     )
-    assert resume_command("my-agent --session {session} {prompt}", "x") == ""  # Unknown agent.
-    assert resume_command("codex {prompt}", "x") == ""  # Cannot name a session up front.
+    assert resume_command("my-agent --session {session} {prompt}", "x", HARNESSES) == ""
+    # Codex cannot name a session up front: its resume waits for the harness's report.
+    assert resume_command("codex {prompt}", "x", HARNESSES) == ""
     windows = prepare(
         "p", tmp_path, platform="win32", directory=run_dir, session=session
     ).script.read_text()
@@ -491,7 +505,7 @@ def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_pat
         "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000",
         "ANTHROPIC_API_KEY": "k",
     }
-    assert launcher.scrubbed_environment(env) == {
+    assert launcher.scrubbed_environment(env, HARNESSES) == {
         "PATH": "/usr/bin",
         "CLAUDE_CONFIG_DIR": "/home/me/.claude",
         "CLAUDE_CODE_USE_BEDROCK": "1",
@@ -501,23 +515,28 @@ def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_pat
     calls = []
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: calls.append((a, kw)))
     monkeypatch.setenv("CLAUDECODE", "1")
-    launcher.spawn(["term", "-e", "run.sh"], tmp_path)
+    assert launcher.spawn(["term", "-e", "run.sh"], tmp_path, HARNESSES) == ""
     ((command,), options) = calls[0]
     assert command == ["term", "-e", "run.sh"]
     assert options["start_new_session"] is True and options["cwd"] == tmp_path
     assert "CLAUDECODE" not in options["env"] and "PATH" in options["env"]
 
 
-def test_the_presets_cover_the_known_agents():
-    from dplanner.modules.step_agent_instruction.launcher import PRESETS
-
-    assert [preset.id for preset in PRESETS] == ["claude", "codex", "opencode"]
-    assert all("{prompt}" in preset.command for preset in PRESETS)
-    for preset in PRESETS:
-        tokens = preset.command.split()
+def test_the_harnesses_cover_the_known_agents():
+    """One provider module per agent CLI, and the capabilities are read off each record:
+    Claude names its session up front, Codex and OpenCode are found afterwards, all
+    three resume and count tokens."""
+    assert [h.id for h in HARNESSES] == ["claude", "codex", "opencode"]
+    assert all("{prompt}" in h.command for h in HARNESSES)
+    for harness in HARNESSES:
+        tokens = harness.command.split()
         if "{run_dir}" in tokens:
             # `--add-dir` takes a list: what follows the directory is an option, not the prompt.
             assert tokens[tokens.index("{run_dir}") + 1].startswith("--")
+    assert HARNESSES[0].capabilities() == ("names its session", "resumes", "counts tokens")
+    assert HARNESSES[1].capabilities() == ("resumes", "counts tokens")
+    assert HARNESSES[2].capabilities() == ("resumes", "counts tokens")
+    assert all(h.shell_markers for h in HARNESSES)
 
 
 def test_picking_a_terminal_prefills_its_command(app):
@@ -545,18 +564,18 @@ def test_picking_a_terminal_prefills_its_command(app):
 def test_picking_a_preset_prefills_the_command(app):
     from PySide6.QtWidgets import QComboBox, QLineEdit
 
-    from dplanner.modules.step_agent_instruction.launcher import PRESETS
     from dplanner.modules.step_agent_instruction.settings_page import agent_command, build_page
 
-    page = build_page(None)
+    page = build_page(None, harnesses=HARNESSES)
     combo = page.findChild(QComboBox, "AgentPresetCombo")
     edit = page.findChild(QLineEdit, "AgentCommandEdit")
     assert combo is not None and edit is not None
-    codex = next(i for i in range(combo.count()) if combo.itemText(i) == "Codex")
+    codex = next(i for i in range(combo.count()) if combo.itemText(i).startswith("Codex"))
+    assert combo.itemText(codex) == "Codex — resumes, counts tokens"
     combo.setCurrentIndex(codex)
     combo.activated.emit(codex)
-    assert edit.text() == PRESETS[1].command
-    assert agent_command() == PRESETS[1].command
+    assert edit.text() == HARNESSES[1].command
+    assert agent_command(HARNESSES) == HARNESSES[1].command
 
 
 def test_a_preset_text_an_earlier_version_shipped_is_still_that_preset(app, tmp_path):
@@ -567,32 +586,26 @@ def test_a_preset_text_an_earlier_version_shipped_is_still_that_preset(app, tmp_
 
     from dplanner.framework.user_config import set_global
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
-    from dplanner.modules.step_agent_instruction.launcher import (
-        PRESETS,
-        current_command,
-        resume_command,
-    )
-    from dplanner.modules.step_agent_instruction.settings_page import (
-        AGENT_COMMAND_KEY,
-        agent_command,
-        build_page,
-    )
+    from dplanner.modules.step_agent_instruction.launcher import current_command, resume_command
+    from dplanner.modules.step_agent_instruction.profiles import AGENT_COMMAND_KEY
+    from dplanner.modules.step_agent_instruction.settings_page import agent_command, build_page
 
-    claude = PRESETS[0]
+    claude = HARNESSES[0]
     assert claude.superseded
     for old in claude.superseded:
-        assert current_command(old) == claude.command
-        assert resume_command(old, "x") == "claude --resume x"
-    assert current_command("my-agent {prompt}") == "my-agent {prompt}"
-    assert current_command("  ") == claude.command
+        assert current_command(old, HARNESSES) == claude.command
+        assert resume_command(old, "x", HARNESSES) == "claude --resume x"
+    assert current_command("my-agent {prompt}", HARNESSES) == "my-agent {prompt}"
+    assert current_command("  ", HARNESSES) == claude.command
     old = "claude --permission-mode plan {prompt}"
     script = prepare("p", tmp_path, agent_command=old, platform="linux").script.read_text()
     assert "--add-dir" in script and "--session-id" in script
+    # The single setting profiles replaced is read as the default profile.
     set_global(MODULE_ID, AGENT_COMMAND_KEY, old)
-    assert agent_command() == claude.command
-    page = build_page(None)
+    assert agent_command(HARNESSES) == claude.command
+    page = build_page(None, harnesses=HARNESSES)
     combo = page.findChild(QComboBox, "AgentPresetCombo")
-    assert combo is not None and combo.currentText() == "Claude Code"
+    assert combo is not None and combo.currentText().startswith("Claude Code")
 
 
 # -- resolution --------------------------------------------------------------------------------
@@ -681,10 +694,17 @@ def test_the_terminal_table_is_one_per_platform_and_probes_installs():
         "Terminal",
         "iTerm",
         "Ghostty",
+        "WezTerm",
+        "herdr",
+        "zellij (new pane)",
         "tmux (new window)",
     ]
-    assert [p.id for p in terminals_for("win32")] == ["wt", "cmd", "ghostty-win"]
+    assert [p.id for p in terminals_for("win32")] == ["wt", "cmd", "ghostty-win", "herdr-win"]
     assert terminals_for("linux")[0].id == "ghostty" and terminals_for("linux")[-1].id == "tmux"
+    # Windows are first and multiplexers last on every platform: Automatic opens a window.
+    for platform in ("linux", "darwin", "win32"):
+        kinds = [p.multiplexer for p in terminals_for(platform)]
+        assert kinds == sorted(kinds)
     ghostty_mac = next(p for p in terminals_for("darwin") if p.id == "ghostty-mac")
     none = lambda _n: None  # noqa: E731 - a stand-in for shutil.which
     assert is_installed(ghostty_mac, which=none, env={}, app_exists=lambda n: n == "Ghostty")
@@ -831,7 +851,7 @@ def test_each_projects_own_repository_root_is_the_workdir(
     select(services, other)
 
     calls: list[tuple[list[str], Path]] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append((cmd, cwd)))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     ((_command, cwd),) = calls
@@ -852,7 +872,7 @@ def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_p
     select(services, step)
 
     calls: list[tuple[list[str], Path]] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append((cmd, cwd)))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     ((_command, cwd),) = calls
@@ -930,7 +950,7 @@ def test_the_order_view_selection_reaches_run_agent(services, step, monkeypatch)
     assert state.enabled
 
     calls: list[list[str]] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append(cmd))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append(cmd))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     assert calls == [["fake-term"]]
@@ -940,7 +960,7 @@ def test_the_button_runs_the_same_action(services, step, monkeypatch):
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
     calls: list[list[str]] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append(cmd))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append(cmd))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     section = _agent_section(services)
     section.show_target(step.id)
@@ -965,7 +985,7 @@ def prerequisite(services, step):
 
 def _fake_terminal(monkeypatch):
     calls: list[list[str]] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append(cmd))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append(cmd))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     return calls
 
@@ -1039,7 +1059,7 @@ def test_running_spawns_a_terminal_in_the_projects_repo_root(
     select(services, step)
 
     calls: list[tuple[list[str], Path]] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append((cmd, cwd)))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term", "-e", "run.sh"])
     services.actions.run("agent.run", services.context.current())
     ((command, cwd),) = calls
@@ -1053,7 +1073,7 @@ def test_a_successful_launch_stamps_the_run_state(services, step, monkeypatch):
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: None)
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     assert read(step) == "launched"
@@ -1093,7 +1113,7 @@ def test_a_run_stages_attached_images_beside_the_prompt(services, step, monkeypa
     attach(services.repo.files(project.id, "step_agent_instruction"), b"proj-bytes", "logo.png")
     select(services, step)
 
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: None)
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     captured = {}
     real_prepare = launcher.prepare
@@ -1165,7 +1185,7 @@ def test_running_over_a_selection_launches_one_agent_for_each_step(services, ste
         prepared.append(files)
         return ["fake-term"]
 
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: None)
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
     monkeypatch.setattr(launcher, "resolve_command", record)
     services.actions.run("agent.run", services.context.current())
 
@@ -1264,7 +1284,7 @@ def test_a_selection_spanning_two_projects_opens_each_shell_in_its_own_repositor
     assert services.actions.spec("agent.run").state(services.context.current()).enabled
 
     calls: list[Path] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append(cwd))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append(cwd))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     assert calls == [library_repo, second_repo]
@@ -1339,7 +1359,7 @@ def test_the_run_uses_a_worktree_only_when_the_step_says_so(services, step, monk
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     services.undo.push(SetModuleDataCommand(step.id, TICKET_ID, ticket_write(Ticket(key="PROJ-9"))))
     select(services, step)
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: None)
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     seen: list[str] = []
     real_prepare = launcher.prepare

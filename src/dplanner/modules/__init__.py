@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from dplanner.cli import CliCommand
     from dplanner.cli.gate import TopologyGate
     from dplanner.cli.report.parts import ReportSource
+    from dplanner.domain.agents import AgentHarness
     from dplanner.domain.aspects import AspectSpec
     from dplanner.domain.assets import AssetSource
     from dplanner.domain.model import Library, Project, Step
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
     from dplanner.modules.sync.service import Publication
 
 __all__ = [
+    "agent_harnesses",
     "aspect_specs",
     "default_cli_commands",
     "default_module_formats",
@@ -145,6 +147,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
+    from dplanner.modules.step_agent_run.usage import summary as usage_words
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
     from dplanner.modules.step_description.aspect import read as description_read
@@ -927,6 +930,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # narrowed store the library watcher reads.
             repo=store,
             reveal=reveal_step,
+            # Which CLI ran a step, and how to read its record back when the shell ends.
+            harnesses=agent_harnesses(),
         )
     )
 
@@ -956,9 +961,18 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # The spawned shell goes to the run tracker: it stamps the launch — directly,
             # off the undo stack, since Ctrl+Z cannot un-launch a shell — and watches
             # the run's files for the shell's end.
-            record_launch=lambda step_id, files: agent_runs.track(
-                step_id, str(files.shell_file), str(files.exit_file)
+            record_launch=lambda step_id, files, harness: agent_runs.track(
+                step_id,
+                str(files.shell_file),
+                str(files.exit_file),
+                harness,
+                # The session the command named, for a harness that names one; a harness
+                # that mints its own is found by its record once the run ends.
+                files.session if _names_session(harness) else "",
             ),
+            harnesses=agent_harnesses(),
+            # The Agent tab's "tokens so far" line: the run tracker's ledger, worded.
+            usage_words=lambda step_id: usage_words(library.step(step_id)),
             pick_assets=pick_assets,
             # Run Agent asks before launching on a step whose prerequisites are not
             # done — the same status reader the progression board's frontier uses.
@@ -2090,15 +2104,17 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
 
     Assembled here because each policy lives in its owner's Qt-free half and no module may
     import another's; both the window's Paste/Duplicate and ``step duplicate`` read this
-    tuple. Three entries, on purpose: an id minted per project (a test's), the state of a
-    shell somebody is running, and a feature's marker — a record has one instance, and
-    the original keeps it. Everything else a step carries copies as it is.
+    tuple. Four entries, on purpose: an id minted per project (a test's), the state of a
+    shell somebody is running and what its runs consumed — both facts about the
+    original — and a feature's marker — a record has one instance, and the original
+    keeps it. Everything else a step carries copies as it is.
     """
     from dplanner.modules.feature.catalogue import drop_marker_for_paste
     from dplanner.modules.step_agent_run.aspect import forget_for_paste
+    from dplanner.modules.step_agent_run.usage import forget_for_paste as forget_usage
     from dplanner.modules.testing.aspect import remint_for_paste
 
-    return (remint_for_paste, forget_for_paste, drop_marker_for_paste)
+    return (remint_for_paste, forget_for_paste, forget_usage, drop_marker_for_paste)
 
 
 def _asset_sources() -> tuple["AssetSource", ...]:
@@ -2219,7 +2235,9 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         *description_cli.commands(),
         *docs_cli.commands(kinds=scopes),
         *agent_cli.commands(briefing=_default_briefing()),
-        *agent_state_cli.commands(),
+        # What a run consumed is read through the harness that ran it, so the verbs are
+        # handed the same tuple the window's tracker reads.
+        *agent_state_cli.commands(harnesses=agent_harnesses()),
         *status_cli.commands(),
         *milestone_cli.commands(),
         # A feature's passages are anchored in the spec documents by the spec module's
@@ -2314,6 +2332,29 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     return [*commands, *skill]
 
 
+def _names_session(harness_id: str) -> bool:
+    from dplanner.domain.agents import harness_by_id
+
+    harness = harness_by_id(agent_harnesses(), harness_id)
+    return harness is not None and harness.names_session
+
+
+def agent_harnesses() -> tuple["AgentHarness", ...]:
+    """Every agent CLI this build can launch, first is the default.
+
+    One provider module per CLI, each exporting a Qt-free ``HARNESS`` — the command, how
+    it resumes, the marks it leaves in its shells, and a reader of its own records. Read
+    by Run Agent's launcher and settings page, by the run tracker's bookkeeping, by the
+    CLI's ``usage`` verbs and by the entry point's shell guard: a fourth agent is a fourth
+    module listed here and nothing else.
+    """
+    from dplanner.modules.agent_claude import harness as claude
+    from dplanner.modules.agent_codex import harness as codex
+    from dplanner.modules.agent_opencode import harness as opencode
+
+    return (claude.HARNESS, codex.HARNESS, opencode.HARNESS)
+
+
 def aspect_specs() -> list["AspectSpec"]:
     """Every step aspect this build knows about.
 
@@ -2328,6 +2369,7 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_agent_run import aspect as agent_run
+    from dplanner.modules.step_agent_run import usage as agent_usage
     from dplanner.modules.step_check import aspect as check
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_milestone import aspect as milestone
@@ -2338,6 +2380,7 @@ def aspect_specs() -> list["AspectSpec"]:
     return [
         agent.SPEC,
         agent_run.SPEC,
+        agent_usage.SPEC,
         check.SPEC,
         description.SPEC,
         docs.SPEC,
