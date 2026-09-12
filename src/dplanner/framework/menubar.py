@@ -22,6 +22,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMainWindow, QMenu
 
 from dplanner.framework.action_registry import (
+    PATH_SEPARATOR,
     ActionRegistry,
     ActionSpec,
     DataMenuSpec,
@@ -44,8 +45,10 @@ class DynamicMenuBar:
         self._context = context
         self._actions: dict[str, QAction] = {}  # spec id → QAction
         self._menus: dict[str, QMenu] = {}
-        # (menu, submenu title) → child QMenu, created on first matching spec. Keyed by
-        # title rather than by group: a submenu is one child menu whatever feeds it.
+        # (menu, submenu path) → child QMenu, created on first matching spec; a nested
+        # child's path is its titles joined by PATH_SEPARATOR, and a parent is always
+        # created before its child. Keyed by path rather than by group: a submenu is one
+        # child menu whatever feeds it.
         self._submenus: dict[tuple[str, str], QMenu] = {}
         self._data_menus: dict[str, tuple[DataMenuSpec, QMenu]] = {}  # spec id → its menu.
         self._keys: dict[QAction, SortKey] = {}  # Every action, separators included.
@@ -110,23 +113,30 @@ class DynamicMenuBar:
 
         Its position is that first spec's, and a later group feeding the same title lands
         inside it rather than beside it — which is what the parent's group bookkeeping
-        reads, since only the menuAction it holds carries a group.
+        reads, since only the menuAction it holds carries a group. A path nests: each
+        level is created inside the one before it by the same rule, so ``"Theme ▸
+        Omarchy"`` is a child menu inside the Theme child menu, at this spec's position
+        among Theme's entries.
         """
         assert spec.submenu is not None
-        lookup = (spec.menu, spec.submenu)
-        child = self._submenus.get(lookup)
-        if child is None:
-            parent = self._menus[spec.menu]
-            child = QMenu(spec.submenu, parent)
-            self._keys[child.menuAction()] = key
-            before = next((a for a in parent.actions() if self._keys[a] > key), None)
-            if before is None:
-                parent.addMenu(child)
-            else:
-                parent.insertMenu(before, child)
-            self._submenus[lookup] = child
-            self._add_separators(lookup, child)
-        return child
+        parent = self._menus[spec.menu]
+        path = ""
+        for title in spec.submenu.split(PATH_SEPARATOR):
+            path = title if not path else path + PATH_SEPARATOR + title
+            lookup = (spec.menu, path)
+            child = self._submenus.get(lookup)
+            if child is None:
+                child = QMenu(title, parent)
+                self._keys[child.menuAction()] = key
+                before = next((a for a in parent.actions() if self._keys[a] > key), None)
+                if before is None:
+                    parent.addMenu(child)
+                else:
+                    parent.insertMenu(before, child)
+                self._submenus[lookup] = child
+                self._add_separators(lookup, child)
+            parent = child
+        return parent
 
     def _add_data_menu(self, spec: DataMenuSpec) -> None:
         """A data child menu: inserted at its sort position, filled fresh on every open.
@@ -202,7 +212,9 @@ class DynamicMenuBar:
     def _refresh_decorations(self) -> None:
         """Separator and menu visibility, derived from the actions' visibility."""
         # Child menus first: their menuAction's visibility feeds the group bookkeeping.
-        for child in self._submenus.values():
+        # Deepest first — a child is always created after its parent, so reversed creation
+        # order computes a nested child before the parent that reads it.
+        for child in reversed(self._submenus.values()):
             child.menuAction().setVisible(
                 any(a.isVisible() and not a.isSeparator() for a in child.actions())
             )

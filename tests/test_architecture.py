@@ -28,6 +28,9 @@ The rules, in prose (see also CLAUDE.md):
 8. Only ``core/storage/`` and the composition root may import a *concrete* storage provider.
    Everything else depends on the protocols — which is what makes "swap the storage system"
    true rather than aspirational.
+9. ``theme/`` is a leaf: it imports ``core`` at most, and importing the package loads no Qt —
+   a theme provider module reads the themes, the providers and the Omarchy mapping without
+   a graphics stack, and the Qt half is imported inside ``apply_theme``.
 
 **When one of these fails, fix the dependency direction, not the test.** Every rule has a
 supported way to get what the shortcut wanted: a capability protocol, a typed callback on
@@ -44,7 +47,8 @@ PACKAGE = SRC.name
 
 QT_PACKAGES = ("PySide6", "shiboken6")
 
-# Files inside a module package that the CLI reaches, and which must therefore load no Qt.
+# Files inside a module package that the CLI reaches, and which must therefore load no Qt —
+# plus the one a contract keeps Qt-free without the CLI (a theme provider's ``themes.py``).
 # Checked by name because that is what makes the rule visible from the filename: if the
 # composition root imports a file at CLI time, it belongs in this tuple.
 HEADLESS_FILES = (
@@ -81,6 +85,7 @@ HEADLESS_FILES = (
     "gh.py",
     "pdf.py",
     "report.py",
+    "themes.py",
 )
 CONCRETE_STORAGE = (
     f"{PACKAGE}.core.storage.local",
@@ -191,6 +196,19 @@ def collect_violations(root: Path = SRC) -> list[str]:
             elif top == "framework":
                 if name.startswith(f"{PACKAGE}.modules") or name == f"{PACKAGE}.app":
                     forbid(path, line, name, "framework/ never imports modules or the app")
+            elif top == "theme":
+                if name.startswith(
+                    (
+                        f"{PACKAGE}.domain",
+                        f"{PACKAGE}.cli",
+                        f"{PACKAGE}.framework",
+                        f"{PACKAGE}.modules",
+                        f"{PACKAGE}.app",
+                        f"{PACKAGE}.entry",
+                        f"{PACKAGE}.menus",
+                    )
+                ):
+                    forbid(path, line, name, "theme/ is a leaf; it imports core at most")
             elif top == "modules":
                 if is_composition_root:
                     continue  # The one place allowed to import everything.
@@ -288,6 +306,27 @@ def test_the_cli_never_loads_qt() -> None:
         # it and the skill); without them here, a Qt import reached only through those
         # paths would go unnoticed — the composition root is exempt from the static rules.
         "default_module_formats(); aspect_specs();"
+        "assert 'PySide6' not in sys.modules, sorted(m for m in sys.modules if 'Side' in m)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_theme_package_imports_without_qt() -> None:
+    """A theme provider is Qt-free by contract, and what it reads is the theme package.
+
+    The themes, the providers and the Omarchy mapping — and the two provider modules over
+    them — must therefore import without PySide6: the Qt half of the package is imported
+    inside ``apply_theme``, the one function that needs it, and this asserts that it stayed
+    there rather than trusting the layout.
+    """
+    probe = (
+        "import sys;"
+        "import dplanner.theme, dplanner.theme.providers, dplanner.theme.omarchy;"
+        "from dplanner.modules.theme_omarchy import themes;"
+        "from dplanner.modules.theme_system import themes;"
         "assert 'PySide6' not in sys.modules, sorted(m for m in sys.modules if 'Side' in m)"
     )
     result = subprocess.run(

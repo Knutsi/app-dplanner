@@ -2394,3 +2394,74 @@ of a tall empty page — and read as a stray footer. One widget, one look, and D
 
 **Upstream?** Yes: every application has empty pages, and the trap (a label after a
 stretched widget) is generic.
+
+## 27. From the theme-providers pass
+
+### `framework/theme_service.py` — a choice over providers, followed by a poll
+
+**What.** `ThemeService(app, providers, parent=…)` resolves a persisted choice (`"system"`,
+`"<provider>/<name>"`, or a legacy bare name) over a tuple of `theme/providers.py`
+records; `set_theme(choice)`, `set_enabled(id, on)` (a per-user switch through
+`user_config`), `check()` (the poll body, on a `QTimer` at `window_watch.POLL_MS` while a
+following provider serves the choice), `effective_choice` (a field), cached `refusal()`s,
+and `apply_saved_theme(app, providers)` for the startup apply. `apply_theme` grew
+`follow_system`, which clears the colour-scheme override instead of setting one.
+
+**Why.** Themes were a table; a desktop that changes underneath the window needs a
+reader, and Qt's own reading echoes the application's override once one is set, so the
+service owns both the poll and the override. The reasoning is in `ARCHITECTURE.md`'s *A
+theme is provided, never listed*.
+
+**Upstream?** Yes, with the contract: a template that ships twenty-two themes in a menu
+wants a provider seam more than it wants the twenty-two.
+
+### `framework/builder.py`, `framework/session.py` — `with_theme_providers`
+
+**What.** The builder carries `_theme_providers` (default `(BUILTIN,)`, not in
+`_require()`), the session takes `theme_providers=` and hands it through, and the
+service is built with `parent=window` so a discarded build takes its timer.
+
+**Why.** Modules must not build a second tuple, and a test build must never read the
+desktop: the machine's tuple is named once, in `app.main`.
+
+**Upstream?** With the service.
+
+### `framework/action_registry.py`, `menubar.py`, `action_menu.py` — a child menu may nest
+
+**What.** `PATH_SEPARATOR` moved from the palette to the registry, beside
+`ActionSpec.submenu`, and a submenu title holding it (`"Theme ▸ Omarchy"`) nests: the bar
+walks the path creating each level at the first spec's key (keyed by path in
+`_submenus`/`_separators`) and computes child-menu visibility deepest first (`reversed`
+creation order); the popup walks the same path with the group bookkeeping per container.
+The `submenu=` filter still names one level.
+
+**Why.** Twenty-five themes in one child menu, and the palette keeps every entry only if
+they stay specs — a `DataMenuSpec` would have nested for free and lost the palette.
+
+**Upstream?** Yes: nesting is a general want, and the visibility-order bug is a trap.
+
+### `framework/debounce.py` — a settle is deterministic
+
+**What.** `DebounceService` keeps its `Debounced`s in a `WeakValueDictionary` keyed by
+registration count, and `flush_all` re-runs what a flush made pending, up to
+`SETTLE_ROUNDS`.
+
+**Why.** A `WeakSet` iterates in hash order, which moves with every allocation in the
+process: a Time-tab test that asserts "Recalculating…" is hidden after `flush_all` passed
+on one commit and failed on the next, because the progress recorder (which writes after a
+change the tab then hears) flushed after the tab instead of before. A settle that runs in
+build order and to completion cannot do that.
+
+**Upstream?** Yes — this is a flake generator in any application with two views that
+wake each other.
+
+### `theme/__init__.py` — the package imports without Qt
+
+**What.** The Qt-bearing imports (`Qt`, `ui_font`, `build_palette`, `build_style`) moved
+inside `apply_theme`; `QApplication` is a `TYPE_CHECKING` import.
+
+**Why.** A theme provider is Qt-free by contract and reads `theme.themes`,
+`theme.providers` and `theme.omarchy`; `tests/test_architecture.py` now probes it.
+
+**Upstream?** Yes, trivially.
+
