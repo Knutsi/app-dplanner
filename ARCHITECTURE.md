@@ -2414,6 +2414,135 @@ never does that: its `-e` forces a fresh process (`gtk-single-instance=false`) w
 window of its own. So tmux is the last resort — what Automatic reaches for over ssh with
 no terminal installed — and a desktop application's agent gets a desktop window.
 
+### An agent CLI is a harness, and a harness is a module
+
+The launcher used to carry a `PRESETS` table of three agent commands and a list of the
+environment variables Claude Code sets in its shells, and every other fact about an agent
+CLI — whether it can be resumed, where it keeps its transcripts — had nowhere to go. Codex
+support was the second CLI to need such facts, and a second block of `if preset.id ==
+"codex"` in the launcher was the shape to refuse.
+
+So an agent CLI is a **harness** now (`domain/agents.py`), and each one is a module:
+`modules/agent_claude/`, `agent_codex/`, `agent_opencode/`, each a Qt-free `harness.py`
+exporting one `AgentHarness` — the command with its placeholders, the resume template,
+the texts the command shipped earlier, the shell markers, and a `report` reader — and the
+composition root's `agent_harnesses()` is the tuple every reader takes as an argument:
+the launcher, the settings page, the run tracker, the `usage` verbs and the entry point's
+shell guard. The contract lives in `domain/` beside `assets.py` and `aspects.py` for the
+same reason those do: it must be importable without Qt, and it is what modules agree
+on rather than what any one of them owns. Three consequences were decided deliberately.
+
+**Capabilities are derived from the record, never declared beside it.** A settings page
+wants to say *Codex — resumes, counts tokens*, and the temptation is a `capabilities`
+tuple on the record. But a tuple beside the fields it describes is a second statement
+that can disagree with the first — a harness whose `resume` template was removed and
+whose tuple still said *resumes*. So `names_session` is *is `{session}` in the command*,
+`counts_tokens` is *is there a reader*, `resumes` is *a resume template, and a way to the
+id* — and `capabilities()` words them. Nothing to keep in step.
+
+**A harness that mints its own id is found afterwards, by where and when.** Claude names
+its session up front (`--session-id`, minted per launch), and that is the best case: the
+id is known before the shell opens, the wrapper writes it into the facts, and the resume
+command is printed on exit. Codex and OpenCode do not take an id; they mint one. Both,
+though, record where a session started and when — Codex in a rollout file whose first
+line carries the `cwd`, OpenCode in a database row with a `directory` — and the launcher
+knows both facts about every run it started. So a harness's `report(RunFacts)` finds the
+run by directory and launch time (the earliest record started there at or after the
+launch, with two minutes' slack for a stamp taken after the shell) and answers the id
+with the usage. A step's worktree is one directory per run, which makes the match exact;
+a step that works in the checkout itself shares it with other runs, and the start time
+tells them apart. The found id is written back onto the run, and *that* is what makes a
+Codex run resumable in the Agents browser — parity with Claude by a different route,
+without a flag Codex does not have.
+
+**The reader is tolerant by construction.** Every one of these formats is the vendor's
+own, undocumented (Claude Code says so in as many words) and free to change between
+releases. A reader that raised on a changed field would take the whole run tracker down
+on the day a vendor shipped; one that answers `None` leaves the run ended as before with
+no tokens beside it, which is the honest report. The OpenTelemetry metrics Claude Code
+exports are the supported channel — `claude_code.token.usage` with a `session.id` on
+every point — and they need an OTLP collector listening on this machine, which is a
+feature to build when a transcript reader has failed, not before. Its console exporter
+writes to the agent's own stdout, so it cannot serve an interactive session.
+
+### A launch profile is a name over the two choices
+
+Run Agent has always asked two questions — which agent, which terminal — and the settings
+page answered each once, for the whole machine. Two terminals of agents at once broke
+that: a Claude run in a Ghostty window for the step under the cursor, and four Codex runs
+side by side in a multiplexer for the four the lasso caught, are not one setting with a
+different value; they are two ways of working a person switches between all day.
+
+A **profile** (`step_agent_instruction/profiles.py`) is the two answers under a name,
+and the list of them is the setting. The first is the default — what *Run Agent…* itself
+runs, so the verb, the Agent tab's button and the palette need no picker — and the rest
+are the entries of *Step ▸ Run Agent With*, a data child menu rebuilt on open so a profile
+added in Settings is offered at once. Each entry is greyed with its own reason: the
+profile's terminal is one probe (`launcher.template_refusal` — *herdr is not installed*,
+*not inside a tmux session*), asked before any step is, because it is the profile's
+refusal and not the selection's. Over a multi-selection every chosen step goes through
+the one picked profile, one pane per step in a multiplexer — which is the gesture the
+whole thing exists for: see four ready steps on the board, select them, pick *Codex in
+herdr*, and they are running side by side.
+
+The two single settings the profiles replaced are read as the default profile when no
+list has been stored, so a machine configured before profiles existed keeps its choices
+without anybody retyping them — the same idea as a harness carrying the command texts it
+shipped earlier. Profiles are per user, per machine (`user_config`), never the plan.
+
+### A multiplexer is a row, and a two-call one is one template
+
+herdr — the multiplexer built for exactly this, a headless server the person's terminal
+attaches to, with a workspace per repository and an agent-state sidebar — adds a shell in
+two calls: `herdr workspace create` prints, as JSON, the pane it made, and `herdr pane run
+<pane> --command …` types a command into it. The terminal table's one template per row
+cannot say that, and the honest alternatives were a Python opener per multiplexer (a
+second table of callables beside the first) or a `sh -c` one-liner nobody could read in
+a settings field.
+
+The row is `herdr workspace create … && herdr pane run {pane} --command {script}`
+instead: `launcher.spawn` splits a command at its `&&` tokens, runs the stages in turn to
+completion, and fills `{pane}` in a later stage with what the earlier one printed (a
+`pane_id` in its JSON, else its last line). It is what a person would type, it stays a
+row a person can edit, and tmux's `new-window -P -F '#{pane_id}'` or `wezterm cli spawn`
+would feed the same `{pane}` if a second call ever needed it. A stage that fails is a
+reason string and no run: the fallback dialog hands the prompt over, exactly as when no
+terminal exists, because a workspace that could not be created is not a shell somebody
+is in. The wrapper script records each multiplexer's own name for the pane from the
+variables it sets (`HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, `WEZTERM_PANE`, beside tmux's
+`TMUX_PANE`), so *Show Agent Terminal* selects the pane through the multiplexer before
+it asks the desktop for a window — `terminal.focus_reason`'s per-run rule, extended.
+
+herdr, zellij and tmux sit last in every platform's list, marked `multiplexer`: Automatic
+still opens a window, and a multiplexer is what a profile picks on purpose.
+
+### What a run consumed is a ledger on the step
+
+Which step cost how many tokens is the question a project's owner asks at the end of a
+week, and nothing recorded it. The run tracker already knows the moment a shell ends and
+which agent ran in it, so it asks the harness's `report` there and writes a row to the
+step's `agent_usage` aspect — the second aspect id in `step_agent_run/`, beside the run
+*state* that is cleared at exit: two different claims, and only this one outlives the
+shell. The write goes directly, off the undo stack, with an origin of its own — the exit's
+rule, for the exit's reason: the tokens were spent whether or not anybody presses Ctrl+Z.
+
+**Rows, never a total.** A step is run more than once — a retry, a second agent picking
+up after the first — and a stored total would hide which run cost what and disagree with
+its rows the first time one was corrected. So the aspect holds one row per run (harness,
+session, input, output, the vendor's own finer split under `details`, when), a row is
+keyed by session so a record read twice is one row, and `usage.totals` sums on read.
+`dplanner usage show` prints the rows, `usage list` a project's steps by cost, and
+`usage record` writes a row for a run the window never saw — through the same harness
+readers, or by hand with `--input`/`--output` for a CLI nothing here can read.
+
+**One meaning of input and output.** Anthropic bills cache reads, cache writes and
+uncached input at three prices and reports all three; OpenAI counts cached tokens as a
+subset of input; OpenCode keeps reasoning apart from output. A ledger that copied each
+vendor's shape could not be added across a step that ran under two of them. So `input`
+is everything sent to the model and `output` everything it generated, whatever the CLI,
+and the vendor's split rides along under `details` in the vendor's words — the sum is
+honest and the breakdown is still there for whoever wants the price.
+
 ## Two repositories, two questions
 
 A project answers two questions about repositories, and for a year the code let one

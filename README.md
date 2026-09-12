@@ -117,13 +117,20 @@ dplanner project export search > plan.json   # and `import` reads the same shape
 ```
 
 **Run Agent is the window's way in.** *Step ▸ Run Agent…* opens a terminal at the
-repository root with the step's briefing — the agent and the terminal are both a dropdown
-of known choices in *Settings ▸ Agent* (Claude Code, Codex, OpenCode; Ghostty, iTerm,
-Terminal, Windows Terminal, kitty and the rest, marked when not installed). The step wears
-a chip and a marching ring while the shell runs, the chip follows what the agent reports
-(`dplanner agent-state set … needs-input` when it has a question), and the ring goes when
-the shell ends — finished, failed or closed, which the status bar says. *View ▸ Agents…*
-lists every run this window launched; *Step ▸ Show Agent Terminal* brings its window back.
+repository root with the step's briefing — through a **launch profile** from *Settings ▸
+Agent*: a name over an agent (Claude Code, Codex, OpenCode — each a module that says
+what its CLI can do) and a terminal or multiplexer (Ghostty, iTerm, Terminal, Windows
+Terminal, kitty, WezTerm and the rest; herdr, zellij and tmux to land several agents
+side by side — marked when not installed). The first profile is what *Run Agent…* runs;
+*Step ▸ Run Agent With* offers the others. Select several ready steps — on the canvas,
+in the progression board — and one gesture launches one agent per step, all through the
+profile you pick. The step wears a chip and a marching ring while the shell runs, the
+chip follows what the agent reports (`dplanner agent-state set … needs-input` when it has
+a question), and the ring goes when the shell ends — finished, failed or closed, which
+the status bar says, with the tokens the run consumed once its CLI's record has been read
+(`dplanner usage show|list` prints the ledger per step and per project). *View ▸
+Agents…* lists every run this window launched, with the command that picks an ended one
+up again; *Step ▸ Show Agent Terminal* brings its window or pane back.
 
 **Both writers may be live.** An agent can work while a window is open on the same folder:
 the window reloads when it owes nothing, and neither side ever overwrites a file it has not
@@ -301,13 +308,19 @@ src/dplanner/
 │   ├── step_description/
 │   ├── step_agent_instruction/   … this one also holds the project's standing instruction,
 │   │                             the step's worktree choice, and assembles and launches Run
-│   │                             Agent (`launcher.py`: the agent and terminal preset tables,
+│   │                             Agent (`launcher.py`: the terminal and multiplexer table,
 │   │                             the run name a worktree and branch carry, the wrapper script
-│   │                             that prepares the worktree and reports back)
+│   │                             that prepares the worktree and reports back; `profiles.py`:
+│   │                             the named agent-and-terminal pairs Run Agent With offers)
+│   ├── agent_claude/        ── one module per agent CLI, each a Qt-free `harness.py`: the
+│   ├── agent_codex/            command, how it resumes, the marks it leaves in its shells, and
+│   ├── agent_opencode/         a reader of its own records (`domain/agents.py` is the contract)
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
-│   │                        reads the wrapper's report; `terminal.py` finds the window again;
-│   │                        the status-bar button and the Agents browser are `view.py`)
+│   │                        reads the wrapper's report; `terminal.py` finds the window or
+│   │                        pane again; the status-bar button and the Agents browser are
+│   │                        `view.py`) — and what its runs consumed (`usage.py`, the
+│   │                        `agent_usage` aspect; `dplanner usage show|list|record`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
 │   ├── feature/             the project's feature catalogue (catalogue.py: records and the

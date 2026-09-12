@@ -1,10 +1,11 @@
 """Bringing a launched shell's terminal window back to the front, per platform.
 
 There is no portable "raise the window running this shell", so this is a provider per
-platform over the facts the wrapper script recorded (``runs.read_shell``): a tmux pane is
-selected wherever it is; macOS asks Terminal or iTerm for the tab on the shell's tty
-through AppleScript and activates any other terminal by its program name; Linux looks the
-window up by the shell's ancestor pids and then by title with xdotool or wmctrl — whichever
+platform over the facts the wrapper script recorded (``runs.read_shell``): a pane inside a
+multiplexer — tmux, herdr, WezTerm — is selected wherever it is; macOS asks Terminal or
+iTerm for the tab on the shell's tty through AppleScript and activates any other terminal
+by its program name; Linux looks the window up by the shell's ancestor pids and then by
+title with xdotool or wmctrl — whichever
 the desktop has, and a Wayland session without either is honestly unsupported; Windows
 activates by the PowerShell pid and then by title.
 
@@ -55,14 +56,33 @@ def focus_reason(
 ) -> str:
     """Why this shell's terminal cannot be raised, or "" when :func:`focus` can try.
 
-    Per run, not per desktop: :func:`focus` selects a tmux pane before it asks the desktop
-    for a window, so a run with a pane is reachable wherever tmux is installed — a Wayland
-    session with no window tool included — and only a run without one needs
-    :func:`support_reason`'s answer.
+    Per run, not per desktop: :func:`focus` selects a multiplexer's pane before it asks
+    the desktop for a window, so a run with a pane is reachable wherever its multiplexer
+    is installed — a Wayland session with no window tool included — and only a run
+    without one needs :func:`support_reason`'s answer.
     """
-    if facts.get("pane", "") and which("tmux"):
+    if _multiplexer_select(facts, which) is not None:
         return ""
     return support_reason(platform, which)
+
+
+def _multiplexer_select(
+    facts: Mapping[str, str], which: Callable[[str], str | None]
+) -> list[list[str]] | None:
+    """The calls that select the run's pane inside its multiplexer, or None when the run
+    is in none the machine has: tmux's window and pane, herdr's workspace and tab,
+    WezTerm's pane — each recorded by the wrapper from the multiplexer's own variables."""
+    if facts.get("pane", "") and which("tmux"):
+        pane = facts["pane"]
+        return [["tmux", "select-window", "-t", pane], ["tmux", "select-pane", "-t", pane]]
+    if facts.get("herdr_workspace", "") and which("herdr"):
+        calls = [["herdr", "workspace", "focus", facts["herdr_workspace"]]]
+        if facts.get("herdr_tab", ""):
+            calls.append(["herdr", "tab", "focus", facts["herdr_tab"]])
+        return calls
+    if facts.get("wezterm_pane", "") and which("wezterm"):
+        return [["wezterm", "cli", "activate-pane", "--pane-id", facts["wezterm_pane"]]]
+    return None
 
 
 def focus(
@@ -73,12 +93,14 @@ def focus(
     read_stat: Callable[[int], str | None] | None = None,
 ) -> str:
     """Raise the terminal the shell runs in. "" on success, else why not."""
-    pane = facts.get("pane", "")
-    if pane and which("tmux"):
-        status, _ = run(["tmux", "select-window", "-t", pane])
+    calls = _multiplexer_select(facts, which)
+    if calls is not None:
+        status, _ = run(calls[0])
         if status == 0:
-            run(["tmux", "select-pane", "-t", pane])
-            # The tmux client may sit in a terminal of its own; raise that too when we can.
+            for call in calls[1:]:
+                run(call)
+            # The multiplexer's client may sit in a terminal of its own; raise that too
+            # when we can.
             _raise_host(facts, platform, which, run, read_stat)
             return ""
     reason = support_reason(platform, which)

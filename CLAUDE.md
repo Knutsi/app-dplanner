@@ -229,6 +229,7 @@ modules/<name>/
 ├── cli.py       the headless half: CliCommand specs                ← imports no Qt
 ├── aspect.py    for a step aspect: SPEC, DATA_FORMAT, read/write    ← imports no Qt
 ├── report.py    what it says in a report: report_source()           ← imports no Qt
+├── harness.py   for an agent CLI provider: HARNESS, and nothing else  ← imports no Qt
 └── section.py   the editor it puts in the step detail panel
 ```
 
@@ -830,19 +831,19 @@ root, stop and look for the registry or capability you have not found yet.
   agent's opening line is `launcher.opening_prompt` — a pointer at `prompt.md`, carrying
   nothing the project is about — because the whole briefing as one argument was every
   agent's command line, and one agent's `pkill -f "Web.Host"` matched four others.
-  `launcher.spawn` hands the terminal `scrubbed_environment()`: the session markers an
-  agent CLI sets in its shells are taken out (a nested `claude` under them is a child
-  session of the outer one), the person's `CLAUDE_CONFIG_DIR`-style configuration stays.
-  The Claude preset names the run's session (`--session-id {session}`, minted per launch);
-  the wrapper records it with `dir` and `resume` in the shell facts, and an ended row in
-  the Agents browser shows the command that picks the agent up again. The preset also
-  hands the run directory over as an additional working directory (`--add-dir
-  {run_dir}`, before another option: the flag takes a list and would swallow
-  `{prompt}`), so reading the briefing asks nothing, and `new_run_dir` resolves the
-  path so the flag and the file agree on macOS (`/var` is a symlink) and Windows (a
-  short-name Temp). **A preset that changes lists the texts it replaced**
-  (`AgentPreset.superseded`): the settings store the picked text, and
-  `current_command` reads a stale one as the preset. The skill and the
+  `launcher.spawn` hands the terminal `scrubbed_environment()`: every harness's shell
+  markers are taken out (a nested `claude` under Claude's is a child session of the
+  outer one), the person's `CLAUDE_CONFIG_DIR`-style configuration stays. The Claude
+  harness names the run's session (`--session-id {session}`, minted per launch); the
+  wrapper records it with `dir` and `resume` in the shell facts, and an ended row in
+  the Agents browser shows the command that picks the agent up again. It also hands
+  the run directory over as an additional working directory (`--add-dir {run_dir}`,
+  before another option: the flag takes a list and would swallow `{prompt}`), so
+  reading the briefing asks nothing, and `new_run_dir` resolves the path so the flag
+  and the file agree on macOS (`/var` is a symlink) and Windows (a short-name Temp).
+  **A harness whose command changes lists the texts it replaced**
+  (`AgentHarness.superseded`): the settings store the picked text, and
+  `launcher.current_command` reads a stale one as the harness. The skill and the
   briefing's preamble both say *never kill by name or pattern*.
   `ARCHITECTURE.md`'s *Running an agent launches a peer, not a task* has the reasoning.
 - **A worktree is the step's decision, and the run is named after the step.** Whether the
@@ -877,19 +878,64 @@ root, stop and look for the registry or capability you have not found yet.
   raising its terminal; *Step ▸ Show Agent Terminal* focuses the window through
   `terminal.py`'s per-platform provider (tmux pane, tty via AppleScript, ancestor pid via
   xdotool, PowerShell pid). All three grey a run that cannot be switched to with its
-  reason, **per run** (`terminal.focus_reason` — a tmux pane is reachable on a desktop
-  whose bare windows are not); *Clear Agent Run* is the window's twin of `agent-state
-  clear`. `ARCHITECTURE.md`'s *The peer reports back through its run directory* has the
-  reasoning.
-- **Which terminal opens is a table, not a chain — and tmux is its last row.**
-  `launcher.TERMINALS` is one row per known terminal per platform with a probe saying
-  whether it is installed; *Automatic* is the first installed row (the platform's own
-  default), and the settings dropdown lists the same rows and pre-fills the editable
-  template — the agent presets' pattern. A new terminal is a row, never an `if`. tmux
-  led the table once, and a DPlanner started from a tmux shell inherits `$TMUX`, so
-  every agent opened as a tmux window inside whatever terminal the person was using; a
-  desktop agent gets a desktop window, and tmux is what Automatic reaches for only when
-  nothing else is installed. Ghostty's `-e` is always a fresh process and window.
+  reason, **per run** (`terminal.focus_reason` — a tmux, herdr or WezTerm pane is
+  reachable on a desktop whose bare windows are not; the wrapper records each
+  multiplexer's own name for the pane); *Clear Agent Run* is the window's twin of
+  `agent-state clear`. `ARCHITECTURE.md`'s *The peer reports back through its run
+  directory* has the reasoning.
+- **What a run consumed is read back when it ends, and kept on the step.** The run
+  remembers its harness and its session (`AgentRun.harness`, `.session`); when the
+  shell ends the tracker asks the harness's `report` and writes a row — harness,
+  session, input, output, the vendor's own breakdown under `details`, when — to the
+  step's `agent_usage` aspect (`step_agent_run/usage.py`, a second aspect id in that
+  package), directly, off the undo stack, with its own origin: tokens were spent
+  whether or not anybody presses Ctrl+Z. **Totals are derived** (`usage.totals`), a
+  session recorded twice is one row, and `input` means everything sent (cache reads
+  and writes included) and `output` everything generated, so two harnesses' numbers
+  add on one step. `dplanner usage show|list|record` is the terminal's half —
+  `record` reads through the same harness readers, or takes `--input`/`--output` by
+  hand; the Agents browser row and the Agent tab say the same words. Claude's
+  transcript is an internal format read tolerantly; the OpenTelemetry metrics are the
+  supported channel and need a collector, which is deliberately not built here.
+- **An agent CLI is a harness, and a harness is a module.** `domain/agents.py` is the
+  contract: an `AgentHarness` is the command (`{prompt}`, `{session}`, `{run_dir}`), how
+  a run resumes, the texts it shipped earlier, the variables it sets in the shells it
+  runs, and a `report` that reads the CLI's own record of one run back — its session
+  and a `Usage`. `modules/agent_claude/`, `agent_codex/` and `agent_opencode/` each
+  export one from a Qt-free `harness.py`, the root's `agent_harnesses()` is the tuple
+  (first is the default), and the launcher, the settings page, the run tracker, the
+  `usage` verbs and `entry.py`'s shell guard all read it — a fourth agent is a fourth
+  module and no `if`. **Capabilities are derived, never declared**: `names_session`
+  is `{session}` in the command, `resumes` is a resume template plus a way to the id,
+  `counts_tokens` is a reader; `capabilities()` words them for the dropdown. Codex and
+  OpenCode mint their own ids, so their `report` finds the run by the directory it
+  worked in and the launch time, and a found id is what makes such a run resumable
+  afterwards. `ARCHITECTURE.md`'s *An agent CLI is a harness* has the reasoning.
+- **Which terminal opens is a table, not a chain — and the multiplexers are its last
+  rows.** `launcher.TERMINALS` is one row per known terminal *and multiplexer* per
+  platform with a probe saying whether it is installed; *Automatic* is the first
+  installed row (the platform's own default), and the settings dropdown lists the same
+  rows and pre-fills the editable template — the harnesses' pattern. A new terminal is
+  a row, never an `if`. tmux led the table once, and a DPlanner started from a tmux
+  shell inherits `$TMUX`, so every agent opened as a tmux window inside whatever
+  terminal the person was using; a desktop agent gets a desktop window, and a
+  multiplexer (herdr, zellij, tmux — `TerminalPreset.multiplexer`) is what Automatic
+  reaches for only when nothing else is installed, and what a *profile* picks on
+  purpose to land several agents side by side. Ghostty's `-e` is always a fresh
+  process and window. **A multiplexer that needs two calls is one template with
+  `&&`**: herdr's row is `herdr workspace create … && herdr pane run {pane} --command
+  {script}`, `launcher.spawn` runs the stages in turn with `{pane}` as what the earlier
+  stage printed, and a stage that fails is a reason and no run — the fallback dialog
+  hands the prompt over, exactly as when no terminal exists.
+- **A launch profile is a name over the two choices, and the first is the default.**
+  `step_agent_instruction/profiles.py`: a `Profile` is an agent command and a terminal
+  template under a name, kept per user (`user_config`; the two single settings they
+  replaced are read as the default profile when no list is stored). *Run Agent…* runs
+  the first; *Step ▸ Run Agent With* is a data child menu of the rest, each greyed with
+  its own reason (`launcher.template_refusal`: a row's probe, asked before any step is),
+  and Settings ▸ Agent is the list beside an editor for the picked one. Over a
+  selection every chosen step goes through the one profile — with a multiplexer, one
+  pane each.
 - **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
   state; the dashed ring round the body moves, which is what says "somebody is on this one
   right now". One `QTimer` on the scene advances every ring and runs only while a node

@@ -25,8 +25,9 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from PySide6.QtWidgets import QMessageBox, QWidget
+from PySide6.QtWidgets import QMenu, QMessageBox, QWidget
 
+from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Node, Step, StepId
 from dplanner.domain.progression import DONE
@@ -38,6 +39,7 @@ from dplanner.framework.action_registry import (
     ActionRegistry,
     ActionSpec,
     ActionState,
+    DataMenuSpec,
 )
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import Context, ContextService
@@ -62,6 +64,11 @@ from dplanner.modules.step_agent_instruction.aspect import (
     uses_worktree,
     with_worktree,
     write_state,
+)
+from dplanner.modules.step_agent_instruction.profiles import (
+    Profile,
+    default_profile,
+    read_profiles,
 )
 from dplanner.modules.step_agent_instruction.prompt import (
     EMPTY_BRIEFING,
@@ -93,7 +100,7 @@ PREVIEW_NOTE = (
 )
 
 
-def _no_record(_step_id: StepId, _files: launcher.LaunchFiles) -> None:
+def _no_record(_step_id: StepId, _files: launcher.LaunchFiles, _harness: str) -> None:
     return None
 
 
@@ -176,10 +183,14 @@ class StepAgentInstructionDeps:
     # place allowed to know what the other aspects store. The same object feeds
     # ``dplanner agent prompt``, so the two surfaces cannot drift.
     briefing: Briefing = EMPTY_BRIEFING
-    # Hands the spawned shell over: the step_agent_run module stamps the aspect and
-    # watches the run's files for the shell's end — reached through the root because
-    # modules never import each other.
-    record_launch: Callable[[StepId, launcher.LaunchFiles], None] = field(default=_no_record)
+    # Hands the spawned shell over — with the id of the harness that runs in it, "" for
+    # a custom command: the step_agent_run module stamps the aspect, watches the run's
+    # files for the shell's end and reads the harness's record back — reached through
+    # the root because modules never import each other.
+    record_launch: Callable[[StepId, launcher.LaunchFiles, str], None] = field(default=_no_record)
+    # Every agent CLI this build can launch, first is the default — the composition
+    # root's ``agent_harnesses()``. What a profile's command is read against.
+    harnesses: tuple[AgentHarness, ...] = ()
     # Insert from Assets…: a modal picker over the node's project's catalog, composed by
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], "list[Payload]"] | None = None
@@ -193,6 +204,9 @@ class StepAgentInstructionDeps:
     # preamble reads too, so the agent is told the very name the script prepared.
     step_key: Callable[[Step], str] = field(default=_no_key)
     ticket_key: Callable[[Step], str] = field(default=_no_key)
+    # What the step's agent runs have consumed, in words, for the Agent tab — the run
+    # tracker's ledger, read through the root; "" when nothing has been recorded.
+    usage_words: Callable[[StepId], str] = field(default=lambda _step_id: "")
 
 
 class StepAgentInstructionModule:
@@ -237,6 +251,7 @@ class StepAgentInstructionModule:
                 pick_assets=deps.pick_assets,
                 worktree=lambda step_id: uses_worktree(deps.library.step(step_id)),
                 set_worktree=self._set_worktree,
+                usage=deps.usage_words,
             )
 
         deps.sections.register(
@@ -290,6 +305,16 @@ class StepAgentInstructionModule:
                 run=self._run,
             )
         )
+        deps.actions.register_data_menu(
+            DataMenuSpec(
+                id="agent.run_with",
+                menu="Step",
+                group="agent",
+                title="Run Agent With",
+                order=15,
+                fill=self._fill_profiles,
+            )
+        )
         deps.actions.register(
             ActionSpec(
                 id="agent.preview",
@@ -306,7 +331,7 @@ class StepAgentInstructionModule:
             SettingsSection(
                 id=f"{MODULE_ID}.launch",
                 category=("Agent",),
-                factory=build_page,
+                factory=lambda parent: build_page(parent, harnesses=deps.harnesses),
             )
         )
 
@@ -331,7 +356,7 @@ class StepAgentInstructionModule:
             return "describe the step, or write an agent instruction first"
         return ""
 
-    def _can_run(self, context: Context) -> ActionState:
+    def _can_run(self, context: Context, profile: Profile | None = None) -> ActionState:
         """Present whenever a step is; greyed with the reason when a precondition is not.
 
         The idiom from `CLAUDE.md`: a disabled entry carries what to do about it. The same
@@ -356,6 +381,10 @@ class StepAgentInstructionModule:
             return ActionState(
                 enabled=False, label=f"{verb} — at most {limit} at a time (Settings ▸ Agent)"
             )
+        # The profile's terminal is one probe, asked before any step is: a multiplexer
+        # that is not running refuses the whole gesture the same way the count does.
+        if refusal := launcher.template_refusal(launch_command(profile)):
+            return ActionState(enabled=False, label=f"{verb} — {refusal}")
         # Where a shell can open is the *project's* fact and asking git for it is not free,
         # so it is asked once per project the selection touches rather than once per step.
         by_project: dict[str, str] = {}
@@ -416,13 +445,15 @@ class StepAgentInstructionModule:
             instruction_files=place(instruction.files),
         )
 
-    def _run(self, context: Context) -> None:
-        """One agent per chosen step, asked about once and launched in order.
+    def _run(self, context: Context, profile: Profile | None = None) -> None:
+        """One agent per chosen step, asked about once and launched in order — through
+        ``profile``, the default one when none is named.
 
         The graph gate is asked **once for the whole gesture**: a box per step would make
         four selected steps four questions about one decision. The loop stops at the first
         step no terminal opened for — the template that refused one will refuse the rest,
-        and the fallback dialog is already holding that step's prompt.
+        and the fallback dialog is already holding that step's prompt. With a multiplexer
+        in the profile every step's shell lands in it, one pane each.
         """
         deps = self._deps
         chosen = self._chosen(context)
@@ -431,9 +462,10 @@ class StepAgentInstructionModule:
         waiting = [(step, unfinished) for step in chosen if (unfinished := self._unfinished(step))]
         if waiting and not self._confirm_unfinished(waiting):
             return
+        profile = profile or default_profile()
         launched = 0
         for step in chosen:
-            if not self._run_on(step):
+            if not self._run_on(step, profile):
                 break
             launched += 1
         if launched == 1:
@@ -450,7 +482,7 @@ class StepAgentInstructionModule:
             if deps.status_for(required) != DONE
         ]
 
-    def _run_on(self, step: Step) -> bool:
+    def _run_on(self, step: Step, profile: Profile) -> bool:
         """Launch the agent on one step; False when no shell opened and the fallback showed."""
         deps = self._deps
         run_dir = launcher.new_run_dir()
@@ -458,11 +490,30 @@ class StepAgentInstructionModule:
         assembled = self._assembled(step, staged)
         worktree = self._run_name(step) if uses_worktree(step) else ""
         workdir = _workdir(deps.facts_for(step.id))
-        spawned, prepared = self._launch(step, assembled.text, run_dir, worktree, workdir)
+        spawned, prepared = self._launch(step, assembled.text, run_dir, worktree, workdir, profile)
         if not spawned:
             # No shell was started, so nothing is stamped: the fallback hands over the prompt.
             PromptFallbackDialog(assembled.text, str(prepared.prompt_file), deps.parent).exec()
         return spawned
+
+    def _fill_profiles(self, menu: QMenu) -> None:
+        """Step ▸ Run Agent With: one entry per profile, the default first and marked,
+        each greyed with its own reason — a profile's terminal may be missing where
+        another's is not — and rebuilt every time the menu opens, so a profile added in
+        Settings is offered at once."""
+        deps = self._deps
+        context = deps.context.current()
+        for index, profile in enumerate(read_profiles()):
+            state = self._can_run(context, profile)
+            name = f"{profile.name} (default)" if index == 0 else profile.name
+            reason = ""
+            if not state.enabled and state.label:
+                reason = state.label.partition(" — ")[2]
+            entry = menu.addAction(f"{name} — {reason}" if reason else name)
+            entry.setEnabled(state.enabled)
+            entry.triggered.connect(
+                lambda _checked=False, p=profile: self._run(deps.context.current(), p)
+            )
 
     def _run_name(self, step: Step) -> str:
         """What this step's worktree and branch are called: the launcher's rule over the
@@ -516,9 +567,15 @@ class StepAgentInstructionModule:
         return box.clickedButton() is run_anyway
 
     def _launch(
-        self, step: Step, text: str, run_dir: Path, worktree: str, workdir: Path | None
+        self,
+        step: Step,
+        text: str,
+        run_dir: Path,
+        worktree: str,
+        workdir: Path | None,
+        profile: Profile,
     ) -> tuple[bool, launcher.LaunchFiles]:
-        """Open the configured terminal on ``text`` for ``step`` in ``workdir``; the run
+        """Open the profile's terminal on ``text`` for ``step`` in ``workdir``; the run
         is recorded only when a shell was actually spawned. Both prompts this module
         launches come through here, so a change to how a terminal opens is made once.
 
@@ -527,22 +584,26 @@ class StepAgentInstructionModule:
         deps = self._deps
         workdir = (workdir or Path()).expanduser()
         key = deps.step_key(step)
+        command_text = agent_command(deps.harnesses, profile)
         prepared = launcher.prepare(
             text,
             workdir,
-            agent_command=agent_command(),
+            agent_command=command_text,
             worktree=worktree,
             directory=run_dir,
             step_title=f"{key} {step.title}".strip(),
             project_id=deps.library.project_of(step.id).id,
+            harnesses=deps.harnesses,
         )
         command = None
         if workdir.is_dir():
-            command = launcher.resolve_command(launch_command(), prepared, workdir)
+            command = launcher.resolve_command(launch_command(profile), prepared, workdir)
         if command is None:
             return False, prepared
-        launcher.spawn(command, workdir)
-        deps.record_launch(step.id, prepared)
+        if launcher.spawn(command, workdir, harnesses=deps.harnesses):
+            return False, prepared  # A multiplexer that refused is no shell at all.
+        harness = launcher.harness_of(command_text, deps.harnesses)
+        deps.record_launch(step.id, prepared, harness.id if harness else "")
         return True, prepared
 
     # -- reconciling a conflict ----------------------------------------------------------------
@@ -584,7 +645,9 @@ class StepAgentInstructionModule:
             preamble=deps.briefing.preamble(step, False, facts),
             entries=entries,
         )
-        spawned, prepared = self._launch(step, text, run_dir, "", facts.plan_root)
+        spawned, prepared = self._launch(
+            step, text, run_dir, "", facts.plan_root, default_profile()
+        )
         if spawned:
             deps.status.show_status(f"Agent launched on “{_titled(step)}”", 4000)
         else:

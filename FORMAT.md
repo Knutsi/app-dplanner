@@ -27,7 +27,7 @@ Four places, and the choice is not stylistic:
 | Per user, per machine (Qt-free) | what the CLI must also read: the project library | `core/config_dir.py` + `domain/library_file.py` | no — it is a list of *this machine's* paths |
 | Per user, per machine (Qt-free) | what happened and how long it took: the telemetry journal, and a native crash's stack | `core/telemetry.py` under `config_dir()/telemetry/` — see *The telemetry journal* | no — it is this machine's diagnostics |
 
-| Per user, per machine (GUI only) | preferences: panel layout, model choices, agent command | `framework/user_config.py`'s `get_global` (QSettings) | no |
+| Per user, per machine (GUI only) | preferences: panel layout, model choices, the agent launch profiles | `framework/user_config.py`'s `get_global` (QSettings) | no |
 | Per user, per machine, per library | where the user left off: open index folders, open tabs | `framework/user_config.py`'s `get_scoped`, under `library_scope(path)` | no |
 | The OS keychain | credentials, API keys | `framework/secrets_store.py` | no, and never on disk |
 
@@ -357,6 +357,18 @@ A feature step's marker names its record instead (`{"feature": "f1"}`); a bare `
 true}` under `feature` — what the retired `step_feature` wrote — still reads as a feature
 to the graph, and as *unregistered* to `feature list` and lint until `feature set` mints
 its record.
+
+**What a step's agent runs consumed is a ledger of rows, never a total.** `agent_usage`
+(a second aspect id in `step_agent_run/`) writes `{"runs": [{"harness": "claude",
+"session": "<id>", "input": 12345, "output": 678, "details": {"cache_read": …,
+"cache_creation": …}, "ended": "<ISO stamp>"}]}` beside the step — one row per run,
+appended by the window when the shell ends and by `dplanner usage record` from the
+terminal, a row per session so a record read twice replaces itself. `input` is everything
+sent to the model and `output` everything it generated, whatever the CLI; the CLI's own
+finer split rides under `details` in its own words. Totals are summed on read
+(`usage.totals`); absence means no agent has run here. The run's *state* stays in
+`step_agent_run` and is cleared at exit — the two are different claims, and only this one
+outlives the shell.
 
 **Absence encodes the default, and the default is not always "off".** Every aspect above is
 one most steps do not have, so the marker records the *claim*. Two go the other way:

@@ -4,8 +4,9 @@ Pure widgets, on the task centre's pattern: the module feeds them the run list a
 callbacks; they only render. Browser rows are persistent widgets keyed by run and
 reconciled on refresh, so a row survives a tick with its buttons' state intact. A live
 row offers *Show Terminal* and *Reveal* — greyed per run with the reason when that run's
-terminal cannot be raised; an ended row keeps its outcome until dismissed, with the
-command that picks the agent up again under it when the wrapper recorded one.
+terminal cannot be raised; an ended row keeps its outcome until dismissed — with what the
+run consumed on its status line once the harness's record was read — and the command that
+picks the agent up again under it when one is known.
 
 Presentation follows DESIGN.md: the step's title on the primary line, the state or outcome
 and the launch time on a secondary line, rows in a framed scrolling well, quiet buttons —
@@ -148,10 +149,11 @@ class AgentRow(QWidget):
         layout.addWidget(self.resume)
         self.refresh(run, "")
 
-    def refresh(self, run: AgentRun, focus_reason: str, resume: str = "") -> None:
+    def refresh(self, run: AgentRun, focus_reason: str, resume: str = "", usage: str = "") -> None:
         self.run = run
         self.title.setText(self._title_of(run.step_id))
-        self.status.setText(status_text(run, self._state_of(run.step_id)))
+        line = status_text(run, self._state_of(run.step_id))
+        self.status.setText(f"{line} · {usage}" if usage else line)
         self.terminal_button.setVisible(run.live)
         self.terminal_button.setEnabled(not focus_reason)
         self.terminal_button.setToolTip(focus_reason or "Bring the agent's terminal to the front")
@@ -229,6 +231,7 @@ class AgentBrowserDialog(QDialog):
         runs: list[AgentRun],
         reason_of: Callable[[AgentRun], str],
         resume_of: Callable[[AgentRun], str],
+        usage_of: Callable[[AgentRun], str] = lambda _run: "",
     ) -> None:
         wanted = {run.key for run in runs}
         for key, row in list(self._rows.items()):
@@ -251,7 +254,7 @@ class AgentBrowserDialog(QDialog):
                 )
                 self._rows_layout.insertWidget(len(self._rows), existing)
                 self._rows[run.key] = existing
-            existing.refresh(run, reason_of(run), resume_of(run))
+            existing.refresh(run, reason_of(run), resume_of(run), usage_of(run))
         live = sum(1 for run in runs if run.live)
         ended = len(runs) - live
         parts = ([f"{live} running"] if live else []) + ([f"{ended} ended"] if ended else [])
