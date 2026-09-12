@@ -1,8 +1,10 @@
 """The spec module's Qt half: the Specs tab, and the verbs that reach it.
 
-Both actions live in the Project menu — the same precedent as the order table's "Show
+Every verb lives in the Project menu — the same precedent as the order table's "Show
 Order" — so the index tree's right-click, the menu bar and the palette all speak the same
-verbs, and the Specs entry row under a project renders that same menu.
+verbs, and the Specs entry row under a project renders that same menu. The ways to *add*
+a spec are one child menu, *Add Spec*: the two built-ins and one entry per document
+source kind the composition root hands in, which is what the tab's + button drops down.
 """
 
 from collections.abc import Callable, Sequence
@@ -29,11 +31,14 @@ from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tabs import TabHost
+from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
 from dplanner.modules.spec.activity import (
+    ADD_SUBMENU,
     DOCUMENT_ENTITY,
+    SOURCE_ENTITY,
     SPECS_KIND,
     Cite,
     OpenCoverage,
@@ -43,6 +48,7 @@ from dplanner.modules.spec.activity import (
 from dplanner.modules.spec.aspect import DATA_FORMAT, MODULE_ID, read_attachments
 from dplanner.modules.spec.documents import (
     SpecDocument,
+    SpecSource,
     binary_refusal,
     default_name,
     import_document,
@@ -52,8 +58,16 @@ from dplanner.modules.spec.documents import (
     write_index,
 )
 from dplanner.modules.spec.figures_section import FiguresSection
+from dplanner.modules.spec.refresh import SourceRefresher
+from dplanner.modules.spec.source_kind import DocumentSourceKind
+from dplanner.modules.spec.sourced import add_source, owned_by_source, remove_source, source_of
 
 FILE_FILTER = "Spec documents (*.pdf *.md *.markdown *.txt);;All files (*)"
+
+
+def open_url(url: str) -> None:
+    """Hand a URL to the browser — one seam, so a test can watch instead."""
+    QDesktopServices.openUrl(QUrl(url))
 
 
 @dataclass(frozen=True)
@@ -70,6 +84,10 @@ class SpecDeps:
     files: Callable[[NodeId], ModuleFileArea]
     # The step panel's Details tab — where a step's attached figures are shown.
     details: InspectorSectionRegistry
+    tasks: TaskService
+    # The document source kinds this build offers — one + menu entry and one way to
+    # fetch each. Named by the composition root; the module runs whatever it is given.
+    kinds: Sequence[DocumentSourceKind] = ()
     # The feature side, handed across by the composition root: which passages of a
     # document features cite (the Cited wash), how to show one in the coverage view, and
     # how to cite a selection. None hides the button — the capability is absent.
@@ -84,6 +102,12 @@ class SpecModule:
 
     def __init__(self, deps: SpecDeps) -> None:
         self._deps = deps
+        self._kinds = {kind.id: kind for kind in deps.kinds}
+        self.refresher = SourceRefresher(
+            deps.library, deps.undo, deps.tasks, deps.files, self._kinds, parent=deps.parent
+        )
+        for kind in deps.kinds:
+            kind.config_changed.connect(deps.context.refresh)
 
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
         self._deps.tabs.open(SPECS_KIND, project_id, preview=preview)
@@ -113,6 +137,9 @@ class SpecModule:
                 passages_of=deps.passages_of,
                 open_coverage=deps.open_coverage,
                 cite=deps.cite,
+                kinds=self._kinds,
+                refresher=self.refresher,
+                connect=self._connect,
             )
 
         deps.tabs.register_factory(SPECS_KIND, factory)
@@ -140,6 +167,7 @@ class SpecModule:
                 menu="Project",
                 group="documents",
                 order=10,
+                submenu=ADD_SUBMENU,
                 tip="Create a markdown document beside this project and edit it in place",
                 state=self._on_a_project,
                 run=self._new,
@@ -152,11 +180,27 @@ class SpecModule:
                 menu="Project",
                 group="documents",
                 order=20,
+                submenu=ADD_SUBMENU,
                 tip="Import a PDF, markdown or text document beside this project",
                 state=self._on_a_project,
                 run=self._add,
             )
         )
+        for position, kind in enumerate(deps.kinds):
+            deps.actions.register(
+                ActionSpec(
+                    id=f"spec.add_source.{kind.id}",
+                    label=kind.label,
+                    menu="Project",
+                    group="documents",
+                    order=30 + position,
+                    submenu=ADD_SUBMENU,
+                    icon=kind.icon,
+                    tip=f"Add a {kind.name} source: its pages become spec documents",
+                    state=self._on_a_project,
+                    run=self._add_source_verb(kind),
+                )
+            )
         deps.actions.register(
             ActionSpec(
                 id="spec.remove",
@@ -165,8 +209,45 @@ class SpecModule:
                 group="documents",
                 order=40,
                 tip="Remove the selected document from the index; the file stays on disk",
-                state=self._on_a_document,
+                state=self._on_a_removable_document,
                 run=self._remove,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="spec.refresh_source",
+                label="Re&fresh Source",
+                menu="Project",
+                group="documents",
+                order=60,
+                tip="Fetch the selected source again; changed pages are replaced, "
+                "the previous version kept",
+                state=self._refresh_state,
+                run=self._refresh_source,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="spec.remove_source",
+                label="Remove Sou&rce",
+                menu="Project",
+                group="documents",
+                order=70,
+                tip="Remove the selected source and every page it fetched; the files stay",
+                state=self._on_a_source,
+                run=self._remove_source,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="spec.open_source",
+                label="Open Source in &Browser",
+                menu="Project",
+                group="documents",
+                order=80,
+                tip="Open the selected source where it lives",
+                state=self._on_a_source,
+                run=self._open_source,
             )
         )
         deps.actions.register(
@@ -211,6 +292,40 @@ class SpecModule:
 
     def _on_a_document(self, context: Context) -> ActionState:
         return ENABLED if self._selected_document(context) is not None else DISABLED
+
+    def _on_a_removable_document(self, context: Context) -> ActionState:
+        found = self._selected_document(context)
+        if found is None:
+            return DISABLED
+        owner = owned_by_source(read_index(self._deps.library.project(found[0])), found[1].name)
+        if owner is not None:
+            return ActionState(enabled=False, label=f"Remove Spec Document — part of {owner.title}")
+        return ENABLED
+
+    def _on_a_source(self, context: Context) -> ActionState:
+        return ENABLED if self._selected_source(context) is not None else DISABLED
+
+    def _refresh_state(self, context: Context) -> ActionState:
+        found = self._selected_source(context)
+        if found is None:
+            return DISABLED
+        status = self.refresher.status(found[1])
+        if not status.ready:
+            return ActionState(enabled=False, label=f"Refresh Source — {status.message}")
+        if self.refresher.is_fetching():
+            return ActionState(enabled=False, label="Refresh Source — fetching…")
+        return ENABLED
+
+    def _selected_source(self, context: Context) -> tuple[NodeId, SpecSource] | None:
+        """The source the Specs tab has selected — a source row or a page inside one."""
+        project_id = context.focus_entity("project")
+        if project_id is None or not self._deps.library.has(project_id):
+            return None
+        source_id = context.selected_entity(SOURCE_ENTITY)
+        if source_id is None:
+            return None
+        source = source_of(read_index(self._deps.library.project(project_id)), source_id)
+        return None if source is None else (project_id, source)
 
     def _selected_document(self, context: Context) -> tuple[NodeId, SpecDocument] | None:
         """The document the Specs tab has selected, resolved against its project's index."""
@@ -328,4 +443,76 @@ class SpecModule:
                 f"{document.file} is missing from the workspace.",
             )
             return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(area.absolute(document.file))))
+        open_url(QUrl.fromLocalFile(str(area.absolute(document.file))).toString())
+
+    # -- sources -------------------------------------------------------------------------------
+
+    def _add_source_verb(self, kind: DocumentSourceKind) -> Callable[[Context], None]:
+        return lambda context: self._add_source(context, kind)
+
+    def _add_source(self, context: Context, kind: DocumentSourceKind) -> None:
+        project_id = context.focus_entity("project")
+        if project_id is None or not self._deps.library.has(project_id):
+            return
+        located = kind.locate(self._deps.parent)
+        if located is None:
+            return
+        title, locator = located
+        index = read_index(self._deps.library.project(project_id))
+        index, source = add_source(index, kind.id, title, locator)
+        self._deps.undo.push(
+            SetModuleDataCommand(
+                project_id, MODULE_ID, write_index(index), label=f"Add {kind.name} Source"
+            )
+        )
+        activity = self._deps.tabs.open(SPECS_KIND, project_id)
+        assert isinstance(activity, SpecsActivity)
+        activity.select_source(source.id)
+        if self.refresher.status(source).ready:
+            self.refresher.refresh(project_id, source.id)
+
+    def _connect(self, project_id: NodeId, source_id: str) -> None:
+        """The strip's one primary button: the kind's guided dialog, then the first fetch
+        when the source has never had one."""
+        source = source_of(read_index(self._deps.library.project(project_id)), source_id)
+        kind = self._kinds.get(source.kind) if source is not None else None
+        if source is None or kind is None:
+            return
+        if kind.connect(self._deps.parent, source.locator) and not source.fetched:
+            self.refresher.refresh(project_id, source_id)
+
+    def _refresh_source(self, context: Context) -> None:
+        found = self._selected_source(context)
+        if found is not None:
+            self.refresher.refresh(found[0], found[1].id)
+
+    def _remove_source(self, context: Context) -> None:
+        found = self._selected_source(context)
+        if found is None:
+            return
+        project_id, source = found
+        index = read_index(self._deps.library.project(project_id))
+        pages = len([doc for doc in index.documents if doc.source == source.id])
+        question = (
+            f"Remove {source.title!r} and the {pages} page{'' if pages == 1 else 's'} it "
+            "fetched? The files stay on disk."
+        )
+        if not confirm(self._deps.parent, "Remove Source", question):
+            return
+        self._deps.undo.break_coalescing()
+        self._deps.undo.push(
+            SetModuleDataCommand(
+                project_id,
+                MODULE_ID,
+                write_index(remove_source(index, source.id)),
+                label="Remove Source",
+            )
+        )
+
+    def _open_source(self, context: Context) -> None:
+        found = self._selected_source(context)
+        if found is None:
+            return
+        kind = self._kinds.get(found[1].kind)
+        if kind is not None:
+            open_url(kind.open_url(found[1].locator))

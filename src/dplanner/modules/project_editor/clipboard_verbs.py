@@ -7,8 +7,9 @@ menu-bar action's shortcut does not fire — so one registrant gets the "takes o
 active" behaviour for free. ``ARCHITECTURE.md``'s *Edit verbs belong to the surface whose
 things they act on* says when that stops being enough.
 
-**What they act on is what Delete acts on** — :func:`~.verbs.chosen_steps`, so Cut and Copy
-work wherever Delete does, a table's right-click included. Only Paste needs a current canvas:
+**What they act on is what Delete acts on** —
+:func:`~dplanner.framework.step_selection.chosen_steps`, so Cut and Copy work wherever
+Delete does, a table's right-click included. Only Paste needs a current canvas:
 it is the target. Its state never reads the clipboard; :class:`ClipboardWatch` counts what
 the clipboard holds when the clipboard changes, and re-emits the context so the label
 ("Paste 3 Steps") follows — the app shell's undo-label idiom.
@@ -34,6 +35,7 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.context import Context, ContextService
+from dplanner.framework.step_selection import chosen_steps
 from dplanner.framework.undo import UndoService
 from dplanner.modules.project_editor.clipboard import (
     MIME_TYPE,
@@ -46,7 +48,6 @@ from dplanner.modules.project_editor.clipboard import (
     to_json,
     write_files,
 )
-from dplanner.modules.project_editor.verbs import chosen_steps
 
 
 def held_clips() -> list[StepClip]:
@@ -157,7 +158,7 @@ class ClipboardVerbs:
 
     def _on_chosen(self, word: str) -> Callable[[Context], ActionState]:
         def state(context: Context) -> ActionState:
-            chosen = chosen_steps(self.library, context)
+            chosen = chosen_steps(context, self.library)
             if not chosen:
                 return DISABLED
             if len(chosen) == 1:
@@ -180,7 +181,7 @@ class ClipboardVerbs:
         return clip(self.library, self.files, self.file_modules, step_ids)
 
     def _copy(self, context: Context) -> None:
-        chosen = chosen_steps(self.library, context)
+        chosen = chosen_steps(context, self.library)
         if not chosen:
             return
         clips = self._clips_of(chosen)
@@ -190,7 +191,7 @@ class ClipboardVerbs:
         QGuiApplication.clipboard().setMimeData(data)
 
     def _cut(self, context: Context) -> None:
-        chosen = chosen_steps(self.library, context)
+        chosen = chosen_steps(context, self.library)
         if not chosen:
             return
         self._copy(context)
@@ -205,7 +206,7 @@ class ClipboardVerbs:
         self._arrive(project_id, clips, anchor=self.new_position(), verb="Paste")
 
     def _duplicate(self, context: Context) -> None:
-        chosen = chosen_steps(self.library, context)
+        chosen = chosen_steps(context, self.library)
         if not chosen:
             return
         project = self.library.project_of(chosen[0])

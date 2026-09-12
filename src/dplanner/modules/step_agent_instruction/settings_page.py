@@ -1,12 +1,39 @@
-"""The "Agent" settings page: which agent Run Agent starts, and which terminal it opens in.
+"""The "Agent" settings page: the launch profiles, how many agents may start at once, and
+what a launch records on the step.
 
-**Sane defaults, options laid out.** Both choices are a dropdown of known rows over an
-editable field: the agent is one of the known CLIs — Claude Code, Codex, OpenCode — and
-the terminal is one of the known terminals for this platform, each marked when it is not
-installed. Picking a row pre-fills the field, so nobody has to research an invocation to
-use the feature; the free-text field exists for the person who already knows exactly what
-they want. The defaults work untouched: Claude Code, in plan mode, in the platform's own
-default terminal.
+A **profile** (``profiles.py``) is one answer to Run Agent's two questions — which agent
+CLI, and which terminal or multiplexer it opens in — under a name. The page is a list of
+them beside an editor for the picked one; the first is the default *Run Agent…* runs, the
+rest are the entries of *Step ▸ Run Agent With*, and *Make Default* moves one to the top.
+
+**Sane defaults, options laid out.** Both of a profile's choices are a dropdown of known
+rows over an editable field: the agent is one of the harnesses this build knows — Claude
+Code, Codex, OpenCode — and the terminal is one of the known terminals and multiplexers
+for this platform, each marked when it is not installed. Picking a row pre-fills the
+field, so nobody has to research an invocation to use the feature; the free-text field
+exists for the person who already knows exactly what they want. The defaults work
+untouched: one profile, Claude Code in plan mode, in the platform's own default terminal.
+A harness row also says what the CLI can do — *resumes*, *counts tokens* — words derived
+from the harness record itself.
+
+**A profile's name follows its choices until somebody types one.** A new profile is a
+copy of the picked one named by what it does — *Claude Code in herdr* — and stays named
+that way through the edits that usually follow, the terminal and then the agent, numbered
+when the name is taken. A name typed into the field is the person's and is kept; a typed
+duplicate is numbered rather than refused. The rule lives with the write, in
+``profiles.update_profile``; this page only re-reads the list after each commit.
+
+**How many at once is here too**, because it is a fact about this desk rather than about
+the plan: how many terminals, worktrees and live sessions one machine can carry is the
+person's to say, and Run Agent over a multi-selection refuses past it. Four is the default
+— enough for the gesture the limit exists for, few enough that a stray lasso cannot fill
+the screen.
+
+The third choice is *On launch*: a launch claims the step is in progress, unless the
+person says otherwise. On by default for the reason the marks are — a preference that has
+to be found before it can help is one that helps nobody — and a switch rather than a rule
+because a plan whose statuses somebody else keeps by hand should not have the window
+writing into it.
 
 Per user, per machine — a colleague's terminal is not the workspace's business, which is
 why this is a GLOBAL-scope section and never a file in the plan. Whether a step's agent
@@ -15,41 +42,90 @@ aspect and switched on the Agent tab.
 """
 
 import sys
+from collections.abc import Callable
 
-from PySide6.QtWidgets import QComboBox, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
 
+from dplanner.domain.agents import AgentHarness
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
 from dplanner.modules.step_agent_instruction.launcher import (
-    DEFAULT_AGENT_COMMAND,
-    PRESETS,
     TerminalPreset,
     current_command,
     is_installed,
     terminals_for,
 )
+from dplanner.modules.step_agent_instruction.profiles import (
+    Profile,
+    default_profile,
+    read_profiles,
+    suggested_name,
+    unique_name,
+    update_profile,
+    write_profiles,
+)
 
-AGENT_COMMAND_KEY = "agent_command"
-LAUNCH_COMMAND_KEY = "launch_command"
+MAX_AGENTS_KEY = "max_agents"
+START_IN_PROGRESS_KEY = "start_in_progress"
 
 CUSTOM_LABEL = "Custom"
 AUTOMATIC_LABEL = "Automatic"
 
-
-def agent_command() -> str:
-    """The stored command, read through the presets: a text an earlier version shipped
-    for a preset is that preset, so the dropdown shows it and the wrapper runs its
-    current command."""
-    return current_command(str(get_global(MODULE_ID, AGENT_COMMAND_KEY, DEFAULT_AGENT_COMMAND)))
+DEFAULT_MAX_AGENTS = 4
+# The ceiling the field offers. Not a judgement about hardware — a spin box needs a range,
+# and a number typed past this one is far likelier a slip than an intention.
+MAX_AGENTS_CEILING = 20
 
 
-def launch_command() -> str:
-    """The terminal template; "" means Automatic — the first installed preset."""
-    return str(get_global(MODULE_ID, LAUNCH_COMMAND_KEY, ""))
+def agent_command(harnesses: tuple[AgentHarness, ...], profile: Profile | None = None) -> str:
+    """The profile's agent command, read through the harnesses: a text an earlier version
+    shipped for a harness is that harness, so the dropdown shows it and the wrapper runs
+    its current command. The default profile's when none is given."""
+    return current_command((profile or default_profile()).agent_command, harnesses)
+
+
+def launch_command(profile: Profile | None = None) -> str:
+    """The profile's terminal template; "" means Automatic — the first installed preset."""
+    return (profile or default_profile()).launch_command
+
+
+def max_agents() -> int:
+    """How many agents one Run Agent may launch. Anything unreadable or out of the field's
+    range reads as the default: a stored preference is not worth refusing the verb over."""
+    try:
+        stored = int(get_global(MODULE_ID, MAX_AGENTS_KEY, DEFAULT_MAX_AGENTS))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_AGENTS
+    return min(max(stored, 1), MAX_AGENTS_CEILING)
+
+
+def start_in_progress() -> bool:
+    """On unless the user turned it off: a launch is the moment the work starts, and a
+    step somebody is working on that still reads *pending* is the plan telling a lie
+    nobody asked it to tell. Switching it off is the deliberate act."""
+    return bool(get_global(MODULE_ID, START_IN_PROGRESS_KEY, True))
 
 
 def terminal_label(preset: TerminalPreset, installed: bool) -> str:
-    return preset.label if installed else f"{preset.label} — not found"
+    label = f"{preset.label} — multiplexer" if preset.multiplexer else preset.label
+    return label if installed else f"{label} — not found"
+
+
+def harness_label(harness: AgentHarness) -> str:
+    """The harness's name with what it can do — words derived from the record."""
+    abilities = ", ".join(harness.capabilities())
+    return f"{harness.label} — {abilities}" if abilities else harness.label
 
 
 def _note(text: str, parent: QWidget) -> QLabel:
@@ -59,82 +135,235 @@ def _note(text: str, parent: QWidget) -> QLabel:
     return note
 
 
-def _preset_field(
-    combo: QComboBox, edit: QLineEdit, key: str, rows: list[tuple[str, str]], blank_label: str
-) -> None:
-    """Wire one dropdown-over-field pair: rows of (label, command), then a blank row.
+class PresetField:
+    """One dropdown-over-field pair: rows of (label, command), then a blank row.
 
     The dropdown reflects the field — a preset when the text matches one, the blank row
     (Custom, or Automatic when empty means "let the platform choose") otherwise — and
-    picking a preset fills the field and commits. The same mechanics serve the agent and
-    the terminal, which is why they are one function.
+    picking a preset fills the field and commits through ``on_commit``. The same
+    mechanics serve the agent and the terminal, which is why they are one class.
     """
-    for label, command in rows:
-        combo.addItem(label, command)
-    combo.addItem(blank_label, "")
 
-    def show_current() -> None:
-        index = combo.findData(edit.text().strip())
-        combo.blockSignals(True)
-        combo.setCurrentIndex(index if index != -1 else combo.count() - 1)
-        combo.blockSignals(False)
+    def __init__(
+        self,
+        combo: QComboBox,
+        edit: QLineEdit,
+        rows: list[tuple[str, str]],
+        blank_label: str,
+        on_commit: Callable[[str], None],
+        canonical: Callable[[str], str] = lambda text: text,
+    ) -> None:
+        self.combo, self.edit, self._on_commit, self._canonical = combo, edit, on_commit, canonical
+        for label, command in rows:
+            combo.addItem(label, command)
+        combo.addItem(blank_label, "")
+        combo.activated.connect(self._pick)
+        edit.editingFinished.connect(self._commit)
 
-    def commit() -> None:
-        set_global(MODULE_ID, key, edit.text().strip())
-        show_current()
+    def show(self, text: str) -> None:
+        """Reflect a stored text: the field, then the row it means."""
+        self.edit.setText(text)
+        self._show_current()
 
-    def pick(index: int) -> None:
-        command = combo.itemData(index)
+    def _show_current(self) -> None:
+        index = self.combo.findData(self._canonical(self.edit.text().strip()))
+        self.combo.blockSignals(True)
+        self.combo.setCurrentIndex(index if index != -1 else self.combo.count() - 1)
+        self.combo.blockSignals(False)
+
+    def _commit(self) -> None:
+        self._on_commit(self.edit.text().strip())
+        self._show_current()
+
+    def _pick(self, index: int) -> None:
+        command = self.combo.itemData(index)
         if command:  # The blank row pre-fills nothing; whatever is typed stays.
-            edit.setText(command)
-            commit()
-
-    show_current()
-    combo.activated.connect(pick)
-    edit.editingFinished.connect(commit)
+            self.edit.setText(command)
+            self._commit()
 
 
-def build_page(parent: QWidget | None, platform: str = sys.platform) -> QWidget:
+class ProfileList(QWidget):
+    """The profiles as a list with Add, Remove and Make Default beside it."""
+
+    def __init__(
+        self,
+        parent: QWidget,
+        on_pick: Callable[[int], None],
+        harnesses: tuple[AgentHarness, ...] = (),
+        platform: str = sys.platform,
+    ) -> None:
+        super().__init__(parent)
+        self._on_pick = on_pick
+        self._harnesses, self._platform = harnesses, platform
+        self.list = QListWidget(self)
+        self.list.setObjectName("AgentProfileList")
+        self.list.currentRowChanged.connect(self._picked)
+        self.add_button = QPushButton("Add", self)
+        self.add_button.setObjectName("AgentProfileAdd")
+        self.add_button.clicked.connect(self._add)
+        self.remove_button = QPushButton("Remove", self)
+        self.remove_button.setObjectName("AgentProfileRemove")
+        self.remove_button.clicked.connect(self._remove)
+        self.default_button = QPushButton("Make Default", self)
+        self.default_button.setObjectName("AgentProfileDefault")
+        self.default_button.clicked.connect(self._make_default)
+
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.addWidget(self.list, 1)
+        buttons = QHBoxLayout()
+        column.addLayout(buttons)  # Parented before it is filled — CLAUDE.md's layout rule.
+        buttons.addWidget(self.add_button)
+        buttons.addWidget(self.remove_button)
+        buttons.addWidget(self.default_button)
+        buttons.addStretch(1)
+        self.reload(0)
+
+    def reload(self, row: int) -> None:
+        profiles = read_profiles()
+        self.list.blockSignals(True)
+        self.list.clear()
+        for index, profile in enumerate(profiles):
+            self.list.addItem(f"{profile.name} (default)" if index == 0 else profile.name)
+        self.list.setCurrentRow(min(max(row, 0), len(profiles) - 1))
+        self.list.blockSignals(False)
+        self.remove_button.setEnabled(len(profiles) > 1)
+        self.default_button.setEnabled(self.list.currentRow() > 0)
+        self._on_pick(self.list.currentRow())
+
+    def _picked(self, row: int) -> None:
+        self.default_button.setEnabled(row > 0)
+        self._on_pick(row)
+
+    def _add(self) -> None:
+        profiles = read_profiles()
+        picked = profiles[max(self.list.currentRow(), 0)]
+        # A new profile starts as a copy of the picked one: the usual reason for a second
+        # profile is one thing changed — the terminal, or the agent. It is named by its
+        # choices, so the name follows that change until somebody types one.
+        copy = Profile("", picked.agent_command, picked.launch_command)
+        taken = [p.name for p in profiles]
+        name = unique_name(suggested_name(copy, self._harnesses, self._platform), taken)
+        write_profiles([*profiles, Profile(name, copy.agent_command, copy.launch_command)])
+        self.reload(len(profiles))
+
+    def _remove(self) -> None:
+        profiles = read_profiles()
+        row = self.list.currentRow()
+        if len(profiles) > 1 and 0 <= row < len(profiles):
+            del profiles[row]
+            write_profiles(profiles)
+            self.reload(min(row, len(profiles) - 1))
+
+    def _make_default(self) -> None:
+        profiles = read_profiles()
+        row = self.list.currentRow()
+        if row > 0:
+            profiles.insert(0, profiles.pop(row))
+            write_profiles(profiles)
+            self.reload(0)
+
+
+def build_page(
+    parent: QWidget | None,
+    platform: str = sys.platform,
+    harnesses: tuple[AgentHarness, ...] = (),
+) -> QWidget:
     page = QWidget(parent)
     page.setObjectName("AgentSettingsPage")
+    current = {"row": 0}
+
+    def commit(**changes: str) -> None:
+        """The picked profile's fields written, then the list re-read: the name may have
+        followed the change, and the row is what shows it."""
+        update_profile(current["row"], harnesses=harnesses, platform=platform, **changes)
+        profiles.reload(current["row"])
+
+    name_edit = QLineEdit(page)
+    name_edit.setObjectName("AgentProfileName")
 
     agent_combo = QComboBox(page)
     agent_combo.setObjectName("AgentPresetCombo")
     command_edit = QLineEdit(page)
     command_edit.setObjectName("AgentCommandEdit")
-    command_edit.setText(agent_command())
-    command_edit.setPlaceholderText(DEFAULT_AGENT_COMMAND)
-    _preset_field(
+    command_edit.setPlaceholderText(harnesses[0].command if harnesses else "")
+    agent_field = PresetField(
         agent_combo,
         command_edit,
-        AGENT_COMMAND_KEY,
-        [(preset.label, preset.command) for preset in PRESETS],
+        [(harness_label(harness), harness.command) for harness in harnesses],
         CUSTOM_LABEL,
+        on_commit=lambda text: commit(agent_command=text),
+        canonical=lambda text: current_command(text, harnesses) if text else "",
     )
 
     terminal_combo = QComboBox(page)
     terminal_combo.setObjectName("AgentTerminalCombo")
     terminal_edit = QLineEdit(page)
     terminal_edit.setObjectName("AgentLaunchCommandEdit")
-    terminal_edit.setText(launch_command())
     terminal_edit.setPlaceholderText("ghostty -e {script}")
-    _preset_field(
+    terminal_field = PresetField(
         terminal_combo,
         terminal_edit,
-        LAUNCH_COMMAND_KEY,
         [
             (terminal_label(preset, is_installed(preset)), preset.command)
             for preset in terminals_for(platform)
         ],
         AUTOMATIC_LABEL,
+        on_commit=lambda text: commit(launch_command=text),
     )
 
+    def show_profile(row: int) -> None:
+        current["row"] = row
+        profile = read_profiles()[row]
+        name_edit.blockSignals(True)
+        name_edit.setText(profile.name)
+        name_edit.blockSignals(False)
+        agent_field.show(profile.agent_command)
+        terminal_field.show(profile.launch_command)
+
+    def rename() -> None:
+        name = name_edit.text().strip()
+        if name and name != read_profiles()[current["row"]].name:
+            commit(name=name)
+
+    profiles = ProfileList(page, show_profile, harnesses, platform)
+    name_edit.editingFinished.connect(rename)
+
+    limit = QSpinBox(page)
+    limit.setObjectName("AgentMaxAgentsSpin")
+    limit.setRange(1, MAX_AGENTS_CEILING)
+    limit.setValue(max_agents())
+    # Arrow steps commit as they land; typing commits on Enter or focus-out, so a
+    # half-typed "1" on the way to "12" never becomes the limit for an instant.
+    limit.setKeyboardTracking(False)
+    limit.valueChanged.connect(lambda value: set_global(MODULE_ID, MAX_AGENTS_KEY, value))
+
+    started_box = QCheckBox("Mark the step in progress when a run starts", page)
+    started_box.setObjectName("AgentStartInProgressBox")
+    started_box.setChecked(start_in_progress())
+    started_box.toggled.connect(lambda on: set_global(MODULE_ID, START_IN_PROGRESS_KEY, bool(on)))
+
     layout = QVBoxLayout(page)
-    layout.addWidget(QLabel("Agent", page))
-    layout.addWidget(agent_combo)
-    layout.addWidget(QLabel("Command", page))
-    layout.addWidget(command_edit)
+    layout.addWidget(QLabel("Profiles", page))
     layout.addWidget(
+        _note(
+            "Run Agent… runs the default profile; the others are Step ▸ Run Agent With.",
+            page,
+        )
+    )
+    # Each child layout is parented before it is filled — CLAUDE.md's layout rule.
+    columns = QHBoxLayout()
+    layout.addLayout(columns)
+    columns.addWidget(profiles, 1)
+    editor = QVBoxLayout()
+    columns.addLayout(editor, 2)
+    editor.addWidget(QLabel("Profile name", page))
+    editor.addWidget(name_edit)
+    editor.addWidget(QLabel("Agent", page))
+    editor.addWidget(agent_combo)
+    editor.addWidget(QLabel("Command", page))
+    editor.addWidget(command_edit)
+    editor.addWidget(
         _note(
             "What the terminal runs. {prompt} is the opening line — one sentence pointing"
             " the agent at the briefing file, never the briefing itself (appended when"
@@ -145,15 +374,44 @@ def build_page(parent: QWidget | None, platform: str = sys.platform) -> QWidget:
             page,
         )
     )
-    layout.addWidget(QLabel("Terminal", page))
-    layout.addWidget(terminal_combo)
-    layout.addWidget(terminal_edit)
-    layout.addWidget(
+    editor.addWidget(QLabel("Terminal or multiplexer", page))
+    editor.addWidget(terminal_combo)
+    editor.addWidget(terminal_edit)
+    editor.addWidget(
         _note(
             "How the terminal opens on the run script. Automatic takes the first installed"
-            " terminal above, always a new window — tmux only when nothing else is"
-            " installed; picking one fills in its command, which can be edited."
-            " Placeholders: {script}, {workdir}, {title}.",
+            " terminal above, always a new window — a multiplexer only when nothing else"
+            " is installed; picking one fills in its command, which can be edited."
+            " A multiplexer adds a pane per agent to what is already running, so several"
+            " selected steps land side by side. Placeholders: {script}, {workdir},"
+            " {title}; two calls joined by && run in turn, {pane} in the second being"
+            " what the first printed.",
+            page,
+        )
+    )
+    editor.addStretch(1)
+
+    layout.addWidget(QLabel("Max agents launched at once", page))
+    limit_row = QHBoxLayout()
+    layout.addLayout(limit_row)
+    limit_row.addWidget(limit)
+    limit_row.addStretch(1)
+    layout.addWidget(
+        _note(
+            "How many agents Run Agent may launch from one selection. Each is a terminal,"
+            " a worktree and a session of its own; select more than this and the verb says"
+            " so instead of filling the desk.",
+            page,
+        )
+    )
+    layout.addWidget(QLabel("On launch", page))
+    layout.addWidget(started_box)
+    layout.addWidget(
+        _note(
+            "Run Agent sets the step's status to in progress as the terminal opens, so"
+            " the board shows the work has started without waiting for the agent to say"
+            " so. It is not undone when the agent stops: finishing is the agent's own"
+            " claim, or yours from Step ▸ Status.",
             page,
         )
     )

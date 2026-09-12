@@ -566,3 +566,22 @@ def test_a_relocated_project_is_followed_by_the_store(store, library, tmp_path):
     store.flush({(library.id, "structure"), (step.id, "meta")})
     assert read_library_file(store.library_path)[0].path == target.resolve()
     assert (target / "steps" / "read-the-spec" / "step.json").is_file()
+
+
+def test_a_file_area_refuses_a_name_that_would_leave_it(store, library, project_dir):
+    """Names reach an area off a shared file — a markdown body, a module's JSON — so the
+    one place they are joined is the one place a traversal is refused."""
+    import pytest
+
+    from dplanner.domain.store import is_area_name
+
+    area = store.files(library.projects[0].id, "spec")
+    area.write_bytes("assets/ok.png", b"x")
+    for bad in ("../../etc/passwd", "/etc/passwd", "assets/../../x", "a\\b", "./x"):
+        assert not is_area_name(bad)
+        assert area.read_bytes(bad) is None
+        with pytest.raises(ValueError):
+            area.write_bytes(bad, b"y")
+        with pytest.raises(ValueError):
+            area.absolute(bad)
+    assert is_area_name("assets/ok.png") and area.read_bytes("assets/ok.png") == b"x"

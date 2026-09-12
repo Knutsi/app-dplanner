@@ -4,14 +4,26 @@ import json
 from pathlib import Path
 
 import pytest
+from PySide6.QtWidgets import QSpinBox
 
+from dplanner.modules import agent_harnesses
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.launcher import (
     LaunchFiles,
-    prepare,
     resolve_command,
 )
+from dplanner.modules.step_agent_instruction.launcher import prepare as _prepare
 from dplanner.modules.step_agent_instruction.prompt import PromptPart, assemble
+
+HARNESSES = agent_harnesses()
+
+
+def prepare(*args, **kwargs):
+    """The launcher's ``prepare`` over this build's harnesses, so a blank command is
+    the default one — what the window passes."""
+    kwargs.setdefault("harnesses", HARNESSES)
+    return _prepare(*args, **kwargs)
+
 
 # -- assembly ----------------------------------------------------------------------------------
 
@@ -387,10 +399,13 @@ def test_the_claude_preset_names_the_session_and_the_script_says_how_to_resume(t
     ) in script
     assert f'To pick it up again: cd "%s" && claude --resume {session}' in script
     assert resume_command(
-        "claude --add-dir {run_dir} --permission-mode plan --session-id {session} {prompt}", "x"
+        "claude --add-dir {run_dir} --permission-mode plan --session-id {session} {prompt}",
+        "x",
+        HARNESSES,
     )
-    assert resume_command("my-agent --session {session} {prompt}", "x") == ""  # Unknown agent.
-    assert resume_command("codex {prompt}", "x") == ""  # Cannot name a session up front.
+    assert resume_command("my-agent --session {session} {prompt}", "x", HARNESSES) == ""
+    # Codex cannot name a session up front: its resume waits for the harness's report.
+    assert resume_command("codex {prompt}", "x", HARNESSES) == ""
     windows = prepare(
         "p", tmp_path, platform="win32", directory=run_dir, session=session
     ).script.read_text()
@@ -490,7 +505,7 @@ def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_pat
         "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000",
         "ANTHROPIC_API_KEY": "k",
     }
-    assert launcher.scrubbed_environment(env) == {
+    assert launcher.scrubbed_environment(env, HARNESSES) == {
         "PATH": "/usr/bin",
         "CLAUDE_CONFIG_DIR": "/home/me/.claude",
         "CLAUDE_CODE_USE_BEDROCK": "1",
@@ -500,23 +515,28 @@ def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_pat
     calls = []
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: calls.append((a, kw)))
     monkeypatch.setenv("CLAUDECODE", "1")
-    launcher.spawn(["term", "-e", "run.sh"], tmp_path)
+    assert launcher.spawn(["term", "-e", "run.sh"], tmp_path, HARNESSES) == ""
     ((command,), options) = calls[0]
     assert command == ["term", "-e", "run.sh"]
     assert options["start_new_session"] is True and options["cwd"] == tmp_path
     assert "CLAUDECODE" not in options["env"] and "PATH" in options["env"]
 
 
-def test_the_presets_cover_the_known_agents():
-    from dplanner.modules.step_agent_instruction.launcher import PRESETS
-
-    assert [preset.id for preset in PRESETS] == ["claude", "codex", "opencode"]
-    assert all("{prompt}" in preset.command for preset in PRESETS)
-    for preset in PRESETS:
-        tokens = preset.command.split()
+def test_the_harnesses_cover_the_known_agents():
+    """One provider module per agent CLI, and the capabilities are read off each record:
+    Claude names its session up front, Codex and OpenCode are found afterwards, all
+    three resume and count tokens."""
+    assert [h.id for h in HARNESSES] == ["claude", "codex", "opencode"]
+    assert all("{prompt}" in h.command for h in HARNESSES)
+    for harness in HARNESSES:
+        tokens = harness.command.split()
         if "{run_dir}" in tokens:
             # `--add-dir` takes a list: what follows the directory is an option, not the prompt.
             assert tokens[tokens.index("{run_dir}") + 1].startswith("--")
+    assert HARNESSES[0].capabilities() == ("names its session", "resumes", "counts tokens")
+    assert HARNESSES[1].capabilities() == ("resumes", "counts tokens")
+    assert HARNESSES[2].capabilities() == ("resumes", "counts tokens")
+    assert all(h.shell_markers for h in HARNESSES)
 
 
 def test_picking_a_terminal_prefills_its_command(app):
@@ -544,18 +564,18 @@ def test_picking_a_terminal_prefills_its_command(app):
 def test_picking_a_preset_prefills_the_command(app):
     from PySide6.QtWidgets import QComboBox, QLineEdit
 
-    from dplanner.modules.step_agent_instruction.launcher import PRESETS
     from dplanner.modules.step_agent_instruction.settings_page import agent_command, build_page
 
-    page = build_page(None)
+    page = build_page(None, harnesses=HARNESSES)
     combo = page.findChild(QComboBox, "AgentPresetCombo")
     edit = page.findChild(QLineEdit, "AgentCommandEdit")
     assert combo is not None and edit is not None
-    codex = next(i for i in range(combo.count()) if combo.itemText(i) == "Codex")
+    codex = next(i for i in range(combo.count()) if combo.itemText(i).startswith("Codex"))
+    assert combo.itemText(codex) == "Codex — resumes, counts tokens"
     combo.setCurrentIndex(codex)
     combo.activated.emit(codex)
-    assert edit.text() == PRESETS[1].command
-    assert agent_command() == PRESETS[1].command
+    assert edit.text() == HARNESSES[1].command
+    assert agent_command(HARNESSES) == HARNESSES[1].command
 
 
 def test_a_preset_text_an_earlier_version_shipped_is_still_that_preset(app, tmp_path):
@@ -566,32 +586,26 @@ def test_a_preset_text_an_earlier_version_shipped_is_still_that_preset(app, tmp_
 
     from dplanner.framework.user_config import set_global
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
-    from dplanner.modules.step_agent_instruction.launcher import (
-        PRESETS,
-        current_command,
-        resume_command,
-    )
-    from dplanner.modules.step_agent_instruction.settings_page import (
-        AGENT_COMMAND_KEY,
-        agent_command,
-        build_page,
-    )
+    from dplanner.modules.step_agent_instruction.launcher import current_command, resume_command
+    from dplanner.modules.step_agent_instruction.profiles import AGENT_COMMAND_KEY
+    from dplanner.modules.step_agent_instruction.settings_page import agent_command, build_page
 
-    claude = PRESETS[0]
+    claude = HARNESSES[0]
     assert claude.superseded
     for old in claude.superseded:
-        assert current_command(old) == claude.command
-        assert resume_command(old, "x") == "claude --resume x"
-    assert current_command("my-agent {prompt}") == "my-agent {prompt}"
-    assert current_command("  ") == claude.command
+        assert current_command(old, HARNESSES) == claude.command
+        assert resume_command(old, "x", HARNESSES) == "claude --resume x"
+    assert current_command("my-agent {prompt}", HARNESSES) == "my-agent {prompt}"
+    assert current_command("  ", HARNESSES) == claude.command
     old = "claude --permission-mode plan {prompt}"
     script = prepare("p", tmp_path, agent_command=old, platform="linux").script.read_text()
     assert "--add-dir" in script and "--session-id" in script
+    # The single setting profiles replaced is read as the default profile.
     set_global(MODULE_ID, AGENT_COMMAND_KEY, old)
-    assert agent_command() == claude.command
-    page = build_page(None)
+    assert agent_command(HARNESSES) == claude.command
+    page = build_page(None, harnesses=HARNESSES)
     combo = page.findChild(QComboBox, "AgentPresetCombo")
-    assert combo is not None and combo.currentText() == "Claude Code"
+    assert combo is not None and combo.currentText().startswith("Claude Code")
 
 
 # -- resolution --------------------------------------------------------------------------------
@@ -680,10 +694,17 @@ def test_the_terminal_table_is_one_per_platform_and_probes_installs():
         "Terminal",
         "iTerm",
         "Ghostty",
+        "WezTerm",
+        "herdr",
+        "zellij (new pane)",
         "tmux (new window)",
     ]
-    assert [p.id for p in terminals_for("win32")] == ["wt", "cmd", "ghostty-win"]
+    assert [p.id for p in terminals_for("win32")] == ["wt", "cmd", "ghostty-win", "herdr-win"]
     assert terminals_for("linux")[0].id == "ghostty" and terminals_for("linux")[-1].id == "tmux"
+    # Windows are first and multiplexers last on every platform: Automatic opens a window.
+    for platform in ("linux", "darwin", "win32"):
+        kinds = [p.multiplexer for p in terminals_for(platform)]
+        assert kinds == sorted(kinds)
     ghostty_mac = next(p for p in terminals_for("darwin") if p.id == "ghostty-mac")
     none = lambda _n: None  # noqa: E731 - a stand-in for shutil.which
     assert is_installed(ghostty_mac, which=none, env={}, app_exists=lambda n: n == "Ghostty")
@@ -830,7 +851,7 @@ def test_each_projects_own_repository_root_is_the_workdir(
     select(services, other)
 
     calls: list[tuple[list[str], Path]] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append((cmd, cwd)))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     ((_command, cwd),) = calls
@@ -851,7 +872,7 @@ def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_p
     select(services, step)
 
     calls: list[tuple[list[str], Path]] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append((cmd, cwd)))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     ((_command, cwd),) = calls
@@ -929,7 +950,7 @@ def test_the_order_view_selection_reaches_run_agent(services, step, monkeypatch)
     assert state.enabled
 
     calls: list[list[str]] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append(cmd))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append(cmd))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     assert calls == [["fake-term"]]
@@ -939,7 +960,7 @@ def test_the_button_runs_the_same_action(services, step, monkeypatch):
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
     calls: list[list[str]] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append(cmd))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append(cmd))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     section = _agent_section(services)
     section.show_target(step.id)
@@ -964,9 +985,24 @@ def prerequisite(services, step):
 
 def _fake_terminal(monkeypatch):
     calls: list[list[str]] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append(cmd))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append(cmd))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     return calls
+
+
+def _silence_fallback(monkeypatch):
+    """The prompt fallback dialog without the blocking: what a launch that opens no shell
+    shows instead of a terminal."""
+    import dplanner.modules.step_agent_instruction.module as agent_module
+
+    class SilentDialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(agent_module, "PromptFallbackDialog", SilentDialog)
 
 
 def _record_boxes(monkeypatch, *, click):
@@ -1038,7 +1074,7 @@ def test_running_spawns_a_terminal_in_the_projects_repo_root(
     select(services, step)
 
     calls: list[tuple[list[str], Path]] = []
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append((cmd, cwd)))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term", "-e", "run.sh"])
     services.actions.run("agent.run", services.context.current())
     ((command, cwd),) = calls
@@ -1052,7 +1088,7 @@ def test_a_successful_launch_stamps_the_run_state(services, step, monkeypatch):
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: None)
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     assert read(step) == "launched"
@@ -1062,23 +1098,89 @@ def test_a_successful_launch_stamps_the_run_state(services, step, monkeypatch):
 
 def test_the_prompt_fallback_does_not_stamp(services, step, monkeypatch):
     """No shell was started, so nothing claims one was."""
-    import dplanner.modules.step_agent_instruction.module as agent_module
     from dplanner.modules.step_agent_run.aspect import read
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: None)
-
-    class SilentDialog:
-        def __init__(self, *args):
-            pass
-
-        def exec(self):
-            return 0
-
-    monkeypatch.setattr(agent_module, "PromptFallbackDialog", SilentDialog)
+    _silence_fallback(monkeypatch)
     services.actions.run("agent.run", services.context.current())
     assert read(step) == ""
+
+
+def test_a_successful_launch_claims_the_step_is_in_progress(services, step, monkeypatch):
+    """On by default, and off the undo stack for the launch stamp's reason: Ctrl+Z must
+    not file the step as pending while an agent is still working in it."""
+    from dplanner.modules.step_status.aspect import read as status_of
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    _fake_terminal(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert status_of(step) == "in-progress"
+    assert not services.undo.can_undo()
+    assert "marked in progress" in services.window.statusBar().currentMessage()
+
+
+def test_the_launch_claim_can_be_switched_off(services, step, monkeypatch):
+    """The person keeping statuses by hand switches it off, and a launch writes nothing."""
+    from dplanner.framework.user_config import set_global
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
+    from dplanner.modules.step_agent_instruction.settings_page import START_IN_PROGRESS_KEY
+    from dplanner.modules.step_status.aspect import read as status_of
+
+    set_global(AGENT_ID, START_IN_PROGRESS_KEY, False)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    _fake_terminal(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert status_of(step) == "pending"
+    assert "marked in progress" not in services.window.statusBar().currentMessage()
+
+
+def test_the_settings_switch_round_trips(app):
+    """The page reflects the stored preference and writes the person's answer back."""
+    from PySide6.QtWidgets import QCheckBox
+
+    from dplanner.modules.step_agent_instruction.settings_page import (
+        build_page,
+        start_in_progress,
+    )
+
+    assert start_in_progress() is True
+    page = build_page(None)
+    box = page.findChild(QCheckBox, "AgentStartInProgressBox")
+    assert box is not None and box.isChecked()
+    box.setChecked(False)
+    assert start_in_progress() is False
+    page.deleteLater()
+
+
+def test_the_prompt_fallback_claims_nothing(services, step, monkeypatch):
+    """No shell was started, so nobody is working on the step yet."""
+    from dplanner.modules.step_status.aspect import read as status_of
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: None)
+    _silence_fallback(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert status_of(step) == "pending"
+
+
+def test_a_multiplexer_that_refuses_claims_nothing(services, step, monkeypatch):
+    """A spawn that answers with a reason opened no shell: the fallback shows and the
+    step stays where it was, exactly as when no command resolved."""
+    from dplanner.modules.step_status.aspect import read as status_of
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["herdr"])
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: "herdr is not installed")
+    _silence_fallback(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert status_of(step) == "pending"
+    assert "marked in progress" not in services.window.statusBar().currentMessage()
 
 
 def test_a_run_stages_attached_images_beside_the_prompt(services, step, monkeypatch):
@@ -1092,7 +1194,7 @@ def test_a_run_stages_attached_images_beside_the_prompt(services, step, monkeypa
     attach(services.repo.files(project.id, "step_agent_instruction"), b"proj-bytes", "logo.png")
     select(services, step)
 
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: None)
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     captured = {}
     real_prepare = launcher.prepare
@@ -1115,6 +1217,208 @@ def test_a_run_stages_attached_images_beside_the_prompt(services, step, monkeypa
     )
     for path in staged:
         assert str(path) in prompt  # Absolute, inside the run dir — reachable from anywhere.
+
+
+# -- a selection of steps, and the limit ---------------------------------------------------------
+
+
+def briefed(services, project, title):
+    """One more agent step in ``project``, with enough prose to be launchable."""
+    from dplanner.domain.commands import AddNodeCommand
+    from dplanner.domain.model import Step
+
+    step = Step(title=title)
+    AddNodeCommand(project.id, step).redo(services.document)
+    services.document.set_text(step.id, "step_agent_instruction", f"Ship {title}.")
+    return step
+
+
+def select_all(services, *steps):
+    from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+
+    services.context.set_scope(
+        SCOPE_SELECTION, tuple(ContextNode(selection_uri("step", s.id)) for s in steps)
+    )
+
+
+def test_a_selection_of_steps_names_its_count_in_the_verb(services, step):
+    """Run Agent reads the selection the way Delete does, and says how many it would run."""
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select_all(services, step, briefed(services, project, "Migrate"))
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.enabled
+    assert state.label == "Run 2 &Agents…"
+
+
+def test_running_over_a_selection_launches_one_agent_for_each_step(services, step, monkeypatch):
+    """Three steps, three peers — each briefed on its own step, in its own run directory."""
+    from dplanner.modules.step_agent_run.aspect import launched
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    chosen = [step, briefed(services, project, "Migrate"), briefed(services, project, "Measure")]
+    select_all(services, *chosen)
+
+    prepared: list[LaunchFiles] = []
+
+    def record(_template, files, _workdir):
+        prepared.append(files)
+        return ["fake-term"]
+
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
+    monkeypatch.setattr(launcher, "resolve_command", record)
+    services.actions.run("agent.run", services.context.current())
+
+    assert len(prepared) == 3
+    assert len({files.directory for files in prepared}) == 3
+    briefed_on = [files.prompt_file.read_text().splitlines()[0] for files in prepared]
+    assert briefed_on == ["# Step: Deploy", "# Step: Migrate", "# Step: Measure"]
+    assert all(launched(services.document.step(s.id)) for s in chosen)
+
+
+def test_a_run_over_a_selection_claims_each_step_whose_shell_opened(services, step, monkeypatch):
+    """The claim is per step, as each shell opens: a run that stops at its third step —
+    no terminal opened for it — leaves the first two marked and the third where it was,
+    and the status line counts what was marked."""
+    from dplanner.modules.step_status.aspect import read as status_of
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    chosen = [step, briefed(services, project, "Migrate"), briefed(services, project, "Measure")]
+    select_all(services, *chosen)
+
+    answers = iter([["fake-term"], ["fake-term"], None])
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: next(answers))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
+    _silence_fallback(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+
+    assert [status_of(services.document.step(s.id)) for s in chosen] == [
+        "in-progress",
+        "in-progress",
+        "pending",
+    ]
+    assert services.window.statusBar().currentMessage() == "2 agents launched, 2 marked in progress"
+
+
+def test_a_selection_past_the_limit_greys_the_verb_and_says_the_limit(services, step):
+    """The count itself is the refusal: a lasso is one flick, and five terminals is not
+    what it meant. Disabled with the reason, never hidden and never a partial launch."""
+    from dplanner.modules.step_agent_instruction.settings_page import DEFAULT_MAX_AGENTS
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    extra = [briefed(services, project, f"Step {n}") for n in range(DEFAULT_MAX_AGENTS)]
+    select_all(services, step, *extra)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.visible and not state.enabled
+    assert state.label == (
+        f"Run {DEFAULT_MAX_AGENTS + 1} Agents"
+        f" — at most {DEFAULT_MAX_AGENTS} at a time (Settings ▸ Agent profiles)"
+    )
+
+
+def test_nothing_launches_past_the_limit_even_if_the_verb_is_run_anyway(
+    services, step, monkeypatch
+):
+    """The state gate is not the only guard: the run itself checks, so a presenter that
+    ran a stale state cannot open a deskful of terminals."""
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select_all(services, step, *[briefed(services, project, f"Step {n}") for n in range(4)])
+    calls = _fake_terminal(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert calls == []
+
+
+def test_the_limit_is_a_setting(services, step, app):
+    """Four is a default, not a rule: the Agent settings page writes the number and the
+    verb reads it back."""
+    from dplanner.modules.step_agent_instruction.settings_page import build_page
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select_all(services, step, briefed(services, project, "Migrate"))
+
+    page = build_page(None)
+    spin = page.findChild(QSpinBox, "AgentMaxAgentsSpin")
+    assert isinstance(spin, QSpinBox)
+    assert spin.value() == 4  # The default, laid out rather than researched.
+    spin.setValue(1)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert not state.enabled
+    assert state.label == "Run 2 Agents — at most 1 at a time (Settings ▸ Agent profiles)"
+
+    spin.setValue(2)
+    assert services.actions.spec("agent.run").state(services.context.current()).enabled
+    page.deleteLater()
+
+
+def test_one_step_that_cannot_run_greys_the_verb_for_all_of_them(services, step):
+    """Launching the subset that qualifies would run fewer agents than were asked for and
+    say nothing about it, so the refusal names the step and its reason."""
+    from dplanner.domain.commands import AddNodeCommand
+    from dplanner.domain.model import Step
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    plain = Step(title="Write the release note")
+    AddNodeCommand(project.id, plain).redo(services.document)
+    select_all(services, step, plain)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.visible and not state.enabled
+    assert state.label == (
+        "Run 2 Agents — “Write the release note”: mark the step as an agent step first"
+        " (Step ▸ Type ▸ Agent)"
+    )
+
+
+def test_a_selection_spanning_two_projects_opens_each_shell_in_its_own_repository(
+    services, step, library_repo, tmp_path, monkeypatch
+):
+    """Where a shell can open is the project's fact, asked once per project — so a
+    selection across two of them must not answer for one with the other's."""
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.seed import seed_project
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    second_repo = init_repo(tmp_path / "second")
+    satellite = services.repo.attach(seed_project(second_repo / "satellite", "Satellite"))
+    services.document.add_child(services.document.id, satellite)
+    select_all(services, step, briefed(services, satellite, "Wire the antenna"))
+    assert services.actions.spec("agent.run").state(services.context.current()).enabled
+
+    calls: list[Path] = []
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append(cwd))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+    services.actions.run("agent.run", services.context.current())
+    assert calls == [library_repo, second_repo]
+
+
+def test_one_box_asks_about_every_chosen_step_that_waits(services, step, monkeypatch):
+    """One gesture, one question: a box per step would ask four times about one decision,
+    and Cancel means none of them."""
+    from dplanner.domain.commands import SetEdgesCommand
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    prepare = briefed(services, project, "Prepare")
+    review = briefed(services, project, "Review")
+    other = briefed(services, project, "Migrate")
+    SetEdgesCommand(step.id, "requires", [prepare.id]).redo(services.document)
+    SetEdgesCommand(other.id, "requires", [review.id]).redo(services.document)
+    select_all(services, step, other)
+
+    calls = _fake_terminal(monkeypatch)
+    boxes = _record_boxes(monkeypatch, click=None)
+    services.actions.run("agent.run", services.context.current())
+    assert calls == []
+    ((_title, text, detail),) = boxes
+    assert text == "2 of the chosen steps wait on work not done yet."
+    assert "Deploy waits on:\n• Prepare — pending" in detail
+    assert "Migrate waits on:\n• Review — pending" in detail
+    assert "Run them anyway?" in detail
 
 
 # -- where the agent works: the step's own fact ---------------------------------------------
@@ -1161,7 +1465,7 @@ def test_the_run_uses_a_worktree_only_when_the_step_says_so(services, step, monk
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     services.undo.push(SetModuleDataCommand(step.id, TICKET_ID, ticket_write(Ticket(key="PROJ-9"))))
     select(services, step)
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: None)
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     seen: list[str] = []
     real_prepare = launcher.prepare

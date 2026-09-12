@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.modules.coverage.trace import COLUMN_TITLES, Item, Trace
 from dplanner.theme.cards import (
+    DIM_OPACITY,
     FILL_ALPHA,
     LIFT,
     LIFTED_SHADOW,
@@ -84,8 +85,8 @@ MEDALLION_D = 20.0
 MARK_D = 8.0
 GLYPHS = {"feature": paint_layers_glyph, "milestone": paint_tag_glyph, "test": paint_beaker_glyph}
 
-# What is not on the path fades to this; a lit link thickens like a selected edge.
-DIM_OPACITY = 0.35
+# What is not on the path fades to ``DIM_OPACITY`` (theme/cards.py, shared with the canvas's
+# spotlight); a lit link thickens like a selected edge.
 LINK_ALPHA = 70
 LINK_W = 1.4
 LINK_LIT_W = 2.4

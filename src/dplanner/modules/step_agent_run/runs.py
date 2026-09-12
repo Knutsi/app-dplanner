@@ -22,6 +22,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from dplanner.domain.agents import RunFacts
 from dplanner.domain.model import now_stamp
 
 CLOSED = "closed"
@@ -36,6 +37,11 @@ class AgentRun:
     outcome: str = ""  # "" while live, else finished | failed | closed | lost.
     code: int | None = None  # The agent's exit status, when there was one.
     ended: str = ""  # ISO stamp of the outcome.
+    # Which agent CLI ran, by harness id ("" for a custom command nothing knows), and
+    # the session it was: named by the launcher up front, or found by the harness's
+    # own records once the run ended — what its usage is read from and what resumes it.
+    harness: str = ""
+    session: str = ""
 
     @property
     def key(self) -> str:
@@ -55,6 +61,8 @@ class AgentRun:
             "outcome": self.outcome,
             "code": self.code,
             "ended": self.ended,
+            "harness": self.harness,
+            "session": self.session,
         }
 
     @classmethod
@@ -73,13 +81,29 @@ class AgentRun:
                 outcome=str(raw.get("outcome", "")),
                 code=int(code) if isinstance(code, int) else None,
                 ended=str(raw.get("ended", "")),
+                harness=str(raw.get("harness", "")),
+                session=str(raw.get("session", "")),
             )
         except (KeyError, TypeError, ValueError):
             return None
 
 
-def new_run(step_id: str, shell_file: str, exit_file: str) -> AgentRun:
-    return AgentRun(step_id, shell_file, exit_file, now_stamp())
+def new_run(
+    step_id: str, shell_file: str, exit_file: str, harness: str = "", session: str = ""
+) -> AgentRun:
+    return AgentRun(step_id, shell_file, exit_file, now_stamp(), harness=harness, session=session)
+
+
+def run_facts(run: AgentRun) -> RunFacts:
+    """What a harness's ``report`` is handed: the session the launcher named (else the
+    one the shell recorded), where the agent worked, and when."""
+    shell = read_shell(run)
+    return RunFacts(
+        session=run.session or shell.get("session", ""),
+        directory=shell.get("dir", ""),
+        launched=run.launched,
+        ended=run.ended,
+    )
 
 
 def read_shell(run: AgentRun) -> dict[str, str]:

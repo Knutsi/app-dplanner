@@ -7,7 +7,13 @@ import pytest
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules.step_status.aspect import MODULE_ID, STATUSES, read, write
+from dplanner.modules.step_status.aspect import (
+    MODULE_ID,
+    STATUSES,
+    read,
+    record_started,
+    write,
+)
 
 # -- the aspect, with no application at all ----------------------------------------------------
 
@@ -37,6 +43,47 @@ def test_an_unknown_word_reads_as_pending_not_an_error():
 def test_writing_an_unknown_status_is_refused():
     with pytest.raises(ValueError, match="unknown status"):
         write("paused")
+
+
+# -- the window's own claim that work started --------------------------------------------------
+
+
+def _one_step():
+    from dplanner.domain.model import Library, Project
+
+    library = Library()
+    project = Project(title="Discovery")
+    library.add_child(library.id, project)
+    step = Step(title="Deploy")
+    library.add_child(project.id, step)
+    return library, step
+
+
+def test_record_started_claims_in_progress():
+    library, step = _one_step()
+    assert record_started(library, step.id) is True
+    assert read(step) == "in-progress"
+
+
+def test_record_started_writes_nothing_twice():
+    """The claim is idempotent: a second launch on a running step dirties nothing."""
+    library, step = _one_step()
+    record_started(library, step.id)
+    assert record_started(library, step.id) is False
+
+
+def test_record_started_overrides_a_finished_claim():
+    """Launching on a step that reads done means work resumed — there is no other honest
+    reading of it, and the person who did not want that switched the launch setting off."""
+    library, step = _one_step()
+    step.module_data[MODULE_ID] = write("done")
+    assert record_started(library, step.id) is True
+    assert read(step) == "in-progress"
+
+
+def test_record_started_on_a_step_that_is_gone_answers_false():
+    library, _step = _one_step()
+    assert record_started(library, "nobody") is False
 
 
 # -- the CLI -----------------------------------------------------------------------------------

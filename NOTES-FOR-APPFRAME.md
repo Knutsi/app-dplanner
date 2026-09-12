@@ -1102,14 +1102,40 @@ Registering ephemeral `ActionSpec`s would leak ids into the palette and need the
 un-registration door the registry deliberately keeps shut. The toolbar already had the
 answer (DPlanner's layout picker builds its popup fresh on open); this is the same rule given
 to the one presenter that never rebuilds. Belongs upstream, we think: "Recent…" menus are
-universal, and `fill_menu` in `action_menu.py` could learn to render the same specs so a
-right-click on a menu holding one cannot drift — not done here because nothing pops Tools up.
+universal. `fill_menu` in `action_menu.py` renders the same specs since 2026-09-12 — merged
+into the one sorted walk by the same `sort_key`, placed with the same group rule, filled on
+`aboutToShow` like the bar's — because *Step ▸ Run Agent With* became a data menu and the
+canvas pops Step up: a right-click that lacked it was the drift the one-builder rule exists
+to prevent. A named-`submenu` render leaves data menus out; they are children of the menu.
 
 **A detail worth keeping.** The data menu's `menuAction` stays visible with an empty list, on
 the *hidden means absent* rule: the menu is the capability, and the fill tells the empty
 story with a disabled entry ("No agents running from this window"). Deriving its visibility
 from its contents — the spec-fed child menus' rule — would make the capability flicker with
 the data.
+
+
+### `framework/step_selection.py` — "which entity does this verb act on", in one place
+
+**What.** `focused_step` moved out of `framework/aspect_toggle.py` and `chosen_steps` out of
+`modules/project_editor/verbs.py` into a file that holds both, with one parameter order
+(`(context, library)`). Nothing else changed: the two bodies are what they were.
+
+**Why.** `chosen_steps` — *the selection, else what the activity is about* — had been the
+private rule of the module that owns Delete, Cut, Copy, Duplicate and Isolate. Run Agent
+learned to act on a multi-selection too, and it lives in a module that may not import that
+one, so the rule was about to exist twice; a second copy is how two verbs come to disagree
+about what "these steps" means, which is the very drift the original docstring was written
+against. Its twin was already in the framework, under a filename that named a Type toggle
+rather than a selection.
+
+**For upstream.** The pair generalises past steps: the questions are *the one entity to act
+on* and *the entities to act on*, and every application built from the template asks them.
+An upstream version would be `focused_entity(context, kind, exists)` /
+`chosen_entities(context, kind, exists)` over any entity kind, with the model lookup handed
+in — the template's `Context` already speaks kinds, and `framework/` has no model to ask.
+We kept ours typed to `Library`/`Step` because that is what every call site here wants and a
+generic pair would have made both call sites longer than the function.
 
 
 ## 2. Conventions the template documents that we had to change
@@ -2262,3 +2288,36 @@ looks exactly like a rule that did not apply. `tests/test_theme.py` renders the 
 asserts both, in the splitter seam's spirit: it fails when either half is removed.
 
 **Upstream?** Yes, both. Any application whose toolbar buttons carry menus hits it.
+
+
+## 23. From the spotlight pass
+
+### `theme/cards.py` — `DIM_OPACITY`, what a lit surface fades the rest to
+
+**What.** `DIM_OPACITY = 0.35`, moved out of `modules/coverage/scene.py` (where it was
+written for the trace's lit path) and now read by the canvas's spotlight too.
+
+**Why.** Two surfaces light part of themselves and fade the remainder, and modules never
+import each other, so the number had to live where both may reach — the same argument that
+put the card primitives here. The rest of the pattern is worth carrying with it: **fade by
+`QGraphicsItem.setOpacity`, never by a paint-level flag.** One number takes a card's fill,
+border, title, glyphs and the shadow under it down together, which is what receding is; the
+painter never learns that a lit state exists, and there is no second "muted" path to keep
+agreeing with the first. **Upstream?** Yes, with the card primitives — any canvas that can
+light a subset of itself wants the constant and the rule.
+
+
+## 24. From the spec-sources pass
+
+### `framework/secrets_store.py` — `backend_problem()`
+
+**What.** Asks keyring which backend it chose and returns a sentence when a secret could
+not be kept safely: the `fail`/`null` backends (no keychain service — on Linux, the
+GNOME Keyring / KWallet remedy), a `keyrings.alt` plaintext backend, or a backend that
+cannot even be asked. `set_secret` keeps swallowing errors; this is for the surface
+*about to* store a credential, so it can refuse with the remedy instead of storing nowhere
+silently — the lesson `gh auth login` learned the hard way. It probes the backend rather
+than writing a probe value, because a write is what raises a keychain prompt.
+
+**Why.** A Confluence token goes through a guided Connect dialog on macOS, Linux and
+Windows, and "connected" must never be a lie. **Upstream?** Yes, as-is.
