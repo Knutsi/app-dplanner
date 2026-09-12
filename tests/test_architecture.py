@@ -59,6 +59,7 @@ HEADLESS_FILES = (
     "placement.py",
     "named_layouts.py",
     "sorts.py",
+    "geometry.py",
     "regions.py",
     "marks.py",
     "look.py",

@@ -2471,6 +2471,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
             days_for=estimated_days,
             paste_policies=_paste_policies(),
             file_modules=tuple(source.id for source in sources),
+            key_of=_step_key,
         ),
         # The staffing matrix reads estimates, agent-ness and the start date through the
         # owners' Qt-free readers — handed over here so no cli.py imports another module's.
