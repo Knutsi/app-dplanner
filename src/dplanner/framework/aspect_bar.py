@@ -48,6 +48,7 @@ from PySide6.QtCore import QEvent, QSize, Qt
 from PySide6.QtGui import QAction, QColor, QIcon, QPalette
 from PySide6.QtWidgets import QHBoxLayout, QMenu, QToolButton, QWidget
 
+from dplanner.core.signals import Signal
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.context import Context
 from dplanner.framework.toolbar import Toolbar
@@ -94,6 +95,10 @@ class AspectBar(QWidget):
         self._actions: dict[str, QAction] = {}
         self._templates: list[tuple[AspectTemplate, QAction]] = []
         self._selected: AspectTemplate | None = None
+        # Re-derived, and said. A host that repeats the bar's answer elsewhere — the details
+        # dialog's lead — cannot get it by listening to the model: applying a template ends
+        # with the bar's own refresh, after the last write anybody heard.
+        self.refreshed: Signal[()] = Signal("aspect_bar.refreshed")
 
         self.tools = Toolbar(self, dense=True)
         self.face = QToolButton(self)
@@ -217,6 +222,7 @@ class AspectBar(QWidget):
             self._describe(selected) if selected is not None else "What this step is"
         )
         self._paint_face()
+        self.refreshed.emit()
 
     # -- ink ---------------------------------------------------------------------------------
 

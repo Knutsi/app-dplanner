@@ -18,11 +18,12 @@ double-click on a step runs — and what New opens on the step it just made. One
 gesture is in the palette and the Step menu too, and the state gate decides once.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from PySide6.QtWidgets import QWidget
 
-from dplanner.domain.model import Library
+from dplanner.domain.model import Library, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -63,10 +64,13 @@ class StepPropertiesDeps:
     # the same freedom holds — a block registrant only has to come before a panel exists.
     details: InspectorSectionRegistry
     theme: ThemeService  # Tab glyphs and the bar's follow the theme's secondary text colour.
-    # The templates the bar words on its left — named combinations of Type toggles,
-    # each with the body tone it wears when the step carries exactly that set. Wired,
+    # The templates the bar's dropdown offers — named combinations of Type toggles, each
+    # with the body tone its glyph wears when the step carries exactly that set. Wired,
     # never inferred: the root names them, as it names the scope kinds.
     templates: tuple[AspectTemplate, ...] = ()
+    # How a step is named in a person's words — ``S7``. The details dialog's lead says it;
+    # how a key is spelled is the root's, so this module never learns the rule.
+    key_for: Callable[[StepId], str] | None = None
 
 
 class StepPropertiesModule:
@@ -143,6 +147,7 @@ class StepPropertiesModule:
             templates=self._deps.templates,
             theme=self._deps.theme,
             step_id=step_id,
+            key_for=self._deps.key_for,
             parent=self._deps.parent,
         )
         # A jump that named one of the step's own things — a test, a feature — lands on

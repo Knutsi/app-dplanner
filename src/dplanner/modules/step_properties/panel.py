@@ -122,6 +122,7 @@ class StepPanel(QWidget):
             # from here too would put the theme's grey beside the palette's in one row.
 
         self._unsubscribes = [
+            self.bar.refreshed.connect(self._say_heading),
             library.structure_changed.connect(self._on_structure),
             # A tab follows its aspect: toggles arrive as module data, and the agent
             # aspect is also implied by its prose, so both writes re-ask shown_for — and
@@ -202,12 +203,15 @@ class StepPanel(QWidget):
             extension.show_target(step_id)
 
     def _restate(self) -> None:
-        """Re-read the bar, and say in words what the panel is showing.
-
-        One place rather than four: the bar's answer to *what is this step* is what the
-        heading says, so whoever wants it hears the same thing the face is wearing.
-        """
+        """Re-read the bar. Saying what it now shows is the bar's own announcement."""
         self.bar.refresh()
+
+    def _say_heading(self) -> None:
+        """What the panel is showing, in words, for whoever asked to be told.
+
+        Driven by the bar rather than by the model: applying a template ends with the bar
+        refreshing itself, which is after the last write a model listener would hear.
+        """
         if self._heading is None:
             return
         if self._step_id is None:

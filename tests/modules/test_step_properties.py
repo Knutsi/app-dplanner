@@ -354,14 +354,15 @@ def test_an_edit_in_the_dialog_lands_on_the_undo_stack(services, project, monkey
 
 def test_the_details_dialog_never_outgrows_the_screen(services, project, monkeypatch):
     """It asks for 900x850 — room for the Tests tab's list beside its editor — but a laptop
-    must still get a dialog it can show whole. Asserted against the clamp, not the constant:
-    the offscreen platform reports an 800x800 screen, so the constant never survives here."""
+    must still get a dialog it can show whole. The frame owns the clamp now, at SCREEN_SHARE
+    of the screen; asserted against it, not the constant, because the offscreen platform
+    reports an 800x800 screen and the constant never survives here."""
     from dplanner.modules.step_properties.dialog import (
         DIALOG_HEIGHT,
         DIALOG_WIDTH,
-        SCREEN_CLEARANCE,
         StepDetailsDialog,
     )
+    from dplanner.theme.tokens import SCREEN_SHARE
 
     step = project.steps[0]
     opened = []
@@ -371,5 +372,59 @@ def test_the_details_dialog_never_outgrows_the_screen(services, project, monkeyp
 
     (dialog,) = opened
     available = dialog.screen().availableGeometry()
-    assert dialog.width() == min(DIALOG_WIDTH, available.width() - SCREEN_CLEARANCE)
-    assert dialog.height() == min(DIALOG_HEIGHT, available.height() - SCREEN_CLEARANCE)
+    assert dialog.width() == min(DIALOG_WIDTH, round(available.width() * SCREEN_SHARE))
+    assert dialog.height() == min(DIALOG_HEIGHT, round(available.height() * SCREEN_SHARE))
+
+
+def test_the_dialog_is_on_the_frame_with_a_title_a_lead_and_no_footer(
+    services, project, monkeypatch
+):
+    """F1's audit: "designed already (no buttons, live edits); not on the frame, so its
+    title is only the window's." The body says what the dialog is, the lead says which step
+    and what it is, and the window title stays the step's own — a switcher full of identical
+    *Step details* entries names nothing."""
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    step = project.steps[0]
+    opened = []
+    monkeypatch.setattr(StepDetailsDialog, "exec", lambda self: opened.append(self))
+    select(services, step.id)
+    services.actions.run("steps.details", services.context.current())
+    (dialog,) = opened
+
+    assert dialog.title_label.text() == "Step details"
+    assert dialog.windowTitle() == "Read the spec"  # The step's, not the frame's.
+    assert dialog.footer.isHidden()  # Every edit is live; there is nothing to confirm.
+    assert dialog.footer_buttons() == []
+    # The lead names the step: its key, and the template it amounts to.
+    assert dialog.lead_label.isVisibleTo(dialog)
+    key, _, kind = dialog.lead_label.text().partition(" · ")
+    assert key.startswith("S") and key[1:].isdigit()
+    assert kind == dialog.panel.bar.selected_label()
+    dialog.dispose()
+
+
+def test_the_dialogs_lead_follows_a_toggle(services, project, monkeypatch):
+    """The lead is the bar's own answer said in words, so it moves when the step does.
+
+    Driven by the bar's announcement, not by the model: applying a template ends with the
+    bar refreshing itself, which is after the last write a model listener would hear.
+    """
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    step = project.steps[0]
+    opened = []
+    # The verb disposes the dialog the moment exec() returns, and a disposed panel has
+    # stopped listening — so hold the teardown until the assertions are done.
+    dispose = StepDetailsDialog.dispose
+    monkeypatch.setattr(StepDetailsDialog, "exec", lambda self: opened.append(self))
+    monkeypatch.setattr(StepDetailsDialog, "dispose", lambda self: None)
+    select(services, step.id)
+    services.actions.run("steps.details", services.context.current())
+    (dialog,) = opened
+
+    assert dialog.lead_label.text().endswith(" · Step")
+    dialog.panel.bar.template("Milestone").trigger()
+    assert dialog.lead_label.text().endswith(" · Milestone")
+    assert dialog.windowTitle() == "Read the spec"  # Still the step's own name.
+    dispose(dialog)

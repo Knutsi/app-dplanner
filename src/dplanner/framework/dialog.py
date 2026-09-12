@@ -204,9 +204,14 @@ class DialogFrame(QDialog):
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 - Qt override
         super().showEvent(event)
         fields = self._body_fields()
-        chain: list[QWidget] = [*fields, *self.footer_buttons()]
-        for earlier, later in pairwise(chain):
-            QWidget.setTabOrder(earlier, later)
+        buttons = self.footer_buttons()
+        if buttons:
+            # Only worth doing for a footer: the rule is that the first Tab out of the body
+            # lands on the primary. With no buttons there is nothing to land on, and a body
+            # that is a whole panel would have its own chain rewritten into findChildren
+            # order — a hundred setTabOrder calls to make the tab order worse.
+            for earlier, later in pairwise([*fields, *buttons]):
+                QWidget.setTabOrder(earlier, later)
         focused = self.focusWidget()
         if focused is None or self.footer.isAncestorOf(focused):
             default = next((b for b in self.footer_buttons() if b.isDefault()), None)

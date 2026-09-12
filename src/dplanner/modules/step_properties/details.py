@@ -16,20 +16,15 @@ visible or not, so a block that reappears is already current.
 
 from collections.abc import Sequence
 
+from PySide6.QtCore import QEvent
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, TextEdit
 from dplanner.framework.inspector import InspectorExtension, InspectorSection
+from dplanner.framework.widgets import caption
 from dplanner.theme.icons import ICON_SIZE, info_icon
-
-# DESIGN.md: 16 px outer margins; more space between blocks than within one.
-PANEL_MARGIN = 16
-BLOCK_GAP = 12
-CAPTION_GAP = 6
-# DESIGN.md's opacity-derived secondary ink: theme-independent by construction, which is
-# what lets one painted glyph serve both themes without a repaint hook here.
-SECONDARY_ALPHA = 160
+from dplanner.theme.tokens import CAPTION_GAP, PANEL_MARGIN, SECONDARY_ALPHA, SECTION_GAP
 
 
 class _Block(QWidget):
@@ -39,22 +34,18 @@ class _Block(QWidget):
         super().__init__()
         self.section = section
         self.extension = extension
-        caption = QLabel(section.label, self)
-        caption.setObjectName("InspectorCaption")
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(CAPTION_GAP)
-        header.addWidget(caption)
+        header.addWidget(caption(section.label, self))
+        self.hint: QLabel | None = None
         if section.hint:
             # DESIGN.md's *Words* rule: a standing convention goes behind a glyph, never
-            # on a line of its own under the field. Repainted on theme change like every
-            # other colour-parameterised glyph.
+            # on a line of its own under the field.
             self.hint = QLabel(self)
             self.hint.setFixedSize(ICON_SIZE, ICON_SIZE)
             self.hint.setToolTip(section.hint)
-            ink = QColor(self.palette().text().color())
-            ink.setAlpha(SECONDARY_ALPHA)
-            self.hint.setPixmap(info_icon(ink).pixmap(ICON_SIZE, ICON_SIZE))
+            self._paint_hint()
             header.addWidget(self.hint)
         header.addStretch(1)
         layout = QVBoxLayout(self)
@@ -74,6 +65,20 @@ class _Block(QWidget):
             # Maximum rather than Fixed so a panel shorter than its blocks still compresses.
             self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
 
+    def _paint_hint(self) -> None:
+        if self.hint is None:
+            return
+        ink = QColor(self.palette().text().color())
+        ink.setAlpha(SECONDARY_ALPHA)
+        self.hint.setPixmap(info_icon(ink).pixmap(ICON_SIZE, ICON_SIZE))
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        # A colour copied out of the palette goes stale: the glyph carries the ink it was
+        # painted in, and nothing else reaches into a block to repaint it.
+        if event.type() == QEvent.Type.PaletteChange:
+            self._paint_hint()
+        super().changeEvent(event)
+
 
 class DetailsSection(QWidget):
     """The blocks the ``step_details`` registry collected, stacked in (order, id) order."""
@@ -86,7 +91,7 @@ class DetailsSection(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
-        layout.setSpacing(BLOCK_GAP)
+        layout.setSpacing(SECTION_GAP)
         for block in self._blocks:
             layout.addWidget(block, stretch=block.section.stretch)
         # Somewhere for the leftover height to go when the block that wanted it is turned
