@@ -56,7 +56,6 @@ from dplanner.theme.tokens import SECONDARY_ALPHA
 from dplanner.theme.tones import (
     BADGE_BORDER,
     BADGE_TINT,
-    BODY_TONES,
     CHIP_ATTENTION_BORDER,
     CHIP_ATTENTION_TINT,
     CHIP_INFO_BORDER,
@@ -64,6 +63,8 @@ from dplanner.theme.tones import (
     INVALID_TINT,
     STATUS_TONES,
     VALID_TINT,
+    recoloured,
+    toned,
 )
 
 # The link handle: a dot on the node's right edge. Dragging from it means "then", so an
@@ -189,6 +190,10 @@ class NodeAccent:
     chip_text: str = ""  # "" → no chip.
     chip_tone: str = ""  # "" neutral | "info" | "attention".
     body_tone: str = ""  # "" plain | "highlight" | "good" | "feature": the node is a kind.
+    # A milestone's own shade of the project's colour map, as "#rrggbb" — it recolours the
+    # body tone, the badge and the tag medallion together, so the card says *which*
+    # milestone as well as that it is one. "" leaves every tone the constant it is.
+    tone_color: str = ""
     # Icon medallions on the top edge, left end, in order: "tag" (a milestone the graph
     # aims at), "layers" (a feature: it collects the work behind it), "spark" (there is
     # machine guidance here), "beaker" (this step keeps tests), "shield" (a check: it
@@ -264,13 +269,24 @@ def paint_node(
     paint_title(painter, inner, title, text_colour, accent.muted, reserved)
     if detail:
         paint_detail_line(painter, inner, accent, text_colour, faded)
-    paint_icon_medallions(painter, palette, accent.icons)
+    paint_icon_medallions(painter, palette, accent.icons, accent.tone_color)
     if accent.badge:
-        paint_badge(painter, palette, body, accent.badge, medallion_end(accent.icons))
+        paint_badge(
+            painter, palette, body, accent.badge, medallion_end(accent.icons), accent.tone_color
+        )
     if accent.chip_text:
         paint_chip(painter, palette, body, accent.chip_text, accent.chip_tone)
     paint_handle(painter, palette, body, state)
     painter.restore()
+
+
+def tone_of(accent: NodeAccent) -> tuple[QColor, QColor] | None:
+    """``(fill, border)`` for a node's kind, recoloured by a milestone's own shade.
+
+    The card, its badge and its tag medallion all resolve through this, so a milestone
+    cannot wear its shade in one of the three and the constant purple in another.
+    """
+    return toned(accent.body_tone, accent.tone_color)
 
 
 def paint_body(
@@ -281,11 +297,11 @@ def paint_body(
     A body tone tints the whole node and strengthens its border — this node is a
     different kind of thing, legible at any zoom — but selection and a link drag's
     verdict still outrank it. Selection *deepens* whatever fill the node had rather than
-    painting one of its own, so a picked milestone is still purple and a picked done step
-    still green — and still recognisably fainter than the work around it.
+    painting one of its own, so a picked milestone keeps its shade and a picked done step
+    is still green — and still recognisably fainter than the work around it.
     """
     muted = accent.muted
-    toned = BODY_TONES.get(accent.body_tone)
+    toned = tone_of(accent)
     if toned is not None:
         tint = QColor(toned[0])
     else:
@@ -478,7 +494,14 @@ def paint_detail_line(
         )
 
 
-def paint_badge(painter: QPainter, palette: QPalette, body: QRectF, text: str, room: float) -> None:
+def paint_badge(
+    painter: QPainter,
+    palette: QPalette,
+    body: QRectF,
+    text: str,
+    room: float,
+    color: str = "",
+) -> None:
     """A pill on the top edge, right end: the milestone label, sitting on the border.
 
     It rises half its height above the node, which is why it must stay inside the item's
@@ -501,8 +524,8 @@ def paint_badge(painter: QPainter, palette: QPalette, body: QRectF, text: str, r
     shown = metrics.elidedText(text, Qt.TextElideMode.ElideRight, budget)
     width = metrics.horizontalAdvance(shown) + 2 * BADGE_PAD
     pill = QRectF(body.right() - BADGE_INSET - width, -BADGE_H / 2, width, BADGE_H)
-    painter.setBrush(BADGE_TINT)
-    painter.setPen(QPen(BADGE_BORDER, 1.0))
+    painter.setBrush(recoloured(BADGE_TINT, color) if color else BADGE_TINT)
+    painter.setPen(QPen(recoloured(BADGE_BORDER, color) if color else BADGE_BORDER, 1.0))
     painter.drawRoundedRect(pill, BADGE_H / 2, BADGE_H / 2)
     painter.setPen(QColor(palette.text().color()))
     painter.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), shown)
@@ -553,21 +576,26 @@ def medallion_end(icons: tuple[str, ...]) -> float:
     return LEFT_INSET + sum(ICON_D + ICON_GAP for _ in icons)
 
 
-def paint_icon_medallions(painter: QPainter, palette: QPalette, icons: tuple[str, ...]) -> None:
+def paint_icon_medallions(
+    painter: QPainter, palette: QPalette, icons: tuple[str, ...], color: str = ""
+) -> None:
     """One small circle per aspect kind, on the top edge's left end — the badge's opposite.
 
     A glance at a node's top-left corner answers "what is this step": a tag means a
     milestone, a spark means machine guidance, nothing means a plain step. The row starts
-    past the spine, so the key under it stays clear.
+    past the spine, so the key under it stays clear. The tag is the one medallion painted
+    in colour, and ``color`` is the milestone's own shade of the project's map.
     """
     ink = QColor(palette.text().color())
     faded = QColor(ink)
     faded.setAlpha(SECONDARY_ALPHA)
+    tag_border = recoloured(BADGE_BORDER, color) if color else QColor(BADGE_BORDER)
+    tag_fill = recoloured(BADGE_TINT, color) if color else QColor(BADGE_TINT)
     x = LEFT_INSET
     for kind in icons:
         centre = QPointF(x + ICON_D / 2, 0.0)
-        border = QColor(BADGE_BORDER) if kind == "tag" else faded
-        fill = QColor(BADGE_TINT) if kind == "tag" else QColor(palette.window().color())
+        border = tag_border if kind == "tag" else faded
+        fill = tag_fill if kind == "tag" else QColor(palette.window().color())
         painter.setBrush(fill)
         painter.setPen(QPen(border, 1.0))
         painter.drawEllipse(centre, ICON_D / 2, ICON_D / 2)

@@ -55,11 +55,16 @@ from dplanner.theme.icons import (
     tag_icon,
     trash_icon,
 )
+from dplanner.theme.palettes import PALETTES, shades
 from dplanner.theme.themes import Theme
 from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
-from dplanner.theme.tones import BADGE_BORDER, HIGHLIGHT_FILL
+from dplanner.theme.tones import HIGHLIGHT_FILL, recoloured
 
 DESIGN_TABLE_KIND = "design_table"
+# The sample's milestones wear real shades of the default map, dealt by place in the
+# sequence, because that is what a milestone wears everywhere in the application now —
+# a reference that showed one constant purple would teach the rule that was replaced.
+SAMPLE_SHADES = shades(PALETTES[0], 3)
 DEMO_DELAY_MS = 1500  # Long enough to see the indicator; a real view settles in 300.
 NO_ROWS = "No steps match. Every row is sample data; Add Rows puts them back."
 COLUMNS = (
@@ -119,14 +124,23 @@ SAMPLE: tuple[tuple[str, tuple[SampleRow, ...]], ...] = (
     ),
 )
 _GLYPHS = {"milestone": tag_icon, "feature": layers_icon, "step": step_icon, "test": beaker_icon}
+# The sample's milestones, in roadmap order — what ``sample_shade`` deals along.
+_MILESTONES = tuple(row for _heading, rows in SAMPLE for row in rows if row.kind == "milestone")
+
+
+def sample_shade(row: SampleRow) -> str:
+    """A sample milestone's shade — ``M1`` the deepest, in the order the roadmap runs."""
+    place = [found.key for found in _MILESTONES].index(row.key)
+    return SAMPLE_SHADES[place]
 
 
 def sample_cells(row: SampleRow, ink: QColor) -> list[Cell]:
     done = row.status == "done"
     milestone = row.kind == "milestone"
     # A milestone is known by its key, so the key badge stands where the glyph would and
-    # the second line says what the row gathers rather than the key again.
-    glyph = key_badge_icon(row.key, BADGE_BORDER) if milestone else _GLYPHS[row.kind](ink)
+    # the second line says what the row gathers rather than the key again — in that
+    # milestone's own shade of the project's colour map.
+    glyph = key_badge_icon(row.key, sample_shade(row)) if milestone else _GLYPHS[row.kind](ink)
     detail = "gathers every step above it" if milestone else row.key
     return [
         Cell(row.title, detail=detail, glyph=glyph, emphasis=milestone),
@@ -171,7 +185,9 @@ def fill_sample(
         if grouped:
             table.add_heading(heading)
         for row in shown:
-            tint = HIGHLIGHT_FILL if row.kind == "milestone" else None
+            tint = (
+                recoloured(HIGHLIGHT_FILL, sample_shade(row)) if row.kind == "milestone" else None
+            )
             table.add_row(sample_cells(row, ink), tint=tint, data={KEY_ROLE: row.key})
     table.fit_columns()
 

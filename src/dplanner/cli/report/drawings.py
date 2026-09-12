@@ -247,7 +247,15 @@ def _card(node: Node, colors: Colors) -> str:
         out.append(_pill(inner_x - 4, y + h - PILL_H / 2, word, spine or colors.ink, colors))
     if node.badge:
         width = _text_width(node.badge, 10.0) + 12
-        out.append(_pill(x + w - 10 - width, y - PILL_H / 2, node.badge, colors.milestone, colors))
+        out.append(
+            _pill(
+                x + w - 10 - width,
+                y - PILL_H / 2,
+                node.badge,
+                node.color or colors.milestone,
+                colors,
+            )
+        )
     out.append("</g>")
     return "".join(out)
 
@@ -257,7 +265,9 @@ def _body_tone(node: Node, colors: Colors) -> str | None:
     if node.status == "done":
         return colors.good
     if node.kind == "milestone":
-        return colors.milestone
+        # Its own shade where the plan deals one; the family otherwise, which is what a
+        # milestone wore before a project had a colour map.
+        return node.color or colors.milestone
     if node.kind == "feature":
         return colors.feature
     return None

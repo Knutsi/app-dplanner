@@ -24,6 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPoint
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
@@ -71,6 +72,10 @@ def _no_run(_context: Context) -> None:
     pass
 
 
+def _no_badge(_step_id: StepId) -> QIcon | None:
+    return None
+
+
 @dataclass(frozen=True)
 class ProgressionDeps:
     library: Library
@@ -87,6 +92,10 @@ class ProgressionDeps:
     # an agent: the button is absent from the board, not disabled.
     agent_state: Callable[[Context], ActionState] | None = None
     agent_run: Callable[[Context], None] = field(default=_no_run)
+    # A milestone's key and its own shade of the project's colour map, or None for a step
+    # that is not one — the badge its card leads with. Wired by the composition root: which
+    # map a project uses is one module's assumption and the key is another's letter.
+    milestone_badge: Callable[[StepId], QIcon | None] = field(default=_no_badge)
 
 
 class ProgressionActivity(EntityActivity):
@@ -124,6 +133,7 @@ class ProgressionActivity(EntityActivity):
             details=self._open_details,
             menu=self._on_context_menu,
             run_control=self._run_control,
+            milestone_badge=deps.milestone_badge,
             parent=content,
         )
         layout.addWidget(self.board, 1)

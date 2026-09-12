@@ -502,9 +502,7 @@ def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
     # The milestones are printed for one team: the one named, else the project's own.
     stored = read_team(project)
     team = next((cell for cell in calendar if (cell.humans, cell.agents) == stored), calendar[0])
-    colors = phase_colors(
-        team.phases, milestone_colors(context.library, project, is_milestone)
-    )
+    colors = phase_colors(team.phases, milestone_colors(context.library, project, is_milestone))
     data: dict[str, Any] = {
         "project": project.id,
         "start": report.start.isoformat(),

@@ -120,9 +120,7 @@ def report_source(
         then = resolve(AT_START, history=history, saved=saved, live=now, start=dated.start)
         basis = pick_words(AT_START, then, today)
         view = view_scope(now, history, then, None)
-        colors = phase_colors(
-            team.phases, milestone_colors(library, project, readers.is_milestone)
-        )
+        colors = phase_colors(team.phases, milestone_colors(library, project, readers.is_milestone))
         labels = dated.labels
         placed = [
             Placed(
