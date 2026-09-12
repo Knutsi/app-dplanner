@@ -26,6 +26,7 @@ from PySide6.QtGui import (
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
+    QFocusEvent,
     QKeyEvent,
     QMouseEvent,
     QPainter,
@@ -67,7 +68,7 @@ from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snap
 from dplanner.modules.project_editor.region_items import RegionItem
 from dplanner.modules.project_editor.regions import Region
 from dplanner.modules.project_editor.renderers import RING_STEP, NodeAccent, RenderHints
-from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef
+from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef, neighbourhood
 
 # How often a live ring's dashes move: quick enough to read as motion, slow enough that an
 # agent working for an hour costs the canvas nothing worth measuring.
@@ -113,6 +114,10 @@ class GraphScene(QGraphicsScene):
         self._marks = Marks()
         # Whether gestures land on the grid — the user's setting, pushed by the module.
         self._snap = True
+        # The spotlight, from its two sources: the user's look, and a key held for a moment.
+        # Either lights it, so letting go of the key never switches the preference off.
+        self._spotlight = False
+        self._spotlight_held = False
         self._nodes: dict[StepId, StepNodeItem] = {}
         self._edges: dict[EdgeRef, EdgeItem] = {}
         self._regions: dict[str, RegionItem] = {}
@@ -223,6 +228,7 @@ class GraphScene(QGraphicsScene):
                 self.addItem(edge)
             else:
                 edge.follow()  # A node may have moved under it since the last sync.
+        self._light_selection()  # The graph changed under the selection; re-derive.
 
     def advance_rings(self) -> None:
         """One tick: every live ring's dashes move on together."""
@@ -274,8 +280,9 @@ class GraphScene(QGraphicsScene):
         finally:
             self._reselecting = False
         # setSelected fires selectionChanged one item at a time and Qt reports the set
-        # unordered, so the order asked for is restored here and announced once.
+        # unordered, so the order asked for is restored here, lit and announced once.
         self._selection_order = [s for s in step_ids if s in self._nodes]
+        self._light_selection()
         self.selection_changed.emit(self.selection())
 
     def selection(self) -> CanvasSelection:
@@ -296,6 +303,7 @@ class GraphScene(QGraphicsScene):
         finally:
             self._reselecting = False
         self._selection_order = []
+        self._light_selection()
         self.selection_changed.emit(self.selection())
 
     def selected_step(self) -> StepId | None:
@@ -351,6 +359,18 @@ class GraphScene(QGraphicsScene):
         self._marks = marks
         for item in self._nodes.values():
             item.set_marks(marks)
+
+    def set_spotlight(self, on: bool) -> None:
+        """Whether the user's look fades what the selection is not linked to."""
+        if on != self._spotlight:
+            self._spotlight = on
+            self._light_selection()
+
+    def hold_spotlight(self, on: bool) -> None:
+        """The same, for as long as a key is held — the view's Alt, and the view's to end."""
+        if on != self._spotlight_held:
+            self._spotlight_held = on
+            self._light_selection()
 
     def set_snap(self, on: bool) -> None:
         """Whether gestures land on the grid from now on. Nothing already placed moves."""
@@ -444,6 +464,23 @@ class GraphScene(QGraphicsScene):
 
     # -- internals ---------------------------------------------------------------------------
 
+    def _light_selection(self) -> None:
+        """Light the selection's arrows, and fade what the spotlight leaves out.
+
+        One derivation, two readers. The arrows hanging off a picked step are lit whatever
+        the look says — that is how a card says what it is connected to — and the spotlight,
+        from the preference or the held key, fades every node and arrow the neighbourhood
+        does not name. **Nothing picked lights nothing**: the neighbourhood of an empty
+        selection is empty, so a spotlight over one dims nothing rather than everything.
+        """
+        near = neighbourhood(self._edges, self._selection_order)
+        dim = (self._spotlight or self._spotlight_held) and bool(near.steps)
+        for step_id, item in self._nodes.items():
+            item.set_dimmed(dim and step_id not in near.steps)
+        for ref, edge in self._edges.items():
+            edge.set_lit(ref in near.edges)
+            edge.set_dimmed(dim and ref not in near.edges)
+
     def _selected_edges(self) -> tuple[EdgeRef, ...]:
         return tuple(
             sorted(item.ref for item in self.selectedItems() if isinstance(item, EdgeItem))
@@ -460,6 +497,7 @@ class GraphScene(QGraphicsScene):
         current = {i.step_id for i in self.selectedItems() if isinstance(i, StepNodeItem)}
         kept = [step_id for step_id in self._selection_order if step_id in current]
         self._selection_order = kept + [s for s in current if s not in kept]
+        self._light_selection()
         self.selection_changed.emit(self.selection())
 
 
@@ -475,6 +513,11 @@ class GraphView(QGraphicsView):
     you are; the minimap in the corner says it instead, and the wheel still scrolls because
     a hidden scroll bar is still a scroll bar. Ctrl+wheel zooms; holding Space and dragging,
     or Space with the arrows or ``hjkl``, moves the plane by hand.
+
+    **Alt spotlights while it is held.** Not a mode and not a verb: it changes nothing about
+    what input means, so it is the same look ``canvas.spotlight`` switches on for good, lent
+    for as long as the key is down. The view holds it because only the view knows when the
+    keyboard goes — and Alt+Tab is precisely Alt held and then taken away.
     """
 
     def __init__(
@@ -617,15 +660,35 @@ class GraphView(QGraphicsView):
                     self.modes.pop()
             event.accept()
             return
+        if key.key == Qt.Key.Key_Alt and not key.auto_repeat:
+            self._hold_spotlight(False)
+            event.accept()
+            return
         super().keyReleaseEvent(event)
 
+    def focusOutEvent(self, event: QFocusEvent) -> None:  # noqa: N802 - Qt override
+        # A held key ends when the keyboard does: Alt+Tab is Alt held and then taken away,
+        # and its release is delivered to whatever the user switched to. Without this the
+        # canvas would still be spotlit when they came back.
+        self._hold_spotlight(False)
+        super().focusOutEvent(event)
+
+    def _hold_spotlight(self, on: bool) -> None:
+        scene = self.scene()
+        if isinstance(scene, GraphScene):
+            scene.hold_spotlight(on)
+
     def _canvas_key(self, key: CanvasKey) -> bool:
-        """The layer under the modes: leaving one, entering pan, and the bound verbs."""
+        """The layer under the modes: leaving one, entering pan, spotlighting, and the
+        bound verbs."""
         if key.key == Qt.Key.Key_Escape:
             return self.modes.pop()
         if key.key == Qt.Key.Key_Space and not key.auto_repeat:
             if not isinstance(self.modes.current(), PanMode):
                 self.modes.push(PanMode(self.deps))
+            return True
+        if key.key == Qt.Key.Key_Alt and not key.auto_repeat:
+            self._hold_spotlight(True)
             return True
         return any(self.deps.run_action(action_id) for action_id in self._bound(key))
 

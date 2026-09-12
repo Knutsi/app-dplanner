@@ -35,6 +35,13 @@ LIFT = 2.0
 SECONDARY_ALPHA = 160
 FILL_ALPHA = 28
 
+# What a surface that lights part of itself fades the rest to. Two of them do — the coverage
+# trace lights a path through its lanes, the canvas spotlights what the selection is linked
+# to — and both fade by *item opacity* rather than by a colour, so a card recedes whole: fill,
+# border, title, glyphs and the shadow under it together, on any theme. Low enough that the
+# lit part is unmistakable, high enough that the rest is still a graph and not a rumour.
+DIM_OPACITY = 0.35
+
 # Selection: a thicker outline in the accent, and half again the fill the card already had.
 # A *gain* rather than a colour of its own is what lets a picked milestone stay purple and a
 # picked done step stay green — the accent is already saying "this one" at the border.

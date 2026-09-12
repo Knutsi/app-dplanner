@@ -13,6 +13,13 @@ terminal on it. The terminal is a **peer process the user owns**, deliberately n
 TaskRunner task — see ``launcher.py``. Preview Prompt and the no-terminal fallback show
 the same assembled text, because the prompt is the library and the terminal was only one
 way to hand it over.
+
+**It runs one agent per chosen step, up to a limit.** The verb reads the selection the way
+Delete does, so lassoing three agent steps is *Run 3 Agents…* and one gesture; past
+*Settings ▸ Agent profiles*'s limit (four by default) the count itself is the refusal, greyed with
+its reason like any other precondition. Each step whose shell opened is also claimed
+*in progress* — through ``deps.mark_started``, unless the person switched that off on the
+settings page — since the agent's own first report may be minutes away.
 """
 
 import json
@@ -20,8 +27,9 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from PySide6.QtWidgets import QMessageBox, QWidget
+from PySide6.QtWidgets import QMenu, QMessageBox, QWidget
 
+from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Node, Step, StepId
 from dplanner.domain.progression import DONE
@@ -33,8 +41,9 @@ from dplanner.framework.action_registry import (
     ActionRegistry,
     ActionSpec,
     ActionState,
+    DataMenuSpec,
 )
-from dplanner.framework.aspect_toggle import aspect_toggle, focused_step
+from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
@@ -43,6 +52,7 @@ from dplanner.framework.settings_registry import (
     SettingsSection,
     SettingsSectionRegistry,
 )
+from dplanner.framework.step_selection import chosen_steps, focused_step
 from dplanner.framework.undo import UndoService
 from dplanner.framework.window import StatusHost
 from dplanner.modules.step_agent_instruction import launcher
@@ -56,6 +66,11 @@ from dplanner.modules.step_agent_instruction.aspect import (
     uses_worktree,
     with_worktree,
     write_state,
+)
+from dplanner.modules.step_agent_instruction.profiles import (
+    Profile,
+    default_profile,
+    read_profiles,
 )
 from dplanner.modules.step_agent_instruction.prompt import (
     EMPTY_BRIEFING,
@@ -74,6 +89,8 @@ from dplanner.modules.step_agent_instruction.settings_page import (
     agent_command,
     build_page,
     launch_command,
+    max_agents,
+    start_in_progress,
 )
 from dplanner.theme.icons import spark_icon, typewriter_icon
 
@@ -86,8 +103,13 @@ PREVIEW_NOTE = (
 )
 
 
-def _no_record(_step_id: StepId, _files: launcher.LaunchFiles) -> None:
+def _no_record(_step_id: StepId, _files: launcher.LaunchFiles, _harness: str) -> None:
     return None
+
+
+def _no_start(_step_id: StepId) -> bool:
+    """A build with nobody to tell that work started: nothing is claimed."""
+    return False
 
 
 def _all_done(_step: Step) -> str:
@@ -117,6 +139,11 @@ def _workdir_refusal(facts: RepositoryFacts) -> str:
 
 def _no_key(_step: Step) -> str:
     return ""
+
+
+def _titled(step: Step) -> str:
+    """A step's title as a person reads it — the placeholder when it has none."""
+    return step.title or "Untitled step"
 
 
 def _our_version(node: Node, entry: str) -> str:
@@ -164,10 +191,14 @@ class StepAgentInstructionDeps:
     # place allowed to know what the other aspects store. The same object feeds
     # ``dplanner agent prompt``, so the two surfaces cannot drift.
     briefing: Briefing = EMPTY_BRIEFING
-    # Hands the spawned shell over: the step_agent_run module stamps the aspect and
-    # watches the run's files for the shell's end — reached through the root because
-    # modules never import each other.
-    record_launch: Callable[[StepId, launcher.LaunchFiles], None] = field(default=_no_record)
+    # Hands the spawned shell over — with the id of the harness that runs in it, "" for
+    # a custom command: the step_agent_run module stamps the aspect, watches the run's
+    # files for the shell's end and reads the harness's record back — reached through
+    # the root because modules never import each other.
+    record_launch: Callable[[StepId, launcher.LaunchFiles, str], None] = field(default=_no_record)
+    # Every agent CLI this build can launch, first is the default — the composition
+    # root's ``agent_harnesses()``. What a profile's command is read against.
+    harnesses: tuple[AgentHarness, ...] = ()
     # Insert from Assets…: a modal picker over the node's project's catalog, composed by
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], "list[Payload]"] | None = None
@@ -175,12 +206,20 @@ class StepAgentInstructionDeps:
     # progression board's seam. Run Agent asks before launching on a step whose
     # prerequisites do not all read done; this module never learns the vocabulary's shape.
     status_for: Callable[[Step], str] = field(default=_all_done)
+    # The writer half of the same seam: work on the step has begun. Run Agent calls it as
+    # the terminal opens, when the person leaves *On launch* on; True when it wrote. The
+    # status aspect owns the word and the fact that the write skips the undo stack — this
+    # module only knows a run has started.
+    mark_started: Callable[[StepId], bool] = field(default=_no_start)
     # The step's readable key ("F7") and its ticket key ("PROJ-12"), both composed by the
     # root from aspects this module never reads. They name the run — the worktree, the
     # branch, the terminal's title — through ``launcher.run_name``, which the briefing's
     # preamble reads too, so the agent is told the very name the script prepared.
     step_key: Callable[[Step], str] = field(default=_no_key)
     ticket_key: Callable[[Step], str] = field(default=_no_key)
+    # What the step's agent runs have consumed, in words, for the Agent tab — the run
+    # tracker's ledger, read through the root; "" when nothing has been recorded.
+    usage_words: Callable[[StepId], str] = field(default=lambda _step_id: "")
 
 
 class StepAgentInstructionModule:
@@ -225,6 +264,7 @@ class StepAgentInstructionModule:
                 pick_assets=deps.pick_assets,
                 worktree=lambda step_id: uses_worktree(deps.library.step(step_id)),
                 set_worktree=self._set_worktree,
+                usage=deps.usage_words,
             )
 
         deps.sections.register(
@@ -278,6 +318,16 @@ class StepAgentInstructionModule:
                 run=self._run,
             )
         )
+        deps.actions.register_data_menu(
+            DataMenuSpec(
+                id="agent.run_with",
+                menu="Step",
+                group="agent",
+                title="Run Agent With",
+                order=15,
+                fill=self._fill_profiles,
+            )
+        )
         deps.actions.register(
             ActionSpec(
                 id="agent.preview",
@@ -293,41 +343,73 @@ class StepAgentInstructionModule:
         deps.settings_sections.register(
             SettingsSection(
                 id=f"{MODULE_ID}.launch",
-                category=("Agent",),
-                factory=build_page,
+                category=("Agent profiles",),
+                factory=lambda parent: build_page(parent, harnesses=deps.harnesses),
             )
         )
 
     # -- running -------------------------------------------------------------------------------
 
-    def _can_run(self, context: Context) -> ActionState:
-        """Present whenever a step is; greyed with the reason when a prerequisite is not.
+    def _chosen(self, context: Context) -> list[Step]:
+        """The steps Run Agent is about — what Delete acts on, read the same way."""
+        library = self._deps.library
+        return [library.step(step_id) for step_id in chosen_steps(context, library)]
 
-        The idiom from `CLAUDE.md`: a disabled entry carries what to do about it. The same
-        state drives the menu bar, the palette and the Agent tab's button.
-        """
-        step = focused_step(context, self._deps.library)
-        if step is None:
-            return DISABLED
+    def _step_refusal(self, step: Step) -> str:
+        """Why this step has no agent run in it; "" when it has. The step's own facts."""
         deps = self._deps
         if not enabled(step):
-            return ActionState(
-                enabled=False,
-                label="Run Agent — mark the step as an agent step first (Step ▸ Type ▸ Agent)",
-            )
+            return "mark the step as an agent step first (Step ▸ Type ▸ Agent)"
         briefed = deps.briefing.instruction(deps.library, step, deps.files)
         if (
             not briefed.body
             and not briefed.files
             and not read_project(deps.library.project_of(step.id))
         ):
+            return "describe the step, or write an agent instruction first"
+        return ""
+
+    def _can_run(self, context: Context, profile: Profile | None = None) -> ActionState:
+        """Present whenever a step is; greyed with the reason when a precondition is not.
+
+        The idiom from `CLAUDE.md`: a disabled entry carries what to do about it. The same
+        state drives the menu bar, the palette and the Agent tab's button.
+
+        **The verb acts on the whole selection, and every chosen step must be launchable.**
+        Running the subset that qualifies would launch fewer agents than were asked for and
+        say nothing, so one step's refusal greys the verb for all of them and the label
+        names which step and why. Past the *Settings ▸ Agent profiles* limit it is the count itself
+        that refuses, and it refuses **before** the per-step questions: a lasso is one flick
+        of the wrist and can hold the whole graph, and a deskful of terminals — or a walk
+        over every step in it — is not what that flick meant.
+        """
+        chosen = self._chosen(context)
+        if not chosen:
+            return DISABLED
+        deps = self._deps
+        count = len(chosen)
+        verb = "Run Agent" if count == 1 else f"Run {count} Agents"
+        limit = max_agents()
+        if count > limit:
             return ActionState(
                 enabled=False,
-                label="Run Agent — describe the step, or write an agent instruction first",
+                label=f"{verb} — at most {limit} at a time (Settings ▸ Agent profiles)",
             )
-        if refusal := _workdir_refusal(deps.facts_for(step.id)):
-            return ActionState(enabled=False, label=f"Run Agent — {refusal}")
-        return ENABLED
+        # The profile's terminal is one probe, asked before any step is: a multiplexer
+        # that is not running refuses the whole gesture the same way the count does.
+        if refusal := launcher.template_refusal(launch_command(profile)):
+            return ActionState(enabled=False, label=f"{verb} — {refusal}")
+        # Where a shell can open is the *project's* fact and asking git for it is not free,
+        # so it is asked once per project the selection touches rather than once per step.
+        by_project: dict[str, str] = {}
+        for step in chosen:
+            project_id = deps.library.project_of(step.id).id
+            if project_id not in by_project:
+                by_project[project_id] = _workdir_refusal(deps.facts_for(step.id))
+            if reason := self._step_refusal(step) or by_project[project_id]:
+                named = reason if count == 1 else f"“{_titled(step)}”: {reason}"
+                return ActionState(enabled=False, label=f"{verb} — {named}")
+        return ENABLED if count == 1 else ActionState(label=f"Run {count} &Agents…")
 
     def _can_preview(self, context: Context) -> ActionState:
         """A preview needs an agent step: with the aspect off there is no briefing to see."""
@@ -364,7 +446,7 @@ class StepAgentInstructionModule:
         # when one exists, the description otherwise, decided by the composition root.
         instruction = deps.briefing.instruction(deps.library, step, deps.files)
         return assemble(
-            step_title=step.title or "Untitled step",
+            step_title=_titled(step),
             project_title=project.title or "Untitled project",
             instruction=instruction.body,
             parts=parts,
@@ -377,27 +459,87 @@ class StepAgentInstructionModule:
             instruction_files=place(instruction.files),
         )
 
-    def _run(self, context: Context) -> None:
-        step = focused_step(context, self._deps.library)
-        if step is None:
-            return
+    def _run(self, context: Context, profile: Profile | None = None) -> None:
+        """One agent per chosen step, asked about once and launched in order — through
+        ``profile``, the default one when none is named.
+
+        The graph gate is asked **once for the whole gesture**: a box per step would make
+        four selected steps four questions about one decision. The loop stops at the first
+        step no terminal opened for — the template that refused one will refuse the rest,
+        and the fallback dialog is already holding that step's prompt. With a multiplexer
+        in the profile every step's shell lands in it, one pane each.
+        """
         deps = self._deps
-        unfinished = [
+        chosen = self._chosen(context)
+        if not chosen or len(chosen) > max_agents():
+            return  # The state gate already prevents this; stay honest.
+        waiting = [(step, unfinished) for step in chosen if (unfinished := self._unfinished(step))]
+        if waiting and not self._confirm_unfinished(waiting):
+            return
+        profile = profile or default_profile()
+        claim = start_in_progress()
+        launched = claimed = 0
+        for step in chosen:
+            spawned, started = self._run_on(step, profile, claim)
+            if not spawned:
+                break
+            launched += 1
+            claimed += started
+        if launched == 1:
+            note = " — marked in progress" if claimed else ""
+            deps.status.show_status(f"Agent launched on “{_titled(chosen[0])}”{note}", 4000)
+        elif launched > 1:
+            note = f", {claimed} marked in progress" if claimed else ""
+            deps.status.show_status(f"{launched} agents launched{note}", 4000)
+
+    def _unfinished(self, step: Step) -> list[Step]:
+        """The step's prerequisites that do not read done — what the graph gate asks about."""
+        deps = self._deps
+        return [
             required
             for required in deps.library.requires(step.id)
             if deps.status_for(required) != DONE
         ]
-        if unfinished and not self._confirm_unfinished(step, unfinished):
-            return
+
+    def _run_on(self, step: Step, profile: Profile, claim_started: bool) -> tuple[bool, bool]:
+        """Launch the agent on one step: whether a shell opened (the fallback showed when
+        not), and whether the step was thereby marked in progress.
+
+        The claim is made here, per step and only once its shell exists, rather than in
+        ``_launch``: the conflict hand-over shares ``_launch`` and must claim nothing —
+        that agent is merging two writers' plan files, not doing the step's work."""
+        deps = self._deps
         run_dir = launcher.new_run_dir()
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
         worktree = self._run_name(step) if uses_worktree(step) else ""
         workdir = _workdir(deps.facts_for(step.id))
-        spawned, prepared = self._launch(step, assembled.text, run_dir, worktree, workdir)
+        spawned, prepared = self._launch(step, assembled.text, run_dir, worktree, workdir, profile)
         if not spawned:
-            # No shell was started, so nothing is stamped: the fallback hands over the prompt.
+            # No shell was started, so nothing is stamped and nothing is claimed: the
+            # fallback hands over the prompt.
             PromptFallbackDialog(assembled.text, str(prepared.prompt_file), deps.parent).exec()
+            return False, False
+        return True, claim_started and deps.mark_started(step.id)
+
+    def _fill_profiles(self, menu: QMenu) -> None:
+        """Step ▸ Run Agent With: one entry per profile, the default first and marked,
+        each greyed with its own reason — a profile's terminal may be missing where
+        another's is not — and rebuilt every time the menu opens, so a profile added in
+        Settings is offered at once."""
+        deps = self._deps
+        context = deps.context.current()
+        for index, profile in enumerate(read_profiles()):
+            state = self._can_run(context, profile)
+            name = f"{profile.name} (default)" if index == 0 else profile.name
+            reason = ""
+            if not state.enabled and state.label:
+                reason = state.label.partition(" — ")[2]
+            entry = menu.addAction(f"{name} — {reason}" if reason else name)
+            entry.setEnabled(state.enabled)
+            entry.triggered.connect(
+                lambda _checked=False, p=profile: self._run(deps.context.current(), p)
+            )
 
     def _run_name(self, step: Step) -> str:
         """What this step's worktree and branch are called: the launcher's rule over the
@@ -416,23 +558,34 @@ class StepAgentInstructionModule:
             SetModuleDataCommand(step_id, MODULE_ID, with_worktree(step, worktree), label=label)
         )
 
-    def _confirm_unfinished(self, step: Step, unfinished: Sequence[Step]) -> bool:
+    def _confirm_unfinished(self, waiting: Sequence[tuple[Step, Sequence[Step]]]) -> bool:
         """The graph gates launching: an agent briefed on a step whose prerequisites are
         not done works without what they were to produce. Say which, and ask — the
-        person may know the work landed without the status being recorded."""
+        person may know the work landed without the status being recorded.
+
+        One box for the whole gesture, so several chosen steps name their own unfinished
+        work under their own heading and Cancel means *none of them*."""
         deps = self._deps
         box = QMessageBox(deps.parent)
         box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle("Run Agent")
-        count = f"{len(unfinished)} step{'s' if len(unfinished) != 1 else ''}"
-        box.setText(f"“{step.title or 'Untitled step'}” waits on {count} not done yet.")
-        listed = "\n".join(
-            f"• {required.title or 'Untitled step'} — {deps.status_for(required)}"
-            for required in unfinished
-        )
-        box.setInformativeText(
-            f"{listed}\n\nThe agent would start without what those steps produce. Run it anyway?"
-        )
+
+        def listed(unfinished: Sequence[Step]) -> str:
+            return "\n".join(f"• {_titled(r)} — {deps.status_for(r)}" for r in unfinished)
+
+        if len(waiting) == 1:
+            step, unfinished = waiting[0]
+            count = f"{len(unfinished)} step{'s' if len(unfinished) != 1 else ''}"
+            box.setText(f"“{_titled(step)}” waits on {count} not done yet.")
+            detail = listed(unfinished)
+            closing = "The agent would start without what those steps produce. Run it anyway?"
+        else:
+            box.setText(f"{len(waiting)} of the chosen steps wait on work not done yet.")
+            detail = "\n\n".join(
+                f"{_titled(step)} waits on:\n{listed(unfinished)}" for step, unfinished in waiting
+            )
+            closing = "The agents would start without what those steps produce. Run them anyway?"
+        box.setInformativeText(f"{detail}\n\n{closing}")
         run_anyway = box.addButton("Run Anyway", QMessageBox.ButtonRole.AcceptRole)
         box.addButton(QMessageBox.StandardButton.Cancel)
         box.setDefaultButton(QMessageBox.StandardButton.Cancel)
@@ -440,31 +593,44 @@ class StepAgentInstructionModule:
         return box.clickedButton() is run_anyway
 
     def _launch(
-        self, step: Step, text: str, run_dir: Path, worktree: str, workdir: Path | None
+        self,
+        step: Step,
+        text: str,
+        run_dir: Path,
+        worktree: str,
+        workdir: Path | None,
+        profile: Profile,
     ) -> tuple[bool, launcher.LaunchFiles]:
-        """Open the configured terminal on ``text`` for ``step`` in ``workdir``; the run
+        """Open the profile's terminal on ``text`` for ``step`` in ``workdir``; the run
         is recorded only when a shell was actually spawned. Both prompts this module
-        launches come through here, so a change to how a terminal opens is made once."""
+        launches come through here, so a change to how a terminal opens is made once.
+
+        What the status bar says, and whether the step is claimed in progress, is the
+        **caller's**: one launch names its step, a run over a selection counts what opened
+        and claims each step as it goes, and neither is true of the other."""
         deps = self._deps
         workdir = (workdir or Path()).expanduser()
         key = deps.step_key(step)
+        command_text = agent_command(deps.harnesses, profile)
         prepared = launcher.prepare(
             text,
             workdir,
-            agent_command=agent_command(),
+            agent_command=command_text,
             worktree=worktree,
             directory=run_dir,
             step_title=f"{key} {step.title}".strip(),
             project_id=deps.library.project_of(step.id).id,
+            harnesses=deps.harnesses,
         )
         command = None
         if workdir.is_dir():
-            command = launcher.resolve_command(launch_command(), prepared, workdir)
+            command = launcher.resolve_command(launch_command(profile), prepared, workdir)
         if command is None:
             return False, prepared
-        launcher.spawn(command, workdir)
-        deps.record_launch(step.id, prepared)
-        deps.status.show_status(f"Agent launched on “{step.title}”", 4000)
+        if launcher.spawn(command, workdir, harnesses=deps.harnesses):
+            return False, prepared  # A multiplexer that refused is no shell at all.
+        harness = launcher.harness_of(command_text, deps.harnesses)
+        deps.record_launch(step.id, prepared, harness.id if harness else "")
         return True, prepared
 
     # -- reconciling a conflict ----------------------------------------------------------------
@@ -501,13 +667,17 @@ class StepAgentInstructionModule:
             ours.write_text(_our_version(library.node(conflict.node_id), conflict.entry))
             entries.append((conflict.path, str(ours)))
         text = conflict_prompt(
-            step_title=step.title or "Untitled step",
+            step_title=_titled(step),
             project_title=library.project_of(step_id).title or "Untitled project",
             preamble=deps.briefing.preamble(step, False, facts),
             entries=entries,
         )
-        spawned, prepared = self._launch(step, text, run_dir, "", facts.plan_root)
-        if not spawned:
+        spawned, prepared = self._launch(
+            step, text, run_dir, "", facts.plan_root, default_profile()
+        )
+        if spawned:
+            deps.status.show_status(f"Agent launched on “{_titled(step)}”", 4000)
+        else:
             PromptFallbackDialog(
                 text, str(prepared.prompt_file), deps.parent, title="Resolve Conflict"
             ).exec()

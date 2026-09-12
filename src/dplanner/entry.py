@@ -33,17 +33,21 @@ from collections.abc import Mapping
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import WINDOW_WORD, run
 from dplanner.core.telemetry import Telemetry, install, journal_path
-from dplanner.modules import default_cli_commands, default_module_formats
+from dplanner.modules import agent_harnesses, default_cli_commands, default_module_formats
 
 # Options that take a value, so the value is not mistaken for a command word. Both surfaces
 # understand --library; the CLI also scopes verbs with --project. Skipping the value is
 # what lets ``dplanner --library ~/plans.json window`` open a window on that library.
 VALUE_OPTIONS = ("--library", "--project")
 
-# What an agent CLI sets in every shell it runs: one row per agent known to mark its
-# shell. Not a dispatch rule — the word decides what runs — but a guard on who owns the
-# window, and a missed agent here costs a guard, not a wrong dispatch.
-AGENT_SHELL_MARKERS = ("CLAUDECODE",)
+
+def agent_shell_markers() -> tuple[str, ...]:
+    """What an agent CLI sets in every shell it runs: each harness's first marker — the
+    one that names the CLI itself rather than a session detail. Not a dispatch rule —
+    the word decides what runs — but a guard on who owns the window, and a missed agent
+    here costs a guard, not a wrong dispatch."""
+    return tuple(h.shell_markers[0] for h in agent_harnesses() if h.shell_markers)
+
 
 REFUSAL = (
     "dplanner window: not from inside an agent's shell ({marker} is set).\n"
@@ -55,7 +59,7 @@ REFUSAL = (
 
 def agent_shell_marker(env: Mapping[str, str] = os.environ) -> str:
     """The marker set in this environment, or "" when no agent's shell is around us."""
-    return next((name for name in AGENT_SHELL_MARKERS if env.get(name)), "")
+    return next((name for name in agent_shell_markers() if env.get(name)), "")
 
 
 def _word_indices(argv: list[str]) -> list[int]:

@@ -42,7 +42,15 @@ def _to_format_3(data: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in data.items() if key != "requirements"}
 
 
-DATA_FORMAT = ModuleDataFormat(MODULE_ID, 3, (_to_format_2, _to_format_3))
+def _to_format_4(data: dict[str, Any]) -> dict[str, Any]:
+    """Format 4 adds where a document *came from*: a ``sources`` list beside the project
+    and ``title``/``source``/``key``/``version``/``parent`` on a document. Every key is
+    additive and absence keeps its old meaning, so the shape is unchanged; the bump is
+    what stops a format-3 build's tolerant reader from rewriting the entry without them."""
+    return dict(data)
+
+
+DATA_FORMAT = ModuleDataFormat(MODULE_ID, 4, (_to_format_2, _to_format_3, _to_format_4))
 
 ATTACHMENTS_KEY = "attachments"
 

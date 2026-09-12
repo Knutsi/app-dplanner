@@ -303,7 +303,7 @@ def test_resolving_with_an_agent_hands_over_both_versions_and_yields(
 
     spawned = []
     monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["true"])
-    monkeypatch.setattr(launcher, "spawn", lambda command, _workdir: spawned.append(command))
+    monkeypatch.setattr(launcher, "spawn", lambda command, _workdir, **_kw: spawned.append(command))
     FakeDialog.answer = AGENT
     watch._ask()
 
@@ -320,6 +320,25 @@ def test_resolving_with_an_agent_hands_over_both_versions_and_yields(
     assert services.document.step(step.id).title == "Agent titled step"
     services.autosave.flush_now()
     assert not services.autosave.has_pending()
+
+
+def test_resolving_a_conflict_does_not_claim_the_step_is_in_progress(
+    session, step, library_file, monkeypatch
+):
+    """That agent merges two writers' plan files; it is not doing the step's work, so the
+    launch that starts it makes no claim about where the work stands."""
+    from dplanner.modules.step_status.aspect import read as status_of
+
+    services = session.services
+    services.undo.push(SetFieldCommand(step.id, "title", "Typed here"))
+    agent_edits_a_step(library_file, step.id)
+    services.autosave.flush_now()
+
+    monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["true"])
+    monkeypatch.setattr(launcher, "spawn", lambda _command, _workdir, **_kw: None)
+    FakeDialog.answer = AGENT
+    module(session)._ask()
+    assert status_of(services.document.step(step.id)) == "pending"
 
 
 def test_a_conflict_is_settled_where_the_plan_lives_not_in_the_code_checkout(
@@ -343,7 +362,7 @@ def test_a_conflict_is_settled_where_the_plan_lives_not_in_the_code_checkout(
 
     opened = []
     monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["true"])
-    monkeypatch.setattr(launcher, "spawn", lambda _command, workdir: opened.append(workdir))
+    monkeypatch.setattr(launcher, "spawn", lambda _command, workdir, **_kw: opened.append(workdir))
     FakeDialog.answer = AGENT
     watch._ask()
     assert FakeDialog.refusals == [""]

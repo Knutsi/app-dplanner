@@ -12,7 +12,7 @@ import pytest
 from dplanner.domain.commands import RemoveNodeCommand, SetModuleDataCommand
 from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules.spec.activity import NAME_ROLE, SpecsActivity
+from dplanner.modules.spec.activity import SpecsActivity
 from dplanner.modules.spec.aspect import MODULE_ID
 from dplanner.modules.spec.documents import (
     SpecIndex,
@@ -102,9 +102,9 @@ def test_the_tab_lists_documents_and_follows_the_model(services, project):
     services.actions.run("spec.open", select(services, project))
     activity = services.tabs.activities()[0]
     assert isinstance(activity, SpecsActivity)
-    assert activity.list.count() == 1  # The pinned Topology row; no documents yet.
+    assert len(activity.rows()) == 1  # The pinned Topology row; no documents yet.
     imported(services, project, "auth", b"# Auth\n", "auth.md")
-    assert [activity.list.item(i).text() for i in range(activity.list.count())] == [
+    assert [activity.row_item(i).text(0) for i in range(len(activity.rows()))] == [
         "Topology",
         "auth",
     ]
@@ -171,20 +171,32 @@ def opened(services, project):
 
 
 def test_the_toolbar_replaced_the_add_button(services, project):
-    from PySide6.QtWidgets import QPushButton
-
+    """The + button is the one way in: its arrow drops the Add Spec child menu, so
+    Import is a menu entry rather than a second glyph, and the strip's Connect button
+    stays off screen while no source is shown."""
     from dplanner.framework.toolbar import ActionToolbar
 
     activity = opened(services, project)
-    assert activity.widget.findChild(ActionToolbar) is activity.toolbar
-    assert activity.widget.findChild(QPushButton) is None
+    assert activity.toolbar in activity.widget.findChildren(ActionToolbar)
+    assert "spec.add" not in activity.toolbar._buttons
+    popup = activity.toolbar.menu_for("spec.new")
+    assert popup is not None
+    entries = [
+        entry.text().replace("&", "") for entry in popup.actions() if not entry.isSeparator()
+    ]
+    assert entries == [
+        "New Spec Document…",
+        "Import Spec Document…",
+        "Confluence Page or Folder…",
+    ]
+    assert activity._source_strip.isHidden()
 
 
 def test_the_active_tab_publishes_the_selected_document(services, project):
     activity = opened(services, project)
     assert services.context.current().selected_entity("spec_document") is None
     imported(services, project, "auth", b"body", "auth.txt")
-    assert activity.list.currentItem() is not None
+    assert activity.current_row() >= 0
     assert services.context.current().selected_entity("spec_document") == "auth"
 
 
@@ -193,7 +205,7 @@ def test_a_background_tab_does_not_speak_for_the_user(services, project):
     imported(services, project, "auth", b"body", "auth.txt")
     activity.on_deactivated()
     services.context.clear_scope(SCOPE_SELECTION)
-    activity.list.setCurrentRow(0)
+    activity.select_row(0)
     assert services.context.current().selected_entity("spec_document") is None
 
 
@@ -229,4 +241,4 @@ def test_the_viewer_survives_an_index_edit_that_keeps_the_blob(services, project
     SetModuleDataCommand(project.id, MODULE_ID, write_index(marked)).redo(services.document)
     # An assets-only edit repaints the list but never rebuilds the viewer.
     assert activity._shown is shown
-    assert activity.list.item(1).data(NAME_ROLE) == "auth"
+    assert activity.rows()[1] == ("auth", 0)

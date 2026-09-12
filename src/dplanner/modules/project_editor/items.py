@@ -36,7 +36,7 @@ from dplanner.modules.project_editor.renderers import (
     paint_node,
 )
 from dplanner.modules.project_editor.selection import EdgeRef
-from dplanner.theme.cards import SECONDARY_ALPHA
+from dplanner.theme.cards import DIM_OPACITY, SECONDARY_ALPHA
 
 # How far a press may land from the handle's centre and still mean it.
 HANDLE_GRAB = 12.0
@@ -50,6 +50,11 @@ EDGE_REACH = 8.0
 
 # The outline preview's wash: the same faint ink a region's body wears.
 OUTLINE_FILL_ALPHA = 10
+
+# An arrow hanging off the selection is *lit*: the accent that says "this one" on the picked
+# card's border, a shade under a picked arrow's own so a link you chose and a link that merely
+# touches what you chose stay tellable apart.
+LIT_ALPHA = 190
 
 # How wide a curve is to the mouse. An edge is drawn 1.4 px thin and no one can click that,
 # so its shape() is the stroked path at this width — comfortably a target, still narrow
@@ -164,6 +169,16 @@ class StepNodeItem(QGraphicsItem):
         if marks != self._marks:
             self._marks = marks
             self.update()
+
+    def set_dimmed(self, dimmed: bool) -> None:
+        """Fade the whole card: the spotlight is on and this step is not in it.
+
+        Item opacity rather than a paint-level flag — one number fades fill, border, title,
+        every medallion and the shadow together, which is what receding *is*, and the
+        renderer never learns that a spotlight exists. The coverage trace dims its cards
+        the same way, off the same constant.
+        """
+        self.setOpacity(DIM_OPACITY if dimmed else 1.0)
 
     def body_rect(self) -> QRectF:
         """The card, in its own coordinates: the rect every painter measures from."""
@@ -282,10 +297,22 @@ class EdgeItem(QGraphicsPathItem):
         self.ref = EdgeRef(waiter=waiter.step_id, kind=kind, source=source.step_id)
         self._head: QPolygonF | None = None
         self._hovered = False
+        self._lit = False
         self.setZValue(-1)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setAcceptHoverEvents(True)
         self.follow()
+
+    def set_lit(self, lit: bool) -> None:
+        """Whether this arrow hangs off a picked step — the scene derives it every time the
+        selection or the graph changes."""
+        if lit != self._lit:
+            self._lit = lit
+            self.update()
+
+    def set_dimmed(self, dimmed: bool) -> None:
+        """Fade the arrow: the spotlight is on and the selection does not touch it."""
+        self.setOpacity(DIM_OPACITY if dimmed else 1.0)
 
     def shape(self) -> QPainterPath:
         stroker = QPainterPathStroker()
@@ -324,14 +351,17 @@ class EdgeItem(QGraphicsPathItem):
         _widget: QWidget | None = None,
     ) -> None:
         palette = live_palette(self)
-        if self.isSelected():
+        if self.isSelected() or self._lit:
             colour = QColor(palette.highlight().color())
+            if not self.isSelected():
+                colour.setAlpha(LIT_ALPHA)
         else:
             colour = QColor(palette.text().color())
             colour.setAlpha(200 if self._hovered else 130)
         style = Qt.PenStyle.SolidLine if self.kind == "requires" else Qt.PenStyle.DashLine
+        stressed = self.isSelected() or self._hovered or self._lit
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(QPen(colour, 2.4 if self.isSelected() or self._hovered else 1.4, style))
+        painter.setPen(QPen(colour, 2.4 if stressed else 1.4, style))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(self.path())
         if self._head is not None:

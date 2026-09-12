@@ -17,8 +17,8 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.aspect_toggle import focused_step
 from dplanner.framework.context import Context
+from dplanner.framework.step_selection import focused_step
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_status.aspect import (
     DATA_FORMAT,

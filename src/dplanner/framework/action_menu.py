@@ -8,7 +8,12 @@ context, is what keeps four presentations of the same verbs from drifting apart.
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import QMenu, QWidget
 
-from dplanner.framework.action_registry import ActionRegistry, ActionSpec, ActionState
+from dplanner.framework.action_registry import (
+    ActionRegistry,
+    ActionSpec,
+    ActionState,
+    DataMenuSpec,
+)
 from dplanner.framework.context import ContextService
 
 
@@ -57,6 +62,12 @@ def append_action(
     return entry
 
 
+def _fill_data(spec: DataMenuSpec, child: QMenu) -> None:
+    """A data child menu's entries, read now — the same clear-and-refill the bar does."""
+    child.clear()
+    spec.fill(child)
+
+
 def fill_menu(
     target: QMenu,
     actions: ActionRegistry,
@@ -82,6 +93,11 @@ def fill_menu(
     are all hidden is never created. Naming a submenu renders just that child menu's
     entries, flat — for a popup on a thing whose verbs live in a submenu, like the tab bar's
     right-click, or a toolbar button that drops its verb's submenu down.
+
+    A **data child menu** (`DataMenuSpec`) is placed by the same key and filled when it
+    opens, as the bar's is — so a menu's right-click offers *Run Agent With* because the
+    Step menu does, and never a copy of it. It is a child of the menu itself, so a named
+    ``submenu`` render leaves it out.
     """
     context = context_service.current()
     previous_group: str | None = None
@@ -95,8 +111,20 @@ def fill_menu(
             lambda _checked=False, sid=spec.id: actions.run(sid, context_service.current())
         )
 
-    for spec in actions.all_specs():
-        if spec.menu != menu or (submenu is not None and spec.submenu != submenu):
+    placed: list[ActionSpec | DataMenuSpec] = [*actions.all_specs(), *actions.data_menus()]
+    for spec in sorted(placed, key=actions.menus.sort_key):
+        if spec.menu != menu:
+            continue
+        if isinstance(spec, DataMenuSpec):
+            if submenu is not None:
+                continue
+            if previous_group is not None and spec.group != previous_group:
+                target.addSeparator()
+            previous_group = spec.group
+            data_child = target.addMenu(spec.title)
+            data_child.aboutToShow.connect(lambda s=spec, c=data_child: _fill_data(s, c))
+            continue
+        if submenu is not None and spec.submenu != submenu:
             continue
         state = spec.state(context)
         if not state.visible:
