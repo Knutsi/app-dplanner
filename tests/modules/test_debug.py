@@ -186,3 +186,23 @@ def test_the_filter_narrows_the_table_and_a_theme_change_repaints_it(services):
     assert 0 < milestones < everything
     services.theme.set_theme("light")
     assert activity.table.rowCount() == milestones
+
+
+def test_the_strip_words_delete_with_the_count_and_add_appends(services):
+    from PySide6.QtCore import QItemSelectionModel
+
+    from dplanner.modules.debug.design_example import DESIGN_TABLE_KIND
+
+    activity = services.tabs.open(DESIGN_TABLE_KIND)
+    table = activity.table
+    before = table.rowCount()
+    assert not activity.delete_button.isEnabled() and activity.delete_button.text() == "Delete"
+    table.selectRow(1)
+    assert activity.delete_button.isEnabled() and activity.delete_button.text() == "Delete Step"
+    flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
+    table.selectionModel().select(table.model().index(2, 0), flags)
+    assert activity.delete_button.text() == "Delete 2 Steps"
+    activity.delete_button.click()
+    assert table.rowCount() == before - 2 and not activity.delete_button.isEnabled()
+    activity.add_button.click()
+    assert table.rowCount() == before - 1

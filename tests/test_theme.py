@@ -191,3 +191,26 @@ def _tool_option(button):
     option = QStyleOptionToolButton()
     button.initStyleOption(option)
     return option
+
+
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=("dark", "light"))
+def test_a_combo_box_on_a_strip_wears_the_quiet_bordered_look(themed, theme):
+    """Beside the strip's buttons a Fusion combo box read as another product's; rendered,
+    its ground inside the border is the overlay the buttons wear."""
+    from PySide6.QtWidgets import QComboBox
+
+    from dplanner.framework.toolbar import control_bar
+    from dplanner.theme import apply_theme
+
+    apply_theme(themed, theme)
+    bar = control_bar()
+    combo = QComboBox(bar)
+    combo.addItems(["All steps", "Milestones"])
+    bar.addWidget(combo)
+    bar.show()
+    themed.processEvents()
+    try:
+        image = combo.grab().toImage()
+        assert image.pixelColor(4, combo.height() // 2) == QColor(theme.bg_overlay)
+    finally:
+        bar.deleteLater()

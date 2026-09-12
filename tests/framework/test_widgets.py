@@ -65,3 +65,8 @@ def test_confirm_is_a_frame_whose_default_never_discards(app, monkeypatch):
     assert [b.isDefault() for b in dialog.footer_buttons()] == [False, True]
     monkeypatch.setattr(DialogFrame, "exec", lambda self: int(QDialog.DialogCode.Accepted))
     assert confirm(None, "Delete Layout", "Delete it?") is True
+
+
+def test_the_empty_state_line_is_a_point_smaller(host):
+    empty = EmptyState("Nothing", host)
+    assert empty.label.font().pointSizeF() == host.font().pointSizeF() - 1

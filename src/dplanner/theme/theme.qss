@@ -568,6 +568,38 @@ QProgressBar::chunk {
     margin: 2px 4px;
 }
 
+/* A combo box on a strip, or in a dialog's body, is one of the buttons beside it: the
+   quiet bordered look, and the arrow's room at the right — Qt's own metric leaves the words
+   under the arrow. Styling the drop-down takes Fusion's arrow away, so the arrow is drawn
+   here as borders — a triangle of the secondary ink, the toolbar arrow's size — and the
+   list that drops down is the palette's. */
+#ControlBar QComboBox, #DialogBody QComboBox {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_PRIMARY;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    padding: 5px ${ARROW_ROOM}px 5px 10px;
+}
+
+#ControlBar QComboBox:hover, #DialogBody QComboBox:hover {
+    border-color: $BORDER_STRONG;
+}
+
+#ControlBar QComboBox::drop-down, #DialogBody QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    width: ${ARROW_W}px;
+    border: none;
+}
+
+#ControlBar QComboBox::down-arrow, #DialogBody QComboBox::down-arrow {
+    width: 0px;
+    height: 0px;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid $TEXT_SECONDARY;
+}
+
 #ToolbarButton {
     /* Glyphs and icons carry different metrics; one fixed height keeps the row even. */
     min-height: 16px;

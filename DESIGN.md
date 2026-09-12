@@ -291,9 +291,10 @@ Every dialog is a `DialogFrame` (`framework/dialog.py`), and its anatomy is the 
   note under it for what is wrong, a primary named for the verb (*Create*), the field
   focused and selected.
 - **Fields in the body**: line and text edits wear the panel field's look with an accent
-  border while focused. Combo boxes, spin boxes and check boxes stay Fusion's, from the
-  palette — a bordered combo has to draw its own arrow, and a boxed spin box shows two
-  styles.
+  border while focused, and a combo box wears the quiet bordered look of the button beside
+  it, with the arrow's room at its right — Fusion's combo beside our buttons read as
+  another product's. Spin boxes and check boxes stay Fusion's, from the palette; a boxed
+  spin box shows two styles.
 
 ## Forms
 
@@ -348,8 +349,9 @@ text that re-lays out on resize, and a selection state that recolours both lines
 
 - **A list when there is one column of things; a table when a reader compares across
   rows.** A list row is two lines — the *what* in primary ink, the *why* under it in
-  secondary, 4 px apart, 10 px above and below, 12 px at the sides — the same row a
-  two-line table cell draws, so the two never disagree.
+  secondary **and a point smaller**, 4 px apart, 10 px above and below, 12 px at the
+  sides — the same row a two-line table cell draws, so the two never disagree. The row's
+  glyph sits on the first line, never centred on the pair: it is the name's.
 - **The trailing note** (a date, a count, a shortcut) sits at the right of the first line
   in secondary ink, measured first so the name elides against what is left.
 - **Hairlines only under a pinned row that heads the list**; between ordinary rows the
@@ -360,6 +362,18 @@ text that re-lays out on resize, and a selection state that recolours both lines
 Every table is a `Table` (`framework/table.py`): its columns declared, the rules applied
 once, its delegate painting what a row wears. Debug ▸ Design Example Table is the reference.
 
+- **The strip above a table carries its verbs, then its view.** Creation first (*Add
+  Step*), then what acts on the picked rows — greyed until a row is picked and worded with
+  the count when several are (*Delete 3 Steps*): disabled, never hidden, the rule every
+  greyed menu entry follows, and the count is what says a verb is about to act on more
+  than the eye is on. Then a rule, then the view's own controls (a filter, a grouping),
+  and at the strip's far right the *Updating…* indicator. On a real surface the verbs are
+  an `ActionToolbar` over registered `ActionSpec`s whose state reads the selection; the
+  example wires plain buttons to show the shape.
+- **Cell text is the UI size; the second line is a point smaller.** A whole table one step
+  down reads as a spreadsheet, and a table is the content; the step down belongs to the
+  line that is *about* the first (`detail_font`, the same step the empty state takes).
+
 - **Column headers are left-aligned**, whatever the column holds
   (`header.setDefaultAlignment`, not Qt's centred default). Numeric *cells* still
   right-align so their digits line up, with the unit inside the cell (*3 d*); the header
@@ -368,9 +382,9 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
   weight among them.
 - **Row height comes from the font, never from a pixel.** The UI font is the platform's;
   a fixed height clips two lines at twelve points. A plain row is the line plus 6 px above
-  and below; a rich row is two lines, the 4 px gap and 10 px above and below — each rounded
-  up onto the 4-point scale (≈ 32 and ≈ 60 at the default font) and set on the vertical
-  header, the one mechanism that sizes a delegate-drawn row.
+  and below; a rich row is the two lines at their two sizes, the 4 px gap and 10 px above
+  and below — each rounded up onto the 4-point scale (≈ 32 and ≈ 56 at the default font)
+  and set on the vertical header, the one mechanism that sizes a delegate-drawn row.
 - **The row is the unit.** The pointer over any cell washes the whole row (the text
   colour at ~5 %, theme-independent like every painter's tone); a picked row wears a 2 px
   `$ACCENT` edge inside its left over the quiet `$BG_OVERLAY` ground — the edge the active
@@ -382,7 +396,9 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
 - A table of mixed kinds gives every row the glyph of what it is (the tag, the layer stack,
   the card), so a reader never has to infer a kind from a column further right — and **the
   glyph slot is reserved on every row of that column**, filled or not, so titles start at
-  one x and a row that gains a kind later does not shift its neighbours.
+  one x and a row that gains a kind later does not shift its neighbours. **The glyph sits
+  on the first line**, centred on the name and never on the pair of lines: a glyph half
+  way between a title and its key belongs to neither.
 - **A group heading is a spanned row nobody can pick**: bold secondary words at a plain
   row's height, no hover, no edge (`add_heading`). Nothing else separates the groups; the
   heading is the separator.
@@ -458,7 +474,7 @@ reaching `theme.qss` as `$NAME` for free. A literal in a layout is a copy that d
 | `SCREEN_SHARE` | 0.8 | the screen a framed or editor dialog may claim |
 | `ICON_SIZE` (+ `ICON_GAP`) | 16 (+ 8) | a glyph, and the slot a glyph column reserves |
 | a title | +2 pt | a dialog's title, a page's answer line, a card's title (`title_font`) |
-| an empty state | −1 pt | the `EmptyState` line |
+| a secondary line | −1 pt | a row's second line, the `EmptyState` line (`detail_font`) |
 | an edge | 2 px | a picked row's left, the active pane's top |
 | a hairline | 1 px `$BORDER` | a header's rule, a seam, a pinned row |
 | a progress bar | 4 px | the one kind there is |
@@ -478,8 +494,9 @@ from the code or a screenshot, and Debug ▸ Design Example is what *yes* looks 
 6. Does Enter run the primary, Escape dismiss, and is a discarding verb never the default?
 7. Does focus land on the first field, or the right button, when it opens?
 8. Is every caption `caption()` over its field, with no label to the left?
-9. Is the table a `Table` — height from the font, the glyph slot on every row, numbers
-   right-aligned, headings spanned?
+9. Is the table a `Table` — height from the header, the glyph slot on every row and on
+   the first line, numbers right-aligned, headings spanned, its verbs on the strip above
+   it greyed until a row is picked?
 10. Does a row wash on hover and pick with the edge over the quiet ground?
 11. Does an empty page swap through `EmptyState.stands_in_for`, and nothing else?
 12. Does *Updating…* stand at the strip's right from the first trigger to the rebuild's end?

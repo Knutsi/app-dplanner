@@ -23,6 +23,9 @@ LINE_GAP = 4.0
 # this many points over the application font — and wraps onto as many lines as the card
 # has room for above its detail line; only the last one elides.
 TITLE_POINTS = 2.0
+# A secondary line is one point down from the text it is about — the same step the empty
+# state takes, so there are two sizes below the title and not three.
+DETAIL_POINTS = 1.0
 
 # A selected card is *lifted*: it draws this far up from where it sits, over a deeper shadow
 # left behind at the seat. Two pixels is the whole effect — enough that the eye reads a card
@@ -107,6 +110,17 @@ def over(ground: QColor, ink: QColor) -> QColor:
         round(ground.green() * (1 - share) + ink.green() * share),
         round(ground.blue() * (1 - share) + ink.blue() * share),
     )
+
+
+def detail_font(base: QFont) -> QFont:
+    """A secondary line's face — a row's second line, an empty state's one line — a point
+    smaller than the base: the step down that says *about* rather than *is*."""
+    font = QFont(base)
+    if font.pointSizeF() > 0:
+        font.setPointSizeF(max(1.0, font.pointSizeF() - DETAIL_POINTS))
+    else:
+        font.setPixelSize(max(1, font.pixelSize() - round(DETAIL_POINTS * 4 / 3)))
+    return font
 
 
 def title_font(base: QFont) -> QFont:

@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dplanner.theme.cards import detail_font
+
 # DESIGN.md's text-well metrics: the text never touches the frame.
 DOCUMENT_MARGIN = 12
 LINE_HEIGHT_PERCENT = 130
@@ -122,9 +124,7 @@ class EmptyState(QWidget):
         self.label.setObjectName("EmptyStateText")
         self.label.setWordWrap(True)
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        font = self.label.font()
-        font.setPointSizeF(font.pointSizeF() - 1.0)
-        self.label.setFont(font)
+        self.label.setFont(detail_font(self.label.font()))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(EMPTY_STATE_GAP)

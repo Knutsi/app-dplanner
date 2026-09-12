@@ -2510,6 +2510,19 @@ four widgets borrowing `#OrderTable` by name. The per-row `setRowHeight` versus
 choice (no table here has more than a few hundred rows); the delegate and the configuration
 transfer to a `QTableView` unchanged.
 
+### `framework/list_rows.py`, `theme/cards.py` — the second line a point smaller, the icon on the first line
+
+**What.** `theme.cards.detail_font(base)` is the secondary face (`DETAIL_POINTS = 1.0`
+down; `EmptyState` takes it too). `rich_row_height(font)` is the one formula both delegates
+size a two-line row from — two lines at two sizes, the gap, the padding. `TwoLineDelegate`
+now paints its own icon, on the first line, rather than letting the style centre it on the
+row; `TableDelegate.glyph_rect` does the same for a table.
+
+**Why.** A row's second line is *about* the first and should say so in size; and a glyph
+centred between a title and its key belonged to neither.
+
+**Upstream?** Yes, with the delegates.
+
 ### `framework/signalling.py` — `UpdatingIndicator`, `StatusLine` (new)
 
 **What.** `UpdatingIndicator.follow(debounced)` connects `pending_changed` to a weakly-held
@@ -2563,7 +2576,10 @@ stylesheet loses fifty-six object names the template's Writer app set — forty 
 the file — the three enumerated `#X #PrimaryButton` lists (one `QPushButton#PrimaryButton`
 rule, last), and the task-browser-scoped progress bar (one bare `QProgressBar` rule); it
 gains the `#Table`, `#DialogBody`/`#DialogFooter` and `#UpdatingIndicator`/`#StatusLine`
-rules. `tests/test_theme.py` asserts every `#Name` is a literal under `src/`.
+rules, and a `QComboBox` on a `#ControlBar` or in a `#DialogBody` wears the quiet bordered
+look with its arrow drawn as borders — styling `::drop-down` takes Fusion's arrow away, and
+Qt's stylesheet has no other way to draw one without an image file. `tests/test_theme.py`
+asserts every `#Name` is a literal under `src/`, and renders the combo.
 
 **Why.** A stylesheet that describes another application is one the next reader copies
 from. A float token is skipped by `as_qss_mapping` on purpose.

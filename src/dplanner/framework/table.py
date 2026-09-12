@@ -41,7 +41,9 @@ from dplanner.framework.list_rows import (
     ICON_GAP,
     MUTED_ROLE,
     TINT_ROLE,
+    rich_row_height,
 )
+from dplanner.theme.cards import detail_font
 from dplanner.theme.icons import ICON_SIZE
 from dplanner.theme.tokens import (
     CELL_PADDING_H,
@@ -98,13 +100,12 @@ def snap_up(value: int) -> int:
     return -(-value // GRID) * GRID
 
 
-def row_height(metrics: QFontMetrics, rich: bool) -> int:
+def row_height(font: QFont, rich: bool) -> int:
     """From the font, never a pixel token: the UI font is the platform's and a fixed height
     clips two lines at twelve points. Rounded up onto the 4-point scale."""
-    line = metrics.height()
     if rich:
-        return snap_up(2 * ROW_PADDING_V + 2 * line + ROW_LINE_GAP)
-    return snap_up(2 * CELL_PADDING_V + line)
+        return snap_up(rich_row_height(font))
+    return snap_up(2 * CELL_PADDING_V + QFontMetrics(font).height())
 
 
 class Table(QTableWidget):
@@ -142,7 +143,8 @@ class Table(QTableWidget):
         self.setMouseTracking(True)  # ``entered`` fires only with it.
         self.entered.connect(lambda index: self._hover(index.row()))
         self.viewportEntered.connect(lambda: self._hover(None))
-        self.setItemDelegate(TableDelegate(self))
+        self.delegate = TableDelegate(self)
+        self.setItemDelegate(self.delegate)
 
     # -- what it is --------------------------------------------------------------------
 
@@ -153,7 +155,7 @@ class Table(QTableWidget):
         return self._rich
 
     def row_height(self) -> int:
-        return row_height(self.fontMetrics(), self._rich)
+        return row_height(self.font(), self._rich)
 
     def padding(self) -> int:
         """The horizontal inset of a cell's content: a rich row's, or a plain cell's."""
@@ -196,7 +198,7 @@ class Table(QTableWidget):
             item.setData(HEADING_ROLE, True)
             self.setItem(row, column, item)
         self.setSpan(row, 0, 1, self.columnCount())
-        self.setRowHeight(row, row_height(self.fontMetrics(), rich=False))
+        self.setRowHeight(row, row_height(self.font(), rich=False))
         return row
 
     def set_cell(self, row: int, column: int, cell: Cell | str) -> None:
@@ -246,6 +248,15 @@ class TableDelegate(QStyledItemDelegate):
     def __init__(self, table: Table) -> None:
         super().__init__(table)
         self._table = table
+
+    def glyph_rect(self, rect: QRect, metrics: QFontMetrics) -> QRect:
+        """Where a row's glyph sits: on the first line of a rich row, never centred on the
+        pair — the glyph is the name's — and on the one line of a plain one."""
+        if self._table.rich():
+            top = rect.top() + ROW_PADDING_V + (metrics.height() - ICON_SIZE) // 2
+        else:
+            top = rect.top() + (rect.height() - ICON_SIZE) // 2
+        return QRect(rect.left() + self._table.padding(), top, ICON_SIZE, ICON_SIZE)
 
     def text_left(self, column: int, rect: QRect) -> int:
         """Where a cell's words start: past the padding, and past the glyph slot a glyph
@@ -305,8 +316,7 @@ class TableDelegate(QStyledItemDelegate):
         painter.save()
         icon = index.data(Qt.ItemDataRole.DecorationRole)
         if self._table.columns()[column].glyph and isinstance(icon, QIcon) and not icon.isNull():
-            top = opt.rect.top() + (opt.rect.height() - ICON_SIZE) // 2
-            icon.paint(painter, QRect(opt.rect.left() + pad, top, ICON_SIZE, ICON_SIZE))
+            icon.paint(painter, self.glyph_rect(opt.rect, metrics))
 
         font = QFont(opt.font)
         if heading or index.data(EMPHASIS_ROLE):
@@ -320,10 +330,11 @@ class TableDelegate(QStyledItemDelegate):
         if detail:
             line = QRect(left, opt.rect.top() + ROW_PADDING_V, width, metrics.height())
             painter.drawText(line, align, QFontMetrics(font).elidedText(text, elide, width))
-            painter.setFont(opt.font)
+            small = QFontMetrics(detail_font(opt.font))
+            painter.setFont(detail_font(opt.font))
             painter.setPen(secondary)
-            line.translate(0, metrics.height() + ROW_LINE_GAP)
-            painter.drawText(line, align, metrics.elidedText(detail, elide, width))
+            line = QRect(left, line.top() + metrics.height() + ROW_LINE_GAP, width, small.height())
+            painter.drawText(line, align, small.elidedText(detail, elide, width))
         else:
             line = QRect(left, opt.rect.top(), width, opt.rect.height())
             painter.drawText(line, align, QFontMetrics(font).elidedText(text, elide, width))
@@ -335,11 +346,12 @@ class TableDelegate(QStyledItemDelegate):
         """What the delegate draws, measured — the blanked option would size to nothing —
         at the row height the header was set to, so ``resizeColumnsToContents`` agrees."""
         metrics = option.fontMetrics
+        small = QFontMetrics(detail_font(option.font))
         text = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         detail = str(index.data(DETAIL_ROLE) or "")
-        widest = max(metrics.horizontalAdvance(text), metrics.horizontalAdvance(detail))
+        widest = max(metrics.horizontalAdvance(text), small.horizontalAdvance(detail))
         column = index.column()
         slot = ICON_SIZE + ICON_GAP if self._table.columns()[column].glyph else 0
         heading = bool(index.data(HEADING_ROLE))
-        height = row_height(metrics, rich=self._table.rich() and not heading)
+        height = row_height(option.font, rich=self._table.rich() and not heading)
         return QSize(widest + slot + 2 * self._table.padding(), height)

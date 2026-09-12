@@ -16,6 +16,7 @@ rendered in both themes. Neither reads the model, so neither follows a project.
 
 from dataclasses import dataclass
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QIcon, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -118,10 +119,19 @@ def sample_cells(row: SampleRow, ink: QColor) -> list[Cell]:
     ]
 
 
-def fill_sample(table: Table, ink: QColor, keep: str) -> None:
+KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 60  # The host's own role: which sample row.
+Groups = list[tuple[str, list[SampleRow]]]
+
+
+def sample_groups() -> Groups:
+    """A mutable copy of the sample, for a surface whose verbs add and remove rows."""
+    return [(heading, list(rows)) for heading, rows in SAMPLE]
+
+
+def fill_sample(table: Table, ink: QColor, keep: str, groups: Groups | None = None) -> None:
     """The sample rows under their headings, narrowed by one of ``FILTERS``."""
     table.clear_rows()
-    for heading, rows in SAMPLE:
+    for heading, rows in groups if groups is not None else sample_groups():
         shown = [
             row
             for row in rows
@@ -134,7 +144,7 @@ def fill_sample(table: Table, ink: QColor, keep: str) -> None:
         table.add_heading(heading)
         for row in shown:
             tint = HIGHLIGHT_FILL if row.kind == "milestone" else None
-            table.add_row(sample_cells(row, ink), tint=tint)
+            table.add_row(sample_cells(row, ink), tint=tint, data={KEY_ROLE: row.key})
     table.fit_columns()
 
 
@@ -272,9 +282,22 @@ class DesignExampleActivity(ActivityBase):
         strip.setSpacing(FIELD_GAP)
         layout.addLayout(strip)  # Before it is filled: a parentless layout leaks its items.
         self.controls = control_bar(self.widget)
+        # The verbs first — creation, then what acts on the picked rows, greyed until there
+        # are any and worded with the count — then the view's own controls.
+        self.add_button = QToolButton(self.controls)
+        self.add_button.setObjectName("ToolbarButton")
+        self.add_button.setText("Add Step")
+        self.controls.addWidget(self.add_button)
+        self.delete_button = QToolButton(self.controls)
+        self.delete_button.setObjectName("ToolbarButton")
+        self.delete_button.setText("Delete")
+        self.delete_button.setEnabled(False)
+        self.controls.addWidget(self.delete_button)
+        self.controls.addSeparator()
         self.filter = QComboBox(self.controls)
         self.filter.addItems(FILTERS)
         self.controls.addWidget(self.filter)
+        self.controls.addSeparator()
         self.refresh_button = QToolButton(self.controls)
         self.refresh_button.setObjectName("ToolbarButton")
         self.refresh_button.setText("Refresh")
@@ -296,10 +319,15 @@ class DesignExampleActivity(ActivityBase):
         )
         layout.addWidget(self.empty, 1)
 
+        self._groups = sample_groups()
+        self._minted = 0
         self._refresh_soon = Debounced(
             self._refresh, SETTLE_MS, parent=self.widget, service=debounce
         )
         self.updating.follow(self._refresh_soon)
+        self.add_button.clicked.connect(self._add_step)
+        self.delete_button.clicked.connect(self._delete_picked)
+        self.table.itemSelectionChanged.connect(self._reword_verbs)
         self.filter.currentIndexChanged.connect(lambda _index: self._refresh_soon.trigger())
         self.refresh_button.clicked.connect(self._refresh_soon.trigger)
         self.empty_toggle.toggled.connect(lambda _on: self._refresh_soon.trigger())
@@ -318,13 +346,40 @@ class DesignExampleActivity(ActivityBase):
     def _add_rows(self) -> None:
         self.empty_toggle.setChecked(False)
 
+    def picked_keys(self) -> list[str]:
+        rows = sorted({item.row() for item in self.table.selectedItems()})
+        keys = (self.table.item(row, 0) for row in rows)
+        return [str(item.data(KEY_ROLE)) for item in keys if item is not None]
+
+    def _reword_verbs(self) -> None:
+        count = len(self.picked_keys())
+        self.delete_button.setEnabled(count > 0)
+        self.delete_button.setText(
+            "Delete" if count == 0 else "Delete Step" if count == 1 else f"Delete {count} Steps"
+        )
+
+    def _add_step(self) -> None:
+        self._minted += 1
+        _heading, rows = self._groups[-1]
+        key = f"S{40 + self._minted}"
+        rows.append(SampleRow("step", key, "A step added from the strip", "0.5 d", "pending", True))
+        self._refresh_soon.trigger()
+
+    def _delete_picked(self) -> None:
+        gone = set(self.picked_keys())
+        for _heading, rows in self._groups:
+            rows[:] = [row for row in rows if row.key not in gone]
+        self._refresh_soon.trigger()
+
     def _refresh(self) -> None:
         if self.empty_toggle.isChecked():
             self.table.clear_rows()
             self.empty.say(NO_ROWS)
+            self._reword_verbs()
             return
         self.empty.say("")
-        fill_sample(self.table, ink_of(self.widget), self.filter.currentText())
+        fill_sample(self.table, ink_of(self.widget), self.filter.currentText(), self._groups)
+        self._reword_verbs()
 
 
 def glyph_for(kind: str, ink: QColor) -> QIcon:

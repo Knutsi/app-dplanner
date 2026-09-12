@@ -132,7 +132,7 @@ def test_hover_follows_the_row_not_the_cell(table, app):
 
 
 def test_the_glyph_slot_is_reserved_on_every_row_of_a_glyph_column(table):
-    delegate = table.itemDelegate()
+    delegate = table.delegate
     rect = table.visualRect(table.model().index(0, 0))
     from PySide6.QtCore import QRect
 
@@ -175,5 +175,46 @@ def test_a_picked_row_wears_the_accent_edge_and_keeps_its_tint(themed, theme):
         assert edge(0) == QColor(theme.accent)
         assert ground(0) == QColor(theme.bg_overlay)  # The quiet ground, not the highlight.
         assert picked_tinted != ground(0)  # A picked row gains its ground; the tint stays.
+    finally:
+        table.deleteLater()
+
+
+def test_a_glyph_sits_on_the_first_line_of_a_rich_row_and_mid_row_on_a_plain_one(app):
+    from PySide6.QtCore import QRect
+    from PySide6.QtGui import QFontMetrics
+
+    from dplanner.theme.icons import ICON_SIZE as SIZE
+    from dplanner.theme.tokens import ROW_PADDING_V
+
+    rich = Table((Column("A", glyph=True, detail=True),))
+    plain = Table((Column("A", glyph=True),))
+    try:
+        box = QRect(0, 100, 300, rich.row_height())
+        metrics = QFontMetrics(rich.font())
+        top = rich.delegate.glyph_rect(box, metrics).top()
+        assert top == 100 + ROW_PADDING_V + (metrics.height() - SIZE) // 2
+        box = QRect(0, 100, 300, plain.row_height())
+        assert plain.delegate.glyph_rect(box, metrics).top() == 100 + (box.height() - SIZE) // 2
+    finally:
+        rich.deleteLater()
+        plain.deleteLater()
+
+
+def test_a_rich_row_is_two_lines_of_two_sizes(app):
+    from PySide6.QtGui import QFontMetrics
+
+    from dplanner.framework.list_rows import rich_row_height
+    from dplanner.framework.table import snap_up
+    from dplanner.theme.cards import detail_font
+    from dplanner.theme.tokens import ROW_LINE_GAP, ROW_PADDING_V
+
+    table = Table((Column("A", detail=True),))
+    try:
+        font = table.font()
+        small = detail_font(font)
+        assert small.pointSizeF() == font.pointSizeF() - 1
+        lines = QFontMetrics(font).height() + QFontMetrics(small).height()
+        assert rich_row_height(font) == 2 * ROW_PADDING_V + lines + ROW_LINE_GAP
+        assert table.row_height() == snap_up(rich_row_height(font))
     finally:
         table.deleteLater()
