@@ -49,6 +49,9 @@ class SaveProgressDialog(DialogFrame):
         for row, label in zip(self._rows, self._labels, strict=True):
             row.say(label)  # Its own ink: waiting is not a state (DESIGN.md's *Signalling*).
             self.body_layout.addWidget(row)
+        # The rows stay at the top and the count with its bar at the foot of the body, so a
+        # taller dialog spreads neither the rows nor the count away from the bar.
+        self.body_layout.addStretch(1)
         self._count = note("", self.body)
         self.body_layout.addWidget(self._count)
         self.bar = QProgressBar(self.body)

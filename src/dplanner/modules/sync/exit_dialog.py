@@ -60,6 +60,9 @@ class ExitDialog(DialogFrame):
         self._message.setObjectName("ExitCommitMessage")
         self._message.setPlaceholderText("Describe this save (optional)")
         field.addWidget(self._message)
+        # Spare height goes to the bottom: without it a resized dialog pulls the caption
+        # away from the field it is over, which is the one thing a caption must not do.
+        self.body_layout.addStretch(1)
 
         self.add_button("Quit Without Committing", self._quit_without_committing, destructive=True)
         self.add_dismiss()
