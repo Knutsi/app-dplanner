@@ -169,6 +169,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepPropertiesModule,
     )
     from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.modules.step_status.aspect import record_started
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
@@ -997,6 +998,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # Run Agent asks before launching on a step whose prerequisites are not
             # done — the same status reader the progression board's frontier uses.
             status_for=step_status,
+            # And says so on the step when the shell opens: the status aspect's own
+            # writer, applied off the undo stack the way the launch stamp is. The
+            # agent module holds the preference; the word is the status module's.
+            mark_started=lambda step_id: record_started(library, step_id),
             # What names the run — its worktree, its branch, its window: the key and
             # the ticket, composed here from aspects the agent module never reads.
             step_key=_step_key,

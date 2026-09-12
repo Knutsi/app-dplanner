@@ -17,7 +17,9 @@ way to hand it over.
 **It runs one agent per chosen step, up to a limit.** The verb reads the selection the way
 Delete does, so lassoing three agent steps is *Run 3 Agents…* and one gesture; past
 *Settings ▸ Agent*'s limit (four by default) the count itself is the refusal, greyed with
-its reason like any other precondition.
+its reason like any other precondition. Each step whose shell opened is also claimed
+*in progress* — through ``deps.mark_started``, unless the person switched that off on the
+settings page — since the agent's own first report may be minutes away.
 """
 
 import json
@@ -88,6 +90,7 @@ from dplanner.modules.step_agent_instruction.settings_page import (
     build_page,
     launch_command,
     max_agents,
+    start_in_progress,
 )
 from dplanner.theme.icons import spark_icon, typewriter_icon
 
@@ -102,6 +105,11 @@ PREVIEW_NOTE = (
 
 def _no_record(_step_id: StepId, _files: launcher.LaunchFiles, _harness: str) -> None:
     return None
+
+
+def _no_start(_step_id: StepId) -> bool:
+    """A build with nobody to tell that work started: nothing is claimed."""
+    return False
 
 
 def _all_done(_step: Step) -> str:
@@ -198,6 +206,11 @@ class StepAgentInstructionDeps:
     # progression board's seam. Run Agent asks before launching on a step whose
     # prerequisites do not all read done; this module never learns the vocabulary's shape.
     status_for: Callable[[Step], str] = field(default=_all_done)
+    # The writer half of the same seam: work on the step has begun. Run Agent calls it as
+    # the terminal opens, when the person leaves *On launch* on; True when it wrote. The
+    # status aspect owns the word and the fact that the write skips the undo stack — this
+    # module only knows a run has started.
+    mark_started: Callable[[StepId], bool] = field(default=_no_start)
     # The step's readable key ("F7") and its ticket key ("PROJ-12"), both composed by the
     # root from aspects this module never reads. They name the run — the worktree, the
     # branch, the terminal's title — through ``launcher.run_name``, which the briefing's
@@ -463,15 +476,20 @@ class StepAgentInstructionModule:
         if waiting and not self._confirm_unfinished(waiting):
             return
         profile = profile or default_profile()
-        launched = 0
+        claim = start_in_progress()
+        launched = claimed = 0
         for step in chosen:
-            if not self._run_on(step, profile):
+            spawned, started = self._run_on(step, profile, claim)
+            if not spawned:
                 break
             launched += 1
+            claimed += started
         if launched == 1:
-            deps.status.show_status(f"Agent launched on “{_titled(chosen[0])}”", 4000)
+            note = " — marked in progress" if claimed else ""
+            deps.status.show_status(f"Agent launched on “{_titled(chosen[0])}”{note}", 4000)
         elif launched > 1:
-            deps.status.show_status(f"{launched} agents launched", 4000)
+            note = f", {claimed} marked in progress" if claimed else ""
+            deps.status.show_status(f"{launched} agents launched{note}", 4000)
 
     def _unfinished(self, step: Step) -> list[Step]:
         """The step's prerequisites that do not read done — what the graph gate asks about."""
@@ -482,8 +500,13 @@ class StepAgentInstructionModule:
             if deps.status_for(required) != DONE
         ]
 
-    def _run_on(self, step: Step, profile: Profile) -> bool:
-        """Launch the agent on one step; False when no shell opened and the fallback showed."""
+    def _run_on(self, step: Step, profile: Profile, claim_started: bool) -> tuple[bool, bool]:
+        """Launch the agent on one step: whether a shell opened (the fallback showed when
+        not), and whether the step was thereby marked in progress.
+
+        The claim is made here, per step and only once its shell exists, rather than in
+        ``_launch``: the conflict hand-over shares ``_launch`` and must claim nothing —
+        that agent is merging two writers' plan files, not doing the step's work."""
         deps = self._deps
         run_dir = launcher.new_run_dir()
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
@@ -492,9 +515,11 @@ class StepAgentInstructionModule:
         workdir = _workdir(deps.facts_for(step.id))
         spawned, prepared = self._launch(step, assembled.text, run_dir, worktree, workdir, profile)
         if not spawned:
-            # No shell was started, so nothing is stamped: the fallback hands over the prompt.
+            # No shell was started, so nothing is stamped and nothing is claimed: the
+            # fallback hands over the prompt.
             PromptFallbackDialog(assembled.text, str(prepared.prompt_file), deps.parent).exec()
-        return spawned
+            return False, False
+        return True, claim_started and deps.mark_started(step.id)
 
     def _fill_profiles(self, menu: QMenu) -> None:
         """Step ▸ Run Agent With: one entry per profile, the default first and marked,
@@ -579,8 +604,9 @@ class StepAgentInstructionModule:
         is recorded only when a shell was actually spawned. Both prompts this module
         launches come through here, so a change to how a terminal opens is made once.
 
-        What the status bar says is the **caller's**: one launch names its step, a run over
-        a selection counts what opened, and neither is true of the other."""
+        What the status bar says, and whether the step is claimed in progress, is the
+        **caller's**: one launch names its step, a run over a selection counts what opened
+        and claims each step as it goes, and neither is true of the other."""
         deps = self._deps
         workdir = (workdir or Path()).expanduser()
         key = deps.step_key(step)

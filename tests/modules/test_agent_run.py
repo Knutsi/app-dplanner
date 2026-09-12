@@ -990,6 +990,21 @@ def _fake_terminal(monkeypatch):
     return calls
 
 
+def _silence_fallback(monkeypatch):
+    """The prompt fallback dialog without the blocking: what a launch that opens no shell
+    shows instead of a terminal."""
+    import dplanner.modules.step_agent_instruction.module as agent_module
+
+    class SilentDialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(agent_module, "PromptFallbackDialog", SilentDialog)
+
+
 def _record_boxes(monkeypatch, *, click):
     """Every QMessageBox shown, recorded instead of blocking; ``click`` names the role of
     the button the person presses, or None for Escape."""
@@ -1083,23 +1098,89 @@ def test_a_successful_launch_stamps_the_run_state(services, step, monkeypatch):
 
 def test_the_prompt_fallback_does_not_stamp(services, step, monkeypatch):
     """No shell was started, so nothing claims one was."""
-    import dplanner.modules.step_agent_instruction.module as agent_module
     from dplanner.modules.step_agent_run.aspect import read
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: None)
-
-    class SilentDialog:
-        def __init__(self, *args):
-            pass
-
-        def exec(self):
-            return 0
-
-    monkeypatch.setattr(agent_module, "PromptFallbackDialog", SilentDialog)
+    _silence_fallback(monkeypatch)
     services.actions.run("agent.run", services.context.current())
     assert read(step) == ""
+
+
+def test_a_successful_launch_claims_the_step_is_in_progress(services, step, monkeypatch):
+    """On by default, and off the undo stack for the launch stamp's reason: Ctrl+Z must
+    not file the step as pending while an agent is still working in it."""
+    from dplanner.modules.step_status.aspect import read as status_of
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    _fake_terminal(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert status_of(step) == "in-progress"
+    assert not services.undo.can_undo()
+    assert "marked in progress" in services.window.statusBar().currentMessage()
+
+
+def test_the_launch_claim_can_be_switched_off(services, step, monkeypatch):
+    """The person keeping statuses by hand switches it off, and a launch writes nothing."""
+    from dplanner.framework.user_config import set_global
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
+    from dplanner.modules.step_agent_instruction.settings_page import START_IN_PROGRESS_KEY
+    from dplanner.modules.step_status.aspect import read as status_of
+
+    set_global(AGENT_ID, START_IN_PROGRESS_KEY, False)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    _fake_terminal(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert status_of(step) == "pending"
+    assert "marked in progress" not in services.window.statusBar().currentMessage()
+
+
+def test_the_settings_switch_round_trips(app):
+    """The page reflects the stored preference and writes the person's answer back."""
+    from PySide6.QtWidgets import QCheckBox
+
+    from dplanner.modules.step_agent_instruction.settings_page import (
+        build_page,
+        start_in_progress,
+    )
+
+    assert start_in_progress() is True
+    page = build_page(None)
+    box = page.findChild(QCheckBox, "AgentStartInProgressBox")
+    assert box is not None and box.isChecked()
+    box.setChecked(False)
+    assert start_in_progress() is False
+    page.deleteLater()
+
+
+def test_the_prompt_fallback_claims_nothing(services, step, monkeypatch):
+    """No shell was started, so nobody is working on the step yet."""
+    from dplanner.modules.step_status.aspect import read as status_of
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: None)
+    _silence_fallback(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert status_of(step) == "pending"
+
+
+def test_a_multiplexer_that_refuses_claims_nothing(services, step, monkeypatch):
+    """A spawn that answers with a reason opened no shell: the fallback shows and the
+    step stays where it was, exactly as when no command resolved."""
+    from dplanner.modules.step_status.aspect import read as status_of
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select(services, step)
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["herdr"])
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: "herdr is not installed")
+    _silence_fallback(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert status_of(step) == "pending"
+    assert "marked in progress" not in services.window.statusBar().currentMessage()
 
 
 def test_a_run_stages_attached_images_beside_the_prompt(services, step, monkeypatch):
@@ -1194,6 +1275,31 @@ def test_running_over_a_selection_launches_one_agent_for_each_step(services, ste
     briefed_on = [files.prompt_file.read_text().splitlines()[0] for files in prepared]
     assert briefed_on == ["# Step: Deploy", "# Step: Migrate", "# Step: Measure"]
     assert all(launched(services.document.step(s.id)) for s in chosen)
+
+
+def test_a_run_over_a_selection_claims_each_step_whose_shell_opened(services, step, monkeypatch):
+    """The claim is per step, as each shell opens: a run that stops at its third step —
+    no terminal opened for it — leaves the first two marked and the third where it was,
+    and the status line counts what was marked."""
+    from dplanner.modules.step_status.aspect import read as status_of
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    chosen = [step, briefed(services, project, "Migrate"), briefed(services, project, "Measure")]
+    select_all(services, *chosen)
+
+    answers = iter([["fake-term"], ["fake-term"], None])
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: next(answers))
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
+    _silence_fallback(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+
+    assert [status_of(services.document.step(s.id)) for s in chosen] == [
+        "in-progress",
+        "in-progress",
+        "pending",
+    ]
+    assert services.window.statusBar().currentMessage() == "2 agents launched, 2 marked in progress"
 
 
 def test_a_selection_past_the_limit_greys_the_verb_and_says_the_limit(services, step):

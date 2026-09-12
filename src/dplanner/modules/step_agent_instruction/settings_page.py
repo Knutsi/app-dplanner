@@ -1,4 +1,5 @@
-"""The "Agent" settings page: the launch profiles, and how many agents may start at once.
+"""The "Agent" settings page: the launch profiles, how many agents may start at once, and
+what a launch records on the step.
 
 A **profile** (``profiles.py``) is one answer to Run Agent's two questions — which agent
 CLI, and which terminal or multiplexer it opens in — under a name. The page is a list of
@@ -21,6 +22,12 @@ person's to say, and Run Agent over a multi-selection refuses past it. Four is t
 — enough for the gesture the limit exists for, few enough that a stray lasso cannot fill
 the screen.
 
+The third choice is *On launch*: a launch claims the step is in progress, unless the
+person says otherwise. On by default for the reason the marks are — a preference that has
+to be found before it can help is one that helps nobody — and a switch rather than a rule
+because a plan whose statuses somebody else keeps by hand should not have the window
+writing into it.
+
 Per user, per machine — a colleague's terminal is not the workspace's business, which is
 why this is a GLOBAL-scope section and never a file in the plan. Whether a step's agent
 gets a fresh worktree is *not* here: that is a fact about the step, kept on its agent
@@ -31,6 +38,7 @@ import sys
 from collections.abc import Callable
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -61,6 +69,7 @@ from dplanner.modules.step_agent_instruction.profiles import (
 )
 
 MAX_AGENTS_KEY = "max_agents"
+START_IN_PROGRESS_KEY = "start_in_progress"
 
 CUSTOM_LABEL = "Custom"
 AUTOMATIC_LABEL = "Automatic"
@@ -91,6 +100,13 @@ def max_agents() -> int:
     except (TypeError, ValueError):
         return DEFAULT_MAX_AGENTS
     return min(max(stored, 1), MAX_AGENTS_CEILING)
+
+
+def start_in_progress() -> bool:
+    """On unless the user turned it off: a launch is the moment the work starts, and a
+    step somebody is working on that still reads *pending* is the plan telling a lie
+    nobody asked it to tell. Switching it off is the deliberate act."""
+    return bool(get_global(MODULE_ID, START_IN_PROGRESS_KEY, True))
 
 
 def terminal_label(preset: TerminalPreset, installed: bool) -> str:
@@ -299,6 +315,11 @@ def build_page(
     limit.setKeyboardTracking(False)
     limit.valueChanged.connect(lambda value: set_global(MODULE_ID, MAX_AGENTS_KEY, value))
 
+    started_box = QCheckBox("Mark the step in progress when a run starts", page)
+    started_box.setObjectName("AgentStartInProgressBox")
+    started_box.setChecked(start_in_progress())
+    started_box.toggled.connect(lambda on: set_global(MODULE_ID, START_IN_PROGRESS_KEY, bool(on)))
+
     editor = QVBoxLayout()
     editor.addWidget(QLabel("Profile name", page))
     editor.addWidget(name_edit)
@@ -356,6 +377,17 @@ def build_page(
             "How many agents Run Agent may launch from one selection. Each is a terminal,"
             " a worktree and a session of its own; select more than this and the verb says"
             " so instead of filling the desk.",
+            page,
+        )
+    )
+    layout.addWidget(QLabel("On launch", page))
+    layout.addWidget(started_box)
+    layout.addWidget(
+        _note(
+            "Run Agent sets the step's status to in progress as the terminal opens, so"
+            " the board shows the work has started without waiting for the agent to say"
+            " so. It is not undone when the agent stops: finishing is the agent's own"
+            " claim, or yours from Step ▸ Status.",
             page,
         )
     )

@@ -2330,6 +2330,48 @@ many peers one machine can carry is not a fact about the project.
 verb here follows: a presenter may run a stale state, and the guard that matters is the one
 in the act.
 
+### A launch says the work has started
+
+The graph gates launching by *reading* status (`status_for`, the progression board's
+seam); a launch also *writes* one. When a shell opens, the step is claimed `in-progress`
+through `mark_started` — the writer half of the same seam, wired by the composition root
+to `step_status`'s own `record_started`, so the agent module never learns the vocabulary
+and the status module keeps the only place its words are spelled.
+
+Three decisions sit in that one line.
+
+**It is off the undo stack**, with an origin of its own, exactly like the launch stamp
+beside it (*The peer reports back through its run directory* has that reasoning). The
+claim rides on something Ctrl+Z cannot take back — a detached shell now exists — and an
+undo entry would let the next Ctrl+Z file the step as pending while an agent is still
+working in it. `record_started` answers False and writes nothing when the step already
+claims to be in progress, so a second launch dirties no file; it *does* override `done`,
+because launching an agent on a finished step means the work resumed and there is no
+other honest reading.
+
+**It is a switch, on by default** — *Agent ▸ On launch*, beside *Agents at once* and per
+user like the rest of that page. On, for the reason the marks are on: the agent's own first report is minutes away
+(the briefing's protocol has it setting `agent-state`, not status), and a step somebody
+is working on that still reads pending is a lie the plan was never asked to tell. A
+switch rather than a rule, because a plan whose statuses a person keeps by hand should
+not have the window writing into it — so switching it off is the deliberate act, and
+nothing else about the launch changes.
+
+**Only Run Agent makes it.** `_launch` — the one place a terminal opens — is shared with
+the conflict hand-over and knows nothing of the claim; it is made one level up, in the
+step loop, after `_launch` has answered that a shell exists. That placement buys two
+things at once: a run over a selection claims each step as its own shell opens and stops
+claiming where the shells stop, so three steps of which the third found no terminal leave
+two marked and one not; and an agent handed two writers' versions of a plan file is never
+marked as doing the step's work — it is merging, and marking that step in progress would
+be the same lie in the other direction. The verb decides; the mechanism obeys.
+
+Nothing un-claims it. Finishing is the agent's own `dplanner status set … done`, or the
+person's from Step ▸ Status — the run ending clears the agent *chip* (that state is about
+the shell) and deliberately says nothing about where the work stands, which is the same
+line *A test result is not a step status* draws between two vocabularies that must not
+be folded into one.
+
 ### The peer is a top-level session, and the briefing stays out of argv
 
 Four agents died at once on 2026-09-05, and DPlanner had not crashed: it was killed, with
