@@ -30,6 +30,11 @@ RULE_ROLE = int(Qt.ItemDataRole.UserRole) + 5
 # A note at the right of the first line, in the secondary tone: a shortcut, a count, a
 # date — a fact *about* the row that reads as a column rather than as part of the name.
 TRAILING_ROLE = int(Qt.ItemDataRole.UserRole) + 6
+# A ``QColor`` washed under every cell of the row (a milestone's, a failed test's) — read
+# by ``framework/table.py``'s delegate, never asked of a callback.
+TINT_ROLE = int(Qt.ItemDataRole.UserRole) + 7
+# The row is a group heading spanning the table: bold secondary words, never selected.
+HEADING_ROLE = int(Qt.ItemDataRole.UserRole) + 8
 
 TRAILING_GAP = 12  # Between the name and the note at the right, so neither crowds the other.
 

@@ -742,6 +742,32 @@ QToolButton[repoTool="true"]:hover {
     padding: 2px 6px;
 }
 
+/* ---- Tables (framework/table.py) --------------------------------------------------- */
+
+/* A well on the window colour; no grid, the alignment is the structure. The delegate
+   paints every pixel of text, glyph, hover and edge itself, so there is no ::item padding
+   and no ::item:hover here — Qt's hover is per cell, and a row is what the eye reads. The
+   header is the caption look laid on its side, over one hairline. */
+#Table {
+    background-color: $BG_BASE;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
+    color: $TEXT_PRIMARY;
+}
+
+#Table::item:selected {
+    background-color: $BG_OVERLAY;
+}
+
+#Table QHeaderView::section {
+    background-color: $BG_BASE;
+    color: $TEXT_SECONDARY;
+    border: none;
+    border-bottom: 1px solid $BORDER;
+    padding: ${CELL_PADDING_V}px ${CELL_PADDING_H}px;
+    font-weight: bold;
+}
+
 /* ---- Dialogs (framework/dialog.py) ------------------------------------------------- */
 
 /* The frame names its parts, and every dialog on it is styled through these two names —
