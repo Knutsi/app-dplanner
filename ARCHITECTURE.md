@@ -3469,11 +3469,18 @@ recognises the moment. None needs action today.
   `tests/modules/test_aspect_editors.py` pins the resulting sequence; the tenth aspect
   author will have to read seven files to pick a number, and that is the moment the order
   belongs in one place (the composition root already knows it).
-- **The index tree now has two segment views that both list projects.** `projects/index.py`
-  nests contributed entry rows under each project; `testing/index.py` is a flat cousin with
-  an *All Projects* row on top. Two is a coincidence, not a pattern — deliberately not
-  abstracted. A third is the moment to extract the shared rebuild-and-restore-expansion
-  machinery, which is the half that is actually the same.
+- **The index tree has two shapes of project folder.** `projects/index.py` nests
+  contributed entry rows under each project, greys unavailable ones and restores the
+  selection across a rebuild; `framework/project_list_segment.py` is the plainer cousin
+  the Tests and Docs folders share — the third user was the moment the
+  rebuild-and-restore-expansion half was extracted. It takes a `LeadingRow` above the
+  projects (Tests' *All Projects*) and `ChildRow`s under each (Docs' *Documentation* and
+  the notes module's *Implementation notes*, each opening its own tab — the second handed
+  across as `DocsDeps.more_rows`, so the folder's owner never learns what it lists); a
+  child row stands for its project exactly as the project row does, so the Project menu
+  works from it. The
+  richer folder is deliberately not folded in: nested contributed entries are a different
+  problem that happens to draw rows too.
 - **Every per-gesture cost is a constant, and the constants add up.** A click on a step
   costs the same nine section shows at 25 steps as at 400, a details open the same
   thirteen widget trees, a full collection the same quarter second — *How the
@@ -3672,20 +3679,24 @@ kinds were the same thing wearing two shapes. Five decisions:
   body, and clears the step. Idempotent, so a second open finds nothing. A handoff a
   person had turned *off* stays on the step's shelf under the retired id, untouched: that
   is what turning it off meant. The Handoff tab, its Type toggle and its place in the
-  *Agent* template went with the aspect; the window's surfaces are the Docs tab's
-  *Implementation notes* view (the log as rows newest first beside the buttonless live
-  editor with a label, a step, addressees, the reach box and the body, *Add Note…*
-  opening on the title, Remove in the `⋯`) and the Agent tab's Notes pane, which renders
-  the same blocks the briefing carries. The view lived in the project panel as a card
-  first, one widget per note; a plan whose agents had written 344 handoffs made every
-  window relayout walk 688 word-wrapped labels, and the always-on panel was the wrong
-  place for a log that grows with every run — see *The context is announced once per
-  turn* below for the measurements. A tab page may carry a list of its own (DESIGN.md
-  forbids one only inside a card, where the wheel would stop scrolling the stack), the
-  rows are painted by the framework's two-line delegate, and the editor binds only the
-  note that is picked. The docs module hosts what the notes module creates through a
-  factory on its Deps, the arrangement the order view and the estimation module's
-  start-date bar already have; neither imports the other.
+  *Agent* template went with the aspect; the window's surfaces are the *Implementation
+  notes* tab (the log as rows newest first beside the buttonless live editor with a
+  label, a step, addressees, the reach box and the body, *Add Note…* opening on the
+  title, Remove in the `⋯`) and the Agent tab's Notes pane, which renders the same
+  blocks the briefing carries. The view lived in the project panel as a card first, one
+  widget per note; a plan whose agents had written 344 handoffs made every window
+  relayout walk 688 word-wrapped labels, and the always-on panel was the wrong place for
+  a log that grows with every run — see *The context is announced once per turn* below
+  for the measurements. It was then a second reading inside the Docs tab behind a
+  switch, which the index said nothing about; a tab of its own is what every other
+  project surface is, and the row that opens it sits under the project in the Docs
+  folder beside *Documentation*, because the notes are the project's other document. A
+  tab page may carry a list of its own (DESIGN.md forbids one only inside a card, where
+  the wheel would stop scrolling the stack), the rows are painted by the framework's
+  two-line delegate, and the editor binds only the note that is picked. The notes module
+  hands its row to the docs module through the root (`DocsDeps.more_rows`), the
+  arrangement the order view and the estimation module's start-date bar already have;
+  neither imports the other.
 
 ## The topology is read before the graph is edited
 

@@ -2,8 +2,8 @@
 
 Nothing here is a framework concept — these are the three or four things every second
 feature would otherwise reimplement slightly differently: a confirmation whose default is
-"no", a centred column at a readable measure, and Ctrl+wheel zoom. Add to it sparingly;
-a helper that only one feature uses belongs in that feature.
+"no", a centred column at a readable measure, what an empty page says, and Ctrl+wheel
+zoom. Add to it sparingly; a helper that only one feature uses belongs in that feature.
 """
 
 from collections.abc import Callable
@@ -13,8 +13,11 @@ from PySide6.QtGui import QTextBlockFormat, QTextCursor, QWheelEvent
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QHBoxLayout,
+    QLabel,
     QMessageBox,
     QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -63,6 +66,60 @@ def centered_column(content: QWidget, max_width: int) -> QWidget:
     layout.addWidget(content, stretch=100)
     layout.addStretch(1)
     return wrapper
+
+
+# DESIGN.md's *Empty states*: one short line at a readable measure, never a banner.
+EMPTY_STATE_MEASURE = 360
+EMPTY_STATE_GAP = 12  # Between the line and the button under it.
+
+
+class EmptyState(QWidget):
+    """What a page with nothing in it says: one short line, a size smaller and in the
+    secondary ink, centred both ways in the space the content would have taken — and,
+    when one verb puts something there, that verb as a plain button under the line.
+
+    A tab cannot go off screen the way a panel does (DESIGN.md's *Panels*), so it says so
+    in words — and a line left where the layout happened to put it reads as a stray
+    footer. ``say`` shows the message and hides on ""; the caller hides the content the
+    state stands in for and gives this the same stretch, so the two trade places.
+    """
+
+    def __init__(
+        self,
+        text: str = "",
+        parent: QWidget | None = None,
+        *,
+        action: tuple[str, Callable[[], object]] | None = None,  # A verb; its answer is not read.
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("EmptyState")
+        self.label = QLabel(text, self)
+        self.label.setObjectName("EmptyStateText")
+        self.label.setWordWrap(True)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        font = self.label.font()
+        font.setPointSizeF(font.pointSizeF() - 1.0)
+        self.label.setFont(font)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(EMPTY_STATE_GAP)
+        layout.addStretch(1)
+        layout.addWidget(centered_column(self.label, EMPTY_STATE_MEASURE))
+        self.button: QPushButton | None = None
+        if action is not None:
+            label, run = action
+            self.button = QPushButton(label, self)
+            self.button.clicked.connect(run)
+            layout.addWidget(self.button, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addStretch(1)
+        self.setVisible(bool(text))
+
+    def say(self, text: str) -> None:
+        self.label.setText(text)
+        self.setVisible(bool(text))
+
+    def text(self) -> str:
+        return self.label.text()
 
 
 class _CtrlWheelFilter(QObject):

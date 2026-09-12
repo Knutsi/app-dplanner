@@ -1,4 +1,4 @@
-"""The note log: what reaches a step, the Docs tab's Implementation notes, and the editor.
+"""The note log: what reaches a step, the Implementation notes tab, and the editor.
 
 The derivation half runs with no Qt and no store — a plain library — because that is
 also the shape the CLI and the briefing read it in.
@@ -10,7 +10,7 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules.docs.activity import VIEW_DOCUMENTATION, VIEW_NOTES
+from dplanner.modules.notes.activity import NOTES_KIND
 from dplanner.modules.notes.editor import NoteEditor
 from dplanner.modules.notes.log import (
     MODULE_ID,
@@ -164,30 +164,21 @@ def project(services, make_project):
 
 
 @pytest.fixture
-def docs_tab(services, project):
-    return services.tabs.open("docs", project.id)
+def notes_tab(services, project):
+    return services.tabs.open(NOTES_KIND, project.id)
 
 
 @pytest.fixture
-def view(docs_tab):
-    """The Docs tab's Implementation notes, the way a reader reaches them: the switch."""
-    docs_tab.page.view_switch.button(VIEW_NOTES).click()
-    return docs_tab._notes
+def view(notes_tab):
+    return notes_tab.view
 
 
-def test_the_docs_tab_switches_between_the_documentation_and_the_notes(docs_tab):
-    page = docs_tab.page
-    # Built on the first switch, never for a tab that only reads the documentation.
-    assert page.caption.text() == "Documentation" and page.views.count() == 1
-    page.view_switch.button(VIEW_NOTES).click()
-    assert page.caption.text() == "Implementation notes"
-    notes = docs_tab._notes
-    assert notes is not None and page.views.currentWidget() is notes.widget
-    assert not page.answer.isVisibleTo(page) and not page.group_action.isVisible()
-    page.view_switch.button(VIEW_DOCUMENTATION).click()
-    assert page.caption.text() == "Documentation" and page.answer.isVisibleTo(page)
-    docs_tab.close()
-    assert docs_tab._notes is None
+def test_the_notes_are_a_tab_of_their_own(services, project, notes_tab):
+    assert notes_tab.title == "Discovery — Implementation notes"
+    assert notes_tab.caption.text() == "Implementation notes"
+    assert services.tabs.open(NOTES_KIND, project.id) is notes_tab  # One per project.
+    services.tabs.close_activity(notes_tab)
+    assert notes_tab.view._unsubscribes == []  # Closing disposes the view's listeners.
 
 
 def test_the_rows_say_what_when_where_for_whom_and_whether_it_stands(view):
@@ -214,6 +205,10 @@ def test_the_rows_follow_the_log(services, project, view):
     services.undo.push(SetModuleDataCommand(project.id, MODULE_ID, {}))
     assert view.rows() == [] and view.empty.isVisibleTo(view)
     assert view.selected() is None and not view.editor.isEnabled()
+    assert not view.split.isVisibleTo(view)  # The roster's button went with it, so:
+    view.empty.button.click()
+    assert [title for title, _line in view.rows()] == [FRESH_TITLE]
+    assert view.split.isVisibleTo(view) and not view.empty.isVisibleTo(view)
 
 
 def test_add_records_a_fresh_note_and_opens_it_on_the_title(services, project, view):
@@ -291,3 +286,56 @@ def test_a_foreign_change_reloads_the_fields(services, project, editor):
     assert editor.label.currentText() == "spec-change"
     assert editor.step.currentIndex() == 0 and editor.supersedes.count() == 1
     assert editor.addressed.text() == ""
+
+
+# -- the index's Docs folder ---------------------------------------------------------------------
+
+
+def docs_folder(services):
+    from dplanner.framework.builder import INDEX_PANEL_ID
+
+    panel = services.window.dock.widget_for(INDEX_PANEL_ID)
+    folder = next(
+        panel.tree.topLevelItem(index)
+        for index in range(panel.tree.topLevelItemCount())
+        if panel.tree.topLevelItem(index).text(0) == "Docs"
+    )
+    return panel, folder
+
+
+def project_row(folder, title):
+    return next(
+        folder.child(i) for i in range(folder.childCount()) if folder.child(i).text(0) == title
+    )
+
+
+def test_the_docs_folder_lists_each_project_with_its_two_readings(services, project):
+    _panel, folder = docs_folder(services)
+    row = project_row(folder, "Discovery")
+    assert [row.child(i).text(0) for i in range(row.childCount())] == [
+        "Documentation",
+        "Implementation notes",
+    ]
+
+
+def test_each_row_under_a_project_opens_its_own_tab(services, project):
+    panel, folder = docs_folder(services)
+    row = project_row(folder, "Discovery")
+    panel.tree.itemActivated.emit(row.child(1), 0)
+    (notes,) = services.tabs.activities()
+    assert notes.title == "Discovery — Implementation notes" and notes.view.rows()
+    panel.tree.itemActivated.emit(row.child(0), 0)
+    assert [a.title for a in services.tabs.activities()] == [
+        "Discovery — Implementation notes",
+        "Discovery — Docs",
+    ]
+
+
+def test_a_reading_s_row_stands_for_its_project(services, project):
+    from dplanner.framework.context import SCOPE_SELECTION, selection_uri
+
+    panel, folder = docs_folder(services)
+    row = project_row(folder, "Discovery")
+    panel.tree.setCurrentItem(row.child(1))
+    uris = [node.uri for node in services.context.current().scope(SCOPE_SELECTION)]
+    assert uris == [selection_uri("project", project.id)]

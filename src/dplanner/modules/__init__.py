@@ -760,13 +760,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
             describe_step=lambda step_id: description_read(library.step(step_id)),
         )
     )
-    # Constructed before the list because the Docs tab hosts its Implementation notes view;
-    # the key rule is the root's, handed over like every row's.
+    # Constructed before the list because the Docs folder carries its Implementation notes
+    # row; the key rule is the root's, handed over like every row's.
     notes = NotesModule(
         NotesDeps(
             library=library,
             undo=services.undo,
             debounce=services.debounce,
+            context=services.context,
+            tabs=services.tabs,
             step_key=_step_key,
         )
     )
@@ -1303,9 +1305,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 instructions=description_read,
                 parent=services.window,
                 pick_assets=pick_assets,
-                # Its Implementation notes view: the notes the project made along the way,
-                # which every briefing indexes — created by the notes module above.
-                notes=notes.create_view,
+                # The Implementation notes tab — the notes the project made along the way,
+                # which every briefing indexes — as a row under each project in its folder.
+                more_rows=(notes.index_row(),),
             )
         ),
         # Declares the compiled-document format only; DocsModule and the CLI write it.

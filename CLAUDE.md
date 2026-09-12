@@ -113,8 +113,10 @@ suite itself green — were libc `exit` running a Qt static destructor over a Py
 the clipboard's data in a global static that dies after the interpreter, and shiboken's
 destroy hook then calls into a finalized Python. `coredumpctl info` shows it in one look:
 `exit` at the bottom of the stack and no test frame anywhere. `tests/conftest.py`'s
-`_collect_qt_garbage` clears the clipboard after every test for exactly this; a real
-platform owns its clipboard through the application and never hits it.
+`_collect_qt_garbage` clears the clipboard after every test for exactly this, and a
+headless script that copies clears it before it returns (`scripts/measure_scaling.py`'s
+`discard`, tested); a real platform owns its clipboard through the application and never
+hits it.
 
 **A pytest worker dying with SIGSEGV names an innocent test.** The suite has crashed this
 way before (2026-09-01, roughly one run in three): the test reported is whichever one that
@@ -1115,9 +1117,11 @@ root, stop and look for the registry or capability you have not found yet.
   **label** from the closed `LABELS` list — `decision`, `handoff`, `spec-change`, `later`,
   `post-project` — a title, markdown body, the day, the step it was made on, the steps it
   is `for`, what it supersedes), `dplanner note add|set|remove|list|show|attach|index`,
-  and the Docs tab's **Implementation notes** view (`view.py`: the log as delegate-painted
-  rows, newest first, beside the picked note's editor — hosted by the docs module through
-  a factory on `DocsDeps`, built on the first switch to it, never a widget per note). It
+  and the **Implementation notes** tab (`activity.py` around `view.py`: the log as
+  delegate-painted rows, newest first, beside the picked note's editor, never a widget
+  per note), opened from the row the notes module puts under each project in the index's
+  Docs folder beside *Documentation* (`index_row`, handed to the docs module as
+  `DocsDeps.more_rows` by the root — neither imports the other). It
   replaced the decision log and the handoff aspect (both reach it at open — `migrate.py`). **The briefing's notes block is an index**: one
   line per standing note that reaches the step, grouped by label, with `note show` to
   open one — and a note **addressed** to the step (`--for S12`) in full ahead of it, which

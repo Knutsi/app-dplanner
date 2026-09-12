@@ -1,4 +1,4 @@
-"""A flat index folder: one row per project, opening that project's surface.
+"""An index folder of projects: one row per project, opening that project's surface.
 
 The shape ``modules/testing/index.py`` wrote first and asked to have extracted at the third
 user — *"If a third segment ever wants this shape, that is the moment to extract it, not
@@ -6,6 +6,11 @@ before"* — which the Docs folder is. What it holds is the half that is genuine
 rebuilding on the model's and the theme's signals, restoring which rows were open, and
 answering the panel's five hooks so a project row stands for its project and every Project
 verb works from the folder.
+
+A folder may put a row above the projects (:class:`LeadingRow`, a surface that spans them
+all) and rows under each project (:class:`ChildRow`, one per reading the surface offers —
+the Docs folder's *Documentation* and *Implementation notes*). A child row stands for its
+project exactly as the project row does; only what it opens differs.
 
 **The menu name arrives as an argument.** ``"Project"`` is application vocabulary and has no
 business in a framework file — the same reason ``IndexSegment`` names a factory rather than a
@@ -33,8 +38,10 @@ from dplanner.framework.theme_service import ThemeService
 
 KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 PROJECT_ROLE = int(Qt.ItemDataRole.UserRole) + 2
+CHILD_ROLE = int(Qt.ItemDataRole.UserRole) + 3  # Which ChildRow a "child" row is, by index.
 
 IconFor = Callable[[str], QIcon]
+PROJECT_KINDS = ("project", "child")  # The rows that stand for a project.
 
 
 @dataclass(frozen=True)
@@ -42,7 +49,7 @@ class LeadingRow:
     """A row above the projects, for a surface that spans them all.
 
     The Tests folder has one — the library-wide roll call has no project to sit under — and
-    the Docs folder has none, which is the only way the two segments differ.
+    the Docs folder has none.
     """
 
     label: str
@@ -50,8 +57,22 @@ class LeadingRow:
     open: Callable[[bool], None]  # The flag is `preview`.
 
 
+@dataclass(frozen=True)
+class ChildRow:
+    """A row under every project, for one reading of that project's surface.
+
+    The Docs folder has two — the documentation and the notes made along the way — and the
+    Tests folder has none. The project row itself keeps opening the surface as it always
+    did; a child names which reading to land on.
+    """
+
+    label: str
+    icon: IconFor
+    open: Callable[[NodeId, bool], None]  # The project, and `preview`.
+
+
 class ProjectListSegment:
-    """One row per project in the library, plus an optional row above them."""
+    """One row per project in the library, plus optional rows above and under them."""
 
     def __init__(
         self,
@@ -66,6 +87,7 @@ class ProjectListSegment:
         project_icon: IconFor,
         open_project: Callable[[NodeId, bool], None],
         leading: LeadingRow | None = None,
+        children: Sequence[ChildRow] = (),
     ) -> None:
         self._root = root
         self._library = library
@@ -77,6 +99,7 @@ class ProjectListSegment:
         self._project_icon = project_icon
         self._open_project = open_project
         self._leading = leading
+        self._children = tuple(children)
         self._unsubscribe = [
             # The rows are projects, never steps: only the library's own membership and a
             # project's own fields can change them.
@@ -98,11 +121,12 @@ class ProjectListSegment:
     # -- what the panel asks for ---------------------------------------------------------
 
     def selection_nodes(self, items: Sequence[QTreeWidgetItem]) -> Sequence[ContextNode]:
-        """A project row stands for its project, so every Project verb works from here."""
+        """A project row — and a child row under it — stands for its project, so every
+        Project verb works from here."""
         uris: list[str] = []
         for item in items:
             kind, node_id = self._identity(item)
-            if kind != "project" or not node_id:
+            if kind not in PROJECT_KINDS or not node_id:
                 continue
             uri = selection_uri("project", node_id)
             if uri not in uris:
@@ -119,7 +143,7 @@ class ProjectListSegment:
     def context_menu(self, item: QTreeWidgetItem) -> QMenu | None:
         kind, _node_id = self._identity(item)
         parent = self._tree()
-        if kind != "project" or parent is None:
+        if kind not in PROJECT_KINDS or parent is None:
             return None
         return build_menu(self._actions, self._context, self._menu, parent)
 
@@ -152,6 +176,15 @@ class ProjectListSegment:
             row.setData(0, PROJECT_ROLE, project.id)
             row.setIcon(0, self._project_icon(ink))
             self._root.addChild(row)
+            for index, child in enumerate(self._children):
+                # Keyed under the project so a rebuild restores the project row's state.
+                sub = QTreeWidgetItem([child.label])
+                sub.setData(0, Qt.ItemDataRole.UserRole, f"{self._key_prefix}:{project.id}:{index}")
+                sub.setData(0, KIND_ROLE, "child")
+                sub.setData(0, PROJECT_ROLE, project.id)
+                sub.setData(0, CHILD_ROLE, index)
+                sub.setIcon(0, child.icon(ink))
+                row.addChild(sub)
 
         restore_expansion(self._root, open_keys)
         if tree is not None:
@@ -163,8 +196,14 @@ class ProjectListSegment:
             self._leading.open(preview)
             return
         project_id = item.data(0, PROJECT_ROLE)
-        if kind == "project" and isinstance(project_id, str):
+        if not isinstance(project_id, str):
+            return
+        if kind == "project":
             self._open_project(project_id, preview)
+        elif kind == "child":
+            index = item.data(0, CHILD_ROLE)
+            if isinstance(index, int) and 0 <= index < len(self._children):
+                self._children[index].open(project_id, preview)
 
     def _identity(self, item: QTreeWidgetItem) -> tuple[str, str]:
         kind = item.data(0, KIND_ROLE)

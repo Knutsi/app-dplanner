@@ -2358,3 +2358,39 @@ What made a flip cost 200 ms was a *module's* panel clearing its cards when it s
 aside (`ProjectPanel`, fixed in the module) and the widget tree under it. Worth saying to
 whoever brings a `ContextPanel` upstream: "off screen" and "showing nothing" are different
 states, and the dock only ever asks for the first.
+
+## 26. From the Docs-folder pass
+
+### `framework/project_list_segment.py` — child rows under each project
+
+**What.** Beside `LeadingRow` (a row above the projects) the segment takes `children:
+Sequence[ChildRow]` — a label, an icon and `open(project_id, preview)` — and draws one row
+per child under every project row, keyed `<prefix>:<project>:<index>` in `UserRole` so
+`expansion_of`/`restore_expansion` keep the project row's open state across a rebuild.
+`KIND_ROLE` gains `"child"` and a `CHILD_ROLE` carries the index; `selection_nodes` and
+`context_menu` treat a child as its project (`PROJECT_KINDS`), so every Project verb and
+the Project menu work from it. The Docs folder is the user: *Documentation* and
+*Implementation notes* under each project, each opening its own tab.
+
+**Why.** The notes had been a second reading inside the Docs tab behind a switch, and the
+index — where a reader looks first — said nothing about it. Generalising the flat segment
+was smaller than a second segment class and leaves the two folders one code path; the
+richer `projects/index.py` (nested *contributed* entries, greyed rows) is still a
+different problem and stays separate.
+
+**Upstream?** Yes, with the segment itself if it goes: a folder of entities whose surface
+has more than one reading is the ordinary case, not this application's.
+
+### `framework/widgets.py` — `EmptyState`
+
+**What.** A widget for what an empty page says: one line at a readable measure
+(`centered_column`), a point smaller, `#EmptyStateText` in the secondary ink, centred
+both ways; `say("")` hides it. The Docs, Tests, Assets and Implementation notes pages use
+it in place of a `QLabel` each had appended to the end of its layout.
+
+**Why.** Each page's label landed wherever the layout left room — the bottom-left corner
+of a tall empty page — and read as a stray footer. One widget, one look, and DESIGN.md's
+*Empty states* names the rule.
+
+**Upstream?** Yes: every application has empty pages, and the trap (a label after a
+stretched widget) is generic.

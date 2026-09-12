@@ -55,13 +55,17 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.debounce import Debounced
 from dplanner.framework.image_preview import ImagePreviewDialog
-from dplanner.framework.widgets import confirm
+from dplanner.framework.widgets import EmptyState, confirm
 from dplanner.modules.project_assets.cli import MODULE_ID, read_titles, write_titles
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
     from dplanner.modules.project_assets.module import ProjectAssetsDeps
 
 ASSETS_KIND = "assets"
+NO_ASSETS = (
+    "No assets yet. Paste an image into a step's description, or"
+    " `dplanner describe attach <step> <file>`."
+)
 
 PANEL_MARGIN = 16
 CAPTION_GAP = 6
@@ -250,14 +254,7 @@ class AssetsActivity(EntityActivity):
         layout.addWidget(self.splitter, 1)
 
         # A tab cannot go off screen the way a panel does, so it says so in words.
-        self.empty = QLabel(
-            "No assets yet. Paste an image into a step's description, or"
-            " `dplanner describe attach <step> <file>`.",
-            page,
-        )
-        self.empty.setObjectName("InspectorNote")
-        self.empty.setWordWrap(True)
-        self.empty.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+        self.empty = EmptyState(NO_ASSETS, page)
         layout.addWidget(self.empty, 1)
 
         self._widget = page

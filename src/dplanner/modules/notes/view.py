@@ -6,9 +6,8 @@ two-line delegate rather than built as a widget, so a plan that has accumulated 
 of handoffs costs the window nothing to lay out. Picking a row binds the editor to that
 note and nothing else; *Add Note…* records a fresh one and opens it on the title, the way
 Step ▸ New opens the details on the name; the `⋯` beside the editor carries Remove. The
-Docs tab hosts it as its *Implementation notes* view through a factory on its Deps — this
-module registers nothing — and the list follows the project after a quiet spell, like
-every table.
+*Implementation notes* tab (``activity.py``) is the page around it, and the list follows
+the project after a quiet spell, like every table.
 """
 
 from collections.abc import Callable
@@ -35,6 +34,7 @@ from dplanner.framework.activity import follow_target
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.list_rows import DETAIL_ROLE, MUTED_ROLE, TwoLineDelegate
 from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import EmptyState
 from dplanner.modules.notes.editor import NoteEditor
 from dplanner.modules.notes.log import (
     DEFAULT_LABEL,
@@ -53,7 +53,7 @@ FRESH_TITLE = "New note"
 LIST_WIDTH = 320
 BLOCK_GAP = 12
 FIELD_GAP = 6
-NO_NOTES = "No notes yet · `dplanner note add` records one, and so does Add Note…"
+NO_NOTES = "No notes yet. `dplanner note add` records one from the terminal."
 
 
 def note_line(record: Note, where: str, addressed: str, superseded_by: str) -> str:
@@ -139,11 +139,10 @@ class NotesView(QWidget):
         self.split.setSizes([LIST_WIDTH, LIST_WIDTH * 2])
         layout.addWidget(self.split, 1)
 
-        self.empty = QLabel(NO_NOTES, self)
-        self.empty.setObjectName("InspectorNote")
-        self.empty.setWordWrap(True)
-        self.empty.hide()
-        layout.addWidget(self.empty)
+        # Hidden until the refresh says the log is empty; it and the split trade places —
+        # the roster's button with it, so the first note has a button of its own here.
+        self.empty = EmptyState(parent=self, action=("Add Note…", self.add_note))
+        layout.addWidget(self.empty, 1)
 
         # After a quiet spell, not per signal: the rows name steps, so a rename counts too.
         self._refresh_soon = Debounced(self._refresh, parent=self, service=debounce)
@@ -160,12 +159,6 @@ class NotesView(QWidget):
             )
         ]
         self._refresh()
-
-    # -- what the Docs tab hosts -------------------------------------------------------------
-
-    @property
-    def widget(self) -> QWidget:
-        return self
 
     def dispose(self) -> None:
         self._refresh_soon.cancel()
@@ -266,7 +259,7 @@ class NotesView(QWidget):
             f"{len(records)} notes, {standing} standing — newest first" if records else ""
         )
         self.split.setVisible(bool(records))
-        self.empty.setVisible(not records)
+        self.empty.say("" if records else NO_NOTES)
         self._show_selected()
 
     def _on_pick(self) -> None:

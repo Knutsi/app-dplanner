@@ -50,14 +50,14 @@ from dplanner.framework.inspector import InspectorSection, InspectorSectionRegis
 from dplanner.framework.llm import LLMMessage, LLMTimeoutError
 from dplanner.framework.llm_service import LLMService
 from dplanner.framework.mime_files import Payload
-from dplanner.framework.project_list_segment import ProjectListSegment
+from dplanner.framework.project_list_segment import ChildRow, ProjectListSegment
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.task_runner import TaskRunner, TaskTimeoutError
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
-from dplanner.modules.docs.activity import DOCS_KIND, DocsActivity
+from dplanner.modules.docs.activity import DOCS_CAPTION, DOCS_KIND, DocsActivity
 from dplanner.modules.docs.aspect import (
     COMPILED_FORMAT,
     COMPILED_ID,
@@ -96,19 +96,6 @@ OPEN_STEP_ACTION = "docs.open_step"
 NO_DOCS_REASON = "Show Docs — this step carries no documentation and gathers none"
 
 
-class NotesView(Protocol):
-    """The Docs tab's *Implementation notes* view: the project's log beside an editor.
-
-    Consumer-owned interface, satisfied structurally by the notes module's view via the
-    composition root — the same arrangement as the order view's start-date bar.
-    """
-
-    @property
-    def widget(self) -> QWidget: ...
-
-    def dispose(self) -> None: ...
-
-
 @dataclass(frozen=True)
 class DocsDeps:
     library: Library
@@ -137,9 +124,9 @@ class DocsDeps:
     # Insert from Assets…: a modal picker over the node's project's catalog, composed by
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], "list[Payload]"] | None = None
-    # The Implementation notes view the Docs tab hosts beside its documentation, created
-    # by the notes module for one project. None is a build without notes.
-    notes: Callable[[NodeId, QWidget], NotesView] | None = None
+    # Rows other modules put under each project in the index's Docs folder, beside
+    # *Documentation* — the notes module's *Implementation notes*, opening its own tab.
+    more_rows: tuple[ChildRow, ...] = ()
 
 
 class DocsCompiledModule:
@@ -276,9 +263,15 @@ class DocsModule:
         )
 
     def _segment(self, root: QTreeWidgetItem) -> ProjectListSegment:
-        """One row per project. No *All Projects* row: documentation is a project's, and
-        there is no cross-project reading of it worth a row."""
+        """One row per project, with the project's documents under it: *Documentation*
+        (this tab) and whatever rows other modules add. No *All Projects* row:
+        documentation is a project's, and there is no cross-project reading of it worth
+        a row."""
         deps = self._deps
+
+        def open_docs(project_id: NodeId, preview: bool) -> None:
+            self.open(project_id, preview=preview)
+
         return ProjectListSegment(
             root,
             deps.library,
@@ -288,7 +281,8 @@ class DocsModule:
             key_prefix="docs",
             menu="Project",
             project_icon=read_icon,
-            open_project=lambda project_id, preview: self.open(project_id, preview=preview),
+            open_project=open_docs,
+            children=(ChildRow(DOCS_CAPTION, read_icon, open_docs), *deps.more_rows),
         )
 
     def _action_specs(self) -> list[ActionSpec]:

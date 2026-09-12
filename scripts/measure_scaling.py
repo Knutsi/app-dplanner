@@ -52,12 +52,13 @@ from typing import Any
 # tests/conftest.py gives: gtk3 starts eight threads and a compositor connection.
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["QT_QPA_PLATFORMTHEME"] = ""
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The repository root, so `scripts.synthetic_library` imports the same way the tests do.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import QEvent, QPointF, QSettings, Qt
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtGui import QGuiApplication, QMouseEvent
 from PySide6.QtWidgets import QApplication
-from synthetic_library import build_library
+from scripts.synthetic_library import build_library
 
 from dplanner.app import configure_application, new_session, set_early_attributes
 from dplanner.core.telemetry import Span, Telemetry, current, install
@@ -720,6 +721,21 @@ def build(app: QApplication, root: Path, size: int, args: argparse.Namespace) ->
     return harness
 
 
+def discard(harness: Harness, app: QApplication) -> None:
+    """Release one size's build, and clear the clipboard while Python is still alive.
+
+    The paste scenario copies through ``steps.copy``, which hands a Python-made ``QMimeData``
+    to the clipboard; under the offscreen platform Qt keeps it in a global static that libc
+    destroys *after* the interpreter, and its wrapper's destructor then calls into a
+    finalized Python — the exit-time segfault CLAUDE.md's *A worker that segfaults after
+    reporting green* describes, and ``tests/conftest.py`` clears after every test.
+    """
+    harness.session.close()
+    QGuiApplication.clipboard().clear()
+    app.processEvents()
+    gc.collect()
+
+
 def medians(results: Sequence[Result]) -> Result:
     if len(results) == 1:
         return results[0]
@@ -870,9 +886,7 @@ def main() -> None:
             for name in names:
                 runs = [harness.measure(name, SCENARIOS[name]) for _ in range(args.repeat)]
                 results[name].append(medians(runs))
-        harness.session.close()
-        app.processEvents()
-        gc.collect()
+        discard(harness, app)
 
     if not args.profile:
         for name, rows in results.items():
