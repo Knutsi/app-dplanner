@@ -16,20 +16,15 @@ visible or not, so a block that reappears is already current.
 
 from collections.abc import Sequence
 
+from PySide6.QtCore import QEvent
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, TextEdit
 from dplanner.framework.inspector import InspectorExtension, InspectorSection
+from dplanner.framework.widgets import caption
 from dplanner.theme.icons import ICON_SIZE, info_icon
-
-# DESIGN.md: 16 px outer margins; more space between blocks than within one.
-PANEL_MARGIN = 16
-BLOCK_GAP = 12
-CAPTION_GAP = 6
-# DESIGN.md's opacity-derived secondary ink: theme-independent by construction, which is
-# what lets one painted glyph serve both themes without a repaint hook here.
-SECONDARY_ALPHA = 160
+from dplanner.theme.tokens import CAPTION_GAP, PANEL_MARGIN, SECONDARY_ALPHA, SECTION_GAP
 
 
 class _Block(QWidget):
@@ -39,22 +34,18 @@ class _Block(QWidget):
         super().__init__()
         self.section = section
         self.extension = extension
-        caption = QLabel(section.label, self)
-        caption.setObjectName("InspectorCaption")
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(CAPTION_GAP)
-        header.addWidget(caption)
+        header.addWidget(caption(section.label, self))
+        self.hint: QLabel | None = None
         if section.hint:
             # DESIGN.md's *Words* rule: a standing convention goes behind a glyph, never
-            # on a line of its own under the field. Repainted on theme change like every
-            # other colour-parameterised glyph.
+            # on a line of its own under the field.
             self.hint = QLabel(self)
             self.hint.setFixedSize(ICON_SIZE, ICON_SIZE)
             self.hint.setToolTip(section.hint)
-            ink = QColor(self.palette().text().color())
-            ink.setAlpha(SECONDARY_ALPHA)
-            self.hint.setPixmap(info_icon(ink).pixmap(ICON_SIZE, ICON_SIZE))
+            self._paint_hint()
             header.addWidget(self.hint)
         header.addStretch(1)
         layout = QVBoxLayout(self)
@@ -62,6 +53,31 @@ class _Block(QWidget):
         layout.setSpacing(CAPTION_GAP)
         layout.addLayout(header)
         layout.addWidget(extension.widget, stretch=1)
+        if section.stretch == 0:
+            # What makes ``InspectorSection.stretch`` authoritative. A QWidgetItem reports
+            # itself expanding when the widget's *own* layout does and its policy carries
+            # GrowFlag — and the line above makes every block's layout expanding, whatever
+            # its section declared. So with the one stretch block hidden, qGeomCalc found no
+            # stretch to honour, fell through to "spread among the expansive", and grew all
+            # three survivors to a third of the tab each (328 px for a 42 px name field,
+            # whose caption and editor sank to the bottom with it). Maximum is ShrinkFlag
+            # only: no GrowFlag, no promotion, and the declared stretch decides again.
+            # Maximum rather than Fixed so a panel shorter than its blocks still compresses.
+            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+
+    def _paint_hint(self) -> None:
+        if self.hint is None:
+            return
+        ink = QColor(self.palette().text().color())
+        ink.setAlpha(SECONDARY_ALPHA)
+        self.hint.setPixmap(info_icon(ink).pixmap(ICON_SIZE, ICON_SIZE))
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        # A colour copied out of the palette goes stale: the glyph carries the ink it was
+        # painted in, and nothing else reaches into a block to repaint it.
+        if event.type() == QEvent.Type.PaletteChange:
+            self._paint_hint()
+        super().changeEvent(event)
 
 
 class DetailsSection(QWidget):
@@ -75,9 +91,16 @@ class DetailsSection(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
-        layout.setSpacing(BLOCK_GAP)
+        layout.setSpacing(SECTION_GAP)
         for block in self._blocks:
             layout.addWidget(block, stretch=block.section.stretch)
+        # Somewhere for the leftover height to go when the block that wanted it is turned
+        # off, so the rest stay their own size at the top. Factor **zero** on purpose: at 1
+        # it would split the leftover with the description block and halve the prose editor
+        # whenever that block *is* shown. Without it the blocks scatter instead, Qt handing
+        # each an equal share of the surplus. ``addStretch`` rather than a hand-built
+        # QSpacerItem, which is the one wrapper shape ``gc_policy``'s finalizer cannot see.
+        layout.addStretch(0)
 
         # A block follows its aspect the way a tab does: toggles arrive as module data,
         # and some aspects are also implied by prose, so both writes re-ask shown_for.

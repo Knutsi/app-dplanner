@@ -591,18 +591,22 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # below.
     step_properties = StepPropertiesModule(
         StepPropertiesDeps(
-            # The templates on the bar's left: what a step *amounts to*, as the set of
-            # Type toggles that are on — clicking one moves every toggle to match, and a
-            # step carrying exactly that set lights it up. Step is the catch-all: any
+            # The templates the bar's dropdown offers: what a step *amounts to*, as the set
+            # of Type toggles that are on — picking one moves every toggle to match, and a
+            # step carrying exactly that set wears its name. Step is the catch-all: any
             # combination no other template names is still a step. Collectors carry no
             # estimate of their own; an agent step gets what an agent reports back
-            # through. Each wears its body tone when selected: violet the milestone, teal
-            # the feature, the agent-run chip's blue for an agent step; Step and Check
-            # keep the accent. Wired, never inferred, like the scope kinds.
+            # through. The selected one's glyph wears its body tone: violet the milestone,
+            # teal the feature, the agent-run chip's blue for an agent step; Step and Check
+            # keep the plain ink. Wired, never inferred, like the scope kinds.
             templates=(
                 AspectTemplate(
                     "Step",
                     frozenset({"estimate.toggle", "description.toggle"}),
+                    # A glyph like every other, so the face's icon slot is never empty:
+                    # one that appeared only for the named kinds would resize the face as
+                    # the step changed, and a face that reports what is on keeps its size.
+                    glyph="step",
                     catch_all=True,
                 ),
                 AspectTemplate(

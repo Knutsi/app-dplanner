@@ -354,14 +354,15 @@ def test_an_edit_in_the_dialog_lands_on_the_undo_stack(services, project, monkey
 
 def test_the_details_dialog_never_outgrows_the_screen(services, project, monkeypatch):
     """It asks for 900x850 — room for the Tests tab's list beside its editor — but a laptop
-    must still get a dialog it can show whole. Asserted against the clamp, not the constant:
-    the offscreen platform reports an 800x800 screen, so the constant never survives here."""
+    must still get a dialog it can show whole. The frame owns the clamp now, at SCREEN_SHARE
+    of the screen; asserted against it, not the constant, because the offscreen platform
+    reports an 800x800 screen and the constant never survives here."""
     from dplanner.modules.step_properties.dialog import (
         DIALOG_HEIGHT,
         DIALOG_WIDTH,
-        SCREEN_CLEARANCE,
         StepDetailsDialog,
     )
+    from dplanner.theme.tokens import SCREEN_SHARE
 
     step = project.steps[0]
     opened = []
@@ -371,5 +372,27 @@ def test_the_details_dialog_never_outgrows_the_screen(services, project, monkeyp
 
     (dialog,) = opened
     available = dialog.screen().availableGeometry()
-    assert dialog.width() == min(DIALOG_WIDTH, available.width() - SCREEN_CLEARANCE)
-    assert dialog.height() == min(DIALOG_HEIGHT, available.height() - SCREEN_CLEARANCE)
+    assert dialog.width() == min(DIALOG_WIDTH, round(available.width() * SCREEN_SHARE))
+    assert dialog.height() == min(DIALOG_HEIGHT, round(available.height() * SCREEN_SHARE))
+
+
+def test_the_dialog_is_on_the_frame_with_no_footer_and_no_heading(services, project, monkeypatch):
+    """F1's audit put this dialog on the frame; the frame prints no heading of its own, so
+    what it shows is the panel and the window title is the step's own name."""
+    from PySide6.QtWidgets import QLabel
+
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    step = project.steps[0]
+    opened = []
+    monkeypatch.setattr(StepDetailsDialog, "exec", lambda self: opened.append(self))
+    select(services, step.id)
+    services.actions.run("steps.details", services.context.current())
+    (dialog,) = opened
+
+    assert dialog.windowTitle() == "Read the spec"  # The step's, so a switcher can tell them apart.
+    assert dialog.footer.isHidden()  # Every edit is live; there is nothing to confirm.
+    assert dialog.footer_buttons() == []
+    assert dialog.findChild(QLabel, "DialogTitle") is None
+    assert dialog.findChild(QLabel, "DialogLead") is None
+    dialog.dispose()

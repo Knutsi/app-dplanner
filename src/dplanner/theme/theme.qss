@@ -528,7 +528,8 @@ QProgressBar::chunk {
 
 /* The quiet bordered button: a toolbar verb, the layout picker, the task browser's in-row
  * Cancel. DESIGN.md's *Buttons*: everything that is not the one primary looks like this. */
-#ToolbarButton, #LayoutButton, #TaskRowCancel, #FilterButtonFace, #FilterButtonClear {
+#ToolbarButton, #LayoutButton, #TemplateButton, #TaskRowCancel, #FilterButtonFace,
+#FilterButtonClear {
     background-color: $BG_OVERLAY;
     color: $TEXT_SECONDARY;
     border: 1px solid $BORDER;
@@ -536,7 +537,7 @@ QProgressBar::chunk {
     padding: 6px 12px;
 }
 
-#ToolbarButton:hover, #LayoutButton:hover, #TaskRowCancel:hover,
+#ToolbarButton:hover, #LayoutButton:hover, #TemplateButton:hover, #TaskRowCancel:hover,
 #FilterButtonFace:hover, #FilterButtonClear:hover {
     color: $TEXT_PRIMARY;
     border-color: $BORDER_STRONG;
@@ -583,17 +584,21 @@ QProgressBar::chunk {
    chrome: no frame, no ground of its own. It is a QToolBar purely for the » overflow button,
    which is the only widget in Qt that degrades a full control row gracefully instead of
    squeezing it. */
-#ControlBar, #AspectBarTools {
+#ControlBar {
     background: transparent;
     border: none;
     padding: 0px;
     spacing: ${CONTROL_GAP}px;
 }
 
-/* The aspect bar seats eleven glyphs and five words in one row: tighter sides than a
-   toolbar verb, so the whole strip fits the details dialog before anything folds. */
-#AspectBarTools #ToolbarButton {
-    padding: 5px 4px;
+/* A dense strip: glyphs read as one set rather than aimed at one at a time, so they pack.
+   The aspect bar seats ten toggles in a dock a third of the window wide, and at the verb
+   strip's sides two of them fit before the rest fold into the … menu — which for a row
+   that answers "what does this step carry" is the row not answering. Height is untouched:
+   every control on a strip is still CONTROL_HEIGHT. A property, not a name, because this
+   is a mode the primitive offers and not one surface styled by hand. */
+#ControlBar[dense="true"] #ToolbarButton {
+    padding: 6px ${DENSE_GAP}px;
 }
 
 #ControlBar::separator {
@@ -679,7 +684,8 @@ QComboBox QAbstractItemView::item:selected {
 /* A styled QToolButton loses Qt's own room for the drop-down arrow: the box model knows
    the text and the padding and nothing about the subcontrol, so the arrow lands on the
    last letter. Both buttons that carry a menu say where it goes and leave room for it. */
-#ToolbarButton::menu-indicator, #LayoutButton::menu-indicator {
+#ToolbarButton::menu-indicator, #LayoutButton::menu-indicator,
+#TemplateButton::menu-indicator {
     subcontrol-origin: padding;
     subcontrol-position: right center;
     width: 10px;
@@ -717,7 +723,11 @@ QComboBox QAbstractItemView::item:selected {
     padding-right: ${ARROW_ROOM}px;
 }
 
-#LayoutButton {
+/* A face that names the current choice and drops the choices down: the layout picker on
+   the canvas, the template on the aspect bar. Both leave the indicator its room — a
+   styled subcontrol is outside Qt's size hint, so without this the arrow is painted over
+   the last letter. */
+#LayoutButton, #TemplateButton {
     padding-right: 20px;
 }
 
@@ -886,11 +896,13 @@ QToolButton[repoTool="true"]:hover {
 
 /* ---- Dialogs (framework/dialog.py) ------------------------------------------------- */
 
-/* The frame names its parts, and every dialog on it is styled through these two names —
-   never through its own. The lead under the title is the secondary remark; the footer's
-   buttons are quiet bordered secondaries, and the one primary is the rule at the end. */
-#DialogLead {
-    color: $TEXT_SECONDARY;
+/* The frame names its parts, and every dialog on it is styled through these names — never
+   through its own. The frame prints no title and no lead: a heading inside a dialog repeats
+   the title bar and pushes the content down. What a confirmation asks is its content, so it
+   is body text and not a remark. The footer's buttons are quiet bordered secondaries, and
+   the one primary is the rule at the end. */
+#DialogQuestion {
+    color: $TEXT_PRIMARY;
 }
 
 /* The footer is a band under the page, edge to edge: the elevated ground under a faint

@@ -35,13 +35,12 @@ from dplanner.framework.inspector import (
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.theme.themes import Theme
+from dplanner.theme.tokens import CAPTION_GAP, PANEL_MARGIN, SECTION_GAP
 
-# DESIGN.md: side panels get 16 px outer margins, and more space between blocks than within
-# one — 12 between, 6 from a caption to its field. The panel's own caption is its frame's
-# header, so nothing here prints one; the bar is chrome and runs edge to edge above it all.
-PANEL_MARGIN = 16
-BLOCK_GAP = 12
-CAPTION_GAP = 6
+# DESIGN.md's *Tokens*: side panels get 16 px outer margins, and more space between blocks
+# than within one — 12 between, 6 from a caption to its field. The panel's own caption is
+# its frame's header, so nothing here prints one; the bar is chrome and runs edge to edge
+# above it all.
 
 
 class StepPanel(QWidget):
@@ -97,7 +96,7 @@ class StepPanel(QWidget):
         self.tab_bar.currentChanged.connect(self._pages.setCurrentIndex)
 
         column = QVBoxLayout()
-        column.setContentsMargins(PANEL_MARGIN, BLOCK_GAP, PANEL_MARGIN, 0)
+        column.setContentsMargins(PANEL_MARGIN, SECTION_GAP, PANEL_MARGIN, 0)
         column.setSpacing(CAPTION_GAP)
         column.addLayout(tab_row)
         column.addLayout(self._pages, stretch=1)
@@ -112,9 +111,8 @@ class StepPanel(QWidget):
             for index, section in enumerate(sections):
                 if section.icon is not None:
                     self.tab_bar.setTabIcon(index, section.icon(current.text_secondary))
-            # A colour copied out of the palette goes stale; the bar's glyphs are repainted
-            # with the tabs they sit above.
-            self.bar.paint(current.text_secondary)
+            # The bar re-inks itself on PaletteChange, strip and face alike. Painting it
+            # from here too would put the theme's grey beside the palette's in one row.
 
         self._unsubscribes = [
             library.structure_changed.connect(self._on_structure),
@@ -128,8 +126,6 @@ class StepPanel(QWidget):
             # A panel is shorter-lived than the theme service; detach in dispose().
             self._unsubscribes.append(theme.changed.connect(paint))
             paint(theme.current)
-        else:
-            self.bar.paint(self.palette().text().color())
 
     # -- what the context says ---------------------------------------------------------------
 

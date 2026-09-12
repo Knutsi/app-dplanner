@@ -63,8 +63,8 @@ class StepPropertiesDeps:
     # the same freedom holds — a block registrant only has to come before a panel exists.
     details: InspectorSectionRegistry
     theme: ThemeService  # Tab glyphs and the bar's follow the theme's secondary text colour.
-    # The templates the bar words on its left — named combinations of Type toggles,
-    # each with the body tone it wears when the step carries exactly that set. Wired,
+    # The templates the bar's dropdown offers — named combinations of Type toggles, each
+    # with the body tone its glyph wears when the step carries exactly that set. Wired,
     # never inferred: the root names them, as it names the scope kinds.
     templates: tuple[AspectTemplate, ...] = ()
 

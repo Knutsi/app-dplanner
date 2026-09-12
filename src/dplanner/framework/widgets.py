@@ -47,12 +47,21 @@ def space_lines(pane: QPlainTextEdit) -> None:
 
 def confirm(parent: QWidget | None, title: str, question: str, *, verb: str = "Yes") -> bool:
     """A confirmation for an action that throws work away, on the dialog frame: the
-    question as its lead, the verb a quiet button (it discards, so no accent), and Cancel
-    the default so Enter never discards anything."""
+    question in the body, the verb a quiet button (it discards, so no accent), and Cancel
+    the default so Enter never discards anything.
+
+    The question is the dialog's whole content, not a heading over it — the frame prints no
+    title of its own, and the title names the window.
+    """
     # The frame is built from this module's helpers, so it is imported here, not above.
     from dplanner.framework.dialog import DialogFrame
 
-    dialog = DialogFrame(title, parent, lead=question)
+    dialog = DialogFrame(title, parent)
+    asked = QLabel(question, dialog)
+    asked.setObjectName("DialogQuestion")
+    asked.setWordWrap(True)
+    dialog.body_layout.addWidget(asked)
+    dialog.body_layout.addStretch(0)
     dialog.add_button(verb, dialog.accept)
     dialog.add_dismiss()
     answer = dialog.exec() == QDialog.DialogCode.Accepted

@@ -377,20 +377,35 @@ root, stop and look for the registry or capability you have not found yet.
   prose's links as uses. `FORMAT.md` has the shape; `ARCHITECTURE.md`'s *Turning an
   aspect off shelves it* has the reasoning.
 - **The aspect bar across the panel's top renders the Type submenu, never a copy of it.**
-  `framework/aspect_bar.py` puts every Type toggle in a right `QToolBar` as a glyph and
-  runs each through `ActionRegistry.run`, so a toggle keeps its own undo command. Its left
-  `QToolBar` is **templates** — `StepPropertiesDeps.templates`, named by the composition
-  root: a label and the *set* of toggles that are on (Step, Milestone, Feature, Agent,
-  Check), worded and wearing a body tone from `theme/tones.py`. Clicking one runs every
-  toggle that differs inside **one `UndoService.gesture`**, and a template reads as
-  selected exactly when the step carries its set and nothing else — a combination is a
-  template, both ways, computed on every refresh and never stored — and **Step is the
-  catch-all**, lit for any combination no other template names. **Overflow is
-  `QToolBar`'s own » button**, which lists what no longer fits as checkable menu
-  entries. It takes the context as a **function**, so the panel inside the details
-  dialog names its own step. **"This type can never carry that aspect" needs no new
-  mechanism** — a toggle returning `ActionState(enabled=False, label=…)` is the existing
-  *disabled, never hidden* rule; do not build one until it is asked for.
+  `framework/aspect_bar.py` puts every Type toggle **on the left, in a `Toolbar`**
+  (`framework/toolbar.py`) as a glyph with its words in the tooltip, and runs each through
+  `ActionRegistry.run`, so a toggle keeps its own undo command. **What no longer fits folds
+  into that strip's `…` menu as glyph *and* words** — never Qt's `»`, which pops the hidden
+  buttons up as glyphs again. The strip is **dense**: these glyphs are read as one set
+  rather than aimed at one at a time, and at the verb strip's metrics only five of the ten
+  toggles fit the width the panel can actually be. **On the right is one dropdown named
+  *Template*** — `StepPropertiesDeps.templates`, named by the composition root: a label and
+  the *set* of toggles that are on (Step, Milestone, Feature, Agent, Check). The face says
+  what it offers and never changes; **which template the step amounts to is the ticked
+  entry**, so the bar reads as the toggles plus a way to set them all at once rather than as
+  two claims about the step. Picking one runs every toggle that differs inside
+  **one `UndoService.gesture`**, and a template reads as selected exactly when the step
+  carries its set and nothing else — a combination is a template, both ways, computed on
+  every refresh and never stored — and **Step is the catch-all**, worn for any combination
+  no other template names. **The face sits outside the `Toolbar`**: a widget on a strip
+  hides when there is no room, and the one control saying what the step *is* must survive
+  every width — the canvas's layout picker and the *Updating…* indicator sit outside theirs
+  for the same reason. **The tone rides on each entry's glyph in the menu, never a fill** —
+  a feature's entry and a feature node are one identity, and a face that carried the tone
+  would repaint the bar's corner every time the step's kind changed. It takes the
+  context as a **function**, so the panel inside the details dialog names its own step, and
+  it **announces every refresh** (`refreshed`) for a host that repeats its answer — the
+  dialog's lead — because applying a template ends with the bar's own refresh, after the
+  last write anybody heard. **A toggle never reports `visible=False`**, and a strip that
+  re-shows what fits on every reflow could not honour it: **"this type can never carry that
+  aspect" needs no new mechanism** — a toggle returning `ActionState(enabled=False,
+  label=…)` is the existing *disabled, never hidden* rule; do not build one until it is
+  asked for.
 - **Tests can be read grouped by what collects them.** The Tests tab's third selector groups
   rows by feature, milestone or check, filled by `scope.gatherers()` in the one place rows
   are ordered (`TestsActivity._rows`); `TestsTable` draws a spanned heading wherever the key
@@ -403,7 +418,13 @@ root, stop and look for the registry or capability you have not found yet.
   the `InspectorSectionRegistry`'s third instantiation; estimate, description and the spec
   figures are the registrants, and `modules/step_properties/details.py` stacks them
   (`stretch` on the section says who gets the leftover height, `shown_for` hides a block
-  with nothing to say). `ARCHITECTURE.md`'s *The Details tab hosts the same contract, as
+  with nothing to say). **A block host gives the leftover to a trailing `addStretch(0)`
+  and caps every stretch-0 block at `QSizePolicy.Maximum`** — both halves, or the blocks
+  scatter when the one that wanted the height is turned off. A `QWidgetItem` reports itself
+  expanding when the widget's *own* layout does, so without the cap every block is
+  expansive whatever its section declared; the cap is what makes `stretch` authoritative,
+  and the stretch is zero or it splits the leftover with the block that asked for it.
+  `ARCHITECTURE.md`'s *The Details tab hosts the same contract, as
   blocks* has the reasoning — including why a host is a registry instance, never a flag.
 - **A large text field expands into a modal editor** — `framework/text_dialog.py`: a
   second `TextBinding` over the same `TextField`, live-synced through the foreign-change
@@ -1299,9 +1320,10 @@ root, stop and look for the registry or capability you have not found yet.
   purple a milestone, **teal a feature**, green a done step (`BODY_TONES` in
   `theme/tones.py`; done outranks milestone outranks feature, and the medallion still says
   what else the node is). An estimate or a description is a facet. The **aspect bar's
-  left** words *templates* — a kind with the facets it usually carries — which is why that
-  list is named in the composition root (`StepPropertiesDeps.templates`) rather than
-  derived from the Type submenu; the bar's right is every toggle, as a glyph. **Step ▸ New is one verb**: a step is born plain, titled "New
+  right** is one dropdown naming the *template* the step amounts to — a kind with the
+  facets it usually carries — which is why that list is named in the composition root
+  (`StepPropertiesDeps.templates`) rather than derived from the Type submenu; the bar's
+  left is every toggle, as a glyph. **Step ▸ New is one verb**: a step is born plain, titled "New
   step", and the details dialog opens on it with the name selected, where the bar says
   what it is.
 - **A step placed by pointing at a spot earns a stored position.** `StepVerbs.create()` is
