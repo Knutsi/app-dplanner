@@ -289,7 +289,7 @@ def test_herdr_is_a_row_whose_template_is_two_calls(tmp_path):
             "dplanner: S7 Deploy",
             "--no-focus",
         ],
-        ["herdr", "pane", "run", "{pane}", "--command", str(tmp_path / "run.sh")],
+        ["herdr", "pane", "run", "{pane}", str(tmp_path / "run.sh")],
     ]
 
 
@@ -306,20 +306,9 @@ def test_a_staged_spawn_feeds_the_pane_the_first_call_printed_into_the_second(
         )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    command = [
-        "herdr",
-        "workspace",
-        "create",
-        "&&",
-        "herdr",
-        "pane",
-        "run",
-        "{pane}",
-        "--command",
-        "x",
-    ]
+    command = ["herdr", "workspace", "create", "&&", "herdr", "pane", "run", "{pane}", "x"]
     assert launcher.spawn(command, tmp_path) == ""
-    assert calls[1] == ["herdr", "pane", "run", "w3:p1", "--command", "x"]
+    assert calls[1] == ["herdr", "pane", "run", "w3:p1", "x"]
     assert launcher.pane_from("%5\n") == "%5" and launcher.pane_from("") == ""
 
 

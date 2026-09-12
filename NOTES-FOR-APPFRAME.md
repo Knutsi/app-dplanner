@@ -1102,8 +1102,11 @@ Registering ephemeral `ActionSpec`s would leak ids into the palette and need the
 un-registration door the registry deliberately keeps shut. The toolbar already had the
 answer (DPlanner's layout picker builds its popup fresh on open); this is the same rule given
 to the one presenter that never rebuilds. Belongs upstream, we think: "Recent…" menus are
-universal, and `fill_menu` in `action_menu.py` could learn to render the same specs so a
-right-click on a menu holding one cannot drift — not done here because nothing pops Tools up.
+universal. `fill_menu` in `action_menu.py` renders the same specs since 2026-09-12 — merged
+into the one sorted walk by the same `sort_key`, placed with the same group rule, filled on
+`aboutToShow` like the bar's — because *Step ▸ Run Agent With* became a data menu and the
+canvas pops Step up: a right-click that lacked it was the drift the one-builder rule exists
+to prevent. A named-`submenu` render leaves data menus out; they are children of the menu.
 
 **A detail worth keeping.** The data menu's `menuAction` stays visible with an empty list, on
 the *hidden means absent* rule: the menu is the capability, and the fill tells the empty

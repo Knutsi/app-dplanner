@@ -10,6 +10,7 @@ from dplanner.framework.action_registry import (
     ActionRegistry,
     ActionSpec,
     ActionState,
+    DataMenuSpec,
     MenuStructure,
 )
 from dplanner.framework.context import ContextService
@@ -59,6 +60,33 @@ def test_a_submenu_popup_holds_exactly_that_submenus_entries(app, registry):
     parent = QWidget()
     popup = build_menu(registry, ContextService(), "View", parent, submenu="Tabs")
     assert entries(popup) == ["move", "close"]
+
+
+def test_a_data_child_menu_sits_in_the_popup_and_fills_when_it_opens(app, registry):
+    """The bar's rule in the popup: placed by the same key, cleared and refilled on open —
+    so a right-click offers the same live list the menu does, never a copy of it."""
+    rows = ["first"]
+
+    def fill(child):
+        for row in rows:
+            child.addAction(row)
+
+    registry.register_data_menu(
+        DataMenuSpec(id="recent", menu="View", group="tabs", title="Recent", order=15, fill=fill)
+    )
+    parent = QWidget()
+    popup = build_menu(registry, ContextService(), "View", parent)
+    assert entries(popup) == ["panel", "|", ("Tabs", ["move", "close"]), ("Recent", [])]
+    recent = next(a.menu() for a in popup.actions() if a.text() == "Recent")
+    assert isinstance(recent, QMenu)
+    recent.aboutToShow.emit()
+    assert entries(recent) == ["first"]
+    rows.append("second")
+    recent.aboutToShow.emit()
+    assert entries(recent) == ["first", "second"]
+    # A child of the menu itself: a named-submenu render is that submenu, flat, and no more.
+    flat = build_menu(registry, ContextService(), "View", parent, submenu="Tabs")
+    assert entries(flat) == ["move", "close"]
 
 
 def test_a_disabled_entry_is_greyed_and_a_hidden_one_is_omitted(app, registry):

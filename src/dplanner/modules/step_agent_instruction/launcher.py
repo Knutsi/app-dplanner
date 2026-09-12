@@ -28,10 +28,10 @@ find.
 
 **A multiplexer that needs two calls writes them as one template.** herdr creates a
 workspace with one call that prints the pane it made, and runs a command into that pane
-with a second. Its row is ``herdr workspace create … && herdr pane run {pane} --command
-{script}``: :func:`spawn` runs the stages in turn, and ``{pane}`` in a later stage is the
-pane the earlier one printed (a ``pane_id`` in its JSON, else its output). The ``&&`` is
-what a person would type, and it keeps a two-call terminal a row like any other.
+with a second. Its row is ``herdr workspace create … && herdr pane run {pane} {script}``:
+:func:`spawn` runs the stages in turn, and ``{pane}`` in a later stage is the pane the
+earlier one printed (a ``pane_id`` in its JSON, else its output). The ``&&`` is what a
+person would type, and it keeps a two-call terminal a row like any other.
 
 **tmux is the last row, never the first.** A DPlanner started from a shell inside tmux
 inherits ``$TMUX``, and while tmux led the table Automatic opened every agent as a tmux
@@ -225,9 +225,11 @@ class TerminalPreset:
 # first, so an untouched setting behaves the way the machine does, and tmux last — see
 # the module docstring for why it is never first. Every Ghostty row opens a new window:
 # `-e` on Linux and Windows is a fresh process, `open -n` on macOS a fresh instance.
+# `pane run` takes the command as the words after the pane id — there is no option for
+# it, and an option-looking word is typed into the pane as text.
 HERDR_COMMAND = (
     "herdr workspace create --cwd {workdir} --label {title} --no-focus"
-    " && herdr pane run {pane} --command {script}"
+    " && herdr pane run {pane} {script}"
 )
 ZELLIJ_COMMAND = "zellij run --name {title} --cwd {workdir} --close-on-exit -- {script}"
 TMUX_COMMAND = "tmux new-window -c {workdir} {script}"

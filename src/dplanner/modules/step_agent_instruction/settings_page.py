@@ -368,7 +368,7 @@ def build_page(
     )
     editor.addStretch(1)
 
-    layout.addWidget(QLabel("Agents at once", page))
+    layout.addWidget(QLabel("Max agents launched at once", page))
     limit_row = QHBoxLayout()
     layout.addLayout(limit_row)
     limit_row.addWidget(limit)

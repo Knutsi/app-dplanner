@@ -871,19 +871,20 @@ root, stop and look for the registry or capability you have not found yet.
   lassoing three agent steps is *Run 3 Agents…* and one gesture; a step in the
   selection that cannot run greys the verb for all of them, naming that step and why,
   because launching the subset that qualifies would run fewer agents than were asked for
-  and say nothing. Past *Settings ▸ Agent*'s **Agents at once** (four by default, per user
-  and per machine like the terminal beside it) the count itself is the refusal — a lasso
-  is one flick of the wrist, and a deskful of terminals is not what it meant.
+  and say nothing. Past *Settings ▸ Agent*'s **Max agents launched at once** (four by
+  default, per user and per machine like the terminal beside it) the count itself is the
+  refusal — a lasso is one flick of the wrist, and a deskful of terminals is not what it
+  meant.
   **A launch that opened a shell claims the step is in progress** — `mark_started`, the
   writer half of that same seam, applied off the undo stack the way the launch stamp is
   (`step_status`'s `record_started`), because Ctrl+Z must not file a step as pending while
   an agent works in it. Over a selection it is claimed per step as each shell opens, so a
   run that stopped at its third step has claimed two. It is the *Agent ▸ On launch* switch
-  beside *Agents at once*, on by default: the agent's own first report is minutes away and
-  a step somebody is working on that still reads pending is a lie the plan was never asked
-  to tell. Only Run Agent makes the claim — in the step loop, never in the shared
-  `_launch` — so a conflict handed to an agent, a merge of two writers' plan files and not
-  the step's work, claims nothing.
+  beside *Max agents launched at once*, on by default: the agent's own first report is
+  minutes away and a step somebody is working on that still reads pending is a lie the
+  plan was never asked to tell. Only Run Agent makes the claim — in the step loop, never
+  in the shared `_launch` — so a conflict handed to an agent, a merge of two writers' plan
+  files and not the step's work, claims nothing.
   **The briefing never rides in argv, and the peer is a top-level session.** The
   agent's opening line is `launcher.opening_prompt` — a pointer at `prompt.md`, carrying
   nothing the project is about — because the whole briefing as one argument was every
@@ -980,8 +981,8 @@ root, stop and look for the registry or capability you have not found yet.
   reaches for only when nothing else is installed, and what a *profile* picks on
   purpose to land several agents side by side. Ghostty's `-e` is always a fresh
   process and window. **A multiplexer that needs two calls is one template with
-  `&&`**: herdr's row is `herdr workspace create … && herdr pane run {pane} --command
-  {script}`, `launcher.spawn` runs the stages in turn with `{pane}` as what the earlier
+  `&&`**: herdr's row is `herdr workspace create … && herdr pane run {pane} {script}`,
+  `launcher.spawn` runs the stages in turn with `{pane}` as what the earlier
   stage printed, and a stage that fails is a reason and no run — the fallback dialog
   hands the prompt over, exactly as when no terminal exists.
 - **A launch profile is a name over the two choices, and the first is the default.**

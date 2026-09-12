@@ -2319,12 +2319,12 @@ is the only honest reading of one question.
 **The count is a precondition, not a warning.** Four agents is four terminals, four
 worktrees, four live sessions and four `dplanner` writers against one plan; a selection is
 made with one flick of the wrist and can hold the whole graph. So *Settings ▸ Agent* carries
-**Agents at once** — four by default — and a selection past it greys the verb with the
-number rather than asking. A confirmation would be the wrong shape here: the limit is not a
-risk to accept once, it is a standing statement about what this desk can hold, so the way
-past it is to change it in the one place it lives. It sits beside the agent command and the
-terminal template for that reason — per user, per machine, never in the plan, because how
-many peers one machine can carry is not a fact about the project.
+**Max agents launched at once** — four by default — and a selection past it greys the verb
+with the number rather than asking. A confirmation would be the wrong shape here: the limit
+is not a risk to accept once, it is a standing statement about what this desk can hold, so
+the way past it is to change it in the one place it lives. It sits beside the agent command
+and the terminal template for that reason — per user, per machine, never in the plan,
+because how many peers one machine can carry is not a fact about the project.
 
 `_run` re-checks the limit rather than trusting the state gate, on the same principle every
 verb here follows: a presenter may run a stale state, and the guard that matters is the one
@@ -2349,9 +2349,10 @@ claims to be in progress, so a second launch dirties no file; it *does* override
 because launching an agent on a finished step means the work resumed and there is no
 other honest reading.
 
-**It is a switch, on by default** — *Agent ▸ On launch*, beside *Agents at once* and per
-user like the rest of that page. On, for the reason the marks are on: the agent's own first report is minutes away
-(the briefing's protocol has it setting `agent-state`, not status), and a step somebody
+**It is a switch, on by default** — *Agent ▸ On launch*, beside *Max agents launched at
+once* and per user like the rest of that page. On, for the reason the marks are on: the
+agent's own first report is minutes away (the briefing's protocol has it setting
+`agent-state`, not status), and a step somebody
 is working on that still reads pending is a lie the plan was never asked to tell. A
 switch rather than a rule, because a plan whose statuses a person keeps by hand should
 not have the window writing into it — so switching it off is the deliberate act, and
@@ -2658,12 +2659,12 @@ shipped earlier. Profiles are per user, per machine (`user_config`), never the p
 herdr — the multiplexer built for exactly this, a headless server the person's terminal
 attaches to, with a workspace per repository and an agent-state sidebar — adds a shell in
 two calls: `herdr workspace create` prints, as JSON, the pane it made, and `herdr pane run
-<pane> --command …` types a command into it. The terminal table's one template per row
+<pane> <command…>` types a command into it. The terminal table's one template per row
 cannot say that, and the honest alternatives were a Python opener per multiplexer (a
 second table of callables beside the first) or a `sh -c` one-liner nobody could read in
 a settings field.
 
-The row is `herdr workspace create … && herdr pane run {pane} --command {script}`
+The row is `herdr workspace create … && herdr pane run {pane} {script}`
 instead: `launcher.spawn` splits a command at its `&&` tokens, runs the stages in turn to
 completion, and fills `{pane}` in a later stage with what the earlier one printed (a
 `pane_id` in its JSON, else its last line). It is what a person would type, it stays a
