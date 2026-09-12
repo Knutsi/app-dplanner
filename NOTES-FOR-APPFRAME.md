@@ -2285,3 +2285,20 @@ looks exactly like a rule that did not apply. `tests/test_theme.py` renders the 
 asserts both, in the splitter seam's spirit: it fails when either half is removed.
 
 **Upstream?** Yes, both. Any application whose toolbar buttons carry menus hits it.
+
+
+## 23. From the spotlight pass
+
+### `theme/cards.py` — `DIM_OPACITY`, what a lit surface fades the rest to
+
+**What.** `DIM_OPACITY = 0.35`, moved out of `modules/coverage/scene.py` (where it was
+written for the trace's lit path) and now read by the canvas's spotlight too.
+
+**Why.** Two surfaces light part of themselves and fade the remainder, and modules never
+import each other, so the number had to live where both may reach — the same argument that
+put the card primitives here. The rest of the pattern is worth carrying with it: **fade by
+`QGraphicsItem.setOpacity`, never by a paint-level flag.** One number takes a card's fill,
+border, title, glyphs and the shadow under it down together, which is what receding is; the
+painter never learns that a lit state exists, and there is no second "muted" path to keep
+agreeing with the first. **Upstream?** Yes, with the card primitives — any canvas that can
+light a subset of itself wants the constant and the rule.

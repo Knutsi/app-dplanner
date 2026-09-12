@@ -1,5 +1,5 @@
-"""The look: one per-user value for the marks, the ground and snapping; and the pitch the
-ground's grid is drawn at. No canvas."""
+"""The look: one per-user value for the marks, the spotlight, the ground and snapping; and
+the pitch the ground's grid is drawn at. No canvas."""
 
 import pytest
 
@@ -10,7 +10,13 @@ from dplanner.modules.project_editor.positions import GRID
 
 
 def test_the_look_round_trips_through_json_and_forgives_junk():
-    look = Look().with_mark("ends", True).with_background("lines").with_snap(False)
+    look = (
+        Look()
+        .with_mark("ends", True)
+        .with_background("lines")
+        .with_snap(False)
+        .with_spotlight(True)
+    )
     assert Look.from_json(look.to_json()) == look
     assert look.marks == Marks(ends=True)
     assert Look.from_json(None) == Look()
@@ -19,8 +25,11 @@ def test_the_look_round_trips_through_json_and_forgives_junk():
         Look().with_background("plaid")
 
 
-def test_the_default_look_is_dots_with_snapping_on_and_no_marks():
-    assert Look() == Look(marks=Marks(), background="dots", snap=True)
+def test_the_default_look_is_dots_with_snapping_on_and_the_spotlight_off():
+    """The marks are on by default and the spotlight is not: a mark says what the graph
+    could be *wrong* about, where the spotlight only hides the parts you are not reading."""
+    assert Look() == Look(marks=Marks(), spotlight=False, background="dots", snap=True)
+    assert Look.from_json({}).spotlight is False
     assert list(BACKGROUNDS) == ["none", "dots", "lines", "crosses"]
 
 
