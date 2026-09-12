@@ -320,7 +320,20 @@ def build_page(
     started_box.setChecked(start_in_progress())
     started_box.toggled.connect(lambda on: set_global(MODULE_ID, START_IN_PROGRESS_KEY, bool(on)))
 
+    layout = QVBoxLayout(page)
+    layout.addWidget(QLabel("Profiles", page))
+    layout.addWidget(
+        _note(
+            "Run Agent… runs the default profile; the others are Step ▸ Run Agent With.",
+            page,
+        )
+    )
+    # Each child layout is parented before it is filled — CLAUDE.md's layout rule.
+    columns = QHBoxLayout()
+    layout.addLayout(columns)
+    columns.addWidget(profiles, 1)
     editor = QVBoxLayout()
+    columns.addLayout(editor, 2)
     editor.addWidget(QLabel("Profile name", page))
     editor.addWidget(name_edit)
     editor.addWidget(QLabel("Agent", page))
@@ -355,18 +368,6 @@ def build_page(
     )
     editor.addStretch(1)
 
-    layout = QVBoxLayout(page)
-    layout.addWidget(QLabel("Profiles", page))
-    layout.addWidget(
-        _note(
-            "Run Agent… runs the default profile; the others are Step ▸ Run Agent With.",
-            page,
-        )
-    )
-    columns = QHBoxLayout()
-    layout.addLayout(columns)
-    columns.addWidget(profiles, 1)
-    columns.addLayout(editor, 2)
     layout.addWidget(QLabel("Agents at once", page))
     limit_row = QHBoxLayout()
     layout.addLayout(limit_row)

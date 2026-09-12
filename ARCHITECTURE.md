@@ -3906,7 +3906,11 @@ step selected, the docs module's `compile_state` asks `llm.status()`, which asks
 provider `is_configured()`, which is `keyring.get_password()` — a D-Bus round trip to the
 Secret Service of **4 ms**, uncached, on every context refresh while that step is
 selected (`modules/docs/module.py`, `framework/secrets_store.py`). Small per call; the
-refresh runs on every push and every click.
+refresh runs on every push and every click. The spec-sources pass already states the rule
+this breaks (*A spec source is a kind the spec module runs*: an action's `state` never
+makes a keychain round trip — `status()` reads a `user_config` row, and the secret is read
+only inside the act), so the fix has that shape too: a *configured* row the state reads,
+the key read only when a call is made.
 
 ### All tabs open
 
