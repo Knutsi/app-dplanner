@@ -1,13 +1,15 @@
 """Debug ▸ Design Example: the design system built from its primitives, to be looked at
 and copied from.
 
-Two surfaces over sample data, nothing saved. The *modal* is a :class:`DialogFrame`
-carrying a form (captions over fields, a hint glyph, a validation note), a :class:`Table`
-(a glyph column, a two-line cell, a numeric column, a heading, a tinted row) and every
-signalling state — an *Updating…* indicator on a demo debouncer, a status line in each
-tone, a determinate progress bar and a refused primary. The *tab* is the same table under
-a control strip with the indicator at its right, outside the » overflow, and an empty
-state that trades places with the table.
+Two surfaces over sample data, nothing saved. The *modal* is a :class:`DialogFrame` —
+title in the body, a footer band — carrying a form (captions over fields, a hint glyph, a
+validation note), a :class:`Table` (a glyph column, a two-line cell, a numeric column, a
+heading, a milestone row wearing its key badge) and every signalling state: an *Updating…*
+indicator and a :class:`Spinner` on a demo debouncer, a status line in each tone, a
+determinate progress bar and a refused primary. The *tab* is the same table under a
+:class:`Toolbar` — glyph verbs that fold into a … menu, a :class:`FilterButton`, a combo,
+the indicator at the strip's right — with verbs worded by the selection and an empty state
+that trades places with the table.
 
 A developer bringing a surface up (DESIGN.md's *Bringing a surface up*) opens these beside
 their own and copies what differs; ``docs/screenshots/f1-design-example/`` holds them

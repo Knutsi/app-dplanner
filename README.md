@@ -285,9 +285,9 @@ src/dplanner/
 │   ├── window_watch.py      noticing, and taking in, another writer's changes to the library
 │   ├── debounce.py          a coalesced refresh: a burst runs once, and tests run it inline
 │   ├── dialog.py            the dialog frame — title in the body, footer slots in one order — and the one-line prompt
-│   ├── toolbar.py           a strip of verbs as glyphs with their words in tooltips, folding into a … menu
+│   ├── toolbar.py           a strip of verbs as glyphs with their words in tooltips, folding into a … menu; the filter control
 │   ├── table.py             the table: columns declared, the rules applied once, a delegate painting what a row wears
-│   ├── signalling.py        Updating… over one Debounced, and a status line in a tone — DESIGN.md's *Signalling*
+│   ├── signalling.py        Updating… over one Debounced, a spinner in a working button's glyph, a status line in a tone
 │   ├── widgets.py           the empty state that trades places with its content, the caption, the note, confirm()
 │   ├── diagnostics.py       the stall watchdog, the failure hooks, the crash log — app.main's
 │   └── …                    registries, actions, tabs, undo, autosave, tasks, LLM

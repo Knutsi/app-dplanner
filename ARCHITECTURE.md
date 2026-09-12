@@ -755,7 +755,10 @@ to borrow a look — two of them lists. Empty states came in five mechanisms, or
 Every busy state was a `QLabel` rewritten by hand. Each of these is now one thing in
 `framework/`: `Table` applies the configuration once and its delegate paints what a row
 wears; `EmptyState.stands_in_for` is the one swap; `StatusLine` is the one busy, ok and
-error; `UpdatingIndicator` follows the one `Debounced` a view already has. **A rule with
+error; `UpdatingIndicator` follows the one `Debounced` a view already has. The review
+rounds that followed added, on the same principle, a `Toolbar` whose verbs are glyphs
+folding into a `…` menu, a `FilterButton`, and a `Spinner` that turns in a button's own
+glyph slot so nothing ever moves. **A rule with
 no primitive is a rule that is followed by whoever remembers it**, and the audit is the
 measure of how many did.
 

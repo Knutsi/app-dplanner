@@ -2635,6 +2635,28 @@ from. A float token is skipped by `as_qss_mapping` on purpose.
 **Upstream?** The tokens and the guard test, yes. The template's own stylesheet should
 ship with the guard and without Writer.
 
+### `modules/debug/design_example.py` — a living example module (a recommendation)
+
+**What.** A Debug-menu module that builds nothing real: one modal and one tab over sample
+data, made from every shared primitive the framework offers — the dialog frame with a form
+and a refused primary, the table with a heading, a badge and a picked row, the toolbar with
+its filter and its overflow, every signalling state, the empty state — plus a script that
+renders both in every theme to a committed folder of images, and a README naming what each
+image shows. DESIGN.md's *Primitives* table points every rule at the image that shows it.
+
+**Why.** A design rule that lives only in a document is followed by whoever remembers it;
+one that lives in a primitive is followed by whoever uses the primitive; but a developer
+still has to *see* the intended result to know whether their surface matches. The example
+module is the place to look, and it is also the harness every primitive change is judged
+in: the review rounds of the design-system pass — a smaller second line, the glyph on the
+first line, a spinner in a button's own slot, a footer band — each started from a render
+of it. Sample data keeps it honest: it can never be mistaken for a feature, and it costs
+nothing to open.
+
+**Upstream?** Yes, and early: a template that ships primitives should ship the module
+that shows them together, the render script, and the rule that a change to a primitive
+re-renders it. It is the cheapest design tool there is.
+
 ### `tests/conftest.py` — `themed` shared
 
 **What.** The `themed` fixture (apply a theme application-wide, restore the default

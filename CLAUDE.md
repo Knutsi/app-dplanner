@@ -46,14 +46,13 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
   suggest it.
 - Only add comments that carry durable value for future developers and agents. Otherwise,
   make the code self-documenting.
-- `DESIGN.md` is the standard for all UI work here, and **Debug ▸ Design Example…** (with its
-  table tab; `modules/debug/design_example.py`, rendered under `docs/screenshots/f1-design-example/`) is
-  what it looks like — build every dialog on `framework/dialog.py`'s `DialogFrame`, every
-  table on `framework/table.py`'s `Table`, every strip of verbs on `framework/toolbar.py`'s
-  `Toolbar` (glyphs with their words in tooltips, folding into `…`), every busy/ok/error on
-  `framework/signalling.py`'s `StatusLine` and every pending rebuild on its
-  `UpdatingIndicator`, and run DESIGN.md's
-  *Bringing a surface up* over any surface you touch. `FORMAT.md` is the standard for
+- `DESIGN.md` is the standard for all UI work here, and **Debug ▸ Design Example…** with its
+  table tab (`modules/debug/design_example.py`, rendered under
+  `docs/screenshots/f1-design-example/`) is what it looks like. Its *Primitives* table maps
+  what you are building — a dialog, a table, a strip of verbs, a filter, a busy state, an
+  empty page — to the primitive in `framework/` and the render to compare against; build
+  from those, never by styling a surface by name, and run its *Bringing a surface up* over
+  any surface you touch. `FORMAT.md` is the standard for
   anything that reaches disk. `ARCHITECTURE.md` is where a rule's *reasoning* lives — when
   you settle an architectural question, write the rule here and the why there, and have
   each point at the other. A decision that lives only in a commit message is one the next

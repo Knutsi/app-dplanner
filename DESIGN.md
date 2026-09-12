@@ -9,13 +9,36 @@ list applies them from the start. All colours flow through the theme (`$TOKEN`s 
 **This document is the standard for all UI work in this repo.** New surfaces follow it
 from the first commit; touching an existing surface includes bringing it up to these rules
 (the boy-scout rule applies to pixels too — *Bringing a surface up*, at the end, is the
-checklist). When a rule here is ambiguous, match what **Debug ▸ Design Example…** and its
-table tab do (`modules/debug/design_example.py`): the design system built from the shared
-primitives — `framework/dialog.py`, `framework/table.py`, `framework/signalling.py`,
-`framework/widgets.py` — and rendered in both themes under `docs/screenshots/f1-design-example/`. For a
-panel, match the step detail panel in `modules/step_properties/panel.py`. `CLAUDE.md`
-points agents here; `ARCHITECTURE.md`'s *A primitive carries the rule* has the reasoning
-for building surfaces from primitives rather than styling each one.
+checklist). The rules are kept by shared **primitives**, and the primitives are shown by
+**Debug ▸ Design Example…** and **Debug ▸ Design Example Table** — the table below says
+which is which and where to see it. When a rule here is ambiguous, match the example; for
+a panel, match the step detail panel in `modules/step_properties/panel.py`. `CLAUDE.md`
+points agents here; `ARCHITECTURE.md`'s *A primitive carries the rule* is why a rule lives
+in a primitive rather than in a stylesheet entry per surface.
+
+## Primitives
+
+What a surface is made of, where the primitive lives, and where to see it. The two example
+surfaces are `modules/debug/design_example.py`; `scripts/render_design_example.py` renders
+them in both themes into `docs/screenshots/f1-design-example/` (its `README.md` names each
+image). Improving the system means changing the primitive and its rule together, then
+re-rendering — never styling one surface by name.
+
+| You are building | Use | In | See it |
+|---|---|---|---|
+| a dialog, a confirmation, a one-line prompt | `DialogFrame`, `confirm()`, `LinePrompt` | `framework/dialog.py`, `framework/widgets.py` | the modal: `dialog-*`, `dialog-refused-*` |
+| a table | `Table`, `Column`, `Cell`; `key_badge_icon` for a milestone | `framework/table.py`, `theme/icons.py` | the table tab: `table-*`, `table-selected-*` |
+| a strip of verbs over a surface | `Toolbar` | `framework/toolbar.py` | the table tab's strip |
+| a filter on a strip | `FilterButton` | `framework/toolbar.py` | `table-filtered-*`, `filters-*` |
+| a combo box on a strip or in a dialog | a plain `QComboBox` — the stylesheet dresses it | `theme.qss` | `dropdown-*` |
+| "the view is rebuilding" | `UpdatingIndicator` | `framework/signalling.py` | the strip's right end, `dialog-working-*` |
+| "this button's work is running" | `Spinner` | `framework/signalling.py` | `dialog-working-*` |
+| busy, ok, error or plain information in words | `StatusLine` | `framework/signalling.py` | the modal's *Signalling* block |
+| a page with nothing in it | `EmptyState(stands_in_for=…)` | `framework/widgets.py` | `table-empty-*` |
+| a caption over a block, a remark under it | `caption()`, `note()` | `framework/widgets.py` | the modal's form |
+| a two-line list row | `TwoLineDelegate` | `framework/list_rows.py` | the palette, the notes tab |
+| when a rebuild is owed | `Debounced.pending_changed` | `framework/debounce.py` | — |
+| a margin, a gap, a height | a token | `theme/tokens.py` (*Tokens*) | — |
 
 ## How people move through it
 
@@ -368,14 +391,12 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
   Step*), then what acts on the picked rows — greyed until a row is picked and worded with
   the count when several are (*Delete 3 Steps*): disabled, never hidden, the rule every
   greyed menu entry follows, and the count is what says a verb is about to act on more
-  than the eye is on. Then a rule, then the view's own controls (a filter, a grouping),
-  and at the strip's far right the *Updating…* indicator. On a real surface the verbs are
-  an `ActionToolbar` over registered `ActionSpec`s whose state reads the selection; the
-  example wires plain buttons to show the shape.
+  than the eye is on. Then a divider, then the view's own controls (a filter, a grouping),
+  and at the strip's far right the *Updating…* indicator. The strip is a `Toolbar`
+  (*Toolbars*); on a real surface its verbs come from the registry.
 - **Cell text is the UI size; the second line is a point smaller.** A whole table one step
   down reads as a spreadsheet, and a table is the content; the step down belongs to the
   line that is *about* the first (`detail_font`, the same step the empty state takes).
-
 - **Column headers are left-aligned**, whatever the column holds
   (`header.setDefaultAlignment`, not Qt's centred default). Numeric *cells* still
   right-align so their digits line up, with the unit inside the cell (*3 d*); the header
@@ -454,6 +475,8 @@ Example Table wears one.
   something is, so the face never changes size; the face then wears a wash of the accent
   over its ground (`$ACCENT_WASH`) and the accent on its border and glyph, never a fill —
   a filter being on is a state, not a mode being pressed — and the tooltip names what is on.
+- **A verb whose work is running turns its glyph** — a `Spinner` attached to the verb's
+  action (*Signalling*, Working); the example's Refresh does so while its rebuild is owed.
 - On a real surface the verbs come from the registry — `ActionToolbar` over registered
   `ActionSpec`s becomes a `Toolbar` fed by them in the design passes; the example wires
   plain slots to show the shape.
@@ -461,7 +484,8 @@ Example Table wears one.
 ## Signalling
 
 What a surface says while it is not yet showing the truth, and where. One vocabulary,
-two widgets (`framework/signalling.py`):
+three widgets (`framework/signalling.py`: `UpdatingIndicator`, `Spinner`, `StatusLine`)
+and one stylesheet rule for the progress bar:
 
 - **Updating** — a rebuild is owed after the person's own change: `UpdatingIndicator`
   follows the view's one `Debounced` and says *Updating…* from the first trigger to the
@@ -514,26 +538,27 @@ reaching `theme.qss` as `$NAME` for free. A literal in a layout is a copy that d
 | Token | Value | Where |
 |---|---|---|
 | `DIALOG_MARGIN` | 20 | a dialog's outer margin |
+| `PANEL_MARGIN` | 16 | side panels and tab pages |
 | `SECTION_GAP` | 12 | between sections; between blocks; between cards; body to footer |
 | `FIELD_GAP` | 8 | fields within a section; footer buttons |
-| `CONTROL_GAP` | 12 | between the controls on a strip; a button's own padding is 6 / 12 |
-| `CONTROL_HEIGHT` | 32 | every control on a strip, set in code |
-| `$BORDER_FAINT` | derived | the hairline blended halfway into the ground: a strip's dividers |
-| `$ACCENT_WASH` | derived | the accent washed over the overlay ground: a control that is on |
 | `CAPTION_GAP` | 6 | a caption to its field, a note to its field |
-| `PANEL_MARGIN` | 16 | side panels and tab pages |
 | `ROW_PADDING_V` / `ROW_PADDING_H` | 10 / 12 | a rich row: lists and two-line cells alike |
 | `ROW_LINE_GAP` | 4 | between a rich row's two lines |
 | `CELL_PADDING_V` / `CELL_PADDING_H` | 6 / 8 | a plain table cell, and its header section |
-| `SECONDARY_ALPHA` | 160 | a painter's secondary ink (~63 %) |
+| `CONTROL_GAP` | 12 | between the controls on a strip; a button's own padding is 6 / 12 |
+| `CONTROL_HEIGHT` | 32 | every control on a strip, set in code |
+| `ICON_SIZE` (+ `ICON_GAP`) | 16 (+ 8) | a glyph, and the gap after it |
+| `KEY_BADGE_W` | 28 | a key badge, and the slot a glyph column reserves on every row |
 | `RADIUS_SM` / `RADIUS_MD` | 5 / 8 | buttons, chips, fields / wells, cards, tables, lanes |
+| `SECONDARY_ALPHA` | 160 | a painter's secondary ink (~63 %) |
 | `SCREEN_SHARE` | 0.8 | the screen a framed or editor dialog may claim |
-| `ICON_SIZE` / `KEY_BADGE_W` (+ `ICON_GAP`) | 16 / 28 (+ 8) | a glyph; the slot a glyph column reserves, wide enough for a key badge |
 | a title | +2 pt | a dialog's title, a page's answer line, a card's title (`title_font`) |
 | a secondary line | −1 pt | a row's second line, the `EmptyState` line (`detail_font`) |
 | an edge | 2 px | a picked row's left, the active pane's top |
 | a hairline | 1 px `$BORDER` | a header's rule, a seam, a pinned row |
 | a progress bar | 4 px | the one kind there is |
+| `$BORDER_FAINT` | derived | the hairline blended halfway into the ground: a strip's dividers |
+| `$ACCENT_WASH` | derived | the accent washed over the overlay ground: a control that is on |
 
 ## Bringing a surface up
 
@@ -555,11 +580,12 @@ from the code or a screenshot, and Debug ▸ Design Example is what *yes* looks 
    it greyed until a row is picked?
 10. Does a row wash on hover and pick with the edge over the quiet ground?
 11. Does an empty page swap through `EmptyState.stands_in_for`, and nothing else?
-12. Does *Updating…* stand at the strip's right from the first trigger to the rebuild's end?
-    Is the strip a `Toolbar` — glyphs with their words in tooltips, folding into `…`?
-13. Is every busy, ok and error a `StatusLine` in place, and every rewritten `QLabel` gone?
-14. Is any progress bar 4 px, accent and determinate?
-15. Does nothing fade, slide or animate except the ring, the indicator and a working
+12. Is the strip a `Toolbar` — glyphs with their words in tooltips, folding into `…`, every
+    control one height — with a `FilterButton` where there are filters?
+13. Does *Updating…* stand at the strip's right from the first trigger to the rebuild's end?
+14. Is every busy, ok and error a `StatusLine` in place, and every rewritten `QLabel` gone?
+15. Is any progress bar 4 px, accent and determinate?
+16. Does nothing fade, slide or animate except the ring, the indicator and a working
     button's glyph — and does that button carry a glyph, so nothing moves when it turns?
 
 **The surfaces, as audited when the system was written (September 2026)** — what makes
