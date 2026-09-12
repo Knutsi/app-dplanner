@@ -191,6 +191,17 @@ def _collect_qt_garbage():
 
 
 @pytest.fixture(autouse=True)
+def _no_agent_shell(monkeypatch):
+    """The suite must not depend on the shell it runs in.
+
+    Run Agent's wrapper exports ``DPLANNER_PROJECT`` into an agent's shell so ``dplanner``
+    reaches the plan from a worktree; an agent running this suite would hand every CLI
+    test that project instead of the one the test built.
+    """
+    monkeypatch.delenv("DPLANNER_PROJECT", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_session_settings():
     """Per-user state must not leak between tests.
 

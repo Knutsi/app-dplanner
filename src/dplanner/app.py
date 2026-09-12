@@ -12,6 +12,7 @@ a module subpackage from here is a layering violation the architecture test refu
 
 import faulthandler
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, Qt
@@ -34,11 +35,11 @@ from dplanner.framework.diagnostics import (
 from dplanner.framework.gc_policy import install_gc_policy
 from dplanner.framework.session import AppSession
 from dplanner.framework.splash import StartupSplash
-from dplanner.framework.theme_service import saved_theme
+from dplanner.framework.theme_service import apply_saved_theme
 from dplanner.identity import APP_DOMAIN, APP_ID, APP_NAME, APP_VERSION
 from dplanner.menus import MENU_STRUCTURE
-from dplanner.modules import default_modules
-from dplanner.theme import apply_theme
+from dplanner.modules import default_modules, theme_providers
+from dplanner.theme.providers import BUILTIN, ThemeProvider
 
 
 def set_early_attributes() -> None:
@@ -59,8 +60,14 @@ def application_icon() -> QIcon:
     return icon
 
 
-def configure_application(app: QApplication) -> None:
-    """Apply identity metadata and the theme to an existing ``QApplication``."""
+def configure_application(
+    app: QApplication, providers: Sequence[ThemeProvider] = (BUILTIN,)
+) -> None:
+    """Apply identity metadata and the theme to an existing ``QApplication``.
+
+    ``providers`` is where the theme comes from — the machine's, from ``main``; the built-in
+    alone by default, which is what a headless test run must never depart from.
+    """
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
@@ -73,9 +80,11 @@ def configure_application(app: QApplication) -> None:
     # size at once, and Qt picks the one the surface asks for.
     app.setWindowIcon(application_icon())
 
-    # After the identity metadata: saved_theme() reads QSettings, which resolves its storage
-    # location from the organisation and application names set above.
-    apply_theme(app, saved_theme())
+    # After the identity metadata: the saved choice is read from QSettings, which resolves
+    # its storage location from the organisation and application names set above. And
+    # before anything else touches the palette or the colour scheme: a provider that reads
+    # the desktop is asked here whether it applies, while the reading is the platform's own.
+    apply_saved_theme(app, providers)
 
     # Python's collector meets Qt objects on our terms: on the GUI thread, at safe points,
     # and never handing a Qt-owned object back to Python — framework/gc_policy.py has the
@@ -83,10 +92,12 @@ def configure_application(app: QApplication) -> None:
     install_gc_policy(app)
 
 
-def build_application(argv: list[str]) -> QApplication:
+def build_application(
+    argv: list[str], providers: Sequence[ThemeProvider] = (BUILTIN,)
+) -> QApplication:
     set_early_attributes()
     app = QApplication(argv)
-    configure_application(app)
+    configure_application(app, providers)
     return app
 
 
@@ -110,7 +121,10 @@ def main(argv: list[str] | None = None) -> int:
         index = args.index("--library")
         del args[index : index + 2]
 
-    app = build_application(args)
+    # Built once and handed to both the startup apply and the session, so every reader
+    # sees one tuple of providers — and the desktop's readings are taken before any theme.
+    providers = theme_providers()
+    app = build_application(args, providers)
 
     # The diagnostics live here and nowhere deeper: a test build has no event loop for a
     # heartbeat to beat in, and pytest owns the exception hooks while a test runs.
@@ -121,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     session_started(telemetry, library=library_path, version=APP_VERSION)
     code = 1
     try:
-        session = new_session()
+        session = new_session(providers)
         if open_at_startup(session, library_path):
             # Only once the window is up: the build itself blocks the GUI thread behind the
             # splash for as long as it takes, and the session's "open" span already says so.
@@ -140,19 +154,21 @@ def main(argv: list[str] | None = None) -> int:
     return code
 
 
-def new_session() -> AppSession:
+def new_session(theme_providers: Sequence[ThemeProvider] = (BUILTIN,)) -> AppSession:
     """The session, wired to this application's model, menus and modules.
 
     Everything application-specific the framework needs is handed over here: how to build a
     repository over its source path, what an empty library file contains, what the menus
     are called and which modules exist. Swap the first two and the same framework runs a
-    different application.
+    different application. ``theme_providers`` is the machine's tuple from ``main``; the
+    built-in alone by default, so a session built by a test never reads the desktop.
     """
     return AppSession(
         module_factory=default_modules,
         repository=LibraryStore,
         menus=MenuStructure(MENU_STRUCTURE),
         seed=create_library,
+        theme_providers=theme_providers,
     )
 
 

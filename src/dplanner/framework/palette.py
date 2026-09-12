@@ -26,13 +26,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.framework.action_registry import ActionRegistry, ActionSpec, key_sequences
+from dplanner.framework.action_registry import (
+    PATH_SEPARATOR,
+    ActionRegistry,
+    ActionSpec,
+    key_sequences,
+)
 from dplanner.framework.context import ContextService
 from dplanner.framework.list_rows import DETAIL_ROLE, TRAILING_ROLE, TwoLineDelegate
 from dplanner.theme.icons import ICON_SIZE
-
-# Between the menus of a path. The same mark the documentation uses for one.
-PATH_SEPARATOR = " ▸ "
 
 
 def fuzzy_score(query: str, text: str) -> int | None:

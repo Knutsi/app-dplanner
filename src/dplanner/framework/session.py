@@ -21,7 +21,7 @@ and the registries above make sharing a process the expensive answer.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
@@ -38,6 +38,7 @@ from dplanner.framework.action_registry import MenuStructure
 from dplanner.framework.builder import AppBuilder, ModuleFactory, SeedFactory
 from dplanner.framework.window_watch import WatchableRepository
 from dplanner.identity import APP_NAME
+from dplanner.theme.providers import BUILTIN, ThemeProvider
 
 if TYPE_CHECKING:
     from dplanner.framework.main_window import AppWindow
@@ -146,11 +147,13 @@ class AppSession:
         repository: RepositoryFactory[Any],
         menus: MenuStructure,
         seed: SeedFactory | None = None,
+        theme_providers: Sequence[ThemeProvider] = (BUILTIN,),
     ) -> None:
         self._module_factory = module_factory
         self._repository = repository
         self._menus = menus
         self._seed = seed
+        self._theme_providers = tuple(theme_providers)
         self.window: AppWindow | None = None
         self.services: AppServices | None = None
         self.library_path: Path | None = None
@@ -222,6 +225,7 @@ class AppSession:
                 .with_session(self)
                 .with_modules(self._module_factory)
                 .with_progress(progress)
+                .with_theme_providers(self._theme_providers)
             )
             if self._seed is not None:
                 builder = builder.with_seed(self._seed)

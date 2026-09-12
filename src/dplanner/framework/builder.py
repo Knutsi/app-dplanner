@@ -60,6 +60,7 @@ from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.user_config import library_scope
 from dplanner.framework.zoom import ZoomService
+from dplanner.theme.providers import BUILTIN, ThemeProvider
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -91,6 +92,7 @@ class AppBuilder:
         self._window_factory: WindowFactory = AppWindow
         self._seed: SeedFactory | None = None
         self._progress: Callable[[str], None] | None = None
+        self._theme_providers: tuple[ThemeProvider, ...] = (BUILTIN,)
 
     def with_source(self, source: Path) -> Self:
         """The path the repository is built over — for DPlanner, the library file."""
@@ -123,6 +125,12 @@ class AppBuilder:
     def with_progress(self, progress: Callable[[str], None] | None) -> Self:
         """Stage-boundary reporting for the startup splash; None stays silent."""
         self._progress = progress
+        return self
+
+    def with_theme_providers(self, providers: Sequence[ThemeProvider]) -> Self:
+        """Where themes come from; the built-in provider alone without this — the test
+        suite's default, so a headless run never reads the desktop."""
+        self._theme_providers = tuple(providers)
         return self
 
     def build(self) -> tuple[AppWindow, AppServices]:
@@ -200,7 +208,7 @@ class AppBuilder:
 
         # 4 — the bundle ------------------------------------------------------------------
         llm_providers = LLMProviderRegistry()
-        theme = ThemeService(qt_app)
+        theme = ThemeService(qt_app, self._theme_providers, parent=window)
         services = AppServices(
             repo=repo,
             document=document,

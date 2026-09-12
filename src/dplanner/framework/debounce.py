@@ -24,7 +24,7 @@ discarded build takes it; the service's ``cancel_all`` is belt and braces for th
 """
 
 from collections.abc import Callable
-from weakref import WeakSet
+from weakref import WeakValueDictionary
 
 from PySide6.QtCore import QObject, QTimer
 from shiboken6 import isValid
@@ -34,6 +34,9 @@ from dplanner.core.telemetry import current, describe_slot
 # After a quiet spell of this long a table, a list or a board rebuilds. The assets tab's
 # number; below what reads as lag on a rebuild nobody is waiting for.
 SETTLE_MS = 300
+# How many times a settle re-runs what the last round made pending before giving up: two
+# rebuilds that trigger each other would otherwise never settle.
+SETTLE_ROUNDS = 8
 
 
 class DebounceService:
@@ -41,10 +44,16 @@ class DebounceService:
 
     def __init__(self) -> None:
         self.immediate = False
-        self._live: WeakSet[Debounced] = WeakSet()
+        # In registration order — the order the build made its views — so a settle is the
+        # same run every time. A set's order moved with every allocation in the process,
+        # and a rebuild that triggers another (the progress recorder writing after a change,
+        # which the Time tab then hears) was flushed before it or after it by chance.
+        self._live: WeakValueDictionary[int, Debounced] = WeakValueDictionary()
+        self._registered = 0
 
     def register(self, debounced: "Debounced") -> None:
-        self._live.add(debounced)
+        self._registered += 1
+        self._live[self._registered] = debounced
 
     def set_immediate(self, immediate: bool) -> None:
         """Run every trigger inline from now on — what a test wants; anything pending runs
@@ -54,9 +63,14 @@ class DebounceService:
             self.flush_all()
 
     def flush_all(self) -> None:
-        """Run whatever is pending, now: the deterministic settle for a test or a quit."""
-        for debounced in self._alive():
-            debounced.flush()
+        """Run whatever is pending, now — and whatever that made pending, until nothing is:
+        the deterministic settle for a test or a quit."""
+        for _round in range(SETTLE_ROUNDS):
+            pending = self.pending()
+            if not pending:
+                return
+            for debounced in pending:
+                debounced.flush()
 
     def cancel_all(self) -> None:
         for debounced in self._alive():
@@ -68,7 +82,7 @@ class DebounceService:
     def _alive(self) -> list["Debounced"]:
         # A Debounced whose C++ side went with its parent is still a Python object until
         # the weak set notices; asking it anything would raise.
-        return [debounced for debounced in list(self._live) if isValid(debounced)]
+        return [debounced for debounced in list(self._live.values()) if isValid(debounced)]
 
 
 class Debounced(QObject):
