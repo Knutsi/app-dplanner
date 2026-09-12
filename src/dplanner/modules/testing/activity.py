@@ -44,6 +44,7 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.debounce import Debounced
 from dplanner.framework.module_data_section import PANEL_MARGIN
+from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.toolbar import control_bar
 from dplanner.framework.widgets import EmptyState
 from dplanner.modules.testing import runs
@@ -130,13 +131,13 @@ class _TestsPage(QWidget):
         # contents grows the » overflow button and puts the tail in a menu, where a plain
         # row simply overlaps. The split is so the primary action stays right-aligned —
         # the left bar takes the slack and is the one that ever needs to overflow.
-        strip = QHBoxLayout()
-        strip.setSpacing(CONTROL_GAP)
+        self.strip = QHBoxLayout()
+        self.strip.setSpacing(CONTROL_GAP)
+        layout.addLayout(self.strip)  # Before it is filled: a parentless layout leaks items.
         self.controls = control_bar(self)
         self.actions_bar = control_bar(self)
-        strip.addWidget(self.controls, 1)
-        strip.addWidget(self.actions_bar)
-        layout.addLayout(strip)
+        self.strip.addWidget(self.controls, 1)
+        self.strip.addWidget(self.actions_bar)
         layout.addSpacing(CONTROL_GAP)
 
         self.table = TestsTable(self)
@@ -230,6 +231,11 @@ class TestsActivity(EntityActivity):
         library = self._library
         # After a quiet spell, not per signal: the table is rebuilt row by row.
         self._refresh_soon = Debounced(self._refresh, parent=self.page, service=deps.debounce)
+        # The page is shared with the all-tests tab, which rebuilds per signal and owes no
+        # indicator — so the seat at the strip's right is claimed by whoever debounces.
+        self.updating = UpdatingIndicator(self.page)
+        self.page.strip.addWidget(self.updating)
+        self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
             # This project only, and no prose: tests are records, titles are fields.
             follow_project(

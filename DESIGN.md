@@ -31,7 +31,7 @@ re-rendering — never styling one surface by name.
 | a strip of verbs over a surface | `Toolbar` | `framework/toolbar.py` | the table tab's strip |
 | a filter on a strip | `FilterButton` | `framework/toolbar.py` | `table-filtered-*`, `filters-*` |
 | a combo box on a strip or in a dialog | a plain `QComboBox` — the stylesheet dresses it | `theme.qss` | `dropdown-*` |
-| "the view is rebuilding" | `UpdatingIndicator` | `framework/signalling.py` | the strip's right end, `dialog-working-*` |
+| "the view is rebuilding" | `UpdatingIndicator` — a `Spinner` on its own | `framework/signalling.py` | the strip's right end, `dialog-working-*` |
 | "this button's work is running" | `Spinner` | `framework/signalling.py` | `dialog-working-*` |
 | busy, ok, error or plain information in words | `StatusLine` | `framework/signalling.py` | the modal's *Signalling* block |
 | a page with nothing in it | `EmptyState(stands_in_for=…)` | `framework/widgets.py` | `table-empty-*` |
@@ -404,7 +404,7 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
   the count when several are (*Delete 3 Steps*): disabled, never hidden, the rule every
   greyed menu entry follows, and the count is what says a verb is about to act on more
   than the eye is on. Then a divider, then the view's own controls (a filter, a grouping),
-  and at the strip's far right the *Updating…* indicator. The strip is a `Toolbar`
+  and at the strip's far right the Updating indicator. The strip is a `Toolbar`
   (*Toolbars*); on a real surface its verbs come from the registry.
 - **Cell text is the UI size; the second line is a point smaller.** A whole table one step
   down reads as a spreadsheet, and a table is the content; the step down belongs to the
@@ -450,8 +450,8 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
   header is hidden state a rebuild silently resets.
 - **Empty**: the table hides and `EmptyState` takes its stretch — one swap, and the table
   is what it `stands_in_for`.
-- **Updating**: the table keeps the last picture while an *Updating…* indicator stands at
-  the right end of the control strip (*Signalling*).
+- **Updating**: the table keeps the last picture while the Updating indicator turns at the
+  right end of the control strip (*Signalling*).
 
 ## Toolbars
 
@@ -507,10 +507,20 @@ three widgets (`framework/signalling.py`: `UpdatingIndicator`, `Spinner`, `Statu
 and one stylesheet rule for the progress bar:
 
 - **Updating** — a rebuild is owed after the person's own change: `UpdatingIndicator`
-  follows the view's one `Debounced` and says *Updating…* from the first trigger to the
-  rebuild's end, at the right end of the control strip, *outside* the `control_bar`
-  toolbar so the » overflow can never swallow it, keeping its room while hidden so the
-  strip never reflows. The content stays; nothing dims.
+  follows the view's one `Debounced` and **turns the same three-quarter arc a working
+  button turns**, from the first trigger to the rebuild's end, at the right end of the
+  control strip, *outside* the `control_bar` toolbar so the » overflow can never swallow
+  it, keeping its room while hidden so the strip never reflows. The content stays; nothing
+  dims. **A view with no control strip puts it at the right end of its caption row** — a
+  board and a two-pane list have a caption and no toolbar, and that row is their strip;
+  give the caption the stretch and the indicator the end. A view that settles once per
+  event-loop turn — the canvas — gets none: there is no span to read.
+- **An arc, not the word.** The indicator carried *Updating…* for one step and the word was
+  wrong three ways: it was the only prose on a strip of controls, it was four times the
+  arc's width at the end of a row already competing for room, and it would need
+  translating where a glyph does not. It is a glyph-sized square with the words in its
+  tooltip — and it is the *same* motion as a working button's, which is what makes "the
+  application is busy with something here" one thing to learn rather than two.
 - **Busy** — work with no known end (a probe, a fetch): a `StatusLine` in the busy tone,
   where the answer will land — a dialog footer's status slot, a page strip's note. Never a
   modal, never a caption rewritten to say *Reading…*.
@@ -518,7 +528,9 @@ and one stylesheet rule for the progress bar:
   `Spinner` turns a three-quarter arc in the glyph slot until the work is done, then the
   glyph comes back (`attach(button).follow(debounced)`, or `start()`/`stop()` around a
   task). The slot is always there, so nothing moves — which is why a button that starts
-  work carries a glyph beside its words, and a spinner refuses one that does not.
+  work carries a glyph beside its words, and a spinner refuses one that does not. Attach a
+  bare `QLabel` instead and the arc stands on its own, which is all an `UpdatingIndicator`
+  is: one motion, two places to put it.
 - **Pending** — a fact nobody has recorded: a greyed italic line saying what is missing
   (*Facts under the thing they are about*); no glyph, because an absence is not a state.
 - **Error** — the error tone in the same place the busy was, with the remedy in its words.
@@ -532,7 +544,18 @@ and one stylesheet rule for the progress bar:
   and only for work whose end the application knows: a fetch of 12 pages, a save over 3
   repositories. Never for the debounce, never for an agent (a peer, not a task), and not
   indeterminate: an unknown fraction is *busy*, and busy is a line. (The task browser's
-  rows keep their indeterminate bars until the signalling pass reaches them.)
+  rows keep their indeterminate bars until the design pass reaches that surface — a task's
+  end really is unknown, so what they owe the rule is a busy line, not a fraction nobody
+  can compute.)
+- **A remembered duration may fill a bar, under a fact that leads it.** How long the last
+  run of the same operation took (`TaskService`'s duration memory, kept per user and
+  machine) is a fair guess and a poor promise, so it is never the *only* thing a bar
+  reads: the known count leads — repositories recorded, pages fetched — and the estimate
+  only fills the gap between one landing and the next, so the bar never sits behind what
+  has actually happened. An estimate that runs out holds just short of full
+  (`ESTIMATE_CAP`), because a bar that reads complete while the work goes on is worse than
+  one that reads slow. With nothing remembered the bar is the count alone, which is the
+  honest picture on a machine's first run.
 - **Never a modal for a background fact.** A modal asks; a fact is said where it bites.
 
 ## Focus and motion
@@ -602,7 +625,8 @@ from the code or a screenshot, and Debug ▸ Design Example is what *yes* looks 
 11. Does an empty page swap through `EmptyState.stands_in_for`, and nothing else?
 12. Is the strip a `Toolbar` — glyphs with their words in tooltips, folding into `…`, every
     control one height — with a `FilterButton` where there are filters?
-13. Does *Updating…* stand at the strip's right from the first trigger to the rebuild's end?
+13. Does the Updating indicator turn at the strip's right from the first trigger to the
+    rebuild's end?
 14. Is every busy, ok and error a `StatusLine` in place, and every rewritten `QLabel` gone?
 15. Is any progress bar 4 px, accent and determinate?
 16. Does nothing fade, slide or animate except the ring, the indicator and a working
@@ -616,9 +640,6 @@ Dialogs:
 
 - `StepDetailsDialog` — designed already (no buttons, live edits); not on the frame, so
   its title is only the window's.
-- `ExitDialog` — Qt's default margins and spacing, a `QDialogButtonBox` with the platform
-  deciding the order, a bare commit-message field with no caption. The signalling pass
-  owns it.
 - `SettingsDialog` — 12 px margins, an unstyled tree with no seam against the page, a lone
   Close.
 - `ProjectDialog` — the most designed; create mode's footer at 8 px against the 12 px
@@ -668,5 +689,6 @@ Tables and lists:
 - Settings tree, Index tree, palette list — unstyled or ink-only hover.
 - Task and Agents browsers, Milestones list — widget rows laid out by hand, one of them by
   measuring strings.
-- Every debounced view but the Time tab — silent for its settle; the Time tab's
-  *Recalculating…* label becomes the indicator in the signalling pass.
+- *(done — the signalling pass)* Every debounced view now carries the indicator, and the
+  Time tab's hand-shown *Recalculating…* label is gone; `ExitDialog` is on the frame, and
+  the quit-time save has a progress dialog over its repositories.

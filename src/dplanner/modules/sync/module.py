@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QInputDialog, QMessageBox, QWidget
+from PySide6.QtWidgets import QDialog, QInputDialog, QMessageBox, QWidget
 
 from dplanner.core.storage.provider import StorageError, StorageProvider
 from dplanner.domain.model import Library, ProjectId
@@ -47,7 +47,8 @@ from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.window import StatusHost, UnsavedChangesHost
 from dplanner.framework.window_watch import POLL_MS
 from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
-from dplanner.modules.sync.service import Publication, RepoGroup, SyncService
+from dplanner.modules.sync.save_progress import SaveProgressDialog
+from dplanner.modules.sync.service import SAVE_TASK, Publication, RepoGroup, SyncService
 from dplanner.modules.sync.view import DiffDialog, IconLabel, UnsavedChangesButton
 from dplanner.theme.icons import branch_icon, folder_icon
 from dplanner.theme.themes import Theme
@@ -87,6 +88,11 @@ class SyncModule:
         self._worktree_changed = False
         # The branch each repository was on when this window last looked, by group.
         self._known_branches: dict[int, str] = {}
+        # The quit-time save: its dialog while it runs, whatever failure it reported, and
+        # whether it has ended — the close guard's second pass reads the last of these.
+        self._exit_progress: SaveProgressDialog | None = None
+        self._exit_error = ""
+        self._exit_saved = False
 
     def register(self) -> None:
         deps = self._deps
@@ -149,6 +155,10 @@ class SyncModule:
             poke_context()
             if busy:
                 return
+            if self._exit_progress is not None:
+                # The runner emits busy_changed(False) *before* failed(...), so the outcome
+                # is only known on the next turn — by which time on_failed has run.
+                QTimer.singleShot(0, self._exit_save_ended)
             if self._worktree_changed:
                 # Autosave stays paused until the fresh tree is in the model, or it would
                 # flush the stale one over it. singleShot hops out of this signal cascade.
@@ -160,7 +170,16 @@ class SyncModule:
 
         service.busy_changed.connect(on_busy_changed)
         service.notice.connect(lambda text: deps.status.show_status(text, 5000))
-        service.failed.connect(lambda text: QMessageBox.warning(deps.parent, "Storage", text))
+
+        def on_failed(text: str) -> None:
+            if self._exit_progress is not None:
+                # Said where the person is looking, once: the progress dialog carries it.
+                self._exit_error = text
+                return
+            QMessageBox.warning(deps.parent, "Storage", text)
+
+        service.failed.connect(on_failed)
+        service.saving.connect(self._on_saving)
         # Files reach disk 1.5 s after the last keystroke; that is also the earliest moment
         # "unsaved changes" could newly be true.
         deps.autosave.flushed.connect(service.refresh)
@@ -286,6 +305,10 @@ class SyncModule:
 
     def _confirm_close(self, service: SyncService) -> bool:
         deps = self._deps
+        if self._exit_saved:
+            return True  # The save this guard started has ended; let the window go.
+        if self._exit_progress is not None:
+            return False  # One is already running, under its own dialog. Ask nothing twice.
         # The debounce means the very last edit may not be on disk yet: flush and re-check
         # before deciding, so quitting right after typing never loses the question.
         deps.autosave.flush_now()
@@ -302,13 +325,60 @@ class SyncModule:
             # are on disk, and the next window shows the same unsaved count.
             return True
         chosen = [dirty[index] for index in dialog.checked_rows()]
-        if chosen:
-            # Synchronous, like the old quit-time save: the window is closing, and a task
-            # nobody can watch is worse than a moment's wait.
-            service.save_sync(
-                dialog.message(), only=chosen, publications=self._publications(service)
-            )
+        if not chosen:
+            return True
+        if not self._begin_exit_save(service, dialog.message(), chosen):
+            return False  # Storage is busy; the notice says so and the window stays.
+        # Not "no" — "not yet". The save runs as an ordinary task under its progress dialog,
+        # and closing again is what ends the window once it has finished.
+        return False
+
+    def _begin_exit_save(self, service: SyncService, message: str, chosen: list[RepoGroup]) -> bool:
+        """Start the quit-time save under its dialog; False when it could not be started."""
+        labels = [self._group_label(group) for group in chosen]
+        # How long the last save took, if this machine has seen one: the bar fills smoothly
+        # between commits instead of standing still through each one.
+        progress = SaveProgressDialog(
+            labels,
+            self._deps.parent,
+            expected_seconds=self._deps.tasks.duration_of(SAVE_TASK),
+        )
+        self._exit_progress = progress  # Set first: _on_saving reads it, and it is queued.
+        self._exit_error = ""
+        if not service.save(message, self._publications(service), only=chosen):
+            self._exit_progress = None
+            progress.deleteLater()
+            return False
+        progress.finished.connect(self._on_exit_progress_finished)
+        progress.setModal(True)
+        # Shown once the task is real, so a refused one never flashes a modal — and never
+        # exec(): the guards run inside closeEvent, where a nested modal loop is re-entrant.
+        progress.show()
         return True
+
+    def _on_saving(self, index: int, phase: str) -> None:
+        """Where the running save has got to — nothing to show unless we are quitting."""
+        if self._exit_progress is not None:
+            self._exit_progress.step(index, phase)
+
+    def _exit_save_ended(self) -> None:
+        progress = self._exit_progress
+        if progress is None:
+            return
+        error, self._exit_error = self._exit_error, ""
+        if error:
+            progress.stopped(error)  # Stays up: the person chooses Close Anyway or Stay.
+            return
+        progress.accept()
+
+    def _on_exit_progress_finished(self, result: int) -> None:
+        progress, self._exit_progress = self._exit_progress, None
+        if progress is not None:
+            progress.deleteLater()
+        if result != QDialog.DialogCode.Accepted:
+            return  # Stay: the window keeps its unsaved changes and nobody lost a thing.
+        self._exit_saved = True
+        self._deps.parent.window().close()
 
     # -- actions -------------------------------------------------------------------------------
 

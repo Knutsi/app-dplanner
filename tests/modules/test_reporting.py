@@ -11,13 +11,17 @@ import time
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import QObject
+from PySide6.QtCore import Signal as QtSignal
+from PySide6.QtWidgets import QPushButton
 
 from dplanner.cli.report import website
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+from dplanner.framework.signalling import Spinner
 from dplanner.framework.user_config import set_global
-from dplanner.modules.reporting.settings_page import MODULE_ID, PUBLISH_KEY
+from dplanner.modules.reporting.settings_page import MODULE_ID, PUBLISH_KEY, build_page
 
 
 def wait_for(app, predicate, timeout=10.0):
@@ -213,3 +217,28 @@ def test_the_tabs_export_button_renders_the_export_submenu(services, project, ki
     assert "Order List (CSV)…" in labels and "Milestones (CSV)…" in labels
     assert "Plan Report (HTML)…" in labels and "Plan Report (PDF)…" in labels
     assert "Plan Tables (Excel)…" in labels
+
+
+class QtSignalHost(QObject):
+    """Stands in for the reporting module's runner: the one signal the page listens to."""
+
+    changed = QtSignal(bool)
+
+
+def test_write_now_turns_its_own_glyph_while_a_report_is_being_written(app):
+    """DESIGN.md's *Signalling*, *Working*: the button whose verb started the work says so
+    in the glyph slot it already had, so nothing on the page moves."""
+    busy = QtSignalHost()
+    page = build_page(None, write_now=lambda: None, busy_changed=busy.changed)
+    try:
+        button = page.findChild(QPushButton, "writeSiteNow")
+        spinner = page.findChild(Spinner)
+        assert button is not None and spinner is not None
+        assert not button.icon().isNull()  # A spinner refuses a button with no idle glyph.
+        idle = button.icon().cacheKey()
+        busy.changed.emit(True)
+        assert spinner.is_spinning() and button.icon().cacheKey() != idle
+        busy.changed.emit(False)
+        assert not spinner.is_spinning() and button.icon().cacheKey() == idle
+    finally:
+        page.deleteLater()

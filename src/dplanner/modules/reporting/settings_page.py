@@ -8,16 +8,28 @@ on Save is this person's behaviour; where the site goes is not a setting at all
 
 from collections.abc import Callable
 
+from PySide6.QtCore import SignalInstance
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QCheckBox, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from dplanner.cli.report.website import REPORTS_DIR
+from dplanner.framework.signalling import Spinner
 from dplanner.framework.user_config import get_global, set_global
+from dplanner.theme.icons import refresh_icon
 
 MODULE_ID = "reporting"
 PUBLISH_KEY = "publish_on_save"
 
 
-def build_page(parent: QWidget | None, *, write_now: Callable[[], None]) -> QWidget:
+def build_page(
+    parent: QWidget | None,
+    *,
+    write_now: Callable[[], None],
+    busy_changed: SignalInstance | None = None,
+) -> QWidget:
+    """The page. ``busy_changed`` is the reporting module's runner signal: the button that
+    started the work says so in its own glyph while a report is being written (DESIGN.md's
+    *Signalling*, *Working*) — one runner, so "a report is being written" is the truth."""
     page = QWidget(parent)
     layout = QVBoxLayout(page)
     layout.setContentsMargins(20, 20, 20, 20)
@@ -42,7 +54,16 @@ def build_page(parent: QWidget | None, *, write_now: Callable[[], None]) -> QWid
     button = QPushButton("Write Now", page)
     button.setObjectName("writeSiteNow")
     button.setToolTip("Write every repository's report site now, whatever the switch says")
+    # The glyph slot is always there, so the arc turning in it moves nothing: a spinner that
+    # appeared beside the words would jump the layout under the pointer.
+    button.setIcon(refresh_icon(page.palette().color(QPalette.ColorRole.Text)))
     button.clicked.connect(lambda: write_now())
     layout.addWidget(button, 0)
+
+    # Parented to the page, which is what keeps it alive; a test finds it by type.
+    spinner = Spinner(page)
+    spinner.attach(button)
+    if busy_changed is not None:
+        busy_changed.connect(lambda busy: spinner.start() if busy else spinner.stop())
     layout.addStretch(1)
     return page

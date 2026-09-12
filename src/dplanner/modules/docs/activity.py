@@ -45,6 +45,7 @@ from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.activity import EntityActivity, follow_project
 from dplanner.framework.context import ContextNode, Uri, activity_uri, selection_uri
 from dplanner.framework.debounce import Debounced
+from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.markdown_view import MarkdownView
 from dplanner.framework.module_data_section import PANEL_MARGIN
 from dplanner.framework.toolbar import control_bar
@@ -132,6 +133,7 @@ class DocsActivity(EntityActivity):
 
         # After a quiet spell, not per signal: a refresh walks a cone per collector.
         self._refresh_soon = Debounced(self._refresh, parent=self.page, service=deps.debounce)
+        self.page.updating.follow(self._refresh_soon)
         self._unsubscribes = [
             # Every signal, this project only — a fragment is prose, so text edits count.
             follow_project(self._library, self.project_id, self._refresh_soon.trigger),
@@ -368,6 +370,8 @@ class _DocsPage(QWidget):
         # visibility — hiding the combo alone would leave its slot behind.
         self.group_action = self.controls.addWidget(self.group_box)
         strip.addWidget(self.controls, 1)
+        self.updating = UpdatingIndicator(self)
+        strip.addWidget(self.updating)
         layout.addLayout(strip)
         layout.addSpacing(CONTROL_GAP)
 

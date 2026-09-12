@@ -2818,3 +2818,52 @@ an aspect a build does not ship never reaches the registry at all.
 **Upstream?** The announcement rule, as a paragraph rather than as code. The `visible`
 removal is specific to a strip that owns widget visibility, and is worth saying out loud in
 `Toolbar`'s docstring upstream.
+## 31. From the signalling pass
+
+### `framework/signalling.py` — one motion, two places to put it
+
+**What.** `Spinner.attach` takes a bare `QLabel` as well as a `QAction | QAbstractButton`.
+A button or verb has a glyph slot the spinner borrows and gives back; a label *is* the
+slot — it shows nothing when idle, so it is fixed to `ICON_SIZE` and keeps its room while
+hidden. `UpdatingIndicator` is that second case with a `Debounced` attached: it was a
+`QLabel` reading *Updating…* and is now the same three-quarter arc a working button turns,
+with the words in its tooltip. `Spinner` is defined above it, since the indicator is one.
+
+**Why.** A word at the end of a control strip is the only prose on a row of glyphs, four
+times the arc's width where the row is already competing for room, and the one thing there
+a translation would have to reach. But the real reason is the vocabulary: *something is
+running here* should be one motion to recognise, not a word in one place and a turning
+glyph in another. The alternative — a second timer loop inside the indicator — would have
+been about fifteen duplicated lines and two ways to turn the same arc.
+
+**Watch.** The `#UpdatingIndicator` colour rule left `theme.qss`: a pixmap ignores `color`,
+and the arc is painted from the palette at `SECONDARY_ALPHA` by `Spinner._ink()`. The
+object name stays, because `tests/test_theme.py` checks that every styled name is set by a
+widget, not the converse. Frames are re-inked on every `start()`, so a theme change between
+runs is picked up — a theme change *mid-spin* is not, and has not been worth a hook.
+
+**Upstream?** Yes. The union in `attach` is six lines and it is what stops a template
+growing two spinners.
+
+### `framework/tasks.py` — the duration memory survives the session
+
+**What.** `TaskService(remember=True)` reads its `key → seconds` memory from the per-user
+store at construction and writes it back on every successful finish; `duration_of(key)`
+exposes it. The default is off, so a test and a throwaway service carry no history. The
+cap that keeps an overrunning estimate short of full is now `ESTIMATE_CAP`, public, because
+a second surface draws a remembered duration as progress.
+
+**Why.** The memory was per build, which means per window. The estimate that matters most
+is for an operation the *current* window has not run yet — in this application, the save at
+quit, in a session where nobody pressed Ctrl+S — and per-build memory is empty exactly
+then. Persisting it is one read and one small write per completed task.
+
+**Watch.** A bar drawn from it must not be the only thing the bar reads. In
+`modules/sync/save_progress.py` the known count leads and the estimate only fills between
+landings (`max(landed, estimated)`), so a guess can never contradict a fact; with nothing
+remembered the bar is the count alone. Failed, cancelled and timed-out runs already do not
+poison the memory, which matters more once it outlives the session.
+
+**Upstream?** Yes, behind the same default-off flag. A template's `TaskService` should be
+able to estimate on a machine's second run without the host application inventing its own
+store.

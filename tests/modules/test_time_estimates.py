@@ -932,17 +932,22 @@ def test_a_snapshot_saved_on_purpose_is_named_kept_and_compared_against(services
     assert services.undo.undo_text() == before
 
 
-def test_the_strip_says_recalculating_until_the_page_has(services, staged, tab):
+def test_the_strip_says_updating_until_the_page_has(services, staged, tab):
     """A change arrives, the page waits for the burst to settle, and the strip says so
-    in between — and stops saying so the moment the report has re-run."""
+    in between — and stops saying so the moment the report has re-run.
+
+    The indicator follows the debouncer itself (``pending_changed``), so this holds for a
+    rebuild that raises as much as one that returns; the pair of statements the old
+    hand-shown label needed could only ever be right by inspection.
+    """
     services.debounce.set_immediate(False)
     try:
-        assert not tab.recalculating.isVisibleTo(tab.widget)
+        assert tab.updating.isHidden()
         ship = staged.steps[-1]
         services.undo.push(SetModuleDataCommand(ship.id, ESTIMATION_ID, write_days(9.0)))
-        assert tab.recalculating.isVisibleTo(tab.widget)
+        assert not tab.updating.isHidden()
         services.debounce.flush_all()
-        assert not tab.recalculating.isVisibleTo(tab.widget)
+        assert tab.updating.isHidden()
         assert tab.chart._data.finish == date(2026, 10, 13)
     finally:
         services.debounce.set_immediate(True)
