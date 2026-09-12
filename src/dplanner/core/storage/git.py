@@ -65,18 +65,36 @@ def init_repo(path: Path) -> Path:
     return path
 
 
+# origin_url's answers, keyed by repository root, stamped with the config file they came
+# from. An action state asks this on every context change, and a subprocess per ask was
+# most of a gesture's pause on macOS; a stat is what it costs now.
+_ORIGINS: dict[Path, tuple[int, str]] = {}
+
+
 def origin_url(path: Path) -> str:
-    """The ``origin`` remote URL of the repository containing ``path``, "" when absent."""
+    """The ``origin`` remote URL of the repository containing ``path``, "" when absent.
+
+    Memoised on the mtime of the main checkout's ``.git/config`` — the file ``git remote``
+    reads and rewrites (by lock-and-rename, so the stamp always moves), for every linked
+    worktree too. ``extensions.worktreeConfig`` is not handled; nothing here sets it.
+    """
     root = find_repo_root(path.expanduser())
     if root is None:
         return ""
+    config = main_checkout(root) / ".git" / "config"
+    stamp = config.stat().st_mtime_ns if config.is_file() else -1
+    hit = _ORIGINS.get(root)
+    if hit is not None and hit[0] == stamp:
+        return hit[1]
     result = subprocess.run(
         ["git", "-C", str(root), "remote", "get-url", "origin"],
         capture_output=True,
         text=True,
         check=False,
     )
-    return result.stdout.strip() if result.returncode == 0 else ""
+    url = result.stdout.strip() if result.returncode == 0 else ""
+    _ORIGINS[root] = (stamp, url)
+    return url
 
 
 _SCHEME = re.compile(r"^(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*)://")

@@ -2321,3 +2321,76 @@ than writing a probe value, because a write is what raises a keychain prompt.
 
 **Why.** A Confluence token goes through a guided Connect dialog on macOS, Linux and
 Windows, and "connected" must never be a lie. **Upstream?** Yes, as-is.
+
+## 25. From the snappy-edits pass
+
+### `framework/context.py` + `framework/builder.py` — the context is announced once per turn
+
+**What.** `ContextService` grew `announce: Callable[[], None]`, defaulting to
+`announce_now()` (`changed.emit(current())`); `set_scope`, `clear_scope` and `refresh`
+update the snapshot synchronously and call `announce()`. The builder, once the window
+exists, sets `context.announce = Debounced(context.announce_now, 0, parent=window,
+service=debounce).trigger`. The app shell's own `poke_context` `Debounced` (an undo push,
+a tab switch, a theme or panel change re-asking every state) went with it — it was a
+debounce of a debounce — and `AppShellDeps` lost its `debounce` field.
+
+**Why.** The docstring said emission was synchronous because "menu-state re-evaluation is
+cheap (a few dozen pure callbacks)". On a real plan it was ~150 states, six toolbars per
+canvas, the menu bar and the panel dock, and a connect gesture published seven times with
+an empty selection in between — so the step panel stepped aside and came back twice, at
+`QSplitter.setSizes` prices, per gesture: 1.7 s on the GUI thread. `current()` is all any
+"publish then act" path reads, and every `changed` listener is display, so one
+announcement per turn over the final state changes nothing visible and removes the
+multiplier for good. The test suite runs `DebounceService` immediate, which keeps every
+existing test synchronous — the determinism argument the docstring made now lives there.
+The `action` span in the journal no longer contains the fan-out; it moves to the
+`refresh ContextService.announce_now` span, whose `coalesced` count says how many
+publishes one announcement stood for.
+
+**Upstream?** Yes, whole. The seam is three lines and the builder's wiring one; any
+application with a context service and a dock will hit the same multiplier the day a
+gesture publishes twice.
+
+### `framework/panels.py` — nothing changed, and that is the note
+
+The dock relays itself only when a panel's `show_context` answer flips, which is right.
+What made a flip cost 200 ms was a *module's* panel clearing its cards when it stepped
+aside (`ProjectPanel`, fixed in the module) and the widget tree under it. Worth saying to
+whoever brings a `ContextPanel` upstream: "off screen" and "showing nothing" are different
+states, and the dock only ever asks for the first.
+
+## 26. From the Docs-folder pass
+
+### `framework/project_list_segment.py` — child rows under each project
+
+**What.** Beside `LeadingRow` (a row above the projects) the segment takes `children:
+Sequence[ChildRow]` — a label, an icon and `open(project_id, preview)` — and draws one row
+per child under every project row, keyed `<prefix>:<project>:<index>` in `UserRole` so
+`expansion_of`/`restore_expansion` keep the project row's open state across a rebuild.
+`KIND_ROLE` gains `"child"` and a `CHILD_ROLE` carries the index; `selection_nodes` and
+`context_menu` treat a child as its project (`PROJECT_KINDS`), so every Project verb and
+the Project menu work from it. The Docs folder is the user: *Documentation* and
+*Implementation notes* under each project, each opening its own tab.
+
+**Why.** The notes had been a second reading inside the Docs tab behind a switch, and the
+index — where a reader looks first — said nothing about it. Generalising the flat segment
+was smaller than a second segment class and leaves the two folders one code path; the
+richer `projects/index.py` (nested *contributed* entries, greyed rows) is still a
+different problem and stays separate.
+
+**Upstream?** Yes, with the segment itself if it goes: a folder of entities whose surface
+has more than one reading is the ordinary case, not this application's.
+
+### `framework/widgets.py` — `EmptyState`
+
+**What.** A widget for what an empty page says: one line at a readable measure
+(`centered_column`), a point smaller, `#EmptyStateText` in the secondary ink, centred
+both ways; `say("")` hides it. The Docs, Tests, Assets and Implementation notes pages use
+it in place of a `QLabel` each had appended to the end of its layout.
+
+**Why.** Each page's label landed wherever the layout left room — the bottom-left corner
+of a tall empty page — and read as a stray footer. One widget, one look, and DESIGN.md's
+*Empty states* names the rule.
+
+**Upstream?** Yes: every application has empty pages, and the trap (a label after a
+stretched widget) is generic.

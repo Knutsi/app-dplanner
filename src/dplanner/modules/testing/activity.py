@@ -45,6 +45,7 @@ from dplanner.framework.context import (
 from dplanner.framework.debounce import Debounced
 from dplanner.framework.module_data_section import PANEL_MARGIN
 from dplanner.framework.toolbar import control_bar
+from dplanner.framework.widgets import EmptyState
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import covered, project_tests
 from dplanner.modules.testing.table import Row, TestsTable
@@ -140,17 +141,12 @@ class _TestsPage(QWidget):
 
         self.table = TestsTable(self)
         layout.addWidget(self.table, 1)
-
-        self.empty = QLabel(self)
-        self.empty.setObjectName("InspectorNote")
-        self.empty.setWordWrap(True)
-        self.empty.hide()
-        layout.addWidget(self.empty)
+        self.empty = EmptyState(parent=self)
+        layout.addWidget(self.empty, 1)
 
     def say(self, message: str) -> None:
         """A tab cannot go off screen the way a panel does, so it says so in words."""
-        self.empty.setText(message)
-        self.empty.setVisible(bool(message))
+        self.empty.say(message)
         self.table.setVisible(not message)
 
     def lead(self, answer: str, detail: str) -> None:

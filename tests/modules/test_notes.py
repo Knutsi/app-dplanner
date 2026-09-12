@@ -1,4 +1,4 @@
-"""The note log: what reaches a step, the Notes card on the project panel, and the editor.
+"""The note log: what reaches a step, the Implementation notes tab, and the editor.
 
 The derivation half runs with no Qt and no store — a plain library — because that is
 also the shape the CLI and the briefing read it in.
@@ -10,9 +10,8 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules.notes.card import FRESH_TITLE
-from dplanner.modules.notes.editor import NoteDialog, NoteEditor
+from dplanner.modules.notes.activity import NOTES_KIND
+from dplanner.modules.notes.editor import NoteEditor
 from dplanner.modules.notes.log import (
     MODULE_ID,
     Note,
@@ -21,6 +20,7 @@ from dplanner.modules.notes.log import (
     write_log,
 )
 from dplanner.modules.notes.reach import briefing_blocks, reaching
+from dplanner.modules.notes.view import FRESH_TITLE
 
 
 def build(edges):
@@ -132,7 +132,7 @@ def test_the_log_is_read_tolerantly_and_written_with_absence_for_the_defaults():
     assert write_log([]) == {}
 
 
-# -- the card and the editor ---------------------------------------------------------------------
+# -- the view and the editor ---------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -164,55 +164,73 @@ def project(services, make_project):
 
 
 @pytest.fixture
-def card(services, project):
-    spec = next(s for s in services.detail_cards.sections() if s.id == "notes.card")
-    card = spec.factory()
-    card.show_target(project.id)
-    yield card
-    card.dispose()
+def notes_tab(services, project):
+    return services.tabs.open(NOTES_KIND, project.id)
 
 
-def rows(card):
-    return [(row.title.text(), row.meta.text()) for row in card.rows]
+@pytest.fixture
+def view(notes_tab):
+    return notes_tab.view
 
 
-def test_the_card_registers_and_the_project_panel_shows_it(services, project):
-    services.context.set_scope(
-        SCOPE_SELECTION, (ContextNode(selection_uri("project", project.id)),)
-    )
-    panel = services.window.dock.widget_for("project_editor.project")
-    assert "Notes" in [c.title.text() for c in panel._cards]
+def test_the_notes_are_a_tab_of_their_own(services, project, notes_tab):
+    assert notes_tab.title == "Discovery — Implementation notes"
+    assert notes_tab.caption.text() == "Implementation notes"
+    assert services.tabs.open(NOTES_KIND, project.id) is notes_tab  # One per project.
+    services.tabs.close_activity(notes_tab)
+    assert notes_tab.view._unsubscribes == []  # Closing disposes the view's listeners.
 
 
-def test_the_rows_say_what_when_where_for_whom_and_whether_it_stands(card):
-    assert rows(card) == [
-        ("Keep SQLite", "N1 · decision · 5 September · on S1"),
-        ("Ship weekly", "N2 · decision · 6 September · superseded by N3"),
-        ("Ship daily", "N3 · decision · 7 September"),
+def test_the_rows_say_what_when_where_for_whom_and_whether_it_stands(view):
+    assert view.rows() == [
         ("Keys in vault", "N4 · handoff · on S1 · for S2"),
+        ("Ship daily", "N3 · decision · 7 September"),
+        ("Ship weekly", "N2 · decision · 6 September · superseded by N3"),
+        ("Keep SQLite", "N1 · decision · 5 September · on S1"),
     ]
-    assert not card.empty.isVisibleTo(card)
-    assert card.rows[0].toolTip() == "One operator."
+    assert view.summary.text() == "4 notes, 3 standing — newest first"
+    assert not view.empty.isVisibleTo(view)
+    assert view.list.item(3).toolTip() == "One operator."
+    assert view.selected() == "N4" and view.editor.title.text() == "Keys in vault"
 
 
-def test_the_rows_follow_the_log(services, project, card):
+def test_picking_a_row_binds_the_editor_to_that_note(view):
+    view.list.setCurrentRow(3)
+    assert view.selected() == "N1"
+    assert view.editor.title.text() == "Keep SQLite"
+    assert view.editor.body.edit.toPlainText() == "One operator."
+
+
+def test_the_rows_follow_the_log(services, project, view):
     services.undo.push(SetModuleDataCommand(project.id, MODULE_ID, {}))
-    assert card.rows == () and card.empty.isVisibleTo(card)
+    assert view.rows() == [] and view.empty.isVisibleTo(view)
+    assert view.selected() is None and not view.editor.isEnabled()
+    assert not view.split.isVisibleTo(view)  # The roster's button went with it, so:
+    view.empty.button.click()
+    assert [title for title, _line in view.rows()] == [FRESH_TITLE]
+    assert view.split.isVisibleTo(view) and not view.empty.isVisibleTo(view)
 
 
-def test_add_records_a_fresh_note_and_opens_it_on_the_title(services, project, card, monkeypatch):
-    opened = []
-    monkeypatch.setattr(NoteDialog, "exec", lambda self: opened.append(self))
-    fresh = card.add_note()
+def test_add_records_a_fresh_note_and_opens_it_on_the_title(services, project, view):
+    fresh = view.add_note()
     assert fresh == "N5"
     record = read_log(project)[-1]
     assert record.title == FRESH_TITLE and record.made == date.today().isoformat()
     assert record.label == "decision"
-    (dialog,) = opened
-    assert dialog.editor.title.text() == FRESH_TITLE and dialog.editor.title.selectedText()
+    assert view.selected() == "N5" and view.rows()[0][0] == FRESH_TITLE
+    assert view.editor.title.text() == FRESH_TITLE and view.editor.title.selectedText()
     assert services.undo.undo_text() == "Add Note"
     services.undo.undo()
     assert [r.id for r in read_log(project)] == ["N1", "N2", "N3", "N4"]
+
+
+def test_remove_drops_the_picked_note_and_unlinks_what_superseded_it(services, project, view):
+    view.list.setCurrentRow(2)
+    assert view.selected() == "N2"
+    view.remove_selected()
+    assert [r.id for r in read_log(project)] == ["N1", "N3", "N4"]
+    assert read_log(project)[1].supersedes == ""
+    assert services.undo.undo_text() == "Remove Note N2"
 
 
 @pytest.fixture
@@ -270,13 +288,54 @@ def test_a_foreign_change_reloads_the_fields(services, project, editor):
     assert editor.addressed.text() == ""
 
 
-def test_the_dialog_removes_the_note_and_unlinks_what_superseded_it(services, project):
-    dialog = NoteDialog(
-        services.document, services.undo, lambda step: f"S{step.number}", project.id, "N2"
+# -- the index's Docs folder ---------------------------------------------------------------------
+
+
+def docs_folder(services):
+    from dplanner.framework.builder import INDEX_PANEL_ID
+
+    panel = services.window.dock.widget_for(INDEX_PANEL_ID)
+    folder = next(
+        panel.tree.topLevelItem(index)
+        for index in range(panel.tree.topLevelItemCount())
+        if panel.tree.topLevelItem(index).text(0) == "Docs"
     )
-    dialog.remove_button.click()
-    assert [r.id for r in read_log(project)] == ["N1", "N3", "N4"]
-    assert read_log(project)[1].supersedes == ""
-    assert services.undo.undo_text() == "Remove Note N2"
-    dialog.dispose()
-    dialog.deleteLater()
+    return panel, folder
+
+
+def project_row(folder, title):
+    return next(
+        folder.child(i) for i in range(folder.childCount()) if folder.child(i).text(0) == title
+    )
+
+
+def test_the_docs_folder_lists_each_project_with_its_two_readings(services, project):
+    _panel, folder = docs_folder(services)
+    row = project_row(folder, "Discovery")
+    assert [row.child(i).text(0) for i in range(row.childCount())] == [
+        "Documentation",
+        "Implementation notes",
+    ]
+
+
+def test_each_row_under_a_project_opens_its_own_tab(services, project):
+    panel, folder = docs_folder(services)
+    row = project_row(folder, "Discovery")
+    panel.tree.itemActivated.emit(row.child(1), 0)
+    (notes,) = services.tabs.activities()
+    assert notes.title == "Discovery — Implementation notes" and notes.view.rows()
+    panel.tree.itemActivated.emit(row.child(0), 0)
+    assert [a.title for a in services.tabs.activities()] == [
+        "Discovery — Implementation notes",
+        "Discovery — Docs",
+    ]
+
+
+def test_a_reading_s_row_stands_for_its_project(services, project):
+    from dplanner.framework.context import SCOPE_SELECTION, selection_uri
+
+    panel, folder = docs_folder(services)
+    row = project_row(folder, "Discovery")
+    panel.tree.setCurrentItem(row.child(1))
+    uris = [node.uri for node in services.context.current().scope(SCOPE_SELECTION)]
+    assert uris == [selection_uri("project", project.id)]

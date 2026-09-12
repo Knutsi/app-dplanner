@@ -166,6 +166,9 @@ class GraphScene(QGraphicsScene):
         self.redirect_requested: Signal[StepId, EdgeEnd] = Signal()
 
         self.selectionChanged.connect(self._on_selection)
+        # True while select_steps/select_region reconcile Qt's selection item by item, so
+        # the per-item selectionChanged is not announced — one gesture, one announcement.
+        self._reselecting = False
 
         # The live rings' clock: one timer for every node wearing one, running only while
         # there is one — an idle canvas ticks nothing. Sync settles it; nothing else does.
@@ -267,15 +270,19 @@ class GraphScene(QGraphicsScene):
 
     def select_steps(self, step_ids: list[StepId]) -> None:
         """Select these, in this order — which is what a two-step verb reads back."""
-        self.clearSelection()
-        self._selection_order = []
-        for step_id in step_ids:
-            item = self._nodes.get(step_id)
-            if item is not None:
-                item.setSelected(True)
+        self._reselecting = True
+        try:
+            self.clearSelection()
+            for step_id in step_ids:
+                item = self._nodes.get(step_id)
+                if item is not None:
+                    item.setSelected(True)
+        finally:
+            self._reselecting = False
         # setSelected fires selectionChanged one item at a time and Qt reports the set
-        # unordered, so the order asked for is restored here and announced once.
+        # unordered, so the order asked for is restored here, lit and announced once.
         self._selection_order = [s for s in step_ids if s in self._nodes]
+        self._light_selection()
         self.selection_changed.emit(self.selection())
 
     def selection(self) -> CanvasSelection:
@@ -287,11 +294,17 @@ class GraphScene(QGraphicsScene):
 
     def select_region(self, region_id: str) -> None:
         """Make one region the whole selection — a body click, or a rename about to ask."""
-        self.clearSelection()
+        self._reselecting = True
+        try:
+            self.clearSelection()
+            item = self._regions.get(region_id)
+            if item is not None:
+                item.setSelected(True)
+        finally:
+            self._reselecting = False
         self._selection_order = []
-        item = self._regions.get(region_id)
-        if item is not None:
-            item.setSelected(True)
+        self._light_selection()
+        self.selection_changed.emit(self.selection())
 
     def selected_step(self) -> StepId | None:
         """The one selected step, or None when it is none or several."""
@@ -479,6 +492,8 @@ class GraphScene(QGraphicsScene):
         )
 
     def _on_selection(self) -> None:
+        if self._reselecting:
+            return
         current = {i.step_id for i in self.selectedItems() if isinstance(i, StepNodeItem)}
         kept = [step_id for step_id in self._selection_order if step_id in current]
         self._selection_order = kept + [s for s in current if s not in kept]

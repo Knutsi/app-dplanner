@@ -43,7 +43,7 @@ from dplanner.framework.context import (
     ContextNode,
     ContextService,
 )
-from dplanner.framework.debounce import DebounceService
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.index_panel import IndexPanel, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
@@ -158,6 +158,12 @@ class AppBuilder:
         panels = PanelRegistry()
         dock = PanelDock(panels, context, tabs)
         window = self._window_factory(tabs, dock)
+        # The context is announced once per event-loop turn: a gesture that publishes the
+        # selection several times — a re-selection clears before it selects — costs one
+        # re-evaluation of every action state, toolbar and panel, over the final state.
+        context.announce = Debounced(
+            context.announce_now, 0, parent=window, service=debounce
+        ).trigger
         # A tab switch is a natural save point and the end of any typing burst.
         tabs.activity_changed.connect(lambda _activity: undo.break_coalescing())
         tabs.activity_changed.connect(lambda _activity: autosave.flush_now())

@@ -109,7 +109,14 @@ class SyncModule:
 
         service = SyncService(deps.repos, deps.tasks, parent=deps.parent)
         self.service = service
-        deps.library.structure_changed.connect(lambda *_: self._on_membership(service))
+        # Membership is the library's own children: a step added to a project changes no
+        # repository's groups, dirtiness or branch, and asking git for each one on every
+        # pasted step was two subprocesses per repository per step on the GUI thread.
+        deps.library.structure_changed.connect(
+            lambda parent_id, *_: (
+                self._on_membership(service) if parent_id == deps.library.id else None
+            )
+        )
 
         unsaved_button = UnsavedChangesButton()
         deps.status.add_status_widget(unsaved_button)

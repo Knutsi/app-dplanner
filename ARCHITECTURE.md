@@ -3469,11 +3469,18 @@ recognises the moment. None needs action today.
   `tests/modules/test_aspect_editors.py` pins the resulting sequence; the tenth aspect
   author will have to read seven files to pick a number, and that is the moment the order
   belongs in one place (the composition root already knows it).
-- **The index tree now has two segment views that both list projects.** `projects/index.py`
-  nests contributed entry rows under each project; `testing/index.py` is a flat cousin with
-  an *All Projects* row on top. Two is a coincidence, not a pattern — deliberately not
-  abstracted. A third is the moment to extract the shared rebuild-and-restore-expansion
-  machinery, which is the half that is actually the same.
+- **The index tree has two shapes of project folder.** `projects/index.py` nests
+  contributed entry rows under each project, greys unavailable ones and restores the
+  selection across a rebuild; `framework/project_list_segment.py` is the plainer cousin
+  the Tests and Docs folders share — the third user was the moment the
+  rebuild-and-restore-expansion half was extracted. It takes a `LeadingRow` above the
+  projects (Tests' *All Projects*) and `ChildRow`s under each (Docs' *Documentation* and
+  the notes module's *Implementation notes*, each opening its own tab — the second handed
+  across as `DocsDeps.more_rows`, so the folder's owner never learns what it lists); a
+  child row stands for its project exactly as the project row does, so the Project menu
+  works from it. The
+  richer folder is deliberately not folded in: nested contributed entries are a different
+  problem that happens to draw rows too.
 - **Every per-gesture cost is a constant, and the constants add up.** A click on a step
   costs the same nine section shows at 25 steps as at 400, a details open the same
   thirteen widget trees, a full collection the same quarter second — *How the
@@ -3672,10 +3679,24 @@ kinds were the same thing wearing two shapes. Five decisions:
   body, and clears the step. Idempotent, so a second open finds nothing. A handoff a
   person had turned *off* stays on the step's shelf under the retired id, untouched: that
   is what turning it off meant. The Handoff tab, its Type toggle and its place in the
-  *Agent* template went with the aspect; the window's surfaces are the project panel's
-  Notes card (rows, the buttonless live editor with a label, a step, addressees, the
-  reach box and the body, *Add Note…* opening on the title) and the Agent tab's Notes
-  pane, which renders the same blocks the briefing carries.
+  *Agent* template went with the aspect; the window's surfaces are the *Implementation
+  notes* tab (the log as rows newest first beside the buttonless live editor with a
+  label, a step, addressees, the reach box and the body, *Add Note…* opening on the
+  title, Remove in the `⋯`) and the Agent tab's Notes pane, which renders the same
+  blocks the briefing carries. The view lived in the project panel as a card first, one
+  widget per note; a plan whose agents had written 344 handoffs made every window
+  relayout walk 688 word-wrapped labels, and the always-on panel was the wrong place for
+  a log that grows with every run — see *The context is announced once per turn* below
+  for the measurements. It was then a second reading inside the Docs tab behind a
+  switch, which the index said nothing about; a tab of its own is what every other
+  project surface is, and the row that opens it sits under the project in the Docs
+  folder beside *Documentation*, because the notes are the project's other document. A
+  tab page may carry a list of its own (DESIGN.md forbids one only inside a card, where
+  the wheel would stop scrolling the stack), the rows are painted by the framework's
+  two-line delegate, and the editor binds only the note that is picked. The notes module
+  hands its row to the docs module through the root (`DocsDeps.more_rows`), the
+  arrangement the order view and the estimation module's start-date bar already have;
+  neither imports the other.
 
 ## The topology is read before the graph is edited
 
@@ -3759,8 +3780,9 @@ synchronous work per keystroke**; the Time tab rebuilt once per burst (26 ms) in
 ten times, the order table once (12 ms), the assets catalog once (15 ms). What was left was
 the context refresh — every action's state, every toolbar and every panel re-asked — which
 the app shell ran inline on every undo push; it is now the same 0 ms `Debounced` as the
-canvas (`poke_context`), and the synchronous cost of a keystroke is **0.3 ms**, with the
-canvas sync (8 ms) and the context refresh (3 ms) following once per event-loop turn.
+canvas (the context service's own `announce`, since *The context is announced once per
+turn* below), and the synchronous cost of a keystroke is **0.3 ms**, with the canvas sync
+(8 ms) and the context refresh (3 ms) following once per event-loop turn.
 
 **Why not a worker thread.** The off-thread design was drawn up — a derivation with a
 generation counter, applying through a queued Qt signal, dropping any result a newer
@@ -3989,6 +4011,69 @@ above are what to re-measure after each.
 
 Re-measure with `uv run python scripts/measure_scaling.py --sizes 25,100,400` after
 each; the click, the second wave and the poll are the three rows to watch.
+
+## The context is announced once per turn, and a panel that steps aside keeps its content
+
+**The rule.** `ContextService` updates its snapshot synchronously and *announces* it
+through a seam the builder routes into a 0 ms `Debounced`: every listener — the menu
+bar's ~150 action states, six toolbars per canvas, the panel dock, the sync module's
+branch label — hears one context per event-loop turn, the final one. A gesture that
+changes the selection does so in one `GraphScene.select_steps`, which announces once; a
+verb that needs a selection the user never made (`steps.link` after a connect or a drop)
+is handed a constructed `Context` instead of the canvas selecting for it; a panel the
+dock takes off screen keeps what it was showing; and nothing in an action state or a
+structure listener spawns a process.
+
+**What it replaced, measured.** On a real plan — 74 steps, 118 links, 344 notes, the
+project tab open, one step selected — a connect (`c`, click, click) blocked the GUI thread
+for **1.7 s** and a paste for **0.6 s**, while the link command, the paste command and
+the canvas resync each cost under 10 ms. Two causes multiplied. The connect published the
+selection *seven* times, synchronously, each publish re-evaluating every action state
+(20 ms for the menu bar alone), and the re-selection cleared before it selected, so the
+selection was empty between publishes: the step panel stepped aside and came back twice
+per gesture, and each swap was `QSplitter.setSizes` at 33–66 ms over the whole widget
+tree. The tree was that heavy because the project panel cleared every card when a step
+was selected and rebound them when the selection emptied — the Notes card tore down and
+rebuilt 344 rows of two word-wrapped labels each on every swap (`NoteRow.__init__` ran
+1 032 times in one connect), and those 688 labels were what every relayout walked. With
+the notes cut to five, the same connect took 0.19 s; with the fixes above, tens of
+milliseconds. On top, 59 git subprocesses ran on the GUI thread in that one connect —
+`origin_url` from `agent.run`'s and `sync.pull`'s states on every publish, and the sync
+module re-asking status and branch of every repository on every `structure_changed`,
+including a pasted step's — cheap on Linux and most of a second on macOS.
+
+**Why the fix is the same shape as the view refresh.** The canvas already rebuilt once per
+turn through `Debounced`, and the reason it was safe applies to the context verbatim:
+nothing a listener does depends on an *intermediate* state, only on the latest, and
+`current()` stays synchronous for the one reader that needs the truth right now — the verb
+that runs after a publish. Coalescing at the source rather than at the four listeners is
+what makes the rule hold for the next gesture somebody writes: a table that publishes
+per row costs one fan-out too. The test suite runs the debounce service immediate, so
+every existing test stays synchronous and deterministic; a test that asserts coalescing
+switches it off and calls `flush_all()`, the pattern the view-refresh tests set.
+
+**Why the selection bug was the same bug.** The canvas selected `[source, target]` so the
+Link verb could read the pair from the context — deliberate, and it left two steps
+selected, so `selected_step()` was None, the next Connect had no source, and the next
+click on a card *selected* it instead of finishing a link. A constructed context is the
+sanctioned way to hand a verb a selection (CLAUDE.md: a gesture can be tested by handing
+it a `Context` with no widget in sight), and it leaves the user's selection where the
+gesture found it, which is what the next `c` needs.
+
+**Why the panel keeps its content.** "Off screen" and "showing nothing" are different
+states, and the dock only ever asks for the first. A card bound to a project that is not
+on screen costs nothing; a card torn down and rebuilt costs the whole widget tree, twice
+per gesture, and throws away every text binding's caret. The step panel already had this
+rule in its unchanged-id early return; the project panel now has it too.
+
+**How it stays fixed.** `scripts/measure_scaling.py --scenarios connect,paste` drives
+the two gestures over the synthetic library with a step selected and reports, beside
+the usual spans, how long the GUI thread was held, how many times the context was
+announced and how many times the dock relaid itself — the number to quote before
+touching any of this.
+`tests/modules/test_project_editor.py` asserts one announcement and no relayout per
+connect and per paste in the window's deferred regime, and `tests/modules/test_sync.py`
+that a step add asks git nothing.
 
 ## The journal: what ran, how long it took, and why it hung
 

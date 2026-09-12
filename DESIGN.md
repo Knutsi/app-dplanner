@@ -166,6 +166,15 @@ sentence as its tooltip (`InspectorSection.hint` does this for a Details block).
 `#InspectorNote` is for a remark that **changes with the data**: what a run recorded, why a
 verb is unavailable, what this scope turned out to hold. Never for a standing definition.
 
+**Empty states.** A tab page with nothing in it says so with `EmptyState`
+(`framework/widgets.py`): one short line, a size smaller and in `$TEXT_SECONDARY`, centred
+both ways in the space the content would have taken, wrapped at a readable measure. The
+content it stands in for is hidden, not shrunk — the two trade places. Never a note left
+where the layout happened to put it, and never a heading, a glyph or a paragraph: the line
+says what would be here and names the way to put something there — as a plain button
+under the line when that is one verb of this page (*Add Note…*), in words when it is a
+toggle or a terminal command.
+
 The same rule decides a control's fate. A selector with one entry, a switch whose two
 positions give the same answer, a caption over a single obvious field — each is a thing to
 read that teaches nothing. Compute whether it would say anything and leave it out when it

@@ -22,7 +22,6 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.context import Context, ContextService
-from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.palette import CommandPalette
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.tabs import TabHost
@@ -41,7 +40,6 @@ class AppShellDeps:
     tabs: TabHost
     theme: ThemeService
     undo: UndoService[Any]
-    debounce: DebounceService
     zoom: ZoomService
     panels: PanelRegistry
     chrome: PanelHost  # Which anchored panels the user has switched on.
@@ -64,10 +62,9 @@ class AppShellModule:
         # The registry re-evaluates action states on context changes only, so an undo-stack
         # change re-emits the context to force a refresh of the Undo/Redo labels. A
         # poke rather than a new signal: one refresh path is easier to reason about than two.
-        # Once per event-loop turn, not per push: a refresh is every action's state, every
-        # toolbar and every panel re-asked, and a paste of forty steps is forty pushes.
-        poke_context = Debounced(deps.context.refresh, 0, parent=window, service=deps.debounce)
-        undo.changed.connect(poke_context.trigger)
+        # The context service announces once per event-loop turn, so a paste of forty
+        # steps — forty pushes — is one refresh.
+        undo.changed.connect(deps.context.refresh)
 
         def undo_state(_context: Context) -> ActionState:
             if undo.can_undo():
@@ -144,7 +141,7 @@ class AppShellModule:
         # Moving a tab is what splits the window: the group appears to receive it and
         # disappears when the last tab leaves, so there is no split mode and never an empty
         # pane. Every state here depends on the tab host rather than on the context graph,
-        # which is what poke_context() below is for — the same shape as Undo's label.
+        # which is what the context refresh below is for — the same shape as Undo's label.
         # One group for all six: the submenu collapse keys on (menu, group, submenu), so a
         # second group would open a second "Tabs" child menu. The move verbs come first by
         # order alone; the move/close separator is the price of the fold.
@@ -246,7 +243,7 @@ class AppShellModule:
         )
         # What a tab can do depends on how many tabs and groups there are, which no signal
         # reports; every activity change is also every moment one could have changed.
-        deps.tabs.activity_changed.connect(lambda _activity: poke_context.trigger())
+        deps.tabs.activity_changed.connect(lambda _activity: deps.context.refresh())
 
         # The tab bar has made the tab current by the time this arrives, so the menu is built
         # from the same context every other presenter reads.
@@ -299,7 +296,7 @@ class AppShellModule:
         # The house themes stay flat, checkable entries; the rest live in an "Other"
         # submenu so the View menu stays scannable. All appear flat in the command palette,
         # and the checkmark shows state in every presentation.
-        deps.theme.changed.connect(lambda _theme: poke_context.trigger())
+        deps.theme.changed.connect(lambda _theme: deps.context.refresh())
 
         def register_theme(theme_name: str, order: int, submenu: str | None = None) -> None:
             def theme_state(_context: Context, name: str = theme_name) -> ActionState:
@@ -369,7 +366,7 @@ class AppShellModule:
         register_area_toggle(PanelArea.RIGHT, "Right Side Panel", "Ctrl+Alt+B", 20)
         # BOTTOM has no registered panels yet; Ctrl+J is reserved for its toggle when one exists.
         # Collapse also flips when a gesture reveals a panel, so the checkmarks re-read here.
-        deps.chrome.areas_changed.connect(lambda _area: poke_context.trigger())
+        deps.chrome.areas_changed.connect(lambda _area: deps.context.refresh())
 
         # One checkable entry per anchored panel. Both halves are needed: the framework's own
         # index panel is registered before any module runs, and every module's panel arrives
@@ -402,7 +399,7 @@ class AppShellModule:
             register_panel_toggle(spec)
         deps.panels.registered.connect(register_panel_toggle)
         # A panel hidden from its own header menu has to reach the checkmark too.
-        deps.chrome.panels_changed.connect(lambda _panel_id: poke_context.trigger())
+        deps.chrome.panels_changed.connect(lambda _panel_id: deps.context.refresh())
 
         deps.actions.register(
             ActionSpec(

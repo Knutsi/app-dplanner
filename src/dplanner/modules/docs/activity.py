@@ -22,16 +22,19 @@ from typing import TYPE_CHECKING, Any
 from PySide6.QtCore import QModelIndex, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QSplitter,
+    QStackedWidget,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -45,6 +48,7 @@ from dplanner.framework.debounce import Debounced
 from dplanner.framework.markdown_view import MarkdownView
 from dplanner.framework.module_data_section import PANEL_MARGIN
 from dplanner.framework.toolbar import control_bar
+from dplanner.framework.widgets import EmptyState
 from dplanner.modules.docs.aspect import MODULE_ID, read
 from dplanner.modules.docs.collect import (
     Source,
@@ -66,6 +70,9 @@ CONTROL_GAP = 8
 SELECTOR_WIDTH = 180
 LIST_WIDTH = 260
 
+DOCS_CAPTION = "Documentation"
+DOCS_SUBTITLE = "What this project's work adds up to, for whoever reads it."
+
 ROW_PADDING_V = 10
 ROW_PADDING_H = 12
 ROW_LINE_GAP = 4
@@ -78,9 +85,10 @@ GROUP_ROLE = int(Qt.ItemDataRole.UserRole) + 2
 MARK_ROLE = int(Qt.ItemDataRole.UserRole) + 3
 
 UNGROUPED = "Every documented step"
+# Under the headline, which already says "Nothing documented yet".
 NOTHING_YET = (
-    "Nothing documented yet. Turn on Step ▸ Type ▸ Docs and write what a step adds "
-    "to the product's documentation — or `dplanner docs set '<step>' --file notes.md`."
+    "Turn on Step ▸ Type ▸ Docs and write what a step adds to the product's "
+    "documentation — or `dplanner docs set '<step>' --file notes.md`."
 )
 NOT_A_COLLECTOR = (
     "These steps reach no feature, so there is nothing for their documentation to be "
@@ -202,7 +210,7 @@ class DocsActivity(EntityActivity):
         self._group_kind = str(box.currentData() or "")
         # A project with nothing to group by shows no control at all rather than one with a
         # single entry — DESIGN.md: an empty box is worse than no box.
-        self.page.group_action.setVisible(len(entries) > 1)
+        self.page.offer_grouping(len(entries) > 1)
 
     def _build_groups(self, project: Project) -> list[Group]:
         kind = next((k for k in self._deps.scopes if k.id == self._group_kind), None)
@@ -324,14 +332,14 @@ class _DocsPage(QWidget):
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
         layout.setSpacing(CAPTION_GAP)
 
-        title = QLabel("Documentation", self)
-        title.setObjectName("InspectorCaption")
-        layout.addWidget(title)
+        self.caption = QLabel(DOCS_CAPTION, self)
+        self.caption.setObjectName("InspectorCaption")
+        layout.addWidget(self.caption)
 
-        subtitle = QLabel("What this project's work adds up to, for whoever reads it.", self)
-        subtitle.setObjectName("InspectorNote")
-        subtitle.setWordWrap(True)
-        layout.addWidget(subtitle)
+        self.subtitle = QLabel(DOCS_SUBTITLE, self)
+        self.subtitle.setObjectName("InspectorNote")
+        self.subtitle.setWordWrap(True)
+        layout.addWidget(self.subtitle)
         layout.addSpacing(BLOCK_GAP)
 
         self.answer = QLabel(self)
@@ -400,13 +408,14 @@ class _DocsPage(QWidget):
         self.splitter.addWidget(right)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setSizes([LIST_WIDTH, LIST_WIDTH * 3])
-        layout.addWidget(self.splitter, 1)
 
-        self.empty = QLabel(self)
-        self.empty.setObjectName("InspectorNote")
-        self.empty.setWordWrap(True)
-        self.empty.hide()
-        layout.addWidget(self.empty)
+        layout.addWidget(self.splitter, 1)
+        self.empty = EmptyState(parent=self)
+        layout.addWidget(self.empty, 1)
+
+    def offer_grouping(self, offered: bool) -> None:
+        """Whether Group by has a choice to offer."""
+        self.group_action.setVisible(offered)
 
     def _reink(self, accent: str) -> None:
         self.rows.set_accent(accent)
@@ -414,8 +423,7 @@ class _DocsPage(QWidget):
 
     def say(self, message: str) -> None:
         """A tab cannot go off screen the way a panel does, so it says so in words."""
-        self.empty.setText(message)
-        self.empty.setVisible(bool(message))
+        self.empty.say(message)
         self.splitter.setVisible(not message)
 
     def lead(self, answer: str, detail: str) -> None:
