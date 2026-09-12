@@ -2894,6 +2894,18 @@ The `profiles_seeded` flag is written with the list: a seeded profile the person
 is not put back on the next start, which is what makes the seed a migration and not a
 default the list keeps falling back to.
 
+**Detection is the same question asked on purpose.** *Add Detected…* on the settings page
+opens a fit dialog listing every harness in every terminal row of this platform, and
+Automatic, with what the machine has of each — the agent's command on PATH, the terminal
+by its row's probe (`detect_pairings`, Qt-free; the dialog is `detect_dialog.py`). A
+pairing both halves of which are installed and which the list does not hold is ticked;
+the rest are listed with the reason (*codex not found*, *already in the list*) rather than
+dropped, so the person sees what installing a tool would unlock. The dialog only answers
+— `chosen()` — and the page writes through `add_profiles`, the seed's own appender, so a
+pairing already meant is never doubled whichever door it came in by. That split is
+deliberate: the first-start checklist that is coming hosts the same rows, and it should
+need the detection and the appender, not the dialog.
+
 ### A multiplexer is a row, and a two-call one is one template
 
 herdr — the multiplexer built for exactly this, a headless server the person's terminal

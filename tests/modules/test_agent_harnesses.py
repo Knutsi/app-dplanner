@@ -448,6 +448,99 @@ def test_manage_agent_profiles_opens_settings_on_the_profiles_page(services, mon
     assert (spec.menu, spec.submenu, spec.in_menus) == ("Step", "Run Agent", False)
 
 
+def test_detection_pairs_what_this_machine_has_and_says_what_it_lacks(app):
+    """Every harness in every terminal row and Automatic: the agent by its command on
+    PATH, the terminal by its row's probe, a stored pairing marked present."""
+    from dplanner.modules.step_agent_instruction.launcher import HERDR_COMMAND
+    from dplanner.modules.step_agent_instruction.profiles import (
+        Profile,
+        detect_pairings,
+        write_profiles,
+    )
+
+    write_profiles([Profile("Mine", "", "ghostty -e {script}")])
+    found = {"claude": "/bin/claude", "ghostty": "/bin/ghostty", "herdr": "/bin/herdr"}
+    rows = detect_pairings(HARNESSES, platform="linux", which=found.get, env={})
+    by_name = {row.profile.name: row for row in rows}
+    assert by_name["Claude Code in Ghostty"].present  # "Mine" already means it.
+    assert by_name["Claude Code in Ghostty"].remark == "already in the list"
+    herdr = by_name["Claude Code in herdr"]
+    assert herdr.runnable and not herdr.present and herdr.remark == ""
+    assert herdr.profile.launch_command == HERDR_COMMAND
+    assert by_name["Claude Code"].runnable  # Automatic is always found.
+    assert by_name["Codex in herdr"].remark == "codex not found"
+    assert by_name["Codex in kitty"].remark == "codex not found, terminal not found"
+    assert not by_name["Claude Code in tmux"].terminal_found  # env probe, $TMUX unset.
+    assert [r.profile.name for r in rows if r.runnable and not r.present] == [
+        "Claude Code in herdr",
+        "Claude Code",
+    ]
+
+
+def test_the_detected_profiles_dialog_ticks_the_runnable_and_adds_the_ticked(app):
+    from PySide6.QtCore import Qt
+
+    from dplanner.modules.step_agent_instruction.detect_dialog import (
+        NOTHING_TICKED,
+        DetectedProfilesDialog,
+    )
+    from dplanner.modules.step_agent_instruction.profiles import (
+        Profile,
+        add_profiles,
+        read_profiles,
+        write_profiles,
+    )
+
+    write_profiles([Profile("Mine", "", "ghostty -e {script}")])
+    found = {"claude": "/bin/claude", "codex": "/bin/codex", "ghostty": "/bin/ghostty"}
+    dialog = DetectedProfilesDialog(HARNESSES, platform="linux", which=found.get, env={})
+    ticked = [p.name for p in dialog.chosen()]
+    assert ticked == ["Claude Code", "Codex in Ghostty", "Codex"]
+    assert dialog.primary_button.text() == "Add 3 Profiles" and dialog.primary_button.isEnabled()
+    present = next(i for i in range(dialog.list.count()) if "already" in dialog.list.item(i).text())
+    assert not dialog.list.item(present).flags() & Qt.ItemFlag.ItemIsEnabled
+    for index in range(dialog.list.count()):
+        dialog.list.item(index).setCheckState(Qt.CheckState.Unchecked)
+    assert not dialog.primary_button.isEnabled() and dialog.status.words() == NOTHING_TICKED
+    dialog.list.item(dialog.list.count() - 1).setCheckState(Qt.CheckState.Checked)  # OpenCode.
+    assert dialog.primary_button.text() == "Add Profile"
+    added = add_profiles(dialog.chosen(), HARNESSES, "linux")
+    assert [p.name for p in added] == ["OpenCode"]
+    assert [p.name for p in read_profiles()] == ["Mine", "OpenCode"]
+    assert add_profiles(dialog.chosen(), HARNESSES, "linux") == []  # Meant already.
+    dialog.deleteLater()
+
+
+def test_the_settings_page_adds_the_detected_profiles(app, monkeypatch):
+    from PySide6.QtWidgets import QDialog, QPushButton
+
+    from dplanner.modules.step_agent_instruction import settings_page
+    from dplanner.modules.step_agent_instruction.detect_dialog import DetectedProfilesDialog
+    from dplanner.modules.step_agent_instruction.profiles import (
+        Profile,
+        read_profiles,
+        write_profiles,
+    )
+
+    write_profiles([Profile("Mine", "", "")])
+    found = {"claude": "/bin/claude", "ghostty": "/bin/ghostty"}
+
+    class Detected(DetectedProfilesDialog):
+        def __init__(self, harnesses, parent=None, *, platform):
+            super().__init__(harnesses, parent, platform=platform, which=found.get, env={})
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(settings_page, "DetectedProfilesDialog", Detected)
+    page = settings_page.build_page(None, platform="linux", harnesses=HARNESSES)
+    button = page.findChild(QPushButton, "AgentProfileDetect")
+    assert button is not None
+    button.click()
+    assert [p.name for p in read_profiles()] == ["Mine", "Claude Code in Ghostty"]
+    page.deleteLater()
+
+
 def test_a_profile_is_named_by_its_choices():
     from dplanner.modules.step_agent_instruction.profiles import Profile, suggested_name
 

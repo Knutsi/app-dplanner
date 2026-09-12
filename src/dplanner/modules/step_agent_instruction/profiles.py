@@ -19,7 +19,11 @@ own default (*Automatic*) — skipping any pairing a stored profile already mean
 choices rather than its name, so a hand-named *Claude in Ghostty* is never doubled. It
 runs when the window is built and records that it has (``profiles_seeded``), so a
 profile the person removes afterwards stays removed; whatever was the default before
-stays the default.
+stays the default. **And the same pairing can be asked for on purpose**:
+:func:`detect_pairings` is every harness in every terminal of this platform with what
+the machine has of each — the agent on PATH, the terminal by its row's probe — which
+*Add Detected Profiles…* on the settings page (``detect_dialog.py``) lists as tickable
+rows and :func:`add_profiles` appends, through the same skip-what-is-meant rule.
 
 **A name follows the choices until somebody types one.** :func:`suggested_name` words a
 profile by its agent and terminal — *Claude Code in herdr* — and :func:`update_profile`
@@ -28,8 +32,11 @@ reads as anything else is a person's and is kept. Names are unique among the pro
 either way, numbered rather than refused.
 """
 
+import os
 import re
+import shutil
 import sys
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -39,6 +46,7 @@ from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
 from dplanner.modules.step_agent_instruction.launcher import (
     current_command,
     harness_of,
+    is_installed,
     terminals_for,
 )
 
@@ -151,43 +159,122 @@ def _choices(profile: Profile, harnesses: tuple[AgentHarness, ...]) -> tuple[str
     return current_command(profile.agent_command, harnesses), profile.launch_command.strip()
 
 
+def pairings(
+    harnesses: tuple[AgentHarness, ...], templates: Sequence[str], platform: str = sys.platform
+) -> list[Profile]:
+    """Every harness in every terminal template, named by its choices — the candidates a
+    seed or a detection offers, agent-major so one agent's rows read together."""
+    candidates = [
+        Profile("", harness.command, template) for harness in harnesses for template in templates
+    ]
+    return [
+        replace(candidate, name=suggested_name(candidate, harnesses, platform))
+        for candidate in candidates
+    ]
+
+
+def add_profiles(
+    candidates: Sequence[Profile],
+    harnesses: tuple[AgentHarness, ...],
+    platform: str = sys.platform,
+) -> list[Profile]:
+    """``candidates`` appended after the stored profiles, skipping any pairing a stored
+    profile already means — by its choices, never its name — and numbering a taken name.
+    The stored default keeps its place. Returns what was added.
+
+    The two old settings read as a profile nobody named: written now among named ones,
+    it is named by its choices rather than left as a *Default* row.
+    """
+    profiles = read_profiles()
+    if get_global(MODULE_ID, PROFILES_KEY) is None and profiles[0].name == DEFAULT_NAME:
+        profiles[0] = replace(profiles[0], name=suggested_name(profiles[0], harnesses, platform))
+    known = {_choices(profile, harnesses) for profile in profiles}
+    added: list[Profile] = []
+    for candidate in candidates:
+        if _choices(candidate, harnesses) in known:
+            continue
+        known.add(_choices(candidate, harnesses))
+        names = [profile.name for profile in profiles + added]
+        added.append(replace(candidate, name=unique_name(candidate.name, names)))
+    write_profiles(profiles + added)
+    return added
+
+
 def seed_profiles(
     harnesses: tuple[AgentHarness, ...], platform: str = sys.platform
 ) -> list[Profile]:
     """Once per user and machine: every harness in every terminal of
-    :data:`SEEDED_TERMINALS`, appended after the profiles already stored.
-
-    A pairing a stored profile already means is skipped, so the seed never doubles a
-    profile a person named themselves; the stored default stays first. The flag is
-    written with the list, so a seeded profile the person removes stays removed. With
-    no harnesses there is nothing to seed and nothing is recorded. Returns what was
-    added.
-    """
+    :data:`SEEDED_TERMINALS`, through :func:`add_profiles`. The flag is written with the
+    list, so a seeded profile the person removes stays removed. With no harnesses there
+    is nothing to seed and nothing is recorded. Returns what was added."""
     if not harnesses or get_global(MODULE_ID, SEEDED_KEY):
         return []
     rows = terminals_for(platform)
     templates = [
         next((row.command for row in rows if row.label == label), "") for label in SEEDED_TERMINALS
     ]
-    profiles = read_profiles()
-    if get_global(MODULE_ID, PROFILES_KEY) is None and profiles[0].name == DEFAULT_NAME:
-        # The two old settings read as a profile nobody named: name it by its choices
-        # now that it is written among named ones, rather than leave a *Default* row.
-        profiles[0] = replace(profiles[0], name=suggested_name(profiles[0], harnesses, platform))
-    known = {_choices(profile, harnesses) for profile in profiles}
-    added: list[Profile] = []
-    for harness in harnesses:
-        for template in templates:
-            candidate = Profile("", harness.command, template)
-            if _choices(candidate, harnesses) in known:
-                continue
-            known.add(_choices(candidate, harnesses))
-            name = suggested_name(candidate, harnesses, platform)
-            names = [profile.name for profile in profiles + added]
-            added.append(replace(candidate, name=unique_name(name, names)))
-    write_profiles(profiles + added)
+    added = add_profiles(pairings(harnesses, templates, platform), harnesses, platform)
     set_global(MODULE_ID, SEEDED_KEY, True)
     return added
+
+
+@dataclass(frozen=True)
+class Detected:
+    """One pairing this machine could run, as :func:`detect_pairings` found it."""
+
+    profile: Profile
+    agent_found: bool
+    terminal_found: bool  # Automatic counts as found: the launch resolves it itself.
+    present: bool  # A stored profile already means this pairing.
+
+    @property
+    def runnable(self) -> bool:
+        return self.agent_found and self.terminal_found
+
+    @property
+    def remark(self) -> str:
+        """Why a row is not ticked, in words; "" for one that is."""
+        if self.present:
+            return "already in the list"
+        missing = [
+            words
+            for found, words in (
+                (self.agent_found, f"{_first_word(self.profile.agent_command)} not found"),
+                (self.terminal_found, "terminal not found"),
+            )
+            if not found
+        ]
+        return ", ".join(missing)
+
+
+def detect_pairings(
+    harnesses: tuple[AgentHarness, ...],
+    platform: str = sys.platform,
+    which: Callable[[str], str | None] = shutil.which,
+    env: Mapping[str, str] = os.environ,
+    app_exists: Callable[[str], bool] | None = None,
+) -> list[Detected]:
+    """Every harness in every terminal of this platform, and Automatic, with what this
+    machine has of each: the agent's command on PATH, the terminal by its row's probe,
+    and whether the list already holds the pairing. The Qt-free half of *Add Detected
+    Profiles…*, so a later checklist can ask the same question."""
+    rows = terminals_for(platform)
+    found = {row.command: is_installed(row, which, env, app_exists) for row in rows}
+    found[""] = True
+    agents = {h.command: which(_first_word(h.command)) is not None for h in harnesses}
+    known = {_choices(profile, harnesses) for profile in read_profiles()}
+    detected = [
+        Detected(
+            profile,
+            agent_found=agents[profile.agent_command],
+            terminal_found=found[profile.launch_command],
+            present=_choices(profile, harnesses) in known,
+        )
+        for profile in pairings(harnesses, [*(row.command for row in rows), ""], platform)
+    ]
+    # What can be added leads, then what is already there, then what a missing tool
+    # would unlock — agent-major within each, so a long list reads from the top.
+    return sorted(detected, key=lambda row: (not row.runnable, row.present))
 
 
 def update_profile(

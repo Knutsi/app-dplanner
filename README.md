@@ -136,7 +136,8 @@ Windows Terminal, kitty, WezTerm and the rest; herdr, zellij and tmux to land se
 agents side by side — marked when not installed). The child menu lists every profile,
 the default first (what the Agent tab's button and the palette run), then *Manage Agent
 Profiles…*; every agent in Ghostty, herdr and the platform's own terminal is there from
-the first start. Select several ready steps — on the canvas, or by ticking them in the
+the first start, and *Add Detected…* on the settings page pairs whatever agents and
+terminals are installed here. Select several ready steps — on the canvas, or by ticking them in the
 progression board and dropping its *Run N Agents* button down — and one gesture launches
 one agent per step, all through the profile you pick. The step wears a chip and a marching ring while the shell runs, the
 chip follows what the agent reports (`dplanner agent-state set … needs-input` when it has
@@ -336,7 +337,8 @@ src/dplanner/
 │   │                             Agent (`launcher.py`: the terminal and multiplexer table,
 │   │                             the run name a worktree and branch carry, the wrapper script
 │   │                             that prepares the worktree and reports back; `profiles.py`:
-│   │                             the named agent-and-terminal pairs Run Agent offers, seeded once)
+│   │                             the named agent-and-terminal pairs Run Agent offers, seeded once;
+│   │                             `detect_dialog.py`: the installed pairings, ticked and added)
 │   ├── agent_claude/        ── one module per agent CLI, each a Qt-free `harness.py`: the
 │   ├── agent_codex/            command, how it resumes, the marks it leaves in its shells, and
 │   ├── agent_opencode/         a reader of its own records (`domain/agents.py` is the contract)

@@ -1120,7 +1120,11 @@ root, stop and look for the registry or capability you have not found yet.
   nowhere else. **The list is seeded once** (`seed_profiles`, from the module's
   `register()`): every harness in Ghostty, herdr and Automatic, appended after what is
   stored, a pairing skipped when a stored profile already means it by its choices, and
-  the `profiles_seeded` flag written with it so a removal stands. A profile's name
+  the `profiles_seeded` flag written with it so a removal stands. **Add Detected…** on
+  the page is the same act on purpose: `detect_pairings` (Qt-free) pairs every harness
+  with every terminal row and says what the machine has of each, `detect_dialog.py`
+  lists them as tickable rows, and `add_profiles` appends the ticked — the seam the
+  coming first-start checklist reuses. A profile's name
   follows its choices — *Claude Code in herdr* — until somebody types one, and a taken
   name is numbered rather than refused. Over a selection every chosen step goes through
   the one profile — with a multiplexer, one pane each. The progression board's Ready
