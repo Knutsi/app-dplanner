@@ -77,6 +77,7 @@ from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.clipboard import PastePolicy
 from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, ClipboardWatch
 from dplanner.modules.project_editor.drops import CanvasDrop
+from dplanner.modules.project_editor.geometry import divide_command
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.layout_button import LayoutButton
@@ -485,9 +486,10 @@ class ProjectActivity(EntityActivity):
 
     def _on_graph_divided(self, moved: list[tuple[StepId, float, float]]) -> None:
         """One side of a cut was pushed aside: one undo step, however many cards went, and
-        named for the gesture rather than the moves it is made of."""
-        commands = [self._move_command(step_id, x, y) for step_id, x, y in moved]
-        self._deps.undo.push(CompositeCommand("Divide Graph", commands))
+        named for the gesture rather than the moves it is made of — the very command
+        ``dplanner layout shift`` applies, so the two surfaces cannot drift."""
+        seats = {step_id: (x, y) for step_id, x, y in moved}
+        self._deps.undo.push(divide_command(self._project(), seats, view_origin=self))
         self._deps.undo.break_coalescing()
 
     def _on_redirect_requested(self, anchor: StepId, end: EdgeEnd) -> None:

@@ -120,6 +120,9 @@ class DocsDeps:
     # A collector's own note, used as the brief for its document. Which prose briefs a
     # compile is a cross-module fact, so the root decides it.
     instructions: Callable[[Step], str] = lambda _step: ""
+    # A milestone collector's own shade of the project's colour map, "" for anything else —
+    # what its group's medallion is painted in. Wired by the composition root.
+    milestone_color: Callable[[str], str] = lambda _step_id: ""
     parent: QWidget | None = None  # The compiler's QObject parent and confirm()'s.
     # Insert from Assets…: a modal picker over the node's project's catalog, composed by
     # the root. Node id in, picked payloads out; None is a build without the browser.

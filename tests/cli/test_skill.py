@@ -51,6 +51,16 @@ def test_the_edge_vocabulary_is_described(files):
     assert "cycles are refused" in files[SKILL_FILE]
 
 
+def test_the_skill_teaches_the_spatial_loop_and_not_regions(files):
+    """Look, sort, make room or tidy, look again, keep — and no regions drawn."""
+    skill = " ".join(files[SKILL_FILE].split())
+    assert "layout show <project> --map" in skill
+    assert "layout shift <project> --x 640 --by 300" in skill
+    assert "layout tidy <project>" in skill
+    assert "Do not draw regions" in skill
+    assert "Sort first, regions second" not in skill
+
+
 def test_the_skill_teaches_description_as_the_briefing(files):
     """The de-confusion the preamble carries: one text per step, and the real flag name —
     `--project` parses as the scope option and then fails, so the skill must never say it."""

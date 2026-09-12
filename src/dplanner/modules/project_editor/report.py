@@ -37,12 +37,16 @@ def report_source(
     status_for: Callable[[Step], str],
     stats_of: Callable[[Library, Project], dict[StepId, str]],
     badge_of: Callable[[Step], str],
+    # Every milestone's own shade, by step id — one deal per project, the same one the
+    # canvas paints and the timeline bands.
+    colors_of: Callable[[Library, Project], dict[StepId, str]],
 ) -> ReportSource:
     def source(library: Library, project: Project, _files: FilesFor) -> Contribution:
         if not project.steps:
             return Contribution()
         placed_at = positions(library, project)
         stats = stats_of(library, project)
+        colors = colors_of(library, project)
         nodes = []
         for step in project.steps:
             x, y = placed_at[step.id]
@@ -60,6 +64,7 @@ def report_source(
                     status=status_for(step),
                     stat=stats.get(step.id, ""),
                     badge=badge_of(step),
+                    color=colors.get(step.id, ""),
                 )
             )
         edges = [

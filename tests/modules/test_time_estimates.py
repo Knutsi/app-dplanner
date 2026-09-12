@@ -27,13 +27,12 @@ from dplanner.modules.time_estimates.chart import segment_words
 from dplanner.modules.time_estimates.milestones import ALL_KEY, ALL_LABEL
 from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
-    PALETTES,
     read_efficiency,
     read_palette,
-    shades,
     stretched,
 )
 from dplanner.modules.time_estimates.view import TINT_MIN_ALPHA
+from dplanner.theme.palettes import PALETTES, shades
 
 
 @pytest.fixture

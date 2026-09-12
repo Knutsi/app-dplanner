@@ -7,7 +7,8 @@ import pytest
 
 from dplanner.domain.schedule import format_date
 from dplanner.domain.store import LibraryStore
-from dplanner.modules.time_estimates.schedule import MODULE_ID, PALETTES, shades
+from dplanner.modules.time_estimates.schedule import MODULE_ID
+from dplanner.theme.palettes import PALETTES, shades
 
 
 @pytest.fixture

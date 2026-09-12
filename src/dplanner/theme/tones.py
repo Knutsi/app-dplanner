@@ -6,7 +6,11 @@ identity, and a table of two copies is how they would drift. DESIGN.md's excepti
 semantic tint is a constant ``QColor`` with a low alpha, never an opaque theme colour.
 
 "highlight" is the badge's purple family — a milestone node, its badge and the order
-table's milestone row are one identity; "good" is the green family — finished work recedes
+table's milestone row are one identity. A milestone *recolours* that identity: it wears its
+own shade of the project's colour map (``theme/palettes.py``), which says which milestone it
+is as well as that it is one, and :func:`toned` is how — the tone's alphas over another hue,
+in one place, so eight painters never re-derive them. Every other tone is the constant it
+looks like; "good" is the green family — finished work recedes
 into a calm green column the eye can skip; "feature" is teal — the other collector, one
 rank down; "info" is the agent-run chip's blue, which the bar lends to the Agent kind.
 
@@ -52,9 +56,32 @@ BUSY_TINT = QColor(110, 160, 220, 180)
 STATUS_TONES: dict[str, QColor] = {"good": VALID_TINT, "busy": BUSY_TINT, "bad": INVALID_TINT}
 
 
-def button_tone(name: str) -> tuple[QColor, QColor] | None:
-    """``(fill, border)`` for a checked control wearing this tone, or None for no such tone."""
+def toned(name: str, color: str = "") -> tuple[QColor, QColor] | None:
+    """``(fill, border)`` for a body tone, or None for no such tone.
+
+    ``color`` recolours it — a milestone's own shade of the project's map — keeping the
+    tone's own alphas, so a recoloured card is exactly as loud as the purple it replaces.
+    Hex in, ``QColor`` out at paint time: a colour is never stored (ARCHITECTURE.md's *The
+    palette a painter is handed is a snapshot*).
+    """
     tone = BODY_TONES.get(name)
+    if tone is None:
+        return None
+    if not color:
+        return tone
+    return recoloured(tone[0], color), recoloured(tone[1], color)
+
+
+def recoloured(tone: QColor, color: str) -> QColor:
+    """``color`` at ``tone``'s alpha — the one place a shade takes a tone's weight."""
+    shade = QColor(color)
+    shade.setAlpha(tone.alpha())
+    return shade
+
+
+def button_tone(name: str, color: str = "") -> tuple[QColor, QColor] | None:
+    """``(fill, border)`` for a checked control wearing this tone, or None for no such tone."""
+    tone = toned(name, color)
     if tone is None:
         return None
     fill = QColor(tone[1])

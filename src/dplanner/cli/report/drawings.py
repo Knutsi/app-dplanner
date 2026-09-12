@@ -8,7 +8,8 @@ theme, which wins over a presentation attribute.
 
 The grammar is the window's (``project_editor/renderers.py``, ``time_estimates/chart.py``):
 cards with an 8 px radius, a 26 px spine carrying the key rotated a quarter turn and washed
-by status, the body tinted by kind — purple a milestone, teal a feature, green a done step —
+by status, the body tinted by kind — a milestone its own shade of the project's colour map,
+teal a feature, green a done step —
 the estimate at the bottom right; cubic edges with a head for ``requires`` and dashes for
 ``relates``; 2 px lines, 8 px end markers ringed with the surface, hairline grid, the axis
 marked at calendar boundaries. Text is measured by an average glyph width, which is what a
@@ -66,6 +67,9 @@ _TONES = {
     "good": "#78c88c",
     "busy": "#6ea0dc",
     "bad": "#dc6e6e",
+    # The family a milestone wears where a project deals no shade of its own; a dealt one
+    # arrives on the node (``Node.color``) and wins. Also the *kind* swatch in the legend,
+    # which stands for "milestone" and not for any one of them.
     "milestone": "#9682dc",
     "feature": "#50b4af",
     "plan": "#5f87d7",
@@ -247,7 +251,15 @@ def _card(node: Node, colors: Colors) -> str:
         out.append(_pill(inner_x - 4, y + h - PILL_H / 2, word, spine or colors.ink, colors))
     if node.badge:
         width = _text_width(node.badge, 10.0) + 12
-        out.append(_pill(x + w - 10 - width, y - PILL_H / 2, node.badge, colors.milestone, colors))
+        out.append(
+            _pill(
+                x + w - 10 - width,
+                y - PILL_H / 2,
+                node.badge,
+                node.color or colors.milestone,
+                colors,
+            )
+        )
     out.append("</g>")
     return "".join(out)
 
@@ -257,7 +269,9 @@ def _body_tone(node: Node, colors: Colors) -> str | None:
     if node.status == "done":
         return colors.good
     if node.kind == "milestone":
-        return colors.milestone
+        # Its own shade where the plan deals one; the family otherwise, which is what a
+        # milestone wore before a project had a colour map.
+        return node.color or colors.milestone
     if node.kind == "feature":
         return colors.feature
     return None

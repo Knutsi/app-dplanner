@@ -94,6 +94,10 @@ def _no_milestone(_step_id: StepId) -> str:
     return ""
 
 
+def _no_color(_step_id: StepId) -> str:
+    return ""
+
+
 def _no_icons(_step_id: StepId) -> tuple[str, ...]:
     return ()
 
@@ -131,6 +135,11 @@ class StepOrderDeps:
     # so the title column wears the same marks the graph does. Wired by the composition
     # root; this module never learns which aspects the kinds stand for.
     step_icons: Callable[[StepId], tuple[str, ...]] = field(default=_no_icons)
+    # A milestone's own shade of the project's colour map, and the key its row wears as
+    # a badge. Both from the composition root: which map a project uses is one module's
+    # assumption and a step's key is another's letter, and this one learns neither.
+    milestone_color: Callable[[StepId], str] = field(default=_no_color)
+    step_key: Callable[[StepId], str] = field(default=_no_color)
 
 
 class OrderActivity(EntityActivity):
@@ -201,7 +210,13 @@ class OrderActivity(EntityActivity):
         layout.addSpacing(CAPTION_GAP)
 
         self.table = OrderTable(
-            wave_label, deps.step_aspects, deps.milestone_label, deps.step_icons, page
+            wave_label,
+            deps.step_aspects,
+            deps.milestone_label,
+            deps.step_icons,
+            deps.milestone_color,
+            deps.step_key,
+            page,
         )
         self.table.itemSelectionChanged.connect(self._on_selection)
         self.table.cellActivated.connect(self._on_activated)
