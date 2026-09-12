@@ -37,7 +37,7 @@ from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.signalling import Spinner, StatusLine, UpdatingIndicator
 from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.theme_service import ThemeService
-from dplanner.framework.toolbar import Toolbar
+from dplanner.framework.toolbar import FilterButton, Toolbar
 from dplanner.framework.widgets import EmptyState, caption, note
 from dplanner.theme.icons import (
     ICON_SIZE,
@@ -65,7 +65,8 @@ COLUMNS = (
     Column("Days", numeric=True),
     Column("Status"),
 )
-FILTERS = ("All steps", "Agent steps", "Milestones")
+FILTERS = (("agent", "Agent steps"), ("milestone", "Milestones"), ("done", "Done"))
+GROUPINGS = ("Grouped by milestone", "Flat")
 
 
 @dataclass(frozen=True)
@@ -141,20 +142,32 @@ def sample_groups() -> Groups:
     return [(heading, list(rows)) for heading, rows in SAMPLE]
 
 
-def fill_sample(table: Table, ink: QColor, keep: str, groups: Groups | None = None) -> None:
-    """The sample rows under their headings, narrowed by one of ``FILTERS``."""
+def matches(row: SampleRow, active: set[str]) -> bool:
+    """No filter on shows everything; several on show what matches any of them."""
+    return (
+        not active
+        or ("agent" in active and row.agent)
+        or ("milestone" in active and row.kind == "milestone")
+        or ("done" in active and row.status == "done")
+    )
+
+
+def fill_sample(
+    table: Table,
+    ink: QColor,
+    active: set[str] = frozenset(),  # type: ignore[assignment]
+    groups: Groups | None = None,
+    *,
+    grouped: bool = True,
+) -> None:
+    """The sample rows, narrowed by the active ``FILTERS`` keys, under their headings or flat."""
     table.clear_rows()
     for heading, rows in groups if groups is not None else sample_groups():
-        shown = [
-            row
-            for row in rows
-            if keep == FILTERS[0]
-            or (keep == FILTERS[1] and row.agent)
-            or (keep == FILTERS[2] and row.kind == "milestone")
-        ]
+        shown = [row for row in rows if matches(row, active)]
         if not shown:
             continue
-        table.add_heading(heading)
+        if grouped:
+            table.add_heading(heading)
         for row in shown:
             tint = HIGHLIGHT_FILL if row.kind == "milestone" else None
             table.add_row(sample_cells(row, ink), tint=tint, data={KEY_ROLE: row.key})
@@ -216,7 +229,7 @@ class DesignExampleDialog(DialogFrame):
 
         body.addWidget(captioned("Steps", self.body))
         self.table = Table(COLUMNS, parent=self.body)
-        fill_sample(self.table, ink_of(self.body), FILTERS[0])
+        fill_sample(self.table, ink_of(self.body))
         body.addWidget(self.table, 1)
 
         signals = QVBoxLayout()
@@ -277,7 +290,7 @@ class DesignExampleDialog(DialogFrame):
         self.set_primary("Apply", self.accept)
 
     def _recompute(self) -> None:
-        fill_sample(self.table, ink_of(self.body), FILTERS[0])
+        fill_sample(self.table, ink_of(self.body))
 
     def _delete(self) -> None:
         self.status.say("Nothing was deleted — this is sample data", "info")
@@ -309,9 +322,13 @@ class DesignExampleActivity(ActivityBase):
         self.delete_action = self.controls.add_verb("Delete", trash_icon, self._delete_picked)
         self.delete_action.setEnabled(False)
         self.controls.add_divider()
-        self.filter = QComboBox()
-        self.filter.addItems(FILTERS)
+        self.filter = FilterButton()
+        for key, text in FILTERS:
+            self.filter.add_filter(key, text)
         self.controls.add_widget(self.filter)
+        self.group = QComboBox()
+        self.group.addItems(GROUPINGS)
+        self.controls.add_widget(self.group)
         self.controls.add_divider()
         self.refresh_action = self.controls.add_verb(
             "Refresh", refresh_icon, self._refresh_soon_trigger
@@ -339,7 +356,8 @@ class DesignExampleActivity(ActivityBase):
         self.spinner = Spinner(self.widget).attach(self.refresh_action)
         self.spinner.follow(self._refresh_soon)
         self.table.itemSelectionChanged.connect(self._reword_verbs)
-        self.filter.currentIndexChanged.connect(lambda _index: self._refresh_soon.trigger())
+        self.filter.changed.connect(self._refresh_soon.trigger)
+        self.group.currentIndexChanged.connect(lambda _index: self._refresh_soon.trigger())
         self._unsubscribe = theme.changed.connect(self._on_theme)
         self._refresh()
 
@@ -391,7 +409,13 @@ class DesignExampleActivity(ActivityBase):
             self._reword_verbs()
             return
         self.empty.say("")
-        fill_sample(self.table, ink_of(self.widget), self.filter.currentText(), self._groups)
+        fill_sample(
+            self.table,
+            ink_of(self.widget),
+            set(self.filter.active()),
+            self._groups,
+            grouped=self.group.currentIndex() == 0,
+        )
         self._reword_verbs()
 
 

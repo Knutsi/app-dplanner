@@ -177,15 +177,20 @@ def test_the_design_table_tab_opens_and_empty_trades_the_table_for_the_state(ser
 
 
 def test_the_filter_narrows_the_table_and_a_theme_change_repaints_it(services):
-    from dplanner.modules.debug.design_example import DESIGN_TABLE_KIND, FILTERS
+    from dplanner.modules.debug.design_example import DESIGN_TABLE_KIND
 
     activity = services.tabs.open(DESIGN_TABLE_KIND)
     everything = activity.table.rowCount()
-    activity.filter.setCurrentText(FILTERS[2])
+    activity.filter.set_active({"milestone"})
     milestones = activity.table.rowCount()
     assert 0 < milestones < everything
-    services.theme.set_theme("light")
-    assert activity.table.rowCount() == milestones
+    assert activity.filter.face.property("active") is True
+    activity.filter.clear_button.click()
+    assert activity.table.rowCount() == everything and not activity.filter.active()
+    activity.group.setCurrentIndex(1)  # Flat: the headings go, the rows stay.
+    assert activity.table.rowCount() == everything - 2
+    services.theme.set_theme("light")  # A repaint, not a change: the count holds.
+    assert activity.table.rowCount() == everything - 2
 
 
 def test_the_strip_words_delete_with_the_count_and_add_appends(services):

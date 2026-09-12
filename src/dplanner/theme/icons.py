@@ -546,6 +546,29 @@ def spinner_frames(color: str | QColor, count: int = SPINNER_FRAMES) -> list[QIc
     return frames
 
 
+def filter_icon(color: str | QColor, *, active: bool = False) -> QIcon:
+    """A funnel: outline while no filter is on, filled with a dot at its leading corner
+    while one is — the indicator lives in the glyph slot, so nothing moves when it comes."""
+    pixmap, painter = _canvas()
+    funnel = [
+        QPointF(2.5, 3.5),
+        QPointF(13.5, 3.5),
+        QPointF(9.5, 8.5),
+        QPointF(9.5, 13.0),
+        QPointF(6.5, 11.5),
+        QPointF(6.5, 8.5),
+    ]
+    painter.setPen(_pen(color, 1.5))
+    painter.setBrush(QColor(color) if active else Qt.BrushStyle.NoBrush)
+    painter.drawPolygon(funnel)
+    if active:
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(color))
+        painter.drawEllipse(QRectF(0.0, 0.0, 5.0, 5.0))
+    painter.end()
+    return QIcon(pixmap)
+
+
 def close_icon(color: str) -> QIcon:
     """A cross: the close button on a tab.
 

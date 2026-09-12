@@ -110,3 +110,30 @@ def test_every_control_on_a_strip_is_one_height(themed, app):
         assert bar._more.minimumHeight() == bar._more.maximumHeight() == CONTROL_HEIGHT
     finally:
         host.deleteLater()
+
+
+def test_a_filter_button_says_when_a_filter_is_on_and_keeps_its_size(host, app):
+    from dplanner.framework.toolbar import FilterButton
+
+    button = FilterButton(host)
+    heard = []
+    button.changed.connect(lambda: heard.append(button.active()))
+    agent = button.add_filter("agent", "Agent steps")
+    button.add_filter("milestone", "Milestones")
+    host.show()
+    app.processEvents()
+    idle = button.face.sizeHint()
+    idle_icon = button.face.icon().cacheKey()
+    assert not button.clear_button.isEnabled() and button.face.property("active") is False
+    assert button.face.toolTip() == "Filter"
+    agent.trigger()  # The menu's own click: toggles and stays open.
+    assert heard == [["agent"]] and button.clear_button.isEnabled()
+    assert button.face.property("active") is True and button.face.icon().cacheKey() != idle_icon
+    assert button.face.toolTip() == "Filter — Agent steps"
+    assert button.face.sizeHint() == idle  # The indicator is the glyph: nothing moved.
+    button.set_active({"agent", "milestone"})
+    assert sorted(button.active()) == ["agent", "milestone"]
+    button.clear_button.click()
+    assert button.active() == [] and heard[-1] == [] and not button.clear_button.isEnabled()
+    assert button.face.property("active") is False
+    assert all(a.isCheckable() for a in button.menu.actions())

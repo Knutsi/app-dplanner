@@ -2537,9 +2537,17 @@ rest; a `…` button lists the hidden verbs as glyph and words in a `QMenu` rebu
 a widget never enters it, and a divider never ends what is shown. Every control is
 `CONTROL_HEIGHT` tall by `setFixedHeight`. Its `sizeHint` is the … button's.
 
+`FilterButton`: a face (`#FilterButtonFace`, the funnel and the word, an `InstantPopup`
+over a `_StayOpenMenu` of checkable `QAction`s that stays open on a toggle) joined to a
+clear button (`#FilterButtonClear`, greyed until a filter is on); `add_filter(key, text)`,
+`active()`, `set_active()`, `clear()`, a `changed` Signal. The indicator is the glyph
+(`theme.icons.filter_icon(active=)`) and a dynamic `active` property the stylesheet reads
+for the accent border.
+
 **Why.** `QToolBar`'s » pops the hidden buttons up as glyphs again, which is nothing once
 the words live in tooltips; and a worded button, a glyph button and a button with a menu
-disagree by a few pixels under the style, so the height is set in code.
+disagree by a few pixels under the style, so the height is set in code. The filter's
+indicator lives in the glyph so the face never changes size.
 
 **Upstream?** Yes. `ActionToolbar` becomes this fed by the registry.
 

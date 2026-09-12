@@ -528,7 +528,7 @@ QProgressBar::chunk {
 
 /* The quiet bordered button: a toolbar verb, the layout picker, the task browser's in-row
  * Cancel. DESIGN.md's *Buttons*: everything that is not the one primary looks like this. */
-#ToolbarButton, #LayoutButton, #TaskRowCancel {
+#ToolbarButton, #LayoutButton, #TaskRowCancel, #FilterButtonFace, #FilterButtonClear {
     background-color: $BG_OVERLAY;
     color: $TEXT_SECONDARY;
     border: 1px solid $BORDER;
@@ -536,9 +536,40 @@ QProgressBar::chunk {
     padding: 6px 12px;
 }
 
-#ToolbarButton:hover, #LayoutButton:hover, #TaskRowCancel:hover {
+#ToolbarButton:hover, #LayoutButton:hover, #TaskRowCancel:hover,
+#FilterButtonFace:hover, #FilterButtonClear:hover {
     color: $TEXT_PRIMARY;
     border-color: $BORDER_STRONG;
+}
+
+/* The filter control (framework/toolbar.py's FilterButton): the face and its × are one
+   shape — the corners between them square, one hairline shared — and while a filter is
+   on the face wears the accent on its border, the glyph having already said so. */
+#FilterButtonFace {
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 0px;
+    padding-right: 10px;
+}
+
+#FilterButtonFace::menu-indicator {
+    image: none;
+    width: 0px;
+}
+
+#FilterButtonFace[active="true"] {
+    color: $TEXT_PRIMARY;
+    border-color: $ACCENT;
+}
+
+#FilterButtonClear {
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+    border-left: none;
+    padding: 6px 8px;
+}
+
+#FilterButtonClear:disabled {
+    color: $TEXT_DISABLED;
 }
 
 #TaskRowCancel:disabled {
@@ -623,7 +654,7 @@ QComboBox QAbstractItemView::item:selected {
     height: 6px;
 }
 
-#ToolbarButton {
+#ToolbarButton, #FilterButtonFace, #FilterButtonClear {
     /* Glyphs and words carry different metrics; one content height keeps every control on
        a strip 32 px tall — this, 6 px of padding above and below, and the hairline. */
     min-height: 18px;

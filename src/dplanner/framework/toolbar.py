@@ -26,7 +26,15 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from PySide6.QtCore import QEvent, QSize, Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPalette, QResizeEvent
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QIcon,
+    QKeySequence,
+    QMouseEvent,
+    QPalette,
+    QResizeEvent,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -37,10 +45,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dplanner.core.signals import Signal
 from dplanner.framework.action_menu import fill_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import Context, ContextService
-from dplanner.theme.icons import ICON_SIZE
+from dplanner.theme.icons import ICON_SIZE, close_icon, filter_icon
 from dplanner.theme.tokens import CONTROL_GAP, CONTROL_HEIGHT, SECONDARY_ALPHA
 
 
@@ -359,3 +368,103 @@ class Toolbar(QWidget):
                 self._menu.addSeparator()
                 pending_divider = False
             self._menu.addAction(item.action)
+
+
+class _StayOpenMenu(QMenu):
+    """A menu of checkable entries that stays open while they are toggled, so several
+    filters can be picked in one visit; anything else closes it as a menu does."""
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
+        action = self.activeAction()
+        if action is not None and action.isCheckable() and action.isEnabled():
+            action.trigger()
+            return
+        super().mouseReleaseEvent(event)
+
+
+class FilterButton(QWidget):
+    """``[funnel] Filter`` with a clear button beside it: the filters in a popup, an
+    indicator while any is on, and a second button that clears them.
+
+    DESIGN.md's *Toolbars*. The face drops a menu of checkable filters down and stays the
+    same size whatever is on: the indicator is the glyph itself — an outline funnel, or a
+    filled one with a dot at its leading corner — and the accent goes on the face's border
+    and glyph rather than filling it, so the words stay legible and the state reads as a
+    filter being on, not a mode being pressed. The clear button beside it is greyed until
+    a filter is on, never hidden. ``changed`` says when the set of active filters changed.
+    """
+
+    def __init__(self, parent: QWidget | None = None, *, label: str = "Filter") -> None:
+        super().__init__(parent)
+        self.changed: Signal[()] = Signal("filter.changed")
+        self._label = label
+        self._actions: dict[str, QAction] = {}
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self.face = QToolButton(self)
+        self.face.setObjectName("FilterButtonFace")
+        self.face.setText(label)
+        self.face.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.face.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.face.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.face.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.face.setFixedHeight(CONTROL_HEIGHT)
+        self.menu = _StayOpenMenu(self.face)
+        self.face.setMenu(self.menu)
+        row.addWidget(self.face)
+        self.clear_button = QToolButton(self)
+        self.clear_button.setObjectName("FilterButtonClear")
+        self.clear_button.setToolTip("Clear the filters")
+        self.clear_button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.clear_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.clear_button.setFixedHeight(CONTROL_HEIGHT)
+        self.clear_button.clicked.connect(lambda _checked=False: self.clear())
+        row.addWidget(self.clear_button)
+        self._show_state()
+
+    def add_filter(self, key: str, text: str) -> QAction:
+        """One checkable entry in the popup, known to the host by ``key``."""
+        action = QAction(text, self.menu)
+        action.setCheckable(True)
+        action.toggled.connect(lambda _on: self._show_state(announce=True))
+        self.menu.addAction(action)
+        self._actions[key] = action
+        return action
+
+    def active(self) -> list[str]:
+        return [key for key, action in self._actions.items() if action.isChecked()]
+
+    def set_active(self, keys: set[str] | list[str]) -> None:
+        wanted = set(keys)
+        for key, action in self._actions.items():
+            action.blockSignals(True)
+            action.setChecked(key in wanted)
+            action.blockSignals(False)
+        self._show_state(announce=True)
+
+    def clear(self) -> None:
+        self.set_active(set())
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        if event.type() == QEvent.Type.PaletteChange:
+            self._show_state()  # The glyphs carry the ink they were painted in.
+        super().changeEvent(event)
+
+    def _show_state(self, *, announce: bool = False) -> None:
+        on = self.active()
+        active = bool(on)
+        secondary = self.palette().color(QPalette.ColorRole.Text)
+        secondary.setAlpha(SECONDARY_ALPHA)
+        ink = self.palette().color(QPalette.ColorRole.Accent) if active else secondary
+        self.face.setIcon(filter_icon(ink, active=active))
+        self.clear_button.setIcon(close_icon(secondary.name()))
+        self.clear_button.setEnabled(active)
+        names = [self._actions[key].text() for key in on]
+        self.face.setToolTip(f"{self._label} — {', '.join(names)}" if names else self._label)
+        if self.face.property("active") != active:
+            self.face.setProperty("active", active)
+            self.face.style().unpolish(self.face)
+            self.face.style().polish(self.face)
+        if announce:
+            self.changed.emit()

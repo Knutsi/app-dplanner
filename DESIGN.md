@@ -446,6 +446,14 @@ Example Table wears one.
   a strong hairline, rounded, 6 px around every entry, the accent on the one under the
   pointer. Its arrow is the theme's own SVG (`theme/__init__.py`'s `drop_arrow_url`): a
   border-drawn triangle flattens into a bar at a 2× scale.
+- **A filter is one control with two buttons** (`FilterButton`): a face — the funnel
+  glyph and the word — that drops the filters down as a menu of checkable entries stacked
+  vertically, which stays open while they are toggled, and a clear button joined to its
+  right, greyed until a filter is on and never hidden. **The indicator is the glyph**: an
+  outline funnel while nothing is on, a filled one with a dot at its leading corner while
+  something is, so the face never changes size; the accent goes on the face's border and
+  glyph, not its fill — a filter being on is a state, not a mode being pressed — and the
+  tooltip names what is on.
 - On a real surface the verbs come from the registry — `ActionToolbar` over registered
   `ActionSpec`s becomes a `Toolbar` fed by them in the design passes; the example wires
   plain slots to show the shape.
