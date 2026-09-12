@@ -17,6 +17,26 @@ from dplanner.theme.themes import Theme
 # Metrics.
 RADIUS_SM: Final = 5
 RADIUS_MD: Final = 8
+
+# Spacing, on DESIGN.md's 4-point scale. One declaration each: a dialog and a panel that
+# disagree about a margin are two surfaces that read as two products.
+DIALOG_MARGIN: Final = 20  # A dialog's outer margin: dialogs breathe more than panels.
+SECTION_GAP: Final = 12  # Between sections; between blocks; between cards; body to footer.
+FIELD_GAP: Final = 8  # Fields within a section; controls on a strip; footer buttons.
+CAPTION_GAP: Final = 6  # A caption to its field, a note to its field.
+PANEL_MARGIN: Final = 16  # Side panels and tab pages.
+# A rich row (a list of two-line items, a two-line table cell): DESIGN.md's list-row rule.
+ROW_PADDING_V: Final = 10
+ROW_PADDING_H: Final = 12
+ROW_LINE_GAP: Final = 4
+# A plain table cell, and the header section over it.
+CELL_PADDING_V: Final = 6
+CELL_PADDING_H: Final = 8
+# ~63 %: DESIGN.md's opacity-derived secondary text, for a painter that has only the palette.
+SECONDARY_ALPHA: Final = 160
+# The slice of the screen a framed or editor-sized dialog claims. A float is Python-only:
+# ``as_qss_mapping`` takes ints and strings, and a stylesheet has no use for a ratio.
+SCREEN_SHARE: Final = 0.8
 # The arrow half of a button that drops a child menu down. Qt's own metric is about ten
 # pixels — a sliver too thin to aim at, and one that reads as a fault beside the button it
 # is attached to. Wide enough to be a target, narrow enough that the words still lead.

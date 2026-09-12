@@ -15,10 +15,7 @@ from PySide6.QtCore import QModelIndex, QRect, QSize, Qt
 from PySide6.QtGui import QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
-ROW_PADDING_V = 10
-ROW_PADDING_H = 12
-ROW_LINE_GAP = 4
-SECONDARY_ALPHA = 160  # ~63 % — DESIGN.md's opacity-derived secondary text.
+from dplanner.theme.tokens import ROW_LINE_GAP, ROW_PADDING_H, ROW_PADDING_V, SECONDARY_ALPHA
 
 ICON_GAP = 8  # Between a row's icon and its text.
 RULE_ALPHA = 60  # The hairline under an emphasised row: a whisper of the text tone.

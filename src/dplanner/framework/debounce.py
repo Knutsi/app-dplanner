@@ -34,6 +34,9 @@ from dplanner.core.telemetry import current, describe_slot
 # After a quiet spell of this long a table, a list or a board rebuilds. The assets tab's
 # number; below what reads as lag on a rebuild nobody is waiting for.
 SETTLE_MS = 300
+# Rounds ``flush_all`` settles through before giving up: two views that re-trigger each
+# other forever are a bug, not a burst, and a bound keeps that a hang nobody sees.
+SETTLE_ROUNDS = 10
 
 
 class DebounceService:
@@ -54,9 +57,20 @@ class DebounceService:
             self.flush_all()
 
     def flush_all(self) -> None:
-        """Run whatever is pending, now: the deterministic settle for a test or a quit."""
-        for debounced in self._alive():
-            debounced.flush()
+        """Run whatever is pending, now — and whatever that made pending, until nothing is:
+        the deterministic settle for a test or a quit.
+
+        One flush can trigger another: the progress recorder's settle writes a row, and
+        every view following the model re-triggers on it. The set is walked in hash order,
+        so a single pass left a view pending on some runs and not on others — the
+        difference was which object happened to be allocated first.
+        """
+        for _ in range(SETTLE_ROUNDS):
+            pending = self.pending()
+            if not pending:
+                return
+            for debounced in pending:
+                debounced.flush()
 
     def cancel_all(self) -> None:
         for debounced in self._alive():

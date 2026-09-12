@@ -29,13 +29,11 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.framework.mime_files import IMAGE_SUFFIXES, Payload
+from dplanner.theme.tokens import DIALOG_MARGIN, SCREEN_SHARE, SECTION_GAP
 
-DIALOG_MARGIN = 20  # DESIGN.md: dialogs breathe more than panels.
-SECTION_GAP = 12
 THUMBNAIL_SIZE = 96  # Larger than the gallery strip's 76: choosing wants a better look.
 DIALOG_WIDTH = 680
 DIALOG_HEIGHT = 460
-SCREEN_SHARE = 0.8  # Clamp on small screens — the same slice every dialog claims.
 
 
 @dataclass(frozen=True)
