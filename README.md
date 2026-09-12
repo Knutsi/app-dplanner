@@ -262,6 +262,7 @@ src/dplanner/
 │   ├── inspector.py         what a module registers to appear in a detail panel
 │   ├── aspect_bar.py        one submenu's toggles as a bar — templates worded left, every toggle glyphed right, » overflow
 │   ├── aspect_toggle.py     the Type toggle an aspect module registers, declared once: shelve off, restore on
+│   ├── step_selection.py    which step, or which steps, a verb acts on — one reading for every verb
 │   ├── prose_section.py     a panel section over one document, bound to the undo stack
 │   ├── prose_edit.py        that section's editor: a pasted file becomes a markdown link
 │   ├── mime_files.py        the files a paste or a drop carries — both editors' one answer

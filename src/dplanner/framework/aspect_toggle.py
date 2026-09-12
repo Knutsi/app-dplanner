@@ -17,15 +17,8 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.shelf import turn_off, turn_on
 from dplanner.framework.action_registry import DISABLED, ActionSpec, ActionState
 from dplanner.framework.context import Context
+from dplanner.framework.step_selection import focused_step
 from dplanner.framework.undo import UndoService
-
-
-def focused_step(context: Context, library: Library) -> Step | None:
-    """The step the context focuses, if the library still has it."""
-    step_id = context.focus_entity("step")
-    if step_id is None or not library.has(step_id):
-        return None
-    return library.step(step_id)
 
 
 def aspect_toggle(

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from PySide6.QtWidgets import QSpinBox
 
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.launcher import (
@@ -1115,6 +1116,183 @@ def test_a_run_stages_attached_images_beside_the_prompt(services, step, monkeypa
     )
     for path in staged:
         assert str(path) in prompt  # Absolute, inside the run dir — reachable from anywhere.
+
+
+# -- a selection of steps, and the limit ---------------------------------------------------------
+
+
+def briefed(services, project, title):
+    """One more agent step in ``project``, with enough prose to be launchable."""
+    from dplanner.domain.commands import AddNodeCommand
+    from dplanner.domain.model import Step
+
+    step = Step(title=title)
+    AddNodeCommand(project.id, step).redo(services.document)
+    services.document.set_text(step.id, "step_agent_instruction", f"Ship {title}.")
+    return step
+
+
+def select_all(services, *steps):
+    from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+
+    services.context.set_scope(
+        SCOPE_SELECTION, tuple(ContextNode(selection_uri("step", s.id)) for s in steps)
+    )
+
+
+def test_a_selection_of_steps_names_its_count_in_the_verb(services, step):
+    """Run Agent reads the selection the way Delete does, and says how many it would run."""
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select_all(services, step, briefed(services, project, "Migrate"))
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.enabled
+    assert state.label == "Run 2 &Agents…"
+
+
+def test_running_over_a_selection_launches_one_agent_for_each_step(services, step, monkeypatch):
+    """Three steps, three peers — each briefed on its own step, in its own run directory."""
+    from dplanner.modules.step_agent_run.aspect import launched
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    chosen = [step, briefed(services, project, "Migrate"), briefed(services, project, "Measure")]
+    select_all(services, *chosen)
+
+    prepared: list[LaunchFiles] = []
+
+    def record(_template, files, _workdir):
+        prepared.append(files)
+        return ["fake-term"]
+
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: None)
+    monkeypatch.setattr(launcher, "resolve_command", record)
+    services.actions.run("agent.run", services.context.current())
+
+    assert len(prepared) == 3
+    assert len({files.directory for files in prepared}) == 3
+    briefed_on = [files.prompt_file.read_text().splitlines()[0] for files in prepared]
+    assert briefed_on == ["# Step: Deploy", "# Step: Migrate", "# Step: Measure"]
+    assert all(launched(services.document.step(s.id)) for s in chosen)
+
+
+def test_a_selection_past_the_limit_greys_the_verb_and_says_the_limit(services, step):
+    """The count itself is the refusal: a lasso is one flick, and five terminals is not
+    what it meant. Disabled with the reason, never hidden and never a partial launch."""
+    from dplanner.modules.step_agent_instruction.settings_page import DEFAULT_MAX_AGENTS
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    extra = [briefed(services, project, f"Step {n}") for n in range(DEFAULT_MAX_AGENTS)]
+    select_all(services, step, *extra)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.visible and not state.enabled
+    assert state.label == (
+        f"Run {DEFAULT_MAX_AGENTS + 1} Agents"
+        f" — at most {DEFAULT_MAX_AGENTS} at a time (Settings ▸ Agent)"
+    )
+
+
+def test_nothing_launches_past_the_limit_even_if_the_verb_is_run_anyway(
+    services, step, monkeypatch
+):
+    """The state gate is not the only guard: the run itself checks, so a presenter that
+    ran a stale state cannot open a deskful of terminals."""
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select_all(services, step, *[briefed(services, project, f"Step {n}") for n in range(4)])
+    calls = _fake_terminal(monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert calls == []
+
+
+def test_the_limit_is_a_setting(services, step, app):
+    """Four is a default, not a rule: the Agent settings page writes the number and the
+    verb reads it back."""
+    from dplanner.modules.step_agent_instruction.settings_page import build_page
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    select_all(services, step, briefed(services, project, "Migrate"))
+
+    page = build_page(None)
+    spin = page.findChild(QSpinBox, "AgentMaxAgentsSpin")
+    assert isinstance(spin, QSpinBox)
+    assert spin.value() == 4  # The default, laid out rather than researched.
+    spin.setValue(1)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert not state.enabled
+    assert state.label == "Run 2 Agents — at most 1 at a time (Settings ▸ Agent)"
+
+    spin.setValue(2)
+    assert services.actions.spec("agent.run").state(services.context.current()).enabled
+    page.deleteLater()
+
+
+def test_one_step_that_cannot_run_greys_the_verb_for_all_of_them(services, step):
+    """Launching the subset that qualifies would run fewer agents than were asked for and
+    say nothing about it, so the refusal names the step and its reason."""
+    from dplanner.domain.commands import AddNodeCommand
+    from dplanner.domain.model import Step
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    plain = Step(title="Write the release note")
+    AddNodeCommand(project.id, plain).redo(services.document)
+    select_all(services, step, plain)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.visible and not state.enabled
+    assert state.label == (
+        "Run 2 Agents — “Write the release note”: mark the step as an agent step first"
+        " (Step ▸ Type ▸ Agent)"
+    )
+
+
+def test_a_selection_spanning_two_projects_opens_each_shell_in_its_own_repository(
+    services, step, library_repo, tmp_path, monkeypatch
+):
+    """Where a shell can open is the project's fact, asked once per project — so a
+    selection across two of them must not answer for one with the other's."""
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.seed import seed_project
+
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    second_repo = init_repo(tmp_path / "second")
+    satellite = services.repo.attach(seed_project(second_repo / "satellite", "Satellite"))
+    services.document.add_child(services.document.id, satellite)
+    select_all(services, step, briefed(services, satellite, "Wire the antenna"))
+    assert services.actions.spec("agent.run").state(services.context.current()).enabled
+
+    calls: list[Path] = []
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd: calls.append(cwd))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+    services.actions.run("agent.run", services.context.current())
+    assert calls == [library_repo, second_repo]
+
+
+def test_one_box_asks_about_every_chosen_step_that_waits(services, step, monkeypatch):
+    """One gesture, one question: a box per step would ask four times about one decision,
+    and Cancel means none of them."""
+    from dplanner.domain.commands import SetEdgesCommand
+
+    project = services.document.project_of(step.id)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    prepare = briefed(services, project, "Prepare")
+    review = briefed(services, project, "Review")
+    other = briefed(services, project, "Migrate")
+    SetEdgesCommand(step.id, "requires", [prepare.id]).redo(services.document)
+    SetEdgesCommand(other.id, "requires", [review.id]).redo(services.document)
+    select_all(services, step, other)
+
+    calls = _fake_terminal(monkeypatch)
+    boxes = _record_boxes(monkeypatch, click=None)
+    services.actions.run("agent.run", services.context.current())
+    assert calls == []
+    ((_title, text, detail),) = boxes
+    assert text == "2 of the chosen steps wait on work not done yet."
+    assert "Deploy waits on:\n• Prepare — pending" in detail
+    assert "Migrate waits on:\n• Review — pending" in detail
+    assert "Run them anyway?" in detail
 
 
 # -- where the agent works: the step's own fact ---------------------------------------------

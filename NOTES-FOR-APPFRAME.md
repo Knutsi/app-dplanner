@@ -1112,6 +1112,29 @@ from its contents — the spec-fed child menus' rule — would make the capabili
 the data.
 
 
+### `framework/step_selection.py` — "which entity does this verb act on", in one place
+
+**What.** `focused_step` moved out of `framework/aspect_toggle.py` and `chosen_steps` out of
+`modules/project_editor/verbs.py` into a file that holds both, with one parameter order
+(`(context, library)`). Nothing else changed: the two bodies are what they were.
+
+**Why.** `chosen_steps` — *the selection, else what the activity is about* — had been the
+private rule of the module that owns Delete, Cut, Copy, Duplicate and Isolate. Run Agent
+learned to act on a multi-selection too, and it lives in a module that may not import that
+one, so the rule was about to exist twice; a second copy is how two verbs come to disagree
+about what "these steps" means, which is the very drift the original docstring was written
+against. Its twin was already in the framework, under a filename that named a Type toggle
+rather than a selection.
+
+**For upstream.** The pair generalises past steps: the questions are *the one entity to act
+on* and *the entities to act on*, and every application built from the template asks them.
+An upstream version would be `focused_entity(context, kind, exists)` /
+`chosen_entities(context, kind, exists)` over any entity kind, with the model lookup handed
+in — the template's `Context` already speaks kinds, and `framework/` has no model to ask.
+We kept ours typed to `Library`/`Step` because that is what every call site here wants and a
+generic pair would have made both call sites longer than the function.
+
+
 ## 2. Conventions the template documents that we had to change
 
 ### A module package's `__init__.py` must not re-export the Qt class

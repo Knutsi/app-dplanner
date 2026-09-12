@@ -2174,6 +2174,41 @@ The assembly is also where the CLI grew the composition root's other seam:
 what crosses modules arrives as arguments — `skill_commands(specs, described)` made that
 shape first, and this is its second use.
 
+### One agent per chosen step, and why the limit is the last check
+
+*Run Agent* reads `chosen_steps` — the framework's one reading of *which steps is this verb
+about*, the same one Delete, Cut, Copy, Duplicate and Isolate act on — so a lasso over three
+agent steps is *Run 3 Agents…*, and the verb needed no gesture of its own to learn it. Three
+decisions came with that.
+
+**Every chosen step must be launchable, or none is.** A step in the selection with no
+briefing, no agent mark or no checkout greys the verb for the whole selection, and the label
+names that step and its reason. Running the subset that qualifies is the tempting
+alternative and the wrong one: it launches fewer agents than were asked for and says so
+nowhere, and the person finds out by counting terminals. This is *hidden means absent;
+disabled means not now* applied to a set — the precondition is still taught, it just now
+names which member failed it.
+
+**The graph gate asks once.** Prerequisites are checked per step, but the question is one
+box for the gesture, listing each waiting step with what it waits on. A box per step would
+ask four times about a single decision, and *Run Anyway* on the third of four would leave
+the person unable to say what they had already agreed to. Cancel means none of them, which
+is the only honest reading of one question.
+
+**The count is a precondition, not a warning.** Four agents is four terminals, four
+worktrees, four live sessions and four `dplanner` writers against one plan; a selection is
+made with one flick of the wrist and can hold the whole graph. So *Settings ▸ Agent* carries
+**Agents at once** — four by default — and a selection past it greys the verb with the
+number rather than asking. A confirmation would be the wrong shape here: the limit is not a
+risk to accept once, it is a standing statement about what this desk can hold, so the way
+past it is to change it in the one place it lives. It sits beside the agent command and the
+terminal template for that reason — per user, per machine, never in the plan, because how
+many peers one machine can carry is not a fact about the project.
+
+`_run` re-checks the limit rather than trusting the state gate, on the same principle every
+verb here follows: a presenter may run a stale state, and the guard that matters is the one
+in the act.
+
 ### The peer is a top-level session, and the briefing stays out of argv
 
 Four agents died at once on 2026-09-05, and DPlanner had not crashed: it was killed, with
