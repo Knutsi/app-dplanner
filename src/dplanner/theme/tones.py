@@ -14,6 +14,10 @@ Teal because of where the hues already are: it sits 76° from the milestone's vi
 the two collectors never read as one, and 42° from the done green — which additionally
 *mutes* its node, so the pair is told apart by weight as well as by hue, and a feature
 still wears its layer medallion. Fill low-alpha, border full-strength.
+
+The status tones — good, busy, bad — are the spine's shades on the canvas and the dot a
+``StatusLine`` wears in a dialog's footer: one word for "this is where the work stands"
+wherever it is said, which is why they live here and not with the canvas painters.
 """
 
 from PySide6.QtGui import QColor
@@ -40,6 +44,12 @@ BODY_TONES: dict[str, tuple[QColor, QColor]] = {
 }
 
 BUTTON_FILL_ALPHA = 70
+
+# Where the work stands, at an alpha that reads as ink rather than as a wash.
+VALID_TINT = QColor(120, 200, 140, 180)
+INVALID_TINT = QColor(220, 110, 110, 180)
+BUSY_TINT = QColor(110, 160, 220, 180)
+STATUS_TONES: dict[str, QColor] = {"good": VALID_TINT, "busy": BUSY_TINT, "bad": INVALID_TINT}
 
 
 def button_tone(name: str) -> tuple[QColor, QColor] | None:

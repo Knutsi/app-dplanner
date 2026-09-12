@@ -29,6 +29,7 @@ from weakref import WeakSet
 from PySide6.QtCore import QObject, QTimer
 from shiboken6 import isValid
 
+from dplanner.core.signals import Signal
 from dplanner.core.telemetry import current, describe_slot
 
 # After a quiet spell of this long a table, a list or a board rebuilds. The assets tab's
@@ -86,7 +87,13 @@ class DebounceService:
 
 
 class Debounced(QObject):
-    """One coalesced action: ``trigger()`` as often as you like, it runs once."""
+    """One coalesced action: ``trigger()`` as often as you like, it runs once.
+
+    ``pending_changed`` says when a run is owed and when it has happened: ``True`` on the
+    first trigger of a burst, ``False`` once the action returned (or raised, or was
+    cancelled) — what an *Updating…* indicator over the view follows. In immediate mode
+    both arrive inside the one ``trigger()`` call.
+    """
 
     def __init__(
         self,
@@ -101,6 +108,8 @@ class Debounced(QObject):
         self._service = service
         self._delay_ms = delay_ms
         self._folded = 0  # Triggers since the last run — what one run stood for.
+        self._pending = False
+        self.pending_changed: Signal[bool] = Signal("debounce.pending")
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(delay_ms)
@@ -111,6 +120,9 @@ class Debounced(QObject):
 
         def trigger() -> None:
             self._folded += 1
+            if not self._pending:
+                self._pending = True
+                self.pending_changed.emit(True)
             if self._service is not None and self._service.immediate:
                 self._timer.stop()
                 self._run()
@@ -131,11 +143,20 @@ class Debounced(QObject):
     def cancel(self) -> None:
         self._timer.stop()
         self._folded = 0
+        self._settle()
 
     def pending(self) -> bool:
         return self._timer.isActive()
 
     def _run(self) -> None:
         folded, self._folded = self._folded, 0
-        with current().span("refresh", self.name, coalesced=folded, delay_ms=self._delay_ms):
-            self._action()
+        try:
+            with current().span("refresh", self.name, coalesced=folded, delay_ms=self._delay_ms):
+                self._action()
+        finally:
+            self._settle()  # A rebuild that raised is still over: the indicator must not stick.
+
+    def _settle(self) -> None:
+        if self._pending:
+            self._pending = False
+            self.pending_changed.emit(False)

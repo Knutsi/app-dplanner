@@ -32,7 +32,6 @@ LIFT = 2.0
 
 # Secondary text as opacity rather than a theme colour: a painter has only the palette, and
 # an alpha-derived secondary is theme-independent by construction (DESIGN.md exception #1).
-SECONDARY_ALPHA = 160
 FILL_ALPHA = 28
 
 # What a surface that lights part of itself fades the rest to. Two of them do — the coverage

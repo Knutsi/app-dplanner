@@ -55,7 +55,6 @@ from dplanner.theme.cards import (
     PADDING,
     RADIUS,
     RESTING_SHADOW,
-    SECONDARY_ALPHA,
     SELECTED_BORDER_W,
     SELECTED_FILL_GAIN,
     over,
@@ -64,6 +63,7 @@ from dplanner.theme.cards import (
     title_lines,
 )
 from dplanner.theme.icons import paint_beaker_glyph, paint_layers_glyph, paint_tag_glyph
+from dplanner.theme.tokens import SECONDARY_ALPHA
 from dplanner.theme.tones import BODY_TONES, GOOD_BORDER
 
 # DESIGN.md's 4-point scale: the tab page's 16, a lane's 12 inside, 12 between cards.

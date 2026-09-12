@@ -103,6 +103,52 @@ def test_a_run_is_a_refresh_span_named_for_the_view(host, qtbot):
     assert debounced.trigger.__wrapped__ == view.refresh  # type: ignore[attr-defined]
 
 
+def test_pending_changed_says_once_when_a_burst_starts_and_once_when_it_ran(host, qtbot):
+    view = _View()
+    debounced = Debounced(view.refresh, 30, parent=host)
+    heard: list[bool] = []
+    debounced.pending_changed.connect(heard.append)
+    for _ in range(5):
+        debounced.trigger()
+    assert heard == [True]
+    qtbot.wait(120)
+    assert heard == [True, False] and view.rebuilds == 1
+
+
+def test_immediate_mode_settles_the_pending_state_within_the_trigger(host):
+    service = DebounceService()
+    service.set_immediate(True)
+    debounced = Debounced(_View().refresh, 30, parent=host, service=service)
+    heard: list[bool] = []
+    debounced.pending_changed.connect(heard.append)
+    debounced.trigger()
+    assert heard == [True, False]
+
+
+def test_cancel_settles_the_pending_state(host):
+    debounced = Debounced(_View().refresh, 30, parent=host)
+    heard: list[bool] = []
+    debounced.pending_changed.connect(heard.append)
+    debounced.trigger()
+    debounced.cancel()
+    assert heard == [True, False]
+
+
+def test_an_action_that_raises_still_settles(host):
+    """An indicator following the view must not stay up over a rebuild that failed."""
+
+    def broken() -> None:
+        raise RuntimeError("rebuild failed")
+
+    debounced = Debounced(broken, 30, parent=host)
+    heard: list[bool] = []
+    debounced.pending_changed.connect(heard.append)
+    debounced.trigger()
+    with pytest.raises(RuntimeError):
+        debounced.flush()
+    assert heard == [True, False] and not debounced.pending()
+
+
 def test_a_debouncer_whose_parent_died_is_no_longer_live(app):
     """The timer goes with the widget, and the service must not ask a dead one anything."""
     service = DebounceService()
