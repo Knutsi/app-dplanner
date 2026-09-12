@@ -40,3 +40,28 @@ def test_the_caption_and_the_note_wear_the_panel_names(host):
     assert caption("Estimate", host).objectName() == "InspectorCaption"
     remark = note("3 pages changed at the source", host)
     assert remark.objectName() == "InspectorNote" and remark.wordWrap()
+
+
+def test_confirm_is_a_frame_whose_default_never_discards(app, monkeypatch):
+    from PySide6.QtWidgets import QDialog, QPushButton
+
+    from dplanner.framework.dialog import DialogFrame
+    from dplanner.framework.widgets import confirm
+
+    seen = []
+
+    def fake_exec(self):
+        seen.append(self)
+        return int(QDialog.DialogCode.Rejected)
+
+    monkeypatch.setattr(DialogFrame, "exec", fake_exec)
+    assert confirm(None, "Delete Layout", "Delete the layout “Wide”?", verb="Delete") is False
+    (dialog,) = seen
+    assert dialog.title_label.text() == "Delete Layout"
+    assert dialog.lead_label.text() == "Delete the layout “Wide”?"
+    assert dialog.findChild(QPushButton, "PrimaryButton") is None
+    names = [b.text() for b in dialog.footer_buttons()]
+    assert names == ["Delete", "Cancel"]
+    assert [b.isDefault() for b in dialog.footer_buttons()] == [False, True]
+    monkeypatch.setattr(DialogFrame, "exec", lambda self: int(QDialog.DialogCode.Accepted))
+    assert confirm(None, "Delete Layout", "Delete it?") is True

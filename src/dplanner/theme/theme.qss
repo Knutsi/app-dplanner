@@ -742,6 +742,46 @@ QToolButton[repoTool="true"]:hover {
     padding: 2px 6px;
 }
 
+/* ---- Dialogs (framework/dialog.py) ------------------------------------------------- */
+
+/* The frame names its parts, and every dialog on it is styled through these two names —
+   never through its own. The lead under the title is the secondary remark; the footer's
+   buttons are quiet bordered secondaries, and the one primary is the rule at the end. */
+#DialogLead {
+    color: $TEXT_SECONDARY;
+}
+
+#DialogFooter QPushButton {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_PRIMARY;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    padding: 6px 14px;
+}
+
+#DialogFooter QPushButton:hover {
+    border-color: $BORDER_STRONG;
+}
+
+#DialogFooter QPushButton:disabled {
+    color: $TEXT_DISABLED;
+}
+
+/* A field in a dialog's body: the panel field's look (#InspectorTitle), with the accent
+   saying where the keyboard is. Line and text edits only — a bordered QComboBox has to draw
+   its own arrow, and a boxed QSpinBox shows two styles; Fusion paints both from the palette. */
+#DialogBody QLineEdit, #DialogBody QPlainTextEdit, #DialogBody QTextEdit {
+    background-color: $BG_BASE;
+    color: $TEXT_PRIMARY;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    padding: 6px 8px;
+}
+
+#DialogBody QLineEdit:focus, #DialogBody QPlainTextEdit:focus, #DialogBody QTextEdit:focus {
+    border-color: $ACCENT;
+}
+
 /* ---- The primary button ------------------------------------------------------------ */
 
 /* One accent primary per surface (DESIGN.md's *Buttons*), wherever it is. Type-prefixed

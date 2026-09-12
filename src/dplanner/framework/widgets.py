@@ -13,9 +13,9 @@ from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QTextBlockFormat, QTextCursor, QWheelEvent
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
+    QDialog,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
@@ -43,12 +43,19 @@ def space_lines(pane: QPlainTextEdit) -> None:
     cursor.mergeBlockFormat(block)
 
 
-def confirm(parent: QWidget | None, title: str, question: str) -> bool:
-    """A Yes/No prompt for an action that throws work away; No is the default so Enter
-    never discards anything."""
-    buttons = QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-    answer = QMessageBox.question(parent, title, question, buttons, QMessageBox.StandardButton.No)
-    return answer == QMessageBox.StandardButton.Yes
+def confirm(parent: QWidget | None, title: str, question: str, *, verb: str = "Yes") -> bool:
+    """A confirmation for an action that throws work away, on the dialog frame: the
+    question as its lead, the verb a quiet button (it discards, so no accent), and Cancel
+    the default so Enter never discards anything."""
+    # The frame is built from this module's helpers, so it is imported here, not above.
+    from dplanner.framework.dialog import DialogFrame
+
+    dialog = DialogFrame(title, parent, lead=question)
+    dialog.add_button(verb, dialog.accept)
+    dialog.add_dismiss()
+    answer = dialog.exec() == QDialog.DialogCode.Accepted
+    dialog.deleteLater()
+    return answer
 
 
 def caption(text: str, parent: QWidget | None = None) -> QLabel:
