@@ -2482,6 +2482,10 @@ on the first field or the default button. Three sizes: fit (a 420 px floor), fra
 (clamped to `SCREEN_SHARE`), editor. `LinePrompt` is one captioned field and a verb, refused
 while blank or while `validate` objects, with a class method `ask`.
 
+**Superseded by §30 (S6):** the title and the lead were taken out of the body. A
+heading inside a dialog repeats the title bar and pushes the content down; `title` now
+names the window only, and what a dialog is about is said by its content.
+
 **Why.** Twenty-four dialogs, two button strategies, margins of 20/16/12/8/none, four that
 set focus, a footer whose default was *Clear*. The frame names its parts so the stylesheet
 reaches every dialog through two constant names — the enumerated `#X QPushButton` lists
@@ -2727,7 +2731,94 @@ project commits is the project's, however much it looks like an appearance setti
 menu then presents the shared value rather than owning one.
 
 **Upstream?** As a paragraph in the docs' preference guidance, not as code.
-## 30. From the signalling pass
+## 30. From the step-details pass (S6)
+
+The first surface brought up to the design system after it landed — which is exactly the
+job of finding out what a primitive is missing. Three of the four notes below are things
+`Toolbar` needed the moment it was fed from an action registry rather than from hand-wired
+slots, which DESIGN.md's *Toolbars* predicted would happen "in the design passes".
+
+### `framework/toolbar.py` — `Toolbar(dense=True)`
+
+**What.** A mode that keeps `CONTROL_HEIGHT` and narrows a strip's button sides and gaps to
+`DENSE_GAP`. Set as a Qt *property* on the widget, so the stylesheet reaches it as
+`#ControlBar[dense="true"] #ToolbarButton`; no new object name.
+
+**Why.** A strip of *verbs* may fold gracefully into the `…` menu, because losing a verb
+costs a click. The aspect bar is not a strip of verbs: it answers *what does this step
+carry*, and a row that folds stops answering. Measured — the step panel cannot be narrower
+than 479 px (its tab pages set that, not the bar), leaving the strip about 356; at the verb
+strip's 45 px buttons that seats **five** of the ten Type toggles, and at the dense 29 px it
+seats **all ten**. The alternative was the surface-named exception this replaced
+(`#AspectBarTools #ToolbarButton { padding: 5px 4px }`), which is precisely what DESIGN.md
+forbids: "never styling one surface by name".
+
+**Upstream?** Yes. Any template with a state strip beside a verb strip wants the
+distinction, and expressing it as a property rather than a name is what keeps the
+stylesheet from growing a rule per surface.
+
+### `framework/toolbar.py` — `add_verb(tip=…)`
+
+**What.** An optional standing tooltip. `_retip` prefers it over the action's words.
+
+**Why.** `_retip` is connected to `action.changed` and forces the tooltip to equal the
+action's text, so a host that sets a tooltip has it reverted on the next `setText`. That is
+right for a hand-wired verb — "a verb is a glyph, and its words are the tooltip" — but a
+registry's `ActionSpec` carries both a label *and* a `tip`, and a host that rewords an
+action to carry a refusal (*disabled, never hidden*) would lose the standing explanation
+with it. The tip stands in the tooltip; the words still name the `…` menu's entry.
+
+**Upstream?** Yes, with the note that it exists for registry-fed toolbars.
+
+### `framework/dialog.py` — `showEvent` skips the tab-order pass with no footer
+
+**What.** The `setTabOrder` loop runs only when `footer_buttons()` is non-empty.
+
+**Why.** The rule it implements is "the first Tab out of the body lands on the primary".
+With no footer there is nothing to land on, and the loop still walks every tab-focusable
+widget in the body and re-links them in `findChildren` order. For a dialog whose body is a
+whole panel — the step details dialog, the frame's own worked example of a button-less
+dialog — that is about a hundred `setTabOrder` calls that make the tab order *worse* than
+the one the panel built. The focus block is untouched.
+
+**Upstream?** Yes; it is a bug in the frame, not a divergence.
+
+### `framework/dialog.py` — no title and no lead in the body
+
+**What.** `DialogFrame` no longer prints a heading: `title_label` and `lead_label` are gone
+with the `lead` parameter, `set_title` sets the window title alone, and `confirm()` puts its
+question in the body. `LinePrompt` loses its `lead` too — its caption already says what it
+wants. Supersedes §28's anatomy.
+
+**Why.** Seen on a real surface rather than on the example, the two lines read as chrome: a
+title repeating the title bar, and a lead repeating what the content below already showed,
+between them pushing a small dialog's content a line and a half down. A dialog is opened for
+its content, and its content is what should be at the top. A confirmation's question is not
+a heading over the dialog — it *is* the dialog.
+
+**Upstream?** Yes. It is the sort of rule that only a second surface disproves, which is
+what design passes are for.
+
+### `framework/aspect_bar.py` — a `refreshed` signal, and no `visible`
+
+**What.** Its state triple is `(enabled, checked)` rather than `(visible, enabled,
+checked)`. (A `refreshed` signal was added here too, for the dialog lead that repeated the
+bar's answer; the lead went in the same pass and the signal with it — noted because the
+*reason* it was needed outlives it.)
+
+**Why.** Two things a host learns only by building a second reader of the bar's answer.
+(1) A host that repeats a derived control's answer cannot get it by listening to the
+*model*: applying a template ends with the bar's own `refresh()`, after the last write
+anybody heard, so a model listener renders one gesture behind. The derived thing must
+announce. (2) `state().visible` was dead and also unhonourable: a
+`Toolbar` re-shows whatever fits on every reflow, so a hidden verb would be resurrected by
+the next resize. *Hidden means absent; disabled means not now* already covers the case, and
+an aspect a build does not ship never reaches the registry at all.
+
+**Upstream?** The announcement rule, as a paragraph rather than as code. The `visible`
+removal is specific to a strip that owns widget visibility, and is worth saying out loud in
+`Toolbar`'s docstring upstream.
+## 31. From the signalling pass
 
 ### `framework/signalling.py` — one motion, two places to put it
 

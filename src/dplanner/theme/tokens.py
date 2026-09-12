@@ -25,6 +25,7 @@ SECTION_GAP: Final = 12  # Between sections; between blocks; between cards; body
 FIELD_GAP: Final = 8  # Fields within a section; footer buttons.
 CONTROL_GAP: Final = 12  # Between the controls on a strip: a packed row of verbs reads as one.
 CONTROL_HEIGHT: Final = 32  # Every control on a strip: a glyph button, a worded one, a combo.
+DENSE_GAP: Final = 4  # Between the glyphs of a dense strip: a set read at once, not aimed at.
 CAPTION_GAP: Final = 6  # A caption to its field, a note to its field.
 PANEL_MARGIN: Final = 16  # Side panels and tab pages.
 # A rich row (a list of two-line items, a two-line table cell): DESIGN.md's list-row rule.

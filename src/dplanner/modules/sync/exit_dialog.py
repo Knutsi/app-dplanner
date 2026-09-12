@@ -9,9 +9,9 @@ Committing** leaves them dirty for next time, and **Cancel** stays.
 One commit message covers every checked repository: a quit-time save is one gesture, and
 the per-repo default ("Save: <timestamp>") stands in when the field is left empty.
 
-It is a :class:`DialogFrame` (DESIGN.md's *Dialogs*): the title printed in the body, a lead
-naming what is at stake, and a footer whose slots put *Quit Without Committing* in the
-destructive place — a different exit that costs something, as far from the accent as the
+It is a :class:`DialogFrame` (DESIGN.md's *Dialogs*): what is at stake as the body's first
+line, the repositories under it, and a footer whose slots put *Quit Without Committing* in
+the destructive place — a different exit that costs something, as far from the accent as the
 footer allows — with Cancel beside the primary, where the eye goes to leave.
 """
 
@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from PySide6.QtWidgets import QCheckBox, QLineEdit, QVBoxLayout, QWidget
 
 from dplanner.framework.dialog import DialogFrame
-from dplanner.framework.widgets import caption
+from dplanner.framework.widgets import caption, note
 from dplanner.theme.tokens import CAPTION_GAP
 
 
@@ -35,15 +35,15 @@ class ExitDialog(DialogFrame):
     """Which dirty repositories to commit on the way out, and with what message."""
 
     def __init__(self, rows: list[DirtyRepoRow], parent: QWidget | None = None) -> None:
-        count = len(rows)
-        super().__init__(
-            "Record Changes Before Quitting",
-            parent,
-            lead=(f"{count} repository has" if count == 1 else f"{count} repositories have")
-            + " planning changes that are not committed.",
-        )
+        super().__init__("Record Changes Before Quitting", parent)
         self.setObjectName("ExitDialog")
         self.discard = False
+
+        count = len(rows)
+        has = "repository has" if count == 1 else "repositories have"
+        self.body_layout.addWidget(
+            note(f"{count} {has} planning changes that are not committed.", self.body)
+        )
 
         self._checks: list[QCheckBox] = []
         for row in rows:

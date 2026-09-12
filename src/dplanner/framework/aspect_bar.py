@@ -1,25 +1,36 @@
-"""The aspect bar: templates on the left, every aspect toggle on the right.
+"""The aspect bar: every aspect toggle on the left, the template it amounts to on the right.
 
-The right half renders one child menu of the action table — Step ▸ Type — and never keeps
-a list of its own: every glyph is a registered toggle, run through ``registry.run`` with
-the context the host hands over, so each stays one undoable command and an aspect a build
-does not ship has no button.
+The left renders one child menu of the action table — Step ▸ Type — and never keeps a list
+of its own: every glyph is a registered toggle, run through ``registry.run`` with the
+context the host hands over, so each stays one undoable command and an aspect a build does
+not ship has no button. It is a :class:`~dplanner.framework.toolbar.Toolbar`, so what no
+longer fits folds into that strip's ``…`` menu as glyph *and* words. Dense, because these
+glyphs are read as one set — the row answers *what does this step carry* — rather than
+aimed at one at a time, and a set that folds stops answering.
 
-The left half is **templates**: named combinations of those toggles, handed over by the
-composition root as data (a template is wired, never inferred). Clicking one runs whichever
+The right is **templates**: named combinations of those toggles, handed over by the
+composition root as data (a template is wired, never inferred). They are one dropdown
+rather than a row of buttons, because only one of them is ever true at a time — five worded
+buttons said the same thing five times and only one of them was ever right. The face is
+named for what it offers, *Template*, and the menu is where the templates are: which one
+the step amounts to is the ticked entry, so the bar reads as the toggles plus a way to set
+them all at once rather than as two claims about the step. Picking one runs whichever
 toggles differ — on for the template's set, off for everything else — inside one undo
 gesture, so *Make Milestone* is one Ctrl+Z however many aspects it moved. And it goes both
 ways: a template reads as selected exactly when the step carries its set and nothing else,
-so a combination somebody built by hand lights up the template it amounts to — and one
-template may be the **catch-all**, lit whenever no other matches, because a step with an
-unnamed combination of aspects is still a step. The bar never stores which template is
-"current"; it is a comparison on every refresh.
+so a combination somebody built by hand names itself — and one template may be the
+**catch-all**, worn whenever no other matches, because a step with an unnamed combination
+of aspects is still a step. The bar never stores which template is current; it is a
+comparison on every refresh.
 
-Two ``QToolBar``s rather than one row of buttons, for the same reason the Tests tab has
-two: a ``QToolBar`` too narrow for its contents grows the » overflow button and puts the
-tail in a menu — as checkable entries, check marks and all — where a plain row would
-simply clip. The left bar takes the slack, so at a width where anything has to go, the
-toggles keep their glyphs and the templates fold first.
+The face sits **beside** the strip and not in it. A widget on a ``Toolbar`` hides when
+there is no room; the one way to set a step's whole shape at once must survive every width,
+for the reason the canvas's layout picker and the *Updating…* indicator sit outside theirs.
+
+A toggle's ``state()`` never returns ``visible=False``, and the bar could not honour it if
+it did: a strip re-shows whatever fits on every reflow. That costs nothing — *hidden means
+absent; disabled means not now* already says a toggle that cannot apply is greyed, and an
+aspect this build does not ship never reaches the registry at all.
 
 The context arrives as a function, not a ``ContextService``: the panel inside the details
 dialog shows a step nobody selected and names it itself, and the bar cannot tell the
@@ -30,63 +41,33 @@ may have changed another toggle's state — and which template matches.
 from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QAction, QColor
-from PySide6.QtWidgets import QHBoxLayout, QToolBar, QToolButton, QWidget
+from PySide6.QtCore import QEvent, QSize, Qt
+from PySide6.QtGui import QAction, QColor, QIcon, QPalette
+from PySide6.QtWidgets import QHBoxLayout, QMenu, QToolButton, QWidget
 
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.context import Context
+from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.undo import UndoService
 from dplanner.theme.icons import ICON_SIZE, glyph_painter
+from dplanner.theme.tokens import CONTROL_HEIGHT, FIELD_GAP, SECONDARY_ALPHA, SECTION_GAP
 from dplanner.theme.tones import button_tone
 
-# DESIGN.md: a strip of verbs is chrome — 8 px inside its own frame, 12 between groups.
-# Sixteen buttons share this row, so they sit 4 apart rather than the canvas strip's 6.
-STRIP_MARGIN = 8
-GROUP_GAP = 12
-BUTTON_GAP = 4
+FACE = "Template"  # The face is named for what it offers; the menu says which one is on.
 
 
 @dataclass(frozen=True)
 class AspectTemplate:
-    """One template on the bar's left: a name, the toggles that are on, and its look."""
+    """One template the bar's dropdown offers: a name, the toggles that are on, its look."""
 
     label: str
     toggles: frozenset[str]  # Type toggle action ids that are on; every other one is off.
-    tone: str | None = None  # A name in ``theme.tones.BODY_TONES``; None keeps the accent.
+    tone: str | None = None  # A name in ``theme.tones.BODY_TONES``; None keeps the plain ink.
     glyph: str | None = None  # A name in ``theme.icons.GLYPH_ICONS``; None draws none.
-    catch_all: bool = False  # Selected whenever no template matches exactly.
-
-
-def _tool_bar(parent: QWidget) -> QToolBar:
-    bar = QToolBar(parent)
-    bar.setObjectName("AspectBarTools")
-    bar.setMovable(False)
-    bar.setFloatable(False)
-    bar.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
-    inner = bar.layout()
-    if inner is not None:
-        inner.setSpacing(BUTTON_GAP)
-        inner.setContentsMargins(0, 0, 0, 0)
-    return bar
-
-
-def _button(bar: QToolBar, action: QAction, *, worded: bool) -> QToolButton | None:
-    bar.addAction(action)
-    button = bar.widgetForAction(action)
-    if not isinstance(button, QToolButton):
-        return None
-    button.setObjectName("ToolbarButton")
-    # A toolbar never takes the keyboard from the editor it sits above.
-    button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    button.setToolButtonStyle(
-        Qt.ToolButtonStyle.ToolButtonTextBesideIcon
-        if worded
-        else Qt.ToolButtonStyle.ToolButtonIconOnly
-    )
-    return button
+    catch_all: bool = False  # Worn whenever no template matches exactly.
 
 
 class AspectBar(QWidget):
@@ -114,28 +95,48 @@ class AspectBar(QWidget):
         }
         self._actions: dict[str, QAction] = {}
         self._templates: list[tuple[AspectTemplate, QAction]] = []
+        self._selected: AspectTemplate | None = None
 
-        self.templates_bar = _tool_bar(self)
-        self.toggles_bar = _tool_bar(self)
+        self.tools = Toolbar(self, dense=True)
+        self.face = QToolButton(self)
+        self.face.setObjectName("TemplateButton")
+        self.face.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.face.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.face.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.face.setText(FACE)
+        self.face.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.face.setFixedHeight(CONTROL_HEIGHT)
+        self._menu = QMenu(self.face)
+        self.face.setMenu(self._menu)
+
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN)
-        layout.setSpacing(GROUP_GAP)
-        layout.addWidget(self.templates_bar, 1)
-        layout.addWidget(self.toggles_bar)
+        layout.setContentsMargins(FIELD_GAP, FIELD_GAP, FIELD_GAP, FIELD_GAP)
+        layout.setSpacing(SECTION_GAP)
+        layout.addWidget(self.tools, 1)
+        layout.addWidget(self.face)
 
+        for action_id, spec in self._specs.items():
+            # The words are the tooltip and the … menu's entry; the spec's own tip, where it
+            # has one, stands in the tooltip so rewording a refusal never loses it.
+            self._actions[action_id] = self.tools.add_verb(
+                spec.label.replace("&", ""),
+                spec.icon if spec.icon is not None else _no_glyph,
+                partial(self._run, action_id),
+                checkable=True,
+                tip=spec.tip,
+            )
         for template in templates:
-            action = QAction(template.label, self.templates_bar)
+            # Built once and parented to the bar, not rebuilt when the menu opens: templates
+            # are construction data, not model data, so their actions are stable — which is
+            # what lets ``template(label)`` name one and ``refresh`` tick it.
+            action = QAction(template.label, self)
             action.setCheckable(True)
             action.setToolTip(self._describe(template))
             action.triggered.connect(lambda _on=False, t=template: self._apply(t))
-            _button(self.templates_bar, action, worded=True)
+            self._menu.addAction(action)
             self._templates.append((template, action))
-        for action_id, spec in self._specs.items():
-            action = QAction(spec.label.replace("&", ""), self.toggles_bar)
-            action.setCheckable(True)
-            action.triggered.connect(lambda _on=False, a=action_id: self._run(a))
-            _button(self.toggles_bar, action, worded=False)
-            self._actions[action_id] = action
+
+        self._reink()
         self.refresh()
 
     # -- what a template is made of ------------------------------------------------------------
@@ -148,11 +149,11 @@ class AspectBar(QWidget):
         ]
         return f"{template.label}: {', '.join(names)}" if names else template.label
 
-    def _states(self) -> dict[str, tuple[bool, bool, bool]]:
-        """Per toggle: (visible, enabled, checked) right now."""
+    def _states(self) -> dict[str, tuple[bool, bool]]:
+        """Per toggle: (enabled, checked) right now."""
         now = self._context()
         return {
-            action_id: (state.visible, state.enabled, bool(state.checked))
+            action_id: (state.enabled, bool(state.checked))
             for action_id, spec in self._specs.items()
             for state in (spec.state(now),)
         }
@@ -169,8 +170,8 @@ class AspectBar(QWidget):
         """Run every toggle that differs from the template, as one undo step."""
         changes = [
             action_id
-            for action_id, (visible, enabled, checked) in self._states().items()
-            if visible and enabled and checked != (action_id in template.toggles)
+            for action_id, (enabled, checked) in self._states().items()
+            if enabled and checked != (action_id in template.toggles)
         ]
         grouping = (
             self._undo.gesture(f"Make {template.label}")
@@ -184,52 +185,67 @@ class AspectBar(QWidget):
 
     def refresh(self) -> None:
         """Re-read every toggle's state, and which template the step now amounts to."""
-        states = self._states()
         now = self._context()
+        states: dict[str, tuple[bool, bool]] = {}
         for action_id, action in self._actions.items():
             spec = self._specs[action_id]
             state = spec.state(now)
+            states[action_id] = (state.enabled, bool(state.checked))
             label = (state.label if state.label is not None else spec.label).replace("&", "")
-            action.setVisible(state.visible)  # Hidden means this build lacks the capability.
             action.setEnabled(state.enabled)
             action.setChecked(bool(state.checked))
             action.setText(label)
-            action.setToolTip(spec.tip or label)
-        offered = {action_id for action_id, (visible, _e, _c) in states.items() if visible}
-        checked = {action_id for action_id, (_v, _e, is_on) in states.items() if is_on}
-        any_enabled = any(enabled for _v, enabled, _c in states.values())
+        checked = {action_id for action_id, (_e, is_on) in states.items() if is_on}
+        any_enabled = any(enabled for enabled, _c in states.values())
         # Exactly its set, and nothing else the build offers: a combination is a template.
+        # What the build offers is what registered — an aspect this build lacks has no spec.
+        offered = set(self._specs)
         matched = {
             template.label
             for template, _action in self._templates
             if checked == (template.toggles & offered)
         }
+        selected: AspectTemplate | None = None
         for template, action in self._templates:
             action.setEnabled(any_enabled)
-            selected = template.label in matched or (template.catch_all and not matched)
-            action.setChecked(any_enabled and selected)
+            is_selected = template.label in matched or (template.catch_all and not matched)
+            action.setChecked(any_enabled and is_selected)
+            if is_selected and selected is None:
+                selected = template
+        self._selected = selected if any_enabled else None
+        self.face.setEnabled(any_enabled)
+        self.face.setToolTip(
+            f"{self._describe(selected)} — pick another"
+            if selected is not None
+            else "Set every aspect at once"
+        )
 
-    def paint(self, ink: str | QColor) -> None:
-        """Glyphs in the theme's secondary text colour; re-call on theme change."""
-        colour = QColor(ink)
-        for action_id, action in self._actions.items():
-            spec = self._specs[action_id]
-            if spec.icon is not None:
-                action.setIcon(spec.icon(colour))
+    # -- ink ---------------------------------------------------------------------------------
+
+    def _ink(self) -> QColor:
+        ink = self.palette().color(QPalette.ColorRole.Text)
+        ink.setAlpha(SECONDARY_ALPHA)
+        return ink
+
+    def _reink(self) -> None:
+        """Every template's glyph in the menu, in that template's body tone.
+
+        The tone rides on the glyph and nothing else: it is the one thing in that menu that
+        changes with the data, which is what makes a feature's entry and a feature node one
+        identity, and DESIGN.md's *Toolbars* rules out a fill for a state anyway. The strip
+        beside it inks its own glyphs.
+        """
+        ink = self._ink()
         for template, action in self._templates:
             painter = glyph_painter(template.glyph) if template.glyph else None
             if painter is not None:
-                action.setIcon(painter(colour))
-            tone = button_tone(template.tone) if template.tone else None
-            button = self.templates_bar.widgetForAction(action)
-            if tone is not None and button is not None:
-                fill, border = tone
-                button.setStyleSheet(
-                    "QToolButton:checked {"
-                    f" background-color: {fill.name(QColor.NameFormat.HexArgb)};"
-                    f" border-color: {border.name(QColor.NameFormat.HexArgb)};"
-                    " color: palette(text); }"
-                )
+                tone = button_tone(template.tone) if template.tone else None
+                action.setIcon(painter(tone[1] if tone is not None else ink))
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        if event.type() == QEvent.Type.PaletteChange:
+            self._reink()  # A glyph carries the ink it was painted in.
+        super().changeEvent(event)
 
     # -- a test's way in ---------------------------------------------------------------------
 
@@ -242,8 +258,17 @@ class AspectBar(QWidget):
         return next(action for template, action in self._templates if template.label == label)
 
     def toggle_ids(self) -> list[str]:
-        """The toggle ids the right bar carries, in registry order."""
+        """The toggle ids the strip carries, in registry order."""
         return list(self._actions)
 
     def template_labels(self) -> list[str]:
         return [template.label for template, _action in self._templates]
+
+    def selected_label(self) -> str:
+        """The template the step amounts to right now — what the face is wearing."""
+        return self._selected.label if self._selected is not None else ""
+
+
+def _no_glyph(_ink: QColor) -> QIcon:
+    """A toggle whose spec carries no painter still needs a slot, or the row jumps."""
+    return QIcon()

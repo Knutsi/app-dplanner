@@ -57,8 +57,9 @@ def test_confirm_is_a_frame_whose_default_never_discards(app, monkeypatch):
     monkeypatch.setattr(DialogFrame, "exec", fake_exec)
     assert confirm(None, "Delete Layout", "Delete the layout “Wide”?", verb="Delete") is False
     (dialog,) = seen
-    assert dialog.title_label.text() == "Delete Layout"
-    assert dialog.lead_label.text() == "Delete the layout “Wide”?"
+    assert dialog.windowTitle() == "Delete Layout"
+    asked = dialog.findChild(QLabel, "DialogQuestion")
+    assert asked is not None and asked.text() == "Delete the layout “Wide”?"
     assert dialog.findChild(QPushButton, "PrimaryButton") is None
     names = [b.text() for b in dialog.footer_buttons()]
     assert names == ["Delete", "Cancel"]

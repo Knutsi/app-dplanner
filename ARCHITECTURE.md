@@ -935,6 +935,27 @@ field, and is the same reasoning that made `detail_cards` a second instance rath
 just a section, the docked panel and the `steps.details` dialog render it identically for
 free.
 
+**A block host owes its stack a trailing stretch and a cap on the rest.** `stretch` on the
+section says who gets the leftover height — the description, which is what a step's prose
+wants and the estimate's spin box does not. When that block is hidden its stretch factor
+can claim nothing, and Qt falls through to a rule nobody wrote down: a `QWidgetItem`
+reports itself *expanding* when the widget's own layout is expanding, whatever the widget's
+policy says, and every block's layout is expanding because a block adds its content with a
+stretch of its own. So with the description off, the surplus was spread equally over the
+blocks that remained — a 42 px name block became 328 px, its caption and field sinking to
+the foot of it, an inch and a half from where the eye expects a field under its caption.
+
+The fix is two halves, and either alone is wrong. A trailing `addStretch(0)` gives the
+leftover somewhere to go; at a factor of **1** it would instead split that leftover with the
+description block and halve the prose editor whenever the block *is* shown. And
+`QSizePolicy.Maximum` on every block whose section declared no stretch takes away the
+GrowFlag that was promoting it behind the data's back — which is the real statement of the
+fix: **the cap is what makes `InspectorSection.stretch` authoritative.** Without it the
+declared stretch is advisory and Qt's propagation decides, which is why the bug read as
+arbitrary. `Maximum` rather than `Fixed`, so a panel shorter than its blocks still
+compresses rather than clipping. `framework/cards.py`'s `CardStack` had the trailing
+spacer from the start and never hit this, because no card asks for stretch.
+
 ## Expanding an editor is a second binding, not a copy
 
 A side panel gives prose a few hundred pixels, and some descriptions and instructions are
@@ -2231,12 +2252,19 @@ every button runs the owning module's toggle through `ActionRegistry.run`. So ea
 undoable command, an aspect a build does not ship has no button, and adding an aspect is
 still one registration in one package.
 
-What the bar adds to the submenu is a *reading*. Its right half is every toggle as a glyph.
-Its left half is **templates**: a name and the set of toggles that are on — *Milestone* is
-milestone and description, *Agent* is agent, description and estimate, *Step* is
-the estimate and description every step is born with — worded, and wearing their body tone
-when selected, so a selected Feature button and a feature node are one identity (which is
-why the tones moved to `theme/tones.py`, where both can reach them). Clicking a template
+What the bar adds to the submenu is a *reading*. Its **left** is every toggle as a glyph.
+Its **right** is one dropdown named *Template*, offering the named combinations: *Milestone*
+is milestone and description, *Agent* is agent, description and estimate, *Step* is the
+estimate and description every step is born with. One control rather than five, because only
+one of them is ever true at a time: five worded buttons said the same thing five times and
+four of them were always wrong. The face is named for what it **offers**, not for what is
+on — which one the step amounts to is the ticked entry — so the bar makes one claim about
+the step (the lit toggles) and offers one way to change it, rather than saying the same
+thing twice in two vocabularies. Each entry's **glyph** wears its body tone, so a feature's
+entry and a feature node are one identity (which is why the tones moved to `theme/tones.py`,
+where both can reach them) — the glyph and not a ground, because a template is *always*
+selected and a wash that is permanently on says nothing, which is also what let ten
+per-button stylesheets go. Picking a template
 runs whichever toggles differ, on for its set and off for everything else, inside one
 `UndoService.gesture`, so *Make Milestone* is one Ctrl+Z however many aspects it moved and
 each is still the owning module's own command — the gesture is the framework's answer to
@@ -2249,12 +2277,27 @@ aspects is still a step and a bar with nothing lit would be saying it is nothing
 stores which template is current; it is a set comparison on every refresh, which is the same *derived,
 never stored* rule as the ordering. Which templates exist is `StepPropertiesDeps.templates`,
 named by the composition root in the order the bar shows them, for the same reason the
-scope kinds are wired rather than inferred. The bar is two `QToolBar`s rather than one row of buttons, for
-the reason the Tests tab already had two: a `QToolBar` too narrow for its contents grows the
-» overflow button and puts the tail in a menu — as checkable entries, check marks and all —
-where a plain row would simply clip. The left bar takes the slack, so at a width where
-anything has to go the facets keep their glyphs and the kinds fold first. That is the whole
-overflow mechanism, and it cost no code.
+scope kinds are wired rather than inferred.
+
+The strip is `framework/toolbar.py`'s `Toolbar`, so what no longer fits is taken off from
+the right and listed in a `…` menu as glyph **and words** — where Qt's own `»` pops the
+hidden buttons up as glyphs again, which is no help to somebody who could not read the
+glyph on the strip. It is **dense**, a mode the primitive offers: a strip of verbs folds
+gracefully because losing a verb to a menu costs a click, but this row answers *what does
+this step carry*, and a row that folds stops answering. The panel cannot be narrower than
+479 px — its tab pages, not the bar — which leaves the strip about 356; at the verb strip's
+45 px buttons that seats five of the ten toggles, and at the dense 29 px it seats all ten.
+
+And the dropdown sits **beside** the strip rather than on it. A widget added to a `Toolbar`
+hides when there is no room for it, so the one control naming what the step *is* would be
+the first casualty of a narrow dock — the canvas's layout picker and the *Updating…*
+indicator sit outside their strips for exactly that reason. It is also why the face is
+named once and left alone: a face whose words changed with the step would re-fold the strip
+beside it every time a toggle moved. That inverts what the two `QToolBar`s used to do,
+deliberately: the
+old left bar took the slack so the facets kept their glyphs and the kinds folded first.
+The kinds are the summary and the facets are the detail, and it is the summary a narrow
+dock should keep.
 
 It replaced the "+" beside the tabs and the dialog of checkboxes it opened, which was the
 same registry-rendering rule with a worse reading — a list you had to summon to see what a
@@ -2268,6 +2311,16 @@ wanted.
 The context arrives as a function rather than a `ContextService`, which is what lets the
 panel inside the details *dialog* — showing a step nobody selected — hand over one naming
 its own step. The specs cannot tell the difference, and neither can they be made to care.
+
+Two smaller things fell out of that rework. A toggle's `state()` **never returns
+`visible=False`** — *hidden means absent; disabled means not now* already says a toggle
+that cannot apply is greyed, and an aspect a build does not ship never reaches the registry
+— so the bar's state triple lost its first third; a strip that re-shows whatever fits on
+every reflow could not have honoured it anyway. And the bar **announces its refresh**
+rather than leaving a host to listen to the model: the dialog's lead repeats the bar's
+answer in words, and applying a template ends with the bar refreshing itself, which is
+after the last write any model listener hears. A host that watched the model showed the
+lead one gesture behind.
 The panel re-reads the bar on every model write to the shown step, because one toggle can
 change another's state.
 

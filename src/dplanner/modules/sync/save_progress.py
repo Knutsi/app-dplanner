@@ -58,10 +58,9 @@ class SaveProgressDialog(DialogFrame):
         *,
         expected_seconds: float | None = None,
     ) -> None:
-        super().__init__(
-            "Saving",
-            parent,
-            lead="Recording a version in each repository with planning changes.",
+        super().__init__("Saving", parent)
+        self.body_layout.addWidget(
+            note("Recording a version in each repository with planning changes.", self.body)
         )
         self._labels = list(labels)
         self._running = True
