@@ -33,14 +33,18 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     "Edit": ("history", "clipboard", "selection"),
     # "palette" is the command palette alone — the way to *any* verb, set off from the
     # panel toggles below it. "areas" is the whole-side collapse switches, ahead of the
-    # per-panel checkmarks in "panels". "tabs" holds the Tabs submenu, which is also what
-    # the tab bar's right-click renders (build_menu's submenu filter), so the two can never
-    # be a hand-maintained copy.
+    # per-panel checkmarks in "panels". "theme_system" and "theme" both feed the Theme
+    # child menu — *System theme*, then every provider's themes — and the rule between
+    # them, drawn inside it, parts what follows the desktop from what is picked; the child
+    # sits at "theme_system"'s position and "theme" adds no rule to View itself, the shape
+    # Step's "test_result" has. "tabs" holds the Tabs submenu, which is also what the tab
+    # bar's right-click renders (build_menu's submenu filter), so the two can never be a
+    # hand-maintained copy.
     #
     # **View is about the window.** The graph editor's own verbs used to sit here in a
     # "canvas" group, which made View half window and half drawing surface and left the
     # graph with no home of its own; they are the Graph menu below now.
-    "View": ("palette", "areas", "panels", "zoom", "theme", "tabs", "window"),
+    "View": ("palette", "areas", "panels", "zoom", "theme_system", "theme", "tabs", "window"),
     # The planner's own vocabulary. "Project" is what the index tree's right-click menu
     # renders and "Step" is what the graph canvas's does — see framework/action_menu.py.
     # "link" holds the two-step verbs: the canvas publishes both ends into the selection

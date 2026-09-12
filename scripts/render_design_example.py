@@ -1,12 +1,12 @@
 """Render Debug ▸ Design Example in the dark and the light theme, to PNG.
 
-    uv run python scripts/render_design_example.py --out docs/design-example
+    uv run python scripts/render_design_example.py --out docs/screenshots/f1-design-example
 
 The images are the design system as rendered — what a pull request that touches a surface
-shows beside its own screenshots, and what ``docs/design-example/`` keeps for the next
-developer. Nothing here reads a library: the two surfaces are built directly over their
-sample data, once per theme, and the widgets are sized here because the offscreen screen
-is smaller than a desktop's.
+shows beside its own screenshots, and what ``docs/screenshots/f1-design-example/`` keeps for
+the next developer. Nothing here reads a library: the two surfaces are built directly over
+their sample data, once per theme, and the widgets are sized here because the offscreen
+screen is smaller than a desktop's.
 """
 
 import argparse
@@ -30,6 +30,7 @@ from dplanner.modules.debug.design_example import (
     DesignExampleDialog,
 )
 from dplanner.theme import apply_theme
+from dplanner.theme.providers import BUILTIN
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
 DIALOG_SIZE = (760, 800)
@@ -65,7 +66,8 @@ def render(app: QApplication, theme: Theme, out: Path) -> None:
     save(dialog, out, "dialog-refused", theme, app)
     discard(dialog)
 
-    activity = DesignExampleActivity(ContextService(), debounce, ThemeService(app, theme))
+    service = ThemeService(app, (BUILTIN,))
+    activity = DesignExampleActivity(ContextService(), debounce, service)
     page = activity.widget
     page.resize(*TABLE_SIZE)
     page.show()
@@ -83,7 +85,7 @@ def render(app: QApplication, theme: Theme, out: Path) -> None:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--out", type=Path, default=Path("docs/design-example"))
+    parser.add_argument("--out", type=Path, default=Path("docs/screenshots/f1-design-example"))
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication(sys.argv[:1])

@@ -18,8 +18,13 @@ from PySide6.QtWidgets import QMenu, QSplitter, QStyle, QToolButton, QWidget
 import dplanner
 from dplanner.theme import load_stylesheet, tokens
 from dplanner.theme.palette import build_palette
+from dplanner.theme.providers import BUILTIN, OMARCHY_THEMES
 from dplanner.theme.style import build_style
-from dplanner.theme.themes import DARK, DEFAULT, LIGHT, THEMES
+from dplanner.theme.themes import DARK, DEFAULT, LIGHT
+
+# Every theme the built-in provider offers: the house themes and the generated Omarchy ones.
+THEMES = {theme.name: theme for theme in BUILTIN.themes()}
+TOKYO_NIGHT = next(theme for theme in OMARCHY_THEMES if theme.name == "tokyo-night")
 
 
 def relative_lightness(hex_color: str) -> float:
@@ -72,6 +77,13 @@ def test_secondary_text_stays_readable(theme):
     assert gap >= 40, f"{theme.name}: secondary text sits {gap:.0f} from its background"
 
 
+@pytest.mark.parametrize("theme", THEMES.values(), ids=list(THEMES))
+def test_selected_text_stays_readable(theme):
+    """A generated theme's selection pair is Omarchy's own, never hand-tuned here."""
+    gap = abs(relative_lightness(theme.selection_fg) - relative_lightness(theme.selection_bg))
+    assert gap >= 60, f"{theme.name}: selected text sits {gap:.0f} from its wash"
+
+
 def test_the_palette_covers_the_inactive_group(app):
     """Qt's Fusion style paints an unfocused window from the Inactive group. Filling only
     Active is why dark themes appear to "go light" the moment focus moves."""
@@ -83,8 +95,8 @@ def test_the_palette_covers_the_inactive_group(app):
     assert active == inactive
 
 
-def test_the_default_theme_is_registered():
-    assert DEFAULT.name in THEMES
+def test_the_default_theme_is_built_in():
+    assert DEFAULT in BUILTIN.themes()
 
 
 def test_the_tab_close_glyph_is_painted_per_theme(app):
@@ -103,25 +115,27 @@ def test_the_tab_close_glyph_is_painted_per_theme(app):
     assert dark.pixmap(16, 16).toImage() != light.pixmap(16, 16).toImage()
 
 
+@pytest.mark.parametrize("theme", (DARK, TOKYO_NIGHT), ids=("dark", "tokyo-night"))
 @pytest.mark.parametrize(
     "orientation",
     [Qt.Orientation.Horizontal, Qt.Orientation.Vertical],
     ids=["horizontal", "vertical"],
 )
-def test_a_splitter_seam_is_exactly_one_hairline(app, orientation):
+def test_a_splitter_seam_is_exactly_one_hairline(app, orientation, theme):
     """Both orientations of a handle draw one line, whatever it takes to get there.
 
     Asserted by rendering rather than by reading the rule, because Qt paints the two
     differently: a horizontal handle honours the box model and a vertical one fills its whole
     rect with the background and puts its borders outside it. The rule that centres a line in
     the first renders a seven-pixel slab in the second, and nothing in the stylesheet says so.
+    Rendered for a generated theme too: its hairline is a derived colour, not a tuned one.
     """
     splitter = QSplitter(orientation)
     for _ in range(2):
         page = QWidget()
         page.setMinimumSize(40, 40)
         splitter.addWidget(page)
-    splitter.setStyleSheet(load_stylesheet(DARK))
+    splitter.setStyleSheet(load_stylesheet(theme))
     splitter.resize(120, 120)
     splitter.show()
     app.processEvents()
@@ -132,7 +146,7 @@ def test_a_splitter_seam_is_exactly_one_hairline(app, orientation):
         if orientation is Qt.Orientation.Vertical
         else [image.pixel(x, 60) for x in range(40, 80)]
     )
-    border = QColor(DARK.border).rgb()
+    border = QColor(theme.border).rgb()
     assert sum(pixel == border for pixel in across) == 1
 
 

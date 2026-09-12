@@ -47,7 +47,7 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
 - Only add comments that carry durable value for future developers and agents. Otherwise,
   make the code self-documenting.
 - `DESIGN.md` is the standard for all UI work here, and **Debug ▸ Design Example…** (with its
-  table tab; `modules/debug/design_example.py`, rendered under `docs/design-example/`) is
+  table tab; `modules/debug/design_example.py`, rendered under `docs/screenshots/f1-design-example/`) is
   what it looks like — build every dialog on `framework/dialog.py`'s `DialogFrame`, every
   table on `framework/table.py`'s `Table`, every busy/ok/error on `framework/signalling.py`'s
   `StatusLine` and every pending rebuild on its `UpdatingIndicator`, and run DESIGN.md's
@@ -87,6 +87,15 @@ The second is the inner loop for work below `framework/`, and it is a *path* sel
 than a marker because the layers already say which is which: `core/`, `domain/` and `cli/` are
 the Qt-free ones. It is not a substitute for the full run before you finish — most of what
 this application does lives in `modules/`, and only the full suite covers it.
+
+**A settle is deterministic, and the suite never reads the shell it runs in.**
+`DebounceService.flush_all` runs pending rebuilds in registration order and re-runs
+whatever a flush made pending, because a `WeakSet`'s order moved with every allocation in
+the process and a rebuild that triggers another (the progress recorder writing after a
+change, which the Time tab hears) was settled before or after it by chance — a Time tab
+test passed on one commit and failed on the next for a change that never touched it. And
+`tests/conftest.py` scrubs `DPLANNER_PROJECT`: Run Agent's wrapper exports it into an
+agent's shell, and an agent running the suite handed every CLI test the wrong project.
 
 **Running on every core means a test may never write into `src/`, and must quiet what the
 application it built has already started.** Both rules were learned from a flake. A test that
@@ -238,6 +247,7 @@ modules/<name>/
 ├── aspect.py    for a step aspect: SPEC, DATA_FORMAT, read/write    ← imports no Qt
 ├── report.py    what it says in a report: report_source()           ← imports no Qt
 ├── harness.py   for an agent CLI provider: HARNESS, and nothing else  ← imports no Qt
+├── themes.py    for a theme provider: the ThemeProvider it offers        ← imports no Qt
 └── section.py   the editor it puts in the step detail panel
 ```
 
@@ -1007,6 +1017,25 @@ root, stop and look for the registry or capability you have not found yet.
   OpenCode mint their own ids, so their `report` finds the run by the directory it
   worked in and the launch time, and a found id is what makes such a run resumable
   afterwards. `ARCHITECTURE.md`'s *An agent CLI is a harness* has the reasoning.
+- **A theme is provided, never listed.** `theme/providers.py` is the contract — a
+  `ThemeProvider` is an id, a label, `refusal()` (why not on this machine, None when it
+  applies, asked once per build), `groups()` (its themes, in the lists the Theme menu
+  shows) and, for one that follows the desktop, `current()`; a provider follows exactly
+  when it has a `current`, derived never declared. `BUILTIN` there is the fallback every
+  build has (the house themes and every Omarchy default, generated from `colors.toml` by
+  `scripts/import_omarchy_themes.py` through the one mapping in `theme/omarchy.py`:
+  anchors from the file, ramps derived); `modules/theme_omarchy/` and `theme_system/`
+  export theirs from a Qt-free `themes.py` with no window half, and the root's
+  `theme_providers()` is the tuple, built once in `app.main`. The persisted
+  `appearance/theme` is `system` or `<provider>/<name>`; absence means system, so a fresh
+  install follows its desktop. `ThemeService` polls the serving provider at `POLL_MS` and
+  applies on `!=`, holds no colour-scheme override while following (Qt echoes an override
+  back), and keeps `effective_choice` as a field — no state callback reads a file.
+  `modules/appearance/` renders View ▸ Theme (specs, so the palette keeps them; long
+  lists nest through `submenu="Theme ▸ Omarchy"`) and Settings ▸ Appearance. Never
+  construct a `ThemeService` over the machine's providers in a test: `new_session()` and
+  `configure_application()` default to the built-in alone. `ARCHITECTURE.md`'s *A theme
+  is provided, never listed* has the reasoning.
 - **Which terminal opens is a table, not a chain — and the multiplexers are its last
   rows.** `launcher.TERMINALS` is one row per known terminal *and multiplexer* per
   platform with a probe saying whether it is installed; *Automatic* is the first

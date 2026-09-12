@@ -90,6 +90,25 @@ def test_the_service_settles_and_cancels_every_live_debouncer(host):
     assert service.pending() == [] and views[0].rebuilds == 1
 
 
+def test_a_settle_runs_in_registration_order_and_settles_what_it_made_pending(host):
+    """The order the build made its views, every time — a set's order moved with every
+    allocation — and a rebuild that triggers another (a recorder writing after a change,
+    a tab hearing it) is settled in the same call rather than left pending by chance."""
+    service = DebounceService()
+    ran: list[str] = []
+    tab = Debounced(lambda: ran.append("tab"), 30, parent=host, service=service)
+
+    def record() -> None:
+        ran.append("recorder")
+        tab.trigger()
+
+    recorder = Debounced(record, 30, parent=host, service=service)  # Registered second.
+    recorder.trigger()
+    tab.trigger()
+    service.flush_all()
+    assert ran == ["tab", "recorder", "tab"] and service.pending() == []
+
+
 def test_a_run_is_a_refresh_span_named_for_the_view(host, qtbot):
     current().clear()
     view = _View()

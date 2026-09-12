@@ -12,7 +12,7 @@ from the first commit; touching an existing surface includes bringing it up to t
 checklist). When a rule here is ambiguous, match what **Debug ▸ Design Example…** and its
 table tab do (`modules/debug/design_example.py`): the design system built from the shared
 primitives — `framework/dialog.py`, `framework/table.py`, `framework/signalling.py`,
-`framework/widgets.py` — and rendered in both themes under `docs/design-example/`. For a
+`framework/widgets.py` — and rendered in both themes under `docs/screenshots/f1-design-example/`. For a
 panel, match the step detail panel in `modules/step_properties/panel.py`. `CLAUDE.md`
 points agents here; `ARCHITECTURE.md`'s *A primitive carries the rule* has the reasoning
 for building surfaces from primitives rather than styling each one.

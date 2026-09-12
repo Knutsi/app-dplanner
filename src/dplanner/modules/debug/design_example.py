@@ -10,8 +10,8 @@ a control strip with the indicator at its right, outside the » overflow, and an
 state that trades places with the table.
 
 A developer bringing a surface up (DESIGN.md's *Bringing a surface up*) opens these beside
-their own and copies what differs; ``docs/design-example/`` holds them rendered in both
-themes. Neither reads the model, so neither follows a project.
+their own and copies what differs; ``docs/screenshots/f1-design-example/`` holds them
+rendered in both themes. Neither reads the model, so neither follows a project.
 """
 
 from dataclasses import dataclass

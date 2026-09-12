@@ -205,11 +205,13 @@ def _collect_qt_garbage():
 
 
 @pytest.fixture(autouse=True)
-def _no_agent_project(monkeypatch):
-    """Run Agent's wrapper exports ``DPLANNER_PROJECT`` into the agent's shell, and the CLI
-    honours it — so a suite run from that shell resolved every test's verbs against a
-    project its throwaway library never held, and 361 tests went red for no finding. A
-    test that means to set it does so after this."""
+def _no_agent_shell(monkeypatch):
+    """The suite must not depend on the shell it runs in.
+
+    Run Agent's wrapper exports ``DPLANNER_PROJECT`` into an agent's shell so ``dplanner``
+    reaches the plan from a worktree; an agent running this suite would hand every CLI
+    test that project instead of the one the test built.
+    """
     monkeypatch.delenv("DPLANNER_PROJECT", raising=False)
 
 

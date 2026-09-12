@@ -2395,7 +2395,77 @@ of a tall empty page — and read as a stray footer. One widget, one look, and D
 **Upstream?** Yes: every application has empty pages, and the trap (a label after a
 stretched widget) is generic.
 
-## 27. From the design-system pass
+## 27. From the theme-providers pass
+
+### `framework/theme_service.py` — a choice over providers, followed by a poll
+
+**What.** `ThemeService(app, providers, parent=…)` resolves a persisted choice (`"system"`,
+`"<provider>/<name>"`, or a legacy bare name) over a tuple of `theme/providers.py`
+records; `set_theme(choice)`, `set_enabled(id, on)` (a per-user switch through
+`user_config`), `check()` (the poll body, on a `QTimer` at `window_watch.POLL_MS` while a
+following provider serves the choice), `effective_choice` (a field), cached `refusal()`s,
+and `apply_saved_theme(app, providers)` for the startup apply. `apply_theme` grew
+`follow_system`, which clears the colour-scheme override instead of setting one.
+
+**Why.** Themes were a table; a desktop that changes underneath the window needs a
+reader, and Qt's own reading echoes the application's override once one is set, so the
+service owns both the poll and the override. The reasoning is in `ARCHITECTURE.md`'s *A
+theme is provided, never listed*.
+
+**Upstream?** Yes, with the contract: a template that ships twenty-two themes in a menu
+wants a provider seam more than it wants the twenty-two.
+
+### `framework/builder.py`, `framework/session.py` — `with_theme_providers`
+
+**What.** The builder carries `_theme_providers` (default `(BUILTIN,)`, not in
+`_require()`), the session takes `theme_providers=` and hands it through, and the
+service is built with `parent=window` so a discarded build takes its timer.
+
+**Why.** Modules must not build a second tuple, and a test build must never read the
+desktop: the machine's tuple is named once, in `app.main`.
+
+**Upstream?** With the service.
+
+### `framework/action_registry.py`, `menubar.py`, `action_menu.py` — a child menu may nest
+
+**What.** `PATH_SEPARATOR` moved from the palette to the registry, beside
+`ActionSpec.submenu`, and a submenu title holding it (`"Theme ▸ Omarchy"`) nests: the bar
+walks the path creating each level at the first spec's key (keyed by path in
+`_submenus`/`_separators`) and computes child-menu visibility deepest first (`reversed`
+creation order); the popup walks the same path with the group bookkeeping per container.
+The `submenu=` filter still names one level.
+
+**Why.** Twenty-five themes in one child menu, and the palette keeps every entry only if
+they stay specs — a `DataMenuSpec` would have nested for free and lost the palette.
+
+**Upstream?** Yes: nesting is a general want, and the visibility-order bug is a trap.
+
+### `framework/debounce.py` — a settle is deterministic
+
+**What.** `DebounceService` keeps its `Debounced`s in a `WeakValueDictionary` keyed by
+registration count, and `flush_all` re-runs what a flush made pending, up to
+`SETTLE_ROUNDS`.
+
+**Why.** A `WeakSet` iterates in hash order, which moves with every allocation in the
+process: a Time-tab test that asserts "Recalculating…" is hidden after `flush_all` passed
+on one commit and failed on the next, because the progress recorder (which writes after a
+change the tab then hears) flushed after the tab instead of before. A settle that runs in
+build order and to completion cannot do that.
+
+**Upstream?** Yes — this is a flake generator in any application with two views that
+wake each other.
+
+### `theme/__init__.py` — the package imports without Qt
+
+**What.** The Qt-bearing imports (`Qt`, `ui_font`, `build_palette`, `build_style`) moved
+inside `apply_theme`; `QApplication` is a `TYPE_CHECKING` import.
+
+**Why.** A theme provider is Qt-free by contract and reads `theme.themes`,
+`theme.providers` and `theme.omarchy`; `tests/test_architecture.py` now probes it.
+
+**Upstream?** Yes, trivially.
+
+## 28. From the design-system pass
 
 ### `framework/dialog.py` — `DialogFrame` and `LinePrompt` (new)
 
@@ -2454,18 +2524,19 @@ plain-Python signal holding a widget's bound method is the shape that crashes th
 **Upstream?** Yes. The tones are the theme's; a framework that ships `Debounced` should
 ship the thing that shows it.
 
-### `framework/debounce.py` — `pending_changed`, and `flush_all` settles to a fixed point
+### `framework/debounce.py` — `pending_changed`
 
 **What.** `Debounced.pending_changed: Signal[bool]` — True on the first trigger of a burst,
-False from a `finally` after `_run` and from `cancel()`. `DebounceService.flush_all` loops
-(`SETTLE_ROUNDS`) until nothing is pending.
+False from a `finally` after `_run` and from `cancel()`; in immediate mode both arrive
+inside the one `trigger()`. (This pass and the theme-providers pass each found `flush_all`
+walking a `WeakSet` in hash order on the same day; §27's deterministic settle is the one
+that stayed.)
 
-**Why.** The indicator above. And `flush_all` walked a `WeakSet` in hash order: the
-progress recorder's flush writes a row, every view following the model re-triggers, and
-whether one stayed pending depended on which object was allocated first — a test that went
-red when an unrelated conftest fixture moved an allocation.
+**Why.** The indicator above: the Time tab's wrapper that showed a label before `trigger()`
+and hid it as the first line of the rebuild was two statements paired by hand that a test
+could never see up.
 
-**Upstream?** Yes, both. A flush that can trigger a flush is the ordinary case.
+**Upstream?** Yes. A framework that ships `Debounced` should say when a run is owed.
 
 ### `framework/widgets.py` — `EmptyState.stands_in_for`, `caption`, `note`, `confirm` on the frame
 
@@ -2500,13 +2571,12 @@ from. A float token is skipped by `as_qss_mapping` on purpose.
 **Upstream?** The tokens and the guard test, yes. The template's own stylesheet should
 ship with the guard and without Writer.
 
-### `tests/conftest.py` — `DPLANNER_PROJECT` dropped; `themed` shared
+### `tests/conftest.py` — `themed` shared
 
-**What.** An autouse fixture deletes `DPLANNER_PROJECT` from the environment; the
-`themed` fixture (apply a theme, restore the default) moves up from two test modules.
+**What.** The `themed` fixture (apply a theme application-wide, restore the default
+afterwards) moves up from two test modules; a render test of a delegate needs it, since a
+delegate paints from the palette and a stylesheet on the widget alone is not enough.
 
-**Why.** Run Agent's wrapper exports the variable into every agent shell, and the CLI
-honours it, so the suite run from an agent's shell resolved every verb against a project
-its throwaway library never held — 361 tests red for no finding.
+**Why.** Three test modules would otherwise carry the same seven lines.
 
-**Upstream?** The shape, yes: a test suite must not read the developer's environment.
+**Upstream?** With the primitives' tests.

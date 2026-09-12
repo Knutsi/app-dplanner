@@ -1,9 +1,8 @@
 """The application shell: the verbs every configuration of the application has.
 
-Undo, redo, quit, full screen, about, the theme picker and the command palette — the things
-that belong to the window itself rather than to any activity or any data. Nothing here
-knows what the application is for, which is why this module ships with the template
-unchanged.
+Undo, redo, quit, full screen, about and the command palette — the things that belong to
+the window itself rather than to any activity or any data. Nothing here knows what the
+application is for, which is why this module ships with the template unchanged.
 """
 
 from dataclasses import dataclass
@@ -25,12 +24,10 @@ from dplanner.framework.context import Context, ContextService
 from dplanner.framework.palette import CommandPalette
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.tabs import TabHost
-from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.window import PanelHost
 from dplanner.framework.zoom import ZoomService
 from dplanner.identity import APP_NAME, APP_VERSION
-from dplanner.theme.themes import OMARCHY_THEMES
 
 
 @dataclass(frozen=True)
@@ -38,7 +35,6 @@ class AppShellDeps:
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
-    theme: ThemeService
     undo: UndoService[Any]
     zoom: ZoomService
     panels: PanelRegistry
@@ -291,39 +287,6 @@ class AppShellModule:
                 run=lambda _context: deps.zoom.change(-1),
             )
         )
-
-        # -- themes -----------------------------------------------------------------------
-        # The house themes stay flat, checkable entries; the rest live in an "Other"
-        # submenu so the View menu stays scannable. All appear flat in the command palette,
-        # and the checkmark shows state in every presentation.
-        deps.theme.changed.connect(lambda _theme: deps.context.refresh())
-
-        def register_theme(theme_name: str, order: int, submenu: str | None = None) -> None:
-            def theme_state(_context: Context, name: str = theme_name) -> ActionState:
-                return ActionState(checked=deps.theme.current.name == name)
-
-            def run_theme(_context: Context, name: str = theme_name) -> None:
-                deps.theme.set_theme(name)
-
-            title = theme_name.replace("-", " ").title()
-            deps.actions.register(
-                ActionSpec(
-                    id=f"appshell.theme_{theme_name}",
-                    label=f"Theme: {title}" if submenu else f"Theme: &{title}",
-                    menu="View",
-                    group="theme",
-                    order=order,
-                    submenu=submenu,
-                    tip=f"Switch to the {title} theme",
-                    state=theme_state,
-                    run=run_theme,
-                )
-            )
-
-        for offset, theme_name in enumerate(("dark", "light", "sepia")):
-            register_theme(theme_name, order=10 * (offset + 1))
-        for offset, theme in enumerate(OMARCHY_THEMES):
-            register_theme(theme.name, order=100 + offset, submenu="Other")
 
         deps.actions.register(
             ActionSpec(

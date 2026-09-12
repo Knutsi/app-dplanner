@@ -198,3 +198,40 @@ def test_a_triggered_entry_runs_through_the_registry_gate(app):
     allowed[0] = False  # Nothing re-emits the context, so the QAction still looks enabled.
     bar.menubar.action("rename").trigger()
     assert ran == ["rename"]
+
+
+def test_a_submenu_path_nests_one_child_menu_inside_another(app):
+    """``"Test ▸ From"`` is a child of the Test child menu, at its first spec's position
+    among Test's entries — a long list sits one level down rather than flat."""
+    specs = (
+        *SPECS,
+        ("import test", "classify", "Test ▸ From", 30),
+        ("import other", "classify", "Test ▸ From", 40),
+    )
+    bar = build(app, specs)
+    assert entries(step_menu(bar)) == [
+        "rename",
+        "|",
+        (
+            "Test",
+            ["add test", "archive test", ("From", ["import test", "import other"]), "|", "mark ok"],
+        ),
+        "|",
+        "details",
+    ]
+    assert bar.menubar.action("import test").text() == "import test"
+
+
+def test_a_nested_child_menu_hides_with_its_entries_and_its_parent_with_it(app):
+    """One restatement decides both levels: a nested child with nothing visible hides, and
+    a parent whose only entry it was hides in the same pass — the child is computed first."""
+    shown = [True]
+    specs = (("rename", "edit", None, 10), ("import test", "classify", "Test ▸ From", 30))
+    bar = build(
+        app, specs, states={"import test": lambda _c: ActionState() if shown[0] else HIDDEN}
+    )
+    assert entries(step_menu(bar)) == ["rename", "|", ("Test", [("From", ["import test"])])]
+
+    shown[0] = False
+    bar.menubar.refresh(bar.context.current())
+    assert entries(step_menu(bar)) == ["rename"]
