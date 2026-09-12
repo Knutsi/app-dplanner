@@ -2471,8 +2471,10 @@ inside `apply_theme`; `QApplication` is a `TYPE_CHECKING` import.
 
 **What.** A `QDialog` with the anatomy DESIGN.md's *Dialogs* names: the title printed in
 the body (`#DialogTitle`, +2 pt via `theme.cards.title_font`), a lead (`#DialogLead`), a
-body (`#DialogBody`, a `QVBoxLayout` the subclass fills) and a footer (`#DialogFooter`)
-whose slots run destructive · status · stretch · secondaries · dismiss · primary.
+body (`#DialogBody`, a `QVBoxLayout` the subclass fills) inside a page that carries the
+dialog's margins, and below it a footer band (`#DialogFooter`, edge to edge on the elevated
+ground under a faint hairline) whose slots run destructive · status · stretch · secondaries
+· dismiss · primary.
 `set_primary`, `add_button(destructive=)`, `add_dismiss`, `refuse(reason)`; the dismiss is
 default only while there is no primary; Ctrl+Enter is the primary from a multi-line field;
 `showEvent` sets the Tab chain (body → primary → secondaries → destructive) and puts focus

@@ -192,6 +192,11 @@ def test_the_primary_wears_the_accent_and_the_others_are_quiet(themed, theme):
         image = dialog.grab().toImage()
         assert image.pixelColor(inside(primary, dialog)) == QColor(theme.accent)
         assert image.pixelColor(inside(cancel, dialog)) == QColor(theme.bg_overlay)
+        # The footer is a band on the elevated ground, the page above it on the base.
+        band = dialog.footer.mapTo(dialog, QPoint(dialog.footer.width() // 2, 4))
+        assert image.pixelColor(band) == QColor(theme.bg_elevated)
+        assert image.pixelColor(QPoint(band.x(), band.y() - 12)) == QColor(theme.bg_base)
+        assert dialog.footer.width() == dialog.width()  # Edge to edge.
     finally:
         dialog.deleteLater()
 

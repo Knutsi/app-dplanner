@@ -58,7 +58,14 @@ class DialogFrame(QDialog):
         editor: bool = False,
     ) -> None:
         super().__init__(parent)
-        column = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        # The page carries the dialog's margins; the footer is a band below it, edge to
+        # edge, with its own — so its ground can run the dialog's full width.
+        self.page = QWidget(self)
+        outer.addWidget(self.page, 1)
+        column = QVBoxLayout(self.page)
         column.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
         column.setSpacing(SECTION_GAP)
 
@@ -82,14 +89,17 @@ class DialogFrame(QDialog):
 
         self.footer = QWidget(self)
         self.footer.setObjectName("DialogFooter")
+        self.footer.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)  # Or no ground.
         self.footer_layout = QHBoxLayout(self.footer)
-        self.footer_layout.setContentsMargins(0, 0, 0, 0)
+        self.footer_layout.setContentsMargins(
+            DIALOG_MARGIN, SECTION_GAP, DIALOG_MARGIN, SECTION_GAP
+        )
         self.footer_layout.setSpacing(FIELD_GAP)
         self.status = StatusLine(self.footer)
         self.footer_layout.addWidget(self.status)
         self.footer_layout.addStretch(1)
         self.footer.hide()  # Until a button arrives: a live-edit dialog never shows one.
-        column.addWidget(self.footer)
+        outer.addWidget(self.footer)
 
         self._destructive: list[QPushButton] = []
         self._secondaries: list[QPushButton] = []

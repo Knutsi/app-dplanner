@@ -262,7 +262,9 @@ Every dialog is a `DialogFrame` (`framework/dialog.py`), and its anatomy is the 
   platform's type at the platform's size; the window title is set too, for the switcher.
   The lead is one secondary line saying what *this* dialog is about, with the thing's name
   in it (*"Build the modal" waits on 2 steps not done yet*) — never a standing definition,
-  which is *Words*' rule. Then the body, then the footer 12 px under it and no rule.
+  which is *Words*' rule. Then the body, then **the footer as a band**, edge to edge below
+  the page: the elevated ground under a faint hairline, its buttons 12 px inside it. It is
+  the one place a dialog has a second ground, so the eye finds the way out without reading.
 - **Footer slots, left to right: destructive · status · stretch · secondaries · Cancel ·
   primary.** The destructive verb is a different exit that costs something (*Quit Without
   Committing*, *Delete*), never an answer to the question; the far left is as far from the

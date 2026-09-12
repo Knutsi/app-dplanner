@@ -839,6 +839,14 @@ QToolButton[repoTool="true"]:hover {
     color: $TEXT_SECONDARY;
 }
 
+/* The footer is a band under the page, edge to edge: the elevated ground under a faint
+   hairline, the one place a dialog has a second ground, so the eye finds the way out
+   without reading. Background only — a colour here would cascade onto the buttons. */
+#DialogFooter {
+    background-color: $BG_ELEVATED;
+    border-top: 1px solid $BORDER_FAINT;
+}
+
 #DialogFooter QPushButton {
     background-color: $BG_OVERLAY;
     color: $TEXT_PRIMARY;
