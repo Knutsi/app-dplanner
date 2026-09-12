@@ -42,6 +42,7 @@ REPOS = [
 # Both are *fit* dialogs (DESIGN.md's *Dialogs*): they take their content's height, so the
 # render sets only a width, the way a long repository label would.
 DIALOG_WIDTH = 620
+EXPECTED_S = 12.0  # What the last save of this kind took, for the bar to fill towards.
 TAB_SIZE = (1180, 760)
 STEPS = 24
 
@@ -71,11 +72,15 @@ def render_dialogs(app: QApplication, theme: Theme, out: Path) -> None:
     discard(exit_dialog)
 
     labels = [row.label for row in REPOS]
-    progress = SaveProgressDialog(labels)
+    # As it stands part-way through a save on a machine that has saved before: one recorded,
+    # one being written, and the bar filled past that third by how long the last one took.
+    progress = SaveProgressDialog(labels, expected_seconds=EXPECTED_S)
     progress.resize(DIALOG_WIDTH, progress.sizeHint().height())
     progress.show()
     progress.step(0, SAVED)
     progress.step(1, PUBLISHING)
+    progress._started -= EXPECTED_S * 0.55
+    progress._redraw()
     save(progress, out, "save-progress", theme, app)
     progress.step(1, COMMITTING)
     progress.stopped("git: the remote refused the push — no upstream for agent/s10")
