@@ -252,3 +252,12 @@ def test_a_nested_child_is_its_parents_entry_for_the_rule_inside(app):
     parent = QWidget()
     popup = build_menu(registry, ContextService(), "View", parent)
     assert entries(popup) == [("Tabs", [("More", ["other"]), "|", "move"]), "panel"]
+
+
+def test_a_verb_seated_in_a_data_menu_is_left_out_of_the_popup(app, registry):
+    registry.register(spec("seated", submenu="Tabs", in_menus=False))
+    parent = QWidget()
+    nested = build_menu(registry, ContextService(), "View", parent)
+    flat = build_menu(registry, ContextService(), "View", parent, "Tabs")
+    assert "seated" not in str(entries(nested)) and "seated" not in str(entries(flat))
+    parent.deleteLater()

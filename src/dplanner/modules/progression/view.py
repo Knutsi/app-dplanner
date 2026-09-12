@@ -2,9 +2,16 @@
 
 Pure rendering — the domain's :class:`~dplanner.domain.progression.Progression` arrives
 computed and the board redraws wholesale, so nothing here can disagree with the model.
-Callbacks carry every gesture out: selecting, opening details, the context menu and the Run
-Agent button all belong to the activity, which is what keeps this file free of commands
-and of other modules' names.
+Callbacks carry every gesture out: selecting, opening details, the context menu, ticking a
+ready step and the *Run Agents* button all belong to the activity, which is what keeps
+this file free of commands and of other modules' names.
+
+**A ready step is ticked, and the lane runs the ticked ones.** Each ready card carries a
+check box at its top left, and the Ready lane's caption row ends in one *Run N Agents*
+button — a face that drops the Step menu's own Run Agent child down (the profiles, then
+the way to Settings), so the board offers exactly what the menu does and never a copy.
+The ticks survive a rebuild (the set is kept here by step id and pruned to what is still
+ready) and are what the button counts.
 
 The segment tints are low-alpha constant ``QColor``s — DESIGN.md's deliberate exception
 for semantic status colours, the same stance as the sync view's diff highlighter. The
@@ -26,12 +33,14 @@ from PySide6.QtGui import (
     QPalette,
 )
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QPushButton,
+    QMenu,
     QScrollArea,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -39,6 +48,7 @@ from PySide6.QtWidgets import (
 from dplanner.domain.model import StepId
 from dplanner.domain.progression import Progression
 from dplanner.theme.icons import ICON_SIZE, KEY_BADGE_W
+from dplanner.theme.tokens import CONTROL_HEIGHT
 
 CARD_PADDING = 12
 # Between a milestone's key badge and the title it leads.
@@ -69,11 +79,13 @@ TRACK_ALPHA = 60
 
 @dataclass(frozen=True)
 class RunControl:
-    """The Run Agent button as the activity resolved it: whether, why not, and how."""
+    """The Run Agents button as the activity resolved it over the ticked steps: its
+    words, whether, why not, and the menu it drops down."""
 
+    label: str  # "Run 2 Agents" — the count is the face.
     enabled: bool
-    reason: str  # The action's current label — a disabled one carries the reason.
-    run: Callable[[], None]
+    reason: str  # The tooltip: the gate's own reason when disabled, a hint otherwise.
+    fill: Callable[[QMenu], None]  # The choices, read fresh every time the menu opens.
 
 
 class SegmentedBar(QWidget):
@@ -216,7 +228,8 @@ class StepCard(QFrame):
         select: Callable[[StepId], None],
         details: Callable[[StepId], None],
         menu: Callable[[StepId, QPoint], None],
-        run: RunControl | None = None,
+        tick: Callable[[StepId, bool], None] | None = None,
+        ticked: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -231,39 +244,35 @@ class StepCard(QFrame):
         layout.setContentsMargins(CARD_PADDING, CARD_PADDING, CARD_PADDING, CARD_PADDING)
         layout.setSpacing(4)
 
+        # The heading row: a tick for a ready step, a milestone's badge, then the title —
+        # every mark top-aligned, since the title wraps and the marks belong to line one.
+        heading = QHBoxLayout()
+        layout.addLayout(heading)  # Joined before it is filled, as every row here is.
+        heading.setSpacing(BADGE_GAP)
+        self.check_box: QCheckBox | None = None
+        if tick is not None:
+            self.check_box = QCheckBox(self)
+            self.check_box.setObjectName("ProgressionTick")
+            self.check_box.setToolTip("Include this step when running agents")
+            self.check_box.setChecked(ticked)
+            self.check_box.toggled.connect(lambda on: tick(step_id, on))
+            heading.addWidget(self.check_box, 0, Qt.AlignmentFlag.AlignTop)
+        if badge is not None:
+            mark = QLabel(self)
+            mark.setPixmap(badge.pixmap(QSize(KEY_BADGE_W, ICON_SIZE)))
+            mark.setAlignment(Qt.AlignmentFlag.AlignTop)
+            heading.addWidget(mark, 0, Qt.AlignmentFlag.AlignTop)
         self.title = QLabel(title, self)
         self.title.setWordWrap(True)
         if dimmed:  # An upcoming step is present without asking to be read.
             self.title.setObjectName("InspectorNote")
-        if badge is None:
-            layout.addWidget(self.title)
-        else:
-            heading = QHBoxLayout()
-            layout.addLayout(heading)  # Joined before it is filled, as every row here is.
-            heading.setSpacing(BADGE_GAP)
-            mark = QLabel(self)
-            mark.setPixmap(badge.pixmap(QSize(KEY_BADGE_W, ICON_SIZE)))
-            mark.setAlignment(Qt.AlignmentFlag.AlignTop)
-            heading.addWidget(mark)
-            heading.addWidget(self.title, 1)
+        heading.addWidget(self.title, 1)
 
         self.detail = QLabel(detail, self)
         self.detail.setObjectName("InspectorNote")
         self.detail.setWordWrap(True)
         self.detail.setVisible(bool(detail))
         layout.addWidget(self.detail)
-
-        self.run_button: QPushButton | None = None
-        if run is not None:
-            self.run_button = QPushButton("Run Agent", self)
-            self.run_button.setEnabled(run.enabled)
-            # The gate's own words: a disabled button teaches its precondition.
-            self.run_button.setToolTip(run.reason)
-            self.run_button.clicked.connect(run.run)
-            holder = QHBoxLayout()
-            layout.addLayout(holder)  # Joined before it is filled, as every row here is.
-            holder.addWidget(self.run_button)
-            holder.addStretch(1)
 
     def select(self) -> None:
         """Make this card's step the selection — the click's meaning, callable by name."""
@@ -299,9 +308,15 @@ class StatusColumn(QFrame):
         layout.setContentsMargins(LANE_PADDING, LANE_PADDING, LANE_PADDING, LANE_PADDING)
         layout.setSpacing(ROW_GAP)
 
+        # The caption row is a control's height in every lane, so the three captions sit
+        # level whether or not a lane ends its row in a button.
+        self._caption_row = QHBoxLayout()
+        layout.addLayout(self._caption_row)  # Joined before it is filled.
+        self._caption_row.setSpacing(ROW_GAP)
         self.caption = QLabel(caption, self)
         self.caption.setObjectName("InspectorCaption")
-        layout.addWidget(self.caption)
+        self.caption.setMinimumHeight(CONTROL_HEIGHT)
+        self._caption_row.addWidget(self.caption, 1, Qt.AlignmentFlag.AlignVCenter)
 
         scroll = QScrollArea(self)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -320,6 +335,10 @@ class StatusColumn(QFrame):
         scroll.viewport().setAutoFillBackground(False)
         content.setAutoFillBackground(False)
         layout.addWidget(scroll, 1)
+
+    def add_tool(self, widget: QWidget) -> None:
+        """A control at the caption row's right end, level with the caption."""
+        self._caption_row.addWidget(widget, 0, Qt.AlignmentFlag.AlignVCenter)
 
     def clear(self) -> None:
         for widget in self._held:
@@ -349,7 +368,12 @@ class StatusColumn(QFrame):
 
 
 class ProgressionBoard(QWidget):
-    """The whole surface: header over three columns, rebuilt wholesale on every change."""
+    """The whole surface: header over three columns, rebuilt wholesale on every change.
+
+    ``run_control`` answers for a list of ticked step ids — None means a build without
+    an agent, and then no card carries a tick and the Ready lane no button: the
+    capability is absent, not greyed.
+    """
 
     def __init__(
         self,
@@ -357,7 +381,7 @@ class ProgressionBoard(QWidget):
         select: Callable[[StepId], None],
         details: Callable[[StepId], None],
         menu: Callable[[StepId, QPoint], None],
-        run_control: Callable[[StepId], RunControl | None],
+        run_control: Callable[[list[StepId]], RunControl | None],
         milestone_badge: Callable[[StepId], QIcon | None] = lambda _step_id: None,
         parent: QWidget | None = None,
     ) -> None:
@@ -367,6 +391,8 @@ class ProgressionBoard(QWidget):
         self._menu = menu
         self._run_control = run_control
         self._milestone_badge = milestone_badge
+        self._ready_ids: list[StepId] = []  # The ready lane's cards, top to bottom.
+        self._ticked: set[StepId] = set()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -384,8 +410,62 @@ class ProgressionBoard(QWidget):
         for column in (self.running, self.ready, self.upcoming):
             columns.addWidget(column, 1)
 
+        # Run N Agents: a face that drops the Run Agent child menu down. A ToolbarButton
+        # with the room the theme keeps for an arrow; InstantPopup, since the face names
+        # a family and picking one member is the verb.
+        self.run_button: QToolButton | None = None
+        if run_control([]) is not None:
+            self.run_button = QToolButton(self.ready)
+            self.run_button.setObjectName("ToolbarButton")
+            self.run_button.setProperty("hasMenu", True)
+            self.run_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            self.run_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.run_button.setFixedHeight(CONTROL_HEIGHT)
+            self.run_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            popup = QMenu(self.run_button)
+            popup.aboutToShow.connect(lambda: self._fill_run_menu(popup))
+            self.run_button.setMenu(popup)
+            self.ready.add_tool(self.run_button)
+            self._refresh_run()
+
+    def ticked(self) -> list[StepId]:
+        """The ticked ready steps, in the lane's order."""
+        return [step_id for step_id in self._ready_ids if step_id in self._ticked]
+
+    def run_menu(self) -> QMenu | None:
+        """The Run Agents dropdown as it would open right now — a test's way in."""
+        popup = self.run_button.menu() if self.run_button is not None else None
+        if popup is not None:
+            self._fill_run_menu(popup)
+        return popup
+
+    def _fill_run_menu(self, popup: QMenu) -> None:
+        popup.clear()
+        control = self._run_control(self.ticked())
+        if control is not None:
+            control.fill(popup)
+
+    def _refresh_run(self) -> None:
+        if self.run_button is None:
+            return
+        control = self._run_control(self.ticked())
+        if control is None:
+            return
+        self.run_button.setText(control.label)
+        self.run_button.setEnabled(control.enabled)
+        self.run_button.setToolTip(control.reason)
+
+    def _on_tick(self, step_id: StepId, on: bool) -> None:
+        if on:
+            self._ticked.add(step_id)
+        else:
+            self._ticked.discard(step_id)
+        self._refresh_run()
+
     def show_progress(self, progress: Progression, weighted: tuple[float, float] | None) -> None:
         self.header.show_progress(progress, weighted)
+        self._ready_ids = [launchable.step.id for launchable in progress.ready[:MAX_READY]]
+        self._ticked &= set(self._ready_ids)  # A step that left the lane leaves the run.
 
         def card(
             step_id: StepId,
@@ -393,7 +473,7 @@ class ProgressionBoard(QWidget):
             detail: str,
             *,
             dimmed: bool = False,
-            with_run: bool = False,
+            with_tick: bool = False,
         ) -> StepCard:
             return StepCard(
                 step_id,
@@ -404,7 +484,8 @@ class ProgressionBoard(QWidget):
                 select=self._select,
                 details=self._details,
                 menu=self._menu,
-                run=self._run_control(step_id) if with_run else None,
+                tick=self._on_tick if with_tick and self.run_button is not None else None,
+                ticked=step_id in self._ticked,
             )
 
         self.running.clear()
@@ -418,7 +499,7 @@ class ProgressionBoard(QWidget):
         self.ready.clear()
         for launchable in progress.ready[:MAX_READY]:
             detail = f"Unblocks {launchable.unlocks}" if launchable.unlocks else ""
-            self.ready.add(card(launchable.step.id, launchable.step.title, detail, with_run=True))
+            self.ready.add(card(launchable.step.id, launchable.step.title, detail, with_tick=True))
         if len(progress.ready) > MAX_READY:
             self.ready.say(f"+{len(progress.ready) - MAX_READY} more")
         if not progress.ready:
@@ -428,6 +509,8 @@ class ProgressionBoard(QWidget):
                 self.ready.say("All done.")
             else:
                 self.ready.say("Nothing to start — everything is running, blocked, or waiting.")
+
+        self._refresh_run()
 
         self.upcoming.clear()
         for coming in progress.upcoming:

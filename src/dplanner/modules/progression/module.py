@@ -14,10 +14,12 @@ Four seams, all established elsewhere in this application:
 - **Selecting a card publishes the selection scope**, so the Step menu's verbs target it.
 - **Activating one opens its details**, by running ``steps.details`` against a context
   naming exactly that card's step — the same seam the Run button already uses.
-- **Run Agent arrives as a state and a verb** (``agent_state``, ``agent_run``), closed
-  over the real action by the composition root. The button renders the gate's own
-  answer — a disabled one wears the reason — and this module never learns the agent
-  module exists. ``None`` is a build without an agent: the button is absent, not greyed.
+- **Run Agent arrives as a state and a menu** (``agent_state``, ``agent_menu``), closed
+  over the real action and the Step menu's own Run Agent child by the composition root.
+  The Ready lane's *Run N Agents* button renders the gate's answer over the ticked steps
+  — a disabled one wears the reason — and drops that child menu down, so the board
+  offers what the menu offers and this module never learns the agent module exists.
+  ``None`` is a build without an agent: the button and the ticks are absent, not greyed.
 """
 
 from collections.abc import Callable
@@ -25,7 +27,7 @@ from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPoint
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QMenu, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.progression import estimated_progress, progression
@@ -68,10 +70,6 @@ def _no_days(_step: Step) -> float | None:
     return None
 
 
-def _no_run(_context: Context) -> None:
-    pass
-
-
 def _no_badge(_step_id: StepId) -> QIcon | None:
     return None
 
@@ -88,10 +86,12 @@ class ProgressionDeps:
     status_for: Callable[[Step], str] = field(default=_pending)
     # A step's estimated days, for the weighted header line. Same seam, same owner rule.
     days_for: Callable[[Step], float | None] = field(default=_no_days)
-    # The Run Agent gate and verb, closed over the real action. None is a build without
-    # an agent: the button is absent from the board, not disabled.
+    # The Run Agent gate, closed over the real action, and the fill of the Step menu's
+    # Run Agent child — the profiles, then Manage Agent Profiles… — which the Ready lane's
+    # button drops down. None is a build without an agent: the button is absent from the
+    # board, not disabled.
     agent_state: Callable[[Context], ActionState] | None = None
-    agent_run: Callable[[Context], None] = field(default=_no_run)
+    agent_menu: Callable[[QMenu], None] | None = None
     # A milestone's key and its own shade of the project's colour map, or None for a step
     # that is not one — the badge its card leads with. Wired by the composition root: which
     # map a project uses is one module's assumption and the key is another's letter.
@@ -194,17 +194,16 @@ class ProgressionActivity(EntityActivity):
         self.board.show_progress(progress, estimated_progress(progress, self._deps.days_for))
 
     def _publish(self, step_id: StepId | None) -> None:
-        nodes = () if step_id is None else (ContextNode(selection_uri("step", step_id)),)
-        self.publish_selection(nodes)
+        self._publish_all([] if step_id is None else [step_id])
+
+    def _publish_all(self, step_ids: list[StepId]) -> None:
+        self.publish_selection(_nodes(step_ids))
 
     def _step_context(self, step_id: StepId) -> Context:
-        """The context the Run Agent gate is asked against: exactly this card's step.
-
-        Synthesised rather than read from the service, so the button launches the step
-        it sits on even when this pane is not the active one and its publish was
-        suppressed.
-        """
-        return Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)})
+        """A context naming exactly this card's step — what a verb run from the card is
+        handed, so it acts on the card even when this pane is not the active one and
+        its publish was suppressed."""
+        return Context({SCOPE_SELECTION: _nodes([step_id])})
 
     def _open_details(self, step_id: StepId) -> None:
         # Select first, so the window agrees about what the dialog is showing; then run the
@@ -212,25 +211,44 @@ class ProgressionActivity(EntityActivity):
         self._publish(step_id)
         self._deps.actions.run("steps.details", self._step_context(step_id))
 
-    def _run_control(self, step_id: StepId) -> RunControl | None:
+    def _run_control(self, step_ids: list[StepId]) -> RunControl | None:
+        """The Run N Agents button over the ticked steps: the gate's own answer, and the
+        Step menu's Run Agent child as its dropdown.
+
+        The gate is asked against a context naming exactly the ticked steps, so the face
+        counts what is ticked whatever the window's selection is; opening the menu then
+        publishes them, because its entries — like every presenter — act on the context
+        the user has now. A press on the board makes this pane the active one first.
+        """
         deps = self._deps
-        if deps.agent_state is None:
+        if deps.agent_state is None or deps.agent_menu is None:
             return None  # A build without an agent: the capability is absent, not greyed.
-        state = deps.agent_state(self._step_context(step_id))
-        if not state.visible:
-            return None
+        agent_menu = deps.agent_menu
+        count = len(step_ids)
+        label = f"Run {count} Agent{'' if count == 1 else 's'}" if count else "Run Agents"
+        if not count:
+            reason = "Tick the ready steps to run, then pick an agent and a terminal"
+            return RunControl(label, False, reason, agent_menu)
+        state = deps.agent_state(Context({SCOPE_SELECTION: _nodes(step_ids)}))
+        reason = "Pick an agent and a terminal"
+        if not state.enabled and state.label:
+            reason = state.label  # The gate's own words: a disabled face teaches why.
 
-        def run() -> None:
-            self._publish(step_id)
-            deps.agent_run(self._step_context(step_id))
+        def fill(menu: QMenu) -> None:
+            self._publish_all(step_ids)
+            agent_menu(menu)
 
-        return RunControl(enabled=state.enabled, reason=state.label or "Run Agent", run=run)
+        return RunControl(label, state.enabled, reason, fill)
 
     def _on_context_menu(self, _step_id: StepId, position: QPoint) -> None:
         # The card published its step on the press, so the menu reads the same context
         # every other presenter does.
         menu = build_menu(self._deps.actions, self._deps.context, "Step", self.board)
         menu.exec(position)
+
+
+def _nodes(step_ids: list[StepId]) -> tuple[ContextNode, ...]:
+    return tuple(ContextNode(selection_uri("step", step_id)) for step_id in step_ids)
 
 
 class ProgressionModule:

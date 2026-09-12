@@ -2845,10 +2845,10 @@ side by side in a multiplexer for the four the lasso caught, are not one setting
 different value; they are two ways of working a person switches between all day.
 
 A **profile** (`step_agent_instruction/profiles.py`) is the two answers under a name,
-and the list of them is the setting. The first is the default — what *Run Agent…* itself
-runs, so the verb, the Agent tab's button and the palette need no picker — and the rest
-are the entries of *Step ▸ Run Agent With*, a data child menu rebuilt on open so a profile
-added in Settings is offered at once. Each entry is greyed with its own reason: the
+and the list of them is the setting. The first is the default — what `agent.run` itself
+runs, so the Agent tab's button and the palette need no picker — and the whole list is
+*Step ▸ Run Agent*, a data child menu rebuilt on open so a profile added in Settings is
+offered at once, the default marked. Each entry is greyed with its own reason: the
 profile's terminal is one probe (`launcher.template_refusal` — *herdr is not installed*,
 *not inside a tmux session*), asked before any step is, because it is the profile's
 refusal and not the selection's. Over a multi-selection every chosen step goes through
@@ -2872,6 +2872,27 @@ The two single settings the profiles replaced are read as the default profile wh
 list has been stored, so a machine configured before profiles existed keeps its choices
 without anybody retyping them — the same idea as a harness carrying the command texts it
 shipped earlier. Profiles are per user, per machine (`user_config`), never the plan.
+
+**The verb has one seat, and it is the child menu.** *Run Agent…* used to sit flat beside
+*Run Agent With ▸*, two entries for one act, and the flat one hid the choice the other
+offered. Now the child menu *is* Run Agent: the profiles, a rule, and *Manage Agent
+Profiles…* — the way to the settings page from the menu that needs it, through the
+settings module's `open(section)` handed over by the root. The verb `agent.run` still
+exists — every button and the palette run it — but it is registered `in_menus=False`:
+the menu bar seats no QAction for it and the pop-ups skip it, while it keeps its menu and
+its submenu (the child's title) so the palette can say *Step ▸ Run Agent* under it. A
+verb whose seat is a data menu's own entries is a new shape for the registry; it owns
+no shortcut, because only a seated QAction fires one, and the registry refuses the pair.
+
+**The list is seeded once, and a removal stands.** A person should not have to build
+*Codex in herdr* by hand to find out it exists, and a dropdown that offers one choice
+teaches nothing. `seed_profiles` runs when the window is built and appends every harness
+in Ghostty, herdr and Automatic (the platform's own terminal) after what is stored — the
+stored default keeps its place, and a pairing a stored profile already *means* is skipped
+by its choices rather than its name, so a hand-named *Claude in Ghostty* is never doubled.
+The `profiles_seeded` flag is written with the list: a seeded profile the person removes
+is not put back on the next start, which is what makes the seed a migration and not a
+default the list keeps falling back to.
 
 ### A multiplexer is a row, and a two-call one is one template
 
@@ -3095,10 +3116,15 @@ what either is stored as, and the derivation is tested with a dict-backed functi
 is persisted, for the ordering's reason — `dplanner status set` changes the answer with no
 window running to notice. The tab (`modules/progression/`), `dplanner progression show` and
 `--json` are three readers of the one function, so no surface can recommend a launch
-another surface would dispute. The Run Agent button on a ready card is the same rule at the
-module layer: it renders the real `agent.run` action's state — evaluated against a context
-synthesised for exactly that card's step — so the gate's reason appears verbatim and no
-second copy of "what launching needs" exists.
+another surface would dispute. The Ready lane's *Run N Agents* button is the same rule at
+the module layer: each ready card carries a tick, and the button renders the real
+`agent.run` action's state — evaluated against a context synthesised for exactly the ticked
+steps — so the gate's reason appears verbatim and no second copy of "what launching needs"
+exists. What it drops down is the Step menu's own Run Agent child (`agent_menu`, the data
+menu's fill handed over by the root), never a copy: the board offers exactly what the
+right-click offers. Opening the menu publishes the ticked steps first, because a menu
+entry — like every presenter — acts on the context the user has now, and the face counts
+what is ticked whatever the window's selection was.
 
 ## Time estimates: two worker pools, one greedy simulation
 

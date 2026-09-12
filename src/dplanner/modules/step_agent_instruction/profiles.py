@@ -2,8 +2,8 @@
 
 A profile is one answer to Run Agent's two questions — the agent command and the terminal
 template — under a name a person picks: *Claude in Ghostty*, *Codex in herdr*. The first
-profile is the **default**, what *Run Agent…* itself runs; the rest are the entries of
-*Step ▸ Run Agent With*. Both texts keep the meaning they had as single settings: a blank
+profile is the **default**, what *Run Agent…* itself runs; all of them are the entries of
+*Step ▸ Run Agent*. Both texts keep the meaning they had as single settings: a blank
 agent command is the first harness, a blank terminal template is *Automatic*.
 
 Stored per user, per machine (``user_config``), never in the plan: which terminal a
@@ -11,6 +11,15 @@ person prefers is not the project's business. **The two settings they replace ar
 as the default profile** when no list has been stored yet, so a machine configured before
 profiles existed keeps its choices without anybody retyping them — the same idea as a
 harness carrying the command texts it shipped earlier.
+
+**The list is seeded once, and the seed is every known pairing.** A person should not
+have to build *Codex in herdr* by hand to find out it exists: :func:`seed_profiles` adds
+one profile per harness and per terminal worth naming — Ghostty, herdr and the platform's
+own default (*Automatic*) — skipping any pairing a stored profile already means, by its
+choices rather than its name, so a hand-named *Claude in Ghostty* is never doubled. It
+runs when the window is built and records that it has (``profiles_seeded``), so a
+profile the person removes afterwards stays removed; whatever was the default before
+stays the default.
 
 **A name follows the choices until somebody types one.** :func:`suggested_name` words a
 profile by its agent and terminal — *Claude Code in herdr* — and :func:`update_profile`
@@ -27,9 +36,17 @@ from typing import Any
 from dplanner.domain.agents import AgentHarness
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
-from dplanner.modules.step_agent_instruction.launcher import harness_of, terminals_for
+from dplanner.modules.step_agent_instruction.launcher import (
+    current_command,
+    harness_of,
+    terminals_for,
+)
 
 PROFILES_KEY = "profiles"
+# Whether the known pairings have been added once — a person's later removals stand.
+SEEDED_KEY = "profiles_seeded"
+# The terminal rows the seed pairs every harness with, by label; "" is Automatic.
+SEEDED_TERMINALS = ("Ghostty", "herdr", "")
 # The two settings profiles replaced; read only when no profile list is stored.
 AGENT_COMMAND_KEY = "agent_command"
 LAUNCH_COMMAND_KEY = "launch_command"
@@ -128,6 +145,51 @@ def follows_choices(
     return re.fullmatch(rf"{base}( \d+)?", profile.name) is not None
 
 
+def _choices(profile: Profile, harnesses: tuple[AgentHarness, ...]) -> tuple[str, str]:
+    """What a profile means, for telling two apart: the harness command a text resolves
+    to and the terminal template as typed."""
+    return current_command(profile.agent_command, harnesses), profile.launch_command.strip()
+
+
+def seed_profiles(
+    harnesses: tuple[AgentHarness, ...], platform: str = sys.platform
+) -> list[Profile]:
+    """Once per user and machine: every harness in every terminal of
+    :data:`SEEDED_TERMINALS`, appended after the profiles already stored.
+
+    A pairing a stored profile already means is skipped, so the seed never doubles a
+    profile a person named themselves; the stored default stays first. The flag is
+    written with the list, so a seeded profile the person removes stays removed. With
+    no harnesses there is nothing to seed and nothing is recorded. Returns what was
+    added.
+    """
+    if not harnesses or get_global(MODULE_ID, SEEDED_KEY):
+        return []
+    rows = terminals_for(platform)
+    templates = [
+        next((row.command for row in rows if row.label == label), "") for label in SEEDED_TERMINALS
+    ]
+    profiles = read_profiles()
+    if get_global(MODULE_ID, PROFILES_KEY) is None and profiles[0].name == DEFAULT_NAME:
+        # The two old settings read as a profile nobody named: name it by its choices
+        # now that it is written among named ones, rather than leave a *Default* row.
+        profiles[0] = replace(profiles[0], name=suggested_name(profiles[0], harnesses, platform))
+    known = {_choices(profile, harnesses) for profile in profiles}
+    added: list[Profile] = []
+    for harness in harnesses:
+        for template in templates:
+            candidate = Profile("", harness.command, template)
+            if _choices(candidate, harnesses) in known:
+                continue
+            known.add(_choices(candidate, harnesses))
+            name = suggested_name(candidate, harnesses, platform)
+            names = [profile.name for profile in profiles + added]
+            added.append(replace(candidate, name=unique_name(name, names)))
+    write_profiles(profiles + added)
+    set_global(MODULE_ID, SEEDED_KEY, True)
+    return added
+
+
 def update_profile(
     index: int,
     *,
@@ -141,7 +203,7 @@ def update_profile(
     changes and the name still reads as what the old choices suggested, it becomes what
     the new ones suggest. A name a person typed stays theirs. Either way the name ends up
     unique among the profiles — a typed duplicate is numbered rather than refused, since
-    *Run Agent With* and the default lookup both go by name.
+    *Run Agent* and the default lookup both go by name.
     """
     profiles = read_profiles()
     if not 0 <= index < len(profiles):

@@ -81,6 +81,8 @@ class DynamicMenuBar:
         return self._actions[action_id]
 
     def _add_spec(self, spec: ActionSpec) -> None:
+        if not spec.in_menus:
+            return  # Seated in a data child menu's entries, not here.
         action = QAction(spec.label, self._window)
         if spec.shortcut is not None:
             action.setShortcuts(key_sequences(spec.shortcut))

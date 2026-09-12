@@ -368,6 +368,86 @@ def test_the_two_old_settings_read_as_the_default_profile(app):
     assert [p.name for p in read_profiles()] == ["Mine", "Codex in herdr"]
 
 
+def test_the_known_pairings_are_seeded_once_and_never_doubled(app):
+    """Every harness in Ghostty, herdr and Automatic, added after what is stored — a
+    pairing already there by its choices is skipped whatever it is named, the stored
+    default stays first, and a second seed (or a removal) is honoured by the flag."""
+    from dplanner.framework.user_config import get_global
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
+    from dplanner.modules.step_agent_instruction.launcher import HERDR_COMMAND
+    from dplanner.modules.step_agent_instruction.profiles import (
+        SEEDED_KEY,
+        Profile,
+        read_profiles,
+        seed_profiles,
+        write_profiles,
+    )
+
+    write_profiles([Profile("Mine", "", "ghostty -e {script}"), Profile("Codex", "codex {prompt}")])
+    added = seed_profiles(HARNESSES, platform="linux")
+    names = [p.name for p in read_profiles()]
+    assert names[:2] == ["Mine", "Codex"]  # The stored list, its default still first.
+    assert (
+        [p.name for p in added]
+        == names[2:]
+        == [
+            "Claude Code in herdr",
+            "Claude Code",
+            "Codex in Ghostty",
+            "Codex in herdr",
+            "OpenCode in Ghostty",
+            "OpenCode in herdr",
+            "OpenCode",
+        ]
+    )
+    herdr = next(p for p in added if p.name == "Codex in herdr")
+    assert (herdr.agent_command, herdr.launch_command) == ("codex {prompt}", HERDR_COMMAND)
+    assert get_global(MODULE_ID, SEEDED_KEY) is True
+    # Seeded: a removal stands, and nothing is added twice.
+    write_profiles(read_profiles()[:3])
+    assert seed_profiles(HARNESSES, platform="linux") == []
+    assert len(read_profiles()) == 3
+
+
+def test_a_fresh_machine_is_seeded_around_its_default_and_no_harness_seeds_nothing(app):
+    from dplanner.framework.user_config import get_global
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
+    from dplanner.modules.step_agent_instruction.profiles import (
+        SEEDED_KEY,
+        read_profiles,
+        seed_profiles,
+    )
+
+    assert seed_profiles((), platform="linux") == [] and get_global(MODULE_ID, SEEDED_KEY) is None
+    seed_profiles(HARNESSES, platform="darwin")
+    names = [p.name for p in read_profiles()]
+    # The unnamed old-settings profile — Claude Code in Automatic — is named by its
+    # choices as it is first written, and stands for that pairing, so it is not doubled.
+    assert names[:3] == ["Claude Code", "Claude Code in Ghostty", "Claude Code in herdr"]
+    assert names.count("Claude Code") == 1 and len(names) == 9
+    assert len({(p.agent_command, p.launch_command) for p in read_profiles()}) == 9
+
+
+def test_the_window_seeds_the_profiles_when_it_is_built(services):
+    from dplanner.modules.step_agent_instruction.profiles import read_profiles
+
+    assert len(read_profiles()) == 9
+
+
+def test_manage_agent_profiles_opens_settings_on_the_profiles_page(services, monkeypatch):
+    from dplanner.modules.settings.module import SettingsModule
+    from dplanner.modules.step_agent_instruction.module import SETTINGS_SECTION
+
+    settings = next(m for m in services.modules if isinstance(m, SettingsModule))
+    monkeypatch.setattr(settings.dialog, "show", lambda: None)
+    services.actions.run("agent.profiles", services.context.current())
+    current = settings.dialog._tree.currentItem()
+    assert current is not None and current.text(0) == "Agent profiles"
+    assert settings.dialog._pane.currentWidget() is settings.dialog._pages[SETTINGS_SECTION]
+    spec = services.actions.spec("agent.profiles")
+    assert (spec.menu, spec.submenu, spec.in_menus) == ("Step", "Run Agent", False)
+
+
 def test_a_profile_is_named_by_its_choices():
     from dplanner.modules.step_agent_instruction.profiles import Profile, suggested_name
 
@@ -521,10 +601,21 @@ def test_run_agent_with_lists_the_profiles_and_launches_through_the_picked_one(
     select(services, step)
     menu = services.window.dynamic_menubar.data_menu("agent.run_with")
     labels = [a.text() for a in menu.actions()]
-    assert labels == ["Claude in Ghostty (default)", "Codex in herdr — herdr is not installed"]
+    assert labels == [
+        "Claude in Ghostty (default)",
+        "Codex in herdr — herdr is not installed",
+        "",  # The rule before the way to Settings.
+        "&Manage Agent Profiles…",
+    ]
     assert menu.actions()[0].isEnabled() and not menu.actions()[1].isEnabled()
+    assert menu.actions()[2].isSeparator() and menu.actions()[3].isEnabled()
     state = services.actions.spec("agent.run").state(services.context.current())
     assert state.enabled  # Run Agent… is the default profile, whose terminal is fine.
+    # The verb's seat is the child menu: neither it nor the Settings link is listed flat.
+    step_menu = services.window.dynamic_menubar._menus["Step"]
+    flat = [a.text() for a in step_menu.actions() if not a.isSeparator()]
+    assert "Run &Agent…" not in flat and "&Manage Agent Profiles…" not in flat
+    assert "Run Agent" in flat  # The child menu's own entry.
 
     monkeypatch.setattr(launcher, "template_refusal", lambda *a, **k: "")
     launched: list[tuple[list[str], str]] = []

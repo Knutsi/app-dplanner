@@ -35,6 +35,7 @@ from dplanner.domain.model import Library, Node, Step, StepId
 from dplanner.domain.progression import DONE
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import Conflict, FilesFor
+from dplanner.framework.action_menu import append_action
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -71,6 +72,7 @@ from dplanner.modules.step_agent_instruction.profiles import (
     Profile,
     default_profile,
     read_profiles,
+    seed_profiles,
 )
 from dplanner.modules.step_agent_instruction.prompt import (
     EMPTY_BRIEFING,
@@ -95,6 +97,12 @@ from dplanner.modules.step_agent_instruction.settings_page import (
 from dplanner.theme.icons import spark_icon, typewriter_icon
 
 PLACEHOLDER = "How to carry this step out: which files, which conventions, what done means."
+
+# The Step menu's Run Agent child: the profiles, then the way to Settings. The data menu
+# is its seat; the two verbs name it as their submenu so the palette says where they live.
+RUN_MENU_ID = "agent.run_with"
+RUN_MENU_TITLE = "Run Agent"
+SETTINGS_SECTION = f"{MODULE_ID}.launch"
 
 PREVIEW_NOTE = (
     "This is the exact briefing Run Agent will launch with. File paths are relative to"
@@ -220,6 +228,10 @@ class StepAgentInstructionDeps:
     # What the step's agent runs have consumed, in words, for the Agent tab — the run
     # tracker's ledger, read through the root; "" when nothing has been recorded.
     usage_words: Callable[[StepId], str] = field(default=lambda _step_id: "")
+    # Opens Settings on the section with this id — *Manage Agent Profiles…* at the foot
+    # of the Run Agent child menu lands on this module's own page. The settings module
+    # owns the dialog; the root closes over it.
+    open_settings: Callable[[str], None] = field(default=lambda _section_id: None)
 
 
 class StepAgentInstructionModule:
@@ -306,13 +318,18 @@ class StepAgentInstructionModule:
                 tip="Mark this step for agent execution; its description is the briefing",
             )
         )
+        # The verb every button and the palette run — through the default profile. Its
+        # seat in the Step menu is the child menu below, which lists every profile with
+        # the default first, so it is not listed flat beside it.
         deps.actions.register(
             ActionSpec(
                 id="agent.run",
                 label="Run &Agent…",
                 menu="Step",
                 group="agent",
+                submenu=RUN_MENU_TITLE,
                 order=10,
+                in_menus=False,
                 tip="Open a terminal with the agent briefed on this step",
                 state=self._can_run,
                 run=self._run,
@@ -320,12 +337,25 @@ class StepAgentInstructionModule:
         )
         deps.actions.register_data_menu(
             DataMenuSpec(
-                id="agent.run_with",
+                id=RUN_MENU_ID,
                 menu="Step",
                 group="agent",
-                title="Run Agent With",
-                order=15,
+                title=RUN_MENU_TITLE,
+                order=10,
                 fill=self._fill_profiles,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="agent.profiles",
+                label="&Manage Agent Profiles…",
+                menu="Step",
+                group="agent",
+                submenu=RUN_MENU_TITLE,
+                order=90,
+                in_menus=False,
+                tip="Settings ▸ Agent profiles: the agents and terminals Run Agent offers",
+                run=lambda _context: deps.open_settings(SETTINGS_SECTION),
             )
         )
         deps.actions.register(
@@ -342,11 +372,14 @@ class StepAgentInstructionModule:
         )
         deps.settings_sections.register(
             SettingsSection(
-                id=f"{MODULE_ID}.launch",
+                id=SETTINGS_SECTION,
                 category=("Agent profiles",),
                 factory=lambda parent: build_page(parent, harnesses=deps.harnesses),
             )
         )
+        # Once per user and machine: every harness in every terminal worth naming, so the
+        # child menu offers the combinations before anybody builds one by hand.
+        seed_profiles(deps.harnesses)
 
     # -- running -------------------------------------------------------------------------------
 
@@ -523,10 +556,11 @@ class StepAgentInstructionModule:
         return True, claim_started and deps.mark_started(step.id)
 
     def _fill_profiles(self, menu: QMenu) -> None:
-        """Step ▸ Run Agent With: one entry per profile, the default first and marked,
-        each greyed with its own reason — a profile's terminal may be missing where
-        another's is not — and rebuilt every time the menu opens, so a profile added in
-        Settings is offered at once."""
+        """Step ▸ Run Agent: one entry per profile, the default first and marked, each
+        greyed with its own reason — a profile's terminal may be missing where another's
+        is not — and rebuilt every time the menu opens, so a profile added in Settings
+        is offered at once. Under a rule, the way to Settings — the same child menu the
+        progression board's *Run Agents* button drops down."""
         deps = self._deps
         context = deps.context.current()
         for index, profile in enumerate(read_profiles()):
@@ -540,6 +574,8 @@ class StepAgentInstructionModule:
             entry.triggered.connect(
                 lambda _checked=False, p=profile: self._run(deps.context.current(), p)
             )
+        menu.addSeparator()
+        append_action(menu, deps.actions, deps.context, "agent.profiles")
 
     def _run_name(self, step: Step) -> str:
         """What this step's worktree and branch are called: the launcher's rule over the

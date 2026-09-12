@@ -3,8 +3,8 @@ what a launch records on the step.
 
 A **profile** (``profiles.py``) is one answer to Run Agent's two questions — which agent
 CLI, and which terminal or multiplexer it opens in — under a name. The page is a list of
-them beside an editor for the picked one; the first is the default *Run Agent…* runs, the
-rest are the entries of *Step ▸ Run Agent With*, and *Make Default* moves one to the top.
+them beside an editor for the picked one; the first is the default *Run Agent…* runs, all
+of them are the entries of *Step ▸ Run Agent*, and *Make Default* moves one to the top.
 
 **Sane defaults, options laid out.** Both of a profile's choices are a dropdown of known
 rows over an editable field: the agent is one of the harnesses this build knows — Claude
@@ -347,7 +347,7 @@ def build_page(
     layout.addWidget(QLabel("Profiles", page))
     layout.addWidget(
         _note(
-            "Run Agent… runs the default profile; the others are Step ▸ Run Agent With.",
+            "Run Agent… runs the default profile; Step ▸ Run Agent lists them all.",
             page,
         )
     )

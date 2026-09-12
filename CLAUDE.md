@@ -1110,13 +1110,23 @@ root, stop and look for the registry or capability you have not found yet.
 - **A launch profile is a name over the two choices, and the first is the default.**
   `step_agent_instruction/profiles.py`: a `Profile` is an agent command and a terminal
   template under a name, kept per user (`user_config`; the two single settings they
-  replaced are read as the default profile when no list is stored). *Run Agent…* runs
-  the first; *Step ▸ Run Agent With* is a data child menu of the rest, each greyed with
-  its own reason (`launcher.template_refusal`: a row's probe, asked before any step is),
-  and Settings ▸ Agent profiles is the list beside an editor for the picked one. A
-  profile's name follows its choices — *Claude Code in herdr* — until somebody types
-  one, and a taken name is numbered rather than refused. Over a selection every chosen
-  step goes through the one profile — with a multiplexer, one pane each.
+  replaced are read as the default profile when no list is stored). `agent.run` runs
+  the first — the Agent tab's button and the palette — and its seat in the Step menu is
+  *Step ▸ Run Agent*, a data child menu of every profile, the default marked, each
+  greyed with its own reason (`launcher.template_refusal`: a row's probe, asked before
+  any step is), then a rule and *Manage Agent Profiles…*, which lands Settings on the
+  page (`SettingsModule.open(section)`, wired by the root). The verb and the link are
+  `in_menus=False`: registered, runnable, in the palette under the child's path, seated
+  nowhere else. **The list is seeded once** (`seed_profiles`, from the module's
+  `register()`): every harness in Ghostty, herdr and Automatic, appended after what is
+  stored, a pairing skipped when a stored profile already means it by its choices, and
+  the `profiles_seeded` flag written with it so a removal stands. A profile's name
+  follows its choices — *Claude Code in herdr* — until somebody types one, and a taken
+  name is numbered rather than refused. Over a selection every chosen step goes through
+  the one profile — with a multiplexer, one pane each. The progression board's Ready
+  lane is the same menu again: each ready card carries a tick, and the lane's *Run N
+  Agents* button (top right, level with the caption) drops the child down over the
+  ticked steps, publishing them as it opens.
 - **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
   state; the dashed ring round the body moves, which is what says "somebody is on this one
   right now". One `QTimer` on the scene advances every ring and runs only while a node

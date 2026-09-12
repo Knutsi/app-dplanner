@@ -42,6 +42,21 @@ def test_an_unknown_group_names_the_valid_ones(registry):
         registry.register(spec("a", group="nope"))
 
 
+def test_a_verb_seated_in_a_data_menu_may_carry_no_shortcut(registry):
+    """Nothing in the bar would fire it, so the registration says so."""
+    registry.register(spec("a", in_menus=False))
+    with pytest.raises(ValueError, match="in no menu"):
+        registry.register(spec("b", in_menus=False, shortcut="Ctrl+B"))
+
+
+def test_a_data_menu_is_found_by_id(registry):
+    from dplanner.framework.action_registry import DataMenuSpec
+
+    data = DataMenuSpec(id="d", menu="File", group="open", title="D", fill=lambda _m: None)
+    registry.register_data_menu(data)
+    assert registry.data_menu("d") is data
+
+
 def test_ordering_is_menu_then_group_then_order(registry):
     registry.register(spec("edit", menu="Edit", group="history"))
     registry.register(spec("save", group="save", order=10))

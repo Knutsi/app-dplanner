@@ -235,3 +235,18 @@ def test_a_nested_child_menu_hides_with_its_entries_and_its_parent_with_it(app):
     shown[0] = False
     bar.menubar.refresh(bar.context.current())
     assert entries(step_menu(bar)) == ["rename"]
+
+
+def test_a_verb_seated_in_a_data_menu_gets_no_entry_of_its_own(app):
+    """``in_menus=False``: the spec is registered — runnable, in the palette — but the
+    bar seats nothing for it, not even a child menu for the submenu it names."""
+    bar = build(app, specs=(("rename", "edit", None, 10),))
+    bar.registry.register(
+        ActionSpec(id="run", label="Run", menu="Step", group="open", submenu="Run", in_menus=False)
+    )
+    step = bar.menubar._menus["Step"]
+    assert [a.text() for a in step.actions() if a.isVisible()] == ["rename"]
+    assert ("Step", "Run") not in bar.menubar._submenus
+    with pytest.raises(KeyError):
+        bar.menubar.action("run")
+    bar.registry.run("run", bar.context.current())  # Still a verb: nothing refuses it.
