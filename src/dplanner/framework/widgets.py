@@ -1,9 +1,10 @@
 """Small shared widget helpers.
 
-Nothing here is a framework concept — these are the three or four things every second
-feature would otherwise reimplement slightly differently: a confirmation whose default is
-"no", a centred column at a readable measure, what an empty page says, and Ctrl+wheel
-zoom. Add to it sparingly; a helper that only one feature uses belongs in that feature.
+Nothing here is a framework concept — these are the handful of things every second feature
+would otherwise reimplement slightly differently: a confirmation whose default is "no", a
+centred column at a readable measure, what an empty page says, the caption over a block and
+the remark under it, and Ctrl+wheel zoom. Add to it sparingly; a helper that only one
+feature uses belongs in that feature.
 """
 
 from collections.abc import Callable
@@ -50,6 +51,21 @@ def confirm(parent: QWidget | None, title: str, question: str) -> bool:
     return answer == QMessageBox.StandardButton.Yes
 
 
+def caption(text: str, parent: QWidget | None = None) -> QLabel:
+    """The one caption look (DESIGN.md's *Hierarchy*): bold, secondary, over its block."""
+    label = QLabel(text, parent)
+    label.setObjectName("InspectorCaption")
+    return label
+
+
+def note(text: str, parent: QWidget | None = None) -> QLabel:
+    """A remark that changes with the data (DESIGN.md's *Words*): secondary, normal weight."""
+    label = QLabel(text, parent)
+    label.setObjectName("InspectorNote")
+    label.setWordWrap(True)
+    return label
+
+
 def centered_column(content: QWidget, max_width: int) -> QWidget:
     """Wrap ``content`` so it sits centred at a readable measure.
 
@@ -80,8 +96,8 @@ class EmptyState(QWidget):
 
     A tab cannot go off screen the way a panel does (DESIGN.md's *Panels*), so it says so
     in words — and a line left where the layout happened to put it reads as a stray
-    footer. ``say`` shows the message and hides on ""; the caller hides the content the
-    state stands in for and gives this the same stretch, so the two trade places.
+    footer. ``say`` shows the message and hides on "", and the content it ``stands_in_for``
+    does the opposite: the caller gives both the same stretch, and the two trade places.
     """
 
     def __init__(
@@ -90,8 +106,10 @@ class EmptyState(QWidget):
         parent: QWidget | None = None,
         *,
         action: tuple[str, Callable[[], object]] | None = None,  # A verb; its answer is not read.
+        stands_in_for: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.stands_in_for = stands_in_for
         self.setObjectName("EmptyState")
         self.label = QLabel(text, self)
         self.label.setObjectName("EmptyStateText")
@@ -112,11 +130,16 @@ class EmptyState(QWidget):
             self.button.clicked.connect(run)
             layout.addWidget(self.button, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch(1)
-        self.setVisible(bool(text))
+        self._trade(bool(text))
 
     def say(self, text: str) -> None:
         self.label.setText(text)
-        self.setVisible(bool(text))
+        self._trade(bool(text))
+
+    def _trade(self, shown: bool) -> None:
+        self.setVisible(shown)
+        if self.stands_in_for is not None:
+            self.stands_in_for.setVisible(not shown)
 
     def text(self) -> str:
         return self.label.text()

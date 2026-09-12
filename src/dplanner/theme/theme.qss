@@ -480,6 +480,29 @@ QSplitter::handle:vertical:pressed {
     color: $TEXT_SECONDARY;
 }
 
+/* What a surface says while it is not yet showing the truth (framework/signalling.py):
+   *Updating…* at a control strip's right while a rebuild is owed, and a status line's
+   words. The line's glyph carries its tone as an inline colour; the words stay secondary. */
+#UpdatingIndicator, #StatusLine {
+    color: $TEXT_SECONDARY;
+}
+
+/* A progress bar is a 4 px accent strip — no text, no frame — and there is one kind of it
+   (DESIGN.md's *Signalling*). The chunk must be styled too, or Fusion's striped chunk is
+   drawn into the trough and reads as mud. */
+QProgressBar {
+    background-color: $BG_OVERLAY;
+    border: none;
+    border-radius: 2px;
+    min-height: 4px;
+    max-height: 4px;
+}
+
+QProgressBar::chunk {
+    background-color: $ACCENT;
+    border-radius: 2px;
+}
+
 /* A feature's card in a panel (framework/cards.py): a well on the elevated panel, the
  * same contrast as a plain field. No colour here — it would cascade onto every label
  * inside. */
@@ -669,19 +692,6 @@ QSplitter::handle:vertical:pressed {
 
 #TaskRowDismiss:hover {
     color: $TEXT_PRIMARY;
-}
-
-/* A thin accent strip: the chunk must be styled too, or Fusion's striped chunk is drawn
- * into the 4 px trough and reads as mud. */
-#TaskBrowserDialog QProgressBar {
-    background-color: $BG_OVERLAY;
-    border: none;
-    border-radius: 2px;
-}
-
-#TaskBrowserDialog QProgressBar::chunk {
-    background-color: $ACCENT;
-    border-radius: 2px;
 }
 
 /* ---- Projects: the Project dialog, Move Plan, Open Projects (DESIGN.md: settings above a

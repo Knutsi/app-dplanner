@@ -1,0 +1,110 @@
+"""State signalling: the indicator follows one debouncer, the status line wears a tone, and
+a progress bar is a four-pixel accent strip in every theme."""
+
+import pytest
+from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QProgressBar, QWidget
+
+from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.signalling import StatusLine, UpdatingIndicator
+from dplanner.theme import apply_theme
+from dplanner.theme.themes import DARK, LIGHT
+from dplanner.theme.tones import STATUS_TONES
+
+
+@pytest.fixture
+def host(app):
+    widget = QWidget()
+    yield widget
+    widget.deleteLater()
+
+
+def test_the_indicator_shows_from_the_first_trigger_until_the_rebuild_ran(host):
+    service = DebounceService()
+    debounced = Debounced(lambda: None, 30, parent=host, service=service)
+    indicator = UpdatingIndicator(host)
+    indicator.follow(debounced)
+    assert indicator.isHidden()
+    debounced.trigger()
+    debounced.trigger()
+    assert not indicator.isHidden()
+    service.flush_all()
+    assert indicator.isHidden()
+
+
+def test_in_immediate_mode_the_indicator_is_up_and_down_within_the_trigger(host):
+    service = DebounceService()
+    service.set_immediate(True)
+    debounced = Debounced(lambda: None, 30, parent=host, service=service)
+    indicator = UpdatingIndicator(host)
+    indicator.follow(debounced)
+    debounced.trigger()
+    assert indicator.isHidden()
+
+
+def test_the_indicator_keeps_its_room_while_hidden(host):
+    assert UpdatingIndicator(host).sizePolicy().retainSizeWhenHidden()
+
+
+def test_follow_returns_the_unsubscribe(host):
+    debounced = Debounced(lambda: None, 30, parent=host)
+    indicator = UpdatingIndicator(host)
+    stop = indicator.follow(debounced)
+    stop()
+    debounced.trigger()
+    assert indicator.isHidden()
+    debounced.cancel()
+
+
+def test_a_debouncer_outliving_its_indicator_reports_into_nothing(app, host):
+    """The slot holds the widget weakly, so nothing calls into a dead C++ side."""
+    debounced = Debounced(lambda: None, 30, parent=host)
+    strip = QWidget()
+    UpdatingIndicator(strip).follow(debounced)
+    strip.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    debounced.trigger()  # Nothing raises.
+    debounced.cancel()
+
+
+def test_a_status_line_wears_its_tone_and_clears(host):
+    line = StatusLine(host)
+    assert line.isHidden()
+    line.say("Connected — this account can read the space", "ok")
+    assert not line.isHidden()
+    assert line.words() == "Connected — this account can read the space" and line.tone() == "ok"
+    assert STATUS_TONES["good"].name() in line.text()
+    line.say("<script>", "error")
+    assert "&lt;script&gt;" in line.text() and STATUS_TONES["bad"].name() in line.text()
+    line.say("Reading…", "busy")
+    assert STATUS_TONES["busy"].name() in line.text()
+    line.clear()
+    assert line.isHidden() and line.words() == ""
+
+
+def test_information_wears_the_lines_own_ink(host):
+    line = StatusLine(host)
+    line.say("12 pages")
+    assert line.tone() == "info" and "color:" not in line.text()
+
+
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=("dark", "light"))
+def test_a_progress_bar_is_a_four_pixel_accent_strip(themed, theme):
+    """Rendered, not read: a bar that Fusion still paints striped would pass a rule check."""
+    apply_theme(themed, theme)
+    bar = QProgressBar()
+    bar.setRange(0, 100)
+    bar.setValue(50)
+    bar.setTextVisible(False)
+    bar.resize(200, 20)
+    bar.show()
+    themed.processEvents()
+    try:
+        assert bar.maximumHeight() == 4
+        image = bar.grab().toImage()
+        assert image.height() == 4
+        assert image.pixel(20, 2) == QColor(theme.accent).rgb()
+        assert image.pixel(180, 2) == QColor(theme.bg_overlay).rgb()
+    finally:
+        bar.deleteLater()

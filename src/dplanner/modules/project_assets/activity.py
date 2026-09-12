@@ -254,7 +254,7 @@ class AssetsActivity(EntityActivity):
         layout.addWidget(self.splitter, 1)
 
         # A tab cannot go off screen the way a panel does, so it says so in words.
-        self.empty = EmptyState(NO_ASSETS, page)
+        self.empty = EmptyState(NO_ASSETS, page, stands_in_for=self.splitter)
         layout.addWidget(self.empty, 1)
 
         self._widget = page
@@ -372,8 +372,7 @@ class AssetsActivity(EntityActivity):
                 self.list.setCurrentItem(item)
         self.list.blockSignals(False)
         has_rows = bool(entries)
-        self.splitter.setVisible(bool(self._entries))
-        self.empty.setVisible(not self._entries)
+        self.empty.say("" if self._entries else NO_ASSETS)
         if has_rows and self.list.currentRow() < 0:
             self.list.setCurrentRow(0)
         else:
