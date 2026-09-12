@@ -46,10 +46,16 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
   suggest it.
 - Only add comments that carry durable value for future developers and agents. Otherwise,
   make the code self-documenting.
-- `DESIGN.md` is the standard for all UI work here. `FORMAT.md` is the standard for anything
-  that reaches disk. `ARCHITECTURE.md` is where a rule's *reasoning* lives — when you settle an
-  architectural question, write the rule here and the why there, and have each point at the
-  other. A decision that lives only in a commit message is one the next feature rediscovers.
+- `DESIGN.md` is the standard for all UI work here, and **Debug ▸ Design Example…** (with its
+  table tab; `modules/debug/design_example.py`, rendered under `docs/design-example/`) is
+  what it looks like — build every dialog on `framework/dialog.py`'s `DialogFrame`, every
+  table on `framework/table.py`'s `Table`, every busy/ok/error on `framework/signalling.py`'s
+  `StatusLine` and every pending rebuild on its `UpdatingIndicator`, and run DESIGN.md's
+  *Bringing a surface up* over any surface you touch. `FORMAT.md` is the standard for
+  anything that reaches disk. `ARCHITECTURE.md` is where a rule's *reasoning* lives — when
+  you settle an architectural question, write the rule here and the why there, and have
+  each point at the other. A decision that lives only in a commit message is one the next
+  feature rediscovers.
 
 ## Checks — run all three before finishing any task
 
@@ -313,6 +319,17 @@ root, stop and look for the registry or capability you have not found yet.
   and fills a vertical one's whole rect, so the rule that centres a line in the first renders a
   7 px slab in the second, and nothing says so. `tests/test_theme.py` renders both rather than
   reading them. `ARCHITECTURE.md`'s *A seam belongs to the splitter* has the reasoning.
+- **A primitive names its parts; a dialog is never added to a selector list.** The frame
+  sets `#DialogBody` and `#DialogFooter`, the table `#Table`, and the one accent rule is
+  `QPushButton#PrimaryButton` — type-prefixed and **last of the button rules in
+  `theme.qss` on purpose**: a descendant rule such as `#Dialog QPushButton` outranks a
+  bare `#PrimaryButton` whatever the order, and the type-prefixed one ties it and wins by
+  position, which is how the file once grew an allow-list of dialog names. Every `#Name`
+  the stylesheet styles must be a literal some widget sets (`tests/test_theme.py`). A
+  table's row height is computed from the font and set on the vertical header, never a
+  pixel token; an empty page swaps through `EmptyState.stands_in_for`; a refused primary
+  is `refuse(reason)` — disabled, its name kept, the reason in the footer's status slot.
+  `ARCHITECTURE.md`'s *A primitive carries the rule* has the reasoning.
 - **A pane is marked only while there is another pane.** The accent edge on the group you are
   in appears when the window splits and goes when it stops being split — the same condition
   that installs `_ActiveGroupWatcher`, because it is the same fact. It lives on a one-widget

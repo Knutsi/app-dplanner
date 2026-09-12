@@ -2394,3 +2394,119 @@ of a tall empty page — and read as a stray footer. One widget, one look, and D
 
 **Upstream?** Yes: every application has empty pages, and the trap (a label after a
 stretched widget) is generic.
+
+## 27. From the design-system pass
+
+### `framework/dialog.py` — `DialogFrame` and `LinePrompt` (new)
+
+**What.** A `QDialog` with the anatomy DESIGN.md's *Dialogs* names: the title printed in
+the body (`#DialogTitle`, +2 pt via `theme.cards.title_font`), a lead (`#DialogLead`), a
+body (`#DialogBody`, a `QVBoxLayout` the subclass fills) and a footer (`#DialogFooter`)
+whose slots run destructive · status · stretch · secondaries · dismiss · primary.
+`set_primary`, `add_button(destructive=)`, `add_dismiss`, `refuse(reason)`; the dismiss is
+default only while there is no primary; Ctrl+Enter is the primary from a multi-line field;
+`showEvent` sets the Tab chain (body → primary → secondaries → destructive) and puts focus
+on the first field or the default button. Three sizes: fit (a 420 px floor), framed
+(clamped to `SCREEN_SHARE`), editor. `LinePrompt` is one captioned field and a verb, refused
+while blank or while `validate` objects, with a class method `ask`.
+
+**Why.** Twenty-four dialogs, two button strategies, margins of 20/16/12/8/none, four that
+set focus, a footer whose default was *Clear*. The frame names its parts so the stylesheet
+reaches every dialog through two constant names — the enumerated `#X QPushButton` lists
+were the alternative, and they are what made a new dialog Fusion by default.
+
+**Upstream?** Yes, whole. Every application has dialogs, and the specificity trap
+(`#Host QPushButton` beats `#PrimaryButton`; `QPushButton#PrimaryButton` ties and wins by
+position) is Qt's, not this application's.
+
+### `framework/table.py` — `Table`, `Column`, `Cell`, `TableDelegate` (new)
+
+**What.** A `QTableWidget` (`#Table`) whose columns are declared (numeric, glyph, two-line,
+resize mode) and whose configuration is applied once; the row height computed from the
+font (`row_height`) and set on the vertical header; a delegate that blanks the option's
+text and icon in `initStyleOption` and paints the row tint, the hover wash (from a hovered
+row the view tracks through `entered`/`viewportEntered`/`leaveEvent` — Qt's `State_MouseOver`
+is per cell), a 2 px `QPalette.Accent` edge on column 0 of a picked row, the reserved glyph
+slot, elided one- or two-line text in the palette's `Text` (never `HighlightedText`: the
+picked ground is the quiet overlay). `add_row` stamps a tint and the host's roles on every
+cell; `add_heading` is a spanned `NoItemFlags` row; `fit_columns` opens interactive columns
+at their content. `list_rows.py` gains `TINT_ROLE` and `HEADING_ROLE`.
+
+**Why.** Three hand-written copies of one configuration disagreeing on nine settings, and
+four widgets borrowing `#OrderTable` by name. The per-row `setRowHeight` versus
+`setDefaultSectionSize` split was a real bug in the Tests table.
+
+**Upstream?** Yes, with the delegate. `QTableWidget` over model/view is this application's
+choice (no table here has more than a few hundred rows); the delegate and the configuration
+transfer to a `QTableView` unchanged.
+
+### `framework/signalling.py` — `UpdatingIndicator`, `StatusLine` (new)
+
+**What.** `UpdatingIndicator.follow(debounced)` connects `pending_changed` to a weakly-held
+`setVisible`; `retainSizeWhenHidden` so a strip never reflows. `StatusLine.say(text, tone)`
+sets rich text — a `●` coloured by `theme.tones.STATUS_TONES` for busy/ok/error, the label's
+own ink for info — and hides on "". Both `$TEXT_SECONDARY` in the stylesheet.
+
+**Why.** Every busy state was a `QLabel` rewritten by hand, and only one view said anything
+during its settle. The weak reference is the gc rule from `CLAUDE.md`: a long-lived
+plain-Python signal holding a widget's bound method is the shape that crashes the collector.
+
+**Upstream?** Yes. The tones are the theme's; a framework that ships `Debounced` should
+ship the thing that shows it.
+
+### `framework/debounce.py` — `pending_changed`, and `flush_all` settles to a fixed point
+
+**What.** `Debounced.pending_changed: Signal[bool]` — True on the first trigger of a burst,
+False from a `finally` after `_run` and from `cancel()`. `DebounceService.flush_all` loops
+(`SETTLE_ROUNDS`) until nothing is pending.
+
+**Why.** The indicator above. And `flush_all` walked a `WeakSet` in hash order: the
+progress recorder's flush writes a row, every view following the model re-triggers, and
+whether one stayed pending depended on which object was allocated first — a test that went
+red when an unrelated conftest fixture moved an allocation.
+
+**Upstream?** Yes, both. A flush that can trigger a flush is the ordinary case.
+
+### `framework/widgets.py` — `EmptyState.stands_in_for`, `caption`, `note`, `confirm` on the frame
+
+**What.** `EmptyState(stands_in_for=content)`: `say()` shows itself and hides the content
+or the reverse. `caption(text)` and `note(text)` make the `#InspectorCaption` and
+`#InspectorNote` labels. `confirm()` keeps its signature (a `verb` keyword added) and builds
+a `DialogFrame` — the question as the lead, the verb quiet, Cancel the default — with the
+frame imported inside the function, since the frame is built from this module's helpers.
+
+**Why.** Five empty-state mechanisms; the two labels hand-built in twenty-two files; a
+`QMessageBox.question` that printed a platform icon and arranged its buttons the platform's
+way for the one moment a person must read carefully.
+
+**Upstream?** Yes.
+
+### `theme/tokens.py`, `theme/tones.py`, `theme/theme.qss` — tokens, status tones, and a stylesheet that names only what exists
+
+**What.** Spacing tokens (`DIALOG_MARGIN`, `SECTION_GAP`, `FIELD_GAP`, `CAPTION_GAP`,
+`PANEL_MARGIN`, `ROW_PADDING_*`, `ROW_LINE_GAP`, `CELL_PADDING_*`, `SECONDARY_ALPHA`,
+`SCREEN_SHARE`) replace copies in `text_dialog.py`, `asset_picker.py`, `image_preview.py`,
+`cards.py`, `list_rows.py`, `markdown_highlight.py` and `theme/cards.py`. `STATUS_TONES`
+(`VALID_TINT`, `INVALID_TINT`, `BUSY_TINT`) move in from the canvas renderer. The
+stylesheet loses fifty-six object names the template's Writer app set — forty per cent of
+the file — the three enumerated `#X #PrimaryButton` lists (one `QPushButton#PrimaryButton`
+rule, last), and the task-browser-scoped progress bar (one bare `QProgressBar` rule); it
+gains the `#Table`, `#DialogBody`/`#DialogFooter` and `#UpdatingIndicator`/`#StatusLine`
+rules. `tests/test_theme.py` asserts every `#Name` is a literal under `src/`.
+
+**Why.** A stylesheet that describes another application is one the next reader copies
+from. A float token is skipped by `as_qss_mapping` on purpose.
+
+**Upstream?** The tokens and the guard test, yes. The template's own stylesheet should
+ship with the guard and without Writer.
+
+### `tests/conftest.py` — `DPLANNER_PROJECT` dropped; `themed` shared
+
+**What.** An autouse fixture deletes `DPLANNER_PROJECT` from the environment; the
+`themed` fixture (apply a theme, restore the default) moves up from two test modules.
+
+**Why.** Run Agent's wrapper exports the variable into every agent shell, and the CLI
+honours it, so the suite run from an agent's shell resolved every verb against a project
+its throwaway library never held — 361 tests red for no finding.
+
+**Upstream?** The shape, yes: a test suite must not read the developer's environment.

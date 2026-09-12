@@ -216,6 +216,7 @@ src/dplanner/
 ├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
 ├── scripts/layout_item_double_delete.py   the layout-item double delete built to order, and the finalizer that stops it
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
+├── scripts/render_design_example.py  Debug ▸ Design Example in both themes, to PNG — committed under docs/design-example/
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
 │   ├── storage/             three providers behind one protocol: folder, git, GitHub
@@ -282,6 +283,10 @@ src/dplanner/
 │   ├── image_preview.py     the modal lightbox the gallery (and anyone) opens
 │   ├── window_watch.py      noticing, and taking in, another writer's changes to the library
 │   ├── debounce.py          a coalesced refresh: a burst runs once, and tests run it inline
+│   ├── dialog.py            the dialog frame — title in the body, footer slots in one order — and the one-line prompt
+│   ├── table.py             the table: columns declared, the rules applied once, a delegate painting what a row wears
+│   ├── signalling.py        Updating… over one Debounced, and a status line in a tone — DESIGN.md's *Signalling*
+│   ├── widgets.py           the empty state that trades places with its content, the caption, the note, confirm()
 │   ├── diagnostics.py       the stall watchdog, the failure hooks, the crash log — app.main's
 │   └── …                    registries, actions, tabs, undo, autosave, tasks, LLM
 
@@ -368,7 +373,9 @@ src/dplanner/
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
 │   ├── install/             getting DPlanner onto this machine from the window: the agent skill, the `dplanner` command and the desktop launcher
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
-│   ├── appshell/  sync/  settings/  taskcenter/  debug/
+│   ├── appshell/  sync/  settings/  taskcenter/
+│   ├── debug/               diagnostics — the LLM Calls and Telemetry tabs — and Debug ▸ Design Example,
+│   │                        the design system built from the primitives, to be looked at and copied from
 │   └── llm/  llm_openai/  llm_anthropic/
 │
 └── theme/                 22 themes, the palette, a chrome-only stylesheet, the glyphs, tones.py —

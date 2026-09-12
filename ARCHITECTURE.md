@@ -722,6 +722,77 @@ the active group and activity are both unchanged, and closing the *other* pane's
 exactly that. So `_drop_group` clears the mark itself rather than trusting the announcement,
 or an unsplit window would keep an accent edge on the pane that survived.
 
+## A primitive carries the rule; a dialog's stylesheet does not
+
+(`DESIGN.md`'s *Dialogs*, *Tables*, *Signalling* and *Bringing a surface up* are the
+standard this settled; `modules/debug/design_example.py` is the living reference.)
+
+For a year the rules lived in two places that could not see each other: DESIGN.md said
+what a dialog looked like, and `theme.qss` said which dialogs looked like it. The accent
+primary was styled inside a list — `#ProjectDialog #PrimaryButton, #MovePlanDialog
+#PrimaryButton, …` — and the quiet secondary likewise, so every new dialog was added to
+four comma lists or got Fusion, and three surfaces that set `#PrimaryButton` in good faith
+got no accent at all. The list was not laziness. **A descendant rule outranks a bare id
+whatever the order**: `#Dialog QPushButton` is specificity (1,0,1) and `#PrimaryButton`
+is (1,0,0), so the moment a dialog's buttons were styled by name, its primary could only
+be reached by naming the dialog again. The fix is one line and one fact:
+`QPushButton#PrimaryButton` is (1,0,1) too, ties, and **wins by position** — so it is the
+last button rule in the file, says so, and no dialog is named again.
+
+That fact generalises. **A primitive names its parts, never itself.** `DialogFrame` sets
+`#DialogBody` and `#DialogFooter`; `Table` sets `#Table`; the subclass keeps its own
+object name for tests and for whatever one-off it needs. The stylesheet then reaches every
+dialog and every table through a handful of constant names, and a new one gets the
+designed look having touched nothing — which is the whole of what *done* meant for the
+design-system step. The alternative, a rule per dialog, is what the audit found: two
+button strategies (a `QDialogButtonBox` with the platform deciding order, a hand-rolled
+footer with the accent), margins of 20, 16, 12, 8 and none, four dialogs that set initial
+focus, one documented data-loss hazard from a footer whose default was *Clear*.
+
+The same shape recurred wherever a rule had no home. Three copies of one `QTableWidget`
+configuration disagreed on nine settings, and four widgets set `objectName("OrderTable")`
+to borrow a look — two of them lists. Empty states came in five mechanisms, or none.
+Every busy state was a `QLabel` rewritten by hand. Each of these is now one thing in
+`framework/`: `Table` applies the configuration once and its delegate paints what a row
+wears; `EmptyState.stands_in_for` is the one swap; `StatusLine` is the one busy, ok and
+error; `UpdatingIndicator` follows the one `Debounced` a view already has. **A rule with
+no primitive is a rule that is followed by whoever remembers it**, and the audit is the
+measure of how many did.
+
+Two decisions inside the primitives are worth their reasons. **A table's row height is
+derived from the font, never a token**: the UI font is the platform's own, and the fixed
+28 and 44 the old tables carried clip two lines at twelve points; the paddings are the
+tokens, the height is computed and set on the vertical header — the one mechanism that
+sizes a delegate-drawn row, learned the hard way in the Tests table. And **a refused
+primary is disabled with its reason in the footer's status slot** rather than enabled and
+refusing: that is the rule every greyed menu entry already follows, and a dialog with a
+second grammar for the same situation is a dialog that teaches the wrong one.
+
+`Debounced` grew a signal for the indicator, `pending_changed`, because the alternative —
+the Time tab's wrapper that showed a label before `trigger()` and hid it as the first
+line of the rebuild — was two statements paired by hand that a test could never see up.
+While it was being wired, `flush_all` turned out to walk a `WeakSet` in hash order: a
+flush that writes (the progress recorder) re-triggers the views that follow the model, and
+whether that left one pending depended on which object was allocated first. It settles to
+a fixed point now.
+
+**The stylesheet is checked against the source.** Forty per cent of it described the
+application the template came from — a corkboard, a binder, a reader, a zen mode — and two
+of those dead names were quoted in DESIGN.md as the canonical look. `tests/test_theme.py`
+asserts every `#Name` in `theme.qss` is a literal some widget sets, so a rule outlives its
+surface by exactly one test run. The same test renders rather than reads where it matters:
+a stylesheet is silent about a rule that renders wrong exactly as it is about one that
+never matched, which is why the primary's accent is asserted from a pixel inside a widget
+named `ProjectDialog`.
+
+**Why the reference is a Debug surface and not a document.** A rule is read once; a
+surface is opened beside the one being built and compared, in both themes, with every
+state on it — the refused primary, the tinted row while picked, the indicator while a
+rebuild is owed. Debug ▸ Design Example… and its table tab are that, over sample data,
+and `docs/design-example/` keeps them rendered so a pull request can show the difference
+it made. Every later step that touches a surface points at them; DESIGN.md's *Bringing a
+surface up* is the list of what to compare.
+
 ## How a panel gets editors it has never heard of
 
 The step detail panel shows a Details tab first — estimate, description, figures — and a tab
