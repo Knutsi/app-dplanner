@@ -760,6 +760,18 @@ def default_modules(services: "AppServices") -> list["Module"]:
             describe_step=lambda step_id: description_read(library.step(step_id)),
         )
     )
+    # Constructed before the list because the Docs folder carries its Implementation notes
+    # row; the key rule is the root's, handed over like every row's.
+    notes = NotesModule(
+        NotesDeps(
+            library=library,
+            undo=services.undo,
+            debounce=services.debounce,
+            context=services.context,
+            tabs=services.tabs,
+            step_key=_step_key,
+        )
+    )
     # Constructed before the list because the projects index opens the matrix through it.
     time_estimates = TimeEstimatesModule(
         TimeEstimatesDeps(
@@ -1018,7 +1030,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 tabs=services.tabs,
                 theme=services.theme,
                 undo=services.undo,
-                debounce=services.debounce,
                 zoom=services.zoom,
                 window=services.window,
                 # Registered before any panel exists, which is why it listens to the registry
@@ -1294,22 +1305,15 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 instructions=description_read,
                 parent=services.window,
                 pick_assets=pick_assets,
+                # The Implementation notes tab — the notes the project made along the way,
+                # which every briefing indexes — as a row under each project in its folder.
+                more_rows=(notes.index_row(),),
             )
         ),
         # Declares the compiled-document format only; DocsModule and the CLI write it.
         DocsCompiledModule(),
-        # Its project-level card: the notes the project made along the way, which every
-        # briefing indexes. Before project_editor, whose panel is built from the cards
-        # registered by then; the key rule is the root's, handed over like every row's.
-        NotesModule(
-            NotesDeps(
-                library=library,
-                undo=services.undo,
-                cards=services.detail_cards,
-                parent=services.window,
-                step_key=_step_key,
-            )
-        ),
+        # Registers nothing; in the list for its data format, and because it is a module.
+        notes,
         StepMilestoneModule(
             StepMilestoneDeps(
                 library=library,

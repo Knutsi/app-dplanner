@@ -15,7 +15,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from dplanner.core.storage.git import DEFAULT_BRANCH, GitStorage, remote_label
+from dplanner.core.storage.git import DEFAULT_BRANCH, GitStorage, origin_url, remote_label
 from dplanner.core.storage.provider import StorageError
 
 
@@ -68,7 +68,8 @@ class GitHubStorage(GitStorage):
     """A git workspace whose origin is on GitHub."""
 
     def has_remote(self) -> bool:
-        return self._git("remote", "get-url", "origin", check=False).returncode == 0
+        # Through the memoised question: an action state asks this on every context change.
+        return bool(origin_url(self.repo_root))
 
     def remote_label(self) -> str:
         """``owner/repo`` for a GitHub origin, ``host/owner/repo`` for any other — pull and

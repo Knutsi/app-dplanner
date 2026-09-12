@@ -3,6 +3,8 @@
 Builds the real application headless over ``scripts/synthetic_library.py``'s library at
 each of ``--sizes``, opens the tabs of one regime, and runs every scenario the window has
 a gesture for — a burst of ten edits of each kind, a click on a step, a context refresh,
+a connect and a paste through the verbs with a step selected (reporting how many times
+the context was announced and the dock relaid itself, which is what made them slow once),
 the details dialog, a cold tab open, a paint of the canvas, the disk poll, the recorder,
 a full garbage collection, the keyring, and each domain derivation on its own — reading
 the journal back after each: the ``command`` spans are the synchronous cost of a push,
@@ -50,11 +52,13 @@ from typing import Any
 # tests/conftest.py gives: gtk3 starts eight threads and a compositor connection.
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["QT_QPA_PLATFORMTHEME"] = ""
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The repository root, so `scripts.synthetic_library` imports the same way the tests do.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QEvent, QPointF, QSettings, Qt
+from PySide6.QtGui import QGuiApplication, QMouseEvent
 from PySide6.QtWidgets import QApplication
-from synthetic_library import build_library
+from scripts.synthetic_library import build_library
 
 from dplanner.app import configure_application, new_session, set_early_attributes
 from dplanner.core.telemetry import Span, Telemetry, current, install
@@ -66,6 +70,7 @@ from dplanner.domain.commands import (
     SetEdgesCommand,
     SetFieldCommand,
     SetModuleDataCommand,
+    remove_steps_command,
 )
 from dplanner.domain.model import Library, Project, Step, TextEdit
 from dplanner.domain.ordering import depths, placed
@@ -83,7 +88,6 @@ from dplanner.modules.project_editor.look import BACKGROUNDS, Look
 from dplanner.modules.project_editor.placement import auto_positions
 from dplanner.modules.project_editor.positions import MODULE_ID as EDITOR_ID
 from dplanner.modules.project_editor.positions import write_position
-from dplanner.modules.project_editor.verbs import removal_of
 from dplanner.modules.step_agent_instruction.aspect import enabled as is_agent
 from dplanner.modules.step_milestone.aspect import read as milestone_label
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
@@ -380,7 +384,8 @@ def _paste(h: Harness) -> None:
 @scenario("delete")
 def _delete(h: Harness) -> None:
     born = [s.id for s in h.project.steps if s.title.startswith("Born ")]
-    h.push(removal_of(born[:PUSHES] or [s.id for s in h.project.steps[-PUSHES:]], "Delete"))
+    doomed = born[:PUSHES] or [s.id for s in h.project.steps[-PUSHES:]]
+    h.push(remove_steps_command(h.library, doomed, "Delete"))
 
 
 @scenario("undo_redo")
@@ -437,6 +442,98 @@ def _context(h: Harness) -> None:
     for _ in range(PUSHES):
         h.services.context.refresh()
         h.pump()
+
+
+def _click(h: Harness, activity: Any, step_id: str) -> None:
+    """A press and a release on the step's card, through the view — what a mouse sends."""
+    view = activity._view
+    viewport = view.viewport()
+    node = activity._scene._nodes[step_id]
+    local = QPointF(view.mapFromScene(node.scenePos() + QPointF(90, 28)))
+    for kind, buttons in (
+        (QEvent.Type.MouseButtonPress, Qt.MouseButton.LeftButton),
+        (QEvent.Type.MouseButtonRelease, Qt.MouseButton.NoButton),
+    ):
+        event = QMouseEvent(
+            kind,
+            local,
+            QPointF(viewport.mapToGlobal(local.toPoint())),
+            Qt.MouseButton.LeftButton,
+            buttons,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        h.app.sendEvent(viewport, event)
+
+
+def _heard(h: Harness, gesture: Callable[[], None]) -> dict[str, float]:
+    """Run a gesture the way a person does and count what the window heard: how long the
+    GUI thread was held, how many times the context was announced and how many times the
+    dock relaid the window. One announcement and no relayout is the number to keep."""
+    announced: list[int] = []
+    relaid: list[int] = []
+    unsubscribe = h.services.context.changed.connect(lambda _context: announced.append(1))
+    dock = h.services.window.dock
+    original = dock._refresh
+
+    def counted() -> None:
+        relaid.append(1)
+        original()
+
+    dock._refresh = counted  # type: ignore[method-assign]
+    started = time.perf_counter()
+    try:
+        gesture()
+        h.pump()
+        held = (time.perf_counter() - started) * 1000.0
+        h.quiet()
+    finally:
+        dock._refresh = original  # type: ignore[method-assign]
+        unsubscribe()
+    return {"held_ms": held, "announced": float(len(announced)), "relaid": float(len(relaid))}
+
+
+@scenario("connect")
+def _connect(h: Harness) -> dict[str, float]:
+    """`c`, click the source, click the target — with the source selected, so the step
+    panel is live — and the selection is left on the source for the next one."""
+    activity = h.canvas()
+    h.services.tabs.focus(activity)
+    h.pump()
+    source, target = h.steps[0], h.steps[-1]
+    activity.select_step(source.id)
+    h.quiet()
+
+    def gesture() -> None:
+        h.services.actions.run("steps.connect", h.services.context.current())
+        _click(h, activity, source.id)
+        _click(h, activity, target.id)
+
+    extra = _heard(h, gesture)
+    if source.id not in h.library.step(target.id).edges.get("requires", []):
+        raise RuntimeError("the connect gesture wrote no link")
+    h.services.undo.undo()
+    h.pump()
+    return extra
+
+
+@scenario("paste")
+def _paste_gesture(h: Harness) -> dict[str, float]:
+    """Copy the selected step and paste it, through the verbs: one step, placed, selected."""
+    activity = h.canvas()
+    h.services.tabs.focus(activity)
+    h.pump()
+    activity.select_step(h.target.id)
+    h.quiet()
+    h.services.actions.run("steps.copy", h.services.context.current())
+    h.quiet()
+    activity._view.note_click(QPointF(200.0, -600.0))
+    before = {step.id for step in h.project.steps}
+    extra = _heard(h, lambda: h.services.actions.run("steps.paste", h.services.context.current()))
+    born = [step.id for step in h.project.steps if step.id not in before]
+    if not born:
+        raise RuntimeError("the paste gesture placed no step")
+    h.push(remove_steps_command(h.library, born, "Delete"))
+    return extra
 
 
 @scenario("details")
@@ -624,6 +721,21 @@ def build(app: QApplication, root: Path, size: int, args: argparse.Namespace) ->
     return harness
 
 
+def discard(harness: Harness, app: QApplication) -> None:
+    """Release one size's build, and clear the clipboard while Python is still alive.
+
+    The paste scenario copies through ``steps.copy``, which hands a Python-made ``QMimeData``
+    to the clipboard; under the offscreen platform Qt keeps it in a global static that libc
+    destroys *after* the interpreter, and its wrapper's destructor then calls into a
+    finalized Python — the exit-time segfault CLAUDE.md's *A worker that segfaults after
+    reporting green* describes, and ``tests/conftest.py`` clears after every test.
+    """
+    harness.session.close()
+    QGuiApplication.clipboard().clear()
+    app.processEvents()
+    gc.collect()
+
+
 def medians(results: Sequence[Result]) -> Result:
     if len(results) == 1:
         return results[0]
@@ -774,9 +886,7 @@ def main() -> None:
             for name in names:
                 runs = [harness.measure(name, SCENARIOS[name]) for _ in range(args.repeat)]
                 results[name].append(medians(runs))
-        harness.session.close()
-        app.processEvents()
-        gc.collect()
+        discard(harness, app)
 
     if not args.profile:
         for name, rows in results.items():

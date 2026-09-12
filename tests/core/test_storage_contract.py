@@ -444,3 +444,28 @@ def test_repo_storage_over_a_checkout_with_an_origin_has_the_remote(tmp_path):
     make_github(tmp_path)
     whole = repo_storage(tmp_path / "clone")
     assert isinstance(whole, RemoteStorage) and whole.has_remote()
+
+
+def test_origin_url_asks_git_once_until_the_remote_changes(tmp_path, monkeypatch):
+    """An action state asks for the origin on every context change; the answer is a
+    subprocess, so it is remembered — stamped with the config file git rewrites when the
+    remote changes, which is what makes the memo honest."""
+    from dplanner.core.storage.git import origin_url
+
+    make_github(tmp_path)
+    repo = tmp_path / "clone"
+    asked = []
+    original = subprocess.run
+
+    def counted(args, *rest, **kwargs):
+        if "get-url" in args:
+            asked.append(args)
+        return original(args, *rest, **kwargs)
+
+    monkeypatch.setattr("dplanner.core.storage.git.subprocess.run", counted)
+
+    first = origin_url(repo / "workspace")
+    assert first.endswith("origin.git")
+    assert origin_url(repo) == first and len(asked) == 1
+    _git("remote", "set-url", "origin", str(tmp_path / "elsewhere.git"), cwd=repo)
+    assert origin_url(repo).endswith("elsewhere.git") and len(asked) == 2

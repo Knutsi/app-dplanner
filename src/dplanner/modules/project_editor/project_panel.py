@@ -112,7 +112,9 @@ class ProjectPanel(QWidget):
     def show_context(self, context: Context) -> bool:
         """The project, unless there is one step to edit — then the step panel has the area."""
         if context.selected_entity("step") is not None:
-            self._set_project(None)
+            # The step panel has the area; the cards stay bound. Clearing them here tore
+            # down and rebuilt every card on each selection change (CLAUDE.md's *A panel
+            # that steps aside keeps its content*).
             return False
         # focus_entity falls back from the selection to the activity's own entity, so this is
         # the same answer for the graph tab, the order table and anything opened later.

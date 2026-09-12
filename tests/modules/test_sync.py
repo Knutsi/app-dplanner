@@ -354,6 +354,29 @@ def test_the_branch_label_asks_git_once_a_second(services, make_project, monkeyp
     assert service.branch_of(group) == first and len(asked) == 2
 
 
+def test_a_step_added_to_a_project_asks_git_nothing(services, make_project, monkeypatch):
+    """Membership is the library's children. A pasted step used to cost two subprocesses
+    per repository — status and branch — on the GUI thread, for a fact it cannot change."""
+    from dplanner.core.storage.git import GitStorage
+    from dplanner.domain.commands import AddNodeCommand
+    from dplanner.domain.model import Step
+
+    project = make_project("Discovery")
+    asked = []
+    original = GitStorage._git
+
+    def counted(self, *args, **kwargs):
+        asked.append(args)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(GitStorage, "_git", counted)
+
+    services.undo.push(AddNodeCommand(project.id, Step(title="Read the spec")))
+    assert asked == []
+    make_project("Billing")  # A project joining the library is membership: git is asked.
+    assert asked
+
+
 # -- a branch switched underneath ---------------------------------------------------------------
 
 

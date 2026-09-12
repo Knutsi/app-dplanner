@@ -1175,11 +1175,12 @@ QToolButton[repoTool="true"]:hover {
     border-radius: ${RADIUS_MD}px;
 }
 
-/* Secondary text: a column's branch, an empty column, a remark, a path preview — and the
- * footer line under a column that names a fact nobody has recorded. */
+/* Secondary text: a column's branch, an empty column, a remark, a path preview, what an
+ * empty page says — and the footer line under a column that names a fact nobody has
+ * recorded. */
 #LogBranch, #LogEmpty, #GhNote, #ProjectNote, #ColocationWarningText, #RepoPickerNote,
 #MoveTargetPath, #MovePlanSummary, #OpenProjectsEmpty, #OpenProjectsNote, #RepoLocation,
-#RepoLineMissing {
+#RepoLineMissing, #EmptyStateText {
     color: $TEXT_SECONDARY;
 }
 

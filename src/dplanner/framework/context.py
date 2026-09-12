@@ -17,6 +17,7 @@ wholesale on every tab switch, ``selection`` on every selection change. Replacin
 can never leave another scope's stale nodes behind.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from dplanner.core.signals import Signal
@@ -144,29 +145,39 @@ class Context:
 
 
 class ContextService:
-    """Holds the current context; emits a fresh snapshot on every change.
+    """Holds the current context; announces a fresh snapshot when it changes.
 
-    Emission is synchronous: menu-state re-evaluation is cheap (a few dozen pure callbacks)
-    and synchronous emission keeps tests deterministic. Qt repaints only after event
-    processing, so the transient empty context during a tab switch never reaches the screen.
+    ``current()`` is always true the moment ``set_scope`` returns — a verb run right after a
+    publish reads the selection it was handed. What the announcement reaches is every
+    action's state, every toolbar, every panel and the menu bar, which is not cheap on a
+    large plan, and a gesture may publish several times with an empty selection in
+    between (a re-selection clears first). So :attr:`announce` is a seam: inline by
+    default, and the builder routes it through a 0 ms ``Debounced`` so a burst of
+    publishes fans out once, over the final state, after the gesture. The test suite runs
+    the debounce service in immediate mode and sees every announcement inline.
     """
 
     def __init__(self) -> None:
         self._scopes: dict[str, tuple[ContextNode, ...]] = {}
         self.changed: Signal[Context] = Signal("context.changed")
+        self.announce: Callable[[], None] = self.announce_now
 
     def current(self) -> Context:
         return Context(dict(self._scopes))
 
-    def refresh(self) -> None:
-        """Re-emit the current context unchanged, so action states re-evaluate — for
-        modules whose action availability depends on state outside the context graph."""
+    def announce_now(self) -> None:
+        """Emit the current snapshot to every listener — what ``announce`` defaults to."""
         self.changed.emit(self.current())
+
+    def refresh(self) -> None:
+        """Announce the current context unchanged, so action states re-evaluate — for
+        modules whose action availability depends on state outside the context graph."""
+        self.announce()
 
     def set_scope(self, scope: str, nodes: tuple[ContextNode, ...] | list[ContextNode]) -> None:
         self._scopes[scope] = tuple(nodes)
-        self.changed.emit(self.current())
+        self.announce()
 
     def clear_scope(self, scope: str) -> None:
         if self._scopes.pop(scope, None) is not None:
-            self.changed.emit(self.current())
+            self.announce()
