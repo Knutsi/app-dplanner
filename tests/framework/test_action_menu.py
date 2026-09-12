@@ -233,3 +233,22 @@ def test_an_entry_wears_the_glyph_its_spec_carries(app, registry):
     assert not by_text["glyphed"].icon().isNull()
     assert by_text["panel"].icon().isNull()
     assert inks and inks[0] == popup.palette().text().color()
+
+
+def test_a_submenu_path_nests_in_the_popup_as_in_the_bar(app, registry):
+    registry.register(spec("rescue", submenu="Tabs ▸ More", order=30))
+    parent = QWidget()
+    popup = build_menu(registry, ContextService(), "View", parent)
+    assert entries(popup) == ["panel", "|", ("Tabs", ["move", "close", ("More", ["rescue"])])]
+
+
+def test_a_nested_child_is_its_parents_entry_for_the_rule_inside(app):
+    """A nested child created from one group and entries from another get the rule between
+    them inside the parent child, as any two entries of it would."""
+    registry = ActionRegistry(MENUS)
+    registry.register(spec("other", group="panels", submenu="Tabs ▸ More"))
+    registry.register(spec("panel", group="panels"))
+    registry.register(spec("move", submenu="Tabs", order=10))
+    parent = QWidget()
+    popup = build_menu(registry, ContextService(), "View", parent)
+    assert entries(popup) == [("Tabs", [("More", ["other"]), "|", "move"]), "panel"]

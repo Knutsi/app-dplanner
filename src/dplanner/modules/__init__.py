@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from dplanner.modules.spec_confluence.module import SecretStore
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
     from dplanner.modules.sync.service import Publication
+    from dplanner.theme.providers import ThemeProvider
 
 __all__ = [
     "agent_harnesses",
@@ -57,6 +58,7 @@ __all__ = [
     "default_cli_commands",
     "default_module_formats",
     "default_modules",
+    "theme_providers",
 ]
 
 
@@ -81,6 +83,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.domain.store import LibraryStore
     from dplanner.framework.aspect_bar import AspectTemplate
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+    from dplanner.modules.appearance.module import AppearanceDeps, AppearanceModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.coverage.activity import CoverageDeps
     from dplanner.modules.coverage.module import CoverageModule
@@ -1028,7 +1031,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 actions=services.actions,
                 context=services.context,
                 tabs=services.tabs,
-                theme=services.theme,
                 undo=services.undo,
                 zoom=services.zoom,
                 window=services.window,
@@ -1036,6 +1038,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # rather than reading it: View ▸ Panels grows an entry as each one arrives.
                 panels=services.panels,
                 chrome=services.window,
+            )
+        ),
+        AppearanceModule(
+            AppearanceDeps(
+                actions=services.actions,
+                context=services.context,
+                theme=services.theme,
+                settings_sections=services.settings_sections,
             )
         ),
         LibraryModule(
@@ -2406,6 +2416,43 @@ def agent_harnesses() -> tuple["AgentHarness", ...]:
     from dplanner.modules.agent_opencode import harness as opencode
 
     return (claude.HARNESS, codex.HARNESS, opencode.HARNESS)
+
+
+def theme_providers() -> tuple["ThemeProvider", ...]:
+    """Every theme provider this build has, first is the default.
+
+    The built-in first: the fallback every build has, and the head of the Theme menu.
+    Then the following providers in the order "System theme" is served in — Omarchy before
+    the desktop's own dark or light, because the first that applies on this machine
+    serves it and Omarchy knows the whole palette where the desktop knows only the
+    polarity. Called once, in ``app.main`` after the ``QApplication`` exists and before
+    any theme is applied, and handed to both the startup apply and the session — every
+    later reader takes the tuple from ``ThemeService``. The desktop's readings are Qt's,
+    so they are wired here: the scheme as it stands now is read at this call, since the
+    live reading echoes the application's own override once one is set, and so is the
+    accent, before the application's own palette replaces the platform's.
+    """
+    import sys
+
+    from PySide6.QtGui import QGuiApplication
+
+    from dplanner.modules.theme_omarchy.themes import omarchy_provider
+    from dplanner.modules.theme_system.themes import system_provider
+    from dplanner.theme.providers import BUILTIN
+
+    def scheme() -> str:
+        return QGuiApplication.styleHints().colorScheme().name.lower()
+
+    at_start = scheme()
+    accent = (
+        QGuiApplication.palette().accent().color().name()
+        if sys.platform in ("darwin", "win32")
+        else None
+    )
+    desktop = system_provider(
+        sys.platform, scheme_at_start=lambda: at_start, scheme=scheme, accent=lambda: accent
+    )
+    return (BUILTIN, omarchy_provider(), desktop)
 
 
 def aspect_specs() -> list["AspectSpec"]:

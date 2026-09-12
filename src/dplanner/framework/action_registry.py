@@ -114,6 +114,11 @@ class MenuStructure:
         )
 
 
+# Between the levels of a submenu path, and between the menus of the path the command
+# palette prints under a verb. The same mark the documentation uses for one.
+PATH_SEPARATOR = " ▸ "
+
+
 @dataclass(frozen=True)
 class ActionSpec:
     id: str  # "explorer.delete_items" — module-prefixed, globally unique.
@@ -123,7 +128,9 @@ class ActionSpec:
     order: int = 50  # Sort key inside the group; gaps of 10 leave room to interleave.
     # Actions sharing a (menu, submenu) title collapse into one child menu placed at the
     # first such action's sort position — whatever groups they come from, with a rule drawn
-    # inside it where the group changes. None (the norm) stays a flat entry.
+    # inside it where the group changes. None (the norm) stays a flat entry. A title holding
+    # PATH_SEPARATOR nests: "Theme ▸ Omarchy" is a child menu inside the Theme child menu,
+    # for a list too long to sit flat among its siblings.
     submenu: str | None = None
     # False keeps a spec out of the command palette: for a verb's second menu placement,
     # whose original already appears there under the same label.

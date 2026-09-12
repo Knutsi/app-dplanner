@@ -87,3 +87,13 @@ def test_the_path_is_searchable_and_a_label_match_still_wins(app):
     assert listed(palette) == ["Vertical"]  # Found only through its path.
     palette._refilter("divide")
     assert listed(palette)[0] == "Divide Everything"  # A name beats a filing.
+
+
+def test_a_nested_submenus_row_prints_the_whole_path(app):
+    registry = ActionRegistry(MENUS)
+    registry.register(
+        ActionSpec(id="a.deep", label="Deep", menu="Graph", group="arrange", submenu="Sort ▸ More")
+    )
+    parent = QWidget()
+    palette = built(registry, parent)
+    assert row(palette, "Deep").data(DETAIL_ROLE) == "Graph ▸ Sort ▸ More"

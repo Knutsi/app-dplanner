@@ -9,6 +9,7 @@ from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import QMenu, QWidget
 
 from dplanner.framework.action_registry import (
+    PATH_SEPARATOR,
     ActionRegistry,
     ActionSpec,
     ActionState,
@@ -89,10 +90,13 @@ def fill_menu(
     menu bar does: **one child menu per title**, sitting at its first visible spec's sort
     position, with a separator inside it wherever its entries change group. So two groups
     can feed one submenu — what a test *is* and what it *did*, say — and get the rule
-    between them rather than two child menus with the same name. A child menu whose entries
-    are all hidden is never created. Naming a submenu renders just that child menu's
-    entries, flat — for a popup on a thing whose verbs live in a submenu, like the tab bar's
-    right-click, or a toolbar button that drops its verb's submenu down.
+    between them rather than two child menus with the same name; and a path (``"Theme ▸
+    Omarchy"``) nests one child menu inside another, each level an entry of the one before.
+    A child menu whose entries are all hidden is never created. Naming a submenu renders
+    just that child menu's entries, flat — for a popup on a thing whose verbs live in a
+    submenu, like the tab bar's right-click, or a toolbar button that drops its verb's
+    submenu down. It names exactly one level: every caller renders a one-level child, and
+    what a nested level would mean flat is nobody's question yet.
 
     A **data child menu** (`DataMenuSpec`) is placed by the same key and filled when it
     opens, as the bar's is — so a menu's right-click offers *Run Agent With* because the
@@ -101,8 +105,8 @@ def fill_menu(
     """
     context = context_service.current()
     previous_group: str | None = None
-    submenus: dict[str, QMenu] = {}
-    submenu_group: dict[str, str] = {}  # Child title → the group its last entry came from.
+    submenus: dict[str, QMenu] = {}  # Child path → its menu.
+    submenu_group: dict[str, str] = {}  # Child path → the group its last entry came from.
 
     def add_entry(child: QMenu, spec: ActionSpec, label: str, state: ActionState) -> None:
         action = child.addAction(label)
@@ -110,6 +114,35 @@ def fill_menu(
         action.triggered.connect(
             lambda _checked=False, sid=spec.id: actions.run(sid, context_service.current())
         )
+
+    def child_menu(path: str, group: str) -> QMenu:
+        """The child menu at ``path``, creating each missing level here.
+
+        A new level is an entry of its container, so the container's group bookkeeping
+        applies to it exactly once, when it lands: the top-level rule for the outermost
+        child, a rule inside the parent child for a nested one. A level that exists is
+        passed through, and its container's bookkeeping stays where the entry that made
+        it left it — the bar's rule, that a child sits at its first spec's position.
+        """
+        nonlocal previous_group
+        container, container_path = target, None
+        so_far = ""
+        for title in path.split(PATH_SEPARATOR):
+            so_far = title if not so_far else so_far + PATH_SEPARATOR + title
+            child = submenus.get(so_far)
+            if child is None:
+                if container_path is None:
+                    if previous_group is not None and group != previous_group:
+                        target.addSeparator()
+                    previous_group = group
+                else:
+                    # A container made in this same walk has no entry yet: no rule.
+                    if submenu_group.get(container_path, group) != group:
+                        container.addSeparator()
+                    submenu_group[container_path] = group
+                child = submenus[so_far] = container.addMenu(title)
+            container, container_path = child, so_far
+        return container
 
     placed: list[ActionSpec | DataMenuSpec] = [*actions.all_specs(), *actions.data_menus()]
     for spec in sorted(placed, key=actions.menus.sort_key):
@@ -131,17 +164,12 @@ def fill_menu(
             continue
         label = state.label if state.label is not None else spec.label
         if submenu is None and spec.submenu is not None:
-            child = submenus.get(spec.submenu)
-            if child is None:
-                # The child menu lands here, at its first visible spec's sort position —
-                # so the group bookkeeping below must run for it exactly once. A later
-                # group feeding the same child is not a top-level entry and must not move
-                # ``previous_group``, or the group after it would lose its rule.
-                if previous_group is not None and spec.group != previous_group:
-                    target.addSeparator()
-                previous_group = spec.group
-                child = submenus[spec.submenu] = target.addMenu(spec.submenu)
-            elif submenu_group[spec.submenu] != spec.group:
+            # The child menu lands at its first visible spec's sort position, so the
+            # container's group bookkeeping runs for it exactly once, inside child_menu.
+            # A later group feeding the same child is not the container's entry and must
+            # not move the container's group, or the group after it would lose its rule.
+            child = child_menu(spec.submenu, spec.group)
+            if spec.submenu in submenu_group and submenu_group[spec.submenu] != spec.group:
                 child.addSeparator()
             submenu_group[spec.submenu] = spec.group
             add_entry(child, spec, label, state)

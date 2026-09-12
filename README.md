@@ -216,6 +216,7 @@ src/dplanner/
 ├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
 ├── scripts/layout_item_double_delete.py   the layout-item double delete built to order, and the finalizer that stops it
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
+├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
 │   ├── storage/             three providers behind one protocol: folder, git, GitHub
@@ -368,12 +369,18 @@ src/dplanner/
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
 │   ├── install/             getting DPlanner onto this machine from the window: the agent skill, the `dplanner` command and the desktop launcher
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
+│   ├── appearance/          View ▸ Theme (System theme, then what every provider offers) and Settings ▸ Appearance
+│   ├── theme_omarchy/       ── one module per theme provider, each a Qt-free `themes.py`: Omarchy's
+│   ├── theme_system/           staged theme and the person's own; the desktop's dark or light on macOS,
+│   │                           Windows, GNOME and KDE (`theme/providers.py` is the contract)
 │   ├── appshell/  sync/  settings/  taskcenter/  debug/
 │   └── llm/  llm_openai/  llm_anthropic/
 │
-└── theme/                 22 themes, the palette, a chrome-only stylesheet, the glyphs, tones.py —
-                           the semantic colours a node body and a kind button share — and cards.py,
-                           the card primitives the canvas and the coverage view both paint with
+└── theme/                 the Theme record and the house themes, the provider contract and the built-in
+                           provider — every Omarchy default, generated from its colors.toml through one
+                           mapping — the palette, a chrome-only stylesheet, the glyphs, tones.py (the
+                           semantic colours a node body and a kind button share) and cards.py, the card
+                           primitives the canvas and the coverage view both paint with
 ```
 
 ## Where it came from
