@@ -557,9 +557,13 @@ root, stop and look for the registry or capability you have not found yet.
   (`tests/conftest.py`; mark a test that means to with `raises_in_a_slot`). *Debug ▸
   Telemetry* and `dplanner telemetry show --slow 50` / `--failures` are the two readers of
   the one file under `config_dir()/telemetry/` (`FORMAT.md`). Measure with it before
-  guessing: `uv run python scripts/measure_edit_cost.py --deferred` builds the application
-  over a synthetic project, pushes bursts of edits and prints what each view paid — it is
-  how the delays above were chosen, and the number to quote before changing one.
+  guessing: `uv run python scripts/measure_scaling.py` builds the application over
+  `scripts/synthetic_library.py`'s library at several sizes, runs every gesture the window
+  has — edit bursts, a click, the details dialog, a tab open, a paint, the poll, a full
+  collection — and prints what each view paid, by size; `synthetic_library.py --out DIR`
+  leaves the same library where a window can open it. `ARCHITECTURE.md`'s *How the
+  application scales* has the numbers, and they are the ones to quote before changing a
+  delay.
 
 - **A hang is sampled and a crash leaves a stack.** `framework/diagnostics.py`, started from
   `app.main` and nowhere deeper: a 100 ms heartbeat, and a daemon thread that samples the

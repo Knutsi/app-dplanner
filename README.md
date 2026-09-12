@@ -209,7 +209,8 @@ src/dplanner/
 ├── app.py                 bootstrap: QApplication, the session, the first open
 ├── entry.py               the one `dplanner` command: the CLI, or `dplanner window` (`dpw`)
 ├── assets/                what the application ships: the icon, one PNG per size, read by the window and the launcher alike
-├── scripts/measure_edit_cost.py   what an edit costs the GUI thread, measured headless through the journal
+├── scripts/measure_scaling.py     what every gesture costs the GUI thread by project size, headless through the journal
+├── scripts/synthetic_library.py   a large library with the real aspect mix — for the harness, and for a window to feel
 ├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
 ├── scripts/layout_item_double_delete.py   the layout-item double delete built to order, and the finalizer that stops it
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
