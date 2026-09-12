@@ -15,7 +15,7 @@ these are.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from PySide6.QtWidgets import QInputDialog, QTreeWidgetItem, QWidget
 
@@ -73,6 +73,11 @@ RESULT_ORDER = ("ok", "failed", "skipped", "pending")
 NO_RUN = "start a test run first (Project ▸ New Test Run)"
 
 
+def _no_color(_step_id: str) -> str:
+    """No colour map reaches this build; a heading is the secondary ink it always was."""
+    return ""
+
+
 @dataclass(frozen=True)
 class TestsDeps:
     library: Library
@@ -97,6 +102,10 @@ class TestsDeps:
     # Insert from Assets…: a modal picker over the step's project's catalog, composed by
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], "list[Payload]"] | None = None
+    # A milestone's own shade of the project's colour map, "" for anything else — what a
+    # *Group by ▸ Milestone* heading is written in. Wired by the composition root; this
+    # module never learns which map a project uses.
+    milestone_color: Callable[[str], str] = field(default=_no_color)
 
 
 class TestsModule:

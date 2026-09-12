@@ -216,6 +216,10 @@ class Node:
     status: str = ""  # pending | in-progress | done | blocked
     stat: str = ""  # The card's bottom-right figure: an estimate, a milestone's total.
     badge: str = ""  # A milestone's label on the top edge.
+    # A milestone's own shade of the project's colour map, as "#rrggbb" — the same hex
+    # its band wears in the timeline, so the report's picture of the graph and its
+    # picture of the schedule name one milestone in one colour. "" for anything else.
+    color: str = ""
 
 
 @dataclass(frozen=True)

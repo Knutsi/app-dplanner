@@ -2666,3 +2666,64 @@ delegate paints from the palette and a stylesheet on the widget alone is not eno
 **Why.** Three test modules would otherwise carry the same seven lines.
 
 **Upstream?** With the primitives' tests.
+
+## 29. From the milestone-colours pass
+
+### `theme/palettes.py` — colour maps, Qt-free (new)
+
+**What.** Nine perceptually ordered colour maps (viridis, mako, rocket, …) as `Palette(id,
+name, stops)`, with `palette(id)`, `shade(found, position)` and `shades(found, count)` —
+`count` shades dealt evenly along a map, centred, so nothing lands on an end. Hex strings
+throughout; no `QColor`, no Qt import at all. `tests/test_architecture.py`'s Qt-free probe
+covers it.
+
+**Why.** This application deals a *sequence* of related shades — one per milestone, by
+place in the roadmap — and the consumers are spread across layers: the feature that owns
+the sequence, the menu that lists the maps, and every painter that draws one. `theme/` is
+the leaf all of them may import, and staying Qt-free is what lets a module's headless half
+and the CLI reach it. The maps are the legible *interior* of each published map: the
+darkest and lightest ends are dropped, because a fill that vanishes into a light or a dark
+theme is no colour at all.
+
+**Upstream?** The `shade`/`shades`/`_mix` machinery, yes — an ordered ramp sampled by
+position is generic, and any application that colours a sequence wants it. The nine maps
+themselves are data, and a template could ship one or two.
+
+### `theme/tones.py` — `toned(name, color)` and `recoloured(tone, color)`
+
+**What.** `toned` returns a body tone's `(fill, border)`, optionally recoloured to another
+hue **at the tone's own alphas**; `recoloured` is that one operation on its own.
+`button_tone` now goes through `toned`.
+
+**Why.** Ten painters wanted "the milestone tone, but this milestone's hue". Without one
+function each of them re-derives the alphas from the constants, and the first one to be
+edited makes a card louder than its row. It is also the honest expression of the rule: a
+semantic tint is a *weight* plus a hue, and only the hue is ever the caller's.
+
+**Upstream?** Yes. Any template with a tone table gains from the recolour being one
+function rather than a convention.
+
+### `theme/icons.py` — `palette_strip_icon`, `PALETTE_STRIP`
+
+**What.** A colour map drawn as a horizontal gradient strip, for a picker row or a menu
+entry. Moved here from the feature that had it, because two surfaces now show it.
+
+**Why.** The usual one: two surfaces drawing the same thing from two painters drift. Worth
+recording only because it is the third time in this tree that a "local" painter turned out
+to have a second caller — a painter beside its one widget is a reasonable place to start
+and a bad place to stay.
+
+**Upstream?** Only with the palettes.
+
+### A note on where a "which of these" preference should live
+
+**What we learned, not a code change.** The obvious home for *View ▸ Milestone Colours* was
+a per-user preference beside the theme — the template's `user_config`/`ThemeService` shape
+fits it perfectly. It was wrong, for a reason the framework cannot see: the value reaches a
+*published artefact* (a committed report), so two users would churn it between them, and a
+second control that already named the stored value would have been lying about what the
+window painted. The rule that came out of it: **a preference that reaches something the
+project commits is the project's, however much it looks like an appearance setting.** The
+menu then presents the shared value rather than owning one.
+
+**Upstream?** As a paragraph in the docs' preference guidance, not as code.

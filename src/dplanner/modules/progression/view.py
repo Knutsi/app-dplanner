@@ -15,8 +15,16 @@ no ``PaletteChange`` hook: nothing stores a colour.
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QPoint, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPainterPath, QPalette
+from PySide6.QtCore import QPoint, QRectF, QSize, Qt
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QIcon,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPalette,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -30,8 +38,11 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.model import StepId
 from dplanner.domain.progression import Progression
+from dplanner.theme.icons import ICON_SIZE, KEY_BADGE_W
 
 CARD_PADDING = 12
+# Between a milestone's key badge and the title it leads.
+BADGE_GAP = 6
 LANE_PADDING = 12
 COLUMN_GAP = 12
 ROW_GAP = 8
@@ -187,6 +198,11 @@ class StepCard(QFrame):
 
     Wears the ``#ToolCard`` well so the board's rows and the panel's cards read alike —
     the box is the stylesheet's, and no colour is stored here.
+
+    A milestone leads with its **key as a badge**, in its own shade of the project's colour
+    map — the same mark its row wears in the order table and the same shade its card wears
+    on the canvas (DESIGN.md's *Tables*). It is the one colour on the board that is not a
+    status: a lane already says where the work stands, and this says what it is leading to.
     """
 
     def __init__(
@@ -195,6 +211,7 @@ class StepCard(QFrame):
         title: str,
         detail: str,
         *,
+        badge: QIcon | None = None,
         dimmed: bool = False,
         select: Callable[[StepId], None],
         details: Callable[[StepId], None],
@@ -218,7 +235,17 @@ class StepCard(QFrame):
         self.title.setWordWrap(True)
         if dimmed:  # An upcoming step is present without asking to be read.
             self.title.setObjectName("InspectorNote")
-        layout.addWidget(self.title)
+        if badge is None:
+            layout.addWidget(self.title)
+        else:
+            heading = QHBoxLayout()
+            layout.addLayout(heading)  # Joined before it is filled, as every row here is.
+            heading.setSpacing(BADGE_GAP)
+            mark = QLabel(self)
+            mark.setPixmap(badge.pixmap(QSize(KEY_BADGE_W, ICON_SIZE)))
+            mark.setAlignment(Qt.AlignmentFlag.AlignTop)
+            heading.addWidget(mark)
+            heading.addWidget(self.title, 1)
 
         self.detail = QLabel(detail, self)
         self.detail.setObjectName("InspectorNote")
@@ -331,6 +358,7 @@ class ProgressionBoard(QWidget):
         details: Callable[[StepId], None],
         menu: Callable[[StepId, QPoint], None],
         run_control: Callable[[StepId], RunControl | None],
+        milestone_badge: Callable[[StepId], QIcon | None] = lambda _step_id: None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -338,6 +366,7 @@ class ProgressionBoard(QWidget):
         self._details = details
         self._menu = menu
         self._run_control = run_control
+        self._milestone_badge = milestone_badge
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -370,6 +399,7 @@ class ProgressionBoard(QWidget):
                 step_id,
                 title or "Untitled step",
                 detail,
+                badge=self._milestone_badge(step_id),
                 dimmed=dimmed,
                 select=self._select,
                 details=self._details,

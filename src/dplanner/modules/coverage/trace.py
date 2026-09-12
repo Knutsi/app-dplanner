@@ -20,7 +20,7 @@ Two readers: the Coverage tab draws it, ``dplanner coverage …`` prints it.
 """
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from dplanner.core.anchors import Anchor, blocks, covered_by
 from dplanner.domain.model import Library, Project, Step, StepId
@@ -71,6 +71,11 @@ class TestRow:
     step_title: str
 
 
+def _no_colors(_library: Library, _project: Project) -> dict[StepId, str]:
+    """No colour map reaches this build; every milestone keeps the constant tone."""
+    return {}
+
+
 @dataclass(frozen=True)
 class Readers:
     """Every fact the trace is built from, as the module owning it answers it."""
@@ -86,6 +91,9 @@ class Readers:
     results: Callable[[Project], dict[str, str]]  # test id → how it last did.
     # (library, project, step) → "current" | "stale" | "never", or "" for nothing to show.
     docs: Callable[[Library, Project, StepId], str]
+    # Every milestone's own shade of the project's colour map, by step id — one deal per
+    # project, the same one the canvas and the calendar read.
+    milestone_colors: Callable[[Library, Project], dict[StepId, str]] = _no_colors
 
 
 # -- the picture ------------------------------------------------------------------------------
@@ -100,6 +108,9 @@ class Item:
     title: str
     detail: str = ""  # The secondary line.
     tone: str = ""  # A body tone from theme/tones.py, "" for plain.
+    # A milestone's own shade of the project's colour map, recolouring ``tone`` at its
+    # own alphas (``theme/tones.py``'s ``toned``). "" leaves the tone the constant it is.
+    color: str = ""
     state: str = ""  # An anchor state, a docs state, a test result — one word, drawn as a mark.
     features: frozenset[str] = frozenset()
     target: tuple[str, str] = ("", "")  # What double-clicking opens: (kind, key).
@@ -301,6 +312,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                     f"feature:{feature.id}", milestone_token(milestone_id), frozenset({feature.id})
                 )
             )
+    colors = readers.milestone_colors(library, project)
     for milestone in milestones:
         members = gathered[milestone.id]
         label = readers.milestone_label(milestone)
@@ -312,6 +324,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 milestone.title or UNTITLED,
                 f"{label} · {count}" if label else count,
                 tone="highlight",
+                color=colors.get(milestone.id, ""),
                 features=frozenset({f.id for f in members} | {milestone_token(milestone.id)}),
                 target=("step", milestone.id),
             )
@@ -342,17 +355,9 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
             if row.id in placed_tests:
                 index = placed_tests[row.id]
                 held = items[index]
-                items[index] = Item(
-                    held.id,
-                    held.column,
-                    held.title,
-                    held.detail,
-                    held.tone,
-                    held.state,
-                    held.features | tokens,
-                    held.target,
-                    held.muted,
-                )
+                # One field changes; naming the other nine positionally is how a new field
+                # lands in the wrong one.
+                items[index] = replace(held, features=held.features | tokens)
             else:
                 placed_tests[row.id] = len(items)
                 items.append(

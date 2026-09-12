@@ -396,8 +396,9 @@ src/dplanner/
 └── theme/                 the Theme record and the house themes, the provider contract and the built-in
                            provider — every Omarchy default, generated from its colors.toml through one
                            mapping — the palette, a chrome-only stylesheet, the glyphs, tones.py (the
-                           semantic colours a node body and a kind button share) and cards.py, the card
-                           primitives the canvas and the coverage view both paint with
+                           semantic colours a node body and a kind button share), palettes.py (the
+                           colour maps a project's milestones are shaded along, Qt-free) and cards.py,
+                           the card primitives the canvas and the coverage view both paint with
 ```
 
 ## Where it came from

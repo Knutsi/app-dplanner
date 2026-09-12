@@ -28,6 +28,8 @@ from dplanner.core.module_data import ModuleDataFormat
 if TYPE_CHECKING:
     from collections.abc import Container, Sequence
 
+    from PySide6.QtGui import QIcon
+
     from dplanner.cli import CliCommand
     from dplanner.cli.gate import TopologyGate
     from dplanner.cli.report.parts import ReportSource
@@ -363,6 +365,86 @@ def default_modules(services: "AppServices") -> list["Module"]:
     def milestone_stats(project: "Project") -> dict[str, str]:
         return _milestone_stats(library, project)
 
+    def milestone_colors(project: "Project") -> dict[str, str]:
+        return _milestone_colors(library, project)
+
+    def milestone_color(step_id: str) -> str:
+        """One milestone's shade, for a surface that draws a row at a time. A surface that
+        draws many at once takes the whole dict instead — this deals the project each call."""
+        if not library.has(step_id):
+            return ""
+        return milestone_colors(library.project_of(step_id)).get(step_id, "")
+
+    def milestone_badge(step_id: str) -> "QIcon | None":
+        """A milestone's key as a badge in its own shade, or None for a step that is not one.
+
+        The one place a milestone's key and its colour are painted together for a surface
+        that is not a table; the order table builds the same badge from the same two facts.
+        """
+        from dplanner.theme.icons import key_badge_icon
+
+        if not library.has(step_id):
+            return None
+        step = library.step(step_id)
+        if not milestone_read(step):
+            return None
+        return key_badge_icon(_step_key(step), milestone_color(step_id))
+
+    def milestone_palette(project_id: str) -> str:
+        """Which colour map a project's milestones are shaded from."""
+        from dplanner.modules.time_estimates.schedule import read_palette
+
+        if not library.has(project_id):
+            return ""
+        return read_palette(library.project(project_id)).id
+
+    def set_milestone_palette(project_id: str, palette_id: str) -> None:
+        """The same undoable write the Time tab's picker and ``schedule palette`` make —
+        one choice, three ways in, so the window and the published report cannot disagree."""
+        from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
+        from dplanner.modules.time_estimates.schedule import write_project
+
+        if not library.has(project_id):
+            return
+        project = library.project(project_id)
+        services.undo.push(
+            SetModuleDataCommand(
+                project_id,
+                TIME_ID,
+                write_project(project, palette_id=palette_id),
+                label="Milestone Palette",
+            )
+        )
+
+    def watch_milestone_palette(restate: "Callable[[], None]") -> None:
+        """Restate the menu's ticks when a project's stored map changes underneath — the
+        Time tab's picker, an undo, or a terminal's ``dplanner schedule palette`` adopted
+        from disk. One entry of one node, so the guard is the module id."""
+        from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
+
+        library.module_data_changed.connect(
+            lambda _node_id, module_id, _origin: restate() if module_id == TIME_ID else None
+        )
+
+    def milestone_shade(step_id: str) -> tuple[str, str]:
+        """A milestone's shade and the sentence for it: *2nd of 4 · Viridis*.
+
+        The words are what make a swatch teach rather than decorate — a colour means "this
+        far along the roadmap", and the tooltip is where that is said once (DESIGN.md's
+        *Words*) instead of as a line under every field.
+        """
+        from dplanner.modules.time_estimates.schedule import read_palette
+
+        if not library.has(step_id):
+            return "", ""
+        project = library.project_of(step_id)
+        colors = milestone_colors(project)
+        color = colors.get(step_id, "")
+        if not color:
+            return "", ""
+        place = list(colors).index(step_id) + 1
+        return color, f"{_ordinal(place)} of {len(colors)} · {read_palette(project).name}"
+
     def step_type_icons(step: "Step") -> tuple[str, ...]:
         return _step_type_icons(step)
 
@@ -407,12 +489,17 @@ def default_modules(services: "AppServices") -> list["Module"]:
 
     def step_accents(project_id: str) -> "dict[str, NodeAccent]":
         """How every step of a project looks on the canvas — one call per canvas sync, so
-        the schedule behind the milestone stats is walked once for all of them."""
+        the schedule behind the milestone stats and the project's colour deal are each
+        walked once for all of them."""
         project = library.project(project_id)
         stats = milestone_stats(project)
-        return {step.id: step_accent(step, stats.get(step.id, "")) for step in project.steps}
+        colors = milestone_colors(project)
+        return {
+            step.id: step_accent(step, stats.get(step.id, ""), colors.get(step.id, ""))
+            for step in project.steps
+        }
 
-    def step_accent(step: "Step", milestone_stat: str) -> "NodeAccent":
+    def step_accent(step: "Step", milestone_stat: str, milestone_color: str = "") -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
 
@@ -468,6 +555,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 if is_feature(step)
                 else ""
             ),
+            # A milestone recolours the kind it is rather than gaining a second mark: the
+            # body, the badge and the tag medallion all take its shade of the project's map.
+            tone_color=milestone_color if milestone else "",
             icons=step_type_icons(step),
             stat_text=stat,
             stat_strong=bool(milestone),
@@ -747,6 +837,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
             days_for=estimated_days,
             agent_state=lambda ctx: services.actions.spec("agent.run").state(ctx),
             agent_run=lambda ctx: services.actions.run("agent.run", ctx),
+            # A milestone on the board leads with its key in its own shade: a lane already
+            # says where the work stands, so the one colour that is not a status says what
+            # the work is leading to.
+            milestone_badge=milestone_badge,
         )
     )
     estimation = EstimationModule(
@@ -940,6 +1034,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
             milestone_label=lambda step_id: milestone_read(library.step(step_id)),
             # The same kind vocabulary the canvas medallions wear, one translation.
             step_icons=lambda step_id: step_type_icons(library.step(step_id)),
+            # The rule, the tint and the key badge all take the milestone's own shade —
+            # the same one its card wears on the canvas and its band in the calendar.
+            milestone_color=milestone_color,
+            step_key=lambda step_id: _step_key(library.step(step_id)),
         )
     )
 
@@ -1046,6 +1144,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 context=services.context,
                 theme=services.theme,
                 settings_sections=services.settings_sections,
+                # View ▸ Milestone Colours writes the *project's* stored map — the same
+                # entry the Time tab's picker and `dplanner schedule palette` write. The
+                # appearance module never learns where a palette lives.
+                milestone_palette=milestone_palette,
+                set_milestone_palette=set_milestone_palette,
+                watch_palette=watch_milestone_palette,
             )
         ),
         LibraryModule(
@@ -1316,6 +1420,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # The description *is* the instructions (ARCHITECTURE.md), and which prose
                 # briefs a compile is a cross-module fact, so it is decided here.
                 instructions=description_read,
+                # A milestone group's medallion in the milestone's own shade — the same
+                # sequence the Tests tab's headings and the calendar show.
+                milestone_color=milestone_color,
                 parent=services.window,
                 pick_assets=pick_assets,
                 # The Implementation notes tab — the notes the project made along the way,
@@ -1333,6 +1440,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 undo=services.undo,
                 sections=services.inspector_sections,
                 actions=services.actions,
+                # The swatch beside the label, and the words that say what it means.
+                shade=milestone_shade,
             )
         ),
         # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
@@ -1367,6 +1476,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # the one place that may know every aspect, so none learns the others.
                 scopes=_scope_kinds(check_read, is_feature, milestone_read),
                 pick_assets=pick_assets,
+                # Grouping by milestone writes each heading in that milestone's own shade,
+                # so the Tests tab reads as the same sequence the calendar does.
+                milestone_color=milestone_color,
             )
         ),
         GithubModule(
@@ -1716,6 +1828,26 @@ def _milestone_stats(library: "Library", project: "Project") -> dict[str, str]:
     return stats
 
 
+def _ordinal(place: int) -> str:
+    """``1st``, ``2nd``, ``3rd``, ``4th`` — the teens are the exception every table forgets."""
+    suffix = "th" if 10 <= place % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(place % 10, "th")
+    return f"{place}{suffix}"
+
+
+def _milestone_colors(library: "Library", project: "Project") -> dict[str, str]:
+    """Each milestone's hex — the one deal, handed to every surface that draws one.
+
+    The colour map is the *project's* assumption, not the user's: the window commits
+    ``reports/`` on every Save, so a per-user map would churn the published report per
+    committer and the Time tab's picker would name a map it was not painting.
+    ARCHITECTURE.md's *Colour is a place on one map* has the rest.
+    """
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.time_estimates.schedule import milestone_colors
+
+    return milestone_colors(library, project, lambda step: bool(milestone_read(step)))
+
+
 def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
     """The figure at each card's bottom right: a milestone's total and landing, any other
     step's estimate — what the canvas paints, read once for the report's graph."""
@@ -1803,6 +1935,8 @@ def _report_sources() -> tuple["ReportSource", ...]:
             status_for=step_status,
             stats_of=_step_stats,
             badge_of=milestone_read,
+            # The report's picture of the graph wears the same shades the window does.
+            colors_of=_milestone_colors,
         ),
         order(
             schedule_of=project_schedule,
@@ -2114,6 +2248,8 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
             tests=tests,
             results=results,
             docs=docs,
+            # The milestone lane wears the same shades the canvas and the calendar do.
+            milestone_colors=_milestone_colors,
         ),
         library,
         project,
