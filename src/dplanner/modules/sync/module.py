@@ -337,17 +337,18 @@ class SyncModule:
         """Start the quit-time save under its dialog; False when it could not be started."""
         labels = [self._group_label(group) for group in chosen]
         progress = SaveProgressDialog(labels, self._deps.parent)
-        progress.finished.connect(self._on_exit_progress_finished)
-        self._exit_progress = progress
+        self._exit_progress = progress  # Set first: _on_saving reads it, and it is queued.
         self._exit_error = ""
+        if not service.save(message, self._publications(service), only=chosen):
+            self._exit_progress = None
+            progress.deleteLater()
+            return False
+        progress.finished.connect(self._on_exit_progress_finished)
         progress.setModal(True)
-        progress.show()  # Never exec(): a nested modal loop inside closeEvent is re-entrant.
-        if service.save(message, self._publications(service), only=chosen):
-            return True
-        self._exit_progress = None
-        progress.finished.disconnect(self._on_exit_progress_finished)
-        progress.deleteLater()
-        return False
+        # Shown once the task is real, so a refused one never flashes a modal — and never
+        # exec(): the guards run inside closeEvent, where a nested modal loop is re-entrant.
+        progress.show()
+        return True
 
     def _on_saving(self, index: int, phase: str) -> None:
         """Where the running save has got to — nothing to show unless we are quitting."""
