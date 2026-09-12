@@ -58,10 +58,9 @@ from dplanner.modules.time_estimates.progress import (
 from dplanner.modules.time_estimates.schedule import (
     Cell,
     TimeReport,
+    milestone_colors,
     phase_colors,
-    read_color,
     read_efficiency,
-    read_palette,
     read_start,
     read_team,
     time_report,
@@ -121,7 +120,9 @@ def report_source(
         then = resolve(AT_START, history=history, saved=saved, live=now, start=dated.start)
         basis = pick_words(AT_START, then, today)
         view = view_scope(now, history, then, None)
-        colors = phase_colors(team.phases, read_color, read_palette(project))
+        colors = phase_colors(
+            team.phases, milestone_colors(library, project, readers.is_milestone)
+        )
         labels = dated.labels
         placed = [
             Placed(

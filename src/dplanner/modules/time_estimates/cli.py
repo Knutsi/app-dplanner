@@ -72,23 +72,22 @@ from dplanner.modules.time_estimates.schedule import (
     DEFAULT_EFFICIENCY,
     DEFAULT_TEAM,
     MODULE_ID,
-    PALETTES,
     Cell,
     TimeReport,
     cell_for,
     is_color,
-    palette,
+    milestone_colors,
     phase_colors,
     read_color,
     read_efficiency,
     read_palette,
     read_start,
     read_team,
-    shades,
     time_report,
     write_milestone,
     write_project,
 )
+from dplanner.theme.palettes import PALETTES, palette, shades
 
 
 @dataclass(frozen=True)
@@ -503,7 +502,9 @@ def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
     # The milestones are printed for one team: the one named, else the project's own.
     stored = read_team(project)
     team = next((cell for cell in calendar if (cell.humans, cell.agents) == stored), calendar[0])
-    colors = phase_colors(team.phases, read_color, read_palette(project))
+    colors = phase_colors(
+        team.phases, milestone_colors(context.library, project, is_milestone)
+    )
     data: dict[str, Any] = {
         "project": project.id,
         "start": report.start.isoformat(),

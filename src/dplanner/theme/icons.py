@@ -8,7 +8,18 @@ dark binder and the light corkboard cards alike.
 from collections.abc import Callable
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import (
+    QColor,
+    QIcon,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QPolygonF,
+)
+
+from dplanner.theme.palettes import Palette
 
 ICON_SIZE = 16
 # A glyph nobody is pointing at is present without asking to be read.
@@ -524,6 +535,37 @@ def key_badge_icon(text: str, color: str | QColor) -> QIcon:
     painter.setFont(font)
     painter.setPen(tone)
     painter.drawText(QRectF(0.0, 0.0, KEY_BADGE_W, ICON_SIZE), Qt.AlignmentFlag.AlignCenter, text)
+    painter.end()
+    return QIcon(pixmap)
+
+
+# A colour map as a strip: wide enough to read the ramp, short enough to sit in a menu row.
+PALETTE_STRIP = QSize(56, 12)
+PALETTE_STRIP_RADIUS = 3
+
+
+def palette_strip_icon(found: Palette) -> QIcon:
+    """A milestone colour map as a strip, dark to light — the map before it is dealt.
+
+    The Time tab's picker and *View ▸ Milestone Colours* both show it, which is why it lives
+    here rather than beside either of them: one painter, so the two surfaces cannot draw the
+    same map differently.
+    """
+    pixmap = QPixmap(PALETTE_STRIP)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    gradient = QLinearGradient(QPointF(0, 0), QPointF(PALETTE_STRIP.width(), 0))
+    last = len(found.stops) - 1
+    for index, stop in enumerate(found.stops):
+        gradient.setColorAt(index / last, QColor(stop))
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(gradient)
+    painter.drawRoundedRect(
+        QRectF(0, 0, PALETTE_STRIP.width(), PALETTE_STRIP.height()),
+        PALETTE_STRIP_RADIUS,
+        PALETTE_STRIP_RADIUS,
+    )
     painter.end()
     return QIcon(pixmap)
 

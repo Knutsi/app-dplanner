@@ -31,13 +31,11 @@ estimates live. Agents are not stretched because their human-in-the-loop cost is
 inside the quarter-day estimate convention; the factor prices the *person's* divided week.
 
 **A milestone's colour is its place in the sequence, read off one colour map** unless
-somebody picked one. The project chooses a :class:`Palette` — a perceptually ordered map
-from data visualisation (viridis, mako, rocket, …), the interior of it so every shade
-reads on a light and a dark surface — and :func:`shades` deals the milestones evenly along
-it: two milestones sit a quarter and three quarters of the way in, eight fill it, and the
-order of the shades is the order of the roadmap. Shades of one map rather than eight
-competing hues, because a calendar of milestones is a sequence and should look like one.
-Hex strings here so the CLI can print and store them; the view turns them into paint.
+somebody picked one. The maps themselves are ``theme/palettes.py``'s — every surface that
+draws a milestone needs them and modules never import each other — and what belongs here is
+what is *this project's*: which map it chose, a milestone's own colour over the dealt one,
+and :func:`milestone_colors`, the one deal every surface reads. Hex strings so the CLI can
+print and store them; the view turns them into paint.
 """
 
 from collections.abc import Callable
@@ -47,14 +45,15 @@ from math import ceil
 from typing import Any, TypeGuard
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
-from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.ordering import cyclic
+from dplanner.domain.model import Library, Project, Step, StepId
+from dplanner.domain.ordering import cyclic, placed
 from dplanner.domain.schedule import (
     Phase,
     critical_path,
     phases,
     working_days_between,
 )
+from dplanner.theme.palettes import DEFAULT_PALETTE, Palette, palette, shades
 
 MODULE_ID = "time_estimates"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
@@ -72,70 +71,6 @@ AGENTS = (1, 2, 3, 4)
 # The team the calendar is dated for until somebody picks one: the smallest.
 DEFAULT_TEAM = (HUMANS[0], AGENTS[0])
 
-
-@dataclass(frozen=True)
-class Palette:
-    """One colour map, as the stops the milestones are shaded between.
-
-    Each is the legible interior of a published map — the darkest and lightest ends are
-    left off, because a fill that vanishes into a light theme or a dark one is no colour
-    at all. ``stops`` run dark to light, so the first milestone wears the deepest shade.
-    """
-
-    id: str
-    name: str
-    stops: tuple[str, ...]
-
-
-PALETTES: tuple[Palette, ...] = (
-    Palette(
-        "viridis",
-        "Viridis",
-        ("#482878", "#3e4989", "#31688e", "#26828e", "#1f9e89", "#35b779", "#6ece58"),
-    ),
-    Palette(
-        "mako",
-        "Mako",
-        ("#2f1c4f", "#3b3f7c", "#3b5f92", "#3c7da0", "#47a1ad", "#6dc1ae"),
-    ),
-    Palette(
-        "crest",
-        "Crest",
-        ("#2a4e7d", "#2d5f8c", "#37739c", "#3f87a3", "#4b9ba2", "#5fae9d", "#7fbf98"),
-    ),
-    Palette(
-        "plasma",
-        "Plasma",
-        ("#46039f", "#7201a8", "#9c179e", "#bd3786", "#d8576b", "#ed7953", "#fb9f3a"),
-    ),
-    Palette(
-        "magma",
-        "Magma",
-        ("#3b0f70", "#641a80", "#8c2981", "#b73779", "#de4968", "#f7705c", "#fe9f6d"),
-    ),
-    Palette(
-        "inferno",
-        "Inferno",
-        ("#420a68", "#781c6d", "#a52c60", "#cf4446", "#ed6925", "#fb9b06"),
-    ),
-    Palette(
-        "rocket",
-        "Rocket",
-        ("#2c1439", "#5b1a4c", "#8a1f55", "#b7284e", "#dc4b3b", "#f07a3a", "#f8a952"),
-    ),
-    Palette(
-        "flare",
-        "Flare",
-        ("#5d3444", "#77384f", "#913c56", "#a94057", "#be4a54", "#cf5b4f", "#da6f52", "#e79a6d"),
-    ),
-    Palette(
-        "cividis",
-        "Cividis",
-        ("#123570", "#3b496c", "#575d6d", "#707173", "#8a8678", "#a59c74", "#c3b369"),
-    ),
-)
-DEFAULT_PALETTE = PALETTES[0].id
-
 # How many shades the swatch menu offers of the chosen map — enough to tell apart, few
 # enough to name.
 SWATCH_SHADES = 8
@@ -146,38 +81,9 @@ WHOLE_COLOR = "#5f87d7"
 REMAINDER_COLOR = "#8b8f96"
 
 
-def palette(palette_id: str | None) -> Palette:
-    """The palette by id; anything unknown — or None — reads as the default."""
-    return next((found for found in PALETTES if found.id == palette_id), PALETTES[0])
-
-
 def read_palette(project: Project) -> Palette:
     """The colour map the project's milestones are shaded from."""
     return palette(read_assumptions(project).palette)
-
-
-def _mix(low: str, high: str, share: float) -> str:
-    """The colour ``share`` of the way from ``low`` to ``high``, channel by channel."""
-
-    def channel(offset: int) -> int:
-        start, end = int(low[offset : offset + 2], 16), int(high[offset : offset + 2], 16)
-        return round(start + (end - start) * share)
-
-    return "#" + "".join(f"{channel(offset):02x}" for offset in (1, 3, 5))
-
-
-def shade(found: Palette, position: float) -> str:
-    """The colour ``position`` of the way along the map, 0 to 1, blended between stops."""
-    stops = found.stops
-    place = min(max(position, 0.0), 1.0) * (len(stops) - 1)
-    index = min(int(place), len(stops) - 2)
-    return _mix(stops[index], stops[index + 1], place - index)
-
-
-def shades(found: Palette, count: int) -> list[str]:
-    """``count`` shades dealt evenly along the map, centred — one milestone sits in the
-    middle, two at a quarter and three quarters, so no shade ever lands on an end."""
-    return [shade(found, (index + 0.5) / count) for index in range(count)]
 
 
 @dataclass(frozen=True)
@@ -374,22 +280,39 @@ class TimeReport:
         return self.human_days + self.agent_days
 
 
-def phase_colors(
-    stretches: tuple[Phase, ...], color_of: Callable[[Step], str | None], found: Palette
-) -> list[str]:
-    """One hex colour per stretch: the milestone's chosen colour, else its shade of the
-    map by place in the sequence; the work after the last milestone is neutral — unless
-    it is all there is."""
-    dealt = shades(found, sum(1 for phase in stretches if phase.milestone is not None))
-    colors: list[str] = []
-    index = 0
-    for phase in stretches:
-        if phase.milestone is None:
-            colors.append(REMAINDER_COLOR if index else WHOLE_COLOR)
-            continue
-        colors.append(color_of(phase.milestone) or dealt[index])
-        index += 1
-    return colors
+def milestone_colors(
+    library: Library, project: Project, is_milestone: Callable[[Step], bool]
+) -> dict[StepId, str]:
+    """Every milestone's hex, by step id: the colour somebody chose for it, else its shade
+    of the project's map dealt by place in the sequence.
+
+    **The one deal.** The canvas, the order table, the progression board, the Tests tab, the
+    coverage lane, the step panel, the calendar and the report all read this, so a milestone
+    cannot wear two colours in one window. The sequence is ``ordering.placed``'s — the order
+    ``dplanner milestone list`` prints and the order the stretches run in, which
+    :func:`phase_colors` relies on and a test pins.
+
+    One walk per project rather than one per milestone, the shape ``_milestone_stats`` has
+    in the composition root; a project with no milestones costs no walk at all. An override
+    does not consume a slot differently — the dealt list is indexed by ordinal either way,
+    so pinning one milestone leaves the others where they were.
+    """
+    if not any(is_milestone(step) for step in project.steps):
+        return {}
+    ordered = [place.step for place in placed(library, project) if is_milestone(place.step)]
+    dealt = shades(read_palette(project), len(ordered))
+    return {step.id: read_color(step) or dealt[index] for index, step in enumerate(ordered)}
+
+
+def phase_colors(stretches: tuple[Phase, ...], colors: dict[StepId, str]) -> list[str]:
+    """One hex colour per stretch, from :func:`milestone_colors`: the work after the last
+    milestone is neutral — unless it is all there is."""
+    return [
+        colors[phase.milestone.id]
+        if phase.milestone is not None
+        else (REMAINDER_COLOR if index else WHOLE_COLOR)
+        for index, phase in enumerate(stretches)
+    ]
 
 
 def cell_for(

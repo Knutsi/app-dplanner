@@ -36,12 +36,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
-from PySide6.QtCore import QDate, QLocale, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QDate, QLocale, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
     QIcon,
-    QLinearGradient,
     QMouseEvent,
     QPainter,
     QPaintEvent,
@@ -66,12 +65,10 @@ from dplanner.domain.model import StepId
 from dplanner.domain.schedule import format_date, format_days, short_date
 from dplanner.modules.time_estimates.progress import Tally
 from dplanner.modules.time_estimates.schedule import (
-    PALETTES,
     SWATCH_SHADES,
-    Palette,
-    shades,
 )
-from dplanner.theme.icons import close_icon
+from dplanner.theme.icons import PALETTE_STRIP, close_icon, palette_strip_icon
+from dplanner.theme.palettes import PALETTES, Palette, shades
 
 # DESIGN.md's rows of rich items: 10 px vertical and 12 px horizontal padding, the row's
 # content lines 4 px apart; the 4-point scale for everything else.
@@ -88,9 +85,6 @@ DATE_ROW_PAD_V = 4
 DOT = 10
 SWATCH = 24  # A hit target comfortably past the 24 px minimum.
 ICON = 16
-STRIP_WIDTH = 56
-STRIP_HEIGHT = 12
-STRIP_RADIUS = 3
 
 # The date fields use the words the calendar uses, so a day reads one way everywhere —
 # English explicitly, for ``format_date``'s reason.
@@ -188,23 +182,6 @@ def dot_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
-def strip_icon(found: Palette) -> QIcon:
-    """The map as a strip, dark to light — what a palette looks like before it is dealt."""
-    pixmap = QPixmap(QSize(STRIP_WIDTH, STRIP_HEIGHT))
-    pixmap.fill(Qt.GlobalColor.transparent)
-    gradient = QLinearGradient(QPointF(0, 0), QPointF(STRIP_WIDTH, 0))
-    last = len(found.stops) - 1
-    for index, stop in enumerate(found.stops):
-        gradient.setColorAt(index / last, QColor(stop))
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(gradient)
-    painter.drawRoundedRect(QRectF(0, 0, STRIP_WIDTH, STRIP_HEIGHT), STRIP_RADIUS, STRIP_RADIUS)
-    painter.end()
-    return QIcon(pixmap)
-
-
 class PalettePicker(QComboBox):
     """The colour maps by name, each with its strip; ``palette_picked`` carries the id."""
 
@@ -213,10 +190,10 @@ class PalettePicker(QComboBox):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._loading = False
-        self.setIconSize(QSize(STRIP_WIDTH, STRIP_HEIGHT))
+        self.setIconSize(PALETTE_STRIP)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         for found in PALETTES:
-            self.addItem(strip_icon(found), found.name, found.id)
+            self.addItem(palette_strip_icon(found), found.name, found.id)
         self.currentIndexChanged.connect(self._on_index)
 
     def show_palette(self, found: Palette) -> None:
