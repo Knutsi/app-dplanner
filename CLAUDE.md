@@ -229,6 +229,7 @@ modules/<name>/
 ├── cli.py       the headless half: CliCommand specs                ← imports no Qt
 ├── aspect.py    for a step aspect: SPEC, DATA_FORMAT, read/write    ← imports no Qt
 ├── report.py    what it says in a report: report_source()           ← imports no Qt
+├── harness.py   for an agent CLI provider: HARNESS, and nothing else  ← imports no Qt
 └── section.py   the editor it puts in the step detail panel
 ```
 
@@ -479,12 +480,12 @@ root, stop and look for the registry or capability you have not found yet.
   has the reasoning.
 - **Marks are a way of looking, remembered per user — and all three are on.** Starts, Ends
   and Orphans (`project_editor/marks.py`, Qt-free) are the `marks` of the module's one
-  `Look` (`look.py`, with the background and Snap to Grid beside them), written to
-  `user_config` and fanned to every scene like `RenderHints`; a tab opened later wears
-  them. **On by default**: a socket with nothing on it and a node with nothing at all are
-  the two things a graph can be wrong about, and a preference that has to be found before
-  it can help is one that helps nobody — so switching one *off* is the deliberate act, and
-  `Marks.from_json` gives an absent name the default rather than False, which is what lets
+  `Look` (`look.py`, with the spotlight, the background and Snap to Grid beside them),
+  written to `user_config` and fanned to every scene like `RenderHints`; a tab opened later
+  wears them. **On by default**: a socket with nothing on it and a node with nothing at all
+  are the two things a graph can be wrong about, and a preference that has to be found
+  before it can help is one that helps nobody — so switching one *off* is the deliberate
+  act, and `Marks.from_json` gives an absent name the default rather than False, which lets
   a default change reach somebody who never touched that switch. The orphan's ring is the
   refusal red at **full strength and `ORPHAN_RING_W`**, twice the agent ring's weight: it
   is the one mark that says *something is wrong here* rather than *this is where the graph
@@ -494,6 +495,19 @@ root, stop and look for the registry or capability you have not found yet.
   the theme-toggle pattern, deliberately not an edge on the activity node, because a
   preference outlives any tab. `ARCHITECTURE.md`'s *Marks are a way of looking* has the
   reasoning.
+- **A picked step lights its arrows, and the spotlight fades the rest.** One derivation —
+  `selection.neighbourhood(edges, picked)`, the arrows with an end among the picked steps and
+  the steps at their far ends, re-derived every selection change and every sync — read twice.
+  The arrows it names are drawn in the accent **always**: that is the second half of what
+  being selected means, not a setting. Fading everything else *is* a setting, because it
+  hides part of a true picture: `Look.spotlight` (*Graph ▸ Spotlight Selection*), off by
+  default where the marks are on, **and holding Alt lends it for a glance** — the view owns
+  the held half and ends it on `focusOutEvent`, since Alt+Tab is Alt held and then taken
+  away. Not a mode: it handles no input. **Nothing picked lights nothing**, so the
+  preference left on never dims a canvas to say nothing. The fade is item opacity at
+  `DIM_OPACITY` (`theme/cards.py`, shared with the coverage trace's lit path), never a
+  paint-level flag — a card recedes whole and `renderers.py` learns nothing.
+  `ARCHITECTURE.md`'s *The spotlight is one derivation* has the reasoning.
 - **A scrollable area's extent must never depend on what the user is moving.** The canvas is
   a *plane*: a constant scene rect centred on the origin, far larger than any graph. That is
   what lets panning go on for as long as anybody wants, and it is also the answer to the older
@@ -543,9 +557,13 @@ root, stop and look for the registry or capability you have not found yet.
   (`tests/conftest.py`; mark a test that means to with `raises_in_a_slot`). *Debug ▸
   Telemetry* and `dplanner telemetry show --slow 50` / `--failures` are the two readers of
   the one file under `config_dir()/telemetry/` (`FORMAT.md`). Measure with it before
-  guessing: `uv run python scripts/measure_edit_cost.py --deferred` builds the application
-  over a synthetic project, pushes bursts of edits and prints what each view paid — it is
-  how the delays above were chosen, and the number to quote before changing one.
+  guessing: `uv run python scripts/measure_scaling.py` builds the application over
+  `scripts/synthetic_library.py`'s library at several sizes, runs every gesture the window
+  has — edit bursts, a click, the details dialog, a tab open, a paint, the poll, a full
+  collection — and prints what each view paid, by size; `synthetic_library.py --out DIR`
+  leaves the same library where a window can open it. `ARCHITECTURE.md`'s *How the
+  application scales* has the numbers, and they are the ones to quote before changing a
+  delay.
 
 - **A hang is sampled and a crash leaves a stack.** `framework/diagnostics.py`, started from
   `app.main` and nowhere deeper: a 100 ms heartbeat, and a daemon thread that samples the
@@ -808,6 +826,36 @@ root, stop and look for the registry or capability you have not found yet.
   the session. Markdown only — PDFs and plain text stay view-only — and the editor prunes
   only blobs its own session superseded. `ARCHITECTURE.md`'s *Editing a spec in-app is a
   replace* has the reasoning.
+- **A spec source is a kind the spec module runs.** A document may come from outside —
+  a Confluence page or folder first — and *where it came from* is a source record in the
+  spec index (format 4: `sources`, and `source`/`key`/`version`/`parent`/`title` on a
+  document; absence still means project-owned and editable). A **document source kind**
+  is the Protocol in `modules/spec/source_kind.py`: it locates, says whether it is
+  connected, connects, fetches and checks; the spec module owns the records, the nested
+  tree, the write (`sourced.apply_snapshot`, through `import_document`, so a refreshed
+  page keeps `previous` and `spec diff` answers per page), the task (`spec/refresh.py`),
+  the undo entry and the freshness note. The + button's arrow renders the Project ▸ *Add
+  Spec* child menu, so a kind contributes one `ActionSpec` and nothing else; the root
+  names the kinds in `_source_kinds`, which is also the test seam. **Refresh is a
+  person's gesture and lands on the undo stack** (`break_coalescing` first, so two
+  refreshes are two entries); **a check writes nothing** — it compares versions on the
+  interval and the strip says "N pages changed — Refresh". A sourced page is shown
+  read-only, `spec import`/`spec remove` refuse it, and fetching is **window-only**:
+  the CLI reads the snapshot and never the credential. `ARCHITECTURE.md`'s *A spec
+  source is a kind the spec module runs* has the reasoning.
+- **An external source's credential is the person's, never the plan's.** The Confluence
+  token lives only in the OS keychain (`secrets_store`, keyed by site — macOS Keychain,
+  Linux Secret Service, Windows Credential Manager; `backend_problem()` refuses with the
+  remedy when none can keep it, never a plaintext fallback); the site → email row in
+  `user_config` is *the fact that a site is connected* and the only thing `status()`
+  reads — a state callback runs on every context change and must never make a keychain
+  round trip. The token is read inside `fetch`, `check` and the Connect dialog's probe,
+  handed to `client.py` as a value; the client has one request method and it is GET,
+  talks only to the source's `*.atlassian.net` origin, follows one redirect to an
+  Atlassian host without the credential, caps every body, count and wait, and composes
+  every error from the status code — never from a library's own message. Content is
+  data: `html.parser`, no raw HTML in the markdown, only http(s)/mailto links, images
+  only from bytes sniffed as raster and named by their content.
 - **Running an agent launches a peer, never a task.** *Run Agent* spawns a detached terminal
   the user owns — not a `TaskRunner` body, which would promise cancel and progress nobody
   can honestly deliver. The terminal opens at the project's **git repository root** (via
@@ -816,24 +864,44 @@ root, stop and look for the registry or capability you have not found yet.
   (`status set`, `agent-state set`, `note add`). **The graph gates launching**: a step
   whose `requires` do not all read done (through `status_for` on the module's Deps, the
   progression board's seam) gets a confirmation naming them before a shell opens — the
-  person may know the work landed unrecorded, so it asks rather than refuses.
+  person may know the work landed unrecorded, so it asks rather than refuses, **once for
+  the whole gesture** whichever of the chosen steps wait.
+  **It runs one agent per chosen step, and the count is the last precondition.** The verb
+  reads `chosen_steps` — the framework's one definition, the same Delete acts on — so
+  lassoing three agent steps is *Run 3 Agents…* and one gesture; a step in the
+  selection that cannot run greys the verb for all of them, naming that step and why,
+  because launching the subset that qualifies would run fewer agents than were asked for
+  and say nothing. Past *Settings ▸ Agent profiles*'s **Max agents launched at once** (four by
+  default, per user and per machine like the terminal beside it) the count itself is the
+  refusal — a lasso is one flick of the wrist, and a deskful of terminals is not what it
+  meant.
+  **A launch that opened a shell claims the step is in progress** — `mark_started`, the
+  writer half of that same seam, applied off the undo stack the way the launch stamp is
+  (`step_status`'s `record_started`), because Ctrl+Z must not file a step as pending while
+  an agent works in it. Over a selection it is claimed per step as each shell opens, so a
+  run that stopped at its third step has claimed two. It is the *Agent profiles ▸ On launch* switch
+  beside *Max agents launched at once*, on by default: the agent's own first report is
+  minutes away and a step somebody is working on that still reads pending is a lie the
+  plan was never asked to tell. Only Run Agent makes the claim — in the step loop, never
+  in the shared `_launch` — so a conflict handed to an agent, a merge of two writers' plan
+  files and not the step's work, claims nothing.
   **The briefing never rides in argv, and the peer is a top-level session.** The
   agent's opening line is `launcher.opening_prompt` — a pointer at `prompt.md`, carrying
   nothing the project is about — because the whole briefing as one argument was every
   agent's command line, and one agent's `pkill -f "Web.Host"` matched four others.
-  `launcher.spawn` hands the terminal `scrubbed_environment()`: the session markers an
-  agent CLI sets in its shells are taken out (a nested `claude` under them is a child
-  session of the outer one), the person's `CLAUDE_CONFIG_DIR`-style configuration stays.
-  The Claude preset names the run's session (`--session-id {session}`, minted per launch);
-  the wrapper records it with `dir` and `resume` in the shell facts, and an ended row in
-  the Agents browser shows the command that picks the agent up again. The preset also
-  hands the run directory over as an additional working directory (`--add-dir
-  {run_dir}`, before another option: the flag takes a list and would swallow
-  `{prompt}`), so reading the briefing asks nothing, and `new_run_dir` resolves the
-  path so the flag and the file agree on macOS (`/var` is a symlink) and Windows (a
-  short-name Temp). **A preset that changes lists the texts it replaced**
-  (`AgentPreset.superseded`): the settings store the picked text, and
-  `current_command` reads a stale one as the preset. The skill and the
+  `launcher.spawn` hands the terminal `scrubbed_environment()`: every harness's shell
+  markers are taken out (a nested `claude` under Claude's is a child session of the
+  outer one), the person's `CLAUDE_CONFIG_DIR`-style configuration stays. The Claude
+  harness names the run's session (`--session-id {session}`, minted per launch); the
+  wrapper records it with `dir` and `resume` in the shell facts, and an ended row in
+  the Agents browser shows the command that picks the agent up again. It also hands
+  the run directory over as an additional working directory (`--add-dir {run_dir}`,
+  before another option: the flag takes a list and would swallow `{prompt}`), so
+  reading the briefing asks nothing, and `new_run_dir` resolves the path so the flag
+  and the file agree on macOS (`/var` is a symlink) and Windows (a short-name Temp).
+  **A harness whose command changes lists the texts it replaced**
+  (`AgentHarness.superseded`): the settings store the picked text, and
+  `launcher.current_command` reads a stale one as the harness. The skill and the
   briefing's preamble both say *never kill by name or pattern*.
   `ARCHITECTURE.md`'s *Running an agent launches a peer, not a task* has the reasoning.
 - **A worktree is the step's decision, and the run is named after the step.** Whether the
@@ -868,19 +936,65 @@ root, stop and look for the registry or capability you have not found yet.
   raising its terminal; *Step ▸ Show Agent Terminal* focuses the window through
   `terminal.py`'s per-platform provider (tmux pane, tty via AppleScript, ancestor pid via
   xdotool, PowerShell pid). All three grey a run that cannot be switched to with its
-  reason, **per run** (`terminal.focus_reason` — a tmux pane is reachable on a desktop
-  whose bare windows are not); *Clear Agent Run* is the window's twin of `agent-state
-  clear`. `ARCHITECTURE.md`'s *The peer reports back through its run directory* has the
-  reasoning.
-- **Which terminal opens is a table, not a chain — and tmux is its last row.**
-  `launcher.TERMINALS` is one row per known terminal per platform with a probe saying
-  whether it is installed; *Automatic* is the first installed row (the platform's own
-  default), and the settings dropdown lists the same rows and pre-fills the editable
-  template — the agent presets' pattern. A new terminal is a row, never an `if`. tmux
-  led the table once, and a DPlanner started from a tmux shell inherits `$TMUX`, so
-  every agent opened as a tmux window inside whatever terminal the person was using; a
-  desktop agent gets a desktop window, and tmux is what Automatic reaches for only when
-  nothing else is installed. Ghostty's `-e` is always a fresh process and window.
+  reason, **per run** (`terminal.focus_reason` — a tmux, herdr or WezTerm pane is
+  reachable on a desktop whose bare windows are not; the wrapper records each
+  multiplexer's own name for the pane); *Clear Agent Run* is the window's twin of
+  `agent-state clear`. `ARCHITECTURE.md`'s *The peer reports back through its run
+  directory* has the reasoning.
+- **What a run consumed is read back when it ends, and kept on the step.** The run
+  remembers its harness and its session (`AgentRun.harness`, `.session`); when the
+  shell ends the tracker asks the harness's `report` and writes a row — harness,
+  session, input, output, the vendor's own breakdown under `details`, when — to the
+  step's `agent_usage` aspect (`step_agent_run/usage.py`, a second aspect id in that
+  package), directly, off the undo stack, with its own origin: tokens were spent
+  whether or not anybody presses Ctrl+Z. **Totals are derived** (`usage.totals`), a
+  session recorded twice is one row, and `input` means everything sent (cache reads
+  and writes included) and `output` everything generated, so two harnesses' numbers
+  add on one step. `dplanner usage show|list|record` is the terminal's half —
+  `record` reads through the same harness readers, or takes `--input`/`--output` by
+  hand; the Agents browser row and the Agent tab say the same words. Claude's
+  transcript is an internal format read tolerantly; the OpenTelemetry metrics are the
+  supported channel and need a collector, which is deliberately not built here.
+- **An agent CLI is a harness, and a harness is a module.** `domain/agents.py` is the
+  contract: an `AgentHarness` is the command (`{prompt}`, `{session}`, `{run_dir}`), how
+  a run resumes, the texts it shipped earlier, the variables it sets in the shells it
+  runs, and a `report` that reads the CLI's own record of one run back — its session
+  and a `Usage`. `modules/agent_claude/`, `agent_codex/` and `agent_opencode/` each
+  export one from a Qt-free `harness.py`, the root's `agent_harnesses()` is the tuple
+  (first is the default), and the launcher, the settings page, the run tracker, the
+  `usage` verbs and `entry.py`'s shell guard all read it — a fourth agent is a fourth
+  module and no `if`. **Capabilities are derived, never declared**: `names_session`
+  is `{session}` in the command, `resumes` is a resume template plus a way to the id,
+  `counts_tokens` is a reader; `capabilities()` words them for the dropdown. Codex and
+  OpenCode mint their own ids, so their `report` finds the run by the directory it
+  worked in and the launch time, and a found id is what makes such a run resumable
+  afterwards. `ARCHITECTURE.md`'s *An agent CLI is a harness* has the reasoning.
+- **Which terminal opens is a table, not a chain — and the multiplexers are its last
+  rows.** `launcher.TERMINALS` is one row per known terminal *and multiplexer* per
+  platform with a probe saying whether it is installed; *Automatic* is the first
+  installed row (the platform's own default), and the settings dropdown lists the same
+  rows and pre-fills the editable template — the harnesses' pattern. A new terminal is
+  a row, never an `if`. tmux led the table once, and a DPlanner started from a tmux
+  shell inherits `$TMUX`, so every agent opened as a tmux window inside whatever
+  terminal the person was using; a desktop agent gets a desktop window, and a
+  multiplexer (herdr, zellij, tmux — `TerminalPreset.multiplexer`) is what Automatic
+  reaches for only when nothing else is installed, and what a *profile* picks on
+  purpose to land several agents side by side. Ghostty's `-e` is always a fresh
+  process and window. **A multiplexer that needs two calls is one template with
+  `&&`**: herdr's row is `herdr workspace create … && herdr pane run {pane} {script}`,
+  `launcher.spawn` runs the stages in turn with `{pane}` as what the earlier
+  stage printed, and a stage that fails is a reason and no run — the fallback dialog
+  hands the prompt over, exactly as when no terminal exists.
+- **A launch profile is a name over the two choices, and the first is the default.**
+  `step_agent_instruction/profiles.py`: a `Profile` is an agent command and a terminal
+  template under a name, kept per user (`user_config`; the two single settings they
+  replaced are read as the default profile when no list is stored). *Run Agent…* runs
+  the first; *Step ▸ Run Agent With* is a data child menu of the rest, each greyed with
+  its own reason (`launcher.template_refusal`: a row's probe, asked before any step is),
+  and Settings ▸ Agent profiles is the list beside an editor for the picked one. A
+  profile's name follows its choices — *Claude Code in herdr* — until somebody types
+  one, and a taken name is numbered rather than refused. Over a selection every chosen
+  step goes through the one profile — with a multiplexer, one pane each.
 - **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
   state; the dashed ring round the body moves, which is what says "somebody is on this one
   right now". One `QTimer` on the scene advances every ring and runs only while a node

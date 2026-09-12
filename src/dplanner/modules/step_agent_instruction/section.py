@@ -164,6 +164,7 @@ class AgentSection(QWidget):
         debounce: DebounceService | None = None,
         worktree: Callable[[StepId], bool] = lambda _sid: True,
         set_worktree: Callable[[StepId, bool], None] = lambda _sid, _on: None,
+        usage: Callable[[StepId], str] = lambda _sid: "",
     ) -> None:
         super().__init__()
         self._product = library
@@ -171,6 +172,7 @@ class AgentSection(QWidget):
         self._pick_assets = pick_assets
         self._worktree = worktree
         self._set_worktree = set_worktree
+        self._usage = usage
 
         self._prompt_parts = prompt_parts
         self._prompt_sections = prompt_sections
@@ -306,9 +308,14 @@ class AgentSection(QWidget):
             " in the checkout this window shows."
         )
         self.worktree_box.toggled.connect(self._worktree_toggled)
+        # What the step's runs have consumed so far — the run tracker's ledger, worded
+        # by the composition root; blank until an agent has run here.
+        self.usage_note = QLabel("", self)
+        self.usage_note.setObjectName("InspectorNote")
         buttons = QHBoxLayout()
         buttons.setSpacing(FIELD_GAP)
         buttons.addWidget(self.worktree_box)
+        buttons.addWidget(self.usage_note)
         buttons.addStretch(1)
         buttons.addWidget(self.preview_button)
         buttons.addWidget(self.run_button)
@@ -595,6 +602,7 @@ class AgentSection(QWidget):
     def _refresh_buttons(self) -> None:
         state = self._run_state()
         self.run_button.setEnabled(state.enabled)
+        self.usage_note.setText(self._usage(self._step_id) if self._step_id is not None else "")
         self.worktree_box.setEnabled(self._step_id is not None)
         self.worktree_box.blockSignals(True)
         self.worktree_box.setChecked(self._step_id is not None and self._worktree(self._step_id))

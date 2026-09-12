@@ -283,7 +283,7 @@ def test_picking_the_topology_row_ends_the_session(services, project):
     activity = specs_tab(services, project)
     activity.select_document("auth")
     activity._editor.insertPlainText("typed ")
-    activity.list.setCurrentRow(0)
+    activity.select_row(0)
     assert not activity.is_editing
     assert activity._views.currentWidget() is activity._topology_page
     assert current_doc(services, project, "auth").previous is not None

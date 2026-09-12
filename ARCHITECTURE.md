@@ -1233,6 +1233,48 @@ warning. Being heavier than the ring it shares a gap with, it is the term `PAINT
 takes — a decoration that reaches further than the bounding rect is clipped, and nothing
 says so.
 
+### The spotlight is one derivation, and a held key lends the look
+
+A picked card says *this one*, and said nothing about what it is joined to — on a graph of
+any size, tracing a step's dependencies meant following curves by eye across cards that all
+looked equally present. Two answers, from one derivation.
+
+**Selection lights its arrows, always.** `selection.neighbourhood(edges, picked)` names the
+arrows with one end among the picked steps and the steps at their far ends; the scene
+re-derives it on every selection change and every sync, and every arrow it names is drawn in
+the accent the picked card's border already wears. Nothing is stored and nothing is
+configurable: it is the second half of *what is selected*, the way a picked node's lift is,
+and a graph relinked by a CLI run this window adopted lights correctly the moment the arrow
+is drawn — the same argument as `marks.ports()` and the ordering's.
+
+**The spotlight fades what the neighbourhood leaves out**, and that *is* a preference: it
+hides part of a true picture, and the part it hides is the one you need while you are
+drawing the graph. So it is a field on the one `Look` beside the marks — off by default,
+where the marks are on, because a mark says what the graph could be *wrong* about and this
+only chooses which of two true pictures you are shown. `Graph ▸ Spotlight Selection` is the
+switch, and **holding Alt lends the same look for as long as the key is down**: the thing
+you want nine times in ten is a glance, and a glance should not cost two menu trips.
+
+**Held is not a mode, and not the preference.** It handles no input — nothing about what a
+click means changes — so a mode would be a stack entry that declines every hook, and one
+that Space's pan would then have to nest inside correctly for no gain. It is not the
+preference either: a key that wrote the setting would leave the menu's tick flickering under
+the user's thumb. So the scene keeps the two sources apart and lights on either
+(`set_spotlight`, `hold_spotlight`), the view owns the held one — because only the view
+learns when the keyboard goes, and **Alt+Tab is precisely Alt held and then taken away**,
+which is why `focusOutEvent` ends it.
+
+**Nothing picked lights nothing.** The neighbourhood of an empty selection is empty, and the
+scene fades nobody when it is — a spotlight over an empty selection would dim the whole
+canvas to say nothing at all. That one rule is what makes the preference safe to leave on.
+
+The fade is `QGraphicsItem.setOpacity` at `DIM_OPACITY`, not a paint-level flag: one number
+fades a card's fill, border, title, medallions and the shadow under it together, which is
+what receding is, and `renderers.py` never learns that a spotlight exists. The coverage
+trace already dimmed its cards that way to light a path through its lanes, so the constant
+moved to `theme/cards.py` — the same argument that put the card primitives there. The ground
+and its regions stay as they are: they are the table, not the graph.
+
 ### The palette a painter is handed is a snapshot
 
 `QStyleOptionGraphicsItem.palette` is filled once, when the scene is constructed, and Qt never
@@ -1745,6 +1787,85 @@ reopens the document as it now is: the model is the authority, unflushed keystro
 and anything already flushed survives as a recoverable blob. An agent replacing the document under an open window resolves through
 *Two writers, one folder* like every other write.
 
+## A spec source is a kind the spec module runs
+
+The spec was always a file somebody put beside the project. Now it may live somewhere
+else and change there — a Confluence page or folder first, other systems later — and the
+question was where the machinery for that belongs. Two shapes were on the table: each
+source module owns its own tree, task and index writes and the spec module hands it a
+writer seam; or the spec module runs every source and a source module is nothing but a
+*kind* — how to ask for a location, whether it is connected, how to connect, how to fetch
+and how to check. The second won, for the reason the asset catalog and the report
+sources did: the interesting logic (records, nesting, the write, the undo entry, the
+freshness note, the strip) is the same for every source, and writing it once in the
+consumer is what makes the second kind a fetcher and a dialog. The contract is a
+`Protocol` in `modules/spec/source_kind.py`, consumer-owned like `CanvasDrop`; the
+Confluence module satisfies it structurally and the composition root hands the kinds in
+as `SpecDeps.kinds`. The Qt-free shapes they exchange — `Snapshot`, `FetchedDocument`,
+`Freshness`, `SourceStatus`, `SourceUnavailableError` — sit in
+`domain/document_source.py`, beside `AssetSource`, because the spec module's headless
+core reads them and the kind's headless half constructs them and neither may import the
+other.
+
+**A fetched page is an ordinary spec document.** Its markdown is a content-addressed
+blob under `documents/`, its images are `assets/<sha16><suffix>` in the same area, and
+the index row carries what makes it a *sourced* one: `source` (the record), `key` (the
+kind's own id for the page), `version` (the kind's stamp, compared and never
+interpreted), `parent` (the document above it, by name) and `title`. Absence keeps its
+old meaning — a row without `source` is project-owned and editable — so no existing
+reader learned a key. The consequence is the one that mattered: `spec show`, `spec
+diff`, citations, coverage and the briefing needed no change at all, because
+`apply_snapshot` writes every page through the same `import_document` a replace uses, and
+a refreshed page therefore keeps `previous`. A page's **name is minted once** from its
+title and kept across refreshes even when the title changes — a citation keys on the
+name, and a title is a thing people edit — with the page matched by `(source, key)`.
+
+**Refresh lands on the undo stack; a check writes nothing.** A person pressed Refresh
+(or added the source), so Ctrl+Z must put the documents back — the Compile Docs
+precedent, not the PR refresher's off-stack write, and `break_coalescing()` runs first
+because the toolbar's buttons take no focus and two refreshes would otherwise merge into
+one entry. The check is the other half of "check, then ask": on the interval, while a
+Specs tab shows the project, the kind compares versions (two or three requests for a tree,
+no bodies) and the strip says "3 pages changed at the source — Refresh"; nothing is
+downloaded until the person asks. Both run on `TaskRunner`s in `spec/refresh.py`, the
+`github/refresh.py` shape; a refusal that names the credential (a 401) is remembered per
+window as *needs reconnect* until the kind's `config_changed` says otherwise.
+
+**Fetching is window-only.** The token could be read by the CLI too — it is in the OS
+keychain, which a shell can reach — and the decision was that it must not be: an agent's
+shell runs with the person's keychain but not the person's judgement, and a spec source
+is the one place the plan touches a credential that opens something outside the plan.
+So `spec list` shows the tree and its provenance, `spec show` and `spec diff` read the
+snapshot, `spec import` and `spec remove` refuse a sourced page with a pointer to the
+tab, and adding, refreshing and removing a source are window acts. The LLM service's
+rule (*An LLM call is a task*) is the same rule from the other side.
+
+**The credential is the person's, per site, per machine, and `status()` never touches
+the keychain.** The token goes through `framework/secrets_store.py` under
+`spec_confluence.token:<host>`; the site → email row in `user_config` is *the fact that
+a site is connected*. That split is not tidiness: an action's `state` runs on every
+context change, and `keyring.get_password` is a D-Bus round trip that can raise a
+keychain prompt in the middle of a menu opening. So `status()` reads the row, and the
+token is read only inside `fetch`, `check` and the Connect dialog's probe, handed to the
+client as a value. The dialog stores nothing until its probe read the page, and refuses
+up front when `backend_problem()` says this machine cannot keep a secret — a plaintext
+file is never the fallback, which is the lesson `gh auth login` learned in public.
+Tokens expire within a year, so *Reconnect* is the same dialog and a normal event.
+
+**Read-only against Confluence by construction, and every byte from it is data.** The
+client has one request method and it is GET; the fake transport the tests hand in has no
+other verb to call. Requests go only to the source's `*.atlassian.net` origin — the
+locator is re-validated on every read from disk, because a plan is shared and a
+colleague's `spec.json` is input — and a download's one redirect is followed only to an
+Atlassian host, without the credential when the host changes. Bodies, attachment sizes,
+page counts, depth, retries and `Retry-After` are all capped. The storage XHTML is parsed
+by `html.parser` (no entity or DTD expansion, no network) into a depth-capped tree, and
+the markdown it becomes carries no raw HTML, links only `http(s)`/`mailto`, and names only
+images the fetch sniffed as raster and content-addressed itself; dynamic macros, whose
+content is not in storage, become a labelled placeholder. Every error a person sees is
+composed here from the status code — a library's own message is where a credential would
+leak into a log.
+
 ## A step has a number, and the letter in front of it is derived
 
 A uuid is the right identity for files that link to each other across renames and
@@ -2174,6 +2295,85 @@ The assembly is also where the CLI grew the composition root's other seam:
 what crosses modules arrives as arguments — `skill_commands(specs, described)` made that
 shape first, and this is its second use.
 
+### One agent per chosen step, and why the limit is the last check
+
+*Run Agent* reads `chosen_steps` — the framework's one reading of *which steps is this verb
+about*, the same one Delete, Cut, Copy, Duplicate and Isolate act on — so a lasso over three
+agent steps is *Run 3 Agents…*, and the verb needed no gesture of its own to learn it. Three
+decisions came with that.
+
+**Every chosen step must be launchable, or none is.** A step in the selection with no
+briefing, no agent mark or no checkout greys the verb for the whole selection, and the label
+names that step and its reason. Running the subset that qualifies is the tempting
+alternative and the wrong one: it launches fewer agents than were asked for and says so
+nowhere, and the person finds out by counting terminals. This is *hidden means absent;
+disabled means not now* applied to a set — the precondition is still taught, it just now
+names which member failed it.
+
+**The graph gate asks once.** Prerequisites are checked per step, but the question is one
+box for the gesture, listing each waiting step with what it waits on. A box per step would
+ask four times about a single decision, and *Run Anyway* on the third of four would leave
+the person unable to say what they had already agreed to. Cancel means none of them, which
+is the only honest reading of one question.
+
+**The count is a precondition, not a warning.** Four agents is four terminals, four
+worktrees, four live sessions and four `dplanner` writers against one plan; a selection is
+made with one flick of the wrist and can hold the whole graph. So *Settings ▸ Agent
+profiles* carries **Max agents launched at once** — four by default — and a selection past
+it greys the verb with the number rather than asking. A confirmation would be the wrong
+shape here: the limit is not a risk to accept once, it is a standing statement about what
+this desk can hold, so the way past it is to change it in the one place it lives. It sits
+beside the agent command and the terminal template for that reason — per user, per
+machine, never in the plan, because how many peers one machine can carry is not a fact
+about the project.
+
+`_run` re-checks the limit rather than trusting the state gate, on the same principle every
+verb here follows: a presenter may run a stale state, and the guard that matters is the one
+in the act.
+
+### A launch says the work has started
+
+The graph gates launching by *reading* status (`status_for`, the progression board's
+seam); a launch also *writes* one. When a shell opens, the step is claimed `in-progress`
+through `mark_started` — the writer half of the same seam, wired by the composition root
+to `step_status`'s own `record_started`, so the agent module never learns the vocabulary
+and the status module keeps the only place its words are spelled.
+
+Three decisions sit in that one line.
+
+**It is off the undo stack**, with an origin of its own, exactly like the launch stamp
+beside it (*The peer reports back through its run directory* has that reasoning). The
+claim rides on something Ctrl+Z cannot take back — a detached shell now exists — and an
+undo entry would let the next Ctrl+Z file the step as pending while an agent is still
+working in it. `record_started` answers False and writes nothing when the step already
+claims to be in progress, so a second launch dirties no file; it *does* override `done`,
+because launching an agent on a finished step means the work resumed and there is no
+other honest reading.
+
+**It is a switch, on by default** — *Agent profiles ▸ On launch*, beside *Max agents launched at
+once* and per user like the rest of that page. On, for the reason the marks are on: the
+agent's own first report is minutes away (the briefing's protocol has it setting
+`agent-state`, not status), and a step somebody
+is working on that still reads pending is a lie the plan was never asked to tell. A
+switch rather than a rule, because a plan whose statuses a person keeps by hand should
+not have the window writing into it — so switching it off is the deliberate act, and
+nothing else about the launch changes.
+
+**Only Run Agent makes it.** `_launch` — the one place a terminal opens — is shared with
+the conflict hand-over and knows nothing of the claim; it is made one level up, in the
+step loop, after `_launch` has answered that a shell exists. That placement buys two
+things at once: a run over a selection claims each step as its own shell opens and stops
+claiming where the shells stop, so three steps of which the third found no terminal leave
+two marked and one not; and an agent handed two writers' versions of a plan file is never
+marked as doing the step's work — it is merging, and marking that step in progress would
+be the same lie in the other direction. The verb decides; the mechanism obeys.
+
+Nothing un-claims it. Finishing is the agent's own `dplanner status set … done`, or the
+person's from Step ▸ Status — the run ending clears the agent *chip* (that state is about
+the shell) and deliberately says nothing about where the work stands, which is the same
+line *A test result is not a step status* draws between two vocabularies that must not
+be folded into one.
+
 ### The peer is a top-level session, and the briefing stays out of argv
 
 Four agents died at once on 2026-09-05, and DPlanner had not crashed: it was killed, with
@@ -2378,6 +2578,147 @@ current session changed. It read as "the agent lands in a random split". Ghostty
 never does that: its `-e` forces a fresh process (`gtk-single-instance=false`) with a
 window of its own. So tmux is the last resort — what Automatic reaches for over ssh with
 no terminal installed — and a desktop application's agent gets a desktop window.
+
+### An agent CLI is a harness, and a harness is a module
+
+The launcher used to carry a `PRESETS` table of three agent commands and a list of the
+environment variables Claude Code sets in its shells, and every other fact about an agent
+CLI — whether it can be resumed, where it keeps its transcripts — had nowhere to go. Codex
+support was the second CLI to need such facts, and a second block of `if preset.id ==
+"codex"` in the launcher was the shape to refuse.
+
+So an agent CLI is a **harness** now (`domain/agents.py`), and each one is a module:
+`modules/agent_claude/`, `agent_codex/`, `agent_opencode/`, each a Qt-free `harness.py`
+exporting one `AgentHarness` — the command with its placeholders, the resume template,
+the texts the command shipped earlier, the shell markers, and a `report` reader — and the
+composition root's `agent_harnesses()` is the tuple every reader takes as an argument:
+the launcher, the settings page, the run tracker, the `usage` verbs and the entry point's
+shell guard. The contract lives in `domain/` beside `assets.py` and `aspects.py` for the
+same reason those do: it must be importable without Qt, and it is what modules agree
+on rather than what any one of them owns. Three consequences were decided deliberately.
+
+**Capabilities are derived from the record, never declared beside it.** A settings page
+wants to say *Codex — resumes, counts tokens*, and the temptation is a `capabilities`
+tuple on the record. But a tuple beside the fields it describes is a second statement
+that can disagree with the first — a harness whose `resume` template was removed and
+whose tuple still said *resumes*. So `names_session` is *is `{session}` in the command*,
+`counts_tokens` is *is there a reader*, `resumes` is *a resume template, and a way to the
+id* — and `capabilities()` words them. Nothing to keep in step.
+
+**A harness that mints its own id is found afterwards, by where and when.** Claude names
+its session up front (`--session-id`, minted per launch), and that is the best case: the
+id is known before the shell opens, the wrapper writes it into the facts, and the resume
+command is printed on exit. Codex and OpenCode do not take an id; they mint one. Both,
+though, record where a session started and when — Codex in a rollout file whose first
+line carries the `cwd`, OpenCode in a database row with a `directory` — and the launcher
+knows both facts about every run it started. So a harness's `report(RunFacts)` finds the
+run by directory and launch time (the earliest record started there at or after the
+launch, with two minutes' slack for a stamp taken after the shell) and answers the id
+with the usage. A step's worktree is one directory per run, which makes the match exact;
+a step that works in the checkout itself shares it with other runs, and the start time
+tells them apart. The found id is written back onto the run, and *that* is what makes a
+Codex run resumable in the Agents browser — parity with Claude by a different route,
+without a flag Codex does not have.
+
+**The reader is tolerant by construction.** Every one of these formats is the vendor's
+own, undocumented (Claude Code says so in as many words) and free to change between
+releases. A reader that raised on a changed field would take the whole run tracker down
+on the day a vendor shipped; one that answers `None` leaves the run ended as before with
+no tokens beside it, which is the honest report. The OpenTelemetry metrics Claude Code
+exports are the supported channel — `claude_code.token.usage` with a `session.id` on
+every point — and they need an OTLP collector listening on this machine, which is a
+feature to build when a transcript reader has failed, not before. Its console exporter
+writes to the agent's own stdout, so it cannot serve an interactive session.
+
+### A launch profile is a name over the two choices
+
+Run Agent has always asked two questions — which agent, which terminal — and the settings
+page answered each once, for the whole machine. Two terminals of agents at once broke
+that: a Claude run in a Ghostty window for the step under the cursor, and four Codex runs
+side by side in a multiplexer for the four the lasso caught, are not one setting with a
+different value; they are two ways of working a person switches between all day.
+
+A **profile** (`step_agent_instruction/profiles.py`) is the two answers under a name,
+and the list of them is the setting. The first is the default — what *Run Agent…* itself
+runs, so the verb, the Agent tab's button and the palette need no picker — and the rest
+are the entries of *Step ▸ Run Agent With*, a data child menu rebuilt on open so a profile
+added in Settings is offered at once. Each entry is greyed with its own reason: the
+profile's terminal is one probe (`launcher.template_refusal` — *herdr is not installed*,
+*not inside a tmux session*), asked before any step is, because it is the profile's
+refusal and not the selection's. Over a multi-selection every chosen step goes through
+the one picked profile, one pane per step in a multiplexer — which is the gesture the
+whole thing exists for: see four ready steps on the board, select them, pick *Codex in
+herdr*, and they are running side by side.
+
+A profile's name is derived until it is typed. A new profile is a copy of the picked one
+named by what it does — *Claude Code in herdr* — and the usual next moves, changing the
+terminal and then the agent, keep renaming it to match, so the list never holds a *Default
+copy* that is actually Codex in tmux. The rule that makes this safe is one comparison in
+`update_profile`: a name is *derived* while it still reads as what the profile's old
+choices suggested (numbered or not), and a name that reads as anything else was a
+person's and is kept. No flag is stored, so an old profile list needs no migration; a
+typed name that happens to equal the suggestion behaves as derived, which is the right
+answer for a name that says what the profile does. Names stay unique either way — *Run
+Agent With* and the default lookup go by name — and a typed duplicate is numbered rather
+than refused, since a settings field is no place for a modal.
+
+The two single settings the profiles replaced are read as the default profile when no
+list has been stored, so a machine configured before profiles existed keeps its choices
+without anybody retyping them — the same idea as a harness carrying the command texts it
+shipped earlier. Profiles are per user, per machine (`user_config`), never the plan.
+
+### A multiplexer is a row, and a two-call one is one template
+
+herdr — the multiplexer built for exactly this, a headless server the person's terminal
+attaches to, with a workspace per repository and an agent-state sidebar — adds a shell in
+two calls: `herdr workspace create` prints, as JSON, the pane it made, and `herdr pane run
+<pane> <command…>` types a command into it. The terminal table's one template per row
+cannot say that, and the honest alternatives were a Python opener per multiplexer (a
+second table of callables beside the first) or a `sh -c` one-liner nobody could read in
+a settings field.
+
+The row is `herdr workspace create … && herdr pane run {pane} {script}`
+instead: `launcher.spawn` splits a command at its `&&` tokens, runs the stages in turn to
+completion, and fills `{pane}` in a later stage with what the earlier one printed (a
+`pane_id` in its JSON, else its last line). It is what a person would type, it stays a
+row a person can edit, and tmux's `new-window -P -F '#{pane_id}'` or `wezterm cli spawn`
+would feed the same `{pane}` if a second call ever needed it. A stage that fails is a
+reason string and no run: the fallback dialog hands the prompt over, exactly as when no
+terminal exists, because a workspace that could not be created is not a shell somebody
+is in. The wrapper script records each multiplexer's own name for the pane from the
+variables it sets (`HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, `WEZTERM_PANE`, beside tmux's
+`TMUX_PANE`), so *Show Agent Terminal* selects the pane through the multiplexer before
+it asks the desktop for a window — `terminal.focus_reason`'s per-run rule, extended.
+
+herdr, zellij and tmux sit last in every platform's list, marked `multiplexer`: Automatic
+still opens a window, and a multiplexer is what a profile picks on purpose.
+
+### What a run consumed is a ledger on the step
+
+Which step cost how many tokens is the question a project's owner asks at the end of a
+week, and nothing recorded it. The run tracker already knows the moment a shell ends and
+which agent ran in it, so it asks the harness's `report` there and writes a row to the
+step's `agent_usage` aspect — the second aspect id in `step_agent_run/`, beside the run
+*state* that is cleared at exit: two different claims, and only this one outlives the
+shell. The write goes directly, off the undo stack, with an origin of its own — the exit's
+rule, for the exit's reason: the tokens were spent whether or not anybody presses Ctrl+Z.
+
+**Rows, never a total.** A step is run more than once — a retry, a second agent picking
+up after the first — and a stored total would hide which run cost what and disagree with
+its rows the first time one was corrected. So the aspect holds one row per run (harness,
+session, input, output, the vendor's own finer split under `details`, when), a row is
+keyed by session so a record read twice is one row, and `usage.totals` sums on read.
+`dplanner usage show` prints the rows, `usage list` a project's steps by cost, and
+`usage record` writes a row for a run the window never saw — through the same harness
+readers, or by hand with `--input`/`--output` for a CLI nothing here can read.
+
+**One meaning of input and output.** Anthropic bills cache reads, cache writes and
+uncached input at three prices and reports all three; OpenAI counts cached tokens as a
+subset of input; OpenCode keeps reasoning apart from output. A ledger that copied each
+vendor's shape could not be added across a step that ran under two of them. So `input`
+is everything sent to the model and `output` everything it generated, whatever the CLI,
+and the vendor's split rides along under `details` in the vendor's words — the sum is
+honest and the breakdown is still there for whoever wants the price.
 
 ## Two repositories, two questions
 
@@ -3204,6 +3545,12 @@ recognises the moment. None needs action today.
   an *All Projects* row on top. Two is a coincidence, not a pattern — deliberately not
   abstracted. A third is the moment to extract the shared rebuild-and-restore-expansion
   machinery, which is the half that is actually the same.
+- **Every per-gesture cost is a constant, and the constants add up.** A click on a step
+  costs the same nine section shows at 25 steps as at 400, a details open the same
+  thirteen widget trees, a full collection the same quarter second — *How the
+  application scales* has the table and the order to take them in. The next surface
+  that shows on every selection, or listens to the whole library, is the one to hold
+  to those rules.
 - **`project_editor` accretes by construction.** *Modules never import each other* means a
   feature that lives *on* the canvas — regions, named layouts, sorts, the minimap — cannot
   become its own package, so the surface-owning module grows instead (a quarter of all
@@ -3511,6 +3858,208 @@ real timers (`tests/framework/test_debounce.py`) and once per converted view by 
 immediate mode off, pushing three times, and asserting one rebuild after `flush_all()`.
 Sprinkling `qtbot.wait` over a hundred tests was the alternative, and it would have made
 every one of them slower and none of them more honest.
+
+## How the application scales
+
+Measured on 2026-09-08, four days after the coalescing pass above and after the coverage
+tab, the progress recorder, the notes log and the feature catalogue had landed on top of
+it. Two sources, read together: the user's own journal — every stall the watchdog sampled
+and every slot over `SLOW_MS` from four days of real sessions on a project of under a
+hundred steps — and `scripts/measure_scaling.py`, which builds the application headless
+over `scripts/synthetic_library.py` (three projects in one plan repository, two of them
+*N* steps with the real aspect mix: statuses, estimates, a milestone every fifteen,
+features, agent steps, tests with runs, notes, a description and a stored position on
+every step) at *N* = 25, 50, 100, 200 and 400, and runs every gesture the window has in
+the deferred regime, pumping the event loop until nothing is pending and the journal has
+been silent for 150 ms. The numbers below are the *few tabs* regime — the graph, the
+order table and the Time tab open, which is how the project that felt sluggish was being
+used; the *all tabs* regime is at the end. The same sweep on the desktop platform
+(wayland, by accident) agreed with the offscreen one within noise on every row but paint,
+which is the honesty check on the harness.
+
+**The graph math is not where the time goes.** Every domain derivation is linear and
+cheap: at 400 steps `depths` is **0.7 ms**, `cone` **0.4 ms**, `progression` **0.6 ms**,
+`link_refusal` **0.02 ms**, the automatic layout **3 ms** (and a project with a fifth of
+its steps unplaced syncs its canvas in the same 11 ms per keystroke as a placed one). A
+title keystroke's synchronous cost — the `command` span — is **0.4 ms at every size**,
+exactly the number the section above ended on. What the journal and the harness agree on
+is that the cost sits in the *reactions* to a change and to a click, and that most of it
+does not scale with the project at all; it is a constant paid per gesture.
+
+| per gesture, ms | 25 | 50 | 100 | 200 | 400 |
+|---|---|---|---|---|---|
+| **click on a step** — `PanelDock._on_context` | 42 | 43 | 51 | 59 | 80 |
+| pick 20 cards on the canvas | 166 | 182 | 201 | 247 | 517 |
+| **details dialog** — construct + first show | 108 | 98 | 113 | 115 | 157 |
+| prose keystroke — canvas `_sync`, same turn | 3 | 6 | 11 | 24 | 58 |
+| prose keystroke — context refresh, same turn | 4 | 4 | 4 | 5 | 6 |
+| after a burst — Order table rebuild | 11 | 20 | 38 | 78 | 126 |
+| after a burst — Time tab rebuild | 11 | 21 | 43 | 88 | 206 |
+| estimate burst — recorder, per run (×2) | 4 | 6 | 9 | 16 | 37 |
+| new step — one `AddNodeCommand` | 7 | 7 | 8 | 9 | 11 |
+| paste of 20 steps — the command | 122 | 137 | 137 | 156 | 188 |
+| **disk poll**, every 2 s | 18 | 26 | 43 | 78 | 151 |
+| autosave flush after one edit | 17 | 27 | 49 | 86 | 159 |
+| **full garbage collection** (gen 2) | 239 | 250 | 268 | 296 | 360 |
+| keyring read, per call | 4.3 | 4.1 | 4.1 | 4.0 | 4.2 |
+| cold open: Tests tab | 146 | 171 | 278 | 670 | 1637 |
+| cold open: Coverage tab | 113 | 145 | 335 | 973 | 2672 |
+| cold open: Estimates tab | 315 | 423 | 707 | 1281 | 2358 |
+| session open | 1784* | 288 | 311 | 461 | 710 |
+
+*the first open of the process pays the imports.
+
+**What the click costs, and why it is flat.** A click publishes the selection, the dock
+asks every context panel to `show_context`, and `StepPanel.show_step` calls `show_target`
+on **all nine of its sections whether or not their tab is visible**
+(`modules/step_properties/panel.py`, `_show_in_extensions`). The profile at 100 steps puts
+the whole click in that loop: the Agent tab rebinds two editors (`TextBinding`, a
+`setPlainText` of the whole document each) and assembles the inherited briefing **three
+times per click** (`_mark_prompt_stale` from `show_target`, from `_refresh_derived` and
+from the follow); the Covers tab runs two `cone` walks, parses the run history and
+builds a card widget per gathered test — eighteen widgets per click on the synthetic
+project; the GitHub tab starts a fetch; every prose tab rebinds. The user's journal has
+the same slot at **30 to 105 ms** thirty times over four days, and the details dialog
+is the same cost twice: `StepDetailsDialog` builds a second full panel (nine sections,
+four Details blocks, about thirteen widget trees and fifteen subscriptions — 185
+`addLayout` calls and sixteen thousand calls into the Python `styleHint` override of
+`theme/style.py` per open) and then shows the step in it, while the docked panel keeps
+listening beside it. Construction is **80 to 125 ms**, flat until the largest size; the
+first show is 20 to 30 ms headless, and the journal's three `steps.details` stalls of
+**~350 ms** are the same open with real painting behind it. Picking twenty cards costs
+twenty publishes, because the scene announces `setSelected` one item at a time and every
+announcement runs the whole chain.
+
+**The second wave is real, and it is the recorder.** An estimate, a status, a link, a
+birth or a deletion settles at ~1000 ms where a title settles at ~700 ms, and the journal
+says why: `ProgressRecorder.record_all` runs 300 ms after the burst, simulates every
+project in the library, writes `progress_history` on the project node — and that write is
+a `module_data_changed` every `follow_project` view of the project hears, so the canvas,
+the Order table and the Time tab rebuild a second time, and the recorder, which listens to
+`module_data_changed` too, runs once more to find nothing changed. Two full simulations
+and a second round of every rebuild, per burst, for a record that only has to be right
+once a day. A title or a prose keystroke escapes it only because the snapshot compares
+stretches, not titles. In immediate mode — the test suite's regime — the same ten
+estimate edits ran the recorder **nineteen times** and every open view nineteen times,
+which is the mechanism with no timer to hide behind.
+
+**Two costs on the GUI thread scale with the plan on disk, not with the graph.** The
+workspace poll is `LibraryStore.changed_underneath()` (`domain/store.py`), a `stat` of
+every plan file of every open project every two seconds — **151 ms at 400 steps, 43 ms
+at 100**, a hitch on a period. And a flush walks the same tree twice per dirty project,
+once to check for a foreign change and once to re-stamp what it wrote
+(`_snapshot` from `flush` and from `_remember_disk`), which is why saving one title
+costs 159 ms at 400 steps. Neither is the graph; both are proportional to
+*projects × steps × module files*.
+
+**A full collection is a quarter of a second, whatever the project.** `gc_policy.py`
+runs the interpreter's own generational policy from a 200 ms timer on the GUI thread; a
+generation-2 pass over the application's **240 000 to 326 000 live objects** takes
+**240 to 360 ms**, and the journal has one at 337 ms sampled inside `collect_if_due`.
+The project is a small share of that graph — 25 steps and 400 steps differ by 90 000
+objects and 120 ms; the rest is the application. Generation 0 is 0.01 ms.
+
+**What does scale, and how.** The canvas sync is superlinear — 3 ms at 25 steps, 58 ms
+at 400 — and half of it at the top is `step_accents` → `_milestone_stats` →
+`project_schedule`, where `domain/schedule.py`'s `working_days_after` walks the calendar
+**day by day from the project start for every step**: 0.7 ms at 25 steps, 28 ms at 400,
+quadratic in the plan's length in days. The Time tab's `time_report` carries the same
+walk through `phases` and `parallel_finish` (10 → 201 ms), and so does the recorder's
+snapshot. The Order table is linear in rows (11 → 126 ms, a `QTableWidget` rebuilt whole).
+Three tabs are expensive to open cold and get worse faster than the project grows: the
+Tests tab and the Coverage tab (about *N*^1.2 and *N*^1.4, both walking every collector's
+cone and building a widget per row), and the Estimates tab (linear, a `QWidget` editor
+per row, **2.4 s at 400 steps** — the journal's 448 ms stall at `bulk.py:285` is the same
+table at a hundred). Painting is small headless — 3 to 11 ms a frame at a 280 000-pixel
+viewport, the dots and crosses grounds costing a few ms over a plain one — but a 4K
+display has thirty times the pixels, and the journal sampled two `steps.details` stalls
+of **314 and 324 ms** inside `paint_ground`, which draws every grid point of the visible
+plane as an antialiased round-capped point on every repaint.
+
+**Two subscribers answer signals that were never about them.** Every `structure_changed`
+in the library — a step born, pasted or deleted in any project — reaches the sync
+module's `_on_membership` (`modules/sync/module.py`), which rewires the repository
+groups and asks git for every branch: **5 to 6 ms per signal**, twenty subprocesses for
+a paste of twenty steps, and the largest single slot in the add, paste, delete and undo
+scenarios. The notes card hears the same signal and refreshes per step (0.5 → 3.7 ms).
+Membership is a change under the *library* node; a step is a change under a project. The
+`foreign_edit` scenario — ten title edits on the sibling project — confirms that every
+`follow_project` view is clean: not one refresh from the Big project's tabs at any size.
+
+**And the action-state refresh reaches the keyring.** With a milestone or a feature
+step selected, the docs module's `compile_state` asks `llm.status()`, which asks the
+provider `is_configured()`, which is `keyring.get_password()` — a D-Bus round trip to the
+Secret Service of **4 ms**, uncached, on every context refresh while that step is
+selected (`modules/docs/module.py`, `framework/secrets_store.py`). Small per call; the
+refresh runs on every push and every click. The spec-sources pass already states the rule
+this breaks (*A spec source is a kind the spec module runs*: an action's `state` never
+makes a keychain round trip — `status()` reads a `user_config` row, and the secret is read
+only inside the act), so the fix has that shape too: a *configured* row the state reads,
+the key read only when a call is made.
+
+### All tabs open
+
+With all eleven tabs open the same edits cost more only where a view has no project
+filter or no timer, and there they cost a great deal. A title keystroke's synchronous
+cost goes from 0.4 ms to **6 ms at 25 steps, 15 ms at 100 and 62 ms at 400**, and the
+`foreign_edit` scenario — a title edit in the *sibling* project — costs exactly the same,
+which names the view: *All tests* (`modules/testing/activity.py`, `AllTestsActivity`)
+walks every project and rebuilds its whole table on any structure, field or module-data
+change, synchronously, in the signal. The Estimates tab (`modules/estimation/bulk.py`) is
+the other: its `_on_structure` rebuilds the table with an editor widget per row on any
+`structure_changed`, so **one new step costs 121 ms at 25 steps, 368 ms at 100 and
+1.4 s at 400** while that tab is open — the journal's 448 ms stall at `bulk.py:285` is
+this, on the real project — and it rewrites every row's text on any `field_changed` in
+the library (4 ms at 400). The Coverage tab is filtered and coalesced, and still costs
+**690 ms at 400 steps** once per burst; a click on a step reaches 113 ms with every
+section and context panel listening. Everything else in the all-tabs run is the few-tabs
+number plus the debounced rebuild each tab already owed.
+
+### What to change, in order
+
+Each of these is a rule about the framework rather than a patch to a view; the numbers
+above are what to re-measure after each.
+
+1. **A section shows on demand, not on every selection.** The inspector host
+   (`framework/inspector.py`, `StepPanel`) shows the *current* tab's extension on a
+   selection change and marks the others stale; a tab switch shows the stale one.
+   `AgentSection._refresh_prompt_if_shown` already hand-rolls this for one pane — the
+   rule belongs in the host, once, and removes the per-section guards. This is the click
+   (42–80 ms → the one visible section) and half the dialog.
+2. **The recorder reads the settled state and never re-emits into it.** Record once per
+   burst, for the project the burst was in (`belongs_to`), after the views' own settle,
+   and write with an origin the `follow_project` views are told to ignore — or write to
+   the per-user store, since the record is a fact about the day, not the plan. Ends the
+   second wave: one simulation instead of two, one rebuild instead of two.
+3. **A derived fact is cached per library revision.** One counter the mutators bump;
+   `cone`, `depths`, `project_schedule`, `progression`, `runs.read` and the briefing
+   memoise on it. *Computed, never stored* still holds — a cache keyed by the revision
+   cannot disagree with its source — and it removes the "asked N times per refresh"
+   class at once: the three briefings per click, the five run-history parses per context
+   refresh, the schedule walk per canvas sync.
+4. **`working_days_after` is arithmetic, not a loop.** Weeks times seven plus the
+   remainder. Turns the schedule, the Time tab and the recorder linear.
+5. **A structure signal under a project is not a membership change.** `_on_membership`
+   checks `parent_id == library.id` before rewiring; the notes card follows its project.
+   Removes twenty git subprocesses from a paste.
+6. **An action state never leaves the process.** `LLMService.status()` caches until
+   `config_changed` — the seam *An LLM call is a task* already names.
+7. **Every subscriber follows a project and coalesces.** Convert `estimation/bulk.py`,
+   `AllTestsActivity` and `framework/project_list_segment.py` to `follow_project` +
+   `Debounced`, and add the rule to `tests/test_architecture.py`: a `library.*_changed
+   .connect` outside `framework/activity.py` and the store is a finding.
+8. **Full collections run when the window is idle.** `collect_if_due` keeps generations
+   0 and 1 on the timer and defers generation 2 until nothing is pending and no input
+   has arrived for a moment — the 240–360 ms pause moves to where nobody is waiting.
+9. **The poll and the flush walk the tree once.** `changed_underneath` on a worker
+   through `TaskRunner` (it is I/O, the one place a thread honestly helps), and the flush
+   re-stamps with `_note_written` instead of a second walk.
+10. **Then the smaller ones**: a scene that announces a multi-selection once; the
+    Estimates and Tests tabs building rows lazily; `AspectBar.refresh` evaluating each
+    toggle once; the ground cached as a pixmap tile per (rect, zoom, background).
+
+Re-measure with `uv run python scripts/measure_scaling.py --sizes 25,100,400` after
+each; the click, the second wave and the poll are the three rows to watch.
 
 ## The journal: what ran, how long it took, and why it hung
 

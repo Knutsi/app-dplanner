@@ -13,8 +13,9 @@ so the canvas and the menu cannot come to mean different things.
 the link between them; selected *edges* mean those edges. Both end in the same command, so
 picking an arrow on the canvas and picking its two ends are the same verb rather than two that
 have to be kept agreeing. The same reasoning makes Delete act on the whole selection — and
-:func:`chosen_steps` is that rule written once, so Cut, Copy and Duplicate next door act on
-exactly what Delete would.
+:func:`~dplanner.framework.step_selection.chosen_steps` is that rule written once, so Cut,
+Copy and Duplicate next door act on exactly what Delete would, and so does Run Agent in a
+module that cannot import this one.
 
 **Delete asks nothing.** Every removal is one undo step, and a prompt in front of an undoable
 verb teaches the wrong lesson — that the gesture is dangerous, when Ctrl+Z is the safety net.
@@ -54,8 +55,8 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.aspect_toggle import focused_step
 from dplanner.framework.context import Context
+from dplanner.framework.step_selection import chosen_steps, focused_step
 from dplanner.framework.undo import UndoService
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.positions import write_position
@@ -76,19 +77,6 @@ def _unnoticed(_step_ids: list[StepId]) -> None:
 
 def _unnoticed_one(_step_id: StepId) -> None:
     return None
-
-
-def chosen_steps(library: Library, context: Context) -> list[StepId]:
-    """Every selected step that still exists, else the one the activity is about.
-
-    What Delete, Cut, Copy and Duplicate act on — one definition, so the four verbs cannot
-    disagree about what "these steps" means.
-    """
-    chosen = [s for s in context.selected_entities("step") if library.has(s)]
-    if chosen:
-        return chosen
-    step_id = context.focus_entity("step")
-    return [step_id] if step_id is not None and library.has(step_id) else []
 
 
 def picked_edges(library: Library, context: Context) -> list[EdgeRef]:
@@ -306,7 +294,7 @@ class StepVerbs:
     # -- isolating ------------------------------------------------------------------------------
 
     def _boundary(self, context: Context) -> tuple[list[StepId], list[tuple[StepId, str, StepId]]]:
-        chosen = chosen_steps(self.library, context)
+        chosen = chosen_steps(context, self.library)
         return chosen, self.library.boundary_edges(chosen)
 
     def _can_isolate(self, context: Context) -> ActionState:
@@ -381,7 +369,7 @@ class StepVerbs:
             self.undo.push(SetFieldCommand(step.id, "title", title.strip()))
 
     def _can_delete(self, context: Context) -> ActionState:
-        doomed = chosen_steps(self.library, context)
+        doomed = chosen_steps(context, self.library)
         if not doomed:
             return DISABLED
         if len(doomed) == 1:
@@ -389,6 +377,6 @@ class StepVerbs:
         return ActionState(label=f"&Delete {len(doomed)} Steps")
 
     def _delete(self, context: Context) -> None:
-        doomed = chosen_steps(self.library, context)
+        doomed = chosen_steps(context, self.library)
         if doomed:
             self.undo.push(remove_steps_command(self.library, doomed, "Delete"))

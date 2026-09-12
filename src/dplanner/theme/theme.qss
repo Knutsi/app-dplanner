@@ -379,6 +379,19 @@ QSplitter::handle:vertical:pressed {
     color: $TEXT_PRIMARY;
 }
 
+/* The Specs tab's list: the index tree's rules, on the tab page's own ground. A source's
+   pages nest under it, so it is a tree; the two-line delegate draws the rows. */
+#SpecTree {
+    background-color: $BG_BASE;
+    border: none;
+    color: $TEXT_PRIMARY;
+}
+
+#SpecTree::item:selected {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_PRIMARY;
+}
+
 #InspectorTabs {
     background: transparent;
 }
@@ -1057,7 +1070,8 @@ QSplitter::handle:vertical:pressed {
 #AgentSkillDialog #PrimaryButton, #CommandInstallDialog #PrimaryButton,
 #ProjectDialog #PrimaryButton, #MovePlanDialog #PrimaryButton,
 #RepositoriesFolderDialog #PrimaryButton, #GhRepoListDialog #PrimaryButton,
-#OpenProjectsDialog #PrimaryButton {
+#OpenProjectsDialog #PrimaryButton, #SpecSourceStrip #PrimaryButton,
+#SourceConnectDialog #PrimaryButton {
     background-color: $ACCENT;
     color: $ON_ACCENT;
     border-color: $ACCENT;
@@ -1069,7 +1083,8 @@ QSplitter::handle:vertical:pressed {
 #AgentSkillDialog #PrimaryButton:hover, #CommandInstallDialog #PrimaryButton:hover,
 #ProjectDialog #PrimaryButton:hover, #MovePlanDialog #PrimaryButton:hover,
 #RepositoriesFolderDialog #PrimaryButton:hover, #GhRepoListDialog #PrimaryButton:hover,
-#OpenProjectsDialog #PrimaryButton:hover {
+#OpenProjectsDialog #PrimaryButton:hover, #SpecSourceStrip #PrimaryButton:hover,
+#SourceConnectDialog #PrimaryButton:hover {
     background-color: $ACCENT_HOVER;
     border-color: $ACCENT_HOVER;
 }

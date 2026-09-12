@@ -12,14 +12,21 @@ from typing import Any, Final
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
-from dplanner.domain.model import Step
+from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.model import Library, Step, StepId
 
 MODULE_ID = "step_status"
 
+IN_PROGRESS: Final = "in-progress"
+
 # In the order work moves through them. "pending" first because it is the default.
-STATUSES: Final = ("pending", "in-progress", "done", "blocked")
+STATUSES: Final = ("pending", IN_PROGRESS, "done", "blocked")
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
+
+# The origin the window's own "work started here" claim carries: no view claims it, so
+# every surface treats the write as foreign and repaints — the launch stamp's pattern.
+STARTED_ORIGIN: Final[object] = object()
 
 
 def read(step: Step) -> str:
@@ -41,6 +48,23 @@ def write(status: str) -> dict[str, Any]:
     if status == "pending":
         return {}
     return stamped({"status": status}, DATA_FORMAT.version)
+
+
+def record_started(library: Library, step_id: StepId) -> bool:
+    """Work on the step just began: claim ``in-progress`` — directly, off the undo stack.
+
+    The claim rides on something nobody can undo — a detached agent shell now exists — so
+    it is applied the way that launch is stamped (``step_agent_run``'s ``record_launch``
+    has the reasoning): an undo entry here would let Ctrl+Z file the step as pending while
+    an agent is still working in it. False, and no write, when the step is gone or already
+    claims to be in progress.
+    """
+    if not library.has(step_id) or read(library.step(step_id)) == IN_PROGRESS:
+        return False
+    SetModuleDataCommand(step_id, MODULE_ID, write(IN_PROGRESS), view_origin=STARTED_ORIGIN).redo(
+        library
+    )
+    return True
 
 
 def summary(step: Step) -> str:

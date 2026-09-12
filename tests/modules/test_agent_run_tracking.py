@@ -325,7 +325,7 @@ def test_run_agent_hands_the_shell_to_the_tracker(services, step, monkeypatch):
     services.document.set_text(step.id, "step_description", "Ship it.")
     spawned: list[list[str]] = []
     monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["true"])
-    monkeypatch.setattr(launcher, "spawn", lambda command, _workdir: spawned.append(command))
+    monkeypatch.setattr(launcher, "spawn", lambda command, _workdir, **_kw: spawned.append(command))
     select(services, step)
     services.actions.run("agent.run", services.context.current())
     assert spawned == [["true"]]

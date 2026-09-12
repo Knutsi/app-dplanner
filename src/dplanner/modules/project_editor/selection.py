@@ -1,4 +1,5 @@
-"""What the user has picked on the canvas, and how it is addressed in the context.
+"""What the user has picked on the canvas, how it is addressed in the context, and what it
+touches.
 
 A step has an id; an edge does not — it is a `(waiter, kind, source)` triple living in the
 waiting step's ``edges`` map. The canvas needs that triple to be a *key*: an edge item has to
@@ -9,6 +10,7 @@ Qt-free and in its own file so ``verbs.py`` can act on selected edges without im
 canvas that drew them, and so ``modes.py`` can report a selection without importing the scene.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from dplanner.domain.model import Edge, StepId
@@ -56,3 +58,35 @@ class CanvasSelection:
     steps: tuple[StepId, ...] = ()
     edges: tuple[EdgeRef, ...] = ()
     regions: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Neighbourhood:
+    """What a picked set of steps touches: the arrows hanging off it, and every step one of
+    them reaches — the picked ones included, since a step is its own neighbour.
+
+    Two readers of the one derivation: an arrow in ``edges`` is lit whatever the look says,
+    and the spotlight fades every node and arrow these two sets do not name.
+    """
+
+    steps: frozenset[StepId] = frozenset()
+    edges: frozenset[EdgeRef] = frozenset()
+
+
+def neighbourhood(edges: Iterable[EdgeRef], picked: Iterable[StepId]) -> Neighbourhood:
+    """The neighbourhood of ``picked`` among the arrows the canvas is drawing.
+
+    Derived on every selection change and every sync from the edges in front of the user,
+    exactly like ``marks.ports()`` — written down, it could disagree with the graph the
+    moment ``dplanner step link`` ran with no window open to notice.
+
+    **Nothing picked has no neighbourhood**, and that empty answer is what keeps a spotlight
+    over an empty selection from dimming the whole canvas to say nothing at all.
+    """
+    steps = set(picked)
+    if not steps:
+        return Neighbourhood()
+    touching = frozenset(ref for ref in edges if ref.waiter in steps or ref.source in steps)
+    steps.update(ref.waiter for ref in touching)
+    steps.update(ref.source for ref in touching)
+    return Neighbourhood(steps=frozenset(steps), edges=touching)

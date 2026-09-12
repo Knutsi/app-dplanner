@@ -119,13 +119,20 @@ dplanner project export search > plan.json   # and `import` reads the same shape
 ```
 
 **Run Agent is the window's way in.** *Step ▸ Run Agent…* opens a terminal at the
-repository root with the step's briefing — the agent and the terminal are both a dropdown
-of known choices in *Settings ▸ Agent* (Claude Code, Codex, OpenCode; Ghostty, iTerm,
-Terminal, Windows Terminal, kitty and the rest, marked when not installed). The step wears
-a chip and a marching ring while the shell runs, the chip follows what the agent reports
-(`dplanner agent-state set … needs-input` when it has a question), and the ring goes when
-the shell ends — finished, failed or closed, which the status bar says. *View ▸ Agents…*
-lists every run this window launched; *Step ▸ Show Agent Terminal* brings its window back.
+repository root with the step's briefing — through a **launch profile** from *Settings ▸
+Agent*: a name over an agent (Claude Code, Codex, OpenCode — each a module that says
+what its CLI can do) and a terminal or multiplexer (Ghostty, iTerm, Terminal, Windows
+Terminal, kitty, WezTerm and the rest; herdr, zellij and tmux to land several agents
+side by side — marked when not installed). The first profile is what *Run Agent…* runs;
+*Step ▸ Run Agent With* offers the others. Select several ready steps — on the canvas,
+in the progression board — and one gesture launches one agent per step, all through the
+profile you pick. The step wears a chip and a marching ring while the shell runs, the
+chip follows what the agent reports (`dplanner agent-state set … needs-input` when it has
+a question), and the ring goes when the shell ends — finished, failed or closed, which
+the status bar says, with the tokens the run consumed once its CLI's record has been read
+(`dplanner usage show|list` prints the ledger per step and per project). *View ▸
+Agents…* lists every run this window launched, with the command that picks an ended one
+up again; *Step ▸ Show Agent Terminal* brings its window or pane back.
 
 **Both writers may be live.** An agent can work while a window is open on the same folder:
 the window reloads when it owes nothing, and neither side ever overwrites a file it has not
@@ -204,7 +211,8 @@ src/dplanner/
 ├── app.py                 bootstrap: QApplication, the session, the first open
 ├── entry.py               the one `dplanner` command: the CLI, or `dplanner window` (`dpw`)
 ├── assets/                what the application ships: the icon, one PNG per size, read by the window and the launcher alike
-├── scripts/measure_edit_cost.py   what an edit costs the GUI thread, measured headless through the journal
+├── scripts/measure_scaling.py     what every gesture costs the GUI thread by project size, headless through the journal
+├── scripts/synthetic_library.py   a large library with the real aspect mix — for the harness, and for a window to feel
 ├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
 ├── scripts/layout_item_double_delete.py   the layout-item double delete built to order, and the finalizer that stops it
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
@@ -264,6 +272,7 @@ src/dplanner/
 │   ├── inspector.py         what a module registers to appear in a detail panel
 │   ├── aspect_bar.py        one submenu's toggles as a bar — templates worded left, every toggle glyphed right, » overflow
 │   ├── aspect_toggle.py     the Type toggle an aspect module registers, declared once: shelve off, restore on
+│   ├── step_selection.py    which step, or which steps, a verb acts on — one reading for every verb
 │   ├── prose_section.py     a panel section over one document, bound to the undo stack
 │   ├── prose_edit.py        that section's editor: a pasted file becomes a markdown link
 │   ├── mime_files.py        the files a paste or a drop carries — both editors' one answer
@@ -302,13 +311,19 @@ src/dplanner/
 │   ├── step_description/
 │   ├── step_agent_instruction/   … this one also holds the project's standing instruction,
 │   │                             the step's worktree choice, and assembles and launches Run
-│   │                             Agent (`launcher.py`: the agent and terminal preset tables,
+│   │                             Agent (`launcher.py`: the terminal and multiplexer table,
 │   │                             the run name a worktree and branch carry, the wrapper script
-│   │                             that prepares the worktree and reports back)
+│   │                             that prepares the worktree and reports back; `profiles.py`:
+│   │                             the named agent-and-terminal pairs Run Agent With offers)
+│   ├── agent_claude/        ── one module per agent CLI, each a Qt-free `harness.py`: the
+│   ├── agent_codex/            command, how it resumes, the marks it leaves in its shells, and
+│   ├── agent_opencode/         a reader of its own records (`domain/agents.py` is the contract)
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
-│   │                        reads the wrapper's report; `terminal.py` finds the window again;
-│   │                        the status-bar button and the Agents browser are `view.py`)
+│   │                        reads the wrapper's report; `terminal.py` finds the window or
+│   │                        pane again; the status-bar button and the Agents browser are
+│   │                        `view.py`) — and what its runs consumed (`usage.py`, the
+│   │                        `agent_usage` aspect; `dplanner usage show|list|record`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
 │   ├── feature/             the project's feature catalogue (catalogue.py: records and the
@@ -339,7 +354,12 @@ src/dplanner/
 │   │                        `dplanner note`, and the project panel's Notes card
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
-│   │                        and page rendering; editor.py: the in-app markdown editor)
+│   │                        and page rendering; editor.py: the in-app markdown editor); and the
+│   │                        documents a *source* fetched (source_kind.py: the kind contract,
+│   │                        sourced.py: applying a snapshot, refresh.py: fetch and check)
+│   ├── spec_confluence/     Confluence Cloud as a spec source: a GET-only client (client.py),
+│   │                        storage XHTML to markdown (convert.py), the walk and its caps
+│   │                        (source.py), the guided Connect dialog, Settings ▸ Confluence
 │   ├── coverage/            the spec and what became of it: passages → features → milestones →
 │   │                        tests and docs (trace.py, one derived picture), the Coverage tab's
 │   │                        four lanes (scene.py), and `dplanner coverage show|spec|review`

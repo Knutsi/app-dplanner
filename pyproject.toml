@@ -83,6 +83,8 @@ check_untyped_defs = true
 line-length = 100
 target-version = "py313"
 src = ["src", "tests"]
+# Proposals under docs/ quote Python with aligned comments: prose, not code to format.
+extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "PTH", "TID", "RUF"]
@@ -90,6 +92,8 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "PTH", "TID", "R
 [tool.ruff.lint.per-file-ignores]
 # Qt virtual methods must keep their camelCase names and parameter names to override correctly.
 "src/dplanner/theme/style.py" = ["N802", "N803"]
+# Storage-format fixtures are one element per line; wrapping XML mid-tag reads worse.
+"tests/modules/test_confluence_convert.py" = ["E501"]
 
 [tool.ruff.format]
 docstring-code-format = true
