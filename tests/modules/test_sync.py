@@ -9,6 +9,7 @@ runtime, so there is no build-time capability to hide behind).
 
 import json
 import subprocess
+import time
 
 import pytest
 from PySide6.QtWidgets import QInputDialog, QMessageBox
@@ -19,6 +20,23 @@ from dplanner.domain.seed import seed_project
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.sync import module as sync_module_mod
 from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
+from dplanner.modules.sync.save_progress import SaveProgressDialog
+from dplanner.modules.sync.service import COMMITTING, NOTHING, PUBLISHING, SAVED
+
+
+def wait_for(qapp, done, timeout=10.0):
+    """Pump until ``done()``; storage runs on a worker and reports back through Qt."""
+    deadline = time.monotonic() + timeout
+    while not done() and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.01)
+    assert done(), "the task never finished"
+
+
+def settle(qapp, turns=4):
+    """Turn the loop a few times: the exit save's outcome is decided one turn after busy."""
+    for _ in range(turns):
+        qapp.processEvents()
 
 
 def sync_module(services):
@@ -191,7 +209,7 @@ def test_two_projects_in_one_repo_are_one_commit_scoped_to_their_directories(
 
 
 def test_the_close_guard_offers_every_dirty_repo_and_commits_only_the_checked(
-    services, make_project, library_repo, tmp_path, monkeypatch
+    services, make_project, library_repo, tmp_path, monkeypatch, qapp
 ):
     first = make_project("Discovery")
     second_repo, second = make_second_repo_project(services, tmp_path)
@@ -223,12 +241,92 @@ def test_the_close_guard_offers_every_dirty_repo_and_commits_only_the_checked(
             return "quit-time save"
 
     monkeypatch.setattr(sync_module_mod, "ExitDialog", CheckFirstOnly)
-    assert module._confirm_close(service) is True
+    # Not "no" but "not yet": the save runs as a task under its progress dialog, and the
+    # window closes when that ends. Nothing is torn down while it runs, which is what the
+    # old synchronous save-at-quit existed to avoid.
+    assert module._confirm_close(service) is False
+    assert module._exit_progress is not None
+    wait_for(qapp, lambda: not services.tasks.active())
+    settle(qapp)
 
     assert len(seen_rows) == 2
     remaining = service.dirty_groups()
     assert len(remaining) == 1  # The unchecked repository stays dirty for next time.
     assert commit_count(library_repo) + commit_count(second_repo) == 1
+    # And the guard now lets the window go, without asking a second time.
+    assert module._exit_saved is True
+    assert module._confirm_close(service) is True
+
+
+class CommitEverything:
+    """The user's answer, scripted: record every dirty repository and quit."""
+
+    DialogCode = ExitDialog.DialogCode
+
+    def __init__(self, rows, _parent=None):
+        self.rows = list(rows)
+        self.discard = False
+
+    def exec(self):
+        return ExitDialog.DialogCode.Accepted
+
+    def checked_rows(self):
+        return list(range(len(self.rows)))
+
+    def message(self):
+        return "quit-time save"
+
+
+def test_a_quit_time_save_that_fails_stands_in_its_dialog_rather_than_being_lost(
+    services, make_project, monkeypatch, qapp
+):
+    """The window is not closing yet, so the failure has somewhere to be read — and the
+    person chooses between leaving without the version and staying to try again."""
+    project = make_project("Discovery")
+    edit_and_flush(services, project)
+    module = sync_module(services)
+    service = module.service
+    service.refresh()
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("the remote refused the push")
+
+    monkeypatch.setattr(service, "save_sync", boom)
+    monkeypatch.setattr(sync_module_mod, "ExitDialog", CommitEverything)
+    assert module._confirm_close(service) is False
+    wait_for(qapp, lambda: not services.tasks.active())
+    settle(qapp)
+
+    progress = module._exit_progress
+    assert progress is not None  # Still up: a failure at quit must not vanish with the window.
+    assert "refused the push" in progress.status.words()
+    assert progress.status.tone() == "error"
+    # Destructive last in Tab order, Stay the default — Enter records nothing by accident.
+    assert [button.text() for button in progress.footer_buttons()] == ["Stay", "Close Anyway"]
+    assert module._exit_saved is False
+
+
+def test_staying_after_a_failed_quit_time_save_keeps_the_window_and_the_changes(
+    services, make_project, monkeypatch, qapp
+):
+    project = make_project("Discovery")
+    edit_and_flush(services, project)
+    module = sync_module(services)
+    service = module.service
+    service.refresh()
+    monkeypatch.setattr(
+        service, "save_sync", lambda *_a, **_k: (_ for _ in ()).throw(OSError("no"))
+    )
+    monkeypatch.setattr(sync_module_mod, "ExitDialog", CommitEverything)
+    module._confirm_close(service)
+    wait_for(qapp, lambda: not services.tasks.active())
+    settle(qapp)
+
+    module._exit_progress.reject()  # "Stay"
+    settle(qapp)
+    assert module._exit_progress is None
+    assert module._exit_saved is False
+    assert len(service.dirty_groups()) == 1  # Nothing was recorded, and nothing was lost.
 
 
 def test_a_clean_library_asks_nothing_on_close(services, make_project, monkeypatch):
@@ -473,3 +571,52 @@ def test_the_poll_stands_down_while_an_operation_runs(services, make_project, mo
     monkeypatch.setattr(GitStorage, "current_branch", counted)
     module._check_branches(service)
     assert asked == []
+
+
+# -- the progress dialog itself ----------------------------------------------------------------
+
+
+def test_the_progress_dialog_carries_a_row_per_repository_and_counts_them(app):
+    dialog = SaveProgressDialog(["~/Code/widget · 3 files — Discovery", "~/Code/billing · 1 file"])
+    try:
+        assert dialog.bar.maximum() == 2 and dialog.bar.value() == 0
+        assert dialog._count.text() == "0 of 2 repositories recorded"
+        dialog.step(0, PUBLISHING)
+        assert dialog._rows[0].tone() == "busy" and "report site" in dialog._rows[0].words()
+        dialog.step(0, COMMITTING)
+        assert dialog._rows[0].tone() == "busy" and dialog.bar.value() == 0
+        dialog.step(0, SAVED)
+        assert dialog._rows[0].tone() == "ok" and dialog.bar.value() == 1
+        assert dialog._count.text() == "1 of 2 repositories recorded"
+        # A repository that turns out clean still advances the count — the fraction counts
+        # repositories dealt with, not commits made.
+        dialog.step(1, NOTHING)
+        assert dialog.bar.value() == 2 and dialog._rows[1].tone() == "info"
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_progress_dialog_refuses_escape_while_the_save_runs(app):
+    """A save nobody can see is what this replaced; dismissing it would restore exactly that."""
+    dialog = SaveProgressDialog(["~/Code/widget"])
+    try:
+        ended: list[int] = []
+        dialog.finished.connect(ended.append)
+        dialog.reject()
+        assert ended == []
+        dialog.stopped("git said no")
+        dialog.reject()
+        assert ended == [int(ExitDialog.DialogCode.Rejected)]
+    finally:
+        dialog.deleteLater()
+
+
+def test_a_row_still_working_when_the_save_failed_says_it_was_not_recorded(app):
+    dialog = SaveProgressDialog(["~/Code/widget · 3 files — Discovery"])
+    try:
+        dialog.step(0, COMMITTING)
+        dialog.stopped("git said no")
+        assert dialog._rows[0].tone() == "error"
+        assert dialog._rows[0].words() == "~/Code/widget · 3 files — Discovery — not recorded"
+    finally:
+        dialog.deleteLater()

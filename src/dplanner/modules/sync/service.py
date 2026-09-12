@@ -54,12 +54,25 @@ class RepoGroup(VersionedStorage, Protocol):
     def label(self) -> str: ...
 
 
+# The phases a save passes through, per repository, in this order. PUBLISHING is skipped
+# where the switch is off, and a repository that turns out to be clean goes straight to
+# NOTHING — which is why a watcher tracks the index it is told rather than counting.
+PUBLISHING = "publishing"
+COMMITTING = "committing"
+SAVED = "saved"
+NOTHING = "nothing"
+
+
 class SyncService(QObject):
     """Runs one storage operation at a time, visibly, across the library's repositories."""
 
     busy_changed = Signal(bool)
     notice = Signal(str)  # Status-bar messages: "Saved", "Nothing to save".
     failed = Signal(str)
+    # Where a save has got to: (index into the targets it was given, one of the phases
+    # above). A Qt signal, so it crosses from the worker thread the way `notice` does, and
+    # inert when nobody is watching — File ▸ Save connects nothing to it.
+    saving = Signal(int, str)
     # Files were rewritten under the running application: the library must be rebuilt.
     worktree_changed = Signal()
     dirty_changed = Signal(bool, int)  # (any uncommitted changes, changed file count total)
@@ -180,24 +193,28 @@ class SyncService(QObject):
         """
         targets = self._groups if only is None else list(only)
         saved, pushed, unpublished = 0, 0, 0
-        for group in targets:
+        for index, group in enumerate(targets):
             group.refresh_dirty()
             if not group.is_dirty():
+                self.saving.emit(index, NOTHING)
                 continue
             also: Sequence[str] = ()
             publish = (publications or {}).get(id(group))
             if publish is not None:
+                self.saving.emit(index, PUBLISHING)
                 try:
                     also = publish()
                 except Exception:
                     logger.exception("Publishing the reports beside %s failed", group.label)
                     unpublished += 1
+            self.saving.emit(index, COMMITTING)
             if group.commit(message, also=also):
                 saved += 1
                 remote = self._remote(group)
                 if remote is not None:
                     remote.push()
                     pushed += 1
+            self.saving.emit(index, SAVED)
         self._recount()
         if saved == 0:
             said = "Nothing new to save"
@@ -211,9 +228,15 @@ class SyncService(QObject):
         self.notice.emit(said)
 
     def save(
-        self, message: str = "", publications: Mapping[int, Publication] | None = None
+        self,
+        message: str = "",
+        publications: Mapping[int, Publication] | None = None,
+        *,
+        only: Sequence[RepoGroup] | None = None,
     ) -> bool:
-        return self._start("Saving", lambda: self.save_sync(message, publications=publications))
+        return self._start(
+            "Saving", lambda: self.save_sync(message, only, publications=publications)
+        )
 
     def pull_sync(self) -> None:
         arrived = 0
