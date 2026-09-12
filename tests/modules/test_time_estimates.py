@@ -1,5 +1,6 @@
 """The time estimates tab: the staffing picker, the start dates and the milestones on the
-left, the calendar and the three plots they date on the right, under one strip."""
+left, the calendar and the plots they date on the right, a page at a time, under one
+strip that names the two snapshots the plots compare."""
 
 from datetime import date
 
@@ -14,6 +15,7 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Step, TextEdit
+from dplanner.domain.schedule import format_date
 from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
 from dplanner.modules.estimation.aspect import write as write_days
 from dplanner.modules.estimation.schedule import write_start
@@ -655,19 +657,13 @@ def test_each_row_says_how_much_of_the_work_through_it_has_landed(services, stag
     tab = services.tabs.open("time", staged.id)
     assert [row.progress.text() for row in tab.milestones.rows] == ["0%", "0%", "0%"]
     services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
-    # By estimated days, which is what the page reads unless the count is asked for: the
-    # whole (2 of 7), then v1 (2 of 4), then v2 (2 of 7) — everything through its stretch.
-    assert tab.by_days
+    # By estimated days, the one measure: the whole (2 of 7), then v1 (2 of 4), then v2
+    # (2 of 7) — everything through its stretch. The count is in the tooltip's words.
     assert [row.progress.text() for row in tab.milestones.rows] == ["29%", "50%", "29%"]
     assert tab.milestones.row(ship.id).progress.toolTip() == (
-        "1 of 4 steps done · 2d of 7d estimated"
+        "2d of 7d estimated · 1 of 4 steps done"
     )
-    tab.steps_button.click()  # by count: 1 of 4, 1 of 2, then 1 of 4
-    assert not tab.by_days
-    assert [row.progress.text() for row in tab.milestones.rows] == ["25%", "50%", "25%"]
     SetModuleDataCommand(draft.id, STATUS_ID, write_status("done")).redo(library)
-    assert [row.progress.text() for row in tab.milestones.rows] == ["50%", "100%", "50%"]
-    tab.days_button.click()
     assert [row.progress.text() for row in tab.milestones.rows] == ["57%", "100%", "57%"]
 
 
@@ -690,9 +686,10 @@ def test_the_right_half_is_no_taller_than_its_content(services, staged, tab, app
     assert page.height() <= max(right.viewport().height(), needed)
 
 
-def test_the_plots_show_the_whole_plan_and_follow_the_measure(services, staged):
-    """The plots are always the whole project; a pick changes what is held in full ink,
-    never what is drawn."""
+def test_the_plots_show_the_whole_plan_a_page_at_a_time(services, staged):
+    """The plots are always the whole project, by estimated days; a pick changes what is
+    held in full ink, never what is drawn; the toggles over them turn the page, and the
+    Volume page reads the recorded days."""
     from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
     from dplanner.modules.step_status.aspect import write as write_status
 
@@ -703,7 +700,7 @@ def test_the_plots_show_the_whole_plan_and_follow_the_measure(services, staged):
     assert data.finish == date(2026, 9, 23) and data.emphasis is None
     assert data.expected[0] == (date(2026, 9, 7), 0.0)
     assert data.expected[-1] == (date(2026, 9, 23), 1.0)
-    assert data.by_days and data.actual[-1] == (date.today(), pytest.approx(2 / 7))
+    assert data.actual[-1] == (date.today(), pytest.approx(2 / 7))
     assert [(s.key, s.label, s.now) for s in data.segments] == [
         (draft.id, "v1", (date(2026, 9, 7), date(2026, 9, 16))),
         (ship.id, "v2", (date(2026, 9, 17), date(2026, 9, 23))),
@@ -714,14 +711,20 @@ def test_the_plots_show_the_whole_plan_and_follow_the_measure(services, staged):
     assert data.emphasis == draft.id and data.emphasised is data.segments[0]
     assert data.finish == date(2026, 9, 23) and len(data.segments) == 2  # nothing hidden
     assert "plan now:" in tab.chart.tooltip_at(date(2026, 9, 10))
-    assert "of days" in tab.chart.tooltip_at(date(2026, 9, 10))
     assert "actual: 29% of days" in tab.chart.tooltip_at(date.today())
-    tab.steps_button.click()
-    data = tab.chart._data
-    assert not data.by_days and data.actual[-1] == (date.today(), 0.25)
-    assert "actual: 25% of steps" in tab.chart.tooltip_at(date.today())
     assert tab.chart.tooltip_at(date(2026, 9, 16)).startswith("16 September")
     assert tab.chart.span[0] <= date(2026, 9, 7) and tab.chart.span[1] >= date(2026, 9, 23)
+    # The pages: Progress is what the tab opens on; the others are a click away.
+    assert tab.page == "progress"
+    assert [panel.kind for panel in tab.chart.panels()] == ["status", "scope"]
+    tab.page_buttons["shift"].click()
+    assert tab.page == "shift" and [p.kind for p in tab.chart.panels()] == ["shift"]
+    tab.page_buttons["volume"].click()
+    assert [p.kind for p in tab.chart.panels()] == ["volume", "remaining"]
+    # The recorder wrote today's row when the tab opened and again after the status: one
+    # day, the live reading — 7d of scope, 5d of it still ahead.
+    assert data.volume[-1] == (date.today(), 7.0) and data.remaining[-1] == (date.today(), 5.0)
+    assert "scope: 7d" in tab.chart.tooltip_at(date.today(), "volume")
 
 
 def test_the_recorder_writes_the_day_once_off_the_undo_stack(services, staged):
@@ -746,19 +749,20 @@ def test_the_recorder_writes_the_day_once_off_the_undo_stack(services, staged):
     services.undo.redo()
     assert read_history(staged)[0].toward(None).done == 1
     entry = staged.module_data[HISTORY_ID]
-    assert entry["format"] == 1 and len(entry["days"]) == 1
+    assert entry["format"] == 2 and len(entry["days"]) == 1
 
 
 def test_the_plots_open_in_a_window_of_their_own_and_follow_the_plan(
     services, staged, tab, monkeypatch
 ):
-    """⤢ opens the same plots with the same record, and a change made while the window is
-    open reaches both charts — one ``ChartData``, two views of it."""
-    from dplanner.modules.time_estimates.chart import ChartDialog
+    """⤢ opens every page of the plots with the same record, and a change made while the
+    window is open reaches both charts — one ``ChartData``, two views of it."""
+    from dplanner.modules.time_estimates.chart import ALL_PAGES, ChartDialog
 
     seen = []
 
     def fake_exec(dialog):
+        assert dialog.chart.page == ALL_PAGES
         seen.append((dialog.chart._data, dialog.windowTitle()))
         ship = staged.steps[-1]
         services.undo.push(SetModuleDataCommand(ship.id, ESTIMATION_ID, write_days(9.0)))
@@ -773,33 +777,21 @@ def test_the_plots_open_in_a_window_of_their_own_and_follow_the_plan(
     assert tab._expanded is None  # closing it leaves nothing behind
 
 
-def test_the_plots_compare_against_the_plan_at_the_basis(services, staged):
-    """The baseline is the plan as recorded on the basis day — the start unless picked —
-    drawn against the plan now in the scope plot, and milestone by milestone in the
-    shift plot, where each row says in words which way it went."""
-    from dplanner.modules.time_estimates.progress import (
-        HISTORY_ID,
-        Landing,
-        Snapshot,
-        Stretch,
-        Tally,
-        write_history,
-    )
+def _old_plan(draft_id, ship_id, day):
+    from dplanner.modules.time_estimates.progress import Landing, Snapshot, Stretch, Tally
 
-    library = services.document
-    _read, draft, _docs, ship = staged.steps
-    old = Snapshot(
-        date(2026, 9, 1),
+    return Snapshot(
+        day,
         (
             Stretch(
-                draft.id,
+                draft_id,
                 Tally(2, 0, 4.0, 0.0),
                 date(2026, 9, 7),
                 date(2026, 9, 14),
                 (Landing(date(2026, 9, 9), 1, 2.0), Landing(date(2026, 9, 14), 1, 2.0)),
             ),
             Stretch(
-                ship.id,
+                ship_id,
                 Tally(1, 0, 2.0, 0.0),
                 date(2026, 9, 15),
                 date(2026, 9, 18),
@@ -807,42 +799,154 @@ def test_the_plots_compare_against_the_plan_at_the_basis(services, staged):
             ),
         ),
     )
+
+
+def test_the_plots_compare_the_two_snapshots_the_strip_names(services, staged):
+    """The then side reads the plan at the project's start unless picked otherwise — a
+    day, a saved snapshot — and the picker's tooltip names the record that stood in, so
+    the comparison is never a guess; the milestone rows say in words which way each
+    landing went against that plan."""
+    from dplanner.modules.time_estimates.progress import (
+        HISTORY_ID,
+        Pick,
+        write_history,
+    )
+
+    library = services.document
+    _read, draft, _docs, ship = staged.steps
+    old = _old_plan(draft.id, ship.id, date(2026, 9, 1))
     SetModuleDataCommand(staged.id, HISTORY_ID, write_history([old])).redo(library)
     tab = services.tabs.open("time", staged.id)
-    assert tab.basis_day == date(2026, 9, 7)  # the project's start
-    assert not tab.basis_reset.isVisibleTo(tab.widget)
-    # The recorder has since written today's row too; pick the 1st to compare against it
-    # whatever today is.
-    tab.basis.setDate(QDate(2026, 9, 1))
-    assert tab.basis_day == date(2026, 9, 1) and tab.basis_reset.isVisibleTo(tab.widget)
+    assert tab.then_pick.kind == "start" and tab.now_pick.kind == "now"
+    assert tab.then_picker.text() == "Plan at start" and tab.now_picker.text() == "Now"
+    # The start is the 7th; the record that stands in for it is the 1st's, and it says so.
+    assert tab.then_picker.toolTip() == "the plan at start, recorded 1 September"
+    assert tab.now_picker.toolTip() == "the plan now"
+    assert not tab.then_day_action.isVisible()
     data = tab.chart._data
-    assert data.basis_day == date(2026, 9, 1) and data.baseline_finish == date(2026, 9, 18)
+    assert data.basis == "the plan at start, recorded 1 September" and data.as_of == ""
+    assert data.baseline_finish == date(2026, 9, 18) and data.finish == date(2026, 9, 23)
     assert data.baseline[0] == (date(2026, 9, 7), 0.0) and data.baseline[-1] == (
         date(2026, 9, 18),
         1.0,
     )
-    assert data.finish == date(2026, 9, 23)
     assert [(s.then, s.now) for s in data.segments] == [
         ((date(2026, 9, 7), date(2026, 9, 14)), (date(2026, 9, 7), date(2026, 9, 16))),
         ((date(2026, 9, 15), date(2026, 9, 18)), (date(2026, 9, 17), date(2026, 9, 23))),
     ]
-    assert segment_words(data.segments[1], data.basis_day, data.today) == (
-        "v2 lands 23 September — 3 working days later than planned on 1 September (18 September)"
+    assert segment_words(data.segments[1], data.basis, data.today) == (
+        "v2 lands 23 September — 3 working days later than the plan at start, "
+        "recorded 1 September said (18 September)"
     )
-    # The heading names the day the reader asked for, which is what the control holds.
-    assert tab.chart.title(tab.chart.panel("scope")) == "Scope change — versus plan at 1 September"
-    assert "plan at 1 September" in tab.chart.tooltip_at(date(2026, 9, 10), "scope")
+    assert tab.chart.title(tab.chart.panel("scope")) == (
+        "Scope change — versus the plan at start, recorded 1 September"
+    )
+    assert "the plan at start, recorded 1 September: " in tab.chart.tooltip_at(
+        date(2026, 9, 10), "scope"
+    )
     assert "plan now" in tab.chart.tooltip_at(date(2026, 9, 10), "scope")
     assert "plan at" not in tab.chart.tooltip_at(date(2026, 9, 10))  # the status plot's words
-    # A basis after every record compares against the last one — today's own.
-    tab.basis.setDate(QDate(2030, 1, 1))
+    # Day…: the field appears beside the picker, and the pick follows it.
+    tab.then_picker.picked.emit(Pick("day", day=date(2026, 9, 3)))
+    assert tab.then_pick == Pick("day", day=date(2026, 9, 3))
+    assert tab.then_day_action.isVisible() and tab.then_picker.text() == "3 September"
+    assert tab.then_picker.toolTip() == "the plan at 3 September, recorded 1 September"
+    tab.then_day.setDate(QDate(2030, 1, 1))  # after every record: today's own, and said
     data = tab.chart._data
-    assert data.basis_day == date(2030, 1, 1) and data.compared
-    assert segment_words(data.segments[1], data.basis_day, data.today) == (
-        "v2 lands 23 September — unchanged since 1 Jan '30"
+    assert tab.then_pick.day == date(2030, 1, 1) and data.compared
+    assert segment_words(data.segments[1], data.basis, data.today) == (
+        f"v2 lands 23 September — unchanged since the plan at 1 Jan '30, "
+        f"recorded {format_date(date.today())}"
     )
-    tab.basis_reset.click()
-    assert tab.basis_day == date(2026, 9, 7) and not tab.basis_reset.isVisibleTo(tab.widget)
+    tab.then_picker.picked.emit(Pick("start"))
+    assert tab.then_pick.kind == "start" and not tab.then_day_action.isVisible()
+    assert tab.then_picker.menu_labels() == ["Plan at start", "Day…"]  # nothing saved yet
+
+
+def test_a_snapshot_saved_on_purpose_is_named_kept_and_compared_against(services, staged):
+    """Save snapshot… keeps the plan as it stands under a title — one undoable write that
+    leaves the recorder's day alone — and both pickers then offer it: as the then side it
+    is what the plots compare against, as the now side the plots read the plan as of it.
+    Forgetting it takes it out of the menus; a now side that read it goes back to live."""
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as write_status
+    from dplanner.modules.time_estimates.progress import (
+        HISTORY_ID,
+        Pick,
+        read_history,
+        read_saved,
+    )
+    from dplanner.modules.time_estimates.snapshots import SaveSnapshotDialog
+
+    read, _draft, _docs, ship = staged.steps
+    tab = services.tabs.open("time", staged.id)
+    dialog = SaveSnapshotDialog([row.title for row in read_saved(staged)], tab.widget)
+    assert not dialog.buttons.button(dialog.buttons.StandardButton.Save).isEnabled()
+    dialog.title.setText("Kickoff review")
+    dialog.note.setPlainText("What we thought on day one")
+    assert dialog.buttons.button(dialog.buttons.StandardButton.Save).isEnabled()
+    assert dialog.values() == ("Kickoff review", "What we thought on day one")
+    dialog.deleteLater()
+    tab.save_snapshot_as("Kickoff review", "What we thought on day one")
+    assert services.undo.undo_text().endswith("Save Snapshot")
+    (kept,) = read_saved(staged)
+    assert kept.title == "Kickoff review" and kept.day == date.today()
+    assert kept.same_plan(read_history(staged)[-1])
+    assert len(read_history(staged)) == 1  # the automatic day is untouched
+    assert tab.chart._data.marks == ((date.today(), "Kickoff review"),)
+    # A taken title is refused in the dialog, with the reason under the field.
+    again = SaveSnapshotDialog(["Kickoff review"], tab.widget)
+    again.title.setText("kickoff review")
+    assert not again.buttons.button(again.buttons.StandardButton.Save).isEnabled()
+    assert "already saved" in again.reason.text()
+    again.deleteLater()
+    # Both pickers offer it, dated.
+    assert tab.then_picker.menu_labels()[1].startswith("Kickoff review · ")
+    assert tab.now_picker.menu_labels()[:2] == ["Now", tab.then_picker.menu_labels()[1]]
+    # Work lands and the plan grows; the saved snapshot is what the plots compare against.
+    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
+    services.undo.push(SetModuleDataCommand(ship.id, ESTIMATION_ID, write_days(4.0)))
+    tab.then_picker.picked.emit(Pick("saved", title="Kickoff review"))
+    data = tab.chart._data
+    assert tab.then_picker.text() == "Kickoff review"
+    assert data.basis == f"Kickoff review ({format_date(date.today())})"
+    assert data.baseline_finish == date(2026, 9, 23) and data.finish == date(2026, 9, 29)
+    assert data.volume[-1] == (date.today(), 9.0) and data.remaining[-1] == (date.today(), 7.0)
+    # As the now side, the plots read the plan as of it: nothing done, 7d of scope.
+    tab.then_picker.picked.emit(Pick("start"))
+    tab.now_picker.picked.emit(Pick("saved", title="Kickoff review"))
+    data = tab.chart._data
+    assert data.as_of == f"Kickoff review ({format_date(date.today())})"
+    assert data.finish == date(2026, 9, 23) and data.actual[-1] == (date.today(), 0.0)
+    assert tab.chart.title(tab.chart.panel("status")) == f"Progress — as of {data.as_of}"
+    assert data.volume[-1] == (date.today(), 7.0)
+    # Forgetting it is undoable too, and the now side falls back to the live plan.
+    tab.now_picker.forget.emit("Kickoff review")
+    assert services.undo.undo_text().endswith("Forget Snapshot")
+    assert read_saved(staged) == [] and tab.now_pick.kind == "now"
+    assert tab.chart._data.finish == date(2026, 9, 29) and tab.chart._data.marks == ()
+    services.undo.undo()
+    assert [row.title for row in read_saved(staged)] == ["Kickoff review"]
+    assert staged.module_data[HISTORY_ID]["format"] == 2
+    before = services.undo.undo_text()
+    tab.now_picker.forget.emit("nobody")  # nothing to forget: nothing pushed
+    assert services.undo.undo_text() == before
+
+
+def test_the_strip_says_recalculating_until_the_page_has(services, staged, tab):
+    """A change arrives, the page waits for the burst to settle, and the strip says so
+    in between — and stops saying so the moment the report has re-run."""
+    services.debounce.set_immediate(False)
+    try:
+        assert not tab.recalculating.isVisibleTo(tab.widget)
+        ship = staged.steps[-1]
+        services.undo.push(SetModuleDataCommand(ship.id, ESTIMATION_ID, write_days(9.0)))
+        assert tab.recalculating.isVisibleTo(tab.widget)
+        services.debounce.flush_all()
+        assert not tab.recalculating.isVisibleTo(tab.widget)
+        assert tab.chart._data.finish == date(2026, 10, 13)
+    finally:
+        services.debounce.set_immediate(True)
 
 
 def test_the_milestone_plot_rows_the_milestones_and_a_gap_the_plan_leaves_empty_is_dotted(
@@ -858,7 +962,9 @@ def test_the_milestone_plot_rows_the_milestones_and_a_gap_the_plan_leaves_empty_
         ("v1", date(2026, 9, 16)),
         ("v2", date(2026, 9, 23)),
     ]
-    assert [panel.kind for panel in tab.chart.panels()] == ["status", "scope", "shift"]
+    assert [panel.kind for panel in tab.chart.panels()] == ["status", "scope"]
+    tab.page_buttons["shift"].click()
+    assert [panel.kind for panel in tab.chart.panels()] == ["shift"]
     assert data.idle == ()
     ship = staged.steps[3]
     services.undo.push(

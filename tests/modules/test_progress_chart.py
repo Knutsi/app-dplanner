@@ -1,16 +1,23 @@
-"""The progress plots: one axis under three, the gutters, the fade, and the words."""
+"""The progress plots: one axis under every plot, a page at a time, the gutters, the
+fade, the volume on a scale of days, and the words."""
 
 from datetime import date
 
+import pytest
 from PySide6.QtGui import QColor
 
 from dplanner.domain.schedule import axis_ticks
 from dplanner.modules.time_estimates.chart import (
+    ALL_PAGES,
     BOTTOM_GUTTER,
     LABEL_GAP,
     MAX_PANEL_HEIGHT,
+    PAGES,
     PANEL_HEIGHT,
+    PROGRESS_PAGE,
     ROW_HEIGHT,
+    SHIFT_PAGE,
+    VOLUME_PAGE,
     ChartData,
     ProgressChart,
     Segment,
@@ -51,27 +58,37 @@ FIRST, LAST = date(2026, 9, 1), date(2026, 10, 1)
 BLUE, VIOLET, TEAL = QColor("#4a7fd6"), QColor("#8e6fd8"), QColor("#2a9d8f")
 
 
-def _chart(data: ChartData, width: int = 700) -> ProgressChart:
-    chart = ProgressChart()
+def _chart(data: ChartData, width: int = 700, page: str = PROGRESS_PAGE) -> ProgressChart:
+    chart = ProgressChart(page=page)
     chart.show_data(data)
     chart.resize(width, chart.height())
     return chart
 
 
-def test_three_plots_share_one_axis_and_the_dates_print_once(app):
+def test_the_plots_share_one_axis_and_the_dates_print_once(app):
     """Every plot starts at the same left and spans the same width; the milestone plot
-    exists only with milestones, a row each; the widget is exactly as tall as the last
-    plot plus the one gutter the dates are printed in — and the x range is the earliest
-    and latest date any plot has to show."""
+    is a row per milestone, one row's worth to say there are none; the widget is exactly
+    as tall as the last plot plus the one gutter the dates are printed in — and the x
+    range is the earliest and latest date any plot has to show."""
     plan = ((FIRST, 0.0), (LAST, 1.0))
-    chart = _chart(ChartData(FIRST, expected=plan))
+    chart = _chart(ChartData(FIRST, expected=plan), page=ALL_PAGES)
     metrics = chart.fontMetrics()
-    assert [panel.kind for panel in chart.panels()] == ["status", "scope"]
-    status, scope = chart.panels()
+    assert [panel.kind for panel in chart.panels()] == [
+        "status",
+        "scope",
+        "shift",
+        "volume",
+        "remaining",
+    ]
+    status, _scope, shift, _volume, remaining = chart.panels()
     assert status.rect.left() >= metrics.horizontalAdvance("100%") + LABEL_GAP
-    assert status.rect.left() == scope.rect.left() and status.rect.width() == scope.rect.width()
+    assert all(
+        panel.rect.left() == status.rect.left() and panel.rect.width() == status.rect.width()
+        for panel in chart.panels()
+    )
     assert status.rect.top() >= metrics.height()
-    assert chart.height() == round(scope.rect.bottom() + BOTTOM_GUTTER)
+    assert shift.rect.height() == ROW_HEIGHT  # one row's worth, to say there are none
+    assert chart.height() == round(remaining.rect.bottom() + BOTTOM_GUTTER)
     assert len(chart.ticks()) >= 1
     earlier = date(2026, 8, 20)
     chart.show_data(
@@ -85,16 +102,69 @@ def test_three_plots_share_one_axis_and_the_dates_print_once(app):
             ),
         )
     )
-    status, scope, shift = chart.panels()
+    shift = chart.panel("shift")
     assert shift.rect.height() == 2 * ROW_HEIGHT  # the remainder gets no row
-    assert shift.rect.left() == status.rect.left()
-    assert chart.height() == round(shift.rect.bottom() + BOTTOM_GUTTER)
     assert chart.span[0] < earlier < FIRST  # the then-span widened the axis
     chart.deleteLater()
 
 
+def test_a_page_shows_its_own_plots_and_the_window_shows_every_page(app):
+    """Milestone shifts, Progress and Volume are three pages of one widget; the page
+    decides the plots and the height, the data is one record whichever page is up."""
+    plan = ((FIRST, 0.0), (LAST, 1.0))
+    chart = _chart(ChartData(FIRST, expected=plan), page=PAGES[1][0])
+    assert chart.page == "progress"
+    assert [panel.kind for panel in chart.panels()] == ["status", "scope"]
+    _status, scope = chart.panels()
+    assert chart.height() == round(scope.rect.bottom() + BOTTOM_GUTTER)
+    chart.show_page(SHIFT_PAGE)
+    assert [panel.kind for panel in chart.panels()] == ["shift"]
+    assert chart.compact_height() == chart.tall_height()  # rows never grow
+    chart.show_page(VOLUME_PAGE)
+    assert [panel.kind for panel in chart.panels()] == ["volume", "remaining"]
+    assert chart.minimumHeight() == chart.compact_height() < chart.tall_height()
+    with pytest.raises(ValueError, match="no page called"):
+        chart.show_page("elsewhere")
+    assert [label for _page, label in PAGES] == ["Milestone shifts", "Progress", "Volume"]
+    chart.deleteLater()
+
+
+def test_the_volume_plots_share_one_scale_in_days(app):
+    """The total and the remaining are drawn on one scale — the largest value either
+    reaches, rounded up to a figure a reader can divide — labelled in days, and the
+    tooltip reads them as days too. A saved snapshot's day is a hairline through every
+    plot with its title beside it."""
+    total = ((FIRST, 10.0), (date(2026, 9, 10), 10.0), (date(2026, 9, 10), 16.0))
+    left = ((FIRST, 10.0), (date(2026, 9, 10), 8.0), (date(2026, 9, 10), 14.0))
+    data = ChartData(
+        date(2026, 9, 12),
+        volume=total,
+        remaining=left,
+        marks=((date(2026, 9, 5), "Kickoff review"),),
+    )
+    chart = _chart(data, width=900, page=VOLUME_PAGE)
+    assert data.scale == 20.0
+    volume, remaining = chart.panels()
+    assert volume.scale == remaining.scale == 20.0
+    assert (
+        chart._y(volume, 20.0) == volume.rect.top()
+        and chart._y(volume, 0.0) == volume.rect.bottom()
+    )
+    assert chart.title(volume) == "Scope volume" and chart.title(remaining) == "Remaining work"
+    assert [label for label, _ in chart.legend(remaining)] == ["Total", "Remaining"]
+    words = chart.tooltip_at(date(2026, 9, 11), "remaining")  # format_days: weeks past 7d
+    assert "scope: 3.2w" in words and "remaining: 2.8w · done 2d" in words
+    assert "scope: 2w" in chart.tooltip_at(date(2026, 9, 9), "volume")
+    assert "saved as Kickoff review" in chart.tooltip_at(date(2026, 9, 5), "volume")
+    image = chart.grab().toImage()
+    x = round(chart._x(date(2026, 9, 5)))
+    y = round(chart._y(remaining, 5.0))
+    assert image.pixelColor(x, y).name() != image.pixelColor(x + 6, y).name()  # the hairline
+    chart.deleteLater()
+
+
 def test_the_share_plots_take_the_height_they_are_given_up_to_a_ceiling(app):
-    """A tall host grows the two share plots in equal parts; a short one gets the floor;
+    """A tall host grows the page's two plots in equal parts; a short one gets the floor;
     past the ceiling neither grows again, and the milestone rows never do."""
     plan = ((FIRST, 0.0), (LAST, 1.0))
     chart = _chart(
@@ -105,32 +175,34 @@ def test_the_share_plots_take_the_height_they_are_given_up_to_a_ceiling(app):
         )
     )
     chart.resize(700, chart.compact_height())
-    status, scope, shift = chart.panels()
+    status, scope = chart.panels()
     assert status.rect.height() == scope.rect.height() == PANEL_HEIGHT
-    assert shift.rect.height() == ROW_HEIGHT
     assert chart.minimumHeight() == chart.compact_height()
     chart.resize(700, chart.compact_height() + 200)
-    status, scope, shift = chart.panels()
+    status, scope = chart.panels()
     assert status.rect.height() == scope.rect.height() == PANEL_HEIGHT + 100
-    assert shift.rect.height() == ROW_HEIGHT  # a row is a row
     chart.resize(700, chart.tall_height() + 400)
-    status, scope, _shift = chart.panels()
+    status, scope = chart.panels()
     assert status.rect.height() == scope.rect.height() == MAX_PANEL_HEIGHT
     assert chart.maximumHeight() == chart.tall_height()
+    chart.show_page(SHIFT_PAGE)
+    chart.resize(700, chart.compact_height() + 200)
+    (shift,) = chart.panels()
+    assert shift.rect.height() == ROW_HEIGHT  # a row is a row
     chart.deleteLater()
 
 
 def test_the_scope_heading_names_the_basis_and_every_landing_carries_its_milestone(app):
-    """The heading names the day the reader asked for, whichever record answered it; the
-    keys carry no second date; and each milestone's landing on the progress line sits on
-    the plan at its own share, named."""
+    """The heading names the plan the reader picked, with the record that stood in for
+    it; the keys carry no second name; and each milestone's landing on the progress line
+    sits on the plan at its own share, named."""
     plan = ((FIRST, 0.0), (date(2026, 9, 16), 0.5), (LAST, 1.0))
     segments = (
         Segment("m1", "v1", VIOLET, now=(FIRST, date(2026, 9, 16))),
         Segment("m2", "v2", TEAL, now=(date(2026, 9, 17), LAST)),
     )
-    chart = _chart(ChartData(FIRST, expected=plan, basis_day=FIRST, segments=segments), width=900)
-    assert chart.title(chart.panel("scope")) == "Scope change — no plan recorded at 1 September"
+    chart = _chart(ChartData(FIRST, expected=plan, segments=segments), width=900)
+    assert chart.title(chart.panel("scope")) == "Scope change — nothing to compare with"
     assert chart.title(chart.panel("status")) == "Progress"
     status = chart.panel("status")
     marks = chart.landing_marks(status)
@@ -143,12 +215,15 @@ def test_the_scope_heading_names_the_basis_and_every_landing_carries_its_milesto
     image = chart.grab().toImage()
     for segment, _name, at in marks:
         assert image.pixelColor(round(at.x()), round(at.y())).name() == segment.color.name()
-    chart.show_data(
-        ChartData(FIRST, expected=plan, baseline=plan, basis_day=FIRST, segments=segments)
-    )
-    assert chart.title(chart.panel("scope")) == "Scope change — versus plan at 1 September"
+    basis = "the plan at start, recorded 1 September"
+    chart.show_data(ChartData(FIRST, expected=plan, baseline=plan, basis=basis, segments=segments))
+    assert chart.title(chart.panel("scope")) == f"Scope change — versus {basis}"
     keys = [label for label, _ in chart.legend(chart.panel("scope"))]
-    assert keys[:2] == ["Plan then", "Plan now"]  # the heading holds the only date
+    assert keys[:2] == ["Plan then", "Plan now"]  # the heading holds the only name
+    chart.show_data(ChartData(FIRST, expected=plan, as_of="Review 2 (20 September)"))
+    assert chart.title(chart.panel("status")) == "Progress — as of Review 2 (20 September)"
+    chart.show_page(VOLUME_PAGE)
+    assert chart.title(chart.panel("volume")) == "Scope volume — as of Review 2 (20 September)"
     chart.deleteLater()
 
 
@@ -182,7 +257,9 @@ def test_a_milestone_row_dates_both_its_marks_and_drops_a_line_to_the_axis(app):
         "m1", "v1", VIOLET, now=(FIRST, date(2026, 9, 18)), then=(FIRST, date(2026, 9, 11))
     )
     still = Segment("m2", "v2", TEAL, now=(FIRST, LAST), then=(FIRST, LAST))
-    chart = _chart(ChartData(FIRST, expected=plan, segments=(moved, still)), width=900)
+    chart = _chart(
+        ChartData(FIRST, expected=plan, segments=(moved, still)), width=900, page=SHIFT_PAGE
+    )
     shift = chart.panel("shift")
     dates = chart.row_dates(shift)
     assert [text for _s, text, _r in dates] == ["18 Sep", "11 Sep", "1 Oct"]
@@ -216,7 +293,7 @@ def test_a_baseline_the_plan_still_agrees_with_shows_as_dashes_on_the_line(app):
     plan = ((FIRST, 0.5), (LAST, 0.5))
     chart = _chart(ChartData(FIRST, expected=plan))
     alone = _colours_along_the_line(chart, "scope", FIRST, LAST)
-    chart.show_data(ChartData(FIRST, expected=plan, baseline=plan, basis_day=FIRST))
+    chart.show_data(ChartData(FIRST, expected=plan, baseline=plan, basis="the plan at start"))
     together = _colours_along_the_line(chart, "scope", FIRST, LAST)
     assert len(alone) == 1
     assert len(together) >= 2
@@ -278,28 +355,27 @@ def test_the_words_beside_the_dot_and_on_a_milestone_row():
     assert standing_words(0.001) == "on plan"
     assert standing_words(None) == ""
     today = date(2026, 9, 10)
+    basis = "the plan at start"
     later = Segment(
         "m", "v1", TEAL, now=(FIRST, date(2026, 9, 23)), then=(FIRST, date(2026, 9, 18))
     )
-    assert segment_words(later, FIRST, today) == (
-        "v1 lands 23 September — 3 working days later than planned on 1 September (18 September)"
+    assert segment_words(later, basis, today) == (
+        "v1 lands 23 September — 3 working days later than the plan at start said (18 September)"
     )
     earlier = Segment(
         "m", "v1", TEAL, now=(FIRST, date(2026, 9, 17)), then=(FIRST, date(2026, 9, 18))
     )
-    assert segment_words(earlier, FIRST, today).endswith(
-        "1 working day earlier than planned on 1 September (18 September)"
+    assert segment_words(earlier, basis, today).endswith(
+        "1 working day earlier than the plan at start said (18 September)"
     )
     same = Segment("m", "v1", TEAL, now=(FIRST, date(2026, 9, 18)), then=(FIRST, date(2026, 9, 18)))
-    assert segment_words(same, FIRST, today) == (
-        "v1 lands 18 September — unchanged since 1 September"
+    assert segment_words(same, basis, today) == (
+        "v1 lands 18 September — unchanged since the plan at start"
     )
     new = Segment("m", "v1", TEAL, now=(FIRST, date(2026, 9, 18)))
-    assert (
-        segment_words(new, FIRST, today) == "v1 lands 18 September — not in the plan at 1 September"
-    )
+    assert segment_words(new, basis, today) == "v1 lands 18 September — not in the plan at start"
     undated = Segment("m", "v1", TEAL)
-    assert segment_words(undated, FIRST, today) == "v1 — nothing estimated, so no date"
+    assert segment_words(undated, basis, today) == "v1 — nothing estimated, so no date"
     plan = ((FIRST, 0.0), (LAST, 1.0))
     on_the_line = ChartData(
         date(2026, 9, 16), expected=plan, actual=((FIRST, 0.0), (date(2026, 9, 16), 0.6))

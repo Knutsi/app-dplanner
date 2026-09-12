@@ -102,9 +102,10 @@ def test_every_source_speaks_plain_data(cli_library, plan):
     assert [c.label for c in steps.columns][:5] == ["Key", "Step", "Kind", "Status", "Estimate"]
 
 
-def test_the_progress_chart_is_three_plots_on_one_axis(cli_library, plan):
+def test_the_progress_chart_is_the_windows_plots_on_one_axis(cli_library, plan):
     """Each plot answers one question, and the renderer takes the axis from all of them at
-    once: the same first and last day, the labels drawn once under the last plot."""
+    once: the same first and last day, the labels drawn once under the last plot. The
+    volume plots share one scale, in days."""
     from dplanner.cli.report.drawings import LIGHT, chart_svg
 
     with open_library(cli_library, default_module_formats(), io.StringIO()) as context:
@@ -121,8 +122,11 @@ def test_the_progress_chart_is_three_plots_on_one_axis(cli_library, plan):
     chart = next(p for p in report.sections["overview"] if isinstance(p, Chart))
     # No earlier plan is recorded, so there is nothing to compare scope against and that
     # plot is left out rather than drawn empty.
-    assert [plot.kind for plot in chart.plots] == ["status", "shift"]
+    assert [plot.kind for plot in chart.plots] == ["status", "shift", "volume", "remaining"]
     status = chart.plots[0]
+    volume, remaining = chart.plots[2:]
+    assert volume.ceiling == remaining.ceiling >= 1.0
+    assert [series.role for series in remaining.series] == ["baseline", "plan"]
     assert [series.role for series in status.series] == ["plan", "actual"]
     assert status.standing in ("on plan", "") or status.standing.startswith(("ahead", "behind"))
     # One stretch per milestone plus the work after the last one; only the milestone gets
@@ -132,7 +136,8 @@ def test_the_progress_chart_is_three_plots_on_one_axis(cli_library, plan):
     assert v1.step_id and v1.note.startswith("v1 lands ")
     assert "by estimated days" in chart.note  # the measure the whole report reads
     svg = chart_svg(chart, LIGHT)
-    assert svg.count('class="plot ') == 2
+    assert svg.count('class="plot ') == 4
+    assert svg.count('data-unit="days"') == 2  # the page's tooltip reads those in days
     assert 'data-kind="status"' in svg and 'data-kind="shift"' in svg
     # The window's decorations, drawn the same way here: the milestone's landing named on
     # the progress line, and on its own row a date beside the mark with a line dropping

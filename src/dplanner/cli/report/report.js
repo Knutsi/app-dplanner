@@ -198,6 +198,7 @@
       });
       plots.push({
         kind: group.dataset.kind,
+        unit: group.dataset.unit || "share",
         top: parseFloat(group.dataset.top),
         bottom: parseFloat(group.dataset.bottom),
         series: series,
@@ -247,7 +248,11 @@
         lines.push("<b>" + fmt(day) + "</b>");
         plot.series.forEach(function (entry) {
           var share = shareAt(entry.points, day);
-          if (share !== null) lines.push(entry.label + ": " + Math.round(share * 100) + "%");
+          if (share === null) return;
+          // A share plot reads in percent; an amount plot in days, the way the axis is
+          // labelled.
+          var said = plot.unit === "days" ? (Math.round(share * 10) / 10) + "d" : Math.round(share * 100) + "%";
+          lines.push(entry.label + ": " + said);
         });
       }
       tip.innerHTML = lines.join("<br>");

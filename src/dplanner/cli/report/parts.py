@@ -49,8 +49,10 @@ FacetKind = Literal["text", "markdown", "link", "status", "days", "date"]
 EdgeKind = Literal["requires", "relates"]
 SeriesRole = Literal["plan", "baseline", "actual"]
 # Which of a chart's stacked plots a series belongs to: where the work stands against
-# the plan, how the plan itself changed, and where each milestone moved.
-PlotKind = Literal["status", "scope", "shift"]
+# the plan, how the plan itself changed, where each milestone moved, and how much work
+# the plan came to over time — the total, and what was still ahead.
+PlotKind = Literal["status", "scope", "shift", "volume", "remaining"]
+AMOUNT_PLOTS: Final[tuple[PlotKind, ...]] = ("volume", "remaining")
 
 
 @dataclass(frozen=True)
@@ -128,7 +130,8 @@ class Plot:
 
     A ``shift`` plot draws the chart's stretches and carries no series of its own.
     ``standing`` is the word beside the status plot's last reading — "ahead 5%",
-    "behind 12%", "on plan".
+    "behind 12%", "on plan". A share plot runs 0..1; an amount plot (``volume``,
+    ``remaining``) runs 0..``ceiling``, in days, and its series are step curves.
     """
 
     kind: PlotKind
@@ -136,6 +139,7 @@ class Plot:
     series: tuple[Series, ...] = ()
     standing: str = ""
     note: str = ""
+    ceiling: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -145,7 +149,9 @@ class Chart:
     The renderer takes the axis from every plot at once: the same dates run under all of
     them, the date marks fall as hairlines through each, the labels are printed once
     under the last, and the edges are the earliest and latest date anything here has to
-    show. ``idle`` names the spans the plan leaves empty, drawn flat and dotted.
+    show. ``idle`` names the spans the plan leaves empty, drawn flat and dotted;
+    ``marks`` are the saved snapshots — a day and its title — drawn as a hairline
+    through every plot.
     """
 
     id: str
@@ -154,6 +160,7 @@ class Chart:
     plots: tuple[Plot, ...] = ()
     stretches: tuple[Stretch, ...] = ()
     idle: tuple[tuple[date, date], ...] = ()
+    marks: tuple[tuple[date, str], ...] = ()
     note: str = ""
 
     @property

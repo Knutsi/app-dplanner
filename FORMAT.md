@@ -415,17 +415,25 @@ assumption about the team, not a fact about a step. The same module writes `{"st
 "2026-10-05", "color": "#e0602c"}` beside a *milestone* step: the day its stretch of work
 begins instead of the day the previous one lands, and a colour chosen over the dealt one
 — assumptions again, and the landing date itself is never written. The same package
-writes a **second id** beside the project, `modules/progress_history.json`: `{"days":
-[{"day": "2026-09-05", "stretches": [{"milestone": "<step id>", "steps": 8, "done": 3,
-"days": 11.0, "done_days": 4.5, "start": "2026-09-07", "finish": "2026-10-12",
-"landings": [{"date": "2026-09-09", "steps": 2, "days": 3.0}, …]}]}]}` — one row per
-day on which the plan's progress or its promise changed, the stretches in the order the
-sequence ran them that day (no `milestone` key for the work after the last one, no
-`finish` for a stretch nothing dated, no `landings` for one with nothing to land). The
-landings are what the simulation expected to land on each date, so the plan as it stood
-that day is drawn exactly from the row. It is the one derived-looking thing that is
-stored, because the past cannot be recomputed: the chart of the plan against what became
-of it needs where the plan stood and what it promised on earlier days. **An estimate
+writes a **second id** beside the project, `modules/progress_history.json` (format 2):
+`{"days": [{"day": "2026-09-05", "stretches": [{"milestone": "<step id>", "steps": 8,
+"done": 3, "days": 11.0, "done_days": 4.5, "start": "2026-09-07", "finish":
+"2026-10-12", "landings": [{"date": "2026-09-09", "steps": 2, "days": 3.0}, …]}]}],
+"saved": [{"title": "Kickoff review", "note": "What we thought on day one", "day":
+"2026-09-05", "stretches": […]}]}` — under `days`, one row per day on which the plan's
+progress or its promise changed, the stretches in the order the sequence ran them that
+day (no `milestone` key for the work after the last one, no `finish` for a stretch
+nothing dated, no `landings` for one with nothing to land); under `saved`, the
+snapshots somebody kept on purpose, the same row with the `title` it is found by and a
+`note` when one was given (no `saved` list without one; a row there without a title is
+not a saved snapshot and reads as absent). A saved snapshot is never replaced by a later
+change, and an automatic day never carries a title. The landings are what the simulation
+expected to land on each date, so the plan as it stood that day is drawn exactly from
+the row. It is the one derived-looking thing that is stored, because the past cannot be
+recomputed: the chart of the plan against what became of it needs where the plan stood
+and what it promised on earlier days. The bump to format 2 exists for the `saved` key,
+so an older build refuses to rewrite the entry rather than dropping what somebody saved.
+**An estimate
 remembers what it was** for the same review: `estimation.json` (format 2) carries
 `"history": [{"day": "2026-09-12", "days": 3.0}]` beside `days` — the value that stood
 when each listed day began, one row per day it changed, written only by a writer that

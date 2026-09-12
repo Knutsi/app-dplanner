@@ -14,7 +14,10 @@ settle would then simply write again with the status undone. It carries an origi
 own so every view treats it as a foreign change, and it never loops: its own write changes
 nothing the snapshot reads, so the settle it triggers finds the same row and writes
 nothing. ``dplanner progress record`` is the same write for a plan driven from the
-terminal; ``progress.py`` owns the shape both use.
+terminal; ``progress.py`` owns the shape both use. A snapshot somebody *saved* is a
+different thing — a user decision, pushed through the undo stack by the tab and written
+by ``dplanner progress save`` — and every write here carries the saved list along as it
+is stored, so a settle never loses one.
 """
 
 from collections.abc import Callable
@@ -29,6 +32,7 @@ from dplanner.modules.time_estimates.progress import (
     HISTORY_ID,
     Snapshot,
     read_history,
+    read_saved,
     recorded,
     take,
     write_history,
@@ -120,7 +124,11 @@ class ProgressRecorder(QObject):
         if rows is None:
             return False
         SetModuleDataCommand(
-            project.id, HISTORY_ID, write_history(rows), view_origin=RECORD_ORIGIN, label=""
+            project.id,
+            HISTORY_ID,
+            write_history(rows, read_saved(project)),
+            view_origin=RECORD_ORIGIN,
+            label="",
         ).redo(self._product)
         return True
 

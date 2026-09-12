@@ -1,40 +1,52 @@
-"""Three plots on one time axis: where the work stands, how the plan changed, and where
-each milestone moved.
+"""The plots on one time axis: where the work stands, how the plan changed, where each
+milestone moved, and how much work the plan came to over time.
 
-One chart used to carry the plan at the basis day, the plan now and what actually landed
-as three lines over each other, and the reader had to untangle them. Now each question
-gets a plot of its own, stacked, on **one locked x axis**: the same dates run under all
-three, the gridlines at every date mark drop through every plot, the date labels are
-printed once under the last one, and the edges are the earliest and latest date any of
-the three has to show — so a point placed in one plot is placed in all of them.
+One chart used to carry the plan then, the plan now and what actually landed as three
+lines over each other, and the reader had to untangle them. Now each question gets a plot
+of its own, stacked, on **one locked x axis**: the same dates run under every plot on a
+page, the gridlines at every date mark drop through each, the date labels are printed
+once under the last one, and the edges are the earliest and latest date any of them has
+to show — so a point placed in one plot is placed in all of them.
 
 - **Progress** — the plan now, the share landed by each date, in each stretch's shade
   (the calendar's colours, on the line), with every milestone's landing marked and
   named; what actually landed, in ink, with a dot at today and beside it a short word on
   where it stands: *ahead 5 %*, *behind 12 %*, *on plan*.
-- **Scope change** — the plan as it stood on the basis day (the project's start, or the
-  day picked beside the chart) dashed and paler, the plan now solid, and **the area
+- **Scope change** — the plan then (the snapshot picked in the strip: the plan at the
+  project's start unless another is chosen) dashed and paler, the plan now solid, and **the area
   between them filled by which way it went**: the plan now above the baseline is work
   pulled in — the same amount promised sooner — and wears the attention amber; below it
   is work that slipped, and wears the bad red; where the two agree there is no area to
   fill, so the run is a line in the good green. The overlap is the point, so the fill
   says the direction and the legend does not have to.
-- **Milestones** — one row per milestone, its landing on the basis day as a hollow
+- **Milestones** — one row per milestone, its landing in the plan then as a hollow
   mark, its landing now filled, and an arrow from the one to the other saying which way
   it went. A milestone the plan then did not know has only the filled mark; an
   unchanged one shows the filled mark inside the ring.
+- **Scope volume** and **Remaining work** — the total of estimated days the plan came
+  to on each recorded day, as a step curve (a record is what the plan was until the
+  next one), and the same less what had landed, drawn over the total in a paler dash so
+  the gap between the two is what is done. Both on one scale in days, so the two plots
+  compare by eye.
+
+**The plots are read a page at a time.** *Milestone shifts*, *Progress* (the first two
+plots) and *Volume* (the last two) are three pages of one widget (:data:`PAGES`), and the
+window of its own (:class:`ChartDialog`) shows every page at once, stacked, where there is
+room for it. A page is a way of looking: the data behind every page is one
+:class:`ChartData`, so a change reaches whichever page is up.
 
 **Picking a milestone highlights; it never hides.** The whole project stays on every
 plot, and everything outside the picked stretch — the other segments of the lines, the
 other rows — fades to a third, so the picked one stands out against the plan it is part
 of. That is what the calendar does with its bands, said the same way here.
 
-**The chart names the day it is measured against, and only that one.** The scope plot is
-headed *Scope change — versus plan at 1 June*: the **basis** the reader asked for, which
-is the day the control beside the plots holds. Which daily record stood in for it is
-bookkeeping and is reported by ``dplanner progress show``; a heading naming that record
-while the control named another read as a contradiction. With nothing recorded that early
-the heading says so rather than comparing the plan with itself (``progress.baseline``).
+**The chart names the plan it is measured against.** The scope plot is headed *Scope
+change — versus the plan at start (7 Sep), recorded 9 Sep* or *— versus Kickoff review
+(1 Nov)*: the pick the reader made in the strip (``progress.pick_words``), with the record
+that stood in for a day named beside it, so which two plans are being compared is never
+a guess. With nothing recorded to compare against the heading says so rather than
+comparing the plan with itself. A saved snapshot's day is a hairline through every plot
+with its title at the top, so the moments somebody chose to remember are on the axis.
 
 **A plot is given the room the window has, up to a ceiling.** The two share plots take
 whatever height the host gives the widget over its minimum, in equal parts, and stop at
@@ -99,10 +111,16 @@ from dplanner.domain.schedule import (
     axis_ticks,
     change_runs,
     format_date,
+    format_days,
     share_at,
     short_date,
 )
-from dplanner.modules.time_estimates.progress import scope_words, shift_words, standing_words
+from dplanner.modules.time_estimates.progress import (
+    scope_words,
+    shift_words,
+    standing_words,
+    volume_scale,
+)
 from dplanner.modules.time_estimates.schedule import WHOLE_COLOR
 from dplanner.modules.time_estimates.view import SECONDARY_ALPHA
 from dplanner.theme.cards import over
@@ -174,9 +192,34 @@ IDLE_SURFACE_ALPHA = 120
 DOT_PATTERN = (0.1, 3.0)
 # Everything outside the picked stretch is painted at this opacity.
 FADE = 0.3
+# A saved snapshot's hairline through every plot, and its title beside it.
+SNAPSHOT_MARK_ALPHA = 120
+SNAPSHOT_NAME_MAX = 110
 
 Point = tuple[date, float]
 Span = tuple[date, date]
+
+# The pages the plots are read on, in the order the toggles offer them — and every page at
+# once, for the window of its own.
+SHIFT_PAGE = "shift"
+PROGRESS_PAGE = "progress"
+VOLUME_PAGE = "volume"
+ALL_PAGES = "all"
+PAGES: tuple[tuple[str, str], ...] = (
+    (SHIFT_PAGE, "Milestone shifts"),
+    (PROGRESS_PAGE, "Progress"),
+    (VOLUME_PAGE, "Volume"),
+)
+# Which plots a page stacks, top to bottom.
+PAGE_PLOTS: dict[str, tuple[str, ...]] = {
+    SHIFT_PAGE: ("shift",),
+    PROGRESS_PAGE: ("status", "scope"),
+    VOLUME_PAGE: ("volume", "remaining"),
+    ALL_PAGES: ("status", "scope", "shift", "volume", "remaining"),
+}
+AMOUNT_PLOTS = ("volume", "remaining")  # Plots on a scale of days rather than a share.
+# What the empty milestone plot says.
+NO_MILESTONES = "No milestones yet"
 
 
 @dataclass(frozen=True)
@@ -199,27 +242,33 @@ class Segment:
 
 @dataclass(frozen=True)
 class ChartData:
-    """The whole plan as the three plots show it: the plan now, the plan on the basis day,
-    what actually landed, and the stretches the lines run through. ``emphasis`` is the
-    milestone held in full ink while the rest fades — None shows every stretch alike.
+    """The whole plan as the plots show it: the plan now, the plan it is compared with,
+    what actually landed, the volume over time and the stretches the lines run through.
+    ``emphasis`` is the milestone held in full ink while the rest fades — None shows every
+    stretch alike.
 
-    ``basis_day`` is the day the plan is compared against — the project's start unless
-    the reader picked another — and the one day the chart names. The baseline drawn for
-    it is the nearest plan anybody recorded (``progress.baseline``); which record that
-    was is bookkeeping, and ``dplanner progress show`` is where it is reported."""
+    ``basis`` names the plan the now is compared with, worded by ``progress.pick_words``
+    — empty when the pick found nothing to compare with — and ``as_of`` names the now
+    when it is a recorded snapshot rather than the live plan. ``today`` is the day the
+    now side stands on. ``marks`` are the saved snapshots, each a day and its title."""
 
     today: date
     expected: tuple[Point, ...] = ()
     actual: tuple[Point, ...] = ()
     baseline: tuple[Point, ...] = ()
-    basis_day: date | None = None
+    basis: str = ""
+    as_of: str = ""
     finish: date | None = None
     baseline_finish: date | None = None
-    by_days: bool = False
     # The spans the plan leaves empty, from a landing to the day work resumes.
     idle: tuple[Span, ...] = ()
     segments: tuple[Segment, ...] = ()
     emphasis: str | None = None
+    # The scope over time: the total of estimated days on each recorded day, and what
+    # was still ahead — step curves, in days.
+    volume: tuple[Point, ...] = ()
+    remaining: tuple[Point, ...] = ()
+    marks: tuple[tuple[date, str], ...] = ()
     # The plan's own colour: the band, the baseline, and the line where no stretch
     # claims it.
     color: QColor = field(default_factory=lambda: QColor(WHOLE_COLOR))
@@ -230,12 +279,17 @@ class ChartData:
 
     @property
     def compared(self) -> bool:
-        """Whether a plan was recorded for the basis day to compare this one against."""
+        """Whether a plan was found to compare this one against."""
         return bool(self.baseline) or any(segment.then is not None for segment in self.segments)
 
     @property
     def emphasised(self) -> Segment | None:
         return next((s for s in self.segments if s.key == self.emphasis), None)
+
+    @property
+    def scale(self) -> float:
+        """The top of the volume plots' scale, in days — one for both plots."""
+        return volume_scale(self.volume, self.remaining)
 
     def standing(self) -> float | None:
         """Actual against plan today, in share: positive ahead, negative behind — None
@@ -249,28 +303,30 @@ class ChartData:
 
 @dataclass(frozen=True)
 class _Panel:
-    kind: str  # "status", "scope" or "shift"
+    kind: str  # "status", "scope", "shift", "volume" or "remaining"
     rect: QRectF  # The plot area; the title band sits above it.
+    scale: float = 1.0  # What the top of the plot stands for: a share, or days.
 
 
-def segment_words(segment: Segment, basis_day: date | None, today: date) -> str:
+def segment_words(segment: Segment, basis: str, today: date) -> str:
     """A milestone row's sentence for a :class:`Segment` — ``progress.shift_words`` with
     the segment's own fields, so the window and the report word one move one way."""
     return shift_words(
         segment.label,
         segment.then[1] if segment.then else None,
         segment.now[1] if segment.now else None,
-        basis_day,
+        basis,
         today,
     )
 
 
 class ProgressChart(QWidget):
-    """The three plots; the host hands it a :class:`ChartData`."""
+    """The plots, a page at a time; the host hands it a :class:`ChartData`."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, page: str = PROGRESS_PAGE) -> None:
         super().__init__(parent)
         self._data: ChartData | None = None
+        self._page = page
         self._first = date.today()
         self._last = date.today()
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -285,6 +341,7 @@ class ProgressChart(QWidget):
             dates = [data.today, *(when for when, _ in data.expected), *(w for w, _ in data.actual)]
             dates += [when for when, _ in data.baseline]
             dates += [when for when in (data.finish, data.baseline_finish) if when is not None]
+            dates += [when for when, _ in (*data.volume, *data.remaining, *data.marks)]
             for segment in data.segments:
                 for span in (segment.now, segment.then):
                     if span is not None:
@@ -295,6 +352,20 @@ class ProgressChart(QWidget):
                 self._last = self._first + timedelta(days=1)
         self._bound_height()
         self.update()
+
+    def show_page(self, page: str) -> None:
+        """Which plots are up — one of :data:`PAGES`, or every one at once."""
+        if page not in PAGE_PLOTS:
+            raise ValueError(f"no page called {page!r}")
+        if page == self._page:
+            return
+        self._page = page
+        self._bound_height()
+        self.update()
+
+    @property
+    def page(self) -> str:
+        return self._page
 
     # -- what the tests read -------------------------------------------------------------------
 
@@ -311,25 +382,25 @@ class ProgressChart(QWidget):
         return axis_ticks(self._first, self._last, room)
 
     def panels(self) -> tuple[_Panel, ...]:
-        """The plots top to bottom, each with its area — the third only with milestones.
+        """The page's plots top to bottom, each with its area.
 
-        The two share plots take whatever height the host gave the widget over its
-        minimum, in equal parts, and stop at ``MAX_PANEL_HEIGHT``: a taller window buys
-        a line more room to say something, and past a point it only stretches two lines
-        into a wall. The milestone plot is a row per milestone whatever the room.
+        A share plot and an amount plot take whatever height the host gave the widget
+        over its minimum, in equal parts, and stop at ``MAX_PANEL_HEIGHT``: a taller
+        window buys a line more room to say something, and past a point it only
+        stretches two lines into a wall. The milestone plot is a row per milestone
+        whatever the room — one row's worth, to say there are none.
         """
         left = self._left_gutter()
         width = self._plot_width()
         band = self._band_height()
         share = self._share_height()
-        heights = [("status", share), ("scope", share)]
-        rows = self._rows()
-        if rows:
-            heights.append(("shift", float(rows * ROW_HEIGHT)))
+        scale = self._data.scale if self._data is not None else 1.0
         found = []
         top = 0.0
-        for kind, height in heights:
-            found.append(_Panel(kind, QRectF(left, top + TITLE_TOP + band, width, height)))
+        for kind in PAGE_PLOTS[self._page]:
+            height = float(max(1, self._rows()) * ROW_HEIGHT) if kind == "shift" else share
+            rect = QRectF(left, top + TITLE_TOP + band, width, height)
+            found.append(_Panel(kind, rect, scale if kind in AMOUNT_PLOTS else 1.0))
             top += TITLE_TOP + band + height + PANEL_GAP
         return tuple(found)
 
@@ -343,22 +414,34 @@ class ProgressChart(QWidget):
         if data is None:
             return ""
         lines = [format_date(when, today=data.today)]
-        unit = "of days" if data.by_days else "of steps"
+        for day, title in data.marks:
+            if day == when:
+                lines.append(f"saved as {title}")
+        if kind in AMOUNT_PLOTS:
+            total, left = share_at(data.volume, when), share_at(data.remaining, when)
+            if total is not None and when <= data.today:
+                lines.append(f"scope: {format_days(total)}")
+            if (
+                kind == "remaining"
+                and left is not None
+                and total is not None
+                and when <= data.today
+            ):
+                lines.append(f"remaining: {format_days(left)} · done {format_days(total - left)}")
+            return "\n".join(lines)
         if kind == "scope":
             was = share_at(data.baseline, when)
-            if was is not None and data.basis_day is not None:
-                lines.append(
-                    f"plan at {format_date(data.basis_day, today=data.today)}: {was:.0%} {unit}"
-                )
+            if was is not None and data.basis:
+                lines.append(f"{data.basis}: {was:.0%} of days")
         planned = share_at(data.expected, when)
         if planned is not None:
-            lines.append(f"plan now: {planned:.0%} {unit}")
+            lines.append(f"plan now: {planned:.0%} of days")
         if any(start < when < end for start, end in data.idle):
             lines.append("no work planned")
         if kind == "status":
             landed = share_at(data.actual, when)
             if landed is not None and when <= data.today:
-                lines.append(f"actual: {landed:.0%} {unit}")
+                lines.append(f"actual: {landed:.0%} of days")
         return "\n".join(lines)
 
     # -- geometry --------------------------------------------------------------------------------
@@ -387,29 +470,37 @@ class ProgressChart(QWidget):
     def _band_height(self) -> float:
         return QFontMetricsF(self._title_font()).height() + TITLE_GAP
 
+    def _stretching(self) -> int:
+        """How many of the page's plots grow with the room: every one but the milestone
+        rows."""
+        return sum(1 for kind in PAGE_PLOTS[self._page] if kind != "shift")
+
     def _fixed_height(self) -> float:
-        """Everything but the two share plots: the heading bands, the gaps between the
+        """Everything but the growing plots: the heading bands, the gaps between the
         plots, the milestone rows and the gutter the dates print in."""
-        rows = self._rows()
-        plots = 3 if rows else 2
+        kinds = PAGE_PLOTS[self._page]
+        rows = max(1, self._rows()) if "shift" in kinds else 0
         return (
-            plots * (TITLE_TOP + self._band_height())
-            + (plots - 1) * PANEL_GAP
+            len(kinds) * (TITLE_TOP + self._band_height())
+            + (len(kinds) - 1) * PANEL_GAP
             + rows * ROW_HEIGHT
             + BOTTOM_GUTTER
         )
 
     def compact_height(self) -> int:
-        """The least the chart is legible in: both share plots on their floor."""
-        return round(self._fixed_height() + 2 * PANEL_HEIGHT)
+        """The least the page is legible in: every growing plot on its floor."""
+        return round(self._fixed_height() + self._stretching() * PANEL_HEIGHT)
 
     def tall_height(self) -> int:
-        """The most it takes: both share plots at their ceiling."""
-        return round(self._fixed_height() + 2 * MAX_PANEL_HEIGHT)
+        """The most it takes: every growing plot at its ceiling."""
+        return round(self._fixed_height() + self._stretching() * MAX_PANEL_HEIGHT)
 
     def _share_height(self) -> float:
+        growing = self._stretching()
+        if not growing:
+            return 0.0
         spare = max(0.0, float(self.height() - self.compact_height()))
-        return min(float(MAX_PANEL_HEIGHT), PANEL_HEIGHT + spare / 2)
+        return min(float(MAX_PANEL_HEIGHT), PANEL_HEIGHT + spare / growing)
 
     def _bound_height(self) -> None:
         """What the host may give it, floor and ceiling — set from the data, never from a
@@ -423,7 +514,8 @@ class ProgressChart(QWidget):
         return self._left_gutter() + self._plot_width() * (when - self._first).days / total
 
     @staticmethod
-    def _y(panel: _Panel, share: float) -> float:
+    def _y(panel: _Panel, value: float) -> float:
+        share = value / panel.scale if panel.scale else 0.0
         return panel.rect.bottom() - panel.rect.height() * min(max(share, 0.0), 1.0)
 
     @staticmethod
@@ -475,10 +567,17 @@ class ProgressChart(QWidget):
             painter.setPen(QPen(line, 1.0))
             x = self._x(picked.now[1])
             painter.drawLine(QPointF(x, top), QPointF(x, bottom))
+        self._draw_marks(painter, panels, data, ink)
 
         for panel in panels:
             if panel.kind == "shift":
                 self._draw_shift(painter, panel, data, ink, surface)
+                continue
+            if panel.kind in AMOUNT_PLOTS:
+                painter.save()
+                painter.setClipRect(panel.rect.adjusted(-MARKER, -MARKER, MARKER, MARKER))
+                self._draw_amount(painter, panel, data, ink, surface)
+                painter.restore()
                 continue
             draw = self._draw_status if panel.kind == "status" else self._draw_scope
             # Everything faded, then the picked stretch over it in full — clipped to
@@ -551,7 +650,7 @@ class ProgressChart(QWidget):
                 painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
         else:
             for share in GRID_SHARES:
-                y = self._y(panel, share)
+                y = self._y(panel, share * panel.scale)
                 painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
         ticks = self.ticks()
         for when, _ in ticks:
@@ -560,15 +659,20 @@ class ProgressChart(QWidget):
         painter.setPen(secondary)
         if panel.kind != "shift":
             for share in LABELLED_SHARES:
+                label = (
+                    format_days(share * panel.scale)
+                    if panel.kind in AMOUNT_PLOTS
+                    else f"{share:.0%}"
+                )
                 painter.drawText(
                     QRectF(
                         0.0,
-                        self._y(panel, share) - metrics.height() / 2,
+                        self._y(panel, share * panel.scale) - metrics.height() / 2,
                         plot.left() - LABEL_GAP,
                         metrics.height(),
                     ),
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                    f"{share:.0%}",
+                    label,
                 )
         if not last:
             return
@@ -663,6 +767,64 @@ class ProgressChart(QWidget):
             painter.drawText(
                 QRectF(centre.x() - width - LANDING_NAME_GAP, top, width, metrics.height()),
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                name,
+            )
+
+    def _draw_amount(
+        self, painter: QPainter, panel: _Panel, data: ChartData, ink: QColor, surface: QColor
+    ) -> None:
+        """The scope over time: the total in the plan's colour with today's reading
+        ringed — and, on the remaining plot, under it in a paler dash, so the gap between
+        the two is what has landed. Step curves, because a record holds until the next."""
+        if panel.kind == "remaining":
+            self._draw_line(
+                painter,
+                panel,
+                data.volume,
+                self._baseline_shade(data.color, ink),
+                Qt.PenStyle.DashLine,
+            )
+        points = data.volume if panel.kind == "volume" else data.remaining
+        self._draw_line(painter, panel, points, data.color)
+        if not points:
+            return
+        when, value = points[-1]
+        centre = QPointF(self._x(when), self._y(panel, value))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(surface)
+        painter.drawEllipse(centre, MARKER / 2 + RING, MARKER / 2 + RING)
+        painter.setBrush(data.color)
+        painter.drawEllipse(centre, MARKER / 2, MARKER / 2)
+
+    def _draw_marks(
+        self, painter: QPainter, panels: tuple[_Panel, ...], data: ChartData, ink: QColor
+    ) -> None:
+        """A saved snapshot's day: a hairline through every plot, its title in secondary
+        ink at the top of the first, elided — the moments somebody chose to remember,
+        on the axis every plot shares."""
+        if not data.marks or not panels:
+            return
+        metrics = painter.fontMetrics()
+        line = QColor(ink)
+        line.setAlpha(SNAPSHOT_MARK_ALPHA)
+        secondary = QColor(ink)
+        secondary.setAlpha(SECONDARY_ALPHA)
+        top, bottom = panels[0].rect.top(), panels[-1].rect.bottom()
+        for when, title in data.marks:
+            if not self._first <= when <= self._last:
+                continue
+            x = self._x(when)
+            painter.setPen(QPen(line, 1.0, Qt.PenStyle.DashLine))
+            painter.drawLine(QPointF(x, top), QPointF(x, bottom))
+            name = metrics.elidedText(title, Qt.TextElideMode.ElideRight, SNAPSHOT_NAME_MAX)
+            width = metrics.horizontalAdvance(name) + 2
+            left = x + LANDING_NAME_GAP
+            if left + width > panels[0].rect.right():
+                left = x - LANDING_NAME_GAP - width
+            painter.setPen(secondary)
+            painter.drawText(
+                QRectF(left, top, width, metrics.height()),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 name,
             )
 
@@ -796,6 +958,14 @@ class ProgressChart(QWidget):
         metrics = painter.fontMetrics()
         secondary = QColor(ink)
         secondary.setAlpha(SECONDARY_ALPHA)
+        if not data.milestones:
+            painter.setPen(secondary)
+            painter.drawText(
+                panel.rect,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                NO_MILESTONES,
+            )
+            return
         # The drops first, so every mark and every date is painted over them.
         for index, segment in enumerate(data.milestones):
             if segment.now is None:
@@ -955,13 +1125,16 @@ class ProgressChart(QWidget):
 
     def title(self, panel: _Panel) -> str:
         data = self._data
+        as_of = f" — as of {data.as_of}" if data is not None and data.as_of else ""
         if panel.kind == "status":
-            return "Progress"
+            return f"Progress{as_of}"
         if panel.kind == "shift":
-            return "Milestones"
-        if data is None or data.basis_day is None:
-            return "Scope change"
-        return scope_words(data.basis_day, data.today, compared=data.compared)
+            return f"Milestones{as_of}"
+        if panel.kind == "volume":
+            return f"Scope volume{as_of}"
+        if panel.kind == "remaining":
+            return f"Remaining work{as_of}"
+        return scope_words(data.basis if data is not None else "")
 
     def legend(self, panel: _Panel) -> list[tuple[str, str]]:
         """The plot's keys: a label and what draws it."""
@@ -974,10 +1147,14 @@ class ProgressChart(QWidget):
                 found.append(("No work planned", "idle"))
             return found
         if panel.kind == "scope":
-            # The heading already names the day; a second date in the key would only
-            # repeat it, and there is one plan then whatever record stood in for it.
+            # The heading already names the plan compared with; a second name in the key
+            # would only repeat it.
             found = [("Plan then", "baseline")] if data.baseline else []
             return [*found, ("Plan now", "plan"), ("Pulled in", "pulled"), ("Slipped", "slipped")]
+        if panel.kind == "volume":
+            return [("Estimated days", "plan")]
+        if panel.kind == "remaining":
+            return [("Total", "baseline"), ("Remaining", "plan")]
         return [("Then", "hollow"), ("Now", "filled")] if data.compared else []
 
     def _draw_title(
@@ -1065,7 +1242,7 @@ class ProgressChart(QWidget):
             if panel.kind == "shift":
                 index = int((position.y() - panel.rect.top()) // ROW_HEIGHT)
                 if 0 <= index < len(data.milestones):
-                    return segment_words(data.milestones[index], data.basis_day, data.today)
+                    return segment_words(data.milestones[index], data.basis, data.today)
                 return ""
             return self.tooltip_at(self._date_at(position.x()), panel.kind)
         return ""
@@ -1090,18 +1267,19 @@ SCREEN_SHARE = 0.8
 
 
 class ChartDialog(QDialog):
-    """The three plots, briefly in a window of their own.
+    """Every plot, briefly in a window of their own.
 
     The same widget with the same data and more room — never a second rendering, so
     there is nothing that can drift: the host feeds it whatever it feeds the inline
-    chart, and a plan that changes while the window is open redraws in both. It holds no
-    state, so closing it loses nothing and there is nothing to confirm.
+    chart, and a plan that changes while the window is open redraws in both. Where the
+    tab shows a page at a time, the window has the room for every page at once. It holds
+    no state, so closing it loses nothing and there is nothing to confirm.
     """
 
     def __init__(self, data: ChartData | None, *, title: str, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.chart = ProgressChart(self)
+        self.chart = ProgressChart(self, page=ALL_PAGES)
         # The plots stop growing at their ceiling; with many milestones the rows can
         # still outrun a short screen, and then this scrolls rather than squeezing them.
         scroller = QScrollArea(self)

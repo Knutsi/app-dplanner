@@ -1,5 +1,5 @@
-"""What the time estimates say in a report: when it lands, how the plan moved, the three
-progress plots, the milestones in sequence and the staffing what-ifs.
+"""What the time estimates say in a report: when it lands, how the plan moved, the
+progress and volume plots, the milestones in sequence and the staffing what-ifs.
 
 The same derivations the Time tab renders and ``dplanner schedule matrix`` /
 ``progress show`` print — ``time_report``, ``take``, ``view_scope`` — read once for the
@@ -35,12 +35,16 @@ from dplanner.domain.schedule import Phase, format_date, format_days
 from dplanner.domain.store import FilesFor
 from dplanner.modules.time_estimates.cli import Readers
 from dplanner.modules.time_estimates.progress import (
+    AT_START,
     Delta,
     ScopeView,
     Snapshot,
-    baseline,
     delta_words,
+    pick_words,
     read_history,
+    read_saved,
+    remaining,
+    resolve,
     scope_words,
     shift_words,
     span_of,
@@ -48,6 +52,8 @@ from dplanner.modules.time_estimates.progress import (
     take,
     tally,
     view_scope,
+    volume,
+    volume_scale,
 )
 from dplanner.modules.time_estimates.schedule import (
     Cell,
@@ -111,8 +117,10 @@ def report_source(
         if now is None:
             return NOTHING
         history = read_history(project)
-        then = baseline(history, dated.start, today=today)
-        view = view_scope(now, history, then, None, by_days=True)
+        saved = read_saved(project)
+        then = resolve(AT_START, history=history, saved=saved, live=now, start=dated.start)
+        basis = pick_words(AT_START, then, today)
+        view = view_scope(now, history, then, None)
         colors = phase_colors(team.phases, read_color, read_palette(project))
         labels = dated.labels
         placed = [
@@ -133,12 +141,14 @@ def report_source(
                     CHART_ID,
                     "Progress against the plan",
                     today,
-                    plots=_plots(view, then, dated.start, today),
-                    stretches=_stretches(team, colors, labels, now, then, dated.start, today),
+                    plots=_plots(view, then, basis, history, now),
+                    stretches=_stretches(team, colors, labels, now, then, basis, today),
                     idle=view.idle,
-                    note="Three plots on one time axis, by estimated days: where the work "
+                    marks=tuple((row.day, row.title) for row in saved),
+                    note="Plots on one time axis, by estimated days: where the work "
                     "stands against the plan, how the plan itself has moved since it was "
-                    "recorded, and where each milestone has slid.",
+                    "recorded, where each milestone has slid, and how much work the plan "
+                    "came to on each recorded day.",
                 ),
             ),
             Placed(
@@ -156,9 +166,7 @@ def report_source(
                             color,
                             step_id=phase.milestone.id if phase.milestone else "",
                             asked=phase.asked,
-                            share=tally(phase.steps, readers.days_for, readers.status_for).share(
-                                by_days=True
-                            ),
+                            share=tally(phase.steps, readers.days_for, readers.status_for).share(),
                         )
                         for phase, color in zip(team.phases, colors, strict=True)
                     ),
@@ -250,11 +258,19 @@ def _change_figure(moved: Delta | None, then: Snapshot | None, today: date) -> F
     return Figure(label, words, tone=tone)
 
 
-def _plots(view: ScopeView, then: Snapshot | None, basis: date, today: date) -> tuple[Plot, ...]:
-    """The three plots the chart stacks — the window's, said as data.
+def _plots(
+    view: ScopeView,
+    then: Snapshot | None,
+    basis: str,
+    history: list[Snapshot],
+    now: Snapshot,
+) -> tuple[Plot, ...]:
+    """The plots the chart stacks — the window's every page, said as data.
 
     The scope plot is left out when there is no earlier plan to compare against: an empty
-    box saying "nothing recorded yet" is the placeholder the card rule forbids.
+    box saying "nothing recorded yet" is the placeholder the card rule forbids. The
+    volume plots share one scale in days, the window's rule, so the gap between them is
+    read by eye.
     """
     plan = Series("Plan now" if then is not None else "Plan", view.expected, "plan")
     found = [
@@ -269,13 +285,33 @@ def _plots(view: ScopeView, then: Snapshot | None, basis: date, today: date) -> 
         found.append(
             Plot(
                 "scope",
-                scope_words(basis, today, compared=True),
+                scope_words(basis),
                 (plan, Series("Plan then", view.baseline, "baseline")),
                 note="Amber where the plan now promises more by a date than it did then, "
                 "red where it promises less, green where the two agree.",
             )
         )
     found.append(Plot("shift", "Milestones"))
+    total, left = tuple(volume(history, now)), tuple(remaining(history, now))
+    scale = volume_scale(total, left)
+    found.append(
+        Plot(
+            "volume",
+            "Scope volume",
+            (Series("Estimated days", total, "plan"),),
+            ceiling=scale,
+            note="The total of estimated days the plan came to on each recorded day.",
+        )
+    )
+    found.append(
+        Plot(
+            "remaining",
+            "Remaining work",
+            (Series("Total", total, "baseline"), Series("Remaining", left, "plan")),
+            ceiling=scale,
+            note="The same less what had landed: the gap between the two is what is done.",
+        )
+    )
     return tuple(found)
 
 
@@ -285,11 +321,11 @@ def _stretches(
     labels: dict[int, str],
     now: Snapshot,
     then: Snapshot | None,
-    basis: date,
+    basis: str,
     today: date,
 ) -> tuple[Stretch, ...]:
-    """Every stretch of the plan: its shade, where it runs now and where it ran on the
-    basis day. One shape for all three plots, as in the window."""
+    """Every stretch of the plan: its shade, where it runs now and where it ran in the
+    plan compared with. One shape for every plot, as in the window."""
     found = []
     for phase, color in zip(team.phases, colors, strict=True):
         key = phase.milestone.id if phase.milestone else ""
@@ -307,7 +343,7 @@ def _stretches(
                     labels[id(phase)],
                     was[1] if was else None,
                     span[1] if span else None,
-                    basis if then is not None else None,
+                    basis if then is not None else "",
                     today,
                 ),
             )
@@ -321,7 +357,7 @@ def _milestones_table(dated: _Dated, readers: Readers) -> Table:
     for phase in team.phases:
         key = phase.milestone.id if phase.milestone else None
         reached = tally(phase.steps, readers.days_for, readers.status_for)
-        share = reached.share(by_days=True)
+        share = reached.share()
         rows.append(
             Row(
                 (
