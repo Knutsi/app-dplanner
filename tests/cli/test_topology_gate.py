@@ -180,3 +180,6 @@ def test_the_skill_marks_gated_verbs(gated_cli):
     assert "reads the topology first" in line
     line = next(line for line in skill.splitlines() if "`dplanner describe set`" in line)
     assert "reads the topology first" not in line
+    # Moving cards about is presentation, not shape: never gated.
+    line = next(line for line in skill.splitlines() if "`dplanner layout shift`" in line)
+    assert "reads the topology first" not in line

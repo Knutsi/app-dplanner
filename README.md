@@ -123,6 +123,8 @@ dplanner order show search               # every step, numbered, in dependency o
 dplanner order show search --ready       # just what can be started right now
 dplanner schedule start search --date 2026-09-01
 dplanner schedule show search            # the same order, with running totals and dates
+dplanner layout show search --map        # the graph as text, one cell per step
+dplanner layout tidy search              # air between the cards, nothing re-sorted
 dplanner project export search > plan.json   # and `import` reads the same shape back
 ```
 
@@ -314,6 +316,8 @@ src/dplanner/
 │   │                        (clipboard.py is what a copied step is; clipboard_verbs.py the Edit menu's
 │   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone)
 │   │                        (its panel also hosts the modules' project-level cards)
+│   │                        (geometry.py measures the graph for `dplanner layout show`, `--map`
+│   │                        draws it, `layout shift` is Divide as a verb, `layout tidy` the sixth sort)
 │   ├── step_properties/     THE step detail panel — one in the window, following the context
 │   │                        (its first tab, details.py, stacks whatever registered a Details
 │   │                        block, name.py leading it; and `steps.details`: the same panel as
@@ -396,8 +400,9 @@ src/dplanner/
 └── theme/                 the Theme record and the house themes, the provider contract and the built-in
                            provider — every Omarchy default, generated from its colors.toml through one
                            mapping — the palette, a chrome-only stylesheet, the glyphs, tones.py (the
-                           semantic colours a node body and a kind button share) and cards.py, the card
-                           primitives the canvas and the coverage view both paint with
+                           semantic colours a node body and a kind button share), palettes.py (the
+                           colour maps a project's milestones are shaded along, Qt-free) and cards.py,
+                           the card primitives the canvas and the coverage view both paint with
 ```
 
 ## Where it came from

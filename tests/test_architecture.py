@@ -59,6 +59,7 @@ HEADLESS_FILES = (
     "placement.py",
     "named_layouts.py",
     "sorts.py",
+    "geometry.py",
     "regions.py",
     "marks.py",
     "look.py",
@@ -321,10 +322,17 @@ def test_the_theme_package_imports_without_qt() -> None:
     them — must therefore import without PySide6: the Qt half of the package is imported
     inside ``apply_theme``, the one function that needs it, and this asserts that it stayed
     there rather than trusting the layout.
+
+    ``palettes`` is here for a second reason: the milestone colour maps are read by a
+    module's Qt-free half (``time_estimates``' ``schedule.py``, ``cli.py`` and
+    ``report.py``), so one ``QColor`` in that file would put a graphics stack in every
+    ``dplanner`` invocation. ``theme/tones.py`` is deliberately *not* in this probe — it
+    holds ``QColor`` constants and only the window reads it.
     """
     probe = (
         "import sys;"
         "import dplanner.theme, dplanner.theme.providers, dplanner.theme.omarchy;"
+        "import dplanner.theme.palettes;"
         "from dplanner.modules.theme_omarchy import themes;"
         "from dplanner.modules.theme_system import themes;"
         "assert 'PySide6' not in sys.modules, sorted(m for m in sys.modules if 'Side' in m)"

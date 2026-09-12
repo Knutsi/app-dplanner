@@ -39,12 +39,14 @@ from dplanner.modules.project_editor.named_layouts import (
     save_layout_command,
     snapshot,
 )
+from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import MODULE_ID
 from dplanner.modules.project_editor.sorts import (
     layered_down,
     layered_flow,
     radial,
     spine,
+    tidy,
     timeline,
 )
 from dplanner.theme.icons import sort_icon
@@ -57,6 +59,7 @@ SORT_ACTION_IDS: tuple[str, ...] = (
     "canvas.sort_spine",
     "canvas.sort_timeline",
     "canvas.sort_radial",
+    "canvas.sort_tidy",
 )
 MANAGE_ACTION_IDS: tuple[str, ...] = (
     "canvas.layout_save",
@@ -153,6 +156,19 @@ class LayoutVerbs:
                 tip="Rings fanned out from the selected step — or the most connected one",
                 state=self._with_steps,
                 run=self._sort_radial,
+            ),
+            ActionSpec(
+                id="canvas.sort_tidy",
+                label="T&idy",
+                menu="Graph",
+                group="arrange",
+                submenu="Sort",
+                order=15,
+                icon=sort_icon,
+                tip="Keep every cluster and its order; resolve overlaps, even the spacing "
+                "to the pitch, close holes",
+                state=self._with_steps,
+                run=self._sort_tidy,
             ),
             ActionSpec(
                 id="canvas.layout_save",
@@ -298,6 +314,13 @@ class LayoutVerbs:
         chosen = context.selected_entities("step")
         center = chosen[0] if len(chosen) == 1 else None
         self._run_sort(project, "Radial Layout", radial(self.library, project, center=center))
+
+    def _sort_tidy(self, _context: Context) -> None:
+        project = self._project()
+        if project is None:
+            return
+        placed = tidy(project, positions(self.library, project))
+        self._run_sort(project, "Tidy Layout", placed)
 
     # -- run -----------------------------------------------------------------------------------
 

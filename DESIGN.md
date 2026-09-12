@@ -358,9 +358,19 @@ reasoning, including why the count of fields was the symptom rather than the dis
   `QColor`s that read on every theme (deliberate exception #2 — see the diff highlighter
   in `modules/sync/view.py`); never opaque theme-specific backgrounds.
 - Every other colour comes from a `Theme` field, through `theme.qss` or the palette.
+- **A milestone wears its place in the sequence, not one purple.** The project picks a
+  colour map (`theme/palettes.py`; *View ▸ Milestone Colours* and the Time tab's picker set
+  the same stored choice) and every milestone is dealt a shade of it by where it falls in
+  the roadmap. One hex, eight surfaces: the card on the canvas, its badge and tag medallion,
+  the order table's row and key badge, the progression board's card, the Tests tab's
+  grouping heading, the Docs tab's medallion, the coverage lane, the Milestone tab's swatch,
+  the calendar's band and the report — so a colour means *this milestone* wherever it is
+  seen. A shade never invents an alpha: `tones.toned(name, hex)` recolours the tone the
+  purple had, so a milestone's card is exactly as loud as it always was. Nothing else in the
+  application deals colour by position, and nothing else should.
 - **A selected item is lifted, not recoloured.** The accent goes on the border; the item's
-  own fill *gains* rather than being replaced, so whatever the colour was saying — a
-  milestone is purple, finished work is green — it still says while the item is picked. Where
+  own fill *gains* rather than being replaced, so whatever the colour was saying — this is
+  the second milestone, finished work is green — it still says while the item is picked. Where
   a surface can afford it (a canvas), a couple of pixels of rise over a soft shadow is what
   makes the difference unmistakable without a second colour. `renderers.paint_node` is the
   worked example.
@@ -412,7 +422,7 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
   colour at ~5 %, theme-independent like every painter's tone); a picked row wears a 2 px
   `$ACCENT` edge inside its left over the quiet `$BG_OVERLAY` ground — the edge the active
   pane wears on its top — and *gains* its ground rather than losing its tint, so a
-  milestone's row stays purple while picked (*Colour*). Nothing else marks it: the focus
+  milestone's row keeps its shade while picked (*Colour*). Nothing else marks it: the focus
   frame Qt draws round the *current cell* is stripped, because a dotted box lingering on
   the last cell clicked is a second mark, on one cell, for what the edge already says.
 - A row that is a **fixed point** among its neighbours (a milestone) goes bold, and is the
@@ -426,9 +436,9 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
   **The glyph sits on the first line**, centred on the name and never on the pair of
   lines: a glyph half way between a title and its key belongs to neither.
 - **A milestone's row wears its key as a badge** where the glyph would be: `F1`, `M2` as a
-  rounded chip in the milestone tone (`key_badge_icon`), the key being what a milestone is
-  known by across the graph. The second line then says what the row gathers, not the key
-  again.
+  rounded chip in that milestone's own shade (`key_badge_icon`), the key being what a
+  milestone is known by across the graph. The second line then says what the row gathers,
+  not the key again.
 - **A group heading is a spanned row nobody can pick**: bold secondary words at a plain
   row's height, no hover, no edge (`add_heading`). Nothing else separates the groups; the
   heading is the separator.

@@ -4,6 +4,12 @@ The same command objects the window pushes, so an apply here is undoable in a ta
 the same library. ``layout save`` upserts rather than refusing a collision: an agent
 re-running a script should converge, and the window's Save-As prompt covers the human case.
 
+``layout show``, ``layout shift`` and ``layout tidy`` are the agent's eyes and hands on the
+canvas: the geometry measured on every read and never stored (``geometry.py``), the Divide
+gesture as a verb building the very command the canvas pushes, and the sixth sort
+(``sorts.tidy``) applied like the other five. None reshapes the graph, so none reads the
+topology first.
+
 ``region add --steps`` is the agent's way in: it computes the rectangle that wraps those
 steps where they sit, so an agent can name an area of the graph without reasoning about
 canvas coordinates. ``--rect`` remains for placing one by hand.
@@ -15,9 +21,20 @@ from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg
-from dplanner.domain.commands import Command
-from dplanner.domain.model import Project, Step
+from dplanner.domain.commands import Command, CompositeCommand
+from dplanner.domain.model import Project, Step, StepId
 from dplanner.modules.project_editor.clipboard import PastePolicy, clip, paste, write_files
+from dplanner.modules.project_editor.geometry import (
+    Axis,
+    as_json,
+    divide_command,
+    lane_lines,
+    map_text,
+    measure,
+    pitches,
+    shift,
+)
+from dplanner.modules.project_editor.geometry import text as geometry_text
 from dplanner.modules.project_editor.named_layouts import (
     apply_layout_commands,
     delete_layout_command,
@@ -28,7 +45,7 @@ from dplanner.modules.project_editor.named_layouts import (
     snapshot,
 )
 from dplanner.modules.project_editor.placement import positions
-from dplanner.modules.project_editor.positions import node_size
+from dplanner.modules.project_editor.positions import GRID, node_size, snapped
 from dplanner.modules.project_editor.regions import (
     TITLE_STRIP_H,
     Region,
@@ -37,14 +54,25 @@ from dplanner.modules.project_editor.regions import (
     set_regions_command,
 )
 from dplanner.modules.project_editor.sorts import (
+    DEFAULT_AIR,
+    H_GAP,
+    H_PITCH,
+    V_GAP,
+    V_PITCH,
     layered_down,
     layered_flow,
     radial,
     spine,
+    tidy,
     timeline,
 )
 
 SORT_NAMES = ("flow", "down", "spine", "timeline", "radial")
+TIDY_LABEL = "Tidy Layout"
+MAP_LEGEND = (
+    f"one cell = one column pitch ({H_PITCH:g}) by one row pitch ({V_PITCH:g}); "
+    "cells are the lanes, a hole is an empty cell, a wide card spans cells"
+)
 
 # The air a wrapped region leaves around its steps; the top adds the title strip's height
 # so the title never sits on a node.
@@ -52,12 +80,20 @@ WRAP_PAD = 32.0
 WRAP_PAD_TOP = TITLE_STRIP_H + 24.0
 
 
+def _no_key(_step: Step) -> str:
+    return ""
+
+
 def commands(
     days_for: Callable[[Step], float | None],
     *,
     paste_policies: Sequence[PastePolicy] = (),
     file_modules: Sequence[str] = (),
+    key_of: Callable[[Step], str] = _no_key,
 ) -> list[CliCommand]:
+    """``key_of`` is the step's readable key (``S7``) — the letter is the composition
+    root's fact, handed over so the geometry report names steps the way every row does."""
+
     def _configure_duplicate(parser: ArgumentParser) -> None:
         parser.add_argument(
             "step", nargs="+", help="steps to copy: id, folder name, or part of a title"
@@ -128,6 +164,119 @@ def commands(
         )
         return 0
 
+    def _show(context: CliContext, args: Namespace) -> int:
+        project = find_project(context.library, args.project)
+        placed = positions(context.library, project)
+        geometry = measure(context.library, project, key_of=key_of, placed=placed)
+        regions = [_region_row(project, region, placed) for region in read_regions(project)]
+        data: dict[str, Any] = {"project": project.id, **as_json(geometry), "regions": regions}
+        if args.map:
+            picture = map_text(geometry)
+            data["map"] = picture
+            context.report(data, f"{picture}\n{MAP_LEGEND}" if picture else "no steps")
+            return 0
+        lines = [geometry_text(geometry)]
+        if regions:
+            lines.append("regions:")
+            lines += [f"  {_region_line(row)}" for row in regions]
+        else:
+            lines.append("regions: none")
+        context.report(data, "\n".join(lines))
+        return 0
+
+    def _shift(context: CliContext, args: Namespace) -> int:
+        """The Divide gesture from the terminal: the same side rule, the same command."""
+        project = find_project(context.library, args.project)
+        if not project.steps:
+            raise CliError("the project has no steps to arrange")
+        axis: Axis = "x" if args.x is not None else "y"
+        cut = args.x if axis == "x" else args.y
+        by = snapped(args.by, GRID)
+        if by == 0:
+            why = "" if args.by == 0 else f" — it snaps to the grid ({GRID:g}) as 0"
+            raise CliError(f"--by {args.by:g} moves nothing{why}")
+        placed = positions(context.library, project)
+        sizes = {step.id: node_size(step) for step in project.steps}
+        only: set[StepId] | None = None
+        if args.steps:
+            only = set()
+            for needle in args.steps:
+                step = find_step(context.library, needle, context.current)
+                if step.id not in placed:
+                    raise CliError(f"step {step.title!r} is not in this project")
+                only.add(step.id)
+        moved = shift(placed, sizes, axis, cut, by, only=only)
+        if not moved:
+            side = "past" if by > 0 else "before"
+            raise CliError(f"no step's centre lies {side} {axis}={cut:g}")
+        context.apply(divide_command(project, moved))
+        after = measure(context.library, project, key_of=key_of)
+        keys = {card.id: card.key or card.title for card in after.cards}
+        direction = ("right" if by > 0 else "left") if axis == "x" else ("down" if by > 0 else "up")
+        report = as_json(after)
+        data = {
+            "project": project.id,
+            "axis": axis,
+            "cut": cut,
+            "by": by,
+            "moved": [
+                {"id": step_id, "key": keys[step_id], "x": x, "y": y}
+                for step_id, (x, y) in moved.items()
+            ],
+            "columns": report["columns"],
+            "rows": report["rows"],
+            "overlaps": report["overlaps"],
+        }
+        count = len(moved)
+        named = " ".join(keys[step_id] for step_id in moved)
+        lines = [
+            f"Shifted {count} step{'s' if count != 1 else ''} {direction} by {abs(by):g}: {named}",
+            *lane_lines(after, axis),
+        ]
+        context.report(data, "\n".join(lines))
+        return 0
+
+    def _tidy(context: CliContext, args: Namespace) -> int:
+        project = find_project(context.library, args.project)
+        if not project.steps:
+            raise CliError("the project has no steps to arrange")
+        if args.gap < 1:
+            raise CliError("--gap needs at least 1 pitch")
+        before = positions(context.library, project)
+        placed = tidy(project, before, air=args.gap)
+        moved = sum(1 for step_id, seat in placed.items() if seat != before[step_id])
+        context.apply(CompositeCommand(TIDY_LABEL, position_commands(project, placed, TIDY_LABEL)))
+        after = measure(context.library, project, key_of=key_of)
+        widest = max(
+            [
+                *(pitches(lane, H_GAP, H_PITCH) or 0.0 for lane in after.columns),
+                *(pitches(lane, V_GAP, V_PITCH) or 0.0 for lane in after.rows),
+                1.0,
+            ]
+        )
+        report = as_json(after)
+        data = {
+            "project": project.id,
+            "moved": moved,
+            "gap": args.gap,
+            "columns": report["columns"],
+            "rows": report["rows"],
+            "overlaps": report["overlaps"],
+        }
+        overlaps = len(after.overlaps)
+        context.report(
+            data,
+            f"Tidy: {moved} of {len(placed)} steps moved; {len(after.columns)} columns x "
+            f"{len(after.rows)} rows; "
+            + (
+                "no overlaps"
+                if not overlaps
+                else f"{overlaps} overlap{'s' if overlaps != 1 else ''}"
+            )
+            + f"; widest gap {widest:.1f} pitch{'' if abs(widest - 1) < 0.05 else 'es'}",
+        )
+        return 0
+
     return [
         CliCommand(
             path=("layout", "sort"),
@@ -137,6 +286,42 @@ def commands(
             examples=(
                 "dplanner layout sort discovery spine",
                 'dplanner layout sort discovery radial --center "read the spec"',
+            ),
+        ),
+        CliCommand(
+            path=("layout", "show"),
+            summary="Where every step sits and how big its card is: the bounds, the waves, "
+            "every overlap, and the gaps between columns and rows in pitches; --map draws it.",
+            configure=_show_args,
+            run=_show,
+            examples=(
+                "dplanner layout show discovery",
+                "dplanner layout show discovery --map",
+                "dplanner layout show discovery --json",
+            ),
+        ),
+        CliCommand(
+            path=("layout", "shift"),
+            summary="Push one side of the graph along an axis — the canvas's Divide: every "
+            "step whose centre lies past the cut moves by the distance; negative brings "
+            "the near side back.",
+            configure=_shift_args,
+            run=_shift,
+            examples=(
+                "dplanner layout shift discovery --x 640 --by 300",
+                "dplanner layout shift discovery --y 400 --by -120",
+                "dplanner layout shift discovery --x 0 --by 300 --steps S7 S8",
+            ),
+        ),
+        CliCommand(
+            path=("layout", "tidy"),
+            summary="Keep every cluster and its order; resolve overlaps, even the spacing to "
+            "the sort pitches, close holes wider than --gap, snap to the grid.",
+            configure=_tidy_args,
+            run=_tidy,
+            examples=(
+                "dplanner layout tidy discovery",
+                "dplanner layout tidy discovery --gap 1",
             ),
         ),
         CliCommand(
@@ -230,6 +415,57 @@ def commands(
 def _project_and_name(parser: ArgumentParser) -> None:
     project_arg(parser)
     parser.add_argument("name", help="the layout's name")
+
+
+def _show_args(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument(
+        "--map",
+        action="store_true",
+        help="draw the graph as text: one cell per column and row pitch, keys in the cells",
+    )
+
+
+def _shift_args(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    where = parser.add_mutually_exclusive_group(required=True)
+    where.add_argument(
+        "--x",
+        type=float,
+        metavar="CUT",
+        help="an upright cut at this x: steps whose centre lies right of it move",
+    )
+    where.add_argument(
+        "--y",
+        type=float,
+        metavar="CUT",
+        help="a level cut at this y: steps whose centre lies below it move",
+    )
+    parser.add_argument(
+        "--by",
+        type=float,
+        required=True,
+        metavar="DISTANCE",
+        help="how far, in canvas units, snapped to the grid; negative moves the near side back",
+    )
+    parser.add_argument(
+        "--steps",
+        nargs="+",
+        metavar="STEP",
+        help="move only these steps (the cut then only names the axis)",
+    )
+
+
+def _tidy_args(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument(
+        "--gap",
+        type=int,
+        default=DEFAULT_AIR,
+        metavar="PITCHES",
+        help="the widest gap kept between neighbouring columns or rows, in pitches "
+        f"(default {DEFAULT_AIR}); a wider hole closes to one",
+    )
 
 
 def _rename_args(parser: ArgumentParser) -> None:

@@ -1286,6 +1286,44 @@ whole list; a body drag also carries the steps whose centres lie inside, as one 
 undo restores frame and steps together. A named layout snapshots region rects along with
 step positions, and applying it moves regions it still finds — never creates or deletes one.
 
+**The canvas's spatial gestures exist as verbs, and geometry is derived on every read.**
+An agent plans through the CLI and cannot see the canvas, so the picture had to become
+words: `dplanner layout show` measures the graph — the stored positions with the ambient
+layout filling the gaps, the card sizes, the waves, the box round everything, every
+overlapping pair and the gap between neighbouring columns and rows in pitches — and
+`--map` draws it as text, one cell per column and row pitch. Nothing it prints is stored:
+it is `geometry.measure` over the same `placement.positions` the canvas syncs from, so a
+second copy of where things are cannot disagree with the first. Its two hands are of the
+same kind as a sort. `layout shift` is the Divide gesture as a function
+(`geometry.shift`): the side rule is the body's centre against the cut, a positive
+distance pushes the far side and a negative one brings the near side back, the distance
+snaps to the grid as the drag does with Snap to Grid on, and the result is
+`geometry.divide_command` — the very `Divide Graph` composite `_on_graph_divided` pushes,
+so the window and the terminal cannot build two commands for one gesture. `layout tidy`
+is the sixth sort (`sorts.tidy`; `canvas.sort_tidy` under Graph ▸ Sort): somebody asked
+for that arrangement, so it persists through the undo stack like the five before it.
+
+**Tidy is a sort that reads the picture, not the graph, and every rule in it is a simpler
+one that failed.** It keeps every cluster and the left-to-right, top-to-bottom order of
+what is there, resolves overlaps, evens the spacing to the pitches, closes any hole wider
+than a threshold to one gap, snaps to the grid and starts at the origin — and it must be
+idempotent, or an agent's verify step would read a graph that changes under a second
+tidy. The cards are read into *lanes* across each axis, and the lanes cluster on edges,
+not centres (left-aligned cards of different widths have different centres, and a centre
+rule split such a column on the second run); the join is inclusive of half a pitch (the
+flow sort centres a column by whole half-pitches, and a strict rule spread every flow
+layout whose columns differed by an odd count into twice the rows); two cards in one
+column and one row are given a sub-row of their own rather than a stack inside the cell
+(a stack beside a taller card in the next column was not a fixed point); and a hole is
+measured against the reach of everything before it and *rounded* to whole pitches (a
+floor let eight points of snap noise collapse a kept empty row). The same lanes are what
+`layout show` reports gaps by and what the map is drawn on, so the number the report
+prints is the number a tidy acts on. One number to know: the column pitch, 300, is not a
+multiple of the grid, 8, so a tidy of a flow layout moves alternate columns by four
+points and nothing else — the fixed point of a sorted graph is the sorted graph snapped.
+Regions are neither carried by a tidy nor drawn on the map: they are annotation on the
+way out, and a rule written for them now would be one more thing to retire.
+
 ### The canvas is a plane, and why that is one decision rather than three
 
 `GraphScene` sets its scene rect once, in its constructor: a square centred on the origin,
@@ -3133,6 +3171,33 @@ decisions worth writing down:
   the report's own blue (`WHOLE_COLOR`), as it always was. The calendar and the list
   share the hex through `schedule.py` and never store a `QColor`, for the
   palette-snapshot reason in *The palette a painter is handed is a snapshot*.
+- **And the map is the project's, which is what let the shade leave this tab.** For a
+  while the shades lived only here: the calendar said *this is milestone 2 of 4* and the
+  graph beside it said only *this is a milestone*, in the one violet every milestone wore.
+  Joining them needed an answer to "what colour is this milestone" that any surface could
+  ask, so `milestone_colors(library, project, is_milestone)` is the deal — `placed`'s
+  sequence, an override over a dealt shade — and `phase_colors` is a lookup into it rather
+  than a second deal beside it. The maps moved to `theme/palettes.py`, Qt-free and a leaf,
+  because the appearance module lists them and modules never import each other; the
+  composition root walks each project once and hands every consumer a typed callback, the
+  `_milestone_stats` shape. `theme/tones.py`'s `toned(name, hex)` recolours a tone at its
+  own alphas, so ten painters never re-derive one and a recoloured card is exactly as loud
+  as the purple it replaced.
+
+  **The choice stayed the project's rather than becoming the user's, and that decided the
+  menu.** A per-user map was the obvious reading of "pick it in the theme menu", and it is
+  wrong twice: Save publishes `reports/` into the plan repository, so two developers would
+  churn the committed report's colours between them; and the Time tab's picker names the
+  project's map, so a window painting a user's override would have a control that lied
+  about what it was showing. So *View ▸ Milestone Colours* writes the same stored entry
+  `dplanner schedule palette` and that picker write, through the same undoable command —
+  one choice, three ways in, the *Two surfaces, one vocabulary* rule applied to a third.
+  It sits **beside** Theme rather than inside it, because it is not a theme and an entry
+  nested under one would read as a theme; and being a project fact in a window menu, it is
+  greyed with its reason when no project is open rather than hidden. The tick follows a
+  map changed from a terminal, from the Time tab or by an undo, because the module
+  subscribes to `module_data_changed` for that one id — a state callback must never read a
+  file (*The context is announced once per turn*).
 - **The page is split at a seam, and the calendar takes the width.** What you set on the
   left — focus, the staffing picker — and what it answers on the right — the colour map
   and the month arrows on one strip, the calendar, then the milestones. The seam starts
