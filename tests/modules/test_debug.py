@@ -131,7 +131,7 @@ def example(services, monkeypatch):
 def test_the_menu_opens_the_design_example_modal_on_the_frame(example):
     from PySide6.QtWidgets import QPushButton
 
-    assert example.title_label.text() == "Design Example" == example.windowTitle()
+    assert example.windowTitle() == "Design Example"
     assert not example.footer.isHidden()
     primary = example.findChild(QPushButton, "PrimaryButton")
     assert primary is not None and primary.text() == "Apply" and primary.isDefault()

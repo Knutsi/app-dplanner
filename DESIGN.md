@@ -48,8 +48,8 @@ flows, and what each surface on the way must make unmistakable:
 - **New step → details → run agent.** *New* drops a card and opens Step Details on it with
   the name selected, so typing is naming; the aspect bar says what the step is. *Run
   Agent* is a plain button on the Agent tab. When the graph says the step's prerequisites
-  are not done, a confirmation names them — the count in its title (*Run 3 Agents*), the
-  step in its lead, the waiting steps in its body — with *Run Anyway* as the primary. The
+  are not done, a confirmation names them — the count in its window title (*Run 3 Agents*),
+  the step and the steps it waits on in its body — with *Run Anyway* as the primary. The
   status bar records the launch; the card's spine goes busy. Never ambiguous: **which
   steps** the shells are about, and **whether a shell opened**.
 - **Import a spec → cite → plan.** The document lands in the tree and its strip says
@@ -75,7 +75,7 @@ Five principles fall out of them, and every rule below is one of these applied:
 
 1. **The primary action is the flow's next step**, and it moves as the flow does — *Connect*
    until connected, *Refresh* while there is something to take in, then nothing.
-2. **A confirmation names what it is about**: the thing in its lead, the count in its title.
+2. **A confirmation names what it is about**: the thing in the question it asks.
 3. **A state is said where the person is looking** — the strip, the footer's status slot,
    the field it concerns — never in a modal about a background fact.
 4. **A refusal carries its remedy in words**: a greyed verb says why, a refused primary says
@@ -279,15 +279,16 @@ would not; the Covers tab's New/Cumulative switch is the worked example.
 
 Every dialog is a `DialogFrame` (`framework/dialog.py`), and its anatomy is the frame's:
 
-- **Top to bottom: the title, a lead, the body, the footer.** The title is printed in the
-  body — two points up, normal weight, the card-title look — because a window manager may
-  draw no title bar at all (the developer's does not), and where it does, the title is the
-  platform's type at the platform's size; the window title is set too, for the switcher.
-  The lead is one secondary line saying what *this* dialog is about, with the thing's name
-  in it (*"Build the modal" waits on 2 steps not done yet*) — never a standing definition,
-  which is *Words*' rule. Then the body, then **the footer as a band**, edge to edge below
-  the page: the elevated ground under a faint hairline, its buttons 12 px inside it. It is
-  the one place a dialog has a second ground, so the eye finds the way out without reading.
+- **Top to bottom: the body, then the footer. The frame prints no heading of its own.**
+  A title inside a dialog repeats what the title bar already says and costs a line and a
+  half at the top of a surface that is small on purpose; a lead under it costs another. A
+  dialog's content is what the person opened it for, and it starts at the top. The title
+  names the **window**, for the switcher, and nothing is drawn from it. What a dialog is
+  about is said by its content — the question a confirmation asks, the caption over a
+  prompt's field — never by a heading over it. Then **the footer as a band**, edge to edge
+  below the page: the elevated ground under a faint hairline, its buttons 12 px inside it.
+  It is the one place a dialog has a second ground, so the eye finds the way out without
+  reading.
 - **Footer slots, left to right: destructive · status · stretch · secondaries · Cancel ·
   primary.** The destructive verb is a different exit that costs something (*Quit Without
   Committing*, *Delete*), never an answer to the question; the far left is as far from the
@@ -310,7 +311,8 @@ Every dialog is a `DialogFrame` (`framework/dialog.py`), and its anatomy is the 
 - **A confirmation is a fit dialog on the frame, never a `QMessageBox`**, which prints a
   platform icon and arranges its sentences and buttons the platform's way — a second
   design for exactly the moments a person must read carefully. `confirm()` builds one: the
-  question as the lead, the verb a *quiet* button (it discards), Cancel the default.
+  question as the body (it is the content, not a heading over it), the verb a *quiet*
+  button (it discards), Cancel the default.
 - **A one-line prompt is a `LinePrompt`, never a `QInputDialog`.** It is the commonest
   dialog in the application, so it must be the most designed: a caption over the field, a
   note under it for what is wrong, a primary named for the verb (*Create*), the field
@@ -586,7 +588,7 @@ from the code or a screenshot, and Debug ▸ Design Example is what *yes* looks 
 1. Is every margin, gap and padding a token, never a literal?
 2. Is a dialog a `DialogFrame` and a page a control strip over its content — not a
    hand-rolled layout?
-3. Does the dialog print its title in its body, with a lead that names the thing?
+3. Does the dialog start at its content — no title and no lead printed over it?
 4. Is there exactly one accent primary, and is it the flow's next step?
 5. Is every confirmation `confirm()` and every one-line prompt a `LinePrompt` — no
    `QMessageBox`, no `QInputDialog`?

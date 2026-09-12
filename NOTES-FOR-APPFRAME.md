@@ -2482,6 +2482,10 @@ on the first field or the default button. Three sizes: fit (a 420 px floor), fra
 (clamped to `SCREEN_SHARE`), editor. `LinePrompt` is one captioned field and a verb, refused
 while blank or while `validate` objects, with a class method `ask`.
 
+**Superseded by §30 (S6):** the title and the lead were taken out of the body. A
+heading inside a dialog repeats the title bar and pushes the content down; `title` now
+names the window only, and what a dialog is about is said by its content.
+
 **Why.** Twenty-four dialogs, two button strategies, margins of 20/16/12/8/none, four that
 set focus, a footer whose default was *Clear*. The frame names its parts so the stylesheet
 reaches every dialog through two constant names — the enumerated `#X QPushButton` lists
@@ -2779,20 +2783,38 @@ the one the panel built. The focus block is untouched.
 
 **Upstream?** Yes; it is a bug in the frame, not a divergence.
 
+### `framework/dialog.py` — no title and no lead in the body
+
+**What.** `DialogFrame` no longer prints a heading: `title_label` and `lead_label` are gone
+with the `lead` parameter, `set_title` sets the window title alone, and `confirm()` puts its
+question in the body. `LinePrompt` loses its `lead` too — its caption already says what it
+wants. Supersedes §28's anatomy.
+
+**Why.** Seen on a real surface rather than on the example, the two lines read as chrome: a
+title repeating the title bar, and a lead repeating what the content below already showed,
+between them pushing a small dialog's content a line and a half down. A dialog is opened for
+its content, and its content is what should be at the top. A confirmation's question is not
+a heading over the dialog — it *is* the dialog.
+
+**Upstream?** Yes. It is the sort of rule that only a second surface disproves, which is
+what design passes are for.
+
 ### `framework/aspect_bar.py` — a `refreshed` signal, and no `visible`
 
-**What.** The bar emits `refreshed` at the end of `refresh()`, and its state triple is
-`(enabled, checked)` rather than `(visible, enabled, checked)`.
+**What.** Its state triple is `(enabled, checked)` rather than `(visible, enabled,
+checked)`. (A `refreshed` signal was added here too, for the dialog lead that repeated the
+bar's answer; the lead went in the same pass and the signal with it — noted because the
+*reason* it was needed outlives it.)
 
 **Why.** Two things a host learns only by building a second reader of the bar's answer.
-(1) The details dialog's lead repeats what the bar derived, in words; a host that listened
-to the *model* for it showed the lead one gesture behind, because applying a template ends
-with the bar's own `refresh()` — after the last write anybody heard. The bar is the thing
-that knows, so the bar says so. (2) `state().visible` was dead and also unhonourable: a
+(1) A host that repeats a derived control's answer cannot get it by listening to the
+*model*: applying a template ends with the bar's own `refresh()`, after the last write
+anybody heard, so a model listener renders one gesture behind. The derived thing must
+announce. (2) `state().visible` was dead and also unhonourable: a
 `Toolbar` re-shows whatever fits on every reflow, so a hidden verb would be resurrected by
 the next resize. *Hidden means absent; disabled means not now* already covers the case, and
 an aspect a build does not ship never reaches the registry at all.
 
-**Upstream?** The signal, yes — a derived control that another surface repeats should
-announce. The `visible` removal is specific to a strip that owns widget visibility, and is
-worth saying out loud in `Toolbar`'s docstring upstream.
+**Upstream?** The announcement rule, as a paragraph rather than as code. The `visible`
+removal is specific to a strip that owns widget visibility, and is worth saying out loud in
+`Toolbar`'s docstring upstream.

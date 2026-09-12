@@ -216,12 +216,7 @@ class DesignExampleDialog(DialogFrame):
     """The modal: a form, a table and every signalling state on one frame."""
 
     def __init__(self, debounce: DebounceService, parent: QWidget | None = None) -> None:
-        super().__init__(
-            "Design Example",
-            parent,
-            lead="Every rule DESIGN.md states, on one modal — sample data, nothing is saved.",
-            size=(760, 760),
-        )
+        super().__init__("Design Example", parent, size=(760, 760))
         body = self.body_layout
 
         form = QVBoxLayout()

@@ -591,8 +591,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # below.
     step_properties = StepPropertiesModule(
         StepPropertiesDeps(
-            # The key reads the step; how it is spelled stays here.
-            key_for=lambda step_id: _step_key(library.step(step_id)),
             # The templates the bar's dropdown offers: what a step *amounts to*, as the set
             # of Type toggles that are on — picking one moves every toggle to match, and a
             # step carrying exactly that set wears its name. Step is the catch-all: any

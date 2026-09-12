@@ -6,7 +6,7 @@ import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor, QGuiApplication
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QDialog, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from dplanner.framework.dialog import FIT_WIDTH, DialogFrame, LinePrompt
 from dplanner.theme import apply_theme
@@ -16,22 +16,19 @@ from dplanner.theme.tokens import SCREEN_SHARE
 
 @pytest.fixture
 def frame(app):
-    dialog = DialogFrame("Run Agent", lead='"Build the modal" waits on 2 steps not done yet')
+    dialog = DialogFrame("Run Agent")
     yield dialog
     dialog.deleteLater()
 
 
-def test_the_title_is_printed_in_the_body_and_mirrors_the_window_title(frame):
-    assert frame.title_label.text() == "Run Agent" == frame.windowTitle()
-    assert frame.title_label.font().pointSizeF() == frame.font().pointSizeF() + 2
+def test_the_title_names_the_window_and_nothing_is_printed_in_the_body(frame):
+    """The frame prints no heading: a title inside a dialog repeats its title bar and
+    pushes the content down. What the dialog is about is what the body shows."""
+    assert frame.windowTitle() == "Run Agent"
     frame.set_title("Run 3 Agents")
-    assert frame.title_label.text() == "Run 3 Agents" == frame.windowTitle()
-
-
-def test_the_lead_hides_when_there_is_nothing_to_say(frame):
-    assert not frame.lead_label.isHidden()
-    frame.set_lead("")
-    assert frame.lead_label.isHidden()
+    assert frame.windowTitle() == "Run 3 Agents"
+    assert frame.findChild(QLabel, "DialogTitle") is None
+    assert frame.findChild(QLabel, "DialogLead") is None
 
 
 def test_the_footer_is_hidden_until_a_button_arrives(frame):

@@ -18,7 +18,7 @@ The name is not here: it is the first block of the Details tab, registered by th
 like any other block, so the control stack reads top-down from the one field every step has.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QStackedLayout, QTabBar, QVBoxLayout, QWidget
@@ -57,8 +57,6 @@ class StepPanel(QWidget):
         sections: Sequence[InspectorSection] = (),
         templates: Sequence[AspectTemplate] = (),
         theme: ThemeService | None = None,
-        heading: Callable[[str], None] | None = None,
-        key_for: Callable[[StepId], str] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -69,11 +67,6 @@ class StepPanel(QWidget):
         self._undo = undo
         self._step_id: StepId | None = None
         self._sections = list(sections)
-        # Who wants to be told what the panel is showing, in words — the details dialog,
-        # for its lead. The anchored panel passes nothing: its frame prints a header
-        # already, and DESIGN.md's *Panels* forbids a second caption under it.
-        self._heading = heading
-        self._key_for = key_for
 
         self.bar = AspectBar(actions, self._own_context, templates, undo=undo, parent=self)
 
@@ -122,7 +115,6 @@ class StepPanel(QWidget):
             # from here too would put the theme's grey beside the palette's in one row.
 
         self._unsubscribes = [
-            self.bar.refreshed.connect(self._say_heading),
             library.structure_changed.connect(self._on_structure),
             # A tab follows its aspect: toggles arrive as module data, and the agent
             # aspect is also implied by its prose, so both writes re-ask shown_for — and
@@ -154,13 +146,13 @@ class StepPanel(QWidget):
         """
         if step_id is None or not self._product.has(step_id):
             self._step_id = None
-            self._restate()
+            self.bar.refresh()
             self._show_in_extensions(None)
             return
         if step_id == self._step_id:
             return
         self._step_id = step_id
-        self._restate()
+        self.bar.refresh()
         self._refresh_tab_visibility()
         self._show_in_extensions(step_id)
 
@@ -202,34 +194,15 @@ class StepPanel(QWidget):
         for extension in self._extensions:
             extension.show_target(step_id)
 
-    def _restate(self) -> None:
-        """Re-read the bar. Saying what it now shows is the bar's own announcement."""
-        self.bar.refresh()
-
-    def _say_heading(self) -> None:
-        """What the panel is showing, in words, for whoever asked to be told.
-
-        Driven by the bar rather than by the model: applying a template ends with the bar
-        refreshing itself, which is after the last write a model listener would hear.
-        """
-        if self._heading is None:
-            return
-        if self._step_id is None:
-            self._heading("")
-            return
-        key = self._key_for(self._step_id) if self._key_for is not None else ""
-        template = self.bar.selected_label()
-        self._heading(" · ".join(part for part in (key, template) if part))
-
     def _on_module_data(self, node_id: NodeId, _module_id: str, _origin: object) -> None:
         if node_id == self._step_id:
             self._refresh_tab_visibility()
-            self._restate()
+            self.bar.refresh()
 
     def _on_text(self, edit: TextEdit, _origin: object) -> None:
         if edit.node_id == self._step_id:
             self._refresh_tab_visibility()
-            self._restate()
+            self.bar.refresh()
 
     def _refresh_tab_visibility(self) -> None:
         """Show each tab only where its section has something to say about this step.

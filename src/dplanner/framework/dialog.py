@@ -1,12 +1,16 @@
-"""The dialog frame: title, lead, body, footer — every dialog's anatomy, written once.
+"""The dialog frame: body and footer — every dialog's anatomy, written once.
 
-DESIGN.md's *Dialogs* is the standard this implements. A :class:`DialogFrame` prints its
-title in its body (a window manager may draw no title bar, and the user's does not), a lead
-line saying what this dialog is about, the body a subclass fills, and a footer whose slots
-run destructive · status · stretch · secondaries · primary. Enter runs the primary, Escape
-dismisses, a dismiss is the default only while there is no primary, and the first Tab out
-of the body lands on the primary. A dialog whose every edit is live carries no button and
-therefore no footer.
+DESIGN.md's *Dialogs* is the standard this implements. A :class:`DialogFrame` is the body a
+subclass fills and a footer whose slots run destructive · status · stretch · secondaries ·
+primary. Enter runs the primary, Escape dismisses, a dismiss is the default only while there
+is no primary, and the first Tab out of the body lands on the primary. A dialog whose every
+edit is live carries no button and therefore no footer.
+
+**It prints no title and no lead of its own.** ``title`` names the window and nothing else.
+A heading inside a dialog repeats what the title bar already says and pushes the content a
+line and a half down; a dialog is small and its content is what the person came for. A
+question a confirmation asks is *content* and belongs in the body, which is where
+``confirm()`` puts it.
 
 The frame names its *parts* — ``#DialogBody``, ``#DialogFooter`` — and leaves its own
 object name to the subclass, so the stylesheet reaches every dialog through two constant
@@ -23,7 +27,6 @@ from PySide6.QtGui import QGuiApplication, QKeyEvent, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QPushButton,
     QVBoxLayout,
@@ -32,7 +35,6 @@ from PySide6.QtWidgets import (
 
 from dplanner.framework.signalling import StatusLine
 from dplanner.framework.widgets import caption
-from dplanner.theme.cards import title_font
 from dplanner.theme.tokens import CAPTION_GAP, DIALOG_MARGIN, FIELD_GAP, SCREEN_SHARE, SECTION_GAP
 
 # A fit-to-content dialog is never narrower than this: a one-line prompt or a confirmation
@@ -41,7 +43,7 @@ FIT_WIDTH = 420
 
 
 class DialogFrame(QDialog):
-    """Title, lead, body and footer; see the module docstring for the rules it keeps.
+    """Body and footer; see the module docstring for the rules it keeps.
 
     ``size=(w, h)`` is a *framed* dialog: that preferred size, clamped to ``SCREEN_SHARE``
     of the screen. ``editor=True`` claims that share outright — a place to work. Neither
@@ -53,7 +55,6 @@ class DialogFrame(QDialog):
         title: str,
         parent: QWidget | None = None,
         *,
-        lead: str = "",
         size: tuple[int, int] | None = None,
         editor: bool = False,
     ) -> None:
@@ -68,17 +69,6 @@ class DialogFrame(QDialog):
         column = QVBoxLayout(self.page)
         column.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
         column.setSpacing(SECTION_GAP)
-
-        self.title_label = QLabel(self)
-        self.title_label.setObjectName("DialogTitle")
-        self.title_label.setFont(title_font(self.font()))
-        self.title_label.setWordWrap(True)
-        column.addWidget(self.title_label)
-
-        self.lead_label = QLabel(self)
-        self.lead_label.setObjectName("DialogLead")
-        self.lead_label.setWordWrap(True)
-        column.addWidget(self.lead_label)
 
         self.body = QWidget(self)
         self.body.setObjectName("DialogBody")
@@ -107,21 +97,14 @@ class DialogFrame(QDialog):
         self._dismiss: QPushButton | None = None
 
         self.set_title(title)
-        self.set_lead(lead)
         self._size(size, editor)
 
     # -- what it says ------------------------------------------------------------------
 
     def set_title(self, text: str) -> None:
-        """The title in the body, mirrored into the window title for the switcher."""
-        self.title_label.setText(text)
+        """What the window and the task switcher call this dialog. Nothing is drawn in the
+        body: the frame prints no heading of its own."""
         self.setWindowTitle(text)
-
-    def set_lead(self, text: str) -> None:
-        """One line under the title saying what this dialog is about — the thing's name in
-        it, never a standing definition (DESIGN.md's *Words*). Hidden when empty."""
-        self.lead_label.setText(text)
-        self.lead_label.setVisible(bool(text))
 
     # -- the footer --------------------------------------------------------------------
 
@@ -273,11 +256,10 @@ class LinePrompt(DialogFrame):
         parent: QWidget | None = None,
         *,
         text: str = "",
-        lead: str = "",
         placeholder: str = "",
         validate: Callable[[str], str | None] | None = None,
     ) -> None:
-        super().__init__(title, parent, lead=lead)
+        super().__init__(title, parent)
         self._validate = validate
         self.body_layout.setSpacing(CAPTION_GAP)
         self.body_layout.addWidget(caption(caption_text, self.body))
@@ -315,7 +297,6 @@ class LinePrompt(DialogFrame):
         verb: str,
         *,
         text: str = "",
-        lead: str = "",
         placeholder: str = "",
         validate: Callable[[str], str | None] | None = None,
     ) -> str | None:
@@ -326,7 +307,6 @@ class LinePrompt(DialogFrame):
             verb,
             parent,
             text=text,
-            lead=lead,
             placeholder=placeholder,
             validate=validate,
         )

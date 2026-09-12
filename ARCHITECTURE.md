@@ -2245,16 +2245,18 @@ undoable command, an aspect a build does not ship has no button, and adding an a
 still one registration in one package.
 
 What the bar adds to the submenu is a *reading*. Its **left** is every toggle as a glyph.
-Its **right** is one dropdown wearing the name and glyph of the template the step amounts
-to: a name and the set of toggles that are on — *Milestone* is milestone and description,
-*Agent* is agent, description and estimate, *Step* is the estimate and description every
-step is born with. One control rather than five, because only one of them is ever true at a
-time: five worded buttons said the same thing five times and four of them were always
-wrong. The selected template's **glyph** wears its body tone, so a feature's face and a
-feature node are one identity (which is why the tones moved to `theme/tones.py`, where both
-can reach them) — the glyph and not the ground, because a template is *always* selected and
-a wash that is permanently on says nothing, which is also what let ten per-button
-stylesheets go. Picking a template
+Its **right** is one dropdown named *Template*, offering the named combinations: *Milestone*
+is milestone and description, *Agent* is agent, description and estimate, *Step* is the
+estimate and description every step is born with. One control rather than five, because only
+one of them is ever true at a time: five worded buttons said the same thing five times and
+four of them were always wrong. The face is named for what it **offers**, not for what is
+on — which one the step amounts to is the ticked entry — so the bar makes one claim about
+the step (the lit toggles) and offers one way to change it, rather than saying the same
+thing twice in two vocabularies. Each entry's **glyph** wears its body tone, so a feature's
+entry and a feature node are one identity (which is why the tones moved to `theme/tones.py`,
+where both can reach them) — the glyph and not a ground, because a template is *always*
+selected and a wash that is permanently on says nothing, which is also what let ten
+per-button stylesheets go. Picking a template
 runs whichever toggles differ, on for its set and off for everything else, inside one
 `UndoService.gesture`, so *Make Milestone* is one Ctrl+Z however many aspects it moved and
 each is still the owning module's own command — the gesture is the framework's answer to
@@ -2281,9 +2283,10 @@ this step carry*, and a row that folds stops answering. The panel cannot be narr
 And the dropdown sits **beside** the strip rather than on it. A widget added to a `Toolbar`
 hides when there is no room for it, so the one control naming what the step *is* would be
 the first casualty of a narrow dock — the canvas's layout picker and the *Updating…*
-indicator sit outside their strips for exactly that reason. Its width is fixed to its
-widest name, because a face that reports what is on and changes size as it does re-folds
-the strip beside it. That inverts what the two `QToolBar`s used to do, deliberately: the
+indicator sit outside their strips for exactly that reason. It is also why the face is
+named once and left alone: a face whose words changed with the step would re-fold the strip
+beside it every time a toggle moved. That inverts what the two `QToolBar`s used to do,
+deliberately: the
 old left bar took the slack so the facets kept their glyphs and the kinds folded first.
 The kinds are the summary and the facets are the detail, and it is the summary a narrow
 dock should keep.

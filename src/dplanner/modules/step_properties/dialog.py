@@ -7,17 +7,15 @@ every edit inside it is already applied and already on the undo stack, so there 
 to confirm and nothing to cancel, and Escape (or the title bar) simply closes it. The frame
 shows no footer until a button arrives, which is this dialog exactly.
 
-What the frame adds is the title it never had. The body says *Step details*; the lead names
-the step — its key and what it is, which the panel restates on every change, so a toggle
-moves the lead with it. The **window** title stays the step's own name: a switcher full of
-identical *Step details* entries names nothing, and the panel's own Name field is where
-that text is edited.
+The frame prints no heading, so what the dialog shows is the panel and nothing above it —
+the same surface the dock anchors, briefly modal. Its **window** title is the step's own
+name, which is what a task switcher needs to tell two of these apart.
 
 It opens with the Name field focused and its text selected: a step just born by New or a
 double-click on empty canvas arrives here titled "New step", and typing replaces that.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 from PySide6.QtWidgets import QLineEdit, QWidget
 
@@ -48,7 +46,6 @@ class StepDetailsDialog(DialogFrame):
         templates: Sequence[AspectTemplate],
         theme: ThemeService,
         step_id: StepId,
-        key_for: Callable[[StepId], str] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(TITLE, parent, size=(DIALOG_WIDTH, DIALOG_HEIGHT))
@@ -62,8 +59,6 @@ class StepDetailsDialog(DialogFrame):
             sections=sections,
             templates=templates,
             theme=theme,
-            heading=self.set_lead,
-            key_for=key_for,
             parent=self,
         )
         self.panel.show_step(step_id)
@@ -86,12 +81,10 @@ class StepDetailsDialog(DialogFrame):
         self.panel.dispose()
 
     def _retitle(self) -> None:
-        """The window title is the step's, not the frame's.
+        """The window title is the step's own name, and follows a rename.
 
-        ``set_title`` mirrors the body's title into the window title, which is right for a
-        dialog named after what it does. This one is opened about a *thing*, and a task
-        switcher showing four identical *Step details* entries says nothing about which
-        step each one holds.
+        A task switcher showing four identical *Step details* entries says nothing about
+        which step each one holds.
         """
         title = self._library.step(self._step_id).title if self._library.has(self._step_id) else ""
         self.setWindowTitle(title or TITLE)

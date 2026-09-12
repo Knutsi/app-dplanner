@@ -896,11 +896,13 @@ QToolButton[repoTool="true"]:hover {
 
 /* ---- Dialogs (framework/dialog.py) ------------------------------------------------- */
 
-/* The frame names its parts, and every dialog on it is styled through these two names —
-   never through its own. The lead under the title is the secondary remark; the footer's
-   buttons are quiet bordered secondaries, and the one primary is the rule at the end. */
-#DialogLead {
-    color: $TEXT_SECONDARY;
+/* The frame names its parts, and every dialog on it is styled through these names — never
+   through its own. The frame prints no title and no lead: a heading inside a dialog repeats
+   the title bar and pushes the content down. What a confirmation asks is its content, so it
+   is body text and not a remark. The footer's buttons are quiet bordered secondaries, and
+   the one primary is the rule at the end. */
+#DialogQuestion {
+    color: $TEXT_PRIMARY;
 }
 
 /* The footer is a band under the page, edge to edge: the elevated ground under a faint

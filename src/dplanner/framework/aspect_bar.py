@@ -10,9 +10,11 @@ aimed at one at a time, and a set that folds stops answering.
 
 The right is **templates**: named combinations of those toggles, handed over by the
 composition root as data (a template is wired, never inferred). They are one dropdown
-rather than a row of buttons, wearing the name and glyph of the template the step amounts
-to right now, because only one of them is ever true at a time — five worded buttons said
-the same thing five times and only one of them was ever right. Picking one runs whichever
+rather than a row of buttons, because only one of them is ever true at a time — five worded
+buttons said the same thing five times and only one of them was ever right. The face is
+named for what it offers, *Template*, and the menu is where the templates are: which one
+the step amounts to is the ticked entry, so the bar reads as the toggles plus a way to set
+them all at once rather than as two claims about the step. Picking one runs whichever
 toggles differ — on for the template's set, off for everything else — inside one undo
 gesture, so *Make Milestone* is one Ctrl+Z however many aspects it moved. And it goes both
 ways: a template reads as selected exactly when the step carries its set and nothing else,
@@ -22,10 +24,8 @@ of aspects is still a step. The bar never stores which template is current; it i
 comparison on every refresh.
 
 The face sits **beside** the strip and not in it. A widget on a ``Toolbar`` hides when
-there is no room; the one control saying what the step *is* must survive every width, for
-the reason the canvas's layout picker and the *Updating…* indicator sit outside theirs.
-Its width is fixed to its widest name, so changing a step's kind never re-folds the strip
-under it.
+there is no room; the one way to set a step's whole shape at once must survive every width,
+for the reason the canvas's layout picker and the *Updating…* indicator sit outside theirs.
 
 A toggle's ``state()`` never returns ``visible=False``, and the bar could not honour it if
 it did: a strip re-shows whatever fits on every reflow. That costs nothing — *hidden means
@@ -48,7 +48,6 @@ from PySide6.QtCore import QEvent, QSize, Qt
 from PySide6.QtGui import QAction, QColor, QIcon, QPalette
 from PySide6.QtWidgets import QHBoxLayout, QMenu, QToolButton, QWidget
 
-from dplanner.core.signals import Signal
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.context import Context
 from dplanner.framework.toolbar import Toolbar
@@ -56,6 +55,8 @@ from dplanner.framework.undo import UndoService
 from dplanner.theme.icons import ICON_SIZE, glyph_painter
 from dplanner.theme.tokens import CONTROL_HEIGHT, FIELD_GAP, SECONDARY_ALPHA, SECTION_GAP
 from dplanner.theme.tones import button_tone
+
+FACE = "Template"  # The face is named for what it offers; the menu says which one is on.
 
 
 @dataclass(frozen=True)
@@ -95,10 +96,6 @@ class AspectBar(QWidget):
         self._actions: dict[str, QAction] = {}
         self._templates: list[tuple[AspectTemplate, QAction]] = []
         self._selected: AspectTemplate | None = None
-        # Re-derived, and said. A host that repeats the bar's answer elsewhere — the details
-        # dialog's lead — cannot get it by listening to the model: applying a template ends
-        # with the bar's own refresh, after the last write anybody heard.
-        self.refreshed: Signal[()] = Signal("aspect_bar.refreshed")
 
         self.tools = Toolbar(self, dense=True)
         self.face = QToolButton(self)
@@ -106,6 +103,7 @@ class AspectBar(QWidget):
         self.face.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.face.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.face.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.face.setText(FACE)
         self.face.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.face.setFixedHeight(CONTROL_HEIGHT)
         self._menu = QMenu(self.face)
@@ -138,7 +136,6 @@ class AspectBar(QWidget):
             self._menu.addAction(action)
             self._templates.append((template, action))
 
-        self._fit_face()
         self._reink()
         self.refresh()
 
@@ -217,12 +214,11 @@ class AspectBar(QWidget):
                 selected = template
         self._selected = selected if any_enabled else None
         self.face.setEnabled(any_enabled)
-        self.face.setText(selected.label if selected is not None else "")
         self.face.setToolTip(
-            self._describe(selected) if selected is not None else "What this step is"
+            f"{self._describe(selected)} — pick another"
+            if selected is not None
+            else "Set every aspect at once"
         )
-        self._paint_face()
-        self.refreshed.emit()
 
     # -- ink ---------------------------------------------------------------------------------
 
@@ -231,55 +227,24 @@ class AspectBar(QWidget):
         ink.setAlpha(SECONDARY_ALPHA)
         return ink
 
-    def _paint_face(self) -> None:
-        """The selected template's glyph, in that template's body tone.
-
-        The tone rides on the glyph and nothing else. A template is *always* selected —
-        the catch-all guarantees it — so a wash over the face's ground would be permanently
-        on and would say nothing, and DESIGN.md's *Toolbars* rules out a fill for a state
-        anyway. The glyph is the one thing here that changes with the data, which is what
-        makes a feature's face and a feature node one identity.
-        """
-        template = self._selected
-        painter = glyph_painter(template.glyph) if template and template.glyph else None
-        if painter is None:
-            self.face.setIcon(QIcon())
-            return
-        tone = button_tone(template.tone) if template and template.tone else None
-        self.face.setIcon(painter(tone[1] if tone is not None else self._ink()))
-
     def _reink(self) -> None:
-        """Every template's own glyph in the menu, plus the face. The strip inks itself."""
+        """Every template's glyph in the menu, in that template's body tone.
+
+        The tone rides on the glyph and nothing else: it is the one thing in that menu that
+        changes with the data, which is what makes a feature's entry and a feature node one
+        identity, and DESIGN.md's *Toolbars* rules out a fill for a state anyway. The strip
+        beside it inks its own glyphs.
+        """
         ink = self._ink()
         for template, action in self._templates:
             painter = glyph_painter(template.glyph) if template.glyph else None
             if painter is not None:
                 tone = button_tone(template.tone) if template.tone else None
                 action.setIcon(painter(tone[1] if tone is not None else ink))
-        self._paint_face()
-
-    def _fit_face(self) -> None:
-        """Fix the face to its widest name, so changing a kind never re-folds the strip.
-
-        DESIGN.md's *Toolbars*: a face that reports what is on never changes size. Left free
-        this one runs from 88 px on *Step* to 115 px on *Milestone*, and a toggle could fold
-        a glyph in or out of the strip beside it.
-        """
-        if not self._templates:
-            return
-        remembered = self.face.text()
-        widest = 0
-        for template, _action in self._templates:
-            self.face.setText(template.label)
-            widest = max(widest, self.face.sizeHint().width())
-        self.face.setText(remembered)
-        self.face.setFixedWidth(widest)
 
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
         if event.type() == QEvent.Type.PaletteChange:
             self._reink()  # A glyph carries the ink it was painted in.
-        elif event.type() == QEvent.Type.FontChange:
-            self._fit_face()
         super().changeEvent(event)
 
     # -- a test's way in ---------------------------------------------------------------------

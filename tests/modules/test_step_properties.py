@@ -376,13 +376,11 @@ def test_the_details_dialog_never_outgrows_the_screen(services, project, monkeyp
     assert dialog.height() == min(DIALOG_HEIGHT, round(available.height() * SCREEN_SHARE))
 
 
-def test_the_dialog_is_on_the_frame_with_a_title_a_lead_and_no_footer(
-    services, project, monkeypatch
-):
-    """F1's audit: "designed already (no buttons, live edits); not on the frame, so its
-    title is only the window's." The body says what the dialog is, the lead says which step
-    and what it is, and the window title stays the step's own — a switcher full of identical
-    *Step details* entries names nothing."""
+def test_the_dialog_is_on_the_frame_with_no_footer_and_no_heading(services, project, monkeypatch):
+    """F1's audit put this dialog on the frame; the frame prints no heading of its own, so
+    what it shows is the panel and the window title is the step's own name."""
+    from PySide6.QtWidgets import QLabel
+
     from dplanner.modules.step_properties.dialog import StepDetailsDialog
 
     step = project.steps[0]
@@ -392,39 +390,9 @@ def test_the_dialog_is_on_the_frame_with_a_title_a_lead_and_no_footer(
     services.actions.run("steps.details", services.context.current())
     (dialog,) = opened
 
-    assert dialog.title_label.text() == "Step details"
-    assert dialog.windowTitle() == "Read the spec"  # The step's, not the frame's.
+    assert dialog.windowTitle() == "Read the spec"  # The step's, so a switcher can tell them apart.
     assert dialog.footer.isHidden()  # Every edit is live; there is nothing to confirm.
     assert dialog.footer_buttons() == []
-    # The lead names the step: its key, and the template it amounts to.
-    assert dialog.lead_label.isVisibleTo(dialog)
-    key, _, kind = dialog.lead_label.text().partition(" · ")
-    assert key.startswith("S") and key[1:].isdigit()
-    assert kind == dialog.panel.bar.selected_label()
+    assert dialog.findChild(QLabel, "DialogTitle") is None
+    assert dialog.findChild(QLabel, "DialogLead") is None
     dialog.dispose()
-
-
-def test_the_dialogs_lead_follows_a_toggle(services, project, monkeypatch):
-    """The lead is the bar's own answer said in words, so it moves when the step does.
-
-    Driven by the bar's announcement, not by the model: applying a template ends with the
-    bar refreshing itself, which is after the last write a model listener would hear.
-    """
-    from dplanner.modules.step_properties.dialog import StepDetailsDialog
-
-    step = project.steps[0]
-    opened = []
-    # The verb disposes the dialog the moment exec() returns, and a disposed panel has
-    # stopped listening — so hold the teardown until the assertions are done.
-    dispose = StepDetailsDialog.dispose
-    monkeypatch.setattr(StepDetailsDialog, "exec", lambda self: opened.append(self))
-    monkeypatch.setattr(StepDetailsDialog, "dispose", lambda self: None)
-    select(services, step.id)
-    services.actions.run("steps.details", services.context.current())
-    (dialog,) = opened
-
-    assert dialog.lead_label.text().endswith(" · Step")
-    dialog.panel.bar.template("Milestone").trigger()
-    assert dialog.lead_label.text().endswith(" · Milestone")
-    assert dialog.windowTitle() == "Read the spec"  # Still the step's own name.
-    dispose(dialog)

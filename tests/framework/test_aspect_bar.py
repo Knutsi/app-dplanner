@@ -232,42 +232,33 @@ def test_glyphs_on_the_strip_one_worded_face_and_no_focus_anywhere(app, toggles)
     assert all(button.styleSheet() == "" for button in bar.findChildren(QToolButton))
 
 
-def test_the_face_wears_the_template_the_step_amounts_to(app, toggles):
-    """Derived on every refresh, never stored — and now said on one control."""
+def test_the_face_is_named_for_what_it_offers_and_the_menu_says_which_is_on(app, toggles):
+    """The face says *Template* and never changes; which one the step amounts to is the
+    ticked entry. Derived on every refresh, never stored."""
     bar = make_bar(toggles)
-    assert bar.face.text() == "Step"  # The catch-all: nothing else matches.
-    assert bar.selected_label() == "Step"
+    assert bar.face.text() == "Template"
+    assert bar.selected_label() == "Step"  # The catch-all: nothing else matches.
+    assert bar.template("Step").isChecked()
 
     toggles.on.update(milestone=True, description=True, estimate=False)
     bar.refresh()
-    assert bar.face.text() == "Milestone"
-
-    toggles.on.update(milestone=False, feature=True)
-    bar.refresh()
-    assert bar.face.text() == "Feature"
-    assert not bar.face.icon().isNull()  # Its named glyph, on the face.
+    assert bar.face.text() == "Template"  # Unmoved.
+    assert bar.selected_label() == "Milestone"
+    assert bar.template("Milestone").isChecked()
+    assert not bar.template("Step").isChecked()
 
     toggles.on.update(docs=True)
     bar.refresh()
-    assert bar.face.text() == "Step"  # One aspect too many puts it back on the catch-all.
+    # One aspect too many, and it is the catch-all again.
+    assert bar.selected_label() == "Step"
 
 
-def test_the_face_keeps_its_width_whatever_it_is_wearing(app, toggles):
-    """DESIGN.md's *Toolbars*: a face that reports what is on never changes size — left
-    free, a longer name would re-fold the strip beside it."""
+def test_every_template_carries_its_glyph_into_the_menu(app, toggles):
+    """The tone rides on the glyph — a feature's entry and a feature node are one identity —
+    and the face carries none, so nothing on it moves as the step changes."""
     bar = make_bar(toggles)
-    widths = []
-    for label, on in (
-        ("Step", {"estimate": True, "description": True}),
-        ("Milestone", {"milestone": True, "description": True}),
-        ("Feature", {"feature": True, "description": True}),
-    ):
-        toggles.on.update(dict.fromkeys(toggles.on, False))
-        toggles.on.update(on)
-        bar.refresh()
-        assert bar.face.text() == label
-        widths.append(bar.face.width())
-    assert len(set(widths)) == 1
+    assert not bar.template("Feature").icon().isNull()
+    assert bar.face.icon().isNull()
 
 
 def test_the_strip_is_dense_so_a_dock_wide_row_of_toggles_fits(app, toggles):

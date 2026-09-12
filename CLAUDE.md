@@ -383,19 +383,21 @@ root, stop and look for the registry or capability you have not found yet.
   into that strip's `…` menu as glyph *and* words** — never Qt's `»`, which pops the hidden
   buttons up as glyphs again. The strip is **dense**: these glyphs are read as one set
   rather than aimed at one at a time, and at the verb strip's metrics only five of the ten
-  toggles fit the width the panel can actually be. **On the right is one dropdown** wearing
-  the name and glyph of the template the step amounts to — `StepPropertiesDeps.templates`,
-  named by the composition root: a label and the *set* of toggles that are on (Step,
-  Milestone, Feature, Agent, Check). Picking one runs every toggle that differs inside
+  toggles fit the width the panel can actually be. **On the right is one dropdown named
+  *Template*** — `StepPropertiesDeps.templates`, named by the composition root: a label and
+  the *set* of toggles that are on (Step, Milestone, Feature, Agent, Check). The face says
+  what it offers and never changes; **which template the step amounts to is the ticked
+  entry**, so the bar reads as the toggles plus a way to set them all at once rather than as
+  two claims about the step. Picking one runs every toggle that differs inside
   **one `UndoService.gesture`**, and a template reads as selected exactly when the step
   carries its set and nothing else — a combination is a template, both ways, computed on
   every refresh and never stored — and **Step is the catch-all**, worn for any combination
   no other template names. **The face sits outside the `Toolbar`**: a widget on a strip
   hides when there is no room, and the one control saying what the step *is* must survive
   every width — the canvas's layout picker and the *Updating…* indicator sit outside theirs
-  for the same reason. Its width is fixed to its widest name, so changing a kind never
-  re-folds the strip under it, and **the tone rides on the glyph, never a fill**: a template
-  is always selected, so a wash would be permanently on and say nothing. It takes the
+  for the same reason. **The tone rides on each entry's glyph in the menu, never a fill** —
+  a feature's entry and a feature node are one identity, and a face that carried the tone
+  would repaint the bar's corner every time the step's kind changed. It takes the
   context as a **function**, so the panel inside the details dialog names its own step, and
   it **announces every refresh** (`refreshed`) for a host that repeats its answer — the
   dialog's lead — because applying a template ends with the bar's own refresh, after the
