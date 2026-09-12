@@ -52,6 +52,7 @@ from dplanner.framework.context import (
     selection_uri,
 )
 from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import ActionToolbar
 from dplanner.modules.step_order.cli import wave_label
@@ -163,6 +164,8 @@ class OrderActivity(EntityActivity):
             menus={"report.html": ("File", "Export")},
         )
         head.addWidget(self.toolbar)
+        self.updating = UpdatingIndicator(page)
+        head.addWidget(self.updating)
 
         self._note = QLabel(
             "Steps in an order that never puts one before what it waits on. Everything in the "
@@ -209,6 +212,7 @@ class OrderActivity(EntityActivity):
         self._widget = page
         # After a quiet spell, not per signal: the table is rebuilt row by row.
         self._refresh_soon = Debounced(self._refresh, parent=page, service=deps.debounce)
+        self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
             # Every signal, this project only. The title column's kind icons read prose
             # presence (an agent instruction), so a text edit can change what a row wears.

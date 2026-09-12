@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPoint
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.progression import estimated_progress, progression
@@ -47,6 +47,7 @@ from dplanner.framework.context import (
     selection_uri,
 )
 from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.widgets import centered_column
 from dplanner.modules.progression.view import BOARD_MAX_WIDTH, ProgressionBoard, RunControl
@@ -105,9 +106,16 @@ class ProgressionActivity(EntityActivity):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(CAPTION_GAP)
 
+        # The caption is a row so the indicator has a right end to stand at: a board has no
+        # control strip, and DESIGN.md's *Signalling* puts it at the strip's right.
+        head = QHBoxLayout()
+        layout.addLayout(head)
         caption = QLabel("Progression", content)
         caption.setObjectName("InspectorCaption")
-        layout.addWidget(caption)
+        head.addWidget(caption)
+        head.addStretch(1)
+        self.updating = UpdatingIndicator(content)
+        head.addWidget(self.updating)
 
         note = QLabel(
             "What can be launched right now, from the graph and the stored statuses. Ready "
@@ -137,6 +145,7 @@ class ProgressionActivity(EntityActivity):
         library = self._product
         # After a quiet spell, not per signal: every card is rebuilt.
         self._refresh_soon = Debounced(self._refresh, parent=page, service=deps.debounce)
+        self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
             # This project only, and no prose: the board reads statuses and titles.
             follow_project(
