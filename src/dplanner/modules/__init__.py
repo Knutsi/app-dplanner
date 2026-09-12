@@ -2216,6 +2216,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.cli.command import CliRegistry
     from dplanner.cli.desktop import commands as desktop_commands
     from dplanner.cli.gate import RECORD_FILE, TopologyGate, gated
+    from dplanner.cli.install import commands as install_commands
     from dplanner.cli.lint import commands as lint_commands
     from dplanner.cli.report.commands import commands as report_commands
     from dplanner.cli.scopes import commands as scope_commands
@@ -2382,7 +2383,11 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     described.register_all(commands)
     skill = skill_commands(specs, described)
     described.register_all(skill)
-    return [*commands, *skill]
+    # The one act over the three pieces — the command, the launcher and the skill — reads
+    # the same registry, and is registered into it so the skill it writes lists it too.
+    installer = install_commands(specs, described)
+    described.register_all(installer)
+    return [*commands, *skill, *installer]
 
 
 def _names_session(harness_id: str) -> bool:
