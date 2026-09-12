@@ -35,7 +35,8 @@ from PySide6.QtWidgets import (
 from dplanner.domain.model import StepId
 from dplanner.domain.schedule import Scheduled, format_date, format_days
 from dplanner.modules.step_order.export import since_milestone
-from dplanner.theme.icons import layers_icon, step_icon, tag_icon
+from dplanner.theme.icons import key_badge_icon, layers_icon, step_icon
+from dplanner.theme.tones import recoloured
 
 COLUMNS = ("#", "Step", "Wave", "Estimate", "Accumulated", "Since milestone", "Date", "")
 TITLE_COLUMN = 1
@@ -54,6 +55,8 @@ STEP_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 # The milestone label on every cell of a milestone row, so the delegate can mark it from any
 # column's index. Falsy on ordinary rows.
 MILESTONE_ROLE = int(Qt.ItemDataRole.UserRole) + 2
+# The milestone's own shade of the project's colour map, as "#rrggbb"; "" is the family.
+COLOR_ROLE = int(Qt.ItemDataRole.UserRole) + 3
 
 # DESIGN.md's row metrics for a list of rich items; a milestone row gets air under its rule.
 ROW_HEIGHT = 28
@@ -65,12 +68,13 @@ KIND_MILESTONE = "milestone"
 KIND_FEATURE = "feature"
 KIND_STEP = "step"
 
-# The milestone row's marks: the canvas badge's purple family, low-alpha so it reads on every
-# theme (DESIGN.md exception #2). The rule closes the block of work that lands in it.
+# The milestone row's marks, low-alpha so they read on every theme (DESIGN.md exception #2).
+# The rule closes the block of work that lands in the milestone. The colours here are the
+# family every milestone wore before the project's colour map reached this table; a row that
+# carries a shade (``COLOR_ROLE``) is these alphas over *its* hue, so the row, the card on
+# the canvas and the band in the calendar are one milestone in one colour.
 MILESTONE_ROW_TINT = QColor(150, 130, 220, 22)
 MILESTONE_RULE = QColor(150, 130, 220, 160)
-# The tag icon at full strength — a glyph this small needs its whole ink to read.
-MILESTONE_ICON_INK = QColor(150, 130, 220)
 
 # Secondary text as opacity rather than a theme colour: an item has only the palette, and an
 # alpha-derived secondary is theme-independent by construction (DESIGN.md exception #1).
@@ -91,9 +95,9 @@ class _MilestoneRowDelegate(QStyledItemDelegate):
     """Marks a milestone row: a low-alpha tint under it and a rule along its bottom.
 
     The grid is off, so each cell's bottom segment joins into the one horizontal line in
-    the table — "everything above this lands in the milestone". The flag is read off the
-    index (``MILESTONE_ROLE``), never asked of a callback, so painting stays a pure function
-    of the model.
+    the table — "everything above this lands in the milestone". The flag and the milestone's
+    shade are read off the index (``MILESTONE_ROLE``, ``COLOR_ROLE``), never asked of a
+    callback, so painting stays a pure function of the model.
     """
 
     def paint(
@@ -105,10 +109,13 @@ class _MilestoneRowDelegate(QStyledItemDelegate):
         if not index.data(MILESTONE_ROLE):
             super().paint(painter, option, index)
             return
-        painter.fillRect(option.rect, MILESTONE_ROW_TINT)
+        shade = index.data(COLOR_ROLE) or ""
+        tint = recoloured(MILESTONE_ROW_TINT, shade) if shade else MILESTONE_ROW_TINT
+        rule = recoloured(MILESTONE_RULE, shade) if shade else MILESTONE_RULE
+        painter.fillRect(option.rect, tint)
         super().paint(painter, option, index)  # Text and selection paint over the tint.
         painter.save()
-        painter.setPen(QPen(MILESTONE_RULE, 1.0))
+        painter.setPen(QPen(rule, 1.0))
         painter.drawLine(option.rect.bottomLeft(), option.rect.bottomRight())
         painter.restore()
 
@@ -122,6 +129,8 @@ class OrderTable(QTableWidget):
         step_aspects: Callable[[StepId], list[str]],
         milestone_label: Callable[[StepId], str] = lambda _step_id: "",
         step_icons: Callable[[StepId], tuple[str, ...]] = lambda _step_id: (),
+        milestone_color: Callable[[StepId], str] = lambda _step_id: "",
+        step_key: Callable[[StepId], str] = lambda _step_id: "",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(0, len(COLUMNS), parent)
@@ -130,6 +139,8 @@ class OrderTable(QTableWidget):
         self._step_aspects = step_aspects
         self._milestone_label = milestone_label
         self._step_icons = step_icons
+        self._milestone_color = milestone_color
+        self._step_key = step_key
         self._kinds: list[str] = []  # One per row, in row order.
         self._shown = {KIND_STEP: True, KIND_FEATURE: True}
         self.setItemDelegate(_MilestoneRowDelegate(self))
@@ -176,11 +187,13 @@ class OrderTable(QTableWidget):
             )
             milestone = self._milestone_label(place.step.id)
             kinds = self._step_icons(place.step.id)
+            shade = self._milestone_color(place.step.id) if milestone else ""
             self._kinds.append(_kind(kinds, bool(milestone)))
             for column, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 item.setData(STEP_ROLE, place.step.id)
                 item.setData(MILESTONE_ROLE, milestone)
+                item.setData(COLOR_ROLE, shade)
                 # A milestone's own answers — its name, the span it closes, its date — read
                 # bold at full strength, so a glance down the column finds the milestones;
                 # the foreground is deliberately not set, so it stays the palette's and live.
@@ -198,7 +211,7 @@ class OrderTable(QTableWidget):
                     font.setBold(True)
                     item.setFont(font)
                 if column == TITLE_COLUMN:
-                    item.setIcon(self._title_icon(kinds))
+                    item.setIcon(self._title_icon(kinds, place.step.id, shade))
                 if column in NUMERIC_COLUMNS:
                     item.setTextAlignment(_RIGHT)
                 self.setItem(row, column, item)
@@ -226,17 +239,19 @@ class OrderTable(QTableWidget):
     def kind_at(self, row: int) -> str:
         return self._kinds[row]
 
-    def _title_icon(self, kinds: tuple[str, ...]) -> QIcon:
-        """What the row is, in the canvas medallions' vocabulary: the tag for a milestone,
-        the layer stack for a feature, the card for a work step.
+    def _title_icon(self, kinds: tuple[str, ...], step_id: StepId, shade: str) -> QIcon:
+        """What the row is, in the canvas medallions' vocabulary: the **key as a badge** for
+        a milestone, the layer stack for a feature, the card for a work step.
 
         One icon per row: a step that is several things at once leads with the rarer claim
-        ("tag" sorts first), and the trailing aspects column still says the rest.
+        ("tag" sorts first), and the trailing aspects column still says the rest. A milestone
+        wears its key rather than a tag glyph (DESIGN.md's *Tables*) — the key is what a
+        milestone is known by across the graph — in its own shade of the project's map.
         """
         faded = QColor(self.palette().text().color())
         faded.setAlpha(SECONDARY_ALPHA)
         if "tag" in kinds:
-            return tag_icon(MILESTONE_ICON_INK)
+            return key_badge_icon(self._step_key(step_id), shade or MILESTONE_RULE)
         if "layers" in kinds:
             return layers_icon(faded)
         return step_icon(faded)

@@ -8,7 +8,18 @@ dark binder and the light corkboard cards alike.
 from collections.abc import Callable
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import (
+    QColor,
+    QIcon,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QPolygonF,
+)
+
+from dplanner.theme.palettes import Palette
 
 ICON_SIZE = 16
 # A glyph nobody is pointing at is present without asking to be read.
@@ -482,6 +493,133 @@ def frame_icon(color: str | QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+def refresh_icon(color: str | QColor) -> QIcon:
+    """A circular arrow: run the rebuild again, now."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.6))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawArc(QRectF(3.0, 3.0, 10.0, 10.0), 40 * 16, 280 * 16)
+    painter.setBrush(QColor(color))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawPolygon([QPointF(13.5, 3.0), QPointF(13.5, 8.0), QPointF(9.5, 5.0)])
+    painter.end()
+    return QIcon(pixmap)
+
+
+# A step's key as a badge — the width a three-character key needs at a glyph's height.
+KEY_BADGE_W = 28
+KEY_BADGE_ALPHA = 44  # The tone washed under the letters; the border and the ink at full.
+KEY_BADGE_POINTS = 7.5
+
+
+def key_badge_icon(text: str, color: str | QColor) -> QIcon:
+    """``F1``, ``M2`` as a rounded chip in a tone: a glyph that names the step.
+
+    Where a row is a milestone the badge stands where the glyph would — the key is what a
+    milestone is known by across the graph, and a tag glyph beside a key on the second
+    line said the same thing twice.
+    """
+    pixmap = QPixmap(KEY_BADGE_W, ICON_SIZE)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    tone = QColor(color)
+    wash = QColor(tone)
+    wash.setAlpha(KEY_BADGE_ALPHA)
+    painter.setPen(_pen(tone, 1.0))
+    painter.setBrush(wash)
+    painter.drawRoundedRect(QRectF(0.5, 0.5, KEY_BADGE_W - 1.0, ICON_SIZE - 1.0), 4.0, 4.0)
+    font = painter.font()
+    font.setPointSizeF(KEY_BADGE_POINTS)
+    font.setBold(True)
+    painter.setFont(font)
+    painter.setPen(tone)
+    painter.drawText(QRectF(0.0, 0.0, KEY_BADGE_W, ICON_SIZE), Qt.AlignmentFlag.AlignCenter, text)
+    painter.end()
+    return QIcon(pixmap)
+
+
+# A colour map as a strip: wide enough to read the ramp, short enough to sit in a menu row.
+PALETTE_STRIP = QSize(56, 12)
+PALETTE_STRIP_RADIUS = 3
+
+
+def palette_strip_icon(found: Palette, size: QSize = PALETTE_STRIP) -> QIcon:
+    """A milestone colour map as a strip, dark to light — the map before it is dealt.
+
+    The Time tab's picker and the command palette both show it, which is why it lives here
+    rather than beside either of them: one painter, so the two surfaces cannot draw the same
+    map differently. ``size`` is the caller's because the two want different shapes — a wide
+    strip in a combo row, a square at :data:`ICON_SIZE` in a list of glyphs — and a wide
+    pixmap scaled into a square slot renders as a sliver.
+    """
+    pixmap = QPixmap(size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    gradient = QLinearGradient(QPointF(0, 0), QPointF(size.width(), 0))
+    last = len(found.stops) - 1
+    for index, stop in enumerate(found.stops):
+        gradient.setColorAt(index / last, QColor(stop))
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(gradient)
+    painter.drawRoundedRect(
+        QRectF(0, 0, size.width(), size.height()),
+        PALETTE_STRIP_RADIUS,
+        PALETTE_STRIP_RADIUS,
+    )
+    painter.end()
+    return QIcon(pixmap)
+
+
+SPINNER_FRAMES = 12  # One turn: a frame every 30°, so the arc reads as turning, not jumping.
+
+
+def spinner_frames(color: str | QColor, count: int = SPINNER_FRAMES) -> list[QIcon]:
+    """A three-quarter arc at ``count`` rotations: the glyph of a button whose work is
+    running. Painted once per ink and stepped by ``framework/signalling.py``'s Spinner."""
+    frames = []
+    for step in range(count):
+        pixmap, painter = _canvas()
+        painter.setPen(_pen(color, 2.0))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        start = (90 - step * 360 // count) * 16
+        painter.drawArc(QRectF(2.5, 2.5, 11.0, 11.0), start, -270 * 16)
+        painter.end()
+        frames.append(QIcon(pixmap))
+    return frames
+
+
+FILTER_ICON_W = 24  # A dot's slot at the left, then the funnel: one width, on or off.
+
+
+def filter_icon(color: str | QColor, *, active: bool = False) -> QIcon:
+    """A funnel with a slot for the indicator before it: outline while no filter is on,
+    filled with a dot in the slot while one is — so the face never changes size."""
+    pixmap = QPixmap(QSize(FILTER_ICON_W, ICON_SIZE))
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    left = FILTER_ICON_W - ICON_SIZE
+    funnel = [
+        QPointF(left + 2.5, 3.5),
+        QPointF(left + 13.5, 3.5),
+        QPointF(left + 9.5, 8.5),
+        QPointF(left + 9.5, 13.0),
+        QPointF(left + 6.5, 11.5),
+        QPointF(left + 6.5, 8.5),
+    ]
+    painter.setPen(_pen(color, 1.5))
+    painter.setBrush(QColor(color) if active else Qt.BrushStyle.NoBrush)
+    painter.drawPolygon(funnel)
+    if active:
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(color))
+        painter.drawEllipse(QRectF(1.0, 5.5, 5.0, 5.0))
+    painter.end()
+    return QIcon(pixmap)
+
+
 def close_icon(color: str) -> QIcon:
     """A cross: the close button on a tab.
 
@@ -555,7 +693,7 @@ def image_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
-def list_icon(color: str) -> QIcon:
+def list_icon(color: str | QColor) -> QIcon:
     """A numbered list: the order table."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 1.2))

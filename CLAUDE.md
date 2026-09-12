@@ -46,10 +46,17 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
   suggest it.
 - Only add comments that carry durable value for future developers and agents. Otherwise,
   make the code self-documenting.
-- `DESIGN.md` is the standard for all UI work here. `FORMAT.md` is the standard for anything
-  that reaches disk. `ARCHITECTURE.md` is where a rule's *reasoning* lives — when you settle an
-  architectural question, write the rule here and the why there, and have each point at the
-  other. A decision that lives only in a commit message is one the next feature rediscovers.
+- `DESIGN.md` is the standard for all UI work here, and **Debug ▸ Design Example…** with its
+  table tab (`modules/debug/design_example.py`, rendered under
+  `docs/screenshots/f1-design-example/`) is what it looks like. Its *Primitives* table maps
+  what you are building — a dialog, a table, a strip of verbs, a filter, a busy state, an
+  empty page — to the primitive in `framework/` and the render to compare against; build
+  from those, never by styling a surface by name, and run its *Bringing a surface up* over
+  any surface you touch. `FORMAT.md` is the standard for
+  anything that reaches disk. `ARCHITECTURE.md` is where a rule's *reasoning* lives — when
+  you settle an architectural question, write the rule here and the why there, and have
+  each point at the other. A decision that lives only in a commit message is one the next
+  feature rediscovers.
 
 ## Checks — run all three before finishing any task
 
@@ -323,6 +330,17 @@ root, stop and look for the registry or capability you have not found yet.
   and fills a vertical one's whole rect, so the rule that centres a line in the first renders a
   7 px slab in the second, and nothing says so. `tests/test_theme.py` renders both rather than
   reading them. `ARCHITECTURE.md`'s *A seam belongs to the splitter* has the reasoning.
+- **A primitive names its parts; a dialog is never added to a selector list.** The frame
+  sets `#DialogBody` and `#DialogFooter`, the table `#Table`, and the one accent rule is
+  `QPushButton#PrimaryButton` — type-prefixed and **last of the button rules in
+  `theme.qss` on purpose**: a descendant rule such as `#Dialog QPushButton` outranks a
+  bare `#PrimaryButton` whatever the order, and the type-prefixed one ties it and wins by
+  position, which is how the file once grew an allow-list of dialog names. Every `#Name`
+  the stylesheet styles must be a literal some widget sets (`tests/test_theme.py`). A
+  table's row height is computed from the font and set on the vertical header, never a
+  pixel token; an empty page swaps through `EmptyState.stands_in_for`; a refused primary
+  is `refuse(reason)` — disabled, its name kept, the reason in the footer's status slot.
+  `ARCHITECTURE.md`'s *A primitive carries the rule* has the reasoning.
 - **A pane is marked only while there is another pane.** The accent edge on the group you are
   in appears when the window splits and goes when it stops being split — the same condition
   that installs `_ActiveGroupWatcher`, because it is the same fact. It lives on a one-widget
@@ -1109,7 +1127,7 @@ root, stop and look for the registry or capability you have not found yet.
   colour on its step — written by the tab's controls (a matrix tile click *is* the
   team) and `dplanner schedule focus` / `schedule palette` / `schedule team` / `schedule
   milestone` alike. **Milestones are shades of one map, dealt by place in the
-  sequence** (`schedule.py`'s `PALETTES` and `shades`), never a list of hues. Under the
+  sequence** (`theme/palettes.py`'s `PALETTES` and `shades`), never a list of hues. Under the
   staffing grid, **Start dates** is what you set (the project's own, and each
   milestone's *Begin…*) and **Milestones** is what it answers — the date it lands and
   how much of it has landed on one row, led by *All milestones*, the whole plan on one
@@ -1185,6 +1203,23 @@ root, stop and look for the registry or capability you have not found yet.
   carries the value it replaced, one row per day, format 2; `dplanner estimate show`
   reads it back) — are the terminal's and the report's prose; the charts say it with
   the plots. `ARCHITECTURE.md`'s *Progress against the plan* has the reasoning.
+- **A milestone's colour is its place in the project's map, and every surface reads the
+  one answer.** `schedule.py`'s `milestone_colors(library, project, is_milestone)` is the
+  deal — `ordering.placed`'s sequence, a milestone's own chosen colour over its dealt
+  shade — walked once per project by the composition root's `_milestone_colors` and handed
+  down as a typed callback, so no module learns where a colour map is stored. Ten surfaces
+  read it: the canvas card, its badge and its tag medallion, the order table's row, rule
+  and **key badge**, the progression board's card, the Tests tab's grouping heading, the
+  Docs tab's medallion, the coverage lane, the Milestone tab's swatch, the calendar's
+  bands and the report's graph. `theme/tones.py`'s `toned(name, hex)` is the one place a
+  shade takes a tone's alphas — never re-derive them — and the maps live in
+  **`theme/palettes.py`** (Qt-free, hex strings) because three consumers need them and
+  modules never import each other. **The map is the project's, never the user's**: the
+  window commits `reports/` on every Save, so a per-user map would churn the published
+  report per committer. *View ▸ Milestone Colours* is therefore a **second presenter** of
+  the choice the Time tab's picker and `dplanner schedule palette` already write — a
+  sibling of Theme, never inside it, and greyed with its reason when no project is open.
+  `ARCHITECTURE.md`'s *Colour is a place on one map* has the reasoning.
 - **A note is a record beside the project with a label, and every briefing carries an
   index.** `modules/notes/` — `log.py` (Qt-free; `N1, N2, …` minted per project, a
   **label** from the closed `LABELS` list — `decision`, `handoff`, `spec-change`, `later`,

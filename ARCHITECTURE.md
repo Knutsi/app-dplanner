@@ -763,6 +763,80 @@ the active group and activity are both unchanged, and closing the *other* pane's
 exactly that. So `_drop_group` clears the mark itself rather than trusting the announcement,
 or an unsplit window would keep an accent edge on the pane that survived.
 
+## A primitive carries the rule; a dialog's stylesheet does not
+
+(`DESIGN.md`'s *Dialogs*, *Tables*, *Signalling* and *Bringing a surface up* are the
+standard this settled; `modules/debug/design_example.py` is the living reference.)
+
+For a year the rules lived in two places that could not see each other: DESIGN.md said
+what a dialog looked like, and `theme.qss` said which dialogs looked like it. The accent
+primary was styled inside a list — `#ProjectDialog #PrimaryButton, #MovePlanDialog
+#PrimaryButton, …` — and the quiet secondary likewise, so every new dialog was added to
+four comma lists or got Fusion, and three surfaces that set `#PrimaryButton` in good faith
+got no accent at all. The list was not laziness. **A descendant rule outranks a bare id
+whatever the order**: `#Dialog QPushButton` is specificity (1,0,1) and `#PrimaryButton`
+is (1,0,0), so the moment a dialog's buttons were styled by name, its primary could only
+be reached by naming the dialog again. The fix is one line and one fact:
+`QPushButton#PrimaryButton` is (1,0,1) too, ties, and **wins by position** — so it is the
+last button rule in the file, says so, and no dialog is named again.
+
+That fact generalises. **A primitive names its parts, never itself.** `DialogFrame` sets
+`#DialogBody` and `#DialogFooter`; `Table` sets `#Table`; the subclass keeps its own
+object name for tests and for whatever one-off it needs. The stylesheet then reaches every
+dialog and every table through a handful of constant names, and a new one gets the
+designed look having touched nothing — which is the whole of what *done* meant for the
+design-system step. The alternative, a rule per dialog, is what the audit found: two
+button strategies (a `QDialogButtonBox` with the platform deciding order, a hand-rolled
+footer with the accent), margins of 20, 16, 12, 8 and none, four dialogs that set initial
+focus, one documented data-loss hazard from a footer whose default was *Clear*.
+
+The same shape recurred wherever a rule had no home. Three copies of one `QTableWidget`
+configuration disagreed on nine settings, and four widgets set `objectName("OrderTable")`
+to borrow a look — two of them lists. Empty states came in five mechanisms, or none.
+Every busy state was a `QLabel` rewritten by hand. Each of these is now one thing in
+`framework/`: `Table` applies the configuration once and its delegate paints what a row
+wears; `EmptyState.stands_in_for` is the one swap; `StatusLine` is the one busy, ok and
+error; `UpdatingIndicator` follows the one `Debounced` a view already has. The review
+rounds that followed added, on the same principle, a `Toolbar` whose verbs are glyphs
+folding into a `…` menu, a `FilterButton`, and a `Spinner` that turns in a button's own
+glyph slot so nothing ever moves. **A rule with
+no primitive is a rule that is followed by whoever remembers it**, and the audit is the
+measure of how many did.
+
+Two decisions inside the primitives are worth their reasons. **A table's row height is
+derived from the font, never a token**: the UI font is the platform's own, and the fixed
+28 and 44 the old tables carried clip two lines at twelve points; the paddings are the
+tokens, the height is computed and set on the vertical header — the one mechanism that
+sizes a delegate-drawn row, learned the hard way in the Tests table. And **a refused
+primary is disabled with its reason in the footer's status slot** rather than enabled and
+refusing: that is the rule every greyed menu entry already follows, and a dialog with a
+second grammar for the same situation is a dialog that teaches the wrong one.
+
+`Debounced` grew a signal for the indicator, `pending_changed`, because the alternative —
+the Time tab's wrapper that showed a label before `trigger()` and hid it as the first
+line of the rebuild — was two statements paired by hand that a test could never see up.
+While it was being wired, `flush_all` turned out to walk a `WeakSet` in hash order: a
+flush that writes (the progress recorder) re-triggers the views that follow the model, and
+whether that left one pending depended on which object was allocated first. It settles to
+a fixed point now.
+
+**The stylesheet is checked against the source.** Forty per cent of it described the
+application the template came from — a corkboard, a binder, a reader, a zen mode — and two
+of those dead names were quoted in DESIGN.md as the canonical look. `tests/test_theme.py`
+asserts every `#Name` in `theme.qss` is a literal some widget sets, so a rule outlives its
+surface by exactly one test run. The same test renders rather than reads where it matters:
+a stylesheet is silent about a rule that renders wrong exactly as it is about one that
+never matched, which is why the primary's accent is asserted from a pixel inside a widget
+named `ProjectDialog`.
+
+**Why the reference is a Debug surface and not a document.** A rule is read once; a
+surface is opened beside the one being built and compared, in both themes, with every
+state on it — the refused primary, the tinted row while picked, the indicator while a
+rebuild is owed. Debug ▸ Design Example… and its table tab are that, over sample data,
+and `docs/screenshots/f1-design-example/` keeps them rendered so a pull request can show the difference
+it made. Every later step that touches a surface points at them; DESIGN.md's *Bringing a
+surface up* is the list of what to compare.
+
 ## How a panel gets editors it has never heard of
 
 The step detail panel shows a Details tab first — estimate, description, figures — and a tab
@@ -3047,6 +3121,33 @@ decisions worth writing down:
   the report's own blue (`WHOLE_COLOR`), as it always was. The calendar and the list
   share the hex through `schedule.py` and never store a `QColor`, for the
   palette-snapshot reason in *The palette a painter is handed is a snapshot*.
+- **And the map is the project's, which is what let the shade leave this tab.** For a
+  while the shades lived only here: the calendar said *this is milestone 2 of 4* and the
+  graph beside it said only *this is a milestone*, in the one violet every milestone wore.
+  Joining them needed an answer to "what colour is this milestone" that any surface could
+  ask, so `milestone_colors(library, project, is_milestone)` is the deal — `placed`'s
+  sequence, an override over a dealt shade — and `phase_colors` is a lookup into it rather
+  than a second deal beside it. The maps moved to `theme/palettes.py`, Qt-free and a leaf,
+  because the appearance module lists them and modules never import each other; the
+  composition root walks each project once and hands every consumer a typed callback, the
+  `_milestone_stats` shape. `theme/tones.py`'s `toned(name, hex)` recolours a tone at its
+  own alphas, so ten painters never re-derive one and a recoloured card is exactly as loud
+  as the purple it replaced.
+
+  **The choice stayed the project's rather than becoming the user's, and that decided the
+  menu.** A per-user map was the obvious reading of "pick it in the theme menu", and it is
+  wrong twice: Save publishes `reports/` into the plan repository, so two developers would
+  churn the committed report's colours between them; and the Time tab's picker names the
+  project's map, so a window painting a user's override would have a control that lied
+  about what it was showing. So *View ▸ Milestone Colours* writes the same stored entry
+  `dplanner schedule palette` and that picker write, through the same undoable command —
+  one choice, three ways in, the *Two surfaces, one vocabulary* rule applied to a third.
+  It sits **beside** Theme rather than inside it, because it is not a theme and an entry
+  nested under one would read as a theme; and being a project fact in a window menu, it is
+  greyed with its reason when no project is open rather than hidden. The tick follows a
+  map changed from a terminal, from the Time tab or by an undo, because the module
+  subscribes to `module_data_changed` for that one id — a state callback must never read a
+  file (*The context is announced once per turn*).
 - **The page is split at a seam, and the calendar takes the width.** What you set on the
   left — focus, the staffing picker — and what it answers on the right — the colour map
   and the month arrows on one strip, the calendar, then the milestones. The seam starts

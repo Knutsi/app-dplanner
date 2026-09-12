@@ -1,9 +1,10 @@
 """Small shared widget helpers.
 
-Nothing here is a framework concept — these are the three or four things every second
-feature would otherwise reimplement slightly differently: a confirmation whose default is
-"no", a centred column at a readable measure, what an empty page says, and Ctrl+wheel
-zoom. Add to it sparingly; a helper that only one feature uses belongs in that feature.
+Nothing here is a framework concept — these are the handful of things every second feature
+would otherwise reimplement slightly differently: a confirmation whose default is "no", a
+centred column at a readable measure, what an empty page says, the caption over a block and
+the remark under it, and Ctrl+wheel zoom. Add to it sparingly; a helper that only one
+feature uses belongs in that feature.
 """
 
 from collections.abc import Callable
@@ -12,14 +13,16 @@ from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QTextBlockFormat, QTextCursor, QWheelEvent
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
+    QDialog,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
+
+from dplanner.theme.cards import detail_font
 
 # DESIGN.md's text-well metrics: the text never touches the frame.
 DOCUMENT_MARGIN = 12
@@ -42,12 +45,34 @@ def space_lines(pane: QPlainTextEdit) -> None:
     cursor.mergeBlockFormat(block)
 
 
-def confirm(parent: QWidget | None, title: str, question: str) -> bool:
-    """A Yes/No prompt for an action that throws work away; No is the default so Enter
-    never discards anything."""
-    buttons = QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-    answer = QMessageBox.question(parent, title, question, buttons, QMessageBox.StandardButton.No)
-    return answer == QMessageBox.StandardButton.Yes
+def confirm(parent: QWidget | None, title: str, question: str, *, verb: str = "Yes") -> bool:
+    """A confirmation for an action that throws work away, on the dialog frame: the
+    question as its lead, the verb a quiet button (it discards, so no accent), and Cancel
+    the default so Enter never discards anything."""
+    # The frame is built from this module's helpers, so it is imported here, not above.
+    from dplanner.framework.dialog import DialogFrame
+
+    dialog = DialogFrame(title, parent, lead=question)
+    dialog.add_button(verb, dialog.accept)
+    dialog.add_dismiss()
+    answer = dialog.exec() == QDialog.DialogCode.Accepted
+    dialog.deleteLater()
+    return answer
+
+
+def caption(text: str, parent: QWidget | None = None) -> QLabel:
+    """The one caption look (DESIGN.md's *Hierarchy*): bold, secondary, over its block."""
+    label = QLabel(text, parent)
+    label.setObjectName("InspectorCaption")
+    return label
+
+
+def note(text: str, parent: QWidget | None = None) -> QLabel:
+    """A remark that changes with the data (DESIGN.md's *Words*): secondary, normal weight."""
+    label = QLabel(text, parent)
+    label.setObjectName("InspectorNote")
+    label.setWordWrap(True)
+    return label
 
 
 def centered_column(content: QWidget, max_width: int) -> QWidget:
@@ -80,8 +105,8 @@ class EmptyState(QWidget):
 
     A tab cannot go off screen the way a panel does (DESIGN.md's *Panels*), so it says so
     in words — and a line left where the layout happened to put it reads as a stray
-    footer. ``say`` shows the message and hides on ""; the caller hides the content the
-    state stands in for and gives this the same stretch, so the two trade places.
+    footer. ``say`` shows the message and hides on "", and the content it ``stands_in_for``
+    does the opposite: the caller gives both the same stretch, and the two trade places.
     """
 
     def __init__(
@@ -90,16 +115,16 @@ class EmptyState(QWidget):
         parent: QWidget | None = None,
         *,
         action: tuple[str, Callable[[], object]] | None = None,  # A verb; its answer is not read.
+        stands_in_for: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.stands_in_for = stands_in_for
         self.setObjectName("EmptyState")
         self.label = QLabel(text, self)
         self.label.setObjectName("EmptyStateText")
         self.label.setWordWrap(True)
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        font = self.label.font()
-        font.setPointSizeF(font.pointSizeF() - 1.0)
-        self.label.setFont(font)
+        self.label.setFont(detail_font(self.label.font()))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(EMPTY_STATE_GAP)
@@ -112,11 +137,16 @@ class EmptyState(QWidget):
             self.button.clicked.connect(run)
             layout.addWidget(self.button, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch(1)
-        self.setVisible(bool(text))
+        self._trade(bool(text))
 
     def say(self, text: str) -> None:
         self.label.setText(text)
-        self.setVisible(bool(text))
+        self._trade(bool(text))
+
+    def _trade(self, shown: bool) -> None:
+        self.setVisible(shown)
+        if self.stands_in_for is not None:
+            self.stands_in_for.setVisible(not shown)
 
     def text(self) -> str:
         return self.label.text()

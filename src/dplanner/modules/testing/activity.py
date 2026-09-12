@@ -141,13 +141,12 @@ class _TestsPage(QWidget):
 
         self.table = TestsTable(self)
         layout.addWidget(self.table, 1)
-        self.empty = EmptyState(parent=self)
+        self.empty = EmptyState(parent=self, stands_in_for=self.table)
         layout.addWidget(self.empty, 1)
 
     def say(self, message: str) -> None:
         """A tab cannot go off screen the way a panel does, so it says so in words."""
         self.empty.say(message)
-        self.table.setVisible(not message)
 
     def lead(self, answer: str, detail: str) -> None:
         self.answer.setText(answer)
@@ -324,6 +323,7 @@ class TestsActivity(EntityActivity):
                     else (outcomes[test.id].result.status if test.id in outcomes else "pending")
                 ),
                 group=groups[step.id][1] if groups else "",
+                group_color=groups[step.id][2] if groups else "",
             )
             for step, test in pairs
         ]
@@ -334,8 +334,9 @@ class TestsActivity(EntityActivity):
         # ungathered row sorts last rather than alphabetically among the named ones.
         return sorted(rows, key=lambda row: groups[row.step.id][0])
 
-    def _groups(self, project: Project) -> dict[StepId, tuple[int, str]]:
-        """Each step's heading, and where it sorts — empty when nothing is being grouped.
+    def _groups(self, project: Project) -> dict[StepId, tuple[int, str, str]]:
+        """Each step's heading, where it sorts and what colour it is written in — empty
+        when nothing is being grouped.
 
         A step two features both wait on is filed under *both at once*, as one joint
         heading, rather than duplicated into each: a test listed twice would be marked
@@ -350,18 +351,24 @@ class TestsActivity(EntityActivity):
         )
         places = {step.id: index for index, step in enumerate(project.steps)}
         last = len(places)
-        found: dict[StepId, tuple[int, str]] = {}
+        found: dict[StepId, tuple[int, str, str]] = {}
         for step in project.steps:
             held = [project.step(owner) for owner in owners.get(step.id, ())]
             named = [owner for owner in held if owner is not None]
             if not named:
-                found[step.id] = (last, UNGATHERED)
+                found[step.id] = (last, UNGATHERED, "")
                 continue
             # The kind is named once, however many owners there are: "Feature: Import and
             # Search", not the label twice.
             names = " and ".join(owner.title or "Untitled step" for owner in named)
             title = f"{kind.label}: {names}"
-            found[step.id] = (places[named[0].id], title)
+            # A joint heading takes the first owner's colour — the same one it sorts by, so
+            # the heading a reader sees is the milestone the group is filed under.
+            found[step.id] = (
+                places[named[0].id],
+                title,
+                self._deps.milestone_color(named[0].id),
+            )
         return found
 
     def _scope_titles(

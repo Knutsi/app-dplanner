@@ -21,9 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-OUTER_MARGIN = 20  # DESIGN.md: dialogs breathe more than panels.
-SECTION_GAP = 12
-SCREEN_SHARE = 0.8  # The largest slice of the screen a preview claims.
+from dplanner.theme.tokens import DIALOG_MARGIN, SCREEN_SHARE, SECTION_GAP
 
 
 class ImagePreviewDialog(QDialog):
@@ -42,7 +40,7 @@ class ImagePreviewDialog(QDialog):
         self.setWindowTitle(caption or f"{name} — {image.width()} x {image.height()}")
 
         column = QVBoxLayout(self)
-        column.setContentsMargins(OUTER_MARGIN, OUTER_MARGIN, OUTER_MARGIN, OUTER_MARGIN)
+        column.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
         column.setSpacing(SECTION_GAP)
 
         self.image_label = QLabel(self)

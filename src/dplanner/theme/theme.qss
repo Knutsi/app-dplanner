@@ -1,7 +1,7 @@
-/* Writer — theme stylesheet (one template, substituted per theme).
+/* DPlanner — theme stylesheet (one template, substituted per theme).
  *
  * A string.Template. Placeholders are a dollar sign followed by a token name from
- * writer.theme.tokens; use the braced form wherever a letter follows the name, as in the
+ * dplanner.theme.tokens; use the braced form wherever a letter follows the name, as in the
  * radius rules below. A literal dollar sign must be doubled — but note that the test suite
  * asserts no dollar sign survives substitution, so avoid literals here entirely.
  *
@@ -9,6 +9,11 @@
  * dialogs; this file styles only the chrome the palette cannot make distinctive. In
  * particular there is no blanket `QWidget { background: ... }` rule — that leaks into every
  * internal helper widget and sub-control Qt creates.
+ *
+ * Every object-name rule names something a widget sets: tests/test_theme.py checks each
+ * `#Name` against the source, so a rule for a surface that no longer exists fails the
+ * suite rather than lingering. A shared primitive names its *parts* (#DialogBody,
+ * #DialogFooter, #Table) so that no dialog or table is ever added to a selector list.
  *
  * Fonts are set via QApplication.setFont(), not here: Qt stylesheet font properties do not
  * cascade through the widget tree the way CSS does.
@@ -181,104 +186,6 @@ QScrollBar::sub-page {
 /* ---- Views ------------------------------------------------------------------------- */
 /* Every rule below is scoped to an object name set in a module's view code, so the
  * chrome-only philosophy above still holds: nothing here leaks into generic widgets. */
-
-/* Corkboard: cards as raised, bordered chrome on the base background — fully themed.
- * The panel is a plain QWidget, which only honours a stylesheet background when
- * WA_StyledBackground is set — the view sets it. */
-#CorkboardPanel {
-    background-color: $BG_BASE;
-}
-
-#CorkboardCard {
-    background-color: $BG_ELEVATED;
-    border: 1px solid $BORDER;
-    border-radius: 6px;
-}
-
-/* Selection and the keyboard cursor are two levels: every selected card is framed, and
- * the one the arrows move from — always exactly one — takes the accent. */
-#CorkboardCard[selected="true"] {
-    border: 2px solid $BORDER_STRONG;
-}
-
-#CorkboardCard[current="true"] {
-    border: 2px solid $ACCENT;
-}
-
-/* The empty slot a card leaves behind while its ghost is being dragged. */
-#CorkboardCard[dragging="true"] {
-    background-color: $BG_BASE;
-    border: 1px dashed $BORDER;
-}
-
-/* Excluded from export/reader: still editable, visibly set aside. */
-#CorkboardCard[excluded="true"] #CardTitle,
-#CorkboardCard[excluded="true"] #CardNote {
-    color: $TEXT_DISABLED;
-}
-
-/* Colours must be stated here, not left to the palette: a widget matched by any
- * stylesheet rule resolves its colours from the stylesheet cascade. */
-#CardTitle,
-#CardNote {
-    background: transparent;
-    border: none;
-    color: $TEXT_PRIMARY;
-    selection-background-color: $SELECTION_BG;
-    selection-color: $SELECTION_FG;
-}
-
-#CardRule {
-    background-color: $BORDER;
-}
-
-#CardChildCount {
-    color: $TEXT_SECONDARY;
-}
-
-/* Section headers: a container as a full-width headline over an edge-to-edge rule. */
-#CorkboardSectionTitle {
-    color: $TEXT_PRIMARY;
-}
-
-#CorkboardSectionChevron, #CorkboardSectionCount {
-    color: $TEXT_SECONDARY;
-}
-
-#CorkboardSectionRule {
-    background-color: $BORDER;
-    border: none;
-}
-
-#CorkboardSectionHeader[selected="true"] #CorkboardSectionTitle {
-    color: $TEXT_PRIMARY;
-}
-
-#CorkboardSectionHeader[selected="true"] {
-    background-color: $BG_ELEVATED;
-}
-
-#CorkboardSectionHeader[current="true"] #CorkboardSectionTitle {
-    color: $ACCENT;
-}
-
-#CorkboardSectionHeader[drop_target="true"] {
-    background-color: $BG_ELEVATED;
-}
-
-#CorkboardSectionHeader[excluded="true"] #CorkboardSectionTitle {
-    color: $TEXT_DISABLED;
-}
-
-#CorkboardInsertionIndicator {
-    background-color: $ACCENT;
-}
-
-#CorkboardAppearancePopover {
-    background-color: $BG_ELEVATED;
-    border: 1px solid $BORDER;
-    border-radius: ${RADIUS_SM}px;
-}
 
 /* A panel area (framework/panels.py): its ground. It draws no edge of its own — the seam
    below already falls there, and two lines a pixel apart is what you get when both draw one. */
@@ -501,7 +408,6 @@ QSplitter::handle:vertical:pressed {
     font-weight: bold;
 }
 
-
 /* The estimate quick-picks: the sizes a step usually is, as one-tap buttons under the day
    box. The quiet bordered look, with the accent only on the one matching the current value —
    DESIGN.md's checked state, and never the surface's primary action. */
@@ -538,115 +444,15 @@ QSplitter::handle:vertical:pressed {
     padding: 4px;
 }
 
-/* Read-throughs: completion table tab, its notes field, the status-bar widget. */
-#ReadthroughTable {
-    background-color: $BG_ELEVATED;
-    border: none;
-    color: $TEXT_SECONDARY;
-}
-
-#ReadthroughTable::item {
-    padding: 3px 2px;
-    border-radius: ${RADIUS_SM}px;
-}
-
-#ReadthroughTable::item:selected {
-    background-color: $BG_OVERLAY;
-    color: $TEXT_PRIMARY;
-}
-
-#ReadthroughTable::item:hover {
-    color: $TEXT_PRIMARY;
-}
-
-#ReadthroughNotes, #ReadthroughSectionNotes {
-    background-color: $BG_BASE;
-    color: $TEXT_PRIMARY;
-    border: 1px solid $BORDER;
-    border-radius: ${RADIUS_SM}px;
-}
-
-#ReadStatusToggle {
-    background-color: $BG_BASE;
-    color: $TEXT_SECONDARY;
-    border: 1px solid $BORDER;
-    border-radius: ${RADIUS_SM}px;
-    padding: 3px 10px;
-}
-
-#ReadStatusToggle:hover:!checked {
-    color: $TEXT_PRIMARY;
-}
-
-#ReadStatusToggle:checked {
-    background-color: $ACCENT;
-    color: $ON_ACCENT;
-    border-color: $ACCENT;
-}
-
 /* Status-bar buttons: quiet text that brightens on hover, no button chrome. */
-#ReadthroughStatus, #TaskStatusButton {
+#TaskStatusButton {
     background: transparent;
     color: $TEXT_SECONDARY;
     border: none;
     padding: 0 6px;
 }
 
-#ReadthroughStatus:hover, #TaskStatusButton:hover {
-    color: $TEXT_PRIMARY;
-}
-
-/* Binder: the structure tree on the Manuscript sidebar page. */
-#BinderPanel {
-    background-color: $BG_ELEVATED;
-}
-
-#BinderTree {
-    background-color: $BG_ELEVATED;
-    border: none;
-    color: $TEXT_SECONDARY;
-}
-
-#BinderTree::item {
-    padding: 3px 2px;
-    border-radius: ${RADIUS_SM}px;
-}
-
-#BinderTree::item:selected {
-    background-color: $BG_OVERLAY;
-    color: $TEXT_PRIMARY;
-}
-
-#BinderTree::item:hover {
-    color: $TEXT_PRIMARY;
-}
-
-#BinderSearch {
-    background-color: $BG_BASE;
-    color: $TEXT_PRIMARY;
-    border: 1px solid $BORDER;
-    border-radius: ${RADIUS_SM}px;
-    padding: 4px 6px;
-    margin: 6px;
-}
-
-#BinderSearch:focus {
-    border-color: $ACCENT;
-}
-
-#BinderResults {
-    background-color: $BG_ELEVATED;
-    border: none;
-    color: $TEXT_SECONDARY;
-}
-
-#BinderResults::item {
-    padding: 5px 6px;
-    border-bottom: 1px solid $BORDER;
-}
-
-#BinderResults::item:selected {
-    background-color: $BG_OVERLAY;
+#TaskStatusButton:hover {
     color: $TEXT_PRIMARY;
 }
 
@@ -655,16 +461,12 @@ QSplitter::handle:vertical:pressed {
     background-color: $BG_ELEVATED;
 }
 
-#InspectorName, #InspectorTitle {
+#InspectorTitle {
     background-color: $BG_BASE;
     color: $TEXT_PRIMARY;
     border: 1px solid $BORDER;
     border-radius: ${RADIUS_SM}px;
     padding: 6px 8px;
-}
-
-#InspectorStats {
-    color: $TEXT_SECONDARY;
 }
 
 #InspectorCaption {
@@ -678,9 +480,32 @@ QSplitter::handle:vertical:pressed {
     color: $TEXT_SECONDARY;
 }
 
-/* Feature cards in the Text tab (framework/cards.py): a well on the elevated panel, the
- * same contrast as the Properties fields above. No colour here — it would cascade onto
- * every label inside. */
+/* What a surface says while it is not yet showing the truth (framework/signalling.py):
+   *Updating…* at a control strip's right while a rebuild is owed, and a status line's
+   words. The line's glyph carries its tone as an inline colour; the words stay secondary. */
+#UpdatingIndicator, #StatusLine {
+    color: $TEXT_SECONDARY;
+}
+
+/* A progress bar is a 4 px accent strip — no text, no frame — and there is one kind of it
+   (DESIGN.md's *Signalling*). The chunk must be styled too, or Fusion's striped chunk is
+   drawn into the trough and reads as mud. */
+QProgressBar {
+    background-color: $BG_OVERLAY;
+    border: none;
+    border-radius: 2px;
+    min-height: 4px;
+    max-height: 4px;
+}
+
+QProgressBar::chunk {
+    background-color: $ACCENT;
+    border-radius: 2px;
+}
+
+/* A feature's card in a panel (framework/cards.py): a well on the elevated panel, the
+ * same contrast as a plain field. No colour here — it would cascade onto every label
+ * inside. */
 #ToolCard {
     background-color: $BG_BASE;
     border: 1px solid $BORDER;
@@ -701,86 +526,53 @@ QSplitter::handle:vertical:pressed {
     border-radius: ${RADIUS_MD}px;
 }
 
-/* Open Manuscript dialog: tabs need explicit rules (nothing else in the app shows a
- * QTabBar through QSS), buttons share the reader-toolbar look. */
-/* Underline-style tabs: text with an accent bar under the active one — chrome that
- * belongs to the theme, not buttons pretending to be tabs. */
-#OpenDialogTabs::pane {
-    border: none;
-    border-top: 1px solid $BORDER;
-}
-
-#OpenDialogTabs QTabBar {
-    background: transparent;
-}
-
-#OpenDialogTabs QTabBar::tab {
-    background: transparent;
-    color: $TEXT_SECONDARY;
-    border: none;
-    border-bottom: 2px solid transparent;
-    padding: 6px 2px;
-    margin-right: 18px;
-}
-
-#OpenDialogTabs QTabBar::tab:selected {
-    color: $TEXT_PRIMARY;
-    border-bottom: 2px solid $ACCENT;
-}
-
-#OpenDialogTabs QTabBar::tab:hover:!selected {
-    color: $TEXT_PRIMARY;
-}
-
-#OpenDialogTable {
-    background-color: $BG_ELEVATED;
-    border: none;
-}
-
-#OpenDialogTable::item {
-    padding: 4px 8px;
-    border: none;
-}
-
-#OpenDialogTable QHeaderView::section {
-    background-color: transparent;
-    color: $TEXT_SECONDARY;
-    border: none;
-    border-bottom: 1px solid $BORDER;
-    padding: 4px 8px;
-}
-
-#OpenDialogStatus {
-    color: $TEXT_SECONDARY;
-}
-
-#OpenDialogButton {
+/* The quiet bordered button: a toolbar verb, the layout picker, the task browser's in-row
+ * Cancel. DESIGN.md's *Buttons*: everything that is not the one primary looks like this. */
+#ToolbarButton, #LayoutButton, #TaskRowCancel, #FilterButtonFace, #FilterButtonClear {
     background-color: $BG_OVERLAY;
     color: $TEXT_SECONDARY;
     border: 1px solid $BORDER;
     border-radius: ${RADIUS_SM}px;
-    padding: 5px 10px;
+    padding: 6px 12px;
 }
 
-#OpenDialogButton:hover {
+#ToolbarButton:hover, #LayoutButton:hover, #TaskRowCancel:hover,
+#FilterButtonFace:hover, #FilterButtonClear:hover {
     color: $TEXT_PRIMARY;
     border-color: $BORDER_STRONG;
 }
 
-/* Reader: toolbar buttons and the table of contents (styled like the binder) — the
- * browser is prose and stays unboxed below. The quiet bordered button look is shared
- * with the task browser's in-row Cancel. */
-#ReaderToolButton, #ToolbarButton, #LayoutButton, #TaskRowCancel {
-    background-color: $BG_OVERLAY;
-    color: $TEXT_SECONDARY;
-    border: 1px solid $BORDER;
-    border-radius: ${RADIUS_SM}px;
-    padding: 5px 10px;
+/* The filter control (framework/toolbar.py's FilterButton): the face and its × are one
+   shape — the corners between them square, one hairline shared — and while a filter is
+   on the face wears a wash of the accent over its ground and the accent on its border,
+   the glyph having already said so. */
+#FilterButtonFace {
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 0px;
+    padding-left: 6px;  /* The glyph carries its own slot for the dot at its left. */
+    padding-right: 10px;
 }
 
-#ReaderToolButton:hover, #ToolbarButton:hover, #LayoutButton:hover, #TaskRowCancel:hover {
+#FilterButtonFace::menu-indicator {
+    image: none;
+    width: 0px;
+}
+
+#FilterButtonFace[active="true"] {
+    background-color: $ACCENT_WASH;
     color: $TEXT_PRIMARY;
-    border-color: $BORDER_STRONG;
+    border-color: $ACCENT;
+}
+
+#FilterButtonClear {
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+    border-left: none;
+    padding: 6px 8px;
+}
+
+#FilterButtonClear:disabled {
+    color: $TEXT_DISABLED;
 }
 
 #TaskRowCancel:disabled {
@@ -795,7 +587,7 @@ QSplitter::handle:vertical:pressed {
     background: transparent;
     border: none;
     padding: 0px;
-    spacing: 8px;
+    spacing: ${CONTROL_GAP}px;
 }
 
 /* The aspect bar seats eleven glyphs and five words in one row: tighter sides than a
@@ -805,15 +597,77 @@ QSplitter::handle:vertical:pressed {
 }
 
 #ControlBar::separator {
-    background-color: $BORDER;
+    background-color: $BORDER_FAINT;
     width: 1px;
-    margin: 2px 4px;
+    margin: 6px 4px;
 }
 
-#ToolbarButton {
-    /* Glyphs and icons carry different metrics; one fixed height keeps the row even. */
-    min-height: 16px;
-    max-height: 16px;
+/* A combo box on a strip, or in a dialog's body, is one of the buttons beside it: the
+   quiet bordered look, and the arrow's room at the right — Qt's own metric leaves the words
+   under the arrow. Styling the drop-down takes Fusion's arrow away, so the arrow is the
+   theme's own SVG (theme/__init__.py's drop_arrow_url): a border-drawn triangle flattens
+   into a bar at a 2× scale. */
+#ControlBar QComboBox, #DialogBody QComboBox {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_PRIMARY;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    padding: 6px ${ARROW_ROOM}px 6px 12px;
+    min-height: 18px;
+    max-height: 18px;
+}
+
+/* The list a combo box drops down: the menu's look — the overlay ground behind a strong
+   hairline, rounded, air around every entry, the accent on the one under the pointer. */
+QComboBox QAbstractItemView {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_PRIMARY;
+    border: 1px solid $BORDER_STRONG;
+    border-radius: ${RADIUS_MD}px;
+    padding: 6px;
+    outline: 0;
+    selection-background-color: $ACCENT;
+    selection-color: $ON_ACCENT;
+}
+
+QComboBox QAbstractItemView::item {
+    padding: 6px 12px;
+    border-radius: ${RADIUS_SM}px;
+}
+
+QComboBox QAbstractItemView::item:selected {
+    background-color: $ACCENT;
+    color: $ON_ACCENT;
+}
+
+#ControlBar QComboBox:hover, #DialogBody QComboBox:hover {
+    border-color: $BORDER_STRONG;
+}
+
+#ControlBar QComboBox::drop-down, #DialogBody QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    width: ${ARROW_W}px;
+    border: none;
+}
+
+#ControlBar QComboBox::down-arrow, #DialogBody QComboBox::down-arrow {
+    image: url($DROP_ARROW);
+    width: 10px;
+    height: 6px;
+}
+
+#ToolbarButton, #FilterButtonFace, #FilterButtonClear {
+    /* Glyphs and words carry different metrics; one content height keeps every control on
+       a strip 32 px tall — this, 6 px of padding above and below, and the hairline. */
+    min-height: 18px;
+    max-height: 18px;
+}
+
+/* A divider between a strip's groups: the hairline at half strength, parting without
+   drawing attention (framework/toolbar.py's Toolbar; a QToolBar's own separator below). */
+#ToolbarDivider {
+    background-color: $BORDER_FAINT;
 }
 
 #ToolbarButton:checked {
@@ -871,167 +725,13 @@ QSplitter::handle:vertical:pressed {
     color: $TEXT_SECONDARY;
 }
 
-#ReaderToc {
-    background-color: $BG_ELEVATED;
-    border: none;
-    border-left: 1px solid $BORDER;
-    color: $TEXT_SECONDARY;
-}
-
-#ReaderToc::item {
-    padding: 3px 2px;
-    border-radius: ${RADIUS_SM}px;
-}
-
-#ReaderToc::item:selected {
-    background-color: $BG_OVERLAY;
-    color: $TEXT_PRIMARY;
-}
-
-#ReaderToc::item:hover {
-    color: $TEXT_PRIMARY;
-}
-
-/* Prose surfaces sit directly on the window colour — no box around the text. The
- * bg_surface colour stays reserved for genuine input wells (search, inspector, notes). */
-#ManuscriptEdit,
-#SegmentBody,
-#ZenEdit,
-#ReaderBrowser {
-    background-color: $BG_BASE;
-    border: none;
-}
-
-#ManuscriptEdit,
-#SegmentBody,
-#ZenEdit {
-    padding: 12px 0px 48px 0px;
-}
-
-/* Zen mode: the manuscript full screen with one quiet corner line — the progress
- * percentage and a text-only "…" button, both deliberately chrome-free — plus the
- * button's mode popup and the transient bottom notice. */
-#ZenWindow {
-    background-color: $BG_BASE;
-}
-
-#ZenProgress {
-    color: $TEXT_DISABLED;
-}
-
-#ZenMenuButton {
-    background: transparent;
-    border: none;
-    color: $TEXT_DISABLED;
-    padding: 0px 2px;
-}
-
-#ZenMenuButton:hover {
-    color: $TEXT_PRIMARY;
-}
-
-#ZenModePopup {
-    background-color: $BG_ELEVATED;
-    border: 1px solid $BORDER;
-    border-radius: ${RADIUS_SM}px;
-}
-
-/* A row of quiet text buttons; the checked mode reads in the accent colour. */
-#ZenModeButton {
-    background: transparent;
-    border: none;
-    color: $TEXT_SECONDARY;
-    padding: 5px 8px;
-}
-
-#ZenModeButton:hover {
-    color: $TEXT_PRIMARY;
-}
-
-#ZenModeButton:checked {
-    color: $ACCENT;
-}
-
-#ZenPopupRule {
-    background-color: $BORDER;
-    border: none;
-}
-
-#ZenTocList {
-    background-color: $BG_ELEVATED;
-    border: none;
-    color: $TEXT_SECONDARY;
-}
-
-#ZenTocList::item {
-    padding: 3px 8px;
-    border-radius: ${RADIUS_SM}px;
-}
-
-#ZenTocList::item:selected {
-    background-color: $BG_OVERLAY;
-    color: $TEXT_PRIMARY;
-}
-
-#ZenTocList::item:hover {
-    color: $TEXT_PRIMARY;
-}
-
-#ZenNotice {
-    color: $TEXT_SECONDARY;
-}
-
-/* The read-only manuscript heading above the segment body; scrolls with the prose.
- * 4px left aligns with the body text, which sits inset by its QTextDocument margin. */
-#SegmentEditorTitle {
-    color: $TEXT_PRIMARY;
-    padding: 12px 0px 0px 4px;
-}
-
-#ReaderBrowser {
-    padding: 32px 0px 96px 0px;
-}
-
-/* ---- Edit review dialog (DESIGN.md: spacious, what/why hierarchy, one accent) ------- */
-
-#EditReviewChangeList {
-    background-color: $BG_SURFACE;
-    border: 1px solid $BORDER;
-    border-radius: ${RADIUS_MD}px;
-}
-
-/* Prose wells: framed like the inspector's text inputs; breathing room comes from the
- * document margin set in code, not padding, so offsets stay unpadded. */
-#EditReviewOriginal, #EditReviewProposed {
-    background-color: $BG_BASE;
-    color: $TEXT_PRIMARY;
-    border: 1px solid $BORDER;
-    border-radius: ${RADIUS_MD}px;
-}
-
-#EditReviewProgress, #EditReviewSummary, #EditReviewOptionDescription, #StyleDecisionChoice {
-    color: $TEXT_SECONDARY;
-}
-
-/* ---- Card preview (Space on the corkboard): a page, not a form ---------------------- */
-
-/* A prose well like the review dialog's panes; the text is inset by the document margin
- * set in code, so no padding here. */
-#CardPreviewBody {
-    background-color: $BG_BASE;
-    color: $TEXT_PRIMARY;
-    border: 1px solid $BORDER;
-    border-radius: ${RADIUS_MD}px;
-}
-
-#CardPreviewPosition {
-    color: $TEXT_SECONDARY;
-}
-
 /* Dialog footer buttons: quiet bordered secondaries, at most one accent primary. */
-#EditReviewDialog QPushButton, #TaskBrowserDialog QPushButton, #CardPreviewDialog QPushButton,
-#InstallDialog QPushButton, #ProjectDialog QPushButton,
-#MovePlanDialog QPushButton, #RepositoriesFolderDialog QPushButton, #GhRepoListDialog QPushButton,
+#TaskBrowserDialog QPushButton,
+#InstallDialog QPushButton,
+#ProjectDialog QPushButton,
+#MovePlanDialog QPushButton,
+#RepositoriesFolderDialog QPushButton,
+#GhRepoListDialog QPushButton,
 #OpenProjectsDialog QPushButton {
     background-color: $BG_OVERLAY;
     color: $TEXT_PRIMARY;
@@ -1040,9 +740,7 @@ QSplitter::handle:vertical:pressed {
     padding: 6px 14px;
 }
 
-#EditReviewDialog QPushButton:hover,
 #TaskBrowserDialog QPushButton:hover,
-#CardPreviewDialog QPushButton:hover,
 #InstallDialog QPushButton:hover,
 #ProjectDialog QPushButton:hover,
 #MovePlanDialog QPushButton:hover,
@@ -1052,9 +750,7 @@ QSplitter::handle:vertical:pressed {
     border-color: $BORDER_STRONG;
 }
 
-#EditReviewDialog QPushButton:disabled,
 #TaskBrowserDialog QPushButton:disabled,
-#CardPreviewDialog QPushButton:disabled,
 #InstallDialog QPushButton:disabled,
 #ProjectDialog QPushButton:disabled,
 #MovePlanDialog QPushButton:disabled,
@@ -1062,53 +758,6 @@ QSplitter::handle:vertical:pressed {
 #GhRepoListDialog QPushButton:disabled,
 #OpenProjectsDialog QPushButton:disabled {
     color: $TEXT_DISABLED;
-}
-
-#EditReviewDialog #PrimaryButton, #CardPreviewDialog #PrimaryButton,
-#InstallDialog #PrimaryButton,
-#ProjectDialog #PrimaryButton, #MovePlanDialog #PrimaryButton,
-#RepositoriesFolderDialog #PrimaryButton, #GhRepoListDialog #PrimaryButton,
-#OpenProjectsDialog #PrimaryButton, #SpecSourceStrip #PrimaryButton,
-#SourceConnectDialog #PrimaryButton {
-    background-color: $ACCENT;
-    color: $ON_ACCENT;
-    border-color: $ACCENT;
-    font-weight: bold;
-    padding: 6px 18px;
-}
-
-#EditReviewDialog #PrimaryButton:hover, #CardPreviewDialog #PrimaryButton:hover,
-#InstallDialog #PrimaryButton:hover,
-#ProjectDialog #PrimaryButton:hover, #MovePlanDialog #PrimaryButton:hover,
-#RepositoriesFolderDialog #PrimaryButton:hover, #GhRepoListDialog #PrimaryButton:hover,
-#OpenProjectsDialog #PrimaryButton:hover, #SpecSourceStrip #PrimaryButton:hover,
-#SourceConnectDialog #PrimaryButton:hover {
-    background-color: $ACCENT_HOVER;
-    border-color: $ACCENT_HOVER;
-}
-
-#EditReviewDialog #PrimaryButton:disabled, #InstallDialog #PrimaryButton:disabled,
-#ProjectDialog #PrimaryButton:disabled,
-#MovePlanDialog #PrimaryButton:disabled, #RepositoriesFolderDialog #PrimaryButton:disabled,
-#GhRepoListDialog #PrimaryButton:disabled, #OpenProjectsDialog #PrimaryButton:disabled {
-    background-color: $BG_OVERLAY;
-    color: $TEXT_DISABLED;
-    border-color: $BORDER;
-}
-
-/* The model's advice on one option of a style decision: the caption look (bold secondary),
- * so it reads as a marker without competing with the accent on the chosen option. */
-#EditReviewOptionRecommended {
-    color: $TEXT_SECONDARY;
-    font-weight: bold;
-}
-
-/* The chosen option of a style decision: the accent marks the checked state. */
-#EditReviewDialog #EditReviewOption:checked {
-    background-color: $ACCENT;
-    color: $ON_ACCENT;
-    border-color: $ACCENT;
-    font-weight: bold;
 }
 
 /* ---- Installing DPlanner (DESIGN.md: what/why rows in a framed well) --------------- */
@@ -1161,19 +810,6 @@ QSplitter::handle:vertical:pressed {
     color: $TEXT_PRIMARY;
 }
 
-/* A thin accent strip: the chunk must be styled too, or Fusion's striped chunk is drawn
- * into the 4 px trough and reads as mud. */
-#TaskBrowserDialog QProgressBar {
-    background-color: $BG_OVERLAY;
-    border: none;
-    border-radius: 2px;
-}
-
-#TaskBrowserDialog QProgressBar::chunk {
-    background-color: $ACCENT;
-    border-radius: 2px;
-}
-
 /* ---- Projects: the Project dialog, Move Plan, Open Projects (DESIGN.md: settings above a
  * rule, log wells below; a glyph button beside each field; one primary per surface) ---- */
 
@@ -1220,4 +856,105 @@ QToolButton[repoTool="true"]:hover {
  * where an icon would be. */
 #RepoMenuButton {
     padding: 2px 6px;
+}
+
+/* ---- Tables (framework/table.py) --------------------------------------------------- */
+
+/* A well on the window colour; no grid, the alignment is the structure. The delegate
+   paints every pixel of text, glyph, hover and edge itself, so there is no ::item padding
+   and no ::item:hover here — Qt's hover is per cell, and a row is what the eye reads. The
+   header is the caption look laid on its side, over one hairline. */
+#Table {
+    background-color: $BG_BASE;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
+    color: $TEXT_PRIMARY;
+}
+
+#Table::item:selected {
+    background-color: $BG_OVERLAY;
+}
+
+#Table QHeaderView::section {
+    background-color: $BG_BASE;
+    color: $TEXT_SECONDARY;
+    border: none;
+    border-bottom: 1px solid $BORDER;
+    padding: ${CELL_PADDING_V}px ${CELL_PADDING_H}px;
+    font-weight: bold;
+}
+
+/* ---- Dialogs (framework/dialog.py) ------------------------------------------------- */
+
+/* The frame names its parts, and every dialog on it is styled through these two names —
+   never through its own. The lead under the title is the secondary remark; the footer's
+   buttons are quiet bordered secondaries, and the one primary is the rule at the end. */
+#DialogLead {
+    color: $TEXT_SECONDARY;
+}
+
+/* The footer is a band under the page, edge to edge: the elevated ground under a faint
+   hairline, the one place a dialog has a second ground, so the eye finds the way out
+   without reading. Background only — a colour here would cascade onto the buttons. */
+#DialogFooter {
+    background-color: $BG_ELEVATED;
+    border-top: 1px solid $BORDER_FAINT;
+}
+
+#DialogFooter QPushButton {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_PRIMARY;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    padding: 6px 14px;
+}
+
+#DialogFooter QPushButton:hover {
+    border-color: $BORDER_STRONG;
+}
+
+#DialogFooter QPushButton:disabled {
+    color: $TEXT_DISABLED;
+}
+
+/* A field in a dialog's body: the panel field's look (#InspectorTitle), with the accent
+   saying where the keyboard is. Line and text edits only — a bordered QComboBox has to draw
+   its own arrow, and a boxed QSpinBox shows two styles; Fusion paints both from the palette. */
+#DialogBody QLineEdit, #DialogBody QPlainTextEdit, #DialogBody QTextEdit {
+    background-color: $BG_BASE;
+    color: $TEXT_PRIMARY;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    padding: 6px 8px;
+}
+
+#DialogBody QLineEdit:focus, #DialogBody QPlainTextEdit:focus, #DialogBody QTextEdit:focus {
+    border-color: $ACCENT;
+}
+
+/* ---- The primary button ------------------------------------------------------------ */
+
+/* One accent primary per surface (DESIGN.md's *Buttons*), wherever it is. Type-prefixed
+   and LAST of the button rules on purpose: a descendant rule such as `#Dialog QPushButton`
+   outranks a bare `#PrimaryButton` whatever the order, which is how this file once grew a
+   list of dialog names; `QPushButton#PrimaryButton` ties it on specificity and wins by
+   position. Nothing below this may style a QPushButton. */
+QPushButton#PrimaryButton {
+    background-color: $ACCENT;
+    color: $ON_ACCENT;
+    border: 1px solid $ACCENT;
+    border-radius: ${RADIUS_SM}px;
+    font-weight: bold;
+    padding: 6px 18px;
+}
+
+QPushButton#PrimaryButton:hover {
+    background-color: $ACCENT_HOVER;
+    border-color: $ACCENT_HOVER;
+}
+
+QPushButton#PrimaryButton:disabled {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_DISABLED;
+    border-color: $BORDER;
 }

@@ -6,7 +6,8 @@ back the one the shelf kept — and toggling off shelves it. Type entries are in
 toggles, never a radio group: what a step *is* emerges from which aspects it carries.
 """
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 
 from dplanner.domain.model import Library
 from dplanner.framework.action_registry import ActionRegistry
@@ -26,12 +27,21 @@ from dplanner.modules.step_milestone.section import MilestoneSection
 from dplanner.theme.icons import tag_icon
 
 
+def _no_shade(_step_id: str) -> tuple[str, str]:
+    """No colour map reaches this build; the tab shows a label and nothing beside it."""
+    return "", ""
+
+
 @dataclass(frozen=True)
 class StepMilestoneDeps:
     library: Library
     undo: UndoService[Library]
     sections: InspectorSectionRegistry
     actions: ActionRegistry
+    # A milestone's own shade of the project's colour map and the words for it — the swatch
+    # beside the label. Which map a project uses is another module's assumption, so the
+    # composition root answers and this one never learns where a palette is stored.
+    shade: Callable[[str], tuple[str, str]] = field(default=_no_shade)
 
 
 class StepMilestoneModule:
@@ -48,7 +58,7 @@ class StepMilestoneModule:
                 id=f"{MODULE_ID}.tab",
                 label=SPEC.label,
                 order=50,
-                factory=lambda: MilestoneSection(deps.library, deps.undo),
+                factory=lambda: MilestoneSection(deps.library, deps.undo, deps.shade),
                 # The tab follows the aspect: toggling on generates a label and the tab
                 # appears with it, so there is always somewhere to edit one that exists.
                 shown_for=lambda step_id: (

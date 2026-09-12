@@ -4,7 +4,8 @@ from PySide6.QtCore import QRect, QSize
 from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import QStyleOptionViewItem
 
-from dplanner.framework.list_rows import ICON_GAP, ROW_PADDING_H, text_left
+from dplanner.framework.list_rows import ICON_GAP, text_left
+from dplanner.theme.tokens import ROW_PADDING_H
 
 
 def _option(icon: QIcon | None) -> QStyleOptionViewItem:

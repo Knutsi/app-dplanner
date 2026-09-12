@@ -141,7 +141,9 @@ class NotesView(QWidget):
 
         # Hidden until the refresh says the log is empty; it and the split trade places —
         # the roster's button with it, so the first note has a button of its own here.
-        self.empty = EmptyState(parent=self, action=("Add Note…", self.add_note))
+        self.empty = EmptyState(
+            parent=self, action=("Add Note…", self.add_note), stands_in_for=self.split
+        )
         layout.addWidget(self.empty, 1)
 
         # After a quiet spell, not per signal: the rows name steps, so a rename counts too.
@@ -258,7 +260,6 @@ class NotesView(QWidget):
         self.summary.setText(
             f"{len(records)} notes, {standing} standing — newest first" if records else ""
         )
-        self.split.setVisible(bool(records))
         self.empty.say("" if records else NO_NOTES)
         self._show_selected()
 

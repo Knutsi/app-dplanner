@@ -32,11 +32,9 @@ from dplanner.framework.prose_edit import Attach, Pick, ProseEdit
 from dplanner.framework.text_binding import TextBinding, TextField
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import centered_column, make_text_well, space_lines
+from dplanner.theme.tokens import DIALOG_MARGIN, SCREEN_SHARE, SECTION_GAP
 
 # DESIGN.md: dialogs get 20 px outer margins and 12 px between sections.
-DIALOG_MARGIN = 20
-SECTION_GAP = 12
-SCREEN_SHARE = 0.8  # The same slice ImagePreviewDialog claims.
 EDITOR_MEASURE = 760  # A readable prose measure; the column centres in a wider dialog.
 BUTTON_INSET = 4  # The expand button's distance from the editor's corner.
 

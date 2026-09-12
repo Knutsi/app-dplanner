@@ -226,6 +226,7 @@ src/dplanner/
 ├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
 ├── scripts/layout_item_double_delete.py   the layout-item double delete built to order, and the finalizer that stops it
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
+├── scripts/render_design_example.py  Debug ▸ Design Example in both themes, to PNG — committed under docs/screenshots/f1-design-example/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
@@ -294,6 +295,11 @@ src/dplanner/
 │   ├── image_preview.py     the modal lightbox the gallery (and anyone) opens
 │   ├── window_watch.py      noticing, and taking in, another writer's changes to the library
 │   ├── debounce.py          a coalesced refresh: a burst runs once, and tests run it inline
+│   ├── dialog.py            the dialog frame — title in the body, footer slots in one order — and the one-line prompt
+│   ├── toolbar.py           a strip of verbs as glyphs with their words in tooltips, folding into a … menu; the filter control
+│   ├── table.py             the table: columns declared, the rules applied once, a delegate painting what a row wears
+│   ├── signalling.py        Updating… over one Debounced, a spinner in a working button's glyph, a status line in a tone
+│   ├── widgets.py           the empty state that trades places with its content, the caption, the note, confirm()
 │   ├── diagnostics.py       the stall watchdog, the failure hooks, the crash log — app.main's
 │   └── …                    registries, actions, tabs, undo, autosave, tasks, LLM
 
@@ -386,14 +392,17 @@ src/dplanner/
 │   ├── theme_omarchy/       ── one module per theme provider, each a Qt-free `themes.py`: Omarchy's
 │   ├── theme_system/           staged theme and the person's own; the desktop's dark or light on macOS,
 │   │                           Windows, GNOME and KDE (`theme/providers.py` is the contract)
-│   ├── appshell/  sync/  settings/  taskcenter/  debug/
+│   ├── appshell/  sync/  settings/  taskcenter/
+│   ├── debug/               diagnostics — the LLM Calls and Telemetry tabs — and Debug ▸ Design Example,
+│   │                        the design system built from the primitives, to be looked at and copied from
 │   └── llm/  llm_openai/  llm_anthropic/
 │
 └── theme/                 the Theme record and the house themes, the provider contract and the built-in
                            provider — every Omarchy default, generated from its colors.toml through one
                            mapping — the palette, a chrome-only stylesheet, the glyphs, tones.py (the
-                           semantic colours a node body and a kind button share) and cards.py, the card
-                           primitives the canvas and the coverage view both paint with
+                           semantic colours a node body and a kind button share), palettes.py (the
+                           colour maps a project's milestones are shaded along, Qt-free) and cards.py,
+                           the card primitives the canvas and the coverage view both paint with
 ```
 
 ## Where it came from

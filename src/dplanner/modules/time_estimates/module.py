@@ -93,7 +93,7 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.tabs import TabHost
-from dplanner.framework.toolbar import CONTROL_GAP, ActionToolbar, control_bar
+from dplanner.framework.toolbar import ActionToolbar, control_bar
 from dplanner.framework.undo import UndoService
 from dplanner.modules.time_estimates.chart import (
     PAGES,
@@ -147,6 +147,7 @@ from dplanner.modules.time_estimates.schedule import (
     WHOLE_COLOR,
     Cell,
     TimeReport,
+    milestone_colors,
     phase_colors,
     read_color,
     read_efficiency,
@@ -159,6 +160,7 @@ from dplanner.modules.time_estimates.schedule import (
 )
 from dplanner.modules.time_estimates.snapshots import SaveSnapshotDialog, SnapshotPicker
 from dplanner.modules.time_estimates.view import Banner, FocusBar, MatrixView
+from dplanner.theme.tokens import CONTROL_GAP
 
 TIME_KIND = "time"
 REFRESH_DELAY_MS = 500
@@ -716,6 +718,10 @@ class TimeEstimatesActivity(EntityActivity):
     def _is_milestone(self, step: Step) -> bool:
         return bool(self._deps.milestone_label(step))
 
+    def _milestone_colors(self) -> dict[StepId, str]:
+        """The project's one deal — the same dict every other surface in the window reads."""
+        return milestone_colors(self._deps.library, self._project(), self._is_milestone)
+
     def _refresh(self) -> None:
         self.recalculating.hide()
         if not self._product.has(self.project_id):
@@ -781,7 +787,8 @@ class TimeEstimatesActivity(EntityActivity):
         found = read_palette(self._project())
         self.palette_picker.show_palette(found)
         colors = [
-            QColor(hex_color) for hex_color in phase_colors(calendar.phases, read_color, found)
+            QColor(hex_color)
+            for hex_color in phase_colors(calendar.phases, self._milestone_colors())
         ]
         stretches = list(zip(calendar.phases, colors, strict=True))
         if self._picked is not None and not any(

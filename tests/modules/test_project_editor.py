@@ -45,7 +45,7 @@ from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef
 from dplanner.modules.step_properties.module import PANEL_ID as STEP_PANEL_ID
 from dplanner.theme import apply_theme
 from dplanner.theme.cards import FILL_ALPHA, LIFT
-from dplanner.theme.themes import DARK, DEFAULT, LIGHT
+from dplanner.theme.themes import DARK, LIGHT
 
 
 @pytest.fixture
@@ -871,13 +871,6 @@ def test_the_canvas_has_no_scroll_bars(services, project, tab):
 
 
 # -- the canvas follows the theme ----------------------------------------------------------------
-
-
-@pytest.fixture
-def themed(app):
-    """A theme is applied application-wide, so put the default back for whatever runs next."""
-    yield app
-    apply_theme(app, DEFAULT)
 
 
 def painted_node(tab, step_id, background: str) -> QColor:

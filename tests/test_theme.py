@@ -6,11 +6,16 @@ rule around it, and a palette that only fills the Active colour group makes a da
 turn light the moment the window loses focus.
 """
 
+import re
+from importlib.resources import files
+from pathlib import Path
+
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QMenu, QSplitter, QStyle, QToolButton, QWidget
 
+import dplanner
 from dplanner.theme import load_stylesheet, tokens
 from dplanner.theme.palette import build_palette
 from dplanner.theme.providers import BUILTIN, OMARCHY_THEMES
@@ -32,6 +37,25 @@ def relative_lightness(hex_color: str) -> float:
 def test_every_theme_substitutes_fully(theme):
     """A leftover $TOKEN makes Qt discard the rule around it — silently."""
     assert "$" not in load_stylesheet(theme)
+
+
+# An object name the stylesheet styles that no ``setObjectName("…")`` literal sets: name → why
+# (a name composed at runtime, say). Empty on purpose; an entry here needs its reason.
+NAMED_DYNAMICALLY: dict[str, str] = {}
+
+
+def test_every_name_the_stylesheet_styles_is_set_by_some_widget():
+    """A rule for a surface that no longer exists is not dead weight but a lie: the next
+    reader copies its look, sets the name, and gets a rule written for another widget.
+    Forty per cent of this file once described the application the template came from."""
+    raw = files("dplanner.theme").joinpath("theme.qss").read_text(encoding="utf-8")
+    assert "Writer" not in raw
+    rules = re.sub(r"/\*.*?\*/", "", raw, flags=re.S)
+    names = set(re.findall(r"#([A-Z][A-Za-z0-9_]*)", rules))  # A capital: never a hex colour.
+    package = Path(dplanner.__file__).parent
+    source = "".join(p.read_text(encoding="utf-8") for p in package.rglob("*.py"))
+    unset = sorted(n for n in names if f'"{n}"' not in source and n not in NAMED_DYNAMICALLY)
+    assert unset == []
 
 
 @pytest.mark.parametrize("theme", THEMES.values(), ids=list(THEMES))
@@ -167,3 +191,26 @@ def _tool_option(button):
     option = QStyleOptionToolButton()
     button.initStyleOption(option)
     return option
+
+
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=("dark", "light"))
+def test_a_combo_box_on_a_strip_wears_the_quiet_bordered_look(themed, theme):
+    """Beside the strip's buttons a Fusion combo box read as another product's; rendered,
+    its ground inside the border is the overlay the buttons wear."""
+    from PySide6.QtWidgets import QComboBox
+
+    from dplanner.framework.toolbar import control_bar
+    from dplanner.theme import apply_theme
+
+    apply_theme(themed, theme)
+    bar = control_bar()
+    combo = QComboBox(bar)
+    combo.addItems(["All steps", "Milestones"])
+    bar.addWidget(combo)
+    bar.show()
+    themed.processEvents()
+    try:
+        image = combo.grab().toImage()
+        assert image.pixelColor(4, combo.height() // 2) == QColor(theme.bg_overlay)
+    finally:
+        bar.deleteLater()

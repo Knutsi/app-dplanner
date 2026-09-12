@@ -32,6 +32,7 @@ from dplanner.modules.testing.view import (
     tint,
     word,
 )
+from dplanner.theme.tones import recoloured
 
 COLUMNS = ("Test", "Project", "Step", "Covered by", "Result", "When")
 TEST_COLUMN, PROJECT_COLUMN, STEP_COLUMN, COVERED_COLUMN, RESULT_COLUMN, WHEN_COLUMN = range(6)
@@ -62,6 +63,10 @@ class Row:
     # the table draws no headings at all. Whoever orders the rows also fills this in:
     # rows of one group must arrive together, and there is one place that orders them.
     group: str = ""
+    # The heading's own colour when the group is a milestone: its shade of the project's
+    # colour map. "" for a feature heading and for the ungathered fallback — a feature is
+    # not dealt a shade, and nothing is not a thing.
+    group_color: str = ""
 
 
 class TestsTable(QTableWidget):
@@ -104,8 +109,8 @@ class TestsTable(QTableWidget):
         self.clearSpans()
         self.setRowCount(len(laid))
         for index, entry in enumerate(laid):
-            if isinstance(entry, str):
-                self._fill_heading(index, entry)
+            if isinstance(entry, tuple):
+                self._fill_heading(index, *entry)
             else:
                 self._fill(index, entry)
         # A column of blanks is noise: hide what this scope has nothing to say about.
@@ -120,11 +125,16 @@ class TestsTable(QTableWidget):
             self.setColumnWidth(TEST_COLUMN, min(self.columnWidth(TEST_COLUMN), TEST_MAX_WIDTH))
             self._sized = bool(rows)
 
-    def _fill_heading(self, index: int, title: str) -> None:
+    def _fill_heading(self, index: int, title: str, color: str = "") -> None:
         """A group's name, spanning the table: not a row, and never selectable.
 
         Left out of the delegate's two-line treatment on purpose — a heading is one line,
         and a second line under it would read as a test that cannot be marked.
+
+        A milestone heading is written in the milestone's own shade of the project's colour
+        map rather than the secondary ink every other heading takes, so grouping by
+        milestone reads as the same sequence the calendar and the graph show. It stays the
+        heading's weight and size: colour is the only thing that changes.
         """
         item = QTableWidgetItem(title)
         item.setFlags(Qt.ItemFlag.NoItemFlags)
@@ -133,7 +143,7 @@ class TestsTable(QTableWidget):
         item.setFont(font)
         faded = self.palette().text().color()
         faded.setAlpha(SECONDARY_ALPHA)
-        item.setForeground(faded)
+        item.setForeground(recoloured(faded, color) if color else faded)
         self.setItem(index, TEST_COLUMN, item)
         for column in range(1, len(COLUMNS)):
             blank = QTableWidgetItem("")
@@ -218,16 +228,20 @@ def _role_at(item: QTableWidgetItem | None, role: int) -> str | None:
     return str(found) if found is not None else None
 
 
-def _with_headings(rows: Sequence[Row]) -> list[Row | str]:
-    """The rows with a heading wherever the group changes; unchanged when nothing groups."""
+def _with_headings(rows: Sequence[Row]) -> list[Row | tuple[str, str]]:
+    """The rows with a heading wherever the group changes; unchanged when nothing groups.
+
+    A heading is ``(title, colour)`` — the colour is the first row's, since every row of a
+    group names the same collector.
+    """
     if not any(row.group for row in rows):
         return list(rows)
-    laid: list[Row | str] = []
+    laid: list[Row | tuple[str, str]] = []
     current = None
     for row in rows:
         if row.group != current:
             current = row.group
-            laid.append(current)
+            laid.append((current, row.group_color))
         laid.append(row)
     return laid
 

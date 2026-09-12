@@ -105,6 +105,9 @@ class Group:
     detail: str
     sources: tuple[Source, ...]
     icon: str = ""  # A medallion name; "" draws none.
+    # A milestone collector's own shade of the project's colour map; "" paints the
+    # glyph in the list's ink, which is what a feature and a check take.
+    color: str = ""
     mark: str = ""  # "stale" | "never" | "" — what the delegate paints at the right edge.
     collector: Step | None = None
     areas: tuple[str, ...] = field(default_factory=tuple)
@@ -243,6 +246,7 @@ class DocsActivity(EntityActivity):
                     _group_detail(found),
                     tuple(found),
                     icon=_glyph_for(self._deps.scopes, step),
+                    color=self._deps.milestone_color(step.id),
                     mark="" if standing.state == "current" else standing.state,
                     collector=step,
                     areas=tuple(source.step.id for source in found),
@@ -410,7 +414,7 @@ class _DocsPage(QWidget):
         self.splitter.setSizes([LIST_WIDTH, LIST_WIDTH * 3])
 
         layout.addWidget(self.splitter, 1)
-        self.empty = EmptyState(parent=self)
+        self.empty = EmptyState(parent=self, stands_in_for=self.splitter)
         layout.addWidget(self.empty, 1)
 
     def offer_grouping(self, offered: bool) -> None:
@@ -424,7 +428,6 @@ class _DocsPage(QWidget):
     def say(self, message: str) -> None:
         """A tab cannot go off screen the way a panel does, so it says so in words."""
         self.empty.say(message)
-        self.splitter.setVisible(not message)
 
     def lead(self, answer: str, detail: str) -> None:
         self.answer.setText(answer)
@@ -440,7 +443,8 @@ class _DocsPage(QWidget):
             item.setData(MARK_ROLE, group.mark)
             painter = glyph_painter(group.icon) if group.icon else None
             if painter is not None:
-                item.setIcon(painter(self.list.palette().text().color()))
+                ink = QColor(self.list.palette().text().color())
+                item.setIcon(painter(QColor(group.color) if group.color else ink))
             self.list.addItem(item)
         rows = [index for index, group in enumerate(groups) if group.key == keep]
         self.list.setCurrentRow(rows[0] if rows else (0 if groups else -1))

@@ -55,7 +55,6 @@ from dplanner.theme.cards import (
     PADDING,
     RADIUS,
     RESTING_SHADOW,
-    SECONDARY_ALPHA,
     SELECTED_BORDER_W,
     SELECTED_FILL_GAIN,
     over,
@@ -64,7 +63,8 @@ from dplanner.theme.cards import (
     title_lines,
 )
 from dplanner.theme.icons import paint_beaker_glyph, paint_layers_glyph, paint_tag_glyph
-from dplanner.theme.tones import BODY_TONES, GOOD_BORDER
+from dplanner.theme.tokens import SECONDARY_ALPHA
+from dplanner.theme.tones import GOOD_BORDER, toned
 
 # DESIGN.md's 4-point scale: the tab page's 16, a lane's 12 inside, 12 between cards.
 MARGIN = 16.0
@@ -210,17 +210,19 @@ class CardItem(QGraphicsObject):
         painter.restore()
 
     def _paint_body(self, painter: QPainter, palette: QPalette, body: QRectF) -> None:
-        toned = BODY_TONES.get(self.item.tone)
-        if toned is not None:
-            tint = QColor(toned[0])
+        # A milestone card recolours its tone to its own shade, exactly as its card on the
+        # canvas does — one resolver, so the two lanes cannot disagree.
+        tone = toned(self.item.tone, self.item.color)
+        if tone is not None:
+            tint = QColor(tone[0])
         else:
             tint = QColor(palette.text().color())
             tint.setAlpha(MUTED_FILL_ALPHA if self.item.muted else FILL_ALPHA)
         if self.selected:
             tint.setAlpha(min(255, round(tint.alpha() * SELECTED_FILL_GAIN)))
             border, width = QColor(palette.highlight().color()), SELECTED_BORDER_W
-        elif toned is not None:
-            border, width = QColor(toned[1]), 1.5
+        elif tone is not None:
+            border, width = QColor(tone[1]), 1.5
         else:
             border = QColor(palette.text().color())
             border.setAlpha(MUTED_BORDER_ALPHA if self.item.muted else 90)
