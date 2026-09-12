@@ -49,7 +49,7 @@ from dplanner.core.signals import Signal
 from dplanner.framework.action_menu import fill_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import Context, ContextService
-from dplanner.theme.icons import ICON_SIZE, close_icon, filter_icon
+from dplanner.theme.icons import FILTER_ICON_W, ICON_SIZE, close_icon, filter_icon
 from dplanner.theme.tokens import CONTROL_GAP, CONTROL_HEIGHT, SECONDARY_ALPHA
 
 
@@ -388,8 +388,8 @@ class FilterButton(QWidget):
 
     DESIGN.md's *Toolbars*. The face drops a menu of checkable filters down and stays the
     same size whatever is on: the indicator is the glyph itself — an outline funnel, or a
-    filled one with a dot at its leading corner — and the accent goes on the face's border
-    and glyph rather than filling it, so the words stay legible and the state reads as a
+    filled one with a dot in the slot before it — and the accent washes the face's ground
+    and colours its border and glyph, so the words stay legible and the state reads as a
     filter being on, not a mode being pressed. The clear button beside it is greyed until
     a filter is on, never hidden. ``changed`` says when the set of active filters changed.
     """
@@ -406,7 +406,7 @@ class FilterButton(QWidget):
         self.face.setObjectName("FilterButtonFace")
         self.face.setText(label)
         self.face.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.face.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.face.setIconSize(QSize(FILTER_ICON_W, ICON_SIZE))  # The dot's slot is in it.
         self.face.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.face.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.face.setFixedHeight(CONTROL_HEIGHT)

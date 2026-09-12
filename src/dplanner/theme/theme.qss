@@ -544,10 +544,12 @@ QProgressBar::chunk {
 
 /* The filter control (framework/toolbar.py's FilterButton): the face and its × are one
    shape — the corners between them square, one hairline shared — and while a filter is
-   on the face wears the accent on its border, the glyph having already said so. */
+   on the face wears a wash of the accent over its ground and the accent on its border,
+   the glyph having already said so. */
 #FilterButtonFace {
     border-top-right-radius: 0px;
     border-bottom-right-radius: 0px;
+    padding-left: 6px;  /* The glyph carries its own slot for the dot at its left. */
     padding-right: 10px;
 }
 
@@ -557,6 +559,7 @@ QProgressBar::chunk {
 }
 
 #FilterButtonFace[active="true"] {
+    background-color: $ACCENT_WASH;
     color: $TEXT_PRIMARY;
     border-color: $ACCENT;
 }

@@ -2541,8 +2541,9 @@ a widget never enters it, and a divider never ends what is shown. Every control 
 over a `_StayOpenMenu` of checkable `QAction`s that stays open on a toggle) joined to a
 clear button (`#FilterButtonClear`, greyed until a filter is on); `add_filter(key, text)`,
 `active()`, `set_active()`, `clear()`, a `changed` Signal. The indicator is the glyph
-(`theme.icons.filter_icon(active=)`) and a dynamic `active` property the stylesheet reads
-for the accent border.
+(`theme.icons.filter_icon(active=)`, 24 px wide with the dot's slot at its left) and a
+dynamic `active` property the stylesheet reads for the accent wash (`$ACCENT_WASH`, derived
+in `as_qss_mapping`) and border.
 
 **Why.** `QToolBar`'s » pops the hidden buttons up as glyphs again, which is nothing once
 the words live in tooltips; and a worded button, a glyph button and a button with a menu

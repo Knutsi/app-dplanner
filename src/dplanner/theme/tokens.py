@@ -77,4 +77,7 @@ def as_qss_mapping(theme: Theme) -> dict[str, str]:
     # A divider between controls, faded halfway into the ground: a rule that parts without
     # drawing attention, where $BORDER is a hairline meant to be seen.
     mapping["BORDER_FAINT"] = mix(theme.border, theme.bg_base, 0.5)
+    # The accent washed over the overlay ground: a control that is *on* (a filter) without
+    # being filled, so its words keep their ink.
+    mapping["ACCENT_WASH"] = mix(theme.bg_overlay, theme.accent, 0.22)
     return mapping

@@ -450,10 +450,10 @@ Example Table wears one.
   glyph and the word — that drops the filters down as a menu of checkable entries stacked
   vertically, which stays open while they are toggled, and a clear button joined to its
   right, greyed until a filter is on and never hidden. **The indicator is the glyph**: an
-  outline funnel while nothing is on, a filled one with a dot at its leading corner while
-  something is, so the face never changes size; the accent goes on the face's border and
-  glyph, not its fill — a filter being on is a state, not a mode being pressed — and the
-  tooltip names what is on.
+  outline funnel while nothing is on, a filled one with a dot in the slot before it while
+  something is, so the face never changes size; the face then wears a wash of the accent
+  over its ground (`$ACCENT_WASH`) and the accent on its border and glyph, never a fill —
+  a filter being on is a state, not a mode being pressed — and the tooltip names what is on.
 - On a real surface the verbs come from the registry — `ActionToolbar` over registered
   `ActionSpec`s becomes a `Toolbar` fed by them in the design passes; the example wires
   plain slots to show the shape.
@@ -519,6 +519,7 @@ reaching `theme.qss` as `$NAME` for free. A literal in a layout is a copy that d
 | `CONTROL_GAP` | 12 | between the controls on a strip; a button's own padding is 6 / 12 |
 | `CONTROL_HEIGHT` | 32 | every control on a strip, set in code |
 | `$BORDER_FAINT` | derived | the hairline blended halfway into the ground: a strip's dividers |
+| `$ACCENT_WASH` | derived | the accent washed over the overlay ground: a control that is on |
 | `CAPTION_GAP` | 6 | a caption to its field, a note to its field |
 | `PANEL_MARGIN` | 16 | side panels and tab pages |
 | `ROW_PADDING_V` / `ROW_PADDING_H` | 10 / 12 | a rich row: lists and two-line cells alike |

@@ -546,17 +546,24 @@ def spinner_frames(color: str | QColor, count: int = SPINNER_FRAMES) -> list[QIc
     return frames
 
 
+FILTER_ICON_W = 24  # A dot's slot at the left, then the funnel: one width, on or off.
+
+
 def filter_icon(color: str | QColor, *, active: bool = False) -> QIcon:
-    """A funnel: outline while no filter is on, filled with a dot at its leading corner
-    while one is — the indicator lives in the glyph slot, so nothing moves when it comes."""
-    pixmap, painter = _canvas()
+    """A funnel with a slot for the indicator before it: outline while no filter is on,
+    filled with a dot in the slot while one is — so the face never changes size."""
+    pixmap = QPixmap(QSize(FILTER_ICON_W, ICON_SIZE))
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    left = FILTER_ICON_W - ICON_SIZE
     funnel = [
-        QPointF(2.5, 3.5),
-        QPointF(13.5, 3.5),
-        QPointF(9.5, 8.5),
-        QPointF(9.5, 13.0),
-        QPointF(6.5, 11.5),
-        QPointF(6.5, 8.5),
+        QPointF(left + 2.5, 3.5),
+        QPointF(left + 13.5, 3.5),
+        QPointF(left + 9.5, 8.5),
+        QPointF(left + 9.5, 13.0),
+        QPointF(left + 6.5, 11.5),
+        QPointF(left + 6.5, 8.5),
     ]
     painter.setPen(_pen(color, 1.5))
     painter.setBrush(QColor(color) if active else Qt.BrushStyle.NoBrush)
@@ -564,7 +571,7 @@ def filter_icon(color: str | QColor, *, active: bool = False) -> QIcon:
     if active:
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(color))
-        painter.drawEllipse(QRectF(0.0, 0.0, 5.0, 5.0))
+        painter.drawEllipse(QRectF(1.0, 5.5, 5.0, 5.0))
     painter.end()
     return QIcon(pixmap)
 
