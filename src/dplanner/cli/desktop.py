@@ -400,7 +400,8 @@ def status(launcher: Launcher, executable: Path | None) -> str:
 
 
 def missing_executable_hint() -> str:
-    from dplanner.cli.skill import install_command
+    # Imported here rather than at the top: cli/install.py reads this module.
+    from dplanner.cli.install import install_command
 
     return (
         f"{WINDOW_SHORTCUT} is not installed beside {PROG} — reinstall with: "

@@ -24,6 +24,15 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 if os.environ["QT_QPA_PLATFORM"] == "offscreen":
     os.environ["QT_QPA_PLATFORMTHEME"] = ""
 
+# The same rule one layer up: the suite must not depend on the shell it was started from.
+# Run Agent's wrapper exports DPLANNER_PROJECT (and a developer may export DPLANNER_LIBRARY)
+# so that every `dplanner` call in that shell reaches the plan the window shows — and the
+# CLI honours it, so in an agent's shell every test that builds a library under tmp_path
+# failed with "no project matching <the agent's own project>". A test names the library and
+# the project it means; nothing here may inherit either.
+os.environ.pop("DPLANNER_PROJECT", None)
+os.environ.pop("DPLANNER_LIBRARY", None)
+
 import pytest
 
 from dplanner.app import configure_application, new_session, set_early_attributes

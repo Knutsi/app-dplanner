@@ -7,18 +7,16 @@ from io import StringIO
 
 import pytest
 
+from dplanner.cli.install import install_command, path_hint, worktree_warning
 from dplanner.cli.main import WINDOW_SHORTCUT, WINDOW_WORD, run
 from dplanner.cli.skill import (
     REFERENCE_FILE,
     SKILL_FILE,
     generate,
     install,
-    install_command,
-    path_hint,
     status,
     target_dir,
     uninstall,
-    worktree_warning,
 )
 from dplanner.modules import aspect_specs, default_module_formats
 
@@ -189,7 +187,7 @@ def test_user_install_goes_to_the_home_directory(tmp_path, monkeypatch):
 
 
 def test_path_hint_is_quiet_when_the_command_resolves(monkeypatch):
-    monkeypatch.setattr("dplanner.cli.skill.shutil.which", lambda _name: "/usr/bin/dplanner")
+    monkeypatch.setattr("dplanner.cli.install._which", lambda _name: "/usr/bin/dplanner")
     assert path_hint() is None
 
 
@@ -197,7 +195,7 @@ def test_path_hint_names_an_editable_install_from_a_checkout(monkeypatch):
     """A skill that tells agents to run a command they do not have is half an install."""
     import shlex
 
-    monkeypatch.setattr("dplanner.cli.skill.shutil.which", lambda _name: None)
+    monkeypatch.setattr("dplanner.cli.install._which", lambda _name: None)
     hint = path_hint()
     assert hint is not None
     assert hint.startswith("uv tool install --editable ")
@@ -206,7 +204,7 @@ def test_path_hint_names_an_editable_install_from_a_checkout(monkeypatch):
 
 def test_status_verb_reports_whether_the_command_resolves(registry, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("dplanner.cli.skill.shutil.which", lambda _name: None)
+    monkeypatch.setattr("dplanner.cli.install._which", lambda _name: None)
     out = invoke(registry, "skill", "status", "--repo")
     assert "not on PATH" in out
 

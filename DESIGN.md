@@ -618,8 +618,10 @@ Dialogs:
   text well.
 - `ConflictDialog` — four peers in a `QDialogButtonBox`, no object name (its primary got
   no accent until the primary rule stopped needing one).
-- `CommandInstallDialog`, `AgentSkillDialog` — seven widgets flat at one gap; the primary
-  inside a button box at the style's mercy.
+- `InstallDialog` (Tools ▸ Install DPlanner…, which replaced the command and skill
+  dialogs) — built to this document as it stood: a well of rows modelled on the task
+  centre, one primary, Close as the default; its state is a word, not a glyph, and it is
+  the readiest candidate for the frame.
 - `SaveSnapshotDialog` — the panel's 6 px idiom hand-simulated with `addSpacing`; the box's
   Save.
 - `DiffDialog` — no margins, no spacing, an uncaptioned picker over an unstyled pane.

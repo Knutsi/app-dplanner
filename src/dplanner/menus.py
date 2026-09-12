@@ -83,8 +83,8 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # a coding agent in a terminal and filling one field are not two of a kind.
     "Step": ("edit", "link", "classify", "test_result", "agent", "docs", "open", "navigate"),
     # "runs" is the Agent List — the live shells this window launched, a data child menu
-    # rebuilt on open — above "agent", the agent-facing setup (the skill, the CLI).
-    "Tools": ("runs", "agent"),
+    # rebuilt on open — above "install", what this machine has of DPlanner itself.
+    "Tools": ("runs", "install"),
     # "design" is the design system's living reference — Design Example… and its table
     # tab — what a developer bringing a surface up opens beside their own (DESIGN.md).
     "Debug": ("llm", "telemetry", "design"),

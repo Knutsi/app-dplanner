@@ -194,11 +194,52 @@ launcher is built and read back in the suite on whatever machine runs it. The la
 opens `dpw` by absolute path, since a menu has no PATH to resolve anything with; which
 `dpw` is the one beside the `dplanner` running the command, so the launcher opens the
 DPlanner it was installed from, and `desktop status` reads *stale* when it opens another.
-The window's *Install dplanner Command…* dialog writes the launcher in the same go as the
-command, and points it at the `dpw` uv just installed — it asks `uv tool dir --bin` rather
-than looking beside the build it happens to be running from, which may be a checkout's
-`.venv`. The skill names neither `dpw` nor the launcher's verbs' target: an agent has no
-business opening the window, whichever word it is.
+The launcher is written in the same go as the command (*Installing is one act*, below), and
+points at the `dpw` uv just installed — `uv tool dir --bin` says where, rather than looking
+beside the build that happens to be running, which may be a checkout's `.venv`. The skill
+names neither `dpw` nor the launcher's verbs' target: an agent has no business opening the
+window, whichever word it is.
+
+### Installing is one act, and the pieces stay
+
+Three things have to be in place before DPlanner is usable: the `dplanner` command on PATH,
+a launcher in the applications menu, and the agent skill. Each had a verb and the first two
+had a dialog, and they drifted — a machine with the command and a skill from a build three
+weeks old was the ordinary case, and no surface could see it, because no surface asked more
+than one of the three questions.
+
+So there is one reader and one writer over all three (`cli/install.py`), and `dplanner
+install all` / `install status` / `install remove` and *Tools ▸ Install DPlanner…* are its
+four callers. `desktop …` and `skill …` are untouched: the one act is a composition of the
+pieces, not a replacement for them, and a person who means only the skill still says so.
+
+- **The reader lives in `cli/`, not in `modules/install/`.** It is what the verbs need, and
+  `cli/` may not import a module — so a status reader under the module would have had to be
+  copied or reached for illegally. It also sits beside the two files it reads, and the
+  module's Qt half imports it the way it already imported `cli.skill`. The checklist's
+  `checks()` will read the same function from the module's own Qt-free half.
+- **The reader runs no subprocess.** The dialog refreshes on it after every act and the
+  checklist will probe with it, and neither can afford a process — the same rule as *No
+  subprocess in an action state*.
+- **The command's state is `installed` or `missing`, never `stale`.** Whether the `dplanner`
+  on PATH came from this build cannot be told without running it, and a status read may not.
+  The launcher and the skill keep all three states, which they could already answer.
+- **The writer never stops at a failure.** Each of the three reports its own line, so a
+  machine ends up as current as it can be rather than as current as its first problem
+  allowed; `install all` exits 1 when any piece failed, having done the others.
+
+Two rules keep the command from shadowing an install somebody else made, and both say so
+rather than acting silently. **A worktree build never repoints it**: `uv tool install
+--editable` into a branch's scratch checkout breaks the moment the worktree is removed, and
+every agent now works in one — this is what makes `install all` safe for an agent to run.
+**A `dplanner` uv did not install is left alone**: a pipx install, a system package or a
+venv is somebody's decision, and `uv tool dir --bin` against the resolved command's own
+directory is how that is asked — uv's answer, never a guess at its layout.
+
+**Removing takes out the launcher and the skill and leaves the command.** `uv tool uninstall
+dplanner` uninstalls the program running the verb; that is a deliberate act of its own, so
+the command's line names the one command instead of running it — composed from the same argv
+the installer would use, so the text cannot drift.
 
 ## The index tree
 
