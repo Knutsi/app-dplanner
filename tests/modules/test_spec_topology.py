@@ -22,13 +22,13 @@ def activity(services, project):
 
 
 def test_the_topology_is_the_first_row_and_shows_its_editor(services, project, activity):
-    first = activity.list.item(0)
-    assert first.text() == "Topology" and first.data(NAME_ROLE) == TOPOLOGY_ROW
-    assert first.data(DETAIL_ROLE) == "not written yet"
+    first = activity.row_item(0)
+    assert first.text(0) == "Topology" and first.data(0, NAME_ROLE) == TOPOLOGY_ROW
+    assert first.data(0, DETAIL_ROLE) == "not written yet"
     # Not one more document: the graph's glyph, a bold name, a rule under the row.
-    assert not first.icon().isNull()
-    assert first.data(EMPHASIS_ROLE) is True and first.data(RULE_ROLE) is True
-    assert activity.list.currentRow() == 0
+    assert not first.icon(0).isNull()
+    assert first.data(0, EMPHASIS_ROLE) is True and first.data(0, RULE_ROLE) is True
+    assert activity.current_row() == 0
     assert activity._views.currentWidget() is activity._topology_page
 
 
@@ -36,7 +36,7 @@ def test_typing_writes_the_projects_prose_through_the_undo_stack(services, proje
     activity.topology.edit.setFocus()
     activity.topology.edit.insertPlainText("Views are features.")
     assert read_topology(project) == "Views are features."
-    assert activity.list.item(0).data(DETAIL_ROLE) == "how this project's graph is shaped"
+    assert activity.row_item(0).data(0, DETAIL_ROLE) == "how this project's graph is shaped"
     services.undo.undo()
     assert read_topology(project) == ""
 
@@ -55,7 +55,7 @@ def test_the_topology_row_selects_no_document(services, project, activity):
     services.context.set_scope(
         SCOPE_SELECTION, (ContextNode(selection_uri("project", project.id)),)
     )
-    activity.list.setCurrentRow(0)
+    activity.select_row(0)
     activity.on_activated()
     context = services.context.current()
     assert context.selected_entity("spec_document") is None

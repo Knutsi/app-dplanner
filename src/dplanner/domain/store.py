@@ -205,7 +205,7 @@ class ModuleFileArea:
 
     def names(self, subdirectory: str = "") -> list[str]:
         """The files directly in ``subdirectory`` of this area, sorted; directories omitted."""
-        directory = _join(self.directory, subdirectory)
+        directory = _join(self.directory, _inside(subdirectory))
         return [
             name
             for name in self._storage.list_dir(directory)
@@ -213,13 +213,16 @@ class ModuleFileArea:
         ]
 
     def read_bytes(self, name: str) -> bytes | None:
+        if not is_area_name(name):
+            return None  # A name that would leave the area names nothing in it.
         return self._storage.read_bytes(_join(self.directory, name))
 
     def absolute(self, name: str) -> Path:
         """The file's place on the local disk — for handing to something outside the store."""
-        return self._storage.root / _join(self.directory, name)
+        return self._storage.root / _join(self.directory, _inside(name))
 
     def write_bytes(self, name: str, data: bytes) -> None:
+        name = _inside(name)
         self._storage.write_bytes(_join(self.directory, name), data)
         self._noted(_join(self.directory, name))
 
@@ -230,6 +233,7 @@ class ModuleFileArea:
         an empty directory is invisible in a diff but not in a file browser, and a project
         that accumulates them stops looking like the plan it holds.
         """
+        name = _inside(name)
         self._storage.delete(_join(self.directory, name))
         self._noted(_join(self.directory, name))
         parts = [part for part in name.split("/")[:-1] if part]
@@ -237,6 +241,23 @@ class ModuleFileArea:
             self._storage.delete(_join(self.directory, *parts))  # Only when it is empty.
             parts.pop()
         self._storage.delete(self.directory)
+
+
+def is_area_name(name: str) -> bool:
+    """Whether ``name`` stays inside the area it is joined to: relative, forward slashes,
+    no ``..`` segment. Every name an area is handed is content-addressed today, but a
+    markdown body and a module's JSON both reach ``read_bytes`` with names read off a
+    shared file, and the one place they are joined is the one place to refuse them."""
+    if not name or name.startswith("/") or "\\" in name:
+        return False
+    return all(part not in ("", ".", "..") for part in name.split("/"))
+
+
+def _inside(name: str) -> str:
+    """``name``, or a ``ValueError`` naming why it cannot address a file in an area."""
+    if name and not is_area_name(name):
+        raise ValueError(f"{name!r} does not name a file inside a module file area")
+    return name
 
 
 # The store's file lookup, handed to whoever needs a node's module files without

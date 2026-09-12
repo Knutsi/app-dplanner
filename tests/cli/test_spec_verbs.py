@@ -260,10 +260,10 @@ def test_attach_to_step_takes_several_assets(cli, project, tmp_path, workspace):
     assert "'a9'" in out
 
 
-def test_the_index_is_stamped_format_3(cli, project, tmp_path, workspace):
+def test_the_index_is_stamped_format_4(cli, project, tmp_path, workspace):
     cli("spec", "import", project, source(tmp_path, "s.md", "# Spec"))
     entry = json.loads(next(workspace.glob("*/modules/spec.json")).read_text())
-    assert entry["format"] == 3
+    assert entry["format"] == 4
 
 
 def test_an_older_index_drops_its_requirements_at_open(cli, project, tmp_path, workspace):
@@ -282,7 +282,7 @@ def test_an_older_index_drops_its_requirements_at_open(cli, project, tmp_path, w
     step_entry.write_text(json.dumps({"requirements": ["r1"], "format": 2}))
     cli("spec", "list", project)  # Any run migrates.
     assert "requirements" not in json.loads(index.read_text())
-    assert json.loads(index.read_text())["format"] == 3
+    assert json.loads(index.read_text())["format"] == 4
     assert not step_entry.exists()  # Nothing left to keep: the entry is removed.
 
 

@@ -2302,3 +2302,19 @@ border, title, glyphs and the shadow under it down together, which is what reced
 painter never learns that a lit state exists, and there is no second "muted" path to keep
 agreeing with the first. **Upstream?** Yes, with the card primitives — any canvas that can
 light a subset of itself wants the constant and the rule.
+
+
+## 24. From the spec-sources pass
+
+### `framework/secrets_store.py` — `backend_problem()`
+
+**What.** Asks keyring which backend it chose and returns a sentence when a secret could
+not be kept safely: the `fail`/`null` backends (no keychain service — on Linux, the
+GNOME Keyring / KWallet remedy), a `keyrings.alt` plaintext backend, or a backend that
+cannot even be asked. `set_secret` keeps swallowing errors; this is for the surface
+*about to* store a credential, so it can refuse with the remedy instead of storing nowhere
+silently — the lesson `gh auth login` learned the hard way. It probes the backend rather
+than writing a probe value, because a write is what raises a keychain prompt.
+
+**Why.** A Confluence token goes through a guided Connect dialog on macOS, Linux and
+Windows, and "connected" must never be a lie. **Upstream?** Yes, as-is.

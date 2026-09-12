@@ -289,8 +289,19 @@ def test_progress_record_writes_a_day_once_and_the_delta_reads_against_it(
     (row,) = library.projects[0].module_data["progress_history"]["days"]
     assert row["day"] == date.today().isoformat() and len(row["stretches"]) == 2
     assert row["stretches"][0]["landings"][-1] == {"date": "2026-09-16", "steps": 1, "days": 2.0}
+    # Date the record back to the 1st, before the basis: a history that begins today has
+    # no baseline to compare against, and a change on the record's own day is inside that
+    # day's record, so today's edits only read as changes against an earlier day.
+    history_file = next(workspace.glob("*/modules/progress_history.json"))
+    entry = json.loads(history_file.read_text())
+    entry["days"][0]["day"] = "2026-09-01"
+    history_file.write_text(json.dumps(entry))
+    for step_file in workspace.glob("*/steps/*/step.json"):  # born before that record
+        node = json.loads(step_file.read_text())
+        node["created"] = "2026-08-30T09:00:00+00:00"
+        step_file.write_text(json.dumps(node))
     data = json.loads(staged("progress", "show", "Discovery", "--json"))
-    assert data["basis"] == "2026-09-07" and data["baseline_day"] == date.today().isoformat()
+    assert data["basis"] == "2026-09-07" and data["baseline_day"] == "2026-09-01"
     assert data["scopes"][1]["delta"] == {
         "steps": 0,
         "days": 0.0,
@@ -301,16 +312,6 @@ def test_progress_record_writes_a_day_once_and_the_delta_reads_against_it(
     assert "v2: 0% by steps (0 of 4), 0% by days (0d of 7d) — lands 23 September; unchanged" in (
         staged("progress", "show", "Discovery")
     )
-    # Date the record back to the 1st: a change on the record's own day is inside that
-    # day's record, so today's edits only read as changes against an earlier day.
-    history_file = next(workspace.glob("*/modules/progress_history.json"))
-    entry = json.loads(history_file.read_text())
-    entry["days"][0]["day"] = "2026-09-01"
-    history_file.write_text(json.dumps(entry))
-    for step_file in workspace.glob("*/steps/*/step.json"):  # born before that record
-        node = json.loads(step_file.read_text())
-        node["created"] = "2026-08-30T09:00:00+00:00"
-        step_file.write_text(json.dumps(node))
     # More work behind v2 moves its landing; the report says what moved it.
     staged("step", "add", "Discovery", "Polish", "--days", "2")
     staged("step", "link", "ship-the-docs", "polish")
