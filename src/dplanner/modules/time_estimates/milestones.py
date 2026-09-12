@@ -121,10 +121,8 @@ class MilestoneEntry:
     # list, or the milestone's own. A stretch that begins when the previous one lands
     # decides nothing and shows no control.
     sets_project: bool = False
-    # What has landed toward this milestone — everything through its stretch — and
-    # which measure the row's percentage reads.
+    # What has landed toward this milestone — everything through its stretch.
     landed: Tally = field(default_factory=Tally)
-    by_days: bool = False
 
     @property
     def is_milestone(self) -> bool:
@@ -132,7 +130,7 @@ class MilestoneEntry:
 
     @property
     def share(self) -> float | None:
-        return self.landed.share(self.by_days)
+        return self.landed.share()
 
 
 def percent(share: float | None) -> str:
@@ -140,11 +138,10 @@ def percent(share: float | None) -> str:
 
 
 def landed_words(landed: Tally) -> str:
-    """The percentage's tooltip: both measures in full, so the row's one number never
-    has to say which it is."""
+    """The percentage's tooltip: the days it is a share of, and the count beside them."""
     return (
-        f"{landed.done} of {landed.steps} steps done · "
-        f"{format_days(landed.done_days)} of {format_days(landed.days)} estimated"
+        f"{format_days(landed.done_days)} of {format_days(landed.days)} estimated · "
+        f"{landed.done} of {landed.steps} steps done"
     )
 
 

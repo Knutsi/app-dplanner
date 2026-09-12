@@ -1,7 +1,9 @@
 """How long the project takes with a stated team, as a tab beside the graph it prices.
 
 A strip across the top holds what the whole page is priced with: the focus factor, the
-calendar-or-project-days lens, the colour map the milestones are shaded from, and Export.
+calendar-or-project-days lens, the colour map the milestones are shaded from, **which two
+snapshots the plots compare** — a *then* and a *now*, each a picker naming the plan it
+reads, with *Save snapshot…* beside them — and Export.
 Under it the page is split at a seam, the answer taking the wider side. On the left, the
 staffing picker (one heatmap of every team, clicking a tile re-asks the question) and,
 under it, **the milestones in one list** — a row each, in the order the graph lands them:
@@ -12,23 +14,26 @@ beginning is the project's own start. The list scrolls under the staffing grid r
 taking it off the page. On the right, what all that answers: a banner when something needs
 saying (steps counted as zero, with the button that goes and sizes them; a plan that cannot
 be dated), a calendar with every milestone's stretch of work lit in its shade, and under it
-**three plots on one time axis** (``chart.py``): the plan now against what actually landed,
-the plan as it stood on the basis day against the plan now, and each milestone's landing
-then and now with an arrow between them — by estimated days, or by the count of steps if
-that is asked for, the toggle above them, against the project's start or any day picked
-beside it, which is the day the plots' headings name. The plots take whatever height the
-window has left, up to a ceiling of their own, and *⤢* beside that control opens them in a
-window of their own, fed the same record. Picking a milestone on the left highlights it on
-the right, in the calendar and in every plot, and fades the rest; nothing is hidden by a
-pick. Calendar days and project days are two lenses on one simulation, so they are a toggle
-over one grid rather than two tables side by side. Nothing on the page explains itself; the
+**the plots, a page at a time** (``chart.py``): *Milestone shifts* — each milestone's
+landing then and now with an arrow between them; *Progress* — the plan now against what
+actually landed, and the plan then against the plan now; *Volume* — the total of
+estimated days the plan came to on each recorded day, and what was still ahead. All by
+estimated days, all measured between the two snapshots the strip names. The plots take
+whatever height the window has left, up to a ceiling of their own, and *⤢* beside the
+page toggles opens every page at once in a window of its own, fed the same record.
+Picking a milestone on the left highlights it on the right, in the calendar and in every
+plot, and fades the rest; nothing is hidden by a pick. Calendar days and project days are
+two lenses on one simulation, so they are a toggle over one grid rather than two tables
+side by side. A change to the plan re-runs the whole page after a quiet spell, and the
+strip says *Recalculating…* until it has. Nothing on the page explains itself; the
 tooltips do.
 
 The simulation is the domain's (``phases`` over ``parallel_finish``); this module renders
 it and stores only assumptions — the focus factor, the palette, the team a tile click
 chooses, and a milestone's date and colour (see ``schedule.py`` beside this file) — plus
 the one thing that cannot be derived: the day's progress, which ``recorder.py`` writes
-into the project's history whenever the plan settles on something new. The estimate,
+into the project's history whenever the plan settles on something new, and the snapshots
+a person saves on purpose (``snapshots.py``), pushed through the undo stack. The estimate,
 agent-step, status, milestone and start-date readers arrive as functions on the Deps, so
 this module never learns what an estimate is stored as or what marks a step for an agent
 — the same seams the progression board uses; and the way to the Estimates tab is a
@@ -47,10 +52,11 @@ from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QLocale, Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDateEdit,
+    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -89,7 +95,14 @@ from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import CONTROL_GAP, ActionToolbar, control_bar
 from dplanner.framework.undo import UndoService
-from dplanner.modules.time_estimates.chart import ChartData, ChartDialog, ProgressChart, Segment
+from dplanner.modules.time_estimates.chart import (
+    PAGES,
+    PROGRESS_PAGE,
+    ChartData,
+    ChartDialog,
+    ProgressChart,
+    Segment,
+)
 from dplanner.modules.time_estimates.cli import Readers
 from dplanner.modules.time_estimates.milestones import (
     ALL_KEY,
@@ -101,20 +114,30 @@ from dplanner.modules.time_estimates.milestones import (
 )
 from dplanner.modules.time_estimates.months import Band, MonthsView
 from dplanner.modules.time_estimates.progress import (
-    DATA_FORMAT as HISTORY_FORMAT,
-)
-from dplanner.modules.time_estimates.progress import (
+    AT_START,
     HISTORY_ID,
+    LIVE,
+    Pick,
     Snapshot,
     Stretch,
     actual,
-    baseline,
     expected,
     idle,
     landings,
+    pick_words,
     read_history,
+    read_saved,
+    remaining,
+    resolve,
+    saved_with,
+    saved_without,
     span_of,
     tally,
+    volume,
+    write_history,
+)
+from dplanner.modules.time_estimates.progress import (
+    DATA_FORMAT as HISTORY_FORMAT,
 )
 from dplanner.modules.time_estimates.recorder import ProgressRecorder
 from dplanner.modules.time_estimates.report import milestones_table
@@ -134,8 +157,8 @@ from dplanner.modules.time_estimates.schedule import (
     write_milestone,
     write_project,
 )
+from dplanner.modules.time_estimates.snapshots import SaveSnapshotDialog, SnapshotPicker
 from dplanner.modules.time_estimates.view import Banner, FocusBar, MatrixView
-from dplanner.theme.icons import close_icon
 
 TIME_KIND = "time"
 REFRESH_DELAY_MS = 500
@@ -154,6 +177,13 @@ RIGHT_WIDTH = 560
 # What the stretch with no milestone is called: after the last milestone, or all there is.
 REMAINDER_LABEL = "Remaining work"
 WHOLE_LABEL = "All work"
+
+# What each page of the plots answers, for its toggle.
+PAGE_TIPS = {
+    "shift": "Where each milestone's landing moved between the two snapshots",
+    "progress": "What has landed against what the plan promised, and how the plan itself moved",
+    "volume": "How much work the plan came to on each recorded day, and how much was still ahead",
+}
 
 
 @dataclass(frozen=True)
@@ -189,6 +219,10 @@ def _team(humans: int, agents: int) -> str:
     return f"{people} + {agents} {'agent' if agents == 1 else 'agents'}"
 
 
+def _to_date(picked: QDate) -> date:
+    return date(picked.year(), picked.month(), picked.day())
+
+
 def _step_context(step_id: StepId) -> Context:
     """A context naming exactly one step — what a row's double-click runs a verb against."""
     return Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)})
@@ -222,12 +256,11 @@ class TimeEstimatesActivity(EntityActivity):
         self._report: TimeReport | None = None
         self._calendar_lens = True
         self._picked: StepId | None = None
-        # By estimated days, not by count: a plan is sized in days, and a share of steps
-        # calls a two-hour step and a two-week one the same thing. The toggle offers the
-        # count beside it.
-        self._by_days = True
-        self._basis: date | None = None  # None: the project's start.
-        self._loading_basis = False
+        # Which two plans the plots compare: the plan at the project's start against the
+        # live plan unless picked otherwise — a way of looking, never stored.
+        self._then: Pick = AT_START
+        self._now: Pick = LIVE
+        self._loading_day = False
         # The plots as data, and the window showing them larger while one is open: the
         # dialog is fed the same record, so a plan that changes redraws in both.
         self._plots: ChartData | None = None
@@ -264,7 +297,42 @@ class TimeEstimatesActivity(EntityActivity):
         self.palette_picker.setToolTip("The colour map the milestones are shaded from")
         self.palette_picker.palette_picked.connect(self._on_palette_changed)
         self.controls.addWidget(self.palette_picker)
+        self.controls.addSeparator()
+        # -- which two plans the plots compare ---------------------------------------------
+        compare_caption = QLabel("Compare", self.controls)
+        compare_caption.setObjectName("ToolbarLabel")
+        self.controls.addWidget(compare_caption)
+        self.then_picker = SnapshotPicker(AT_START, self.controls)
+        self.then_picker.picked.connect(self._on_then_picked)
+        self.then_picker.forget.connect(self._on_forget)
+        self.controls.addWidget(self.then_picker)
+        self.then_day = self._day_edit(self._on_then_day)
+        self.then_day_action = self.controls.addWidget(self.then_day)
+        with_caption = QLabel("with", self.controls)
+        with_caption.setObjectName("ToolbarLabel")
+        self.controls.addWidget(with_caption)
+        self.now_picker = SnapshotPicker(LIVE, self.controls)
+        self.now_picker.picked.connect(self._on_now_picked)
+        self.now_picker.forget.connect(self._on_forget)
+        self.controls.addWidget(self.now_picker)
+        self.now_day = self._day_edit(self._on_now_day)
+        self.now_day_action = self.controls.addWidget(self.now_day)
+        self.save_snapshot = QToolButton(self.controls)
+        self.save_snapshot.setObjectName("ToolbarButton")
+        self.save_snapshot.setText("Save snapshot…")
+        self.save_snapshot.setToolTip(
+            "Keep the plan as it stands today, under a title, to compare against later"
+        )
+        self.save_snapshot.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.save_snapshot.clicked.connect(self._on_save_snapshot)
+        self.controls.addWidget(self.save_snapshot)
         strip_row.addWidget(self.controls, 1)
+        # A change to the plan re-runs the page after a quiet spell; until it has, the
+        # strip says so rather than showing a picture of a plan that has since changed.
+        self.recalculating = QLabel("Recalculating…", strip)
+        self.recalculating.setObjectName("ToolbarLabel")
+        self.recalculating.hide()
+        strip_row.addWidget(self.recalculating)
         # Export's arrow renders File ▸ Export — the milestones' CSV, the plan's page, the
         # PDF, the workbook — the same entries, never a copy, found where the numbers are.
         self.toolbar = ActionToolbar(
@@ -334,51 +402,27 @@ class TimeEstimatesActivity(EntityActivity):
         self.months.day_picked.connect(self._on_start_picked)
         right.addWidget(self.months)
 
-        # -- progress: the plan against what landed, and the day it is compared with -------
+        # -- the plots: a page at a time -------------------------------------------------------
         right.addSpacing(BLOCK_GAP)
         self.progress_bar = QWidget(answer)
         progress_row = QHBoxLayout(self.progress_bar)
         progress_row.setContentsMargins(0, 0, 0, 0)
         progress_row.setSpacing(BUTTON_GAP)
-        self._measures = QButtonGroup(answer)
-        self._measures.setExclusive(True)
-        self.days_button = _toggle(
-            self.progress_bar,
-            "By days",
-            "Estimated days of done steps over the estimated days of all",
-        )
-        self.steps_button = _toggle(self.progress_bar, "By steps", "Done steps over steps")
-        for index, button in enumerate((self.days_button, self.steps_button)):
-            self._measures.addButton(button, index)
+        self._pages = QButtonGroup(answer)
+        self._pages.setExclusive(True)
+        self.page_buttons: dict[str, QToolButton] = {}
+        for index, (page, label) in enumerate(PAGES):
+            button = _toggle(self.progress_bar, label, PAGE_TIPS[page])
+            self._pages.addButton(button, index)
             progress_row.addWidget(button)
-        self.days_button.setChecked(True)
-        self._measures.idClicked.connect(self._on_measure)
+            self.page_buttons[page] = button
+        self.page_buttons[PROGRESS_PAGE].setChecked(True)
+        self._pages.idClicked.connect(self._on_page)
         progress_row.addStretch(1)
-        # The basis: the plan the scope is compared against — the start unless picked.
-        basis_caption = QLabel("Plan at", self.progress_bar)
-        basis_caption.setObjectName("ToolbarLabel")
-        progress_row.addWidget(basis_caption)
-        progress_row.addSpacing(BUTTON_GAP)
-        self.basis = QDateEdit(self.progress_bar)
-        self.basis.setCalendarPopup(True)
-        self.basis.setLocale(QLocale(QLocale.Language.English))
-        self.basis.setDisplayFormat(DATE_FORMAT)
-        self.basis.setKeyboardTracking(False)
-        self.basis.setToolTip("The day to compare the plan against — the start by default")
-        self.basis.dateChanged.connect(self._on_basis)
-        progress_row.addWidget(self.basis)
-        self.basis_reset = QToolButton(self.progress_bar)
-        self.basis_reset.setAutoRaise(True)
-        self.basis_reset.setIcon(close_icon(self.progress_bar.palette().text().color().name()))
-        self.basis_reset.setToolTip("Back to the project's start")
-        self.basis_reset.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.basis_reset.clicked.connect(lambda: self._set_basis(None))
-        progress_row.addWidget(self.basis_reset)
-        progress_row.addSpacing(BUTTON_GAP)
         self.expand = QToolButton(self.progress_bar)
         self.expand.setObjectName("ToolbarButton")
         self.expand.setText("⤢")
-        self.expand.setToolTip("Open the plots in a window of their own")
+        self.expand.setToolTip("Open every page of the plots in a window of their own")
         self.expand.setCursor(Qt.CursorShape.PointingHandCursor)
         self.expand.clicked.connect(self._on_expand)
         progress_row.addWidget(self.expand)
@@ -387,7 +431,7 @@ class TimeEstimatesActivity(EntityActivity):
         # The plots take the height the window has left — nothing else here asks to
         # stretch — and whatever is over their ceiling falls to the bottom of the page
         # rather than into the gaps above them.
-        self.chart = ProgressChart(answer)
+        self.chart = ProgressChart(answer, page=PROGRESS_PAGE)
         right.addWidget(self.chart, 1)
         right.addStretch(0)
 
@@ -420,9 +464,21 @@ class TimeEstimatesActivity(EntityActivity):
             # carrying one marks the step as agent work — so a text edit can move a step
             # between pools — and a milestone's label and a step's title are what the
             # lists print.
-            follow_project(self._product, self.project_id, self._refresh_soon.trigger),
+            follow_project(self._product, self.project_id, self._on_change),
         ]
         self._refresh()
+
+    def _day_edit(self, on_change: Callable[[QDate], None]) -> QDateEdit:
+        """The day a *Day…* pick reads, shown beside its picker only while that is the
+        pick."""
+        edit = QDateEdit(self.controls)
+        edit.setCalendarPopup(True)
+        edit.setLocale(QLocale(QLocale.Language.English))
+        edit.setDisplayFormat(DATE_FORMAT)
+        edit.setKeyboardTracking(False)
+        edit.setToolTip("The plan as recorded on this day")
+        edit.dateChanged.connect(on_change)
+        return edit
 
     @staticmethod
     def _scrolling(page: QWidget) -> QScrollArea:
@@ -481,13 +537,18 @@ class TimeEstimatesActivity(EntityActivity):
         return self._selected_cell().finish if self._report and self._report.calendar else None
 
     @property
-    def by_days(self) -> bool:
-        return self._by_days
+    def then_pick(self) -> Pick:
+        """Which plan the plots compare against."""
+        return self._then
 
     @property
-    def basis_day(self) -> date:
-        """The day the plan is compared against: picked, else the project's start."""
-        return self._basis or self._deps.start_of(self.project_id)
+    def now_pick(self) -> Pick:
+        """Which plan stands for now."""
+        return self._now
+
+    @property
+    def page(self) -> str:
+        return self.chart.page
 
     def snapshot(self, today: date | None = None) -> Snapshot | None:
         """The plan today, stretch by stretch, for the selected team — what the plots and
@@ -514,18 +575,65 @@ class TimeEstimatesActivity(EntityActivity):
         self._calendar_lens = chosen == 0
         self._render()
 
-    def _on_measure(self, chosen: int) -> None:
-        self._by_days = chosen == 0
-        self._render()
+    def _on_page(self, chosen: int) -> None:
+        self.chart.show_page(PAGES[chosen][0])
 
-    def _on_basis(self, picked: QDate) -> None:
-        if not self._loading_basis:
-            self._set_basis(date(picked.year(), picked.month(), picked.day()))
+    def _on_change(self, *_args: object) -> None:
+        self.recalculating.show()
+        self._refresh_soon.trigger()
 
-    def _set_basis(self, when: date | None) -> None:
+    def _on_then_picked(self, pick: Pick) -> None:
         """A way of looking, not a plan fact: view state, re-rendered, never stored."""
-        self._basis = when
+        self._then = pick
         self._render()
+
+    def _on_now_picked(self, pick: Pick) -> None:
+        self._now = pick
+        self._render()
+
+    def _on_then_day(self, picked: QDate) -> None:
+        if not self._loading_day:
+            self._on_then_picked(Pick("day", day=_to_date(picked)))
+
+    def _on_now_day(self, picked: QDate) -> None:
+        if not self._loading_day:
+            self._on_now_picked(Pick("day", day=_to_date(picked)))
+
+    def _on_save_snapshot(self) -> None:
+        """The plan as it stands today, kept under a title: a decision, so one undoable
+        write — the recorder's automatic day is not touched by it."""
+        if not self._product.has(self.project_id):
+            return
+        project = self._project()
+        saved = read_saved(project)
+        dialog = SaveSnapshotDialog([row.title for row in saved], self._deps.parent)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.save_snapshot_as(*dialog.values())
+
+    def save_snapshot_as(self, title: str, note: str = "") -> None:
+        """What the dialog does on Save — and what a test calls in its place."""
+        project = self._project()
+        now = self.snapshot()
+        if now is None:
+            return
+        entry = write_history(
+            read_history(project), saved_with(read_saved(project), now, title, note)
+        )
+        self._deps.undo.push(
+            SetModuleDataCommand(self.project_id, HISTORY_ID, entry, label="Save Snapshot")
+        )
+
+    def _on_forget(self, title: str) -> None:
+        if not self._product.has(self.project_id):
+            return
+        project = self._project()
+        entry = write_history(read_history(project), saved_without(read_saved(project), title))
+        if entry == project.module_data.get(HISTORY_ID, {}):
+            return
+        self._deps.undo.push(
+            SetModuleDataCommand(self.project_id, HISTORY_ID, entry, label="Forget Snapshot")
+        )
 
     def _on_team_picked(self) -> None:
         """A tile click is the project's staffing assumption: one undoable write, the
@@ -549,8 +657,9 @@ class TimeEstimatesActivity(EntityActivity):
         self._deps.set_start(self.project_id, when)  # the model change refreshes the tab
 
     def _on_expand(self) -> None:
-        """The plots in a window of their own — the same data, more room. Modal, because
-        it is a way of looking at what the tab already shows and nothing to work beside."""
+        """Every page of the plots in a window of their own — the same data, more room.
+        Modal, because it is a way of looking at what the tab already shows and nothing
+        to work beside."""
         dialog = ChartDialog(self._plots, title=self.title, parent=self._deps.parent)
         self._expanded = dialog
         try:
@@ -608,6 +717,7 @@ class TimeEstimatesActivity(EntityActivity):
         return bool(self._deps.milestone_label(step))
 
     def _refresh(self) -> None:
+        self.recalculating.hide()
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         deps = self._deps
@@ -688,19 +798,28 @@ class TimeEstimatesActivity(EntityActivity):
         self.milestones.show_entries(entries, self._picked or ALL_KEY, found=found)
         self._render_progress(stretches, now)
 
-    def _render_progress(self, stretches: list[tuple[Phase, QColor]], now: Snapshot) -> None:
-        """The three plots over the whole plan, the picked milestone held in full ink."""
-        history = read_history(self._project())
-        basis = self.basis_day
-        # ``today`` is what keeps a project whose history begins today from being drawn
-        # against its own record — the plan over itself is not a comparison.
-        then = baseline(history, basis, today=now.day)
-        self._loading_basis = True
-        try:
-            self.basis.setDate(QDate(basis.year, basis.month, basis.day))
-        finally:
-            self._loading_basis = False
-        self.basis_reset.setVisible(self._basis is not None)
+    def _render_progress(self, stretches: list[tuple[Phase, QColor]], live: Snapshot) -> None:
+        """The plots over the whole plan between the two picked snapshots, the picked
+        milestone held in full ink."""
+        project = self._project()
+        history = read_history(project)
+        saved = read_saved(project)
+        start = self._deps.start_of(self.project_id)
+
+        def found(pick: Pick) -> Snapshot | None:
+            return resolve(pick, history=history, saved=saved, live=live, start=start)
+
+        now = found(self._now)
+        if now is None:  # The saved snapshot it read was forgotten: back to the live plan.
+            self._now = LIVE
+            now = live
+        then = found(self._then)
+        basis = pick_words(self._then, then, now.day)
+        as_of = "" if self._now.kind == "now" else pick_words(self._now, now, live.day)
+        self.then_picker.show_pick(self._then, then, saved, basis, now.day)
+        self.now_picker.show_pick(self._now, now, saved, as_of or "the plan now", live.day)
+        self._show_day(self.then_day_action, self.then_day, self._then)
+        self._show_day(self.now_day_action, self.now_day, self._now)
         segments = []
         for phase, shade in stretches:
             key = phase.milestone.id if phase.milestone else ""
@@ -715,20 +834,34 @@ class TimeEstimatesActivity(EntityActivity):
             )
         self._plots = ChartData(
             today=now.day,
-            expected=tuple(expected(now, None, by_days=self._by_days)),
-            actual=tuple(actual(history, now, None, by_days=self._by_days)),
-            baseline=tuple(expected(then, None, by_days=self._by_days)) if then else (),
-            basis_day=basis,
+            expected=tuple(expected(now, None)),
+            actual=tuple(actual(history, now, None)),
+            baseline=tuple(expected(then, None)) if then else (),
+            basis=basis,
+            as_of=as_of,
             finish=now.landing(None),
             baseline_finish=then.landing(None) if then is not None else None,
-            by_days=self._by_days,
             idle=tuple(idle(now, None)),
             segments=tuple(segments),
             emphasis=self._picked,
+            volume=tuple(volume(history, now)),
+            remaining=tuple(remaining(history, now)),
+            marks=tuple((row.day, row.title) for row in saved),
         )
         self.chart.show_data(self._plots)
         if self._expanded is not None and isValid(self._expanded):
             self._expanded.show_data(self._plots)
+
+    def _show_day(self, action: QAction, edit: QDateEdit, pick: Pick) -> None:
+        """A *Day…* pick shows its field beside the picker, loaded with the day and never
+        reading its own load as a pick."""
+        action.setVisible(pick.kind == "day")
+        if pick.kind == "day" and pick.day is not None:
+            self._loading_day = True
+            try:
+                edit.setDate(QDate(pick.day.year, pick.day.month, pick.day.day))
+            finally:
+                self._loading_day = False
 
     def _label(self, phase: Phase, stretches: list[tuple[Phase, QColor]]) -> str:
         if phase.milestone is None:
@@ -773,7 +906,6 @@ class TimeEstimatesActivity(EntityActivity):
                 asked=phase.asked if phase.pushed else None,
                 # Toward the milestone: everything through its stretch.
                 landed=now.toward(phase.milestone.id if phase.milestone else None),
-                by_days=self._by_days,
             )
             for phase, color in stretches
         ]
@@ -794,7 +926,6 @@ class TimeEstimatesActivity(EntityActivity):
                     asked=None,
                     sets_project=True,
                     landed=now.toward(None),
-                    by_days=self._by_days,
                 ),
             )
         elif found:

@@ -2666,19 +2666,19 @@ decisions worth writing down:
 The calendar says when each milestone lands; a person working the plan wants the other
 half — how far it has come, and whether it is on the curve it promised. The plots under
 the calendar answer with the shape a trip planner's energy graph has: the plan's curve,
-what actually landed, and the plan as it stood on the day you compare against. Four
-decisions carry it:
+what actually landed, and the plan as it stood on the day you compare against. The
+decisions that carry it:
 
-- **Two measures, both honest, neither hidden.** By steps (done over steps) and by
-  estimated days (the days of done steps over the days of all); the toggle above the
-  plots picks which the plots and the rows read, and a row's tooltip always prints
-  both. A count never lies about what it is, and a weighted share
-  answers "how much of the *work*"; picking one for everybody would have been a claim
-  the numbers do not carry. Both are `time_estimates/progress.py` over `status_for` —
-  the status aspect's reader handed in like `days_for`, so this module never learns
-  where a status lives — and "toward a milestone" is **cumulative through its
-  stretch**, because a milestone lands when everything before it has, not only what is
-  new since the last one.
+- **One measure: estimated days.** The days of done steps over the days of all of them,
+  `time_estimates/progress.py` over `status_for` — the status aspect's reader handed in
+  like `days_for`, so this module never learns where a status lives — and "toward a
+  milestone" is **cumulative through its stretch**, because a milestone lands when
+  everything before it has, not only what is new since the last one. A share by count
+  of steps was offered beside it for a while, as a toggle; it was dropped because
+  nobody reading the plots wants it and it calls a two-hour step and a two-week one the
+  same thing, which is the one comparison a plan priced in days must not make. The
+  count is still tallied and printed in words (*2d of 7d estimated · 1 of 4 steps
+  done*), never offered as the share.
 - **The expected curve is the simulation's own.** A straight line from start to landing
   would be a guess wearing the plan's colour. `parallel_finish` already knows the
   working day each step lands on; it now says so (`ParallelFinish.landings`, carried on
@@ -2705,7 +2705,7 @@ decisions carry it:
   cut drew every earlier promise as its own dashed segment; the walk that redesigned it
   wanted one question answered clearly: *how has the plan moved since we started?* So
   there is one **baseline** — the plan as recorded on the **basis** day, the project's
-  start unless a day is picked beside the plots (`progress show --basis`) — chosen as
+  start unless another plan is picked in the strip (`progress show --basis`) — chosen as
   the last row on or before the basis, or the earliest row for a project older than its
   history. That fallback stops at **today's own record**: a project whose history begins
   today has no earlier plan, and standing today's record in for one drew the plan now
@@ -2795,23 +2795,94 @@ decisions carry it:
   a plan with thirty milestones would scroll it away exactly when the answers are being
   compared. That is why the left half is no longer a scroll area of its own — it is a
   pinned head and a scrolling list, and only the answer side scrolls whole.
-- **The measure is estimated days, and the count is what you ask for.** By steps was the
-  default because it needs no estimates; it also calls a two-hour step and a two-week one
-  the same thing, which is the one comparison a plan priced in days must not make. Days
-  leads the toggle and is what the window opens on, and the report and its exports are
-  drawn the same way, so a page mailed to somebody says what the window said.
-- **The plots name the day the reader asked for, not the record that stood in for it.**
-  The scope plot used to be headed *Scope change since 7 September* while the control a
-  finger's width above it said *Plan at 1 Jun 2026* — the heading was naming the day the
-  baseline happened to be recorded on, and the two dates read as a contradiction rather
-  than as a fact and its bookkeeping. The heading is now *Scope change — versus plan at
-  1 June*: the basis, which is the question the plot answers and the day the control
-  holds, and *Scope change — no plan recorded at 1 June* when nothing was recorded that
-  early. Which daily record stood in for the basis is real but secondary, and it is
-  reported where a reader can act on it — `dplanner progress show`'s `baseline_day` and
-  the report's *Since the plan of…* figure. `progress.scope_words` words it for the
-  window and the report at once, beside `standing_words` and `shift_words`, for the same
-  reason those live there.
+- **A comparison is two snapshots, and both are picked where the reader can see them.**
+  The first cut compared "the plan at the basis day" with "now", the basis a date field
+  under the plots, and the day the record was actually taken on reported only by the
+  terminal. Users read the plots without knowing what they were comparing: the concept
+  of a snapshot was in the file and nowhere on the screen. So the strip now carries
+  *Compare [then] with [now]* — two `SnapshotPicker`s (`snapshots.py`), each a button
+  wearing the name of the plan it reads and dropping a menu built when it opens: the
+  side's own default (the plan at the project's start; the live plan now), every
+  snapshot somebody saved, and *Day…* for any recorded day. The choice is a `Pick`
+  (`progress.py`), view state like the picked milestone, and `resolve` finds the record
+  that stands for it: the start and a day through the baseline rule — the last record
+  on or before the day, else the earliest, but **never today's own record** standing in
+  for an earlier day, which would draw the plan over itself and call it a comparison —
+  a saved snapshot by title, the live plan for *Now*. Two sides rather than one because
+  the question at a review is as often *what did we think on 1 November against what we
+  thought on 1 December* as *against now*, and read as of an earlier snapshot the
+  curves stop at its day (`progress.until`). Three was considered and left: two answers
+  every question anybody asked, and a third picker is a third thing to explain.
+- **Every heading names the plan it is compared with — the record included.** The
+  earlier rule named the day the reader asked for and hid which record stood in for it,
+  because a control saying *1 June* under a heading saying *7 September* read as a
+  contradiction. With the pick explicit that reasoning inverts: the pick *is* the thing
+  compared, and hiding the record made the comparison untrustworthy. `pick_words`
+  words a pick once — *the plan at start, recorded 9 September*, *Kickoff review
+  (1 November)*, *the plan at 3 September* when a record fell on that very day, *now* —
+  and the picker's tooltip, the scope plot's heading (`scope_words`), every milestone
+  row's sentence (`shift_words`, *3 working days later than Kickoff review said*), the
+  report and `progress show` all read that one sentence. A saved snapshot's day is a
+  hairline through every plot with its title at the top, so the moments somebody chose
+  to remember are on the axis every plot shares.
+- **Saved snapshots are a second list, kept whole; automatic days stay last-wins.** A
+  snapshot a person saves — *"What we thought on 1 November"*, with a note on the
+  occasion — is a record of a decision, and it must mean the plan *at that moment*:
+  riding it on the day's automatic row would let an afternoon's ten new steps rewrite
+  what the morning's review had looked at. So `progress_history.json` (format 2) holds
+  `days`, the automatic rows the recorder replaces within a day, and `saved`, rows with
+  a `title` that nothing replaces and nothing expires; `saved_with` refuses a title
+  already taken because a saved snapshot is found by its name. The save is a user
+  decision, so it goes **through the undo stack** (*Save Snapshot*, *Forget Snapshot*;
+  `dplanner progress save|list|remove`), unlike the recorder's automatic write; and
+  every write of the entry — the recorder's included — carries the saved list along as
+  stored, so a settle never loses one. The format bump exists for the `saved` key: an
+  older build refuses to rewrite the entry rather than dropping what somebody saved.
+- **A snapshot records the plan as simulated that day, not the graph.** The tempting
+  alternative — store the graph and the estimates, re-simulate every old snapshot under
+  whatever team the reader picks now — was weighed and left: it makes every snapshot a
+  copy of the project, and the comparison it enables ("what would last month's plan
+  have said with two more agents") is not the one the plots exist for. What a snapshot
+  keeps is what the plan *promised* that day, for the team and focus of that day, and
+  that is what a comparison against it must hold still. The volume plots are the part
+  of a snapshot the team never touches — a total of estimated days is the same under
+  any staffing — which is why they can be read across every snapshot without a
+  re-simulation.
+- **Volume is derived from the snapshots, so it costs the file nothing.** The scope
+  over time — how much work the plan came to on each recorded day, and how much of it
+  was still ahead — is the one question the progress and scope plots cannot answer,
+  because both draw shares: a plan that doubled overnight and landed half of it reads as
+  *50 %* on both days. Every automatic row already carries each stretch's tally, so
+  `progress.volume` and `remaining` read the total and the total less the done days
+  off the rows through *now* as **step curves** (a record is what the plan was until the
+  next one; a slope between two records would claim a change on days nothing was
+  recorded). The two plots share **one scale in days** (`volume_scale`, the largest value
+  either reaches rounded up to 1, 2 or 5 times a power of ten, in the window and the
+  report alike), so the gap between the total and the remaining is read by eye as what
+  has landed; the remaining plot draws the total under it in a paler dash for the same
+  reason the scope plot draws the plan then over the plan now.
+- **The plots are read a page at a time, and the window of their own shows every page.**
+  Five plots stacked under a calendar outran any screen, and the two that answer one
+  question were rarely the two on it. `chart.py`'s `PAGES` — *Milestone shifts*,
+  *Progress* (the plan against what landed, and the scope change), *Volume* — are three
+  pages of one widget over one `ChartData`, toggled by the row over the plots where the
+  measure toggle used to be, and the page decides the plots and the height while the
+  data is one record whichever page is up. Progress is what the tab opens on, because
+  it is where a reader almost always is; a milestone plot with nothing to row says *No
+  milestones yet* in one row's height rather than leaving the page. `ChartDialog` is
+  the same widget on the `all` page: where the tab has to choose, a window of its own
+  has the room, and a reader comparing pages wants them under each other.
+- **A change re-runs the page after a quiet spell, and the strip says so meanwhile.**
+  The refresh is the heaviest reaction in the application — two dozen simulations, the
+  matrix, the calendar, the list and every plot — and it was already coalesced
+  (`REFRESH_DELAY_MS`, *A view refresh is coalesced*). What it lacked was a word: for
+  half a second after an edit the page showed a plan that had since changed, with
+  nothing to say it was stale. *Recalculating…* in the strip appears when a change
+  arrives and leaves when the report has re-run. Moving the derivation to a worker
+  thread was considered and rejected for the reason that section gives — pure Python
+  competing for the GIL, and a thread alive at teardown is the suite's SIGSEGV shape —
+  so the answer to "the recalculation must not lag the UI" stays the debounce, and the
+  answer to "the user must see it is recalculating" is one label.
 - **A plot is given the room the window has, up to a ceiling.** The two share plots were
   a fixed 112 px whatever the screen, so a tall window ran out of page and a laptop
   ran out of plot. They now take whatever height the host gives the chart over its
@@ -2821,10 +2892,10 @@ decisions carry it:
   a widget that resizes itself inside its own resize event is what put a scroll area
   into the loop `months.py` documents. And a plot's name is set **bold** with air above
   it, so the three read as three headings rather than as captions under the plot above.
-- **Expanding the plots is the same widget with more room.** *⤢* beside the basis opens
-  `ChartDialog` — a second `ProgressChart` fed the same `ChartData` the tab feeds the
-  inline one, so a plan that changes while the window is open redraws in both and there
-  is no second rendering to drift. It holds no state, so closing it loses nothing: the
+- **Expanding the plots is the same widget with more room.** *⤢* beside the page toggles
+  opens `ChartDialog` — a second `ProgressChart` fed the same `ChartData` the tab feeds
+  the inline one, so a plan that changes while the window is open redraws in both and
+  there is no second rendering to drift. It holds no state, so closing it loses nothing: the
   text dialog's rule (*expanding an editor is a second binding, not a copy*) applied to
   a view that has nothing to bind.
 - **A milestone row dates both its marks and drops a line to the axis.** The axis marks

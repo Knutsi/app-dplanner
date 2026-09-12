@@ -925,58 +925,69 @@ root, stop and look for the registry or capability you have not found yet.
   hand-edited file smuggled in is named by `ordering.cyclic()` and the tab says so instead
   of drawing a calendar over a broken walk. `ARCHITECTURE.md`'s *Time estimates: two
   worker pools, one greedy simulation* has the reasoning.
-- **Progress is derived; the day's progress is recorded.** How far a milestone has come —
-  by steps and by estimated days, everything through its stretch — is
+- **Progress is derived; the past is a list of snapshots, and a comparison is two of
+  them.** How far a milestone has come — by estimated days, everything through its
+  stretch; the count of steps is tallied and worded, never the share — is
   `time_estimates/progress.py` over the statuses (`status_for`, handed in like `days_for`),
   and the plan's expected curve is the simulation's own per-step landings
   (`domain/schedule.py`'s `ParallelFinish.landings`, carried on each `Phase`). The one
   thing that cannot be derived is the past: a `Snapshot` — one row per stretch, steps,
   done, days, done days, start, landing, and the **landing knots** the curve is drawn
-  through — is written under a second module id, `progress_history`, **only on a day
-  something in it changed**, last-wins within the day, by `recorder.py` after every
-  settled change in the window and by `dplanner progress record` from the terminal.
-  The recorder writes directly with its own origin, off the undo stack (the PR
-  refresher's rule — Ctrl+Z undoes the status, not the record). **The baseline is the
-  plan as recorded on the basis day** — the project's start, or the day picked beside
-  the chart / `progress show --basis` — the last row on or before it (the earliest row
-  for a project older than its history, but **never today's own record**, which is the
-  plan now and no comparison at all), drawn exactly from its knots. **The plots name the
-  basis, never the record that stood in for it** (`progress.scope_words`, worded once for
-  the window and the report): *Scope change — versus plan at 1 June* is the day the
-  control beside them holds, and *no plan recorded at 1 June* when there is none;
-  `progress show`'s `baseline_day` is where the record itself is reported. The progress
-  chart is **three plots on one locked time axis** — the same dates under all three, the
-  date marks (days, Mondays or month firsts, `axis_ticks`) as hairlines through every
-  plot, the labels printed once under the last, the edges the earliest and latest date
-  any plot has to show: *Progress* (the plan now in each stretch's shade against what
-  landed in ink, with *ahead 5 %* / *behind 12 %* beside today's dot), *Scope change*
-  (the baseline dashed **over** the plan now, opaque and paler — so a plan unchanged
-  since the basis reads as two lines in one place — and **the area between them filled
-  by direction**: the attention amber where the plan now promises more by a date than
-  it did, the bad red where it promises less, the good green as a line where the two
-  agree), and *Milestones* (a row each: the landing then hollow, the landing now
-  filled, an arrow between). A span a milestone's own start date leaves empty is flat
-  and dotted (`progress.idle`, the same one `progress show` prints). **Both surfaces
-  draw those three plots** — `time_estimates/chart.py` in the window, `cli/report/`'s
+  through — is written under a second module id, `progress_history` (format 2), in two
+  lists. **Automatic** days, **only on a day something in the plan changed** (a step or
+  an estimate added or removed, a link, a status, a milestone dated), last-wins within
+  the day, by `recorder.py` after every settled change in the window and by `dplanner
+  progress record` from the terminal — directly, with its own origin, off the undo stack
+  (the PR refresher's rule — Ctrl+Z undoes the status, not the record). And **saved**
+  snapshots, taken on purpose under a title and a note — *Save snapshot…* in the tab's
+  strip (`snapshots.py`), `dplanner progress save|list|remove` — a decision, so pushed
+  through the undo stack, never replaced by a later change and carried along by every
+  automatic write. **The plots compare a then with a now, and both are picked in the
+  strip** (`Pick`, `resolve`, `pick_words`): the then side is the plan at the project's
+  start unless a saved snapshot or a day is chosen, resolved as the last record on or
+  before the day (the earliest row for a project older than its history, but **never
+  today's own record**, which is the plan now and no comparison at all); the now side is
+  the live plan unless a saved snapshot or a day is chosen, and read as of one the
+  curves stop at its day. **Every heading names the plan it is compared with, record
+  included** — *Scope change — versus the plan at start, recorded 9 Sep*, *versus
+  Kickoff review (1 Nov)*, *Progress — as of Review 2 (1 Dec)* — worded once
+  (`pick_words`, `scope_words`, `shift_words`) for the picker's tooltip, the window and
+  the report, so which two plans are compared is never a guess; a saved snapshot's day
+  is a hairline through every plot with its title. **The plots are read a page at a
+  time** (`chart.py`'s `PAGES`, toggles over them): *Milestone shifts* (a row each: the
+  landing then hollow, the landing now filled, an arrow between), *Progress* (the plan
+  now in each stretch's shade against what landed in ink, with *ahead 5 %* / *behind
+  12 %* beside today's dot; and *Scope change* — the plan then dashed **over** the plan
+  now, opaque and paler — so a plan unchanged since reads as two lines in one place —
+  and **the area between them filled by direction**: the attention amber where the plan
+  now promises more by a date than it did, the bad red where it promises less, the good
+  green as a line where the two agree) and *Volume* (`progress.volume` and `remaining`:
+  the total of estimated days the plan came to on each recorded day as a step curve,
+  and the same less what had landed, on one scale in days — `volume_scale`, shared
+  with the report); *⤢* opens `ChartDialog` with every page at once, the same widget fed
+  the same record, so both redraw together. Every page shares one locked time axis —
+  the date marks (days, Mondays or month firsts, `axis_ticks`) as hairlines through
+  every plot, the labels printed once under the last, the edges the earliest and
+  latest date any plot has to show. A span a milestone's own start date leaves empty is
+  flat and dotted (`progress.idle`, the same one `progress show` prints). **Both
+  surfaces draw the same plots** — `time_estimates/chart.py` in the window, `cli/report/`'s
   `Chart` of `Plot`s and `Stretch`es on the page and the PDF — so what they share is
   `domain/schedule.py`: `share_at` reads a line at a date and `change_runs` cuts two
   plans into the runs the fill is coloured by, and `progress.py` words `standing_words`
-  and `shift_words` once. **The measure is estimated days** — the count of steps is the
-  other half of the toggle, never the default, in the window and in the report alike: a
-  share of steps calls a two-hour step and a two-week one the same thing. **Every
-  milestone's landing is marked and named on the progress line** — a name elided, and
-  dropped rather than squeezed when its neighbour's reaches that far — **a milestone row
-  dates both its marks and drops a hairline to the axis** (`row_dates`, the same fit
-  rule, both surfaces), the two share plots grow with the window to a ceiling of twice
-  their floor (bounds set from the data, never from a resize), their names are set bold,
-  and *⤢* beside the basis opens `ChartDialog`: the same widget fed the same record, so
-  both redraw together. The delta in words (`delta`, `delta_words`) and
-  `changes_since` — the steps born and the estimates changed after the baseline's
-  recorded day, from the step's `created` stamp and the estimate aspect's own history
-  (`estimation`'s `read_history`; every `write` carries the value it replaced, one row
-  per day, format 2; `dplanner estimate show` reads it back) — are the terminal's and
-  the report's prose; the charts say it with the plots. `ARCHITECTURE.md`'s *Progress
-  against the plan* has the reasoning.
+  and `shift_words` once. **Every milestone's landing is marked and named on the
+  progress line** — a name elided, and dropped rather than squeezed when its neighbour's
+  reaches that far — **a milestone row dates both its marks and drops a hairline to the
+  axis** (`row_dates`, the same fit rule, both surfaces), a page's plots grow with the
+  window to a ceiling of twice their floor (bounds set from the data, never from a
+  resize), and their names are set bold. **A change re-runs the page after a quiet
+  spell, and the strip says *Recalculating…* until it has** — the debounce is the
+  coalescing, and a worker thread is not the answer (*A view refresh is coalesced*). The
+  delta in words (`delta`, `delta_words`) and `changes_since` — the steps born and the
+  estimates changed after the baseline's recorded day, from the step's `created` stamp
+  and the estimate aspect's own history (`estimation`'s `read_history`; every `write`
+  carries the value it replaced, one row per day, format 2; `dplanner estimate show`
+  reads it back) — are the terminal's and the report's prose; the charts say it with
+  the plots. `ARCHITECTURE.md`'s *Progress against the plan* has the reasoning.
 - **A note is a record beside the project with a label, and every briefing carries an
   index.** `modules/notes/` — `log.py` (Qt-free; `N1, N2, …` minted per project, a
   **label** from the closed `LABELS` list — `decision`, `handoff`, `spec-change`, `later`,

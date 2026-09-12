@@ -5,6 +5,7 @@ from datetime import date
 
 import pytest
 
+from dplanner.domain.schedule import format_date
 from dplanner.domain.store import LibraryStore
 from dplanner.modules.time_estimates.schedule import MODULE_ID, PALETTES, shades
 
@@ -256,20 +257,24 @@ def test_progress_show_counts_what_landed_toward_each_milestone(staged):
     staged("status", "set", "read-the-spec", "done")
     data = json.loads(staged("progress", "show", "Discovery", "--json"))
     v1, v2, whole = data["scopes"]
-    assert (v1["label"], v1["steps"], v1["done"], v1["by_steps"]) == ("v1", 2, 1, 0.5)
+    assert (v1["label"], v1["steps"], v1["done"]) == ("v1", 2, 1)
     assert (v1["days"], v1["done_days"], v1["by_days"]) == (4.0, 2.0, 0.5)
+    assert "by_steps" not in v1  # by estimated days, the one measure
     assert v1["finish"] == "2026-09-16"
     assert (v2["label"], v2["steps"], v2["done"], v2["finish"]) == ("v2", 4, 1, "2026-09-23")
-    assert whole["label"] == "All work" and whole["by_steps"] == 0.25
+    assert whole["label"] == "All work" and whole["by_days"] == pytest.approx(2 / 7)
     assert whole["expected"][0] == {"date": "2026-09-07", "share": 0.0}
     assert whole["expected"][-1] == {"date": "2026-09-23", "share": 1.0}
-    assert whole["actual"] == [{"date": date.today().isoformat(), "share": 0.25}]
-    assert data["recorded_days"] == 0
+    assert whole["actual"] == [{"date": date.today().isoformat(), "share": pytest.approx(2 / 7)}]
+    assert data["recorded_days"] == 0 and data["saved"] == []
+    assert data["basis"] == {"pick": "start", "title": "", "day": "", "words": ""}
+    assert data["as_of"] == ""
+    assert data["volume"] == [{"date": date.today().isoformat(), "days": 7.0, "remaining": 5.0}]
     assert whole["baseline"] is None and whole["delta"] is None
-    assert "no earlier plan" not in staged("progress", "show", "Discovery")
     said = staged("progress", "show", "Discovery")
-    assert "v1: 50% by steps (1 of 2), 50% by days (2d of 4d) — lands 16 September" in said
-    assert "All work: 25% by steps" in said
+    assert "v1: 50% (2d of 4d, 1 of 2 steps) — lands 16 September" in said
+    assert "All work: 29% (2d of 7d, 1 of 4 steps)" in said
+    assert "(nothing recorded to compare with; 1 person + 1 agent; 0 days recorded" in said
     # A milestone is named by its label or by its step, whichever comes to mind.
     one = json.loads(staged("progress", "show", "Discovery", "--milestone", "v2", "--json"))
     assert [scope["label"] for scope in one["scopes"]] == ["v2"]
@@ -289,18 +294,11 @@ def test_progress_record_writes_a_day_once_and_the_delta_reads_against_it(
     (row,) = library.projects[0].module_data["progress_history"]["days"]
     assert row["day"] == date.today().isoformat() and len(row["stretches"]) == 2
     assert row["stretches"][0]["landings"][-1] == {"date": "2026-09-16", "steps": 1, "days": 2.0}
+    # Today's own record is the plan now and no comparison: nothing stands in for the
+    # start until an earlier day is recorded.
     data = json.loads(staged("progress", "show", "Discovery", "--json"))
-    assert data["basis"] == "2026-09-07" and data["baseline_day"] == date.today().isoformat()
-    assert data["scopes"][1]["delta"] == {
-        "steps": 0,
-        "days": 0.0,
-        "finish_then": "2026-09-23",
-        "finish_now": "2026-09-23",
-        "shift": 0,
-    }
-    assert "v2: 0% by steps (0 of 4), 0% by days (0d of 7d) — lands 23 September; unchanged" in (
-        staged("progress", "show", "Discovery")
-    )
+    assert data["basis"]["pick"] == "start" and data["baseline_day"] == ""
+    assert data["scopes"][1]["delta"] is None
     # Date the record back to the 1st: a change on the record's own day is inside that
     # day's record, so today's edits only read as changes against an earlier day.
     history_file = next(workspace.glob("*/modules/progress_history.json"))
@@ -311,6 +309,19 @@ def test_progress_record_writes_a_day_once_and_the_delta_reads_against_it(
         node = json.loads(step_file.read_text())
         node["created"] = "2026-08-30T09:00:00+00:00"
         step_file.write_text(json.dumps(node))
+    data = json.loads(staged("progress", "show", "Discovery", "--json"))
+    assert data["baseline_day"] == "2026-09-01"
+    assert data["basis"]["words"] == "the plan at start, recorded 1 September"
+    assert data["scopes"][1]["delta"] == {
+        "steps": 0,
+        "days": 0.0,
+        "finish_then": "2026-09-23",
+        "finish_now": "2026-09-23",
+        "shift": 0,
+    }
+    assert "v2: 0% (0d of 7d, 0 of 4 steps) — lands 23 September; unchanged" in (
+        staged("progress", "show", "Discovery")
+    )
     # More work behind v2 moves its landing; the report says what moved it.
     staged("step", "add", "Discovery", "Polish", "--days", "2")
     staged("step", "link", "ship-the-docs", "polish")
@@ -348,8 +359,8 @@ def test_progress_record_writes_a_day_once_and_the_delta_reads_against_it(
 def test_the_basis_can_be_any_day_and_a_bad_one_is_refused(staged):
     staged("progress", "record", "Discovery")
     data = json.loads(staged("progress", "show", "Discovery", "--basis", "2030-01-01", "--json"))
-    assert data["basis"] == "2030-01-01" and data["baseline_day"] == date.today().isoformat()
-    assert "compared with the plan recorded" in staged(
+    assert data["basis"]["day"] == "2030-01-01" and data["baseline_day"] == date.today().isoformat()
+    assert f"(versus the plan at 1 Jan '30, recorded {format_date(date.today())};" in staged(
         "progress", "show", "Discovery", "--basis", "2030-01-01"
     )
     assert "YYYY-MM-DD" in staged("progress", "show", "Discovery", "--basis", "soon", expect=1)
@@ -363,3 +374,56 @@ def test_progress_on_a_stepless_project_says_so(cli):
     cli("project", "create", "Empty")
     assert "No steps yet." in cli("progress", "show", "Empty")
     assert "nothing to record" in cli("progress", "record", "Empty", expect=1)
+
+
+def test_a_saved_snapshot_is_named_listed_compared_against_and_forgotten(staged, cli_library):
+    """``progress save`` keeps today's plan under a title beside the automatic days;
+    ``--basis`` and ``--as-of`` name it; ``list`` prints it; ``remove`` forgets it — and
+    a second save under the same title is refused."""
+    said = staged("progress", "save", "Discovery", "Kickoff review", "--note", "day one")
+    assert "saved the plan as of" in said and "'Kickoff review'" in said
+    assert "already saved" in staged("progress", "save", "Discovery", "kickoff review", expect=1)
+    library = LibraryStore(cli_library).load()
+    entry = library.projects[0].module_data["progress_history"]
+    assert entry["format"] == 2 and "days" not in entry  # saved on purpose, not recorded
+    (kept,) = entry["saved"]
+    assert (kept["title"], kept["note"], kept["day"]) == (
+        "Kickoff review",
+        "day one",
+        date.today().isoformat(),
+    )
+    listed = json.loads(staged("progress", "list", "Discovery", "--json"))
+    assert listed["saved"] == [
+        {"title": "Kickoff review", "note": "day one", "day": date.today().isoformat()}
+    ]
+    assert "1 saved snapshot, 0 days recorded" in staged("progress", "list", "Discovery")
+    assert "Kickoff review" in staged("progress", "list", "Discovery")
+    # The plan grows; the saved snapshot is what it is compared against.
+    staged("step", "add", "Discovery", "Polish", "--days", "2")
+    staged("step", "link", "ship-the-docs", "polish")
+    data = json.loads(
+        staged("progress", "show", "Discovery", "--basis", "Kickoff review", "--json")
+    )
+    words = f"Kickoff review ({format_date(date.today())})"
+    assert data["basis"] == {"pick": "saved", "title": "Kickoff review", "day": "", "words": words}
+    assert data["scopes"][1]["delta"]["steps"] == 1 and data["scopes"][1]["delta"]["days"] == 2.0
+    said = staged("progress", "show", "Discovery", "--basis", "Kickoff review")
+    assert f"(versus {words};" in said and "1 saved snapshot)" in said
+    # Read as of it, the plan is what it was: four steps, and said so.
+    as_of = json.loads(
+        staged("progress", "show", "Discovery", "--as-of", "Kickoff review", "--json")
+    )
+    assert as_of["as_of"] == words and as_of["scopes"][1]["steps"] == 4
+    assert f"; as of {words};" in staged(
+        "progress", "show", "Discovery", "--as-of", "Kickoff review"
+    )
+    assert "a date (YYYY-MM-DD), a saved snapshot's title" in staged(
+        "progress", "show", "Discovery", "--basis", "nobody", expect=1
+    )
+    assert "nothing recorded to read the plan as of" in staged(
+        "progress", "show", "Discovery", "--as-of", "2020-01-01", expect=1
+    )
+    assert "forgot 'Kickoff review'" in staged("progress", "remove", "Discovery", "Kickoff review")
+    assert "nothing to forget" in staged("progress", "remove", "Discovery", "Kickoff review")
+    library = LibraryStore(cli_library).load()
+    assert "progress_history" not in library.projects[0].module_data

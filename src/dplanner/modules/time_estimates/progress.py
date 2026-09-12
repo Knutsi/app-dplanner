@@ -1,10 +1,13 @@
-"""How far the plan has come, against how far it said it would be by now.
+"""How far the plan has come, against how far it said it would be by now — and the
+snapshots that remember what it said.
 
 The calendar beside this says when each milestone *lands*; this says what has *landed*.
-Two measures, because they answer different questions and neither lies about what it
-is: **by steps** — done steps over steps — and **by days** — the estimated days of done
-steps over the estimated days of all of them. Both are derived on every read from the
-statuses and the estimates (``ordering.py``'s rule), never stored.
+**The measure is estimated days**: the days of done steps over the days of all of them.
+A count of steps was offered beside it once and dropped, because a share of steps calls a
+two-hour step and a two-week one the same thing — the one comparison a plan priced in
+days must not make. The count is still tallied and printed in words, never as the share.
+Everything here is derived on every read from the statuses and the estimates
+(``ordering.py``'s rule), never stored — except the past.
 
 **Expected progress is the simulation's own curve.** ``domain/schedule.py``'s
 ``parallel_finish`` says on which working day each step lands; ``phases`` carries that
@@ -13,34 +16,50 @@ each date. :func:`expected` turns the knots into a share landed by date: the pla
 promise, for the stored team and focus, exact rather than a straight line drawn between
 start and finish.
 
-**The past is the one thing here that is stored, because it cannot be derived.** What the
-plan looked like last Tuesday — how many steps it had, how much was done, when each of
-them was expected to land — is gone once the plan changes, and a chart of the plan
-against what became of it is nothing without it. So a :class:`Snapshot` — one row per
-stretch of the plan: steps, done, days, done days, start, landing, and the landing knots
-— is recorded per day under a module id of its own, ``progress_history``
-(``modules/progress_history.json`` beside the project), **only on a day something in it
-changed** and last-wins within a day. The window's recorder writes it after every
-settled change; ``dplanner progress record`` writes it for a plan driven from the
-terminal. A row keeps its stretches *in order*, so a later read can sum through a
-milestone the way the sequence ran that day; a milestone a row never knew is simply
-absent from it. Because a row carries its knots, **the plan as it stood on any recorded
-day is drawn exactly**, not reconstructed.
+**A snapshot is the plan on one day, and the past is a list of them.** What the plan
+looked like last Tuesday — how many steps it had, how much was done, when each of them
+was expected to land — is gone once the plan changes, and a chart of the plan against
+what became of it is nothing without it. So a :class:`Snapshot` — one row per stretch of
+the plan: steps, done, days, done days, start, landing, and the landing knots — is
+recorded under a module id of its own, ``progress_history``
+(``modules/progress_history.json`` beside the project). Two lists live there:
 
-**The baseline is the plan as recorded on the basis day, and the delta is what changed
-since.** The basis is the project's start unless somebody picks another day; the
-baseline is the last row on or before it (the earliest row, when none is — a project
-older than its history). :func:`delta` says how the scope moved between then and now —
-steps and days added, the landing shifted — and the chart draws the band between the two
-curves. Qt-free by rule (``HEADLESS_FILES``); the chart renders, the CLI prints, and both
-read this.
+- **Automatic** snapshots, one per day, written **only on a day something in the plan
+  changed** — a step or an estimate added or taken away, a link that reorders the graph,
+  a status that lands work, a milestone dated — and last-wins within the day. The
+  window's recorder writes them after every settled change; ``dplanner progress record``
+  writes them for a plan driven from the terminal.
+- **Saved** snapshots, taken on purpose and named — *"What we thought on 1 November"* —
+  with a note saying what the occasion was. They are never replaced by a later change
+  and never expire: a saved snapshot is a record of a decision, kept whole.
+
+A row keeps its stretches *in order*, so a later read can sum through a milestone the way
+the sequence ran that day; a milestone a row never knew is simply absent from it. Because
+a row carries its knots, **the plan as it stood on any recorded day is drawn exactly**,
+not reconstructed.
+
+**A comparison is two snapshots, and both are picked.** The plots compare a *then* with
+a *now*; a :class:`Pick` says which recorded plan each side reads — the plan at the
+project's start, a saved snapshot by name, any recorded day, or the live plan — and
+:func:`resolve` finds the record that stands for it. The then side defaults to the
+project's start (the last record on or before it, else the earliest one, but never
+today's own: the plan over itself is no comparison) and the now side to the live plan,
+which is the question almost everybody asks; a saved snapshot on either side is how a
+review meeting's outlook is measured against a later one. :func:`pick_words` names the
+record that answered, so a heading never hides which plan it is comparing.
+
+**Volume is the scope over time.** :func:`volume` reads every snapshot's total of
+estimated days into a step curve — the sum the plan came to on each recorded day — and
+:func:`remaining` the same less what had landed; together they say how the scope grew as
+the work went on and how much of it was still ahead. Qt-free by rule
+(``HEADLESS_FILES``); the chart renders, the CLI prints, and both read this.
 """
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from itertools import pairwise
-from typing import Any
+from typing import Any, Literal
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.model import Library, Project, Step
@@ -58,8 +77,18 @@ from dplanner.domain.schedule import (
 from dplanner.modules.time_estimates.schedule import stretched
 
 HISTORY_ID = "progress_history"
-DATA_FORMAT = ModuleDataFormat(HISTORY_ID)
 ROWS_KEY = "days"
+SAVED_KEY = "saved"
+
+
+def _to_format_2(data: dict[str, Any]) -> dict[str, Any]:
+    """Format 1 shapes are valid format 2 shapes: the bump exists for the ``saved`` key,
+    so an older build refuses to rewrite the entry rather than dropping what somebody
+    saved on purpose."""
+    return dict(data)
+
+
+DATA_FORMAT = ModuleDataFormat(HISTORY_ID, 2, (_to_format_2,))
 
 # Two shares within this of each other are "on plan" — a chart's line width, in share.
 ON_PLAN = 0.005
@@ -82,11 +111,14 @@ class Tally:
             self.done_days + other.done_days,
         )
 
-    def share(self, by_days: bool) -> float | None:
-        """Done over total, 0 to 1 — None when there is nothing to be a share of."""
-        whole = self.days if by_days else self.steps
-        landed = self.done_days if by_days else self.done
-        return landed / whole if whole else None
+    def share(self) -> float | None:
+        """Done days over all days, 0 to 1 — None when there is nothing to be a share of."""
+        return self.done_days / self.days if self.days else None
+
+    @property
+    def remaining(self) -> float:
+        """The estimated days not yet landed."""
+        return self.days - self.done_days
 
 
 @dataclass(frozen=True)
@@ -114,10 +146,16 @@ class Stretch:
 
 @dataclass(frozen=True)
 class Snapshot:
-    """The plan on one day, stretch by stretch, in the order the sequence ran them."""
+    """The plan on one day, stretch by stretch, in the order the sequence ran them.
+
+    ``title`` and ``note`` are a saved snapshot's — what the occasion was called and what
+    it was about; an automatic day carries neither.
+    """
 
     day: date
     stretches: tuple[Stretch, ...]
+    title: str = ""
+    note: str = ""
 
     def toward(self, key: str | None) -> Tally:
         """The tally through the stretch ``key`` closes — every stretch for None."""
@@ -203,24 +241,24 @@ def standing_words(standing: float | None) -> str:
     return f"{'ahead' if standing > 0 else 'behind'} {abs(standing):.0%}"
 
 
-def shift_words(
-    label: str, then: date | None, now: date | None, basis: date | None, today: date
-) -> str:
-    """A milestone's row in words: where it lands, and how that moved since the basis."""
+def shift_words(label: str, then: date | None, now: date | None, basis: str, today: date) -> str:
+    """A milestone's row in words: where it lands, and how that moved against the plan
+    it is compared with — ``basis`` is that plan named (:func:`pick_words`), empty when
+    there is none to compare with."""
     if now is None:
         return f"{label} — nothing estimated, so no date"
     said = f"{label} lands {format_date(now, today=today)}"
-    if basis is None:
+    if not basis:
         return said
     if then is None:
-        return f"{said} — not in the plan at {format_date(basis, today=today)}"
+        return f"{said} — not in {basis}"
     moved = landing_shift(then, now)
     if moved == 0:
-        return f"{said} — unchanged since {format_date(basis, today=today)}"
+        return f"{said} — unchanged since {basis}"
     direction = "later" if moved > 0 else "earlier"
     return (
         f"{said} — {abs(moved)} working day{'' if abs(moved) == 1 else 's'} {direction} "
-        f"than planned on {format_date(basis, today=today)} ({format_date(then, today=today)})"
+        f"than {basis} said ({format_date(then, today=today)})"
     )
 
 
@@ -361,28 +399,24 @@ def idle(snapshot: Snapshot, key: str | None) -> list[tuple[date, date]]:
     return spans
 
 
-def expected(snapshot: Snapshot, key: str | None, *, by_days: bool) -> list[tuple[date, float]]:
-    """The plan's promise for the scope as the snapshot recorded it: the share landed by
-    each date, from the stretches' landing knots, 0 at the first start and 1 at the
-    scope's landing. Cumulative through the stretch ``key`` closes — every stretch for
-    None; empty for a scope the snapshot never knew or one with nothing to be a share of.
-    Across a gap the plan leaves empty (:func:`idle`) the line holds flat to the day
-    work resumes, so a chart can draw the gap as what it is rather than a slope."""
+def expected(snapshot: Snapshot, key: str | None) -> list[tuple[date, float]]:
+    """The plan's promise for the scope as the snapshot recorded it: the share of
+    estimated days landed by each date, from the stretches' landing knots, 0 at the first
+    start and 1 at the scope's landing. Cumulative through the stretch ``key`` closes —
+    every stretch for None; empty for a scope the snapshot never knew or one with nothing
+    to be a share of. Across a gap the plan leaves empty (:func:`idle`) the line holds
+    flat to the day work resumes, so a chart can draw the gap as what it is rather than
+    a slope."""
     if not snapshot.has(key):
         return []
     chosen = _through(snapshot, key)
-    whole = sum(
-        landing.days if by_days else landing.steps
-        for stretch in chosen
-        for landing in stretch.landings
-    )
+    whole = sum(landing.days for stretch in chosen for landing in stretch.landings)
     if not whole:
         return []
     landed: dict[date, float] = {}
     for stretch in chosen:
         for landing in stretch.landings:
-            amount = landing.days if by_days else landing.steps
-            landed[landing.day] = landed.get(landing.day, 0.0) + amount
+            landed[landing.day] = landed.get(landing.day, 0.0) + landing.days
     resumes = {start for _finish, start in idle(snapshot, key)}
     points = [(chosen[0].start, 0.0)]
     running = 0.0
@@ -395,21 +429,24 @@ def expected(snapshot: Snapshot, key: str | None, *, by_days: bool) -> list[tupl
     return points
 
 
+def until(history: Sequence[Snapshot], now: Snapshot | None) -> list[Snapshot]:
+    """The recorded days through ``now``'s own, then ``now`` — the rows a curve ending
+    at ``now`` is drawn from. A day after it is the future of a plan read as of an
+    earlier snapshot, and says nothing about it."""
+    rows = [row for row in history if now is None or row.day <= now.day]
+    return [*rows, *([now] if now is not None else [])]
+
+
 def actual(
-    history: Sequence[Snapshot],
-    now: Snapshot | None,
-    key: str | None,
-    *,
-    by_days: bool,
+    history: Sequence[Snapshot], now: Snapshot | None, key: str | None
 ) -> list[tuple[date, float]]:
     """Where progress actually stood, day by day: every recorded day that knew the scope,
-    then today. A day the scope had nothing to be a share of contributes no point."""
+    then ``now``. A day the scope had nothing to be a share of contributes no point."""
     points: list[tuple[date, float]] = []
-    rows = [*history, *([now] if now is not None else [])]
-    for row in rows:
+    for row in until(history, now):
         if not row.has(key):
             continue
-        share = row.toward(key).share(by_days)
+        share = row.toward(key).share()
         if share is None:
             continue
         if points and points[-1][0] == row.day:
@@ -441,19 +478,12 @@ def baseline(
     return first
 
 
-def scope_words(basis: date, today: date, *, compared: bool) -> str:
-    """The scope plot's heading: what the plan now is measured against.
-
-    The day named is the one the reader asked for — the project's start unless they
-    picked another — because that is the question the plot answers and the day the
-    control beside it holds. Which daily record stood in for it is bookkeeping, and
-    lives in ``dplanner progress show``. Worded here rather than in either surface
-    because the window and the report may not word one fact two ways.
-    """
-    when = format_date(basis, today=today)
-    if compared:
-        return f"Scope change — versus plan at {when}"
-    return f"Scope change — no plan recorded at {when}"
+def scope_words(basis: str) -> str:
+    """The scope plot's heading: what the plan now is measured against, named by
+    :func:`pick_words` — empty when the pick found no record. Worded here rather than
+    in either surface because the window and the report may not word one fact two
+    ways."""
+    return f"Scope change — versus {basis}" if basis else "Scope change — nothing to compare with"
 
 
 def delta(then: Snapshot, now: Snapshot, key: str | None) -> Delta | None:
@@ -471,7 +501,7 @@ def delta(then: Snapshot, now: Snapshot, key: str | None) -> Delta | None:
 
 def delta_words(moved: Delta, since: date) -> str:
     """The delta in one clause: what was added and how the landing moved since the
-    baseline's day."""
+    baseline's recorded day."""
     when = format_date(since)
     if moved.unchanged:
         return f"unchanged since {when}"
@@ -563,9 +593,19 @@ def _created_on(step: Step) -> date | None:
 
 
 def read_history(project: Project) -> list[Snapshot]:
-    """Every recorded day, oldest first. An unreadable row reads as absent."""
+    """Every automatically recorded day, oldest first. An unreadable row reads as absent."""
+    return _rows(project, ROWS_KEY)
+
+
+def read_saved(project: Project) -> list[Snapshot]:
+    """Every snapshot somebody saved on purpose, in the order they were saved — each
+    with its title; one without a title is not a saved snapshot and reads as absent."""
+    return [row for row in _rows(project, SAVED_KEY) if row.title]
+
+
+def _rows(project: Project, key: str) -> list[Snapshot]:
     entry = project.module_data.get(HISTORY_ID, {})
-    raw = entry.get(ROWS_KEY)
+    raw = entry.get(key)
     if not isinstance(raw, list):
         return []
     rows: list[Snapshot] = []
@@ -579,8 +619,19 @@ def read_history(project: Project) -> list[Snapshot]:
         parsed = [_stretch(item) for item in stretches if isinstance(item, dict)]
         if any(item is None for item in parsed):
             continue
-        rows.append(Snapshot(day, tuple(s for s in parsed if s is not None)))
+        rows.append(
+            Snapshot(
+                day,
+                tuple(s for s in parsed if s is not None),
+                title=_text(row.get("title")),
+                note=_text(row.get("note")),
+            )
+        )
     return rows
+
+
+def _text(value: object) -> str:
+    return value.strip() if isinstance(value, str) else ""
 
 
 def _stretch(row: dict[str, Any]) -> Stretch | None:
@@ -625,56 +676,63 @@ def _amount(value: object) -> float:
     return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
 
 
-def write_history(rows: Sequence[Snapshot]) -> dict[str, Any]:
-    """The entry for these days — ``{}`` (remove the file) when there are none. Absence
-    is the default throughout: no milestone key for the remainder, no ``finish`` for a
-    stretch nothing dated, no ``landings`` for one with nothing to land, and a zero is
-    written because it is a count, not a default."""
-    if not rows:
+def write_history(rows: Sequence[Snapshot], saved: Sequence[Snapshot] = ()) -> dict[str, Any]:
+    """The entry for these days and these saved snapshots — ``{}`` (remove the file)
+    when there are none of either. Absence is the default throughout: no milestone key
+    for the remainder, no ``finish`` for a stretch nothing dated, no ``landings`` for one
+    with nothing to land, no ``saved`` list without a saved snapshot and no ``note`` on
+    one without; a zero is written because it is a count, not a default."""
+    if not rows and not saved:
         return {}
-    return stamped(
-        {
-            ROWS_KEY: [
-                {
-                    "day": row.day.isoformat(),
-                    "stretches": [
-                        {
-                            **({"milestone": s.key} if s.key else {}),
-                            "steps": s.tally.steps,
-                            "done": s.tally.done,
-                            "days": float(s.tally.days),
-                            "done_days": float(s.tally.done_days),
-                            "start": s.start.isoformat(),
-                            **({"finish": s.finish.isoformat()} if s.finish else {}),
-                            **(
-                                {
-                                    "landings": [
-                                        {
-                                            "date": knot.day.isoformat(),
-                                            "steps": knot.steps,
-                                            "days": float(knot.days),
-                                        }
-                                        for knot in s.landings
-                                    ]
-                                }
-                                if s.landings
-                                else {}
-                            ),
-                        }
-                        for s in row.stretches
-                    ],
-                }
-                for row in rows
-            ]
-        },
-        DATA_FORMAT.version,
-    )
+    entry: dict[str, Any] = {}
+    if rows:
+        entry[ROWS_KEY] = [_row(row) for row in rows]
+    if saved:
+        entry[SAVED_KEY] = [
+            {"title": row.title, **({"note": row.note} if row.note else {}), **_row(row)}
+            for row in saved
+        ]
+    return stamped(entry, DATA_FORMAT.version)
+
+
+def _row(row: Snapshot) -> dict[str, Any]:
+    return {
+        "day": row.day.isoformat(),
+        "stretches": [
+            {
+                **({"milestone": s.key} if s.key else {}),
+                "steps": s.tally.steps,
+                "done": s.tally.done,
+                "days": float(s.tally.days),
+                "done_days": float(s.tally.done_days),
+                "start": s.start.isoformat(),
+                **({"finish": s.finish.isoformat()} if s.finish else {}),
+                **(
+                    {
+                        "landings": [
+                            {
+                                "date": knot.day.isoformat(),
+                                "steps": knot.steps,
+                                "days": float(knot.days),
+                            }
+                            for knot in s.landings
+                        ]
+                    }
+                    if s.landings
+                    else {}
+                ),
+            }
+            for s in row.stretches
+        ],
+    }
 
 
 def recorded(history: Sequence[Snapshot], now: Snapshot) -> list[Snapshot] | None:
     """The history with today recorded — None when the last row already says exactly
     this, so nothing is written. Today's own earlier row is replaced: one row per day,
-    the last state of the day wins."""
+    the last state of the day wins. A title on ``now`` is not recorded here: the
+    automatic days carry none."""
+    now = replace(now, title="", note="")
     rows = list(history)
     if rows and rows[-1].day == now.day:
         if rows[-1].same_plan(now):
@@ -685,6 +743,142 @@ def recorded(history: Sequence[Snapshot], now: Snapshot) -> list[Snapshot] | Non
         return None
     rows.append(now)
     return rows
+
+
+def find_saved(saved: Sequence[Snapshot], title: str) -> Snapshot | None:
+    """The saved snapshot called ``title``, case and surrounding space aside."""
+    wanted = title.strip().lower()
+    return next((row for row in saved if row.title.lower() == wanted), None)
+
+
+def saved_with(
+    saved: Sequence[Snapshot], now: Snapshot, title: str, note: str = ""
+) -> list[Snapshot]:
+    """The saved snapshots with ``now`` kept under ``title`` — refused when the title is
+    empty or already taken, because a saved snapshot is found by its name."""
+    title = title.strip()
+    if not title:
+        raise ValueError("a saved snapshot needs a title")
+    if find_saved(saved, title) is not None:
+        raise ValueError(f"a snapshot called {title!r} is already saved")
+    return [*saved, replace(now, title=title, note=note.strip())]
+
+
+def saved_without(saved: Sequence[Snapshot], title: str) -> list[Snapshot]:
+    """The saved snapshots less the one called ``title`` — unchanged when there is none."""
+    wanted = title.strip().lower()
+    return [row for row in saved if row.title.lower() != wanted]
+
+
+# -- which plan a comparison reads ---------------------------------------------------------------
+
+PickKind = Literal["start", "now", "saved", "day"]
+
+
+@dataclass(frozen=True)
+class Pick:
+    """Which recorded plan one side of the comparison reads: the plan at the project's
+    start, the live plan now, a saved snapshot by ``title``, or the plan as recorded on
+    ``day``. View state, never stored — a way of looking, like the picked milestone."""
+
+    kind: PickKind
+    title: str = ""
+    day: date | None = None
+
+
+AT_START = Pick("start")
+LIVE = Pick("now")
+
+
+def resolve(
+    pick: Pick,
+    *,
+    history: Sequence[Snapshot],
+    saved: Sequence[Snapshot],
+    live: Snapshot | None,
+    start: date,
+) -> Snapshot | None:
+    """The record ``pick`` names — None when nothing recorded answers it.
+
+    The start and a day resolve through :func:`baseline`: the last record on or before
+    the day, else the earliest there is, but never the live plan's own day standing in
+    for an earlier one — that is the plan now and no comparison at all.
+    """
+    if pick.kind == "now":
+        return live
+    if pick.kind == "saved":
+        return find_saved(saved, pick.title)
+    when = start if pick.kind == "start" else pick.day
+    if when is None:
+        return None
+    return baseline(history, when, today=live.day if live is not None else None)
+
+
+def pick_words(pick: Pick, found: Snapshot | None, today: date) -> str:
+    """The pick named for a heading or a row's sentence — and, when a record stood in
+    for the day asked for, which one: *the plan at start (7 Sep), recorded 9 Sep*. Empty
+    when the pick found nothing, so a caller can say so in its own words."""
+    if pick.kind == "now":
+        return "now"
+    if pick.kind == "saved":
+        return f"{pick.title} ({format_date(found.day, today=today)})" if found else ""
+    when = pick.day if pick.kind == "day" else None
+    asked = f"the plan at {format_date(when, today=today)}" if when else "the plan at start"
+    if found is None:
+        return ""
+    if when is not None and found.day == when:
+        return asked
+    return f"{asked}, recorded {format_date(found.day, today=today)}"
+
+
+# -- volume: the scope over time -----------------------------------------------------------------
+
+
+def volume(history: Sequence[Snapshot], now: Snapshot | None) -> list[tuple[date, float]]:
+    """The total of estimated days the plan came to on each recorded day through
+    ``now``, as a step curve: a value holds until the day it changed, because a record
+    is what the plan was until the next one."""
+    return _steps(until(history, now), lambda reached: reached.days)
+
+
+def remaining(history: Sequence[Snapshot], now: Snapshot | None) -> list[tuple[date, float]]:
+    """The estimated days still ahead on each recorded day through ``now`` — the volume
+    less what had landed — as the same step curve."""
+    return _steps(until(history, now), lambda reached: reached.remaining)
+
+
+def nice_ceiling(value: float) -> float:
+    """The least of 1, 2 or 5 times a power of ten at or above ``value`` — at least one
+    day, so an empty scale still has a top. What the volume plots' scale is set to, in
+    the window and in the report alike."""
+    if value <= 1.0:
+        return 1.0
+    magnitude = 10 ** int(f"{value:e}".split("e")[1])
+    for step in (1, 2, 5, 10):
+        if step * magnitude >= value:
+            return float(step * magnitude)
+    return float(10 * magnitude)
+
+
+def volume_scale(total: Sequence[tuple[date, float]], left: Sequence[tuple[date, float]]) -> float:
+    """One scale for both volume plots — the largest value either reaches, rounded up
+    (:func:`nice_ceiling`) — so the gap between them is read by eye."""
+    return nice_ceiling(max((value for _, value in (*total, *left)), default=0.0))
+
+
+def _steps(
+    rows: Sequence[Snapshot], value_of: Callable[[Tally], float]
+) -> list[tuple[date, float]]:
+    points: list[tuple[date, float]] = []
+    for row in rows:
+        value = value_of(row.toward(None))
+        if points and points[-1][0] == row.day:
+            points[-1] = (row.day, value)  # The live reading replaces its own day's record.
+            continue
+        if points:
+            points.append((row.day, points[-1][1]))  # Held flat until the day it changed.
+        points.append((row.day, value))
+    return points
 
 
 @dataclass(frozen=True)
@@ -713,30 +907,23 @@ class ScopeView:
 
 
 def view_scope(
-    now: Snapshot,
-    history: Sequence[Snapshot],
-    then: Snapshot | None,
-    key: str | None,
-    *,
-    by_days: bool,
+    now: Snapshot, history: Sequence[Snapshot], then: Snapshot | None, key: str | None
 ) -> ScopeView:
+    promised = tuple(expected(now, key))
+    landed = tuple(actual(history, now, key))
     return ScopeView(
         key=key,
         reached=now.toward(key),
         finish=now.landing(key),
-        expected=tuple(expected(now, key, by_days=by_days)),
-        actual=tuple(actual(history, now, key, by_days=by_days)),
-        baseline=tuple(expected(then, key, by_days=by_days)) if then is not None else (),
+        expected=promised,
+        actual=landed,
+        baseline=tuple(expected(then, key)) if then is not None else (),
         baseline_day=then.day if then is not None else None,
         baseline_finish=then.landing(key) if then is not None else None,
         moved=delta(then, now, key) if then is not None else None,
         marks=tuple(marks(now, key)),
         idle=tuple(idle(now, key)),
-        standing=_standing(
-            tuple(expected(now, key, by_days=by_days)),
-            tuple(actual(history, now, key, by_days=by_days)),
-            now.day,
-        ),
+        standing=_standing(promised, landed, now.day),
     )
 
 

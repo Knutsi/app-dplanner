@@ -22,6 +22,7 @@ from html import escape
 from math import cos, pi, sin
 
 from dplanner.cli.report.parts import (
+    AMOUNT_PLOTS,
     Chart,
     Graph,
     Node,
@@ -36,6 +37,7 @@ from dplanner.domain.schedule import (
     axis_ticks,
     change_runs,
     format_date,
+    format_days,
     share_at,
     short_date,
 )
@@ -324,11 +326,13 @@ SAME = 0.002
 
 @dataclass(frozen=True)
 class _Panel:
-    """One stacked plot's box, and the band above it its title sits in."""
+    """One stacked plot's box, and the band above it its title sits in. ``scale`` is
+    what its top stands for: a share of one, or a plot's ceiling in days."""
 
     kind: PlotKind
     top: float
     height: float
+    scale: float = 1.0
 
     @property
     def bottom(self) -> float:
@@ -337,7 +341,7 @@ class _Panel:
 
 def _panels(chart: Chart) -> list[_Panel]:
     """The plots top to bottom. A shift plot is as tall as it has milestones; a share
-    plot is a fixed box, because a share always runs 0..1."""
+    plot and an amount plot are a fixed box, because their scale is the data's."""
     found: list[_Panel] = []
     cursor = CHART_TOP + TITLE_H
     for plot in chart.plots:
@@ -345,7 +349,8 @@ def _panels(chart: Chart) -> list[_Panel]:
         if plot.kind == "shift" and not rows:
             continue
         height = rows * SHIFT_ROW_H if plot.kind == "shift" else PLOT_H
-        found.append(_Panel(plot.kind, cursor, height))
+        scale = plot.ceiling if plot.kind in AMOUNT_PLOTS else 1.0
+        found.append(_Panel(plot.kind, cursor, height, scale))
         cursor += height + PLOT_GAP + TITLE_H
     return found
 
@@ -363,7 +368,7 @@ def chart_svg(chart: Chart, colors: Colors) -> str:
     panels = _panels(chart)
     if not panels:
         return ""
-    days = [chart.today]
+    days = [chart.today, *(when for when, _ in chart.marks)]
     for plot in chart.plots:
         for series in plot.series:
             days += [when for when, _ in series.points]
@@ -384,7 +389,8 @@ def chart_svg(chart: Chart, colors: Colors) -> str:
     def x(when: date) -> float:
         return left + (when - first).days / span * plot_w
 
-    def y(panel: _Panel, share: float) -> float:
+    def y(panel: _Panel, value: float) -> float:
+        share = value / panel.scale if panel.scale else 0.0
         return panel.top + (1.0 - max(0.0, min(1.0, share))) * panel.height
 
     ticks = axis_ticks(first, last, int(plot_w // TICK_ROOM))
@@ -398,8 +404,9 @@ def chart_svg(chart: Chart, colors: Colors) -> str:
     by_kind = {plot.kind: plot for plot in chart.plots}
     for panel in panels:
         plot = by_kind[panel.kind]
+        unit = "days" if panel.kind in AMOUNT_PLOTS else "share"
         out.append(
-            f'<g class="plot plot-{panel.kind}" data-kind="{panel.kind}" '
+            f'<g class="plot plot-{panel.kind}" data-kind="{panel.kind}" data-unit="{unit}" '
             f'data-top="{_n(panel.top)}" data-bottom="{_n(panel.bottom)}">'
         )
         out.append(_plot_title(plot, panel, left, plot_w, colors))
@@ -408,9 +415,23 @@ def chart_svg(chart: Chart, colors: Colors) -> str:
             out.append(_status_plot(chart, plot, panel, x, y, colors))
         elif panel.kind == "scope":
             out.append(_scope_plot(chart, plot, panel, x, y, colors))
+        elif panel.kind in AMOUNT_PLOTS:
+            out.append(_amount_plot(plot, panel, x, y, colors))
         else:
             out.append(_shift_plot(chart, panel, x, left, left + plot_w, colors))
         out.append("</g>")
+    # A saved snapshot's day: a hairline through every plot, its title at the top.
+    for when, title in chart.marks:
+        if not first <= when <= last:
+            continue
+        at = x(when)
+        out.append(
+            f'<g class="mark" data-title="{_t(title)}"><line x1="{_n(at)}" x2="{_n(at)}" '
+            f'y1="{_n(panels[0].top)}" y2="{_n(panels[-1].bottom)}" stroke="{colors.ink}" '
+            f'stroke-opacity="0.45" stroke-dasharray="4 3"/>'
+            f'<text x="{_n(at + 4)}" y="{_n(panels[0].top + 10)}" '
+            f'fill="{colors.secondary}">{_t(_clip(title, 18))}</text></g>'
+        )
     # Today, and the dates: one line down every plot, one row of labels under the last.
     if first <= chart.today <= last:
         out.append(
@@ -508,6 +529,31 @@ def _keys(plot: Plot, colors: Colors) -> list[tuple[str, Callable[[float, float]
     return found
 
 
+def _amount_plot(
+    plot: Plot,
+    panel: _Panel,
+    x: Callable[[date], float],
+    y: Callable[[_Panel, float], float],
+    colors: Colors,
+) -> str:
+    """The scope over time: the total in the plan's colour with its last reading marked
+    and — on the remaining plot — the total under it in a paler dash, so the gap between
+    the two is what has landed. Step curves, because a record holds until the next."""
+    out = []
+    for series in plot.series:
+        if not series.points:
+            continue
+        if series.role == "baseline":
+            out.append(
+                _polyline(series, panel, x, y, colors.plan, "0.55", ' stroke-dasharray="6 4"')
+            )
+            continue
+        out.append(_polyline(series, panel, x, y, colors.plan, "1", ""))
+        when, value = series.points[-1]
+        out.append(_marker(x(when), y(panel, value), colors.plan, colors.surface))
+    return "".join(out)
+
+
 def _plot_grid(
     chart: Chart,
     panel: _Panel,
@@ -531,15 +577,20 @@ def _plot_grid(
             )
     else:
         for share in (0.0, 0.25, 0.5, 0.75, 1.0):
-            at = y(panel, share)
+            at = y(panel, share * panel.scale)
             out.append(
                 f'<line class="grid" x1="{_n(left)}" x2="{_n(left + plot_w)}" y1="{_n(at)}" '
                 f'y2="{_n(at)}" stroke="{colors.ink}" stroke-opacity="0.12"/>'
             )
             if share in (0.0, 0.5, 1.0):
+                label = (
+                    format_days(share * panel.scale)
+                    if panel.kind in AMOUNT_PLOTS
+                    else f"{share:.0%}"
+                )
                 out.append(
                     f'<text class="axis" x="{_n(left - 8)}" y="{_n(at)}" text-anchor="end" '
-                    f'dominant-baseline="central" fill="{colors.secondary}">{share:.0%}</text>'
+                    f'dominant-baseline="central" fill="{colors.secondary}">{label}</text>'
                 )
     for when, _ in ticks:
         out.append(

@@ -41,8 +41,10 @@ image and file a project carries is browsable in one place — the Assets tab an
 `dplanner asset` list what exists, who uses each, and what a sweep may safely remove —
 and any prose editor can reuse one with Insert from Assets…. The Time Estimates tab
 also says how far each milestone has come against the plan as it stood at the start —
-the plan then, the plan now with the change between them, and what actually landed — and
-`dplanner progress show` prints the same, with the steps and estimates that moved it.
+or against any snapshot you saved on purpose (*Save snapshot…*, `dplanner progress
+save`), both sides picked in its strip — the plan then, the plan now with the change
+between them, what actually landed, and how much work the plan came to on each recorded
+day; `dplanner progress show` prints the same, with the steps and estimates that moved it.
 What a project learns along the way — decisions, handoffs, spec changes, what was
 deferred — is one labelled log beside it (`dplanner note add`, the project panel's Notes
 card), and every agent's briefing carries an index of the notes that reach its step, with
@@ -324,8 +326,10 @@ src/dplanner/
 │   ├── time_estimates/      the staffing matrix, the start dates and milestones in sequence and the calendar
 │   │                        they date — `dplanner schedule matrix`, `schedule palette`, `schedule team`,
 │   │                        `schedule milestone`; and progress against the plan (progress.py derives it,
-│   │                        recorder.py writes the day's history, chart.py draws three plots on one time
-│   │                        axis: progress, scope change, milestone shifts) — `dplanner progress show|record`
+│   │                        recorder.py writes the day's history, snapshots.py picks the two plans compared
+│   │                        and saves one on purpose, chart.py draws the plots on one time axis, a page at
+│   │                        a time: milestone shifts, progress and scope change, volume) —
+│   │                        `dplanner progress show|record|save|list|remove`
 │   ├── reporting/           the window's half of the report: File ▸ Export's HTML, PDF (paper.py) and Excel,
 │   │                        Project ▸ Preview Report, the publisher that writes `reports/` on every Save,
 │   │                        Settings ▸ Reports

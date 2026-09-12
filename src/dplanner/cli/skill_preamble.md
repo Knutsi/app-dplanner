@@ -80,12 +80,16 @@ you work. So:
   staffing lands between them — read the labels, and quote the one you mean.
   `dplanner schedule matrix` prices the staffings in between and dates every milestone
   for the project's team (`schedule team` sets it), and **`dplanner progress show`** says
-  how far each milestone has come — by steps and by estimated days — against the plan
-  as it stood at the start (or at `--basis DATE`): what was added since, how the landing
-  moved, and which steps were born or re-estimated (`estimate show <step>` prints an
-  estimate's earlier values). That history is what the window writes as the plan
-  changes; when you finish a step with no window open, `dplanner progress record
-  <project>` writes the day's row yourself.
+  how far each milestone has come — by estimated days — against the plan as it stood at
+  the start (or at `--basis`, a date or a saved snapshot's title; `--as-of` reads the
+  now side from one too): what was added since, how the landing moved, which steps were
+  born or re-estimated (`estimate show <step>` prints an estimate's earlier values), and
+  the volume the plan came to on each recorded day. That history is what the window
+  writes as the plan changes; when you finish a step with no window open, `dplanner
+  progress record <project>` writes the day's row yourself. **`dplanner progress save
+  <project> "<title>"`** keeps today's plan under a name on purpose — the outlook at a
+  review, the day the ground was broken — for later comparisons to name; the developer
+  asks for one, you never save unasked.
 - **Every `dplanner` command reaches the plan the window shows, from anywhere in the
   repository** — a worktree included: inside one, the walk finds the branch's copy of the
   plan and resolves it to the library's project of the same id, so a status set from an
@@ -485,7 +489,8 @@ then authored `step add`s.
   `milestone clear`, `feature clear`, `feature uncite`, `ticket clear`, `github clear`,
   `agent off`, `agent set --clear`, `note remove`) exit 0 when there is nothing to clear —
   safe to batch; so does `feature cite` of a passage already cited, `note add` of a title
-  already recorded on that step, and `progress record` of a day nothing changed on.
+  already recorded on that step, `progress record` of a day nothing changed on, and
+  `progress remove` of a snapshot nobody saved.
 - **A verb marked *reads the topology first*** refuses until `topology show` has printed
   the project's current topology on this machine. Read it once per session, and again
   after `topology set`; it costs one command and it is the shape of everything you add.

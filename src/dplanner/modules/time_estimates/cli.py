@@ -1,6 +1,7 @@
 """``dplanner schedule matrix``, ``schedule focus``, ``schedule palette``, ``schedule
-team``, ``schedule milestone`` — staffing the plan — and ``dplanner progress show`` and
-``progress record`` — how far it has come.
+team``, ``schedule milestone`` — staffing the plan — and ``dplanner progress show``,
+``progress record``, ``progress save``, ``progress list`` and ``progress remove`` — how
+far it has come, and the snapshots that say how far it said it would.
 
 ``schedule show`` prints the brackets (serial, critical path); ``matrix`` prints what lands
 between them: the makespan for every staffing in a small grid of people by coding agents,
@@ -11,12 +12,16 @@ and ``--json``, so the three can never disagree. ``focus``, ``palette``, ``team`
 ``milestone`` store the assumptions behind the calendar half — the same writes the tab's
 controls push.
 
-``progress show`` prints what has landed toward each milestone, by steps and by estimated
-days, against the plan as recorded on the **basis** day — the project's start, or
-``--basis`` — and how the plan moved since: steps and days added, the landing shifted,
-and which steps were added or re-estimated after the basis; ``progress record`` writes
-today's row of that history — what the window does by itself after every settled change,
-for a plan driven from the terminal (``progress.py`` has the shape and the reasoning).
+``progress show`` prints what has landed toward each milestone, by estimated days,
+against the plan it is compared with — the plan at the project's start unless
+``--basis`` names a day, a saved snapshot or ``now`` — and how the plan moved since:
+steps and days added, the landing shifted, and which steps were added or re-estimated
+after it; ``--as-of`` reads the now side from a saved snapshot or a day instead of the
+live plan, and the volume the plan came to on each recorded day is printed with it.
+``progress record`` writes today's row of the automatic history — what the window does
+by itself after every settled change, for a plan driven from the terminal — and
+``progress save`` keeps today's plan under a title on purpose, for ``list`` to print and
+``--basis`` to name (``progress.py`` has the shape and the reasoning).
 
 The estimate, agent-step, status, milestone and start-date readers arrive as functions
 from the composition root, the same hand-over ``progression_cli.commands(status_for=…)``
@@ -37,20 +42,30 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Project, Step
 from dplanner.domain.schedule import Phase, format_date, format_days
 from dplanner.modules.time_estimates.progress import (
+    AT_START,
     HISTORY_ID,
+    LIVE,
     Delta,
+    Pick,
     Snapshot,
     Tally,
     actual,
-    baseline,
     changes_since,
     delta,
     delta_words,
     expected,
+    find_saved,
     idle,
+    pick_words,
     read_history,
+    read_saved,
     recorded,
+    remaining,
+    resolve,
+    saved_with,
+    saved_without,
     take,
+    volume,
     write_history,
 )
 from dplanner.modules.time_estimates.schedule import (
@@ -119,6 +134,9 @@ def commands(
     def progress_record(context: CliContext, args: Namespace) -> int:
         return _progress_record(context, args, readers)
 
+    def progress_save(context: CliContext, args: Namespace) -> int:
+        return _progress_save(context, args, readers)
+
     return [
         CliCommand(
             path=("schedule", "matrix"),
@@ -177,14 +195,15 @@ def commands(
         ),
         CliCommand(
             path=("progress", "show"),
-            summary="How far the plan has come toward each milestone, by steps and by "
-            "estimated days, against the plan as it stood at the start — or at --basis — "
-            "and what changed since.",
+            summary="How far the plan has come toward each milestone, by estimated days, "
+            "against the plan as it stood at the start — or at --basis, a day or a saved "
+            "snapshot — what changed since, and the volume the plan came to over time.",
             configure=_configure_progress,
             run=progress_show,
             examples=(
                 "dplanner progress show discovery",
                 "dplanner progress show discovery --milestone v2 --basis 2026-09-15 --json",
+                "dplanner progress show discovery --basis 'Kickoff review' --as-of 'Review 2'",
             ),
         ),
         CliCommand(
@@ -194,6 +213,31 @@ def commands(
             configure=project_arg,
             run=progress_record,
             examples=("dplanner progress record discovery",),
+        ),
+        CliCommand(
+            path=("progress", "save"),
+            summary="Keep the plan as it stands today under a title, to compare against "
+            "later — the outlook at a review, the day the ground was broken.",
+            configure=_configure_save,
+            run=progress_save,
+            examples=(
+                "dplanner progress save discovery 'Kickoff review'",
+                "dplanner progress save discovery 'Kickoff' --note 'What we thought on 1 Nov'",
+            ),
+        ),
+        CliCommand(
+            path=("progress", "list"),
+            summary="The saved snapshots, and how many days the history has recorded.",
+            configure=project_arg,
+            run=_progress_list,
+            examples=("dplanner progress list discovery",),
+        ),
+        CliCommand(
+            path=("progress", "remove"),
+            summary="Forget a saved snapshot by its title.",
+            configure=_configure_remove,
+            run=_progress_remove,
+            examples=("dplanner progress remove discovery 'Kickoff review'",),
         ),
     ]
 
@@ -249,9 +293,27 @@ def _configure_progress(parser: ArgumentParser) -> None:
     )
     parser.add_argument(
         "--basis",
-        metavar="YYYY-MM-DD",
-        help="compare against the plan as recorded on this day (default: the project's start)",
+        metavar="DAY|TITLE",
+        help="compare against the plan as recorded on this day (YYYY-MM-DD), a saved "
+        "snapshot's title, 'start' or 'now' (default: the project's start)",
     )
+    parser.add_argument(
+        "--as-of",
+        dest="as_of",
+        metavar="DAY|TITLE",
+        help="read the plan now from a saved snapshot or a recorded day instead of the live plan",
+    )
+
+
+def _configure_save(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument("title", help="what the snapshot is called — found by this later")
+    parser.add_argument("--note", default="", help="what the occasion was")
+
+
+def _configure_remove(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument("title", help="the saved snapshot's title")
 
 
 def _configure_milestone(parser: ArgumentParser) -> None:
@@ -601,7 +663,9 @@ def _progress_record(context: CliContext, args: Namespace, readers: Readers) -> 
             f"{project.title}: nothing changed since the last record",
         )
         return 0
-    context.apply(SetModuleDataCommand(project.id, HISTORY_ID, write_history(rows)))
+    context.apply(
+        SetModuleDataCommand(project.id, HISTORY_ID, write_history(rows, read_saved(project)))
+    )
     context.report(
         {"project": project.id, "day": now.day.isoformat(), "outcome": "recorded"},
         f"{project.title}: progress recorded for {format_date(now.day)}",
@@ -609,24 +673,113 @@ def _progress_record(context: CliContext, args: Namespace, readers: Readers) -> 
     return 0
 
 
+def _progress_save(context: CliContext, args: Namespace, readers: Readers) -> int:
+    project = find_project(context.library, args.project)
+    now = _snapshot(context, project, readers, date.today())
+    if now is None:
+        raise CliError("nothing to save — the project has no steps, or cannot be dated")
+    try:
+        saved = saved_with(read_saved(project), now, args.title, args.note)
+    except ValueError as error:
+        raise CliError(str(error)) from error
+    context.apply(
+        SetModuleDataCommand(project.id, HISTORY_ID, write_history(read_history(project), saved))
+    )
+    kept = saved[-1]
+    context.report(
+        {"project": project.id, "title": kept.title, "day": kept.day.isoformat()},
+        f"{project.title}: saved the plan as of {format_date(kept.day)} as {kept.title!r}",
+    )
+    return 0
+
+
+def _progress_list(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.library, args.project)
+    saved = read_saved(project)
+    history = read_history(project)
+    lines = [
+        f"  {row.title} · {format_date(row.day)}" + (f" — {row.note}" if row.note else "")
+        for row in saved
+    ]
+    said = (
+        f"{project.title}: {len(saved)} saved snapshot{'s' if len(saved) != 1 else ''}, "
+        f"{len(history)} day{'s' if len(history) != 1 else ''} recorded"
+    )
+    context.report(
+        {
+            "project": project.id,
+            "saved": [_saved_row(row) for row in saved],
+            "recorded_days": len(history),
+        },
+        "\n".join([said, *lines]),
+    )
+    return 0
+
+
+def _progress_remove(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.library, args.project)
+    saved = read_saved(project)
+    kept = saved_without(saved, args.title)
+    if len(kept) != len(saved):
+        context.apply(
+            SetModuleDataCommand(project.id, HISTORY_ID, write_history(read_history(project), kept))
+        )
+    context.report(
+        {"project": project.id, "title": args.title, "removed": len(kept) != len(saved)},
+        f"{project.title}: forgot {args.title!r}"
+        if len(kept) != len(saved)
+        else f"{project.title}: no snapshot called {args.title!r} — nothing to forget",
+    )
+    return 0
+
+
+def _saved_row(row: Snapshot) -> dict[str, Any]:
+    return {"title": row.title, "note": row.note, "day": row.day.isoformat()}
+
+
+def _pick_arg(value: str | None, saved: list[Snapshot], default: Pick, flag: str) -> Pick:
+    """A ``--basis`` or ``--as-of`` value as a pick: a day, a saved snapshot's title, or
+    the two words for the sides' own defaults."""
+    if value is None:
+        return default
+    word = value.strip()
+    if word.lower() == "start":
+        return AT_START
+    if word.lower() == "now":
+        return LIVE
+    try:
+        return Pick("day", day=date.fromisoformat(word))
+    except ValueError:
+        pass
+    found = find_saved(saved, word)
+    if found is not None:
+        return Pick("saved", title=found.title)
+    raise CliError(
+        f"{flag} is a date (YYYY-MM-DD), a saved snapshot's title, 'start' or 'now': {value!r}"
+    )
+
+
 def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> int:
     project = find_project(context.library, args.project)
     today = date.today()
-    now = _snapshot(context, project, readers, today)
-    if now is None:
+    live = _snapshot(context, project, readers, today)
+    if live is None:
         if not project.steps:
             context.report({"project": project.id, "steps": 0}, "No steps yet.")
             return 0
         raise CliError("these steps wait on each other, so nothing can be dated")
     history = read_history(project)
+    saved = read_saved(project)
     humans, agents = read_team(project)
-    basis = readers.start_of(project)
-    if args.basis:
-        try:
-            basis = date.fromisoformat(args.basis)
-        except ValueError as error:
-            raise CliError(f"--basis is a date, YYYY-MM-DD: {args.basis!r}") from error
-    then = baseline(history, basis, today=today)
+    start = readers.start_of(project)
+    then_pick = _pick_arg(args.basis, saved, AT_START, "--basis")
+    now_pick = _pick_arg(args.as_of, saved, LIVE, "--as-of")
+    now = resolve(now_pick, history=history, saved=saved, live=live, start=start)
+    if now is None:
+        raise CliError(f"nothing recorded to read the plan as of {args.as_of!r}")
+    then = resolve(then_pick, history=history, saved=saved, live=live, start=start)
+    basis = pick_words(then_pick, then, now.day)
+    as_of = "" if now_pick.kind == "now" else pick_words(now_pick, now, today)
     # What moved the plan, since the day the baseline was recorded — the record the
     # delta measures from.
     changes = (
@@ -664,15 +817,14 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
                 "done": reached.done,
                 "days": reached.days,
                 "done_days": reached.done_days,
-                "by_steps": reached.share(by_days=False),
-                "by_days": reached.share(by_days=True),
+                "by_days": reached.share(),
                 "finish": landing.isoformat() if landing else "",
                 "idle": [
                     {"from": since.isoformat(), "to": until.isoformat()}
                     for since, until in idle(now, key)
                 ],
-                "expected": _curve(expected(now, key, by_days=False)),
-                "actual": _curve(actual(history, now, key, by_days=False)),
+                "expected": _curve(expected(now, key)),
+                "actual": _curve(actual(history, now, key)),
                 "baseline": None
                 if then is None or not then.has(key)
                 else {
@@ -680,7 +832,7 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
                     "steps": then.toward(key).steps,
                     "days": then.toward(key).days,
                     "finish": then_landing.isoformat() if then_landing else "",
-                    "expected": _curve(expected(then, key, by_days=False)),
+                    "expected": _curve(expected(then, key)),
                 },
                 "delta": None
                 if moved is None
@@ -701,14 +853,28 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
                 for since, until in gaps
             )
         lines.append(line)
+    total, left = volume(history, now), remaining(history, now)
     data = {
         "project": project.id,
-        "day": today.isoformat(),
-        "basis": basis.isoformat(),
+        "day": now.day.isoformat(),
+        "basis": {
+            "pick": then_pick.kind,
+            "title": then_pick.title,
+            "day": then_pick.day.isoformat() if then_pick.day else "",
+            "words": basis,
+        },
         "baseline_day": then.day.isoformat() if then is not None else "",
+        "as_of": as_of,
         "team": {"humans": humans, "agents": agents},
         "recorded_days": len(history),
+        "saved": [_saved_row(row) for row in saved],
         "scopes": rows,
+        # The scope over time: the total of estimated days on each recorded day, and what
+        # was still ahead — the step curves the Volume page draws.
+        "volume": [
+            {"date": when.isoformat(), "days": days, "remaining": ahead}
+            for (when, days), (_, ahead) in zip(total[::2], left[::2], strict=True)
+        ],
         "changes": None
         if changes is None
         else {
@@ -732,11 +898,20 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
     }
     if changes is not None:
         lines += changes.lines(readers.key_of)
-    said = f"(basis {format_date(basis)}"
-    said += f", compared with the plan recorded {format_date(then.day)}" if then is not None else ""
+    if total:
+        lines.append(
+            "volume: "
+            + ", ".join(
+                f"{format_days(days)} on {format_date(when, today=today)}"
+                for when, days in total[::2]
+            )
+        )
+    said = f"(versus {basis}" if basis else "(nothing recorded to compare with"
+    said += f"; as of {as_of}" if as_of else ""
     lines.append(
         said + f"; {_people(humans, agents)}; {len(history)} day"
-        f"{'s' if len(history) != 1 else ''} recorded)"
+        f"{'s' if len(history) != 1 else ''} recorded, "
+        f"{len(saved)} saved snapshot{'s' if len(saved) != 1 else ''})"
     )
     context.report(data, "\n".join(lines))
     return 0
@@ -764,13 +939,13 @@ def _progress_line(
     label: str, tally: Tally, landing: date | None, then: Snapshot | None, moved: Delta | None
 ) -> str:
     said = (
-        f"{label}: {_percent(tally.share(by_days=False))} by steps "
-        f"({tally.done} of {tally.steps}), {_percent(tally.share(by_days=True))} by days "
-        f"({format_days(tally.done_days)} of {format_days(tally.days)})"
+        f"{label}: {_percent(tally.share())} "
+        f"({format_days(tally.done_days)} of {format_days(tally.days)}, "
+        f"{tally.done} of {tally.steps} steps)"
     )
     said += f" — lands {format_date(landing)}" if landing else " — nothing estimated, no date"
     if moved is not None and then is not None:
         said += "; " + delta_words(moved, then.day)
     elif then is not None:
-        said += "; not in the plan on the basis day"
+        said += "; not in the plan compared with"
     return said

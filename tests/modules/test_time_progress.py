@@ -1,4 +1,6 @@
-"""How far the plan has come, derived, and the history that remembers where it stood.
+"""How far the plan has come, derived, and the history that remembers where it stood —
+the automatic days, the snapshots saved on purpose, the pick that says which two plans a
+comparison reads, and the volume over time.
 
 No ``qapp`` fixture: ``progress.py`` is Qt-free by rule, and this file proves it works
 without one.
@@ -10,8 +12,11 @@ import pytest
 
 from dplanner.domain.model import Library, Project, Step
 from dplanner.modules.time_estimates.progress import (
+    AT_START,
+    LIVE,
     Delta,
     Landing,
+    Pick,
     Snapshot,
     Stretch,
     Tally,
@@ -21,10 +26,19 @@ from dplanner.modules.time_estimates.progress import (
     delta,
     delta_words,
     expected,
+    nice_ceiling,
+    pick_words,
     read_history,
+    read_saved,
     recorded,
+    remaining,
+    resolve,
+    saved_with,
+    saved_without,
     scope_words,
+    shift_words,
     take,
+    volume,
     write_history,
 )
 
@@ -107,15 +121,15 @@ def test_progress_toward_a_milestone_is_cumulative_through_it(plan):
     assert now.toward(key_of(plan, "B")) == Tally(2, 2, 3.0, 3.0)
     assert now.toward(key_of(plan, "D")) == Tally(4, 2, 10.0, 3.0)
     assert now.toward(None) == Tally(4, 2, 10.0, 3.0)
-    assert now.toward(key_of(plan, "D")).share(by_days=False) == 0.5
-    assert now.toward(key_of(plan, "D")).share(by_days=True) == 0.3
+    assert now.toward(key_of(plan, "D")).share() == 0.3  # by estimated days, the one measure
+    assert now.toward(key_of(plan, "D")).remaining == 7.0
     assert now.landing(None) == date(2026, 9, 18)
     assert now.toward("nobody") == Tally() and not now.has("nobody")
 
 
 def test_nothing_to_be_a_share_of_is_none_not_zero():
-    assert Tally().share(by_days=False) is None
-    assert Tally(steps=2, days=0.0).share(by_days=True) is None
+    assert Tally().share() is None
+    assert Tally(steps=2, days=0.0).share() is None  # steps alone are no share
 
 
 def test_a_stepless_or_looped_project_has_no_snapshot(plan):
@@ -157,19 +171,19 @@ def test_a_stretch_records_what_lands_on_each_date(plan):
 
 def test_the_expected_curve_is_the_simulations_own_landings(plan):
     now = snapshot(plan)
-    assert expected(now, None, by_days=False) == [
+    assert expected(now, None) == [
         (MONDAY, 0.0),
-        (MONDAY, 0.25),  # A lands on day one
-        (date(2026, 9, 9), 0.5),  # B on the third
-        (date(2026, 9, 14), 0.75),  # C: three days from the 10th
+        (MONDAY, 0.1),  # A lands on day one: 1 of 10 days
+        (date(2026, 9, 9), 0.3),  # B on the third
+        (date(2026, 9, 14), 0.6),  # C: three days from the 10th
         (date(2026, 9, 18), 1.0),
     ]
-    assert expected(now, key_of(plan, "B"), by_days=True) == [
+    assert expected(now, key_of(plan, "B")) == [
         (MONDAY, 0.0),
         (MONDAY, 1 / 3),
         (date(2026, 9, 9), 1.0),
     ]
-    assert expected(now, "nobody", by_days=False) == []
+    assert expected(now, "nobody") == []
 
 
 def test_the_actual_curve_is_every_recorded_day_then_today(plan):
@@ -177,19 +191,26 @@ def test_the_actual_curve_is_every_recorded_day_then_today(plan):
     then = snapshot(plan, finished=("A",), today=date(2026, 9, 9))
     now = snapshot(plan)
     key = key_of(plan, "D")
-    assert actual([earlier, then], now, key, by_days=False) == [
+    assert actual([earlier, then], now, key) == [
         (date(2026, 9, 8), 0.0),
-        (date(2026, 9, 9), 0.25),
-        (date(2026, 9, 10), 0.5),
+        (date(2026, 9, 9), 0.1),
+        (date(2026, 9, 10), 0.3),
     ]
     # A day recorded before the milestone existed says nothing about it.
     before = snapshot(plan, finished=(), closing=("B",), today=date(2026, 9, 7))
-    assert actual([before, then], now, key, by_days=True)[0] == (date(2026, 9, 9), 0.1)
+    assert actual([before, then], now, key)[0] == (date(2026, 9, 9), 0.1)
     # Today's live reading replaces its own record rather than doubling it.
-    assert actual([then, snapshot(plan, finished=("A",))], now, key, by_days=False)[-1] == (
+    assert actual([then, snapshot(plan, finished=("A",))], now, key)[-1] == (
         date(2026, 9, 10),
-        0.5,
+        0.3,
     )
+    # Read as of an earlier snapshot, the days after it are its future and say nothing.
+    later = snapshot(plan, finished=("A", "B", "C"), today=date(2026, 9, 15))
+    assert actual([earlier, then, later], now, key) == [
+        (date(2026, 9, 8), 0.0),
+        (date(2026, 9, 9), 0.1),
+        (date(2026, 9, 10), 0.3),
+    ]
 
 
 def test_the_baseline_is_the_last_record_on_or_before_the_basis(plan):
@@ -207,14 +228,55 @@ def test_the_baseline_is_the_last_record_on_or_before_the_basis(plan):
     assert baseline([later], date(2026, 9, 1), today=date(2026, 9, 10)) is later
 
 
-def test_the_scope_heading_names_the_basis_the_reader_asked_for():
-    """The day the control holds, not the record that stood in for it — and it says so
-    plainly when nothing was recorded that early."""
-    basis, today = date(2026, 9, 1), date(2026, 9, 10)
-    assert scope_words(basis, today, compared=True) == "Scope change — versus plan at 1 September"
-    assert scope_words(basis, today, compared=False) == (
-        "Scope change — no plan recorded at 1 September"
+def test_a_pick_names_which_recorded_plan_a_side_of_the_comparison_reads(plan):
+    """The start and a day resolve to the last record on or before them — the earliest
+    there is, for a project older than its history — never the live plan's own day; a
+    saved snapshot by its title; and the words name the record that stood in."""
+    first = snapshot(plan, finished=(), today=date(2026, 9, 7))
+    later = snapshot(plan, finished=("A",), today=date(2026, 9, 9))
+    live = snapshot(plan)  # the 10th
+    kept = saved_with([], later, "Kickoff review", "what we thought")
+
+    def found(pick, start=MONDAY):
+        return resolve(pick, history=[first, later], saved=kept, live=live, start=start)
+
+    assert found(AT_START) is first
+    assert found(AT_START, start=date(2026, 9, 1)) is first  # older than its history
+    assert found(AT_START, start=date(2026, 9, 10)) is later  # the last on or before
+    assert found(LIVE) is live
+    assert found(Pick("day", day=date(2026, 9, 9))) is later
+    assert found(Pick("day", day=date(2026, 9, 8))) is first
+    assert found(Pick("saved", title="kickoff review")) == kept[0]
+    assert found(Pick("saved", title="nobody")) is None
+    assert resolve(AT_START, history=[live], saved=[], live=live, start=MONDAY) is None
+    today = date(2026, 9, 10)
+    assert pick_words(AT_START, first, today) == "the plan at start, recorded 7 September"
+    assert pick_words(Pick("day", day=date(2026, 9, 9)), later, today) == "the plan at 9 September"
+    assert pick_words(Pick("day", day=date(2026, 9, 8)), first, today) == (
+        "the plan at 8 September, recorded 7 September"
     )
+    assert pick_words(Pick("saved", title="Kickoff review"), kept[0], today) == (
+        "Kickoff review (9 September)"
+    )
+    assert pick_words(LIVE, live, today) == "now"
+    assert pick_words(AT_START, None, today) == ""
+
+
+def test_the_scope_heading_names_the_plan_compared_with():
+    """The pick the reader made, with the record that stood in for it — and it says so
+    plainly when nothing was recorded to compare against."""
+    assert scope_words("the plan at start, recorded 7 September") == (
+        "Scope change — versus the plan at start, recorded 7 September"
+    )
+    assert scope_words("") == "Scope change — nothing to compare with"
+    today = date(2026, 9, 10)
+    assert shift_words("v2", date(2026, 9, 18), date(2026, 9, 23), "Kickoff review", today) == (
+        "v2 lands 23 September — 3 working days later than Kickoff review said (18 September)"
+    )
+    assert shift_words("v2", None, date(2026, 9, 23), "Kickoff review", today) == (
+        "v2 lands 23 September — not in Kickoff review"
+    )
+    assert shift_words("v2", None, date(2026, 9, 23), "", today) == "v2 lands 23 September"
 
 
 def test_the_delta_says_what_was_added_and_how_the_landing_moved(plan):
@@ -243,9 +305,11 @@ def test_the_delta_says_what_was_added_and_how_the_landing_moved(plan):
 
 def test_the_change_report_names_steps_born_and_re_estimated_after_the_basis(plan):
     library, project = plan
-    a, b, _c, _d = project.steps
+    a, b, c, d = project.steps
     library.add_child(project.id, Step(title="E", created="2026-09-10T09:00:00+00:00"))
-    for step in (a, b):
+    # Every step but E was born before the basis — said so, rather than left to the day
+    # this runs on: an unstamped step is born today, and today is not always the 7th.
+    for step in (a, b, c, d):
         step.created = "2026-09-01T09:00:00+00:00"
     history = {a.id: [(date(2026, 9, 12), 3.0)], b.id: [(date(2026, 9, 2), 1.0)]}
     changes = changes_since(project, date(2026, 9, 7), days_for, lambda s: history.get(s.id, []))
@@ -283,10 +347,41 @@ def test_the_history_round_trips_with_absence_for_the_defaults(plan):
         ],
     }
     assert "milestone" not in row["stretches"][1]  # the work after the last milestone
+    assert entry["format"] == 2 and "saved" not in entry
     project = Project(title="P")
     project.module_data["progress_history"] = entry
     assert read_history(project) == [now]
     assert write_history([]) == {}
+
+
+def test_a_saved_snapshot_is_kept_whole_under_its_title(plan):
+    """Saved beside the automatic days, found by title, refused twice, forgotten by name
+    — and never replaced by a later change: the automatic row carries no title."""
+    now = snapshot(plan, closing=("B",))
+    saved = saved_with([], now, "  Kickoff review ", "what we thought on the 10th")
+    assert saved[0].title == "Kickoff review" and saved[0].note == "what we thought on the 10th"
+    assert saved[0].same_plan(now)
+    with pytest.raises(ValueError, match="already saved"):
+        saved_with(saved, now, "kickoff review")
+    with pytest.raises(ValueError, match="needs a title"):
+        saved_with(saved, now, "   ")
+    entry = write_history([now], saved)
+    (kept,) = entry["saved"]
+    assert kept["title"] == "Kickoff review" and kept["day"] == "2026-09-10"
+    assert kept["stretches"] == entry["days"][0]["stretches"]
+    project = Project(title="P")
+    project.module_data["progress_history"] = entry
+    assert read_saved(project) == saved and read_history(project) == [now]
+    assert "note" not in write_history([], saved_with([], now, "Plain"))["saved"][0]
+    assert saved_without(saved, "KICKOFF REVIEW") == []
+    assert saved_without(saved, "nobody") == saved
+    assert write_history([], []) == {}
+    # A title on the snapshot handed to the automatic recorder is not recorded there.
+    rows = recorded([], saved[0])
+    assert rows is not None and rows[0].title == "" and rows[0].same_plan(now)
+    # A row in the saved list without a title is not a saved snapshot.
+    project.module_data["progress_history"]["saved"].append({"day": "2026-09-11", "stretches": []})
+    assert len(read_saved(project)) == 1
 
 
 def test_unreadable_rows_read_as_absent():
@@ -349,6 +444,51 @@ def test_a_milestone_whose_start_is_later_opens_a_gap_the_plan_holds_flat(plan):
     assert idle(now, b) == []
     assert [milestone for _, milestone in marks(now, None)] == [b, d]
     assert marks(now, b) == [(date(2026, 9, 9), b)]
-    curve = expected(now, None, by_days=False)
-    assert (date(2026, 9, 9), 0.5) in curve and (later, 0.5) in curve
+    curve = expected(now, None)
+    assert (date(2026, 9, 9), 0.3) in curve and (later, 0.3) in curve
     assert idle(snapshot(plan), None) == []
+
+
+# -- volume: the scope over time -------------------------------------------------------------
+
+
+def test_the_volume_is_a_step_curve_of_each_recorded_days_total(plan):
+    """The total of estimated days on each recorded day, held flat until it changed, and
+    the same less what had landed; the live reading replaces its own day's record, and a
+    day after the snapshot read as now is its future and is left out."""
+    library, project = plan
+    first = snapshot(plan, finished=(), today=date(2026, 9, 7))
+    then = snapshot(plan, finished=("A",), today=date(2026, 9, 9))
+    library.add_child(project.id, Step(title="E"))
+    DAYS["E"] = 5.0
+    try:
+        now = snapshot(plan, finished=("A", "B"))
+        assert volume([first, then], now) == [
+            (date(2026, 9, 7), 10.0),
+            (date(2026, 9, 9), 10.0),
+            (date(2026, 9, 9), 10.0),
+            (date(2026, 9, 10), 10.0),
+            (date(2026, 9, 10), 15.0),
+        ]
+        assert remaining([first, then], now) == [
+            (date(2026, 9, 7), 10.0),
+            (date(2026, 9, 9), 10.0),
+            (date(2026, 9, 9), 9.0),
+            (date(2026, 9, 10), 9.0),
+            (date(2026, 9, 10), 12.0),
+        ]
+        same_day = snapshot(plan, finished=("A", "B"), today=date(2026, 9, 9))
+        assert volume([first, then], same_day)[-1] == (date(2026, 9, 9), 15.0)
+        assert volume([first, then, now], then) == volume([first], then)
+        assert volume([], None) == []
+    finally:
+        del DAYS["E"]
+    assert [nice_ceiling(value) for value in (0.0, 1.0, 3.0, 12.0, 20.0, 41.0, 130.0)] == [
+        1.0,
+        1.0,
+        5.0,
+        20.0,
+        20.0,
+        50.0,
+        200.0,
+    ]
