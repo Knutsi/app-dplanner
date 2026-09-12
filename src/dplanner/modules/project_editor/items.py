@@ -27,16 +27,16 @@ from dplanner.domain.model import StepId
 from dplanner.modules.project_editor.marks import Marks
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.modules.project_editor.renderers import (
-    INVALID_TINT,
     PAINT_MARGIN,
-    VALID_TINT,
     NodeAccent,
     NodeState,
     RenderHints,
     paint_node,
 )
 from dplanner.modules.project_editor.selection import EdgeRef
-from dplanner.theme.cards import DIM_OPACITY, SECONDARY_ALPHA
+from dplanner.theme.cards import DIM_OPACITY
+from dplanner.theme.tokens import SECONDARY_ALPHA
+from dplanner.theme.tones import INVALID_TINT, VALID_TINT
 
 # How far a press may land from the handle's centre and still mean it.
 HANDLE_GRAB = 12.0

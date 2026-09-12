@@ -2465,3 +2465,204 @@ inside `apply_theme`; `QApplication` is a `TYPE_CHECKING` import.
 
 **Upstream?** Yes, trivially.
 
+## 28. From the design-system pass
+
+### `framework/dialog.py` — `DialogFrame` and `LinePrompt` (new)
+
+**What.** A `QDialog` with the anatomy DESIGN.md's *Dialogs* names: the title printed in
+the body (`#DialogTitle`, +2 pt via `theme.cards.title_font`), a lead (`#DialogLead`), a
+body (`#DialogBody`, a `QVBoxLayout` the subclass fills) inside a page that carries the
+dialog's margins, and below it a footer band (`#DialogFooter`, edge to edge on the elevated
+ground under a faint hairline) whose slots run destructive · status · stretch · secondaries
+· dismiss · primary.
+`set_primary`, `add_button(destructive=)`, `add_dismiss`, `refuse(reason)`; the dismiss is
+default only while there is no primary; Ctrl+Enter is the primary from a multi-line field;
+`showEvent` sets the Tab chain (body → primary → secondaries → destructive) and puts focus
+on the first field or the default button. Three sizes: fit (a 420 px floor), framed
+(clamped to `SCREEN_SHARE`), editor. `LinePrompt` is one captioned field and a verb, refused
+while blank or while `validate` objects, with a class method `ask`.
+
+**Why.** Twenty-four dialogs, two button strategies, margins of 20/16/12/8/none, four that
+set focus, a footer whose default was *Clear*. The frame names its parts so the stylesheet
+reaches every dialog through two constant names — the enumerated `#X QPushButton` lists
+were the alternative, and they are what made a new dialog Fusion by default.
+
+**Upstream?** Yes, whole. Every application has dialogs, and the specificity trap
+(`#Host QPushButton` beats `#PrimaryButton`; `QPushButton#PrimaryButton` ties and wins by
+position) is Qt's, not this application's.
+
+### `framework/table.py` — `Table`, `Column`, `Cell`, `TableDelegate` (new)
+
+**What.** A `QTableWidget` (`#Table`) whose columns are declared (numeric, glyph, two-line,
+resize mode) and whose configuration is applied once; the row height computed from the
+font (`row_height`) and set on the vertical header; a delegate that blanks the option's
+text and icon in `initStyleOption` and paints the row tint, the hover wash (from a hovered
+row the view tracks through `entered`/`viewportEntered`/`leaveEvent` — Qt's `State_MouseOver`
+is per cell), a 2 px `QPalette.Accent` edge on column 0 of a picked row, the reserved glyph
+slot, elided one- or two-line text in the palette's `Text` (never `HighlightedText`: the
+picked ground is the quiet overlay). `add_row` stamps a tint and the host's roles on every
+cell; `add_heading` is a spanned `NoItemFlags` row; `fit_columns` opens interactive columns
+at their content; `initStyleOption` also strips `State_HasFocus`, since the style's focus
+frame round the current cell lingered as a box on the last cell clicked. `list_rows.py`
+gains `TINT_ROLE` and `HEADING_ROLE`.
+
+**Why.** Three hand-written copies of one configuration disagreeing on nine settings, and
+four widgets borrowing `#OrderTable` by name. The per-row `setRowHeight` versus
+`setDefaultSectionSize` split was a real bug in the Tests table.
+
+**Upstream?** Yes, with the delegate. `QTableWidget` over model/view is this application's
+choice (no table here has more than a few hundred rows); the delegate and the configuration
+transfer to a `QTableView` unchanged.
+
+### `framework/list_rows.py`, `theme/cards.py` — the second line a point smaller, the icon on the first line
+
+**What.** `theme.cards.detail_font(base)` is the secondary face (`DETAIL_POINTS = 1.0`
+down; `EmptyState` takes it too). `rich_row_height(font)` is the one formula both delegates
+size a two-line row from — two lines at two sizes, the gap, the padding. `TwoLineDelegate`
+now paints its own icon, on the first line, rather than letting the style centre it on the
+row; `TableDelegate.glyph_rect` does the same for a table.
+
+**Why.** A row's second line is *about* the first and should say so in size; and a glyph
+centred between a title and its key belonged to neither.
+
+**Upstream?** Yes, with the delegates.
+
+### `framework/toolbar.py` — `Toolbar`: glyphs with tooltips, folding into a … menu
+
+**What.** `Toolbar(QWidget)`: `add_verb(text, painter, slot, shortcut=, checkable=)` puts a
+`QToolButton` with a default `QAction` on the strip — icon only, the words and shortcut as
+the tooltip, re-inked from the palette's text at `SECONDARY_ALPHA` on a palette change;
+`add_widget`, `add_divider`. `resizeEvent` shows what fits from the left and hides the
+rest; a `…` button lists the hidden verbs as glyph and words in a `QMenu` rebuilt on open,
+a widget never enters it, and a divider never ends what is shown. Every control is
+`CONTROL_HEIGHT` tall by `setFixedHeight`. Its `sizeHint` is the … button's.
+
+`FilterButton`: a face (`#FilterButtonFace`, the funnel and the word, an `InstantPopup`
+over a `_StayOpenMenu` of checkable `QAction`s that stays open on a toggle) joined to a
+clear button (`#FilterButtonClear`, greyed until a filter is on); `add_filter(key, text)`,
+`active()`, `set_active()`, `clear()`, a `changed` Signal. The indicator is the glyph
+(`theme.icons.filter_icon(active=)`, 24 px wide with the dot's slot at its left) and a
+dynamic `active` property the stylesheet reads for the accent wash (`$ACCENT_WASH`, derived
+in `as_qss_mapping`) and border.
+
+**Why.** `QToolBar`'s » pops the hidden buttons up as glyphs again, which is nothing once
+the words live in tooltips; and a worded button, a glyph button and a button with a menu
+disagree by a few pixels under the style, so the height is set in code. The filter's
+indicator lives in the glyph so the face never changes size.
+
+**Upstream?** Yes. `ActionToolbar` becomes this fed by the registry.
+
+### `theme/__init__.py`, `theme/icons.py`, `theme/tokens.py` — the arrow, the key badge, derived tokens
+
+**What.** `drop_arrow_url(theme)` writes a 10×6 SVG in the theme's secondary ink to the temp
+dir (per colour, once) and `load_stylesheet` substitutes it as `$DROP_ARROW`; `key_badge_icon(text, colour)` paints `F1`/`M2` as a rounded chip `KEY_BADGE_W` wide at a glyph's
+height; `refresh_icon`; `tokens.mix` and a derived `$BORDER_FAINT` (the border halfway into
+the ground) beside `CONTROL_HEIGHT`. `Table`'s glyph slot is `KEY_BADGE_W` wide.
+
+**Why.** Styling a combo's drop-down takes Fusion's arrow away, Qt draws a stylesheet
+image only from a file, and a border-drawn triangle flattens into a bar at a 2× scale.
+A derived token spares every theme provider a field it would never set.
+
+**Upstream?** The arrow and the derived token, yes; the badge is this application's.
+
+### `framework/signalling.py` — `UpdatingIndicator`, `StatusLine` (new)
+
+**What.** `UpdatingIndicator.follow(debounced)` connects `pending_changed` to a weakly-held
+`setVisible`; `retainSizeWhenHidden` so a strip never reflows. `StatusLine.say(text, tone)`
+sets rich text — a `●` coloured by `theme.tones.STATUS_TONES` for busy/ok/error, the label's
+own ink for info — and hides on "". Both `$TEXT_SECONDARY` in the stylesheet.
+
+`Spinner(parent).attach(button | action).follow(debounced)` turns a three-quarter arc
+(`theme.icons.spinner_frames`, twelve frames, one turn a second) in the target's glyph slot
+while the debouncer owes a run — or between `start()` and `stop()` — and puts the glyph it
+had back; it refuses a target with no glyph, since a spinner appearing beside the words is
+a size jump.
+
+**Why.** Every busy state was a `QLabel` rewritten by hand, and only one view said anything
+during its settle. The weak reference is the gc rule from `CLAUDE.md`: a long-lived
+plain-Python signal holding a widget's bound method is the shape that crashes the collector.
+
+**Upstream?** Yes. The tones are the theme's; a framework that ships `Debounced` should
+ship the thing that shows it.
+
+### `framework/debounce.py` — `pending_changed`
+
+**What.** `Debounced.pending_changed: Signal[bool]` — True on the first trigger of a burst,
+False from a `finally` after `_run` and from `cancel()`; in immediate mode both arrive
+inside the one `trigger()`. (This pass and the theme-providers pass each found `flush_all`
+walking a `WeakSet` in hash order on the same day; §27's deterministic settle is the one
+that stayed.)
+
+**Why.** The indicator above: the Time tab's wrapper that showed a label before `trigger()`
+and hid it as the first line of the rebuild was two statements paired by hand that a test
+could never see up.
+
+**Upstream?** Yes. A framework that ships `Debounced` should say when a run is owed.
+
+### `framework/widgets.py` — `EmptyState.stands_in_for`, `caption`, `note`, `confirm` on the frame
+
+**What.** `EmptyState(stands_in_for=content)`: `say()` shows itself and hides the content
+or the reverse. `caption(text)` and `note(text)` make the `#InspectorCaption` and
+`#InspectorNote` labels. `confirm()` keeps its signature (a `verb` keyword added) and builds
+a `DialogFrame` — the question as the lead, the verb quiet, Cancel the default — with the
+frame imported inside the function, since the frame is built from this module's helpers.
+
+**Why.** Five empty-state mechanisms; the two labels hand-built in twenty-two files; a
+`QMessageBox.question` that printed a platform icon and arranged its buttons the platform's
+way for the one moment a person must read carefully.
+
+**Upstream?** Yes.
+
+### `theme/tokens.py`, `theme/tones.py`, `theme/theme.qss` — tokens, status tones, and a stylesheet that names only what exists
+
+**What.** Spacing tokens (`DIALOG_MARGIN`, `SECTION_GAP`, `FIELD_GAP`, `CAPTION_GAP`,
+`PANEL_MARGIN`, `CONTROL_GAP` — out of `framework/toolbar.py`, and 12 now — `ROW_PADDING_*`,
+`ROW_LINE_GAP`, `CELL_PADDING_*`, `SECONDARY_ALPHA`, `SCREEN_SHARE`) replace copies in `text_dialog.py`, `asset_picker.py`, `image_preview.py`,
+`cards.py`, `list_rows.py`, `markdown_highlight.py` and `theme/cards.py`. `STATUS_TONES`
+(`VALID_TINT`, `INVALID_TINT`, `BUSY_TINT`) move in from the canvas renderer. The
+stylesheet loses fifty-six object names the template's Writer app set — forty per cent of
+the file — the three enumerated `#X #PrimaryButton` lists (one `QPushButton#PrimaryButton`
+rule, last), and the task-browser-scoped progress bar (one bare `QProgressBar` rule); it
+gains the `#Table`, `#DialogBody`/`#DialogFooter` and `#UpdatingIndicator`/`#StatusLine`
+rules, and a `QComboBox` on a `#ControlBar` or in a `#DialogBody` wears the quiet bordered
+look with its arrow drawn as borders — styling `::drop-down` takes Fusion's arrow away, and
+Qt's stylesheet has no other way to draw one without an image file. `tests/test_theme.py`
+asserts every `#Name` is a literal under `src/`, and renders the combo.
+
+**Why.** A stylesheet that describes another application is one the next reader copies
+from. A float token is skipped by `as_qss_mapping` on purpose.
+
+**Upstream?** The tokens and the guard test, yes. The template's own stylesheet should
+ship with the guard and without Writer.
+
+### `modules/debug/design_example.py` — a living example module (a recommendation)
+
+**What.** A Debug-menu module that builds nothing real: one modal and one tab over sample
+data, made from every shared primitive the framework offers — the dialog frame with a form
+and a refused primary, the table with a heading, a badge and a picked row, the toolbar with
+its filter and its overflow, every signalling state, the empty state — plus a script that
+renders both in every theme to a committed folder of images, and a README naming what each
+image shows. DESIGN.md's *Primitives* table points every rule at the image that shows it.
+
+**Why.** A design rule that lives only in a document is followed by whoever remembers it;
+one that lives in a primitive is followed by whoever uses the primitive; but a developer
+still has to *see* the intended result to know whether their surface matches. The example
+module is the place to look, and it is also the harness every primitive change is judged
+in: the review rounds of the design-system pass — a smaller second line, the glyph on the
+first line, a spinner in a button's own slot, a footer band — each started from a render
+of it. Sample data keeps it honest: it can never be mistaken for a feature, and it costs
+nothing to open.
+
+**Upstream?** Yes, and early: a template that ships primitives should ship the module
+that shows them together, the render script, and the rule that a change to a primitive
+re-renders it. It is the cheapest design tool there is.
+
+### `tests/conftest.py` — `themed` shared
+
+**What.** The `themed` fixture (apply a theme application-wide, restore the default
+afterwards) moves up from two test modules; a render test of a delegate needs it, since a
+delegate paints from the palette and a stylesheet on the widget alone is not enough.
+
+**Why.** Three test modules would otherwise carry the same seven lines.
+
+**Upstream?** With the primitives' tests.

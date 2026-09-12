@@ -25,7 +25,6 @@ CARD_PADDING = 12  # Inside the card, all four sides.
 CARD_HEADER_GAP = 8  # Caption to body.
 STACK_MARGIN = 16  # Panel metrics per DESIGN.md.
 STACK_SPACING = 12  # Between cards.
-SECTION_GAP = 12  # Between the sections of a split card (above and below its rule).
 
 
 def card_rule(parent: QWidget | None = None, *, vertical: bool = False) -> QFrame:

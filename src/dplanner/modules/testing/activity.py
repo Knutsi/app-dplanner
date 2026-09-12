@@ -141,13 +141,12 @@ class _TestsPage(QWidget):
 
         self.table = TestsTable(self)
         layout.addWidget(self.table, 1)
-        self.empty = EmptyState(parent=self)
+        self.empty = EmptyState(parent=self, stands_in_for=self.table)
         layout.addWidget(self.empty, 1)
 
     def say(self, message: str) -> None:
         """A tab cannot go off screen the way a panel does, so it says so in words."""
         self.empty.say(message)
-        self.table.setVisible(not message)
 
     def lead(self, answer: str, detail: str) -> None:
         self.answer.setText(answer)

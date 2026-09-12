@@ -410,7 +410,7 @@ class _DocsPage(QWidget):
         self.splitter.setSizes([LIST_WIDTH, LIST_WIDTH * 3])
 
         layout.addWidget(self.splitter, 1)
-        self.empty = EmptyState(parent=self)
+        self.empty = EmptyState(parent=self, stands_in_for=self.splitter)
         layout.addWidget(self.empty, 1)
 
     def offer_grouping(self, offered: bool) -> None:
@@ -424,7 +424,6 @@ class _DocsPage(QWidget):
     def say(self, message: str) -> None:
         """A tab cannot go off screen the way a panel does, so it says so in words."""
         self.empty.say(message)
-        self.splitter.setVisible(not message)
 
     def lead(self, answer: str, detail: str) -> None:
         self.answer.setText(answer)

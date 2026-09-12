@@ -11,7 +11,8 @@ from PySide6.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget
 
 from dplanner.modules.project_editor.items import live_palette, snapped_point
 from dplanner.modules.project_editor.regions import TITLE_STRIP_H
-from dplanner.theme.cards import PADDING, SECONDARY_ALPHA
+from dplanner.theme.cards import PADDING
+from dplanner.theme.tokens import SECONDARY_ALPHA
 
 # A region's grabbable edges: how far the clickable ring reaches either side of the border,
 # and the square at the bottom-right corner that resizes.

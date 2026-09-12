@@ -36,6 +36,8 @@ os.environ.pop("DPLANNER_LIBRARY", None)
 import pytest
 
 from dplanner.app import configure_application, new_session, set_early_attributes
+from dplanner.theme import apply_theme
+from dplanner.theme.themes import DEFAULT
 
 # AA_DontUseNativeMenuBar is read at QMenuBar construction time and must be set before the
 # QApplication exists. pytest-qt constructs it lazily inside the `qapp` fixture, so this has
@@ -65,6 +67,18 @@ def app(qapp, tmp_path_factory):
     )
     configure_application(qapp)
     return qapp
+
+
+@pytest.fixture
+def themed(app):
+    """A theme is applied application-wide, so put the default back for whatever runs next.
+
+    A render test that samples colours applies its theme with ``apply_theme(themed, theme)``:
+    a delegate paints from the palette, so setting a stylesheet on the widget alone is not
+    enough.
+    """
+    yield app
+    apply_theme(app, DEFAULT)
 
 
 @pytest.fixture

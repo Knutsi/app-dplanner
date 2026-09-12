@@ -12,13 +12,11 @@ more entry.
 from typing import Any
 
 from PySide6.QtCore import QModelIndex, QRect, QSize, Qt
-from PySide6.QtGui import QFont, QFontMetrics, QPainter
+from PySide6.QtGui import QFont, QFontMetrics, QIcon, QPainter
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
-ROW_PADDING_V = 10
-ROW_PADDING_H = 12
-ROW_LINE_GAP = 4
-SECONDARY_ALPHA = 160  # ~63 % — DESIGN.md's opacity-derived secondary text.
+from dplanner.theme.cards import detail_font
+from dplanner.theme.tokens import ROW_LINE_GAP, ROW_PADDING_H, ROW_PADDING_V, SECONDARY_ALPHA
 
 ICON_GAP = 8  # Between a row's icon and its text.
 RULE_ALPHA = 60  # The hairline under an emphasised row: a whisper of the text tone.
@@ -33,8 +31,24 @@ RULE_ROLE = int(Qt.ItemDataRole.UserRole) + 5
 # A note at the right of the first line, in the secondary tone: a shortcut, a count, a
 # date — a fact *about* the row that reads as a column rather than as part of the name.
 TRAILING_ROLE = int(Qt.ItemDataRole.UserRole) + 6
+# A ``QColor`` washed under every cell of the row (a milestone's, a failed test's) — read
+# by ``framework/table.py``'s delegate, never asked of a callback.
+TINT_ROLE = int(Qt.ItemDataRole.UserRole) + 7
+# The row is a group heading spanning the table: bold secondary words, never selected.
+HEADING_ROLE = int(Qt.ItemDataRole.UserRole) + 8
 
 TRAILING_GAP = 12  # Between the name and the note at the right, so neither crowds the other.
+
+
+def rich_row_height(font: QFont) -> int:
+    """Two lines of two sizes with the gap between and the padding around: the one
+    formula a list row and a two-line table cell both take their height from."""
+    return (
+        2 * ROW_PADDING_V
+        + QFontMetrics(font).height()
+        + QFontMetrics(detail_font(font)).height()
+        + ROW_LINE_GAP
+    )
 
 
 def text_left(option: QStyleOptionViewItem) -> int:
@@ -54,6 +68,9 @@ class TwoLineDelegate(QStyledItemDelegate):
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
         opt.text = ""
+        left = text_left(opt)  # Measured with the icon in place; the icon is ours to draw.
+        icon = QIcon(opt.icon)
+        opt.icon = QIcon()
         style = opt.widget.style() if opt.widget else None
         if style is not None:
             style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
@@ -68,11 +85,23 @@ class TwoLineDelegate(QStyledItemDelegate):
             primary = secondary
 
         rect = opt.rect.adjusted(ROW_PADDING_H, ROW_PADDING_V, -ROW_PADDING_H, -ROW_PADDING_V)
-        rect.setLeft(text_left(opt))  # The style drew the icon; the text starts past it.
         metrics = opt.fontMetrics
         elide = Qt.TextElideMode.ElideRight
         align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         painter.save()
+        if not icon.isNull():
+            # On the first line, not centred on the row: a glyph is the name's, not the pair's.
+            size = opt.decorationSize
+            icon.paint(
+                painter,
+                QRect(
+                    rect.left(),
+                    rect.top() + (metrics.height() - size.height()) // 2,
+                    size.width(),
+                    size.height(),
+                ),
+            )
+        rect.setLeft(left)
         name_font = QFont(opt.font)
         if index.data(EMPHASIS_ROLE):
             name_font.setBold(True)
@@ -100,18 +129,18 @@ class TwoLineDelegate(QStyledItemDelegate):
             align,
             metrics.elidedText(index.data(Qt.ItemDataRole.DisplayRole), elide, name_width),
         )
-        painter.setFont(opt.font)
-        metrics = opt.fontMetrics
+        painter.setFont(detail_font(opt.font))
+        detail = QFontMetrics(detail_font(opt.font))
         painter.setPen(secondary)
         painter.drawText(
             QRect(
                 rect.left(),
-                rect.top() + metrics.height() + ROW_LINE_GAP,
+                rect.top() + opt.fontMetrics.height() + ROW_LINE_GAP,
                 rect.width(),
-                metrics.height(),
+                detail.height(),
             ),
             align,
-            metrics.elidedText(index.data(DETAIL_ROLE) or "", elide, rect.width()),
+            detail.elidedText(index.data(DETAIL_ROLE) or "", elide, rect.width()),
         )
         if index.data(RULE_ROLE):
             rule = palette.color(palette.ColorRole.Text)
@@ -124,5 +153,4 @@ class TwoLineDelegate(QStyledItemDelegate):
     def sizeHint(  # noqa: N802 - Qt override
         self, option: QStyleOptionViewItem, index: QModelIndex | Any
     ) -> QSize:
-        metrics = option.fontMetrics
-        return QSize(0, 2 * ROW_PADDING_V + 2 * metrics.height() + ROW_LINE_GAP)
+        return QSize(0, rich_row_height(option.font))

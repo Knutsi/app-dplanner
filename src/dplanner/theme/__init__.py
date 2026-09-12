@@ -10,7 +10,9 @@ plain data and functions a provider module reads without a graphics stack, so th
 is imported inside :func:`apply_theme`, the one function that needs it.
 """
 
+import tempfile
 from importlib import resources
+from pathlib import Path
 from string import Template
 from typing import TYPE_CHECKING
 
@@ -31,7 +33,29 @@ def load_stylesheet(theme: Theme = DEFAULT) -> str:
     stylesheet, where Qt would discard the surrounding rule without complaint.
     """
     raw = resources.files(__package__).joinpath("theme.qss").read_text(encoding="utf-8")
-    return Template(raw).substitute(tokens.as_qss_mapping(theme))
+    mapping = tokens.as_qss_mapping(theme)
+    mapping["DROP_ARROW"] = drop_arrow_url(theme)
+    return Template(raw).substitute(mapping)
+
+
+# The one picture the stylesheet needs. A combo box's arrow can only be an image once its
+# drop-down is styled, a border-drawn triangle flattens into a bar at a 2x scale, and Qt
+# reads `url()` from a file: so a tiny SVG in the theme's secondary ink is written to the
+# temp dir per colour and named here. An SVG scales cleanly at any device pixel ratio.
+_ARROW_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6">'
+    '<polygon points="0,0 10,0 5,6" fill="{fill}"/></svg>'
+)
+
+
+def drop_arrow_url(theme: Theme) -> str:
+    """The path of the drop-down arrow in this theme's ink, written if it is not there."""
+    folder = Path(tempfile.gettempdir()) / "dplanner-theme"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"drop-arrow-{theme.text_secondary.lstrip('#')}.svg"
+    if not path.exists():
+        path.write_text(_ARROW_SVG.format(fill=theme.text_secondary), encoding="utf-8")
+    return path.as_posix()
 
 
 def apply_theme(

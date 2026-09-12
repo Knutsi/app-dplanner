@@ -19,7 +19,7 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.tabs import TabHost
 from dplanner.theme import apply_theme
-from dplanner.theme.themes import DARK, DEFAULT, LIGHT
+from dplanner.theme.themes import DARK, LIGHT
 
 
 class FakeActivity(ActivityBase):
@@ -54,13 +54,6 @@ class FakeActivity(ActivityBase):
 @pytest.fixture
 def context():
     return ContextService()
-
-
-@pytest.fixture
-def themed(app):
-    """A theme is applied application-wide, so put the default back for whatever runs next."""
-    yield app
-    apply_theme(app, DEFAULT)
 
 
 @pytest.fixture

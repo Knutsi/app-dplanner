@@ -38,7 +38,6 @@ from dplanner.theme.cards import (
     PADDING,
     RADIUS,
     RESTING_SHADOW,
-    SECONDARY_ALPHA,
     SELECTED_BORDER_W,
     SELECTED_FILL_GAIN,
     over,
@@ -53,6 +52,7 @@ from dplanner.theme.icons import (
     paint_spark_glyph,
     paint_tag_glyph,
 )
+from dplanner.theme.tokens import SECONDARY_ALPHA
 from dplanner.theme.tones import (
     BADGE_BORDER,
     BADGE_TINT,
@@ -61,6 +61,9 @@ from dplanner.theme.tones import (
     CHIP_ATTENTION_TINT,
     CHIP_INFO_BORDER,
     CHIP_INFO_TINT,
+    INVALID_TINT,
+    STATUS_TONES,
+    VALID_TINT,
 )
 
 # The link handle: a dot on the node's right edge. Dragging from it means "then", so an
@@ -84,10 +87,6 @@ END_MARK = QColor(220, 170, 90)
 ORPHAN_RING = QColor(224, 82, 82)
 ORPHAN_RING_W = 3.0
 
-# Low-alpha semantic tints that read on every theme (DESIGN.md exception #2).
-VALID_TINT = QColor(120, 200, 140, 180)
-INVALID_TINT = QColor(220, 110, 110, 180)
-BUSY_TINT = QColor(110, 160, 220, 180)
 # A toned body colours the whole node, so its kind reads at any zoom. The tones live in
 # ``theme/tones.py`` — the aspect bar's kind buttons wear the same ones, and a checked
 # Feature button and a feature node are one identity.
@@ -159,7 +158,7 @@ PAINT_MARGIN = max(
     LIFTED_SHADOW.drop + LIFTED_SHADOW.spread + 1.0,
 )
 
-SPINE_TONES = {"good": VALID_TINT, "busy": BUSY_TINT, "bad": INVALID_TINT}
+SPINE_TONES = STATUS_TONES  # The spine says where the work stands, in the one vocabulary.
 CHIP_TONES = {
     "info": (CHIP_INFO_TINT, CHIP_INFO_BORDER),
     "attention": (CHIP_ATTENTION_TINT, CHIP_ATTENTION_BORDER),

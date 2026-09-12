@@ -19,8 +19,9 @@ import re
 from PySide6.QtGui import QFont, QSyntaxHighlighter, QTextCharFormat, QTextDocument
 from PySide6.QtWidgets import QWidget
 
+from dplanner.theme.tokens import SECONDARY_ALPHA
+
 # The ~63 % secondary ink, as everywhere a painter has only the palette.
-SECONDARY_ALPHA = 160
 
 _HEADING = re.compile(r"^(#{1,6})\s+\S")
 _LIST_MARKER = re.compile(r"^(\s*)([-*+]|\d{1,3}[.)])\s+\S")

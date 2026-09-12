@@ -85,6 +85,8 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "runs" is the Agent List — the live shells this window launched, a data child menu
     # rebuilt on open — above "install", what this machine has of DPlanner itself.
     "Tools": ("runs", "install"),
-    "Debug": ("llm", "telemetry"),
+    # "design" is the design system's living reference — Design Example… and its table
+    # tab — what a developer bringing a surface up opens beside their own (DESIGN.md).
+    "Debug": ("llm", "telemetry", "design"),
     "Help": ("about",),
 }
