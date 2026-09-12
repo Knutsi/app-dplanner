@@ -531,6 +531,25 @@ root, stop and look for the registry or capability you have not found yet.
   pure Python competing for the GIL, and a thread alive at teardown is the suite's SIGSEGV
   shape — `ARCHITECTURE.md`'s *A view refresh is coalesced, and hears one project* has the
   measurements (67 ms → 0.3 ms of synchronous work per keystroke with seven tabs open).
+- **The context is announced once per event-loop turn, and a gesture changes the
+  selection once.** `ContextService.set_scope`/`clear_scope`/`refresh` update the snapshot
+  synchronously — `current()` is always true, which is all a verb run right after a
+  publish reads — but the fan-out to every action state, toolbar, panel and the menu bar
+  goes through `announce`, a 0 ms `Debounced` the builder wires, so a gesture that
+  publishes seven times costs one re-evaluation over the final state and never shows a
+  panel a selection that was empty for a microsecond. Three rules keep it that way:
+  `GraphScene.select_steps` announces once (it reconciles Qt's selection item by item
+  behind a `_reselecting` guard); a verb that needs a selection the user did not make is
+  handed a **constructed `Context`** (`_on_link_requested`) rather than having the canvas
+  select for it; and **a panel that steps aside keeps its content** (`ProjectPanel`
+  returns False for a selected step without clearing its cards — clearing tore down and
+  rebuilt every card twice per gesture). **No subprocess in an action state or a structure
+  listener**: `origin_url` is memoised on the config file's mtime, and the sync module
+  asks git about membership only when the *library's* children change. Measured on a
+  74-step, 344-note plan: connect 1.7 s → tens of ms, paste 0.6 s → tens of ms; the
+  suite runs the debounce service immediate, so a test that asserts coalescing switches
+  it off and `flush_all()`s. `scripts/measure_edit_cost.py --gestures` is the number to
+  quote. `ARCHITECTURE.md`'s *The context is announced once per turn* has the reasoning.
 - **Every action, command and slow slot is a span, and the journal is how you find out
   why.** `core/telemetry.py` is one process-wide journal, like `logging`: `ActionRegistry.run`
   (every presenter's one path — the menu bar's QAction goes through it too), `UndoService`'s
@@ -982,8 +1001,10 @@ root, stop and look for the registry or capability you have not found yet.
   **label** from the closed `LABELS` list — `decision`, `handoff`, `spec-change`, `later`,
   `post-project` — a title, markdown body, the day, the step it was made on, the steps it
   is `for`, what it supersedes), `dplanner note add|set|remove|list|show|attach|index`,
-  and the project panel's Notes card. It replaced the decision log and the handoff aspect
-  (both reach it at open — `migrate.py`). **The briefing's notes block is an index**: one
+  and the Docs tab's **Implementation notes** view (`view.py`: the log as delegate-painted
+  rows, newest first, beside the picked note's editor — hosted by the docs module through
+  a factory on `DocsDeps`, built on the first switch to it, never a widget per note). It
+  replaced the decision log and the handoff aspect (both reach it at open — `migrate.py`). **The briefing's notes block is an index**: one
   line per standing note that reaches the step, grouped by label, with `note show` to
   open one — and a note **addressed** to the step (`--for S12`) in full ahead of it, which
   is how one agent points the next at what it must read. Who a note reaches is the

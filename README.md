@@ -332,7 +332,7 @@ src/dplanner/
 │   ├── notes/               what a project records along the way — decisions, handoffs, spec changes,
 │   │                        deferrals — one labelled log (log.py), what reaches a step and the briefing's
 │   │                        index (reach.py), how the two retired modules reach it (migrate.py),
-│   │                        `dplanner note`, and the project panel's Notes card
+│   │                        `dplanner note`, and the Docs tab's Implementation notes view (view.py)
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
 │   │                        and page rendering; editor.py: the in-app markdown editor)

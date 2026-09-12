@@ -6,8 +6,9 @@ two notes never merge into one undo step, and the widget reloads on a foreign ch
 with ``ModuleDataSection``'s echo rule — its own write is ignored while one of its
 fields has the focus. The body is prose in a record (a string, not a ``.md``), so it goes
 through ``TextBinding`` the way a feature's description does: :class:`NoteBodyField`
-describes it, and typing is undoable and coalesced for free. The dialog around it has no
-buttons: every edit is already live and undoable, so Escape and the title bar close it.
+describes it, and typing is undoable and coalesced for free. The editor has no buttons of
+its own: every edit is already live and undoable, and the view hosting it (``view.py``)
+carries the verbs.
 """
 
 from collections.abc import Callable
@@ -18,11 +19,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
-    QDialog,
     QFormLayout,
-    QHBoxLayout,
     QLineEdit,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -40,16 +38,12 @@ from dplanner.modules.notes.log import (
     label_of,
     read_log,
     with_note,
-    without_note,
     write_log,
 )
 
-# DESIGN.md: dialogs 20 px out, 12 between sections, 6 within a block.
-DIALOG_MARGIN = 20
+# DESIGN.md: 12 between sections, 6 within a block.
 BLOCK_GAP = 12
 FIELD_GAP = 6
-DIALOG_WIDTH = 640
-DIALOG_HEIGHT = 560
 BODY_PLACEHOLDER = "What a later reader needs: the reasoning, the gotcha, where things are."
 FOR_PLACEHOLDER = "Step keys whose briefing carries this in full — S9 S12"
 
@@ -314,63 +308,3 @@ class NoteEditor(QWidget):
         if self._project_id is None or updated == self.record():
             return
         self._undo.push(_write(self._library, self._project_id, updated, self))
-
-
-class NoteDialog(QDialog):
-    """One note, front and centre, with no buttons — every edit is live and undoable.
-    Remove is the one verb: it drops the record and closes. Whoever opens it owes it a
-    ``dispose()``."""
-
-    def __init__(
-        self,
-        library: Library,
-        undo: UndoService[Library],
-        step_key: Callable[[Step], str],
-        project_id: NodeId,
-        note_id: str,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self._library = library
-        self._undo = undo
-        self._project_id = project_id
-        self._note_id = note_id
-        self.setWindowTitle(f"Note {note_id}")
-        self.editor = NoteEditor(library, undo, step_key, self)
-        self.editor.show_record(project_id, note_id)
-
-        self.remove_button = QPushButton("Remove Note", self)
-        self.remove_button.setToolTip("Drop this note from the log — undoable")
-        self.remove_button.clicked.connect(self._remove)
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addStretch(1)
-        row.addWidget(self.remove_button)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
-        layout.setSpacing(BLOCK_GAP)
-        layout.addWidget(self.editor, 1)
-        layout.addLayout(row)
-        self.resize(DIALOG_WIDTH, DIALOG_HEIGHT)
-        self.editor.title.setFocus(Qt.FocusReason.OtherFocusReason)
-        self.editor.title.selectAll()
-
-    def dispose(self) -> None:
-        self.editor.dispose()
-
-    def _remove(self) -> None:
-        if not self._library.has(self._project_id):
-            self.reject()
-            return
-        records = read_log(self._library.project(self._project_id))
-        if any(record.id == self._note_id for record in records):
-            self._undo.push(
-                SetModuleDataCommand(
-                    self._project_id,
-                    MODULE_ID,
-                    write_log(without_note(records, self._note_id)),
-                    label=f"Remove Note {self._note_id}",
-                )
-            )
-        self.reject()

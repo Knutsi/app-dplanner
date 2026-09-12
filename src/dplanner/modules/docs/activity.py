@@ -22,16 +22,19 @@ from typing import TYPE_CHECKING, Any
 from PySide6.QtCore import QModelIndex, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QSplitter,
+    QStackedWidget,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -56,7 +59,7 @@ from dplanner.modules.docs.section import CompileBanner, CompiledSection, Compil
 from dplanner.theme.icons import ICON_SIZE, glyph_painter
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
-    from dplanner.modules.docs.module import DocsDeps
+    from dplanner.modules.docs.module import DocsDeps, NotesView
 
 DOCS_KIND = "docs"
 
@@ -65,6 +68,14 @@ BLOCK_GAP = 12
 CONTROL_GAP = 8
 SELECTOR_WIDTH = 180
 LIST_WIDTH = 260
+
+# The two readings the tab offers, in the order of the switch's buttons and the stack.
+VIEW_DOCUMENTATION = 0
+VIEW_NOTES = 1
+DOCS_CAPTION = "Documentation"
+DOCS_SUBTITLE = "What this project's work adds up to, for whoever reads it."
+NOTES_CAPTION = "Implementation notes"
+NOTES_SUBTITLE = "What was decided, handed over, changed and deferred along the way."
 
 ROW_PADDING_V = 10
 ROW_PADDING_H = 12
@@ -118,6 +129,10 @@ class DocsActivity(EntityActivity):
         self.page = _DocsPage(deps, link)
         self.page.group_box.currentIndexChanged.connect(self._on_group_changed)
         self.page.list.currentRowChanged.connect(self._on_row_changed)
+        # The notes view is built on the first switch to it, never for a tab that only
+        # ever reads the documentation.
+        self._notes: NotesView | None = None
+        self.page.view_switch.idClicked.connect(self._show_view)
 
         # After a quiet spell, not per signal: a refresh walks a cone per collector.
         self._refresh_soon = Debounced(self._refresh, parent=self.page, service=deps.debounce)
@@ -149,10 +164,15 @@ class DocsActivity(EntityActivity):
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes = []
+        if self._notes is not None:
+            self._notes.dispose()
+            self._notes = None
 
     def show_collector(self, step_id: StepId) -> None:
         """Select the group that is ``step_id``'s — its own, when it collects, else the
         one holding its fragment — what a jump from a step or the coverage view lands on."""
+        self.page.view_switch.button(VIEW_DOCUMENTATION).setChecked(True)
+        self._show_view(VIEW_DOCUMENTATION)
         self._refresh()
         held = next(
             (group for group in self._groups if group.key == step_id),
@@ -202,7 +222,13 @@ class DocsActivity(EntityActivity):
         self._group_kind = str(box.currentData() or "")
         # A project with nothing to group by shows no control at all rather than one with a
         # single entry — DESIGN.md: an empty box is worse than no box.
-        self.page.group_action.setVisible(len(entries) > 1)
+        self.page.offer_grouping(len(entries) > 1)
+
+    def _show_view(self, index: int) -> None:
+        if index == VIEW_NOTES and self._notes is None and self._deps.notes is not None:
+            self._notes = self._deps.notes(self.project_id, self.page)
+            self.page.host_notes(self._notes.widget)
+        self.page.show_view(index)
 
     def _build_groups(self, project: Project) -> list[Group]:
         kind = next((k for k in self._deps.scopes if k.id == self._group_kind), None)
@@ -324,14 +350,14 @@ class _DocsPage(QWidget):
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
         layout.setSpacing(CAPTION_GAP)
 
-        title = QLabel("Documentation", self)
-        title.setObjectName("InspectorCaption")
-        layout.addWidget(title)
+        self.caption = QLabel(DOCS_CAPTION, self)
+        self.caption.setObjectName("InspectorCaption")
+        layout.addWidget(self.caption)
 
-        subtitle = QLabel("What this project's work adds up to, for whoever reads it.", self)
-        subtitle.setObjectName("InspectorNote")
-        subtitle.setWordWrap(True)
-        layout.addWidget(subtitle)
+        self.subtitle = QLabel(DOCS_SUBTITLE, self)
+        self.subtitle.setObjectName("InspectorNote")
+        self.subtitle.setWordWrap(True)
+        layout.addWidget(self.subtitle)
         layout.addSpacing(BLOCK_GAP)
 
         self.answer = QLabel(self)
@@ -350,6 +376,25 @@ class _DocsPage(QWidget):
         strip = QHBoxLayout()
         strip.setSpacing(CONTROL_GAP)
         self.controls = control_bar(self)
+        # Which reading is on screen — the documentation, or the notes made along the way.
+        # A pair of buttons rather than a combo: two entries, both always meaningful.
+        self.view_bar = QWidget(self.controls)
+        view_row = QHBoxLayout(self.view_bar)
+        view_row.setContentsMargins(0, 0, 0, 0)
+        view_row.setSpacing(CONTROL_GAP)
+        self.view_switch = QButtonGroup(self.view_bar)
+        self.view_switch.setExclusive(True)
+        for index, label in enumerate((DOCS_CAPTION, NOTES_CAPTION)):
+            button = QToolButton(self.view_bar)
+            button.setObjectName("ToolbarButton")
+            button.setText(label)
+            button.setCheckable(True)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.view_switch.addButton(button, index)
+            view_row.addWidget(button)
+        self.view_switch.button(VIEW_DOCUMENTATION).setChecked(True)
+        self.view_action = self.controls.addWidget(self.view_bar)
+        self.view_action.setVisible(deps.notes is not None)  # No notes module: no choice.
         self.group_box = QComboBox(self.controls)
         self.group_box.setMinimumWidth(SELECTOR_WIDTH)
         # A toolbar wraps a widget in an action, and it is the *action* that carries
@@ -400,13 +445,45 @@ class _DocsPage(QWidget):
         self.splitter.addWidget(right)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setSizes([LIST_WIDTH, LIST_WIDTH * 3])
-        layout.addWidget(self.splitter, 1)
 
         self.empty = QLabel(self)
         self.empty.setObjectName("InspectorNote")
         self.empty.setWordWrap(True)
         self.empty.hide()
-        layout.addWidget(self.empty)
+
+        # The documentation body and, once asked for, the notes view: one on screen at a
+        # time, under the same caption and control strip.
+        self.views = QStackedWidget(self)
+        body = QWidget(self.views)
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+        body_layout.addWidget(self.splitter, 1)
+        body_layout.addWidget(self.empty)
+        self.views.addWidget(body)
+        layout.addWidget(self.views, 1)
+        self._grouping_offered = False
+
+    def host_notes(self, notes: QWidget) -> None:
+        """The Implementation notes view, once the tab is asked for it."""
+        self.views.addWidget(notes)
+
+    def show_view(self, index: int) -> None:
+        """Documentation or notes: the caption, the subtitle and the controls follow."""
+        notes = index == VIEW_NOTES
+        if notes and self.views.count() <= VIEW_NOTES:
+            return  # Nothing to switch to in a build without notes.
+        self.views.setCurrentIndex(index)
+        self.caption.setText(NOTES_CAPTION if notes else DOCS_CAPTION)
+        self.subtitle.setText(NOTES_SUBTITLE if notes else DOCS_SUBTITLE)
+        self.answer.setVisible(not notes)
+        self.detail.setVisible(not notes)
+        self.group_action.setVisible(not notes and self._grouping_offered)
+
+    def offer_grouping(self, offered: bool) -> None:
+        """Whether Group by has a choice to offer — shown only with the documentation."""
+        self._grouping_offered = offered
+        self.group_action.setVisible(offered and self.views.currentIndex() == VIEW_DOCUMENTATION)
 
     def _reink(self, accent: str) -> None:
         self.rows.set_accent(accent)

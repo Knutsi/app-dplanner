@@ -332,12 +332,16 @@ def test_moving_two_nodes_is_one_undo_step(services, project, tab):
 
 
 def test_a_drop_runs_the_same_verb_the_menu_does(services, project, tab):
-    """The drop is not a special case: it selects both ends and runs `steps.link`."""
+    """The drop is not a special case: it runs `steps.link` against a context naming both
+    ends — and leaves the selection as it found it, so the next Connect starts where the
+    user was."""
     first, second = project.steps
+    tab.select_step(first.id)
     scene(tab).link_requested.emit(first.id, second.id)
 
     assert services.document.step(second.id).edges["requires"] == [first.id]
-    assert services.context.current().selected_entities("step") == [first.id, second.id]
+    assert services.context.current().selected_entities("step") == [first.id]
+    assert scene(tab).selection().steps == (first.id,)
 
 
 def test_a_refused_drop_says_why_instead_of_doing_nothing(services, project, tab):
@@ -1243,6 +1247,75 @@ def test_connect_mode_links_two_clicks_and_then_lets_go(app, services, project, 
 
     assert services.document.step(second.id).edges["requires"] == [first.id]
     assert modes(tab).current().name == IDLE
+
+
+def test_selecting_several_steps_announces_the_selection_once(services, project, tab):
+    """Qt reports a re-selection item by item; the scene announces the gesture."""
+    first, second = project.steps
+    heard = []
+    scene(tab).selection_changed.connect(lambda selection: heard.append(selection.steps))
+    scene(tab).select_steps([first.id, second.id])
+    assert heard == [(first.id, second.id)]
+
+
+def _announcements(services, monkeypatch):
+    """How often the window heard the context, and how often the dock relaid itself."""
+    from dplanner.framework.panels import PanelDock
+
+    announced: list[int] = []
+    relaid: list[int] = []
+    services.context.changed.connect(lambda _context: announced.append(1))
+    original = PanelDock._refresh
+
+    def counted(self):
+        relaid.append(1)
+        original(self)
+
+    monkeypatch.setattr(PanelDock, "_refresh", counted)
+    return announced, relaid
+
+
+def test_a_connect_announces_the_context_once_and_the_step_panel_stays(
+    app, services, project, tab, monkeypatch
+):
+    """The gesture publishes the selection more than once on its way — the source pick, the
+    mode leaving, the push — and the window hears one announcement over the final state:
+    the selection it started with, so the step panel never steps aside for a selection
+    that was empty for a microsecond. The window's regime, not the suite's: coalescing
+    only shows with the debounce service deferred."""
+    first, second = project.steps
+    tab.select_step(first.id)
+    announced, relaid = _announcements(services, monkeypatch)
+    services.debounce.set_immediate(False)
+
+    services.actions.run("steps.connect", services.context.current())
+    click(app, tab, centre_of(scene(tab)._nodes[first.id]))
+    click(app, tab, centre_of(scene(tab)._nodes[second.id]))
+    assert announced == []  # Pending, not run.
+    services.debounce.flush_all()
+
+    assert services.document.step(second.id).edges["requires"] == [first.id]
+    assert len(announced) == 1 and relaid == []
+    assert scene(tab).selection().steps == (first.id,)
+    assert services.window.dock.is_panel_showing(STEP_PANEL_ID)
+
+
+def test_a_paste_announces_the_context_once_and_the_step_panel_stays(
+    services, project, tab, monkeypatch
+):
+    first, _second = project.steps
+    tab.select_step(first.id)
+    services.actions.run("steps.copy", services.context.current())
+    announced, relaid = _announcements(services, monkeypatch)
+    services.debounce.set_immediate(False)
+
+    services.actions.run("steps.paste", services.context.current())
+    services.debounce.flush_all()
+
+    (copy,) = [step for step in project.steps if step.id not in (first.id, _second.id)]
+    assert len(announced) == 1 and relaid == []
+    assert scene(tab).selection().steps == (copy.id,)
+    assert services.window.dock.is_panel_showing(STEP_PANEL_ID)
 
 
 def test_escape_clears_the_pending_step_before_it_leaves(app, services, project, tab):

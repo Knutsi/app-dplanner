@@ -55,6 +55,8 @@ from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
+    SCOPE_SELECTION,
+    Context,
     ContextNode,
     ContextService,
     Uri,
@@ -294,14 +296,16 @@ class ProjectActivity(EntityActivity):
     def frame(self) -> None:
         self._view.frame_content()
 
-    def run_action(self, action_id: str) -> bool:
+    def run_action(self, action_id: str, context: Context | None = None) -> bool:
         """Run a verb against the current context, honouring its state gate.
 
         The one path from this tab to the vocabulary: the keymap uses it, the mode stack uses
         it, and so does a link the user just drew. Its answer — did the gate allow it — is
-        what lets one key name several verbs and mean the one that applies.
+        what lets one key name several verbs and mean the one that applies. A constructed
+        ``context`` is for a gesture whose verb needs a selection the user never made.
         """
-        context = self._deps.context.current()
+        if context is None:
+            context = self._deps.context.current()
         state = self._deps.actions.spec(action_id).state(context)
         if not (state.visible and state.enabled):
             return False
@@ -516,11 +520,20 @@ class ProjectActivity(EntityActivity):
         return f"{moved}; {len(plan.refused)} left alone — {plan.refused[0][1]}"
 
     def _on_link_requested(self, source: StepId, target: StepId) -> None:
-        """A drop is not a special case: it selects both ends and runs the same verb the
-        menu does, so the refusal, the label and the command all come from one place."""
-        self._scene.select_steps([source, target])
-        if not self.run_action("steps.link"):
-            state = self._deps.actions.spec("steps.link").state(self._deps.context.current())
+        """A drop is not a special case: it runs the same verb the menu does, handed a
+        context naming both ends, so the refusal, the label and the command all come from
+        one place. The canvas selection is left as the gesture found it — selecting the
+        pair left Connect with no source for the next link."""
+        context = Context(
+            {
+                SCOPE_ACTIVITY: self.activity_nodes(),
+                SCOPE_SELECTION: tuple(
+                    ContextNode(selection_uri("step", step_id)) for step_id in (source, target)
+                ),
+            }
+        )
+        if not self.run_action("steps.link", context):
+            state = self._deps.actions.spec("steps.link").state(context)
             self._deps.status.show_status(state.label or "Those steps cannot be linked", 4000)
 
     def _on_create(self, x: float, y: float) -> None:

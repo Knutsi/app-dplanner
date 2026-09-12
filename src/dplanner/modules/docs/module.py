@@ -23,6 +23,7 @@ sync: a person pressed a button, and undoing has to put back what was there.
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QTreeWidgetItem, QWidget
@@ -95,6 +96,19 @@ OPEN_STEP_ACTION = "docs.open_step"
 NO_DOCS_REASON = "Show Docs — this step carries no documentation and gathers none"
 
 
+class NotesView(Protocol):
+    """The Docs tab's *Implementation notes* view: the project's log beside an editor.
+
+    Consumer-owned interface, satisfied structurally by the notes module's view via the
+    composition root — the same arrangement as the order view's start-date bar.
+    """
+
+    @property
+    def widget(self) -> QWidget: ...
+
+    def dispose(self) -> None: ...
+
+
 @dataclass(frozen=True)
 class DocsDeps:
     library: Library
@@ -123,6 +137,9 @@ class DocsDeps:
     # Insert from Assets…: a modal picker over the node's project's catalog, composed by
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], "list[Payload]"] | None = None
+    # The Implementation notes view the Docs tab hosts beside its documentation, created
+    # by the notes module for one project. None is a build without notes.
+    notes: Callable[[NodeId, QWidget], NotesView] | None = None
 
 
 class DocsCompiledModule:

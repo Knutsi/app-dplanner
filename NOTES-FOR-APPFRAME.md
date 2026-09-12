@@ -2262,3 +2262,40 @@ looks exactly like a rule that did not apply. `tests/test_theme.py` renders the 
 asserts both, in the splitter seam's spirit: it fails when either half is removed.
 
 **Upstream?** Yes, both. Any application whose toolbar buttons carry menus hits it.
+
+## 23. From the snappy-edits pass
+
+### `framework/context.py` + `framework/builder.py` — the context is announced once per turn
+
+**What.** `ContextService` grew `announce: Callable[[], None]`, defaulting to
+`announce_now()` (`changed.emit(current())`); `set_scope`, `clear_scope` and `refresh`
+update the snapshot synchronously and call `announce()`. The builder, once the window
+exists, sets `context.announce = Debounced(context.announce_now, 0, parent=window,
+service=debounce).trigger`. The app shell's own `poke_context` `Debounced` (an undo push,
+a tab switch, a theme or panel change re-asking every state) went with it — it was a
+debounce of a debounce — and `AppShellDeps` lost its `debounce` field.
+
+**Why.** The docstring said emission was synchronous because "menu-state re-evaluation is
+cheap (a few dozen pure callbacks)". On a real plan it was ~150 states, six toolbars per
+canvas, the menu bar and the panel dock, and a connect gesture published seven times with
+an empty selection in between — so the step panel stepped aside and came back twice, at
+`QSplitter.setSizes` prices, per gesture: 1.7 s on the GUI thread. `current()` is all any
+"publish then act" path reads, and every `changed` listener is display, so one
+announcement per turn over the final state changes nothing visible and removes the
+multiplier for good. The test suite runs `DebounceService` immediate, which keeps every
+existing test synchronous — the determinism argument the docstring made now lives there.
+The `action` span in the journal no longer contains the fan-out; it moves to the
+`refresh ContextService.announce_now` span, whose `coalesced` count says how many
+publishes one announcement stood for.
+
+**Upstream?** Yes, whole. The seam is three lines and the builder's wiring one; any
+application with a context service and a dock will hit the same multiplier the day a
+gesture publishes twice.
+
+### `framework/panels.py` — nothing changed, and that is the note
+
+The dock relays itself only when a panel's `show_context` answer flips, which is right.
+What made a flip cost 200 ms was a *module's* panel clearing its cards when it stepped
+aside (`ProjectPanel`, fixed in the module) and the widget tree under it. Worth saying to
+whoever brings a `ContextPanel` upstream: "off screen" and "showing nothing" are different
+states, and the dock only ever asks for the first.
