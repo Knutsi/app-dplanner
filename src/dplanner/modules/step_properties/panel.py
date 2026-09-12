@@ -18,7 +18,7 @@ The name is not here: it is the first block of the Details tab, registered by th
 like any other block, so the control stack reads top-down from the one field every step has.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QStackedLayout, QTabBar, QVBoxLayout, QWidget
@@ -35,13 +35,12 @@ from dplanner.framework.inspector import (
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.theme.themes import Theme
+from dplanner.theme.tokens import CAPTION_GAP, PANEL_MARGIN, SECTION_GAP
 
-# DESIGN.md: side panels get 16 px outer margins, and more space between blocks than within
-# one — 12 between, 6 from a caption to its field. The panel's own caption is its frame's
-# header, so nothing here prints one; the bar is chrome and runs edge to edge above it all.
-PANEL_MARGIN = 16
-BLOCK_GAP = 12
-CAPTION_GAP = 6
+# DESIGN.md's *Tokens*: side panels get 16 px outer margins, and more space between blocks
+# than within one — 12 between, 6 from a caption to its field. The panel's own caption is
+# its frame's header, so nothing here prints one; the bar is chrome and runs edge to edge
+# above it all.
 
 
 class StepPanel(QWidget):
@@ -58,6 +57,8 @@ class StepPanel(QWidget):
         sections: Sequence[InspectorSection] = (),
         templates: Sequence[AspectTemplate] = (),
         theme: ThemeService | None = None,
+        heading: Callable[[str], None] | None = None,
+        key_for: Callable[[StepId], str] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -68,6 +69,11 @@ class StepPanel(QWidget):
         self._undo = undo
         self._step_id: StepId | None = None
         self._sections = list(sections)
+        # Who wants to be told what the panel is showing, in words — the details dialog,
+        # for its lead. The anchored panel passes nothing: its frame prints a header
+        # already, and DESIGN.md's *Panels* forbids a second caption under it.
+        self._heading = heading
+        self._key_for = key_for
 
         self.bar = AspectBar(actions, self._own_context, templates, undo=undo, parent=self)
 
@@ -97,7 +103,7 @@ class StepPanel(QWidget):
         self.tab_bar.currentChanged.connect(self._pages.setCurrentIndex)
 
         column = QVBoxLayout()
-        column.setContentsMargins(PANEL_MARGIN, BLOCK_GAP, PANEL_MARGIN, 0)
+        column.setContentsMargins(PANEL_MARGIN, SECTION_GAP, PANEL_MARGIN, 0)
         column.setSpacing(CAPTION_GAP)
         column.addLayout(tab_row)
         column.addLayout(self._pages, stretch=1)
@@ -112,9 +118,8 @@ class StepPanel(QWidget):
             for index, section in enumerate(sections):
                 if section.icon is not None:
                     self.tab_bar.setTabIcon(index, section.icon(current.text_secondary))
-            # A colour copied out of the palette goes stale; the bar's glyphs are repainted
-            # with the tabs they sit above.
-            self.bar.paint(current.text_secondary)
+            # The bar re-inks itself on PaletteChange, strip and face alike. Painting it
+            # from here too would put the theme's grey beside the palette's in one row.
 
         self._unsubscribes = [
             library.structure_changed.connect(self._on_structure),
@@ -128,8 +133,6 @@ class StepPanel(QWidget):
             # A panel is shorter-lived than the theme service; detach in dispose().
             self._unsubscribes.append(theme.changed.connect(paint))
             paint(theme.current)
-        else:
-            self.bar.paint(self.palette().text().color())
 
     # -- what the context says ---------------------------------------------------------------
 
@@ -150,13 +153,13 @@ class StepPanel(QWidget):
         """
         if step_id is None or not self._product.has(step_id):
             self._step_id = None
-            self.bar.refresh()
+            self._restate()
             self._show_in_extensions(None)
             return
         if step_id == self._step_id:
             return
         self._step_id = step_id
-        self.bar.refresh()
+        self._restate()
         self._refresh_tab_visibility()
         self._show_in_extensions(step_id)
 
@@ -198,15 +201,31 @@ class StepPanel(QWidget):
         for extension in self._extensions:
             extension.show_target(step_id)
 
+    def _restate(self) -> None:
+        """Re-read the bar, and say in words what the panel is showing.
+
+        One place rather than four: the bar's answer to *what is this step* is what the
+        heading says, so whoever wants it hears the same thing the face is wearing.
+        """
+        self.bar.refresh()
+        if self._heading is None:
+            return
+        if self._step_id is None:
+            self._heading("")
+            return
+        key = self._key_for(self._step_id) if self._key_for is not None else ""
+        template = self.bar.selected_label()
+        self._heading(" · ".join(part for part in (key, template) if part))
+
     def _on_module_data(self, node_id: NodeId, _module_id: str, _origin: object) -> None:
         if node_id == self._step_id:
             self._refresh_tab_visibility()
-            self.bar.refresh()
+            self._restate()
 
     def _on_text(self, edit: TextEdit, _origin: object) -> None:
         if edit.node_id == self._step_id:
             self._refresh_tab_visibility()
-            self.bar.refresh()
+            self._restate()
 
     def _refresh_tab_visibility(self) -> None:
         """Show each tab only where its section has something to say about this step.

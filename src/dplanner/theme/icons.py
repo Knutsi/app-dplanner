@@ -866,6 +866,7 @@ def ticket_icon(color: str | QColor) -> QIcon:
 # "beaker" one carrying tests, "shield" a check). It lives here, beside the glyphs, so a
 # surface that shows what kind a step is looks it up rather than keeping its own table.
 GLYPH_ICONS: dict[str, Callable[[str | QColor], QIcon]] = {
+    "step": step_icon,
     "tag": tag_icon,
     "layers": layers_icon,
     "spark": spark_icon,

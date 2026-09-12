@@ -50,7 +50,7 @@ from dplanner.framework.action_menu import fill_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import Context, ContextService
 from dplanner.theme.icons import FILTER_ICON_W, ICON_SIZE, close_icon, filter_icon
-from dplanner.theme.tokens import CONTROL_GAP, CONTROL_HEIGHT, SECONDARY_ALPHA
+from dplanner.theme.tokens import CONTROL_GAP, CONTROL_HEIGHT, DENSE_GAP, SECONDARY_ALPHA
 
 
 def control_bar(parent: QWidget | None = None) -> QToolBar:
@@ -211,17 +211,26 @@ class Toolbar(QWidget):
 
     The strip's size hint is the … button's, so a page can be dragged narrower than its
     verbs and the strip answers by folding rather than by squeezing.
+
+    ``dense`` packs a strip whose glyphs are read as **one set** rather than aimed at one
+    at a time — the step panel's aspect bar, where the row answers "what does this step
+    carry". A verb strip folds gracefully because losing a verb to the … menu costs a
+    click; a set that folds stops answering its question at all, and the aspect bar in a
+    360 px dock showed two of its ten toggles at the verb strip's metrics. Dense keeps
+    `CONTROL_HEIGHT` and takes the width back from the sides and the gaps.
     """
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, dense: bool = False) -> None:
         super().__init__(parent)
         self.setObjectName("ControlBar")
+        self.setProperty("dense", dense)  # `#ControlBar[dense="true"]` narrows the buttons.
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._items: list[_Item] = []
         self._painters: dict[QAction, Callable[[QColor], QIcon]] = {}
+        self._tips: dict[QAction, str] = {}
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(CONTROL_GAP)
+        self._layout.setSpacing(DENSE_GAP if dense else CONTROL_GAP)
         self._more = QToolButton(self)
         self._more.setObjectName("ToolbarButton")
         self._more.setText(MORE)
@@ -247,11 +256,20 @@ class Toolbar(QWidget):
         *,
         shortcut: str = "",
         checkable: bool = False,
+        tip: str = "",
     ) -> QAction:
         """A glyph on the strip; ``text`` (and the shortcut) is its tooltip and its words in
-        the … menu. The returned action is what a host enables, checks and rewords."""
+        the … menu. The returned action is what a host enables, checks and rewords.
+
+        ``tip`` is for a verb that has more to say than its words — a registered
+        ``ActionSpec.tip``, say. It stands in the tooltip while the words still name the
+        entry in the … menu, so a host that rewords an action to carry a refusal does not
+        lose the standing explanation with it.
+        """
         action = QAction(text, self)
         action.setCheckable(checkable)
+        if tip:
+            self._tips[action] = tip
         if shortcut:
             action.setShortcut(shortcut)
         action.triggered.connect(lambda _checked=False: slot())
@@ -298,7 +316,7 @@ class Toolbar(QWidget):
     # -- the words -----------------------------------------------------------------------
 
     def _retip(self, action: QAction) -> None:
-        words = action.text()
+        words = self._tips.get(action) or action.text()
         if not action.shortcut().isEmpty():
             words = f"{words}  {action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)}"
         if action.toolTip() != words:

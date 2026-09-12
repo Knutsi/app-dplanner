@@ -513,6 +513,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 AspectTemplate(
                     "Step",
                     frozenset({"estimate.toggle", "description.toggle"}),
+                    # A glyph like every other, so the face's icon slot is never empty:
+                    # one that appeared only for the named kinds would resize the face as
+                    # the step changed, and a face that reports what is on keeps its size.
+                    glyph="step",
                     catch_all=True,
                 ),
                 AspectTemplate(

@@ -13,6 +13,7 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.aspect_bar import AspectBar, AspectTemplate
 from dplanner.framework.context import Context
+from dplanner.framework.toolbar import MORE
 from dplanner.framework.undo import UndoService
 
 MENUS = MenuStructure({"Step": ("classify", "edit")})
@@ -107,7 +108,7 @@ def make_bar(toggles, templates=TEMPLATES):
     return AspectBar(toggles.registry, lambda: Context({}), templates, undo=toggles.undo)
 
 
-def test_templates_go_left_in_the_given_order_and_every_toggle_goes_right(app, toggles):
+def test_templates_come_in_the_given_order_and_every_toggle_goes_on_the_strip(app, toggles):
     bar = make_bar(toggles)
     assert bar.template_labels() == ["Step", "Milestone", "Feature"]
     assert bar.toggle_ids() == ["milestone", "feature", "estimate", "description", "docs"]
@@ -208,42 +209,92 @@ def test_a_disabled_state_greys_toggles_and_templates_alike(app, toggles):
     toggles.enabled = False
     bar.refresh()
     assert not bar.action("feature").isEnabled()
-    assert bar.action("feature").isVisible()
     assert not bar.template("Step").isEnabled()
     assert not bar.template("Step").isChecked()
+    assert not bar.face.isEnabled()
+    assert bar.selected_label() == ""  # Nothing to be, with no step to be it.
 
 
-def test_words_left_glyphs_right_and_no_focus_anywhere(app, toggles):
+def test_glyphs_on_the_strip_one_worded_face_and_no_focus_anywhere(app, toggles):
     from PySide6.QtCore import Qt
 
     bar = make_bar(toggles)
-    bar.paint("#808080")
-    template = bar.templates_bar.widgetForAction(bar.template("Milestone"))
-    toggle = bar.toggles_bar.widgetForAction(bar.action("docs"))
-    assert isinstance(template, QToolButton) and isinstance(toggle, QToolButton)
-    assert template.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+    toggle = bar.tools.findChildren(QToolButton)[0]
+    assert bar.face.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+    assert bar.face.popupMode() == QToolButton.ToolButtonPopupMode.InstantPopup
     assert toggle.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
-    assert template.focusPolicy() == Qt.FocusPolicy.NoFocus
+    assert bar.face.focusPolicy() == Qt.FocusPolicy.NoFocus
+    assert toggle.focusPolicy() == Qt.FocusPolicy.NoFocus
     assert not bar.action("docs").icon().isNull()
     assert not bar.template("Feature").icon().isNull()  # A named glyph.
-    assert bar.template("Step").icon().isNull()  # No glyph named, none drawn.
-    # A toned template wears its colour when checked; an untoned one keeps the theme's rule.
-    assert "background-color" in template.styleSheet()
-    assert bar.templates_bar.widgetForAction(bar.template("Step")).styleSheet() == ""
+    # The tone rides on the glyph; nothing on this bar carries a stylesheet of its own.
+    assert bar.styleSheet() == ""
+    assert all(button.styleSheet() == "" for button in bar.findChildren(QToolButton))
 
 
-def test_a_bar_too_narrow_for_its_templates_grows_the_overflow_button(app, toggles):
-    """Overflow is QToolBar's own »: the actions that no longer fit move into its menu."""
+def test_the_face_wears_the_template_the_step_amounts_to(app, toggles):
+    """Derived on every refresh, never stored — and now said on one control."""
     bar = make_bar(toggles)
-    bar.paint("#808080")  # Glyphs, as the app paints them: an unpainted toggle shows words.
+    assert bar.face.text() == "Step"  # The catch-all: nothing else matches.
+    assert bar.selected_label() == "Step"
+
+    toggles.on.update(milestone=True, description=True, estimate=False)
+    bar.refresh()
+    assert bar.face.text() == "Milestone"
+
+    toggles.on.update(milestone=False, feature=True)
+    bar.refresh()
+    assert bar.face.text() == "Feature"
+    assert not bar.face.icon().isNull()  # Its named glyph, on the face.
+
+    toggles.on.update(docs=True)
+    bar.refresh()
+    assert bar.face.text() == "Step"  # One aspect too many puts it back on the catch-all.
+
+
+def test_the_face_keeps_its_width_whatever_it_is_wearing(app, toggles):
+    """DESIGN.md's *Toolbars*: a face that reports what is on never changes size — left
+    free, a longer name would re-fold the strip beside it."""
+    bar = make_bar(toggles)
+    widths = []
+    for label, on in (
+        ("Step", {"estimate": True, "description": True}),
+        ("Milestone", {"milestone": True, "description": True}),
+        ("Feature", {"feature": True, "description": True}),
+    ):
+        toggles.on.update(dict.fromkeys(toggles.on, False))
+        toggles.on.update(on)
+        bar.refresh()
+        assert bar.face.text() == label
+        widths.append(bar.face.width())
+    assert len(set(widths)) == 1
+
+
+def test_the_strip_is_dense_so_a_dock_wide_row_of_toggles_fits(app, toggles):
+    """The row answers *what does this step carry*, so it packs rather than folds.
+
+    At the verb strip's own metrics a 45 px glyph button seats five of the ten Type toggles
+    in the width the step panel can actually be (its minimum is 479 px, set by its tab
+    pages, which leaves the strip ~356); dense is 29 px and seats all ten.
+    """
+    bar = make_bar(toggles)
+    buttons = [b for b in bar.tools.findChildren(QToolButton) if b.text() != MORE]
+    assert bar.tools.property("dense") is True
+    assert all(b.sizeHint().width() <= 32 for b in buttons)
+
+
+def test_a_narrow_bar_folds_toggles_into_the_menu_and_never_the_face(app, toggles):
+    """The … takes the strip from the right; the one control saying what the step *is*
+    survives every width, which is why it sits beside the strip and not in it."""
+    bar = make_bar(toggles)
     bar.show()
     bar.resize(700, 48)
     app.processEvents()
-    extension = bar.templates_bar.findChild(QToolButton, "qt_toolbar_ext_button")
-    assert extension is not None
-    assert not extension.isVisible()
+    assert bar.tools.hidden_items() == []
+    assert bar.face.isVisible()
 
     bar.resize(200, 48)
     app.processEvents()
-    assert extension.isVisible()
+    assert bar.tools.hidden_items() != []  # Something folded…
+    assert bar.face.isVisible()  # …and it was never the face.
     bar.close()
