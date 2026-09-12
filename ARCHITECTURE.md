@@ -2318,13 +2318,14 @@ is the only honest reading of one question.
 
 **The count is a precondition, not a warning.** Four agents is four terminals, four
 worktrees, four live sessions and four `dplanner` writers against one plan; a selection is
-made with one flick of the wrist and can hold the whole graph. So *Settings ▸ Agent* carries
-**Max agents launched at once** — four by default — and a selection past it greys the verb
-with the number rather than asking. A confirmation would be the wrong shape here: the limit
-is not a risk to accept once, it is a standing statement about what this desk can hold, so
-the way past it is to change it in the one place it lives. It sits beside the agent command
-and the terminal template for that reason — per user, per machine, never in the plan,
-because how many peers one machine can carry is not a fact about the project.
+made with one flick of the wrist and can hold the whole graph. So *Settings ▸ Agent
+profiles* carries **Max agents launched at once** — four by default — and a selection past
+it greys the verb with the number rather than asking. A confirmation would be the wrong
+shape here: the limit is not a risk to accept once, it is a standing statement about what
+this desk can hold, so the way past it is to change it in the one place it lives. It sits
+beside the agent command and the terminal template for that reason — per user, per
+machine, never in the plan, because how many peers one machine can carry is not a fact
+about the project.
 
 `_run` re-checks the limit rather than trusting the state gate, on the same principle every
 verb here follows: a presenter may run a stale state, and the guard that matters is the one
@@ -2349,7 +2350,7 @@ claims to be in progress, so a second launch dirties no file; it *does* override
 because launching an agent on a finished step means the work resumed and there is no
 other honest reading.
 
-**It is a switch, on by default** — *Agent ▸ On launch*, beside *Max agents launched at
+**It is a switch, on by default** — *Agent profiles ▸ On launch*, beside *Max agents launched at
 once* and per user like the rest of that page. On, for the reason the marks are on: the
 agent's own first report is minutes away (the briefing's protocol has it setting
 `agent-state`, not status), and a step somebody
@@ -2648,6 +2649,18 @@ refusal and not the selection's. Over a multi-selection every chosen step goes t
 the one picked profile, one pane per step in a multiplexer — which is the gesture the
 whole thing exists for: see four ready steps on the board, select them, pick *Codex in
 herdr*, and they are running side by side.
+
+A profile's name is derived until it is typed. A new profile is a copy of the picked one
+named by what it does — *Claude Code in herdr* — and the usual next moves, changing the
+terminal and then the agent, keep renaming it to match, so the list never holds a *Default
+copy* that is actually Codex in tmux. The rule that makes this safe is one comparison in
+`update_profile`: a name is *derived* while it still reads as what the profile's old
+choices suggested (numbered or not), and a name that reads as anything else was a
+person's and is kept. No flag is stored, so an old profile list needs no migration; a
+typed name that happens to equal the suggestion behaves as derived, which is the right
+answer for a name that says what the profile does. Names stay unique either way — *Run
+Agent With* and the default lookup go by name — and a typed duplicate is numbered rather
+than refused, since a settings field is no place for a modal.
 
 The two single settings the profiles replaced are read as the default profile when no
 list has been stored, so a machine configured before profiles existed keeps its choices

@@ -1315,7 +1315,7 @@ def test_a_selection_past_the_limit_greys_the_verb_and_says_the_limit(services, 
     assert state.visible and not state.enabled
     assert state.label == (
         f"Run {DEFAULT_MAX_AGENTS + 1} Agents"
-        f" — at most {DEFAULT_MAX_AGENTS} at a time (Settings ▸ Agent)"
+        f" — at most {DEFAULT_MAX_AGENTS} at a time (Settings ▸ Agent profiles)"
     )
 
 
@@ -1348,7 +1348,7 @@ def test_the_limit_is_a_setting(services, step, app):
     spin.setValue(1)
     state = services.actions.spec("agent.run").state(services.context.current())
     assert not state.enabled
-    assert state.label == "Run 2 Agents — at most 1 at a time (Settings ▸ Agent)"
+    assert state.label == "Run 2 Agents — at most 1 at a time (Settings ▸ Agent profiles)"
 
     spin.setValue(2)
     assert services.actions.spec("agent.run").state(services.context.current()).enabled

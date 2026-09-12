@@ -368,6 +368,40 @@ def test_the_two_old_settings_read_as_the_default_profile(app):
     assert [p.name for p in read_profiles()] == ["Mine", "Codex in herdr"]
 
 
+def test_a_profile_is_named_by_its_choices():
+    from dplanner.modules.step_agent_instruction.profiles import Profile, suggested_name
+
+    def named(agent, terminal):
+        return suggested_name(Profile("", agent, terminal), HARNESSES, platform="linux")
+
+    assert named("", "") == "Claude Code"  # The first harness, in Automatic.
+    assert named("codex {prompt}", launcher.HERDR_COMMAND) == "Codex in herdr"
+    assert named("", "tmux new-window -c {workdir} {script}") == "Claude Code in tmux"
+    assert named("aider --yes {prompt}", "foot {script}") == "aider in foot"
+    assert named("", "myterm -x {script}") == "Claude Code in myterm"
+
+
+def test_a_name_nobody_typed_follows_the_choices_and_a_typed_one_stays(app):
+    from dplanner.modules.step_agent_instruction.profiles import (
+        Profile,
+        read_profiles,
+        update_profile,
+        write_profiles,
+    )
+
+    def change(index, **changes):
+        update_profile(index, harnesses=HARNESSES, platform="linux", **changes)
+        return [p.name for p in read_profiles()]
+
+    write_profiles([Profile("Default"), Profile("Claude Code"), Profile("Claude Code 2")])
+    # A numbered name is still the derived one, and follows.
+    assert change(2, launch_command=launcher.HERDR_COMMAND)[2] == "Claude Code in herdr"
+    assert change(2, agent_command="codex {prompt}")[2] == "Codex in herdr"
+    assert change(2, name="Mine")[2] == "Mine"
+    assert change(2, launch_command="")[2] == "Mine"  # A person's word is kept.
+    assert change(1, name="Mine") == ["Default", "Mine 2", "Mine"]  # Never two of a name.
+
+
 def test_the_settings_page_adds_removes_and_promotes_profiles(app):
     from dplanner.modules.step_agent_instruction.profiles import read_profiles
     from dplanner.modules.step_agent_instruction.settings_page import build_page
@@ -386,8 +420,8 @@ def test_the_settings_page_adds_removes_and_promotes_profiles(app):
     assert isinstance(name, QLineEdit) and isinstance(terminal, QLineEdit)
     assert listing.count() == 1 and not remove.isEnabled() and not promote.isEnabled()
 
-    add.click()  # A copy of the picked profile, named apart.
-    assert [p.name for p in read_profiles()] == ["Default", "Default copy"]
+    add.click()  # A copy of the picked profile, named by its choices.
+    assert [p.name for p in read_profiles()] == ["Default", "Claude Code"]
     assert listing.currentRow() == 1 and remove.isEnabled() and promote.isEnabled()
     name.setText("Codex in herdr")
     name.editingFinished.emit()
@@ -409,6 +443,39 @@ def test_the_settings_page_adds_removes_and_promotes_profiles(app):
     listing.setCurrentRow(1)
     remove.click()
     assert [p.name for p in read_profiles()] == ["Codex in herdr"]
+    page.deleteLater()
+
+
+def test_the_settings_page_renames_a_profile_as_its_choices_change(app):
+    """Add, then pick a terminal, then an agent: the name keeps up, and the list shows
+    it. Type a name and it is yours through every later change."""
+    from dplanner.modules.step_agent_instruction.profiles import read_profiles
+    from dplanner.modules.step_agent_instruction.settings_page import build_page
+
+    page = build_page(None, platform="linux", harnesses=HARNESSES)
+    listing = page.findChild(QListWidget, "AgentProfileList")
+    add = page.findChild(QPushButton, "AgentProfileAdd")
+    name = page.findChild(QLineEdit, "AgentProfileName")
+    terminal = page.findChild(QLineEdit, "AgentLaunchCommandEdit")
+    assert isinstance(listing, QListWidget) and isinstance(add, QPushButton)
+    assert isinstance(name, QLineEdit) and isinstance(terminal, QLineEdit)
+
+    add.click()
+    terminal.setText(launcher.HERDR_COMMAND)
+    terminal.editingFinished.emit()
+    assert [p.name for p in read_profiles()] == ["Default", "Claude Code in herdr"]
+    assert listing.item(1).text() == "Claude Code in herdr"
+    assert name.text() == "Claude Code in herdr"
+    add.click()  # A copy of the herdr profile: the same name, numbered.
+    assert read_profiles()[2].name == "Claude Code in herdr 2"
+    terminal.setText("ghostty -e {script}")
+    terminal.editingFinished.emit()
+    assert read_profiles()[2].name == "Claude Code in Ghostty"
+    name.setText("Mine")
+    name.editingFinished.emit()
+    terminal.setText("")
+    terminal.editingFinished.emit()
+    assert read_profiles()[2].name == "Mine"  # Typed, so it stays.
     page.deleteLater()
 
 

@@ -11,13 +11,23 @@ person prefers is not the project's business. **The two settings they replace ar
 as the default profile** when no list has been stored yet, so a machine configured before
 profiles existed keeps its choices without anybody retyping them — the same idea as a
 harness carrying the command texts it shipped earlier.
+
+**A name follows the choices until somebody types one.** :func:`suggested_name` words a
+profile by its agent and terminal — *Claude Code in herdr* — and :func:`update_profile`
+renames a profile whose name still reads as what its old choices suggested; a name that
+reads as anything else is a person's and is kept. Names are unique among the profiles
+either way, numbered rather than refused.
 """
 
+import re
+import sys
 from dataclasses import dataclass, replace
 from typing import Any
 
+from dplanner.domain.agents import AgentHarness
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
+from dplanner.modules.step_agent_instruction.launcher import harness_of, terminals_for
 
 PROFILES_KEY = "profiles"
 # The two settings profiles replaced; read only when no profile list is stored.
@@ -88,9 +98,58 @@ def unique_name(base: str, taken: list[str]) -> str:
     return name
 
 
-def update_profile(index: int, **changes: str) -> None:
-    """One field of one stored profile changed; the rest kept as they are."""
+def _first_word(command: str) -> str:
+    words = command.split()
+    return words[0] if words else ""
+
+
+def suggested_name(
+    profile: Profile, harnesses: tuple[AgentHarness, ...], platform: str = sys.platform
+) -> str:
+    """The name a profile's two choices suggest: *Claude Code in herdr*, or the agent's
+    name alone when the terminal is Automatic. A command or template nothing here knows
+    is named by its first word, which is usually the program."""
+    harness = harness_of(profile.agent_command, harnesses)
+    agent = harness.label if harness else _first_word(profile.agent_command) or "Agent"
+    template = profile.launch_command.strip()
+    if not template:
+        return agent
+    row = next((r for r in terminals_for(platform) if r.command == template), None)
+    terminal = row.label.split(" (")[0] if row else _first_word(template)
+    return f"{agent} in {terminal}" if terminal else agent
+
+
+def follows_choices(
+    profile: Profile, harnesses: tuple[AgentHarness, ...], platform: str = sys.platform
+) -> bool:
+    """Whether the name is the one its choices suggest, or that name numbered — a name
+    nobody typed, free to follow the next change. Anything else is a person's word."""
+    base = re.escape(suggested_name(profile, harnesses, platform))
+    return re.fullmatch(rf"{base}( \d+)?", profile.name) is not None
+
+
+def update_profile(
+    index: int,
+    *,
+    harnesses: tuple[AgentHarness, ...] = (),
+    platform: str = sys.platform,
+    **changes: str,
+) -> None:
+    """Fields of one stored profile changed; the rest kept as they are.
+
+    A name that was never typed follows the choices: when the agent or the terminal
+    changes and the name still reads as what the old choices suggested, it becomes what
+    the new ones suggest. A name a person typed stays theirs. Either way the name ends up
+    unique among the profiles — a typed duplicate is numbered rather than refused, since
+    *Run Agent With* and the default lookup both go by name.
+    """
     profiles = read_profiles()
-    if 0 <= index < len(profiles):
-        profiles[index] = replace(profiles[index], **changes)
-        write_profiles(profiles)
+    if not 0 <= index < len(profiles):
+        return
+    before = profiles[index]
+    after = replace(before, **changes)
+    if "name" not in changes and after != before and follows_choices(before, harnesses, platform):
+        after = replace(after, name=suggested_name(after, harnesses, platform))
+    others = [p.name for i, p in enumerate(profiles) if i != index]
+    profiles[index] = replace(after, name=unique_name(after.name, others))
+    write_profiles(profiles)

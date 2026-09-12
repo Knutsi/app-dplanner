@@ -16,6 +16,13 @@ untouched: one profile, Claude Code in plan mode, in the platform's own default 
 A harness row also says what the CLI can do — *resumes*, *counts tokens* — words derived
 from the harness record itself.
 
+**A profile's name follows its choices until somebody types one.** A new profile is a
+copy of the picked one named by what it does — *Claude Code in herdr* — and stays named
+that way through the edits that usually follow, the terminal and then the agent, numbered
+when the name is taken. A name typed into the field is the person's and is kept; a typed
+duplicate is numbered rather than refused. The rule lives with the write, in
+``profiles.update_profile``; this page only re-reads the list after each commit.
+
 **How many at once is here too**, because it is a fact about this desk rather than about
 the plan: how many terminals, worktrees and live sessions one machine can carry is the
 person's to say, and Run Agent over a multi-selection refuses past it. Four is the default
@@ -63,6 +70,7 @@ from dplanner.modules.step_agent_instruction.profiles import (
     Profile,
     default_profile,
     read_profiles,
+    suggested_name,
     unique_name,
     update_profile,
     write_profiles,
@@ -177,9 +185,16 @@ class PresetField:
 class ProfileList(QWidget):
     """The profiles as a list with Add, Remove and Make Default beside it."""
 
-    def __init__(self, parent: QWidget, on_pick: Callable[[int], None]) -> None:
+    def __init__(
+        self,
+        parent: QWidget,
+        on_pick: Callable[[int], None],
+        harnesses: tuple[AgentHarness, ...] = (),
+        platform: str = sys.platform,
+    ) -> None:
         super().__init__(parent)
         self._on_pick = on_pick
+        self._harnesses, self._platform = harnesses, platform
         self.list = QListWidget(self)
         self.list.setObjectName("AgentProfileList")
         self.list.currentRowChanged.connect(self._picked)
@@ -224,9 +239,12 @@ class ProfileList(QWidget):
         profiles = read_profiles()
         picked = profiles[max(self.list.currentRow(), 0)]
         # A new profile starts as a copy of the picked one: the usual reason for a second
-        # profile is one thing changed — the terminal, or the agent.
-        name = unique_name(f"{picked.name} copy", [p.name for p in profiles])
-        write_profiles([*profiles, Profile(name, picked.agent_command, picked.launch_command)])
+        # profile is one thing changed — the terminal, or the agent. It is named by its
+        # choices, so the name follows that change until somebody types one.
+        copy = Profile("", picked.agent_command, picked.launch_command)
+        taken = [p.name for p in profiles]
+        name = unique_name(suggested_name(copy, self._harnesses, self._platform), taken)
+        write_profiles([*profiles, Profile(name, copy.agent_command, copy.launch_command)])
         self.reload(len(profiles))
 
     def _remove(self) -> None:
@@ -255,6 +273,12 @@ def build_page(
     page.setObjectName("AgentSettingsPage")
     current = {"row": 0}
 
+    def commit(**changes: str) -> None:
+        """The picked profile's fields written, then the list re-read: the name may have
+        followed the change, and the row is what shows it."""
+        update_profile(current["row"], harnesses=harnesses, platform=platform, **changes)
+        profiles.reload(current["row"])
+
     name_edit = QLineEdit(page)
     name_edit.setObjectName("AgentProfileName")
 
@@ -268,7 +292,7 @@ def build_page(
         command_edit,
         [(harness_label(harness), harness.command) for harness in harnesses],
         CUSTOM_LABEL,
-        on_commit=lambda text: update_profile(current["row"], agent_command=text),
+        on_commit=lambda text: commit(agent_command=text),
         canonical=lambda text: current_command(text, harnesses) if text else "",
     )
 
@@ -285,7 +309,7 @@ def build_page(
             for preset in terminals_for(platform)
         ],
         AUTOMATIC_LABEL,
-        on_commit=lambda text: update_profile(current["row"], launch_command=text),
+        on_commit=lambda text: commit(launch_command=text),
     )
 
     def show_profile(row: int) -> None:
@@ -300,10 +324,9 @@ def build_page(
     def rename() -> None:
         name = name_edit.text().strip()
         if name and name != read_profiles()[current["row"]].name:
-            update_profile(current["row"], name=name)
-            profiles.reload(current["row"])
+            commit(name=name)
 
-    profiles = ProfileList(page, show_profile)
+    profiles = ProfileList(page, show_profile, harnesses, platform)
     name_edit.editingFinished.connect(rename)
 
     limit = QSpinBox(page)

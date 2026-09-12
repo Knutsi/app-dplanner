@@ -16,7 +16,7 @@ way to hand it over.
 
 **It runs one agent per chosen step, up to a limit.** The verb reads the selection the way
 Delete does, so lassoing three agent steps is *Run 3 Agents…* and one gesture; past
-*Settings ▸ Agent*'s limit (four by default) the count itself is the refusal, greyed with
+*Settings ▸ Agent profiles*'s limit (four by default) the count itself is the refusal, greyed with
 its reason like any other precondition. Each step whose shell opened is also claimed
 *in progress* — through ``deps.mark_started``, unless the person switched that off on the
 settings page — since the agent's own first report may be minutes away.
@@ -343,7 +343,7 @@ class StepAgentInstructionModule:
         deps.settings_sections.register(
             SettingsSection(
                 id=f"{MODULE_ID}.launch",
-                category=("Agent",),
+                category=("Agent profiles",),
                 factory=lambda parent: build_page(parent, harnesses=deps.harnesses),
             )
         )
@@ -378,7 +378,7 @@ class StepAgentInstructionModule:
         **The verb acts on the whole selection, and every chosen step must be launchable.**
         Running the subset that qualifies would launch fewer agents than were asked for and
         say nothing, so one step's refusal greys the verb for all of them and the label
-        names which step and why. Past the *Settings ▸ Agent* limit it is the count itself
+        names which step and why. Past the *Settings ▸ Agent profiles* limit it is the count itself
         that refuses, and it refuses **before** the per-step questions: a lasso is one flick
         of the wrist and can hold the whole graph, and a deskful of terminals — or a walk
         over every step in it — is not what that flick meant.
@@ -392,7 +392,8 @@ class StepAgentInstructionModule:
         limit = max_agents()
         if count > limit:
             return ActionState(
-                enabled=False, label=f"{verb} — at most {limit} at a time (Settings ▸ Agent)"
+                enabled=False,
+                label=f"{verb} — at most {limit} at a time (Settings ▸ Agent profiles)",
             )
         # The profile's terminal is one probe, asked before any step is: a multiplexer
         # that is not running refuses the whole gesture the same way the count does.

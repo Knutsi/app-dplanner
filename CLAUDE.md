@@ -871,7 +871,7 @@ root, stop and look for the registry or capability you have not found yet.
   lassoing three agent steps is *Run 3 Agents…* and one gesture; a step in the
   selection that cannot run greys the verb for all of them, naming that step and why,
   because launching the subset that qualifies would run fewer agents than were asked for
-  and say nothing. Past *Settings ▸ Agent*'s **Max agents launched at once** (four by
+  and say nothing. Past *Settings ▸ Agent profiles*'s **Max agents launched at once** (four by
   default, per user and per machine like the terminal beside it) the count itself is the
   refusal — a lasso is one flick of the wrist, and a deskful of terminals is not what it
   meant.
@@ -879,7 +879,7 @@ root, stop and look for the registry or capability you have not found yet.
   writer half of that same seam, applied off the undo stack the way the launch stamp is
   (`step_status`'s `record_started`), because Ctrl+Z must not file a step as pending while
   an agent works in it. Over a selection it is claimed per step as each shell opens, so a
-  run that stopped at its third step has claimed two. It is the *Agent ▸ On launch* switch
+  run that stopped at its third step has claimed two. It is the *Agent profiles ▸ On launch* switch
   beside *Max agents launched at once*, on by default: the agent's own first report is
   minutes away and a step somebody is working on that still reads pending is a lie the
   plan was never asked to tell. Only Run Agent makes the claim — in the step loop, never
@@ -991,9 +991,10 @@ root, stop and look for the registry or capability you have not found yet.
   replaced are read as the default profile when no list is stored). *Run Agent…* runs
   the first; *Step ▸ Run Agent With* is a data child menu of the rest, each greyed with
   its own reason (`launcher.template_refusal`: a row's probe, asked before any step is),
-  and Settings ▸ Agent is the list beside an editor for the picked one. Over a
-  selection every chosen step goes through the one profile — with a multiplexer, one
-  pane each.
+  and Settings ▸ Agent profiles is the list beside an editor for the picked one. A
+  profile's name follows its choices — *Claude Code in herdr* — until somebody types
+  one, and a taken name is numbered rather than refused. Over a selection every chosen
+  step goes through the one profile — with a multiplexer, one pane each.
 - **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
   state; the dashed ring round the body moves, which is what says "somebody is on this one
   right now". One `QTimer` on the scene advances every ring and runs only while a node
