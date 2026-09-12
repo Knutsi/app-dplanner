@@ -544,16 +544,18 @@ PALETTE_STRIP = QSize(56, 12)
 PALETTE_STRIP_RADIUS = 3
 
 
-def palette_strip_icon(found: Palette) -> QIcon:
+def palette_strip_icon(found: Palette, size: QSize = PALETTE_STRIP) -> QIcon:
     """A milestone colour map as a strip, dark to light — the map before it is dealt.
 
-    The Time tab's picker and *View ▸ Milestone Colours* both show it, which is why it lives
-    here rather than beside either of them: one painter, so the two surfaces cannot draw the
-    same map differently.
+    The Time tab's picker and the command palette both show it, which is why it lives here
+    rather than beside either of them: one painter, so the two surfaces cannot draw the same
+    map differently. ``size`` is the caller's because the two want different shapes — a wide
+    strip in a combo row, a square at :data:`ICON_SIZE` in a list of glyphs — and a wide
+    pixmap scaled into a square slot renders as a sliver.
     """
-    pixmap = QPixmap(PALETTE_STRIP)
+    pixmap = QPixmap(size)
     pixmap.fill(Qt.GlobalColor.transparent)
-    gradient = QLinearGradient(QPointF(0, 0), QPointF(PALETTE_STRIP.width(), 0))
+    gradient = QLinearGradient(QPointF(0, 0), QPointF(size.width(), 0))
     last = len(found.stops) - 1
     for index, stop in enumerate(found.stops):
         gradient.setColorAt(index / last, QColor(stop))
@@ -562,7 +564,7 @@ def palette_strip_icon(found: Palette) -> QIcon:
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(gradient)
     painter.drawRoundedRect(
-        QRectF(0, 0, PALETTE_STRIP.width(), PALETTE_STRIP.height()),
+        QRectF(0, 0, size.width(), size.height()),
         PALETTE_STRIP_RADIUS,
         PALETTE_STRIP_RADIUS,
     )

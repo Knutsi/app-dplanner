@@ -26,6 +26,8 @@ map* has the reasoning.
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from PySide6.QtCore import QSize
+
 from dplanner.framework.action_registry import (
     PATH_SEPARATOR,
     ActionRegistry,
@@ -36,7 +38,7 @@ from dplanner.framework.context import Context, ContextService
 from dplanner.framework.settings_registry import SettingsSection, SettingsSectionRegistry
 from dplanner.framework.theme_service import SYSTEM, ThemeService, choice_for
 from dplanner.modules.appearance.settings_page import build_page
-from dplanner.theme.icons import palette_strip_icon
+from dplanner.theme.icons import ICON_SIZE, palette_strip_icon
 from dplanner.theme.palettes import PALETTES, Palette
 from dplanner.theme.providers import ThemeProvider
 from dplanner.theme.themes import Theme
@@ -189,7 +191,13 @@ class AppearanceModule:
                 order=order,
                 submenu=MILESTONE_MENU,
                 tip=f"Shade this project's milestones along {found.name}",
-                icon=lambda _ink, found=found: palette_strip_icon(found),  # type: ignore[misc]
+                # A square at glyph size: the command palette's slot is ICON_SIZE, and a
+                # 56 px strip scaled into it renders as a sliver. The menu bar paints no
+                # glyph at all (ARCHITECTURE.md's *The palette a painter is handed is a
+                # snapshot*) — this is for the palette and any pop-up rendering of View.
+                icon=lambda _ink, found=found: palette_strip_icon(  # type: ignore[misc]
+                    found, QSize(ICON_SIZE, ICON_SIZE)
+                ),
                 state=state,
                 run=run,
             )
