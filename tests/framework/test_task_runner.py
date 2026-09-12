@@ -5,6 +5,7 @@ import threading
 import time
 import weakref
 
+import pytest
 from PySide6.QtWidgets import QWidget
 
 from dplanner.framework.task_runner import TaskRunner, TaskTimeoutError
@@ -187,3 +188,32 @@ def test_the_body_and_its_captures_are_released_on_the_gui_thread(app, qtbot) ->
 
     qtbot.waitUntil(lambda: bool(freed), timeout=5000)
     assert freed == [threading.main_thread()]
+
+
+def test_a_successful_runs_duration_is_remembered_and_estimates_the_next(app) -> None:
+    """The estimate that matters most is for an operation this window has not run yet — the
+    save at quit, in a session where nobody pressed Ctrl+S — so the memory is per user and
+    per machine, not per build."""
+    first = TaskService(remember=True)
+    task = first.start("Saving")
+    task.monotonic_start -= 4.0
+    first.finish(task)
+    assert first.duration_of("Saving") == pytest.approx(4.0, abs=0.5)
+
+    # A fresh service — the next window — starts knowing it.
+    second = TaskService(remember=True)
+    assert second.duration_of("Saving") == pytest.approx(4.0, abs=0.5)
+    assert second.start("Saving").estimate == pytest.approx(4.0, abs=0.5)
+    # And a service that does not remember carries nothing over.
+    assert TaskService().duration_of("Saving") is None
+
+
+def test_a_failed_run_does_not_poison_the_remembered_duration(app) -> None:
+    service = TaskService(remember=True)
+    good = service.start("Cloning")
+    good.monotonic_start -= 2.0
+    service.finish(good)
+    bad = service.start("Cloning")
+    bad.monotonic_start -= 90.0
+    service.finish(bad, "the remote refused")
+    assert service.duration_of("Cloning") == pytest.approx(2.0, abs=0.5)

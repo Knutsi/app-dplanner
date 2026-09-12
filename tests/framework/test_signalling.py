@@ -1,14 +1,15 @@
-"""State signalling: the indicator follows one debouncer, the status line wears a tone, and
-a progress bar is a four-pixel accent strip in every theme."""
+"""State signalling: the indicator turns while one debouncer owes a run, the status line
+wears a tone, and a progress bar is a four-pixel accent strip in every theme."""
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QSize
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QProgressBar, QWidget
 
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.signalling import StatusLine, UpdatingIndicator
 from dplanner.theme import apply_theme
+from dplanner.theme.icons import ICON_SIZE
 from dplanner.theme.themes import DARK, LIGHT
 from dplanner.theme.tones import STATUS_TONES
 
@@ -25,12 +26,28 @@ def test_the_indicator_shows_from_the_first_trigger_until_the_rebuild_ran(host):
     debounced = Debounced(lambda: None, 30, parent=host, service=service)
     indicator = UpdatingIndicator(host)
     indicator.follow(debounced)
-    assert indicator.isHidden()
+    assert indicator.isHidden() and not indicator.is_spinning()
     debounced.trigger()
     debounced.trigger()
-    assert not indicator.isHidden()
+    assert not indicator.isHidden() and indicator.is_spinning()
     service.flush_all()
-    assert indicator.isHidden()
+    assert indicator.isHidden() and not indicator.is_spinning()
+
+
+def test_the_indicator_is_an_arc_and_no_words(host):
+    """The words would be the only prose on a strip of controls; they are the tooltip."""
+    indicator = UpdatingIndicator(host)
+    assert indicator.text() == "" and indicator.toolTip() == "Updating…"
+    assert indicator.size() == QSize(ICON_SIZE, ICON_SIZE)
+    debounced = Debounced(lambda: None, 30, parent=host)
+    indicator.follow(debounced)
+    debounced.trigger()
+    turning = indicator.pixmap()
+    assert not turning.isNull()
+    indicator._spinner._advance()  # A frame on, so the arc is at a different rotation.
+    assert indicator.pixmap().cacheKey() != turning.cacheKey()
+    debounced.cancel()
+    assert indicator.pixmap().isNull()  # Idle shows nothing at all.
 
 
 def test_in_immediate_mode_the_indicator_is_up_and_down_within_the_trigger(host):

@@ -575,7 +575,10 @@ root, stop and look for the registry or capability you have not found yet.
   `UpdatingIndicator` (`framework/signalling.py`) at the right end of the strip — the
   caption row, in a view with no strip — `follow()`ing the view's one `Debounced`, whose
   `pending_changed` settles on a rebuild that raised as much as one that returned. Wire it
-  where the `Debounced` is built; never show and hide a label by hand. Never move a derivation to a worker thread for speed: it is
+  where the `Debounced` is built; never show and hide a label by hand. **It is a turning
+  arc and no words** — the same `Spinner` a working button turns, which drives a button's
+  glyph slot or a bare `QLabel` that is one; *something is running here* is one motion to
+  recognise, not a word in one place and a glyph in another. Never move a derivation to a worker thread for speed: it is
   pure Python competing for the GIL, and a thread alive at teardown is the suite's SIGSEGV
   shape — `ARCHITECTURE.md`'s *A view refresh is coalesced, and hears one project* has the
   measurements (67 ms → 0.3 ms of synchronous work per keystroke with seven tabs open).
@@ -636,7 +639,10 @@ root, stop and look for the registry or capability you have not found yet.
   committing (`modules/sync/save_progress.py`) — with the **close deferred** until it ends:
   the guard starts the save and returns False, and the dialog closes the window. That is
   what retired the synchronous save-at-quit exception; a failure stands in that dialog
-  rather than being lost with the window. Never `exec()` a dialog from inside a close
+  rather than being lost with the window. **Its bar reads the repositories recorded as a
+  floor and fills between them from how long the last save took** — `TaskService`'s
+  duration memory, kept across sessions — never an estimate that could contradict what has
+  landed. Never `exec()` a dialog from inside a close
   guard — the guards run inside `closeEvent`, so a nested modal loop there is re-entrant.
   Branch verbs act on the focused project's repository.
   The CLI has no timer: a run is a transaction that flushes once, at the end, and writes

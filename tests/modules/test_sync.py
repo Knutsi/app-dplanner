@@ -18,9 +18,10 @@ from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import SetFieldCommand
 from dplanner.domain.seed import seed_project
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+from dplanner.framework.tasks import ESTIMATE_CAP
 from dplanner.modules.sync import module as sync_module_mod
 from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
-from dplanner.modules.sync.save_progress import SaveProgressDialog
+from dplanner.modules.sync.save_progress import BAR_STEPS, SaveProgressDialog
 from dplanner.modules.sync.service import COMMITTING, NOTHING, PUBLISHING, SAVED
 
 
@@ -579,19 +580,46 @@ def test_the_poll_stands_down_while_an_operation_runs(services, make_project, mo
 def test_the_progress_dialog_carries_a_row_per_repository_and_counts_them(app):
     dialog = SaveProgressDialog(["~/Code/widget · 3 files — Discovery", "~/Code/billing · 1 file"])
     try:
-        assert dialog.bar.maximum() == 2 and dialog.bar.value() == 0
+        assert dialog.bar.value() == 0
         assert dialog._count.text() == "0 of 2 repositories recorded"
         dialog.step(0, PUBLISHING)
         assert dialog._rows[0].tone() == "busy" and "report site" in dialog._rows[0].words()
         dialog.step(0, COMMITTING)
         assert dialog._rows[0].tone() == "busy" and dialog.bar.value() == 0
         dialog.step(0, SAVED)
-        assert dialog._rows[0].tone() == "ok" and dialog.bar.value() == 1
+        assert dialog._rows[0].tone() == "ok" and dialog.bar.value() == BAR_STEPS // 2
         assert dialog._count.text() == "1 of 2 repositories recorded"
         # A repository that turns out clean still advances the count — the fraction counts
         # repositories dealt with, not commits made.
         dialog.step(1, NOTHING)
-        assert dialog.bar.value() == 2 and dialog._rows[1].tone() == "info"
+        assert dialog.bar.value() == BAR_STEPS and dialog._rows[1].tone() == "info"
+    finally:
+        dialog.deleteLater()
+
+
+def test_a_remembered_duration_fills_the_bar_between_the_repositories_that_landed(app):
+    """The count is a fact and leads; a previous run's duration only fills between steps."""
+    dialog = SaveProgressDialog(["~/Code/widget", "~/Code/billing"], expected_seconds=10.0)
+    try:
+        dialog._started -= 2.0  # Two seconds into a save the last one took ten.
+        dialog._redraw()
+        assert dialog.bar.value() == round(0.2 * BAR_STEPS)
+        dialog.step(0, SAVED)  # A repository landing outruns the estimate: the fact leads.
+        assert dialog.bar.value() == BAR_STEPS // 2
+        dialog._started -= 100.0  # Long past what the last run took.
+        dialog._redraw()
+        assert dialog.bar.value() == round(ESTIMATE_CAP * BAR_STEPS)  # Never falsely full.
+    finally:
+        dialog.deleteLater()
+
+
+def test_with_nothing_remembered_the_bar_is_the_repositories_alone(app):
+    dialog = SaveProgressDialog(["~/Code/widget", "~/Code/billing"])
+    try:
+        assert not dialog._tick.isActive()  # Nothing to tick towards.
+        dialog._started -= 100.0
+        dialog._redraw()
+        assert dialog.bar.value() == 0
     finally:
         dialog.deleteLater()
 

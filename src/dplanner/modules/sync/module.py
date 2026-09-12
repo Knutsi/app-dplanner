@@ -48,7 +48,7 @@ from dplanner.framework.window import StatusHost, UnsavedChangesHost
 from dplanner.framework.window_watch import POLL_MS
 from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
 from dplanner.modules.sync.save_progress import SaveProgressDialog
-from dplanner.modules.sync.service import Publication, RepoGroup, SyncService
+from dplanner.modules.sync.service import SAVE_TASK, Publication, RepoGroup, SyncService
 from dplanner.modules.sync.view import DiffDialog, IconLabel, UnsavedChangesButton
 from dplanner.theme.icons import branch_icon, folder_icon
 from dplanner.theme.themes import Theme
@@ -336,7 +336,13 @@ class SyncModule:
     def _begin_exit_save(self, service: SyncService, message: str, chosen: list[RepoGroup]) -> bool:
         """Start the quit-time save under its dialog; False when it could not be started."""
         labels = [self._group_label(group) for group in chosen]
-        progress = SaveProgressDialog(labels, self._deps.parent)
+        # How long the last save took, if this machine has seen one: the bar fills smoothly
+        # between commits instead of standing still through each one.
+        progress = SaveProgressDialog(
+            labels,
+            self._deps.parent,
+            expected_seconds=self._deps.tasks.duration_of(SAVE_TASK),
+        )
         self._exit_progress = progress  # Set first: _on_saving reads it, and it is queued.
         self._exit_error = ""
         if not service.save(message, self._publications(service), only=chosen):

@@ -2990,6 +2990,14 @@ dialog's own end closes the window. Three things follow, and each was a decision
   (`modules/github/notice.py`: a nested modal loop deadlocks headless tests). The dialog is
   modal and shown; the event loop that was already running is the one that delivers the
   task's completion.
+- **The bar reads a fact and an estimate, and the fact leads.** How many repositories are
+  recorded is known, and it is the bar's floor. Between those steps it is filled by how
+  long the last save took — `TaskService`'s duration memory, which the application now keeps
+  across sessions (`remember=True`), because the estimate that matters most is for the save
+  a window has not run yet: quitting a session in which nobody pressed Ctrl+S. A guess that
+  could *contradict* what has landed would be worse than no guess, so `max(landed,
+  estimated)` is the whole rule, and an estimate that runs out holds at `ESTIMATE_CAP`
+  rather than reading complete. With nothing remembered the bar is the count alone.
 - **The progress is reported by the service, not inferred by the dialog.** `SyncService`
   emits `saving(index, phase)` from inside the per-repository loop — a Qt signal, so it
   crosses from the worker thread exactly as `notice` does, and inert when nobody is
@@ -4049,6 +4057,17 @@ what the primitive replaced.
 
 The canvas is the deliberate exception: at 0 ms it settles once per event-loop turn, so
 there is no span for a person to read and an indicator would only flicker.
+
+**And the indicator is a motion, not a word.** It carried *Updating…* for one step. A word
+at the end of a control strip is the only prose on a row of glyphs, it is four times the
+width of what it replaced, and it is the one thing on that strip a translation would have
+to reach; so it is the same three-quarter arc a working button turns, with the words in its
+tooltip. The point is not the pixels saved — it is that *something is running here* becomes
+**one** thing to recognise wherever it appears, rather than a word in one place and a
+turning glyph in another. `Spinner` therefore drives either: a button or toolbar verb, whose
+glyph it borrows and gives back, or a bare `QLabel` that *is* the slot and shows nothing when
+idle. `UpdatingIndicator` is the second of those with a `Debounced` attached, which is why
+wiring a view stayed three lines when the look changed.
 
 ## How the application scales
 

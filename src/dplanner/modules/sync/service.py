@@ -57,6 +57,7 @@ class RepoGroup(VersionedStorage, Protocol):
 # The phases a save passes through, per repository, in this order. PUBLISHING is skipped
 # where the switch is off, and a repository that turns out to be clean goes straight to
 # NOTHING — which is why a watcher tracks the index it is told rather than counting.
+SAVE_TASK = "Saving"  # The task label, and so its duration-memory key.
 PUBLISHING = "publishing"
 COMMITTING = "committing"
 SAVED = "saved"
@@ -235,7 +236,7 @@ class SyncService(QObject):
         only: Sequence[RepoGroup] | None = None,
     ) -> bool:
         return self._start(
-            "Saving", lambda: self.save_sync(message, only, publications=publications)
+            SAVE_TASK, lambda: self.save_sync(message, only, publications=publications)
         )
 
     def pull_sync(self) -> None:

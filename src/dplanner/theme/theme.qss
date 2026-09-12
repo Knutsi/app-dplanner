@@ -480,10 +480,10 @@ QSplitter::handle:vertical:pressed {
     color: $TEXT_SECONDARY;
 }
 
-/* What a surface says while it is not yet showing the truth (framework/signalling.py):
-   *Updating…* at a control strip's right while a rebuild is owed, and a status line's
-   words. The line's glyph carries its tone as an inline colour; the words stay secondary. */
-#UpdatingIndicator, #StatusLine {
+/* A status line's words (framework/signalling.py): its glyph carries the tone as an inline
+   colour, the words stay secondary. The Updating indicator is not here — it is a turning
+   arc painted from the palette at SECONDARY_ALPHA, and a pixmap ignores `color`. */
+#StatusLine {
     color: $TEXT_SECONDARY;
 }
 
