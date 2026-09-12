@@ -563,22 +563,47 @@ QProgressBar::chunk {
 }
 
 #ControlBar::separator {
-    background-color: $BORDER;
+    background-color: $BORDER_FAINT;
     width: 1px;
-    margin: 2px 4px;
+    margin: 6px 4px;
 }
 
 /* A combo box on a strip, or in a dialog's body, is one of the buttons beside it: the
    quiet bordered look, and the arrow's room at the right — Qt's own metric leaves the words
-   under the arrow. Styling the drop-down takes Fusion's arrow away, so the arrow is drawn
-   here as borders — a triangle of the secondary ink, the toolbar arrow's size — and the
-   list that drops down is the palette's. */
+   under the arrow. Styling the drop-down takes Fusion's arrow away, so the arrow is the
+   theme's own SVG (theme/__init__.py's drop_arrow_url): a border-drawn triangle flattens
+   into a bar at a 2× scale. */
 #ControlBar QComboBox, #DialogBody QComboBox {
     background-color: $BG_OVERLAY;
     color: $TEXT_PRIMARY;
     border: 1px solid $BORDER;
     border-radius: ${RADIUS_SM}px;
     padding: 6px ${ARROW_ROOM}px 6px 12px;
+    min-height: 18px;
+    max-height: 18px;
+}
+
+/* The list a combo box drops down: the menu's look — the overlay ground behind a strong
+   hairline, rounded, air around every entry, the accent on the one under the pointer. */
+QComboBox QAbstractItemView {
+    background-color: $BG_OVERLAY;
+    color: $TEXT_PRIMARY;
+    border: 1px solid $BORDER_STRONG;
+    border-radius: ${RADIUS_MD}px;
+    padding: 6px;
+    outline: 0;
+    selection-background-color: $ACCENT;
+    selection-color: $ON_ACCENT;
+}
+
+QComboBox QAbstractItemView::item {
+    padding: 6px 12px;
+    border-radius: ${RADIUS_SM}px;
+}
+
+QComboBox QAbstractItemView::item:selected {
+    background-color: $ACCENT;
+    color: $ON_ACCENT;
 }
 
 #ControlBar QComboBox:hover, #DialogBody QComboBox:hover {
@@ -593,17 +618,22 @@ QProgressBar::chunk {
 }
 
 #ControlBar QComboBox::down-arrow, #DialogBody QComboBox::down-arrow {
-    width: 0px;
-    height: 0px;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 6px solid $TEXT_SECONDARY;
+    image: url($DROP_ARROW);
+    width: 10px;
+    height: 6px;
 }
 
 #ToolbarButton {
-    /* Glyphs and icons carry different metrics; one fixed height keeps the row even. */
-    min-height: 16px;
-    max-height: 16px;
+    /* Glyphs and words carry different metrics; one content height keeps every control on
+       a strip 32 px tall — this, 6 px of padding above and below, and the hairline. */
+    min-height: 18px;
+    max-height: 18px;
+}
+
+/* A divider between a strip's groups: the hairline at half strength, parting without
+   drawing attention (framework/toolbar.py's Toolbar; a QToolBar's own separator below). */
+#ToolbarDivider {
+    background-color: $BORDER_FAINT;
 }
 
 #ToolbarButton:checked {

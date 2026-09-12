@@ -37,12 +37,24 @@ from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.signalling import StatusLine, UpdatingIndicator
 from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.theme_service import ThemeService
-from dplanner.framework.toolbar import control_bar
+from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import EmptyState, caption, note
-from dplanner.theme.icons import ICON_SIZE, beaker_icon, info_icon, layers_icon, step_icon, tag_icon
+from dplanner.theme.icons import (
+    ICON_SIZE,
+    beaker_icon,
+    info_icon,
+    key_badge_icon,
+    layers_icon,
+    list_icon,
+    plus_icon,
+    refresh_icon,
+    step_icon,
+    tag_icon,
+    trash_icon,
+)
 from dplanner.theme.themes import Theme
 from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
-from dplanner.theme.tones import HIGHLIGHT_FILL
+from dplanner.theme.tones import BADGE_BORDER, HIGHLIGHT_FILL
 
 DESIGN_TABLE_KIND = "design_table"
 DEMO_DELAY_MS = 1500  # Long enough to see the indicator; a real view settles in 300.
@@ -107,13 +119,13 @@ _GLYPHS = {"milestone": tag_icon, "feature": layers_icon, "step": step_icon, "te
 
 def sample_cells(row: SampleRow, ink: QColor) -> list[Cell]:
     done = row.status == "done"
+    milestone = row.kind == "milestone"
+    # A milestone is known by its key, so the key badge stands where the glyph would and
+    # the second line says what the row gathers rather than the key again.
+    glyph = key_badge_icon(row.key, BADGE_BORDER) if milestone else _GLYPHS[row.kind](ink)
+    detail = "gathers every step above it" if milestone else row.key
     return [
-        Cell(
-            row.title,
-            detail=row.key,
-            glyph=_GLYPHS[row.kind](ink),
-            emphasis=row.kind == "milestone",
-        ),
+        Cell(row.title, detail=detail, glyph=glyph, emphasis=milestone),
         Cell(row.days, secondary=done),
         Cell(row.status, secondary=done),
     ]
@@ -281,33 +293,24 @@ class DesignExampleActivity(ActivityBase):
         strip = QHBoxLayout()
         strip.setSpacing(FIELD_GAP)
         layout.addLayout(strip)  # Before it is filled: a parentless layout leaks its items.
-        self.controls = control_bar(self.widget)
+        self.controls = Toolbar(self.widget)
         # The verbs first — creation, then what acts on the picked rows, greyed until there
-        # are any and worded with the count — then the view's own controls.
-        self.add_button = QToolButton(self.controls)
-        self.add_button.setObjectName("ToolbarButton")
-        self.add_button.setText("Add Step")
-        self.controls.addWidget(self.add_button)
-        self.delete_button = QToolButton(self.controls)
-        self.delete_button.setObjectName("ToolbarButton")
-        self.delete_button.setText("Delete")
-        self.delete_button.setEnabled(False)
-        self.controls.addWidget(self.delete_button)
-        self.controls.addSeparator()
-        self.filter = QComboBox(self.controls)
+        # are any and worded with the count — then the view's own controls. Glyphs, with
+        # the words in the tooltips; what no longer fits folds into the … menu.
+        self.add_action = self.controls.add_verb("Add Step", plus_icon, self._add_step)
+        self.delete_action = self.controls.add_verb("Delete", trash_icon, self._delete_picked)
+        self.delete_action.setEnabled(False)
+        self.controls.add_divider()
+        self.filter = QComboBox()
         self.filter.addItems(FILTERS)
-        self.controls.addWidget(self.filter)
-        self.controls.addSeparator()
-        self.refresh_button = QToolButton(self.controls)
-        self.refresh_button.setObjectName("ToolbarButton")
-        self.refresh_button.setText("Refresh")
-        self.controls.addWidget(self.refresh_button)
-        self.controls.addSeparator()
-        self.empty_toggle = QToolButton(self.controls)
-        self.empty_toggle.setObjectName("ToolbarButton")
-        self.empty_toggle.setText("Empty")
-        self.empty_toggle.setCheckable(True)
-        self.controls.addWidget(self.empty_toggle)
+        self.controls.add_widget(self.filter)
+        self.controls.add_divider()
+        self.refresh_action = self.controls.add_verb(
+            "Refresh", refresh_icon, self._refresh_soon_trigger
+        )
+        self.empty_action = self.controls.add_verb(
+            "Show the empty state", list_icon, self._refresh_soon_trigger, checkable=True
+        )
         strip.addWidget(self.controls, 1)
         self.updating = UpdatingIndicator(self.widget)
         strip.addWidget(self.updating)  # Outside the bar: the » overflow never swallows it.
@@ -325,12 +328,8 @@ class DesignExampleActivity(ActivityBase):
             self._refresh, SETTLE_MS, parent=self.widget, service=debounce
         )
         self.updating.follow(self._refresh_soon)
-        self.add_button.clicked.connect(self._add_step)
-        self.delete_button.clicked.connect(self._delete_picked)
         self.table.itemSelectionChanged.connect(self._reword_verbs)
         self.filter.currentIndexChanged.connect(lambda _index: self._refresh_soon.trigger())
-        self.refresh_button.clicked.connect(self._refresh_soon.trigger)
-        self.empty_toggle.toggled.connect(lambda _on: self._refresh_soon.trigger())
         self._unsubscribe = theme.changed.connect(self._on_theme)
         self._refresh()
 
@@ -343,8 +342,12 @@ class DesignExampleActivity(ActivityBase):
     def _on_theme(self, _theme: Theme) -> None:
         self._refresh()  # The glyphs carry the ink they were painted in.
 
+    def _refresh_soon_trigger(self) -> None:
+        self._refresh_soon.trigger()
+
     def _add_rows(self) -> None:
-        self.empty_toggle.setChecked(False)
+        self.empty_action.setChecked(False)
+        self._refresh_soon.trigger()
 
     def picked_keys(self) -> list[str]:
         rows = sorted({item.row() for item in self.table.selectedItems()})
@@ -353,8 +356,8 @@ class DesignExampleActivity(ActivityBase):
 
     def _reword_verbs(self) -> None:
         count = len(self.picked_keys())
-        self.delete_button.setEnabled(count > 0)
-        self.delete_button.setText(
+        self.delete_action.setEnabled(count > 0)
+        self.delete_action.setText(
             "Delete" if count == 0 else "Delete Step" if count == 1 else f"Delete {count} Steps"
         )
 
@@ -372,7 +375,7 @@ class DesignExampleActivity(ActivityBase):
         self._refresh_soon.trigger()
 
     def _refresh(self) -> None:
-        if self.empty_toggle.isChecked():
+        if self.empty_action.isChecked():
             self.table.clear_rows()
             self.empty.say(NO_ROWS)
             self._reword_verbs()

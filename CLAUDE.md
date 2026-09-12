@@ -49,8 +49,10 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
 - `DESIGN.md` is the standard for all UI work here, and **Debug ▸ Design Example…** (with its
   table tab; `modules/debug/design_example.py`, rendered under `docs/screenshots/f1-design-example/`) is
   what it looks like — build every dialog on `framework/dialog.py`'s `DialogFrame`, every
-  table on `framework/table.py`'s `Table`, every busy/ok/error on `framework/signalling.py`'s
-  `StatusLine` and every pending rebuild on its `UpdatingIndicator`, and run DESIGN.md's
+  table on `framework/table.py`'s `Table`, every strip of verbs on `framework/toolbar.py`'s
+  `Toolbar` (glyphs with their words in tooltips, folding into `…`), every busy/ok/error on
+  `framework/signalling.py`'s `StatusLine` and every pending rebuild on its
+  `UpdatingIndicator`, and run DESIGN.md's
   *Bringing a surface up* over any surface you touch. `FORMAT.md` is the standard for
   anything that reaches disk. `ARCHITECTURE.md` is where a rule's *reasoning* lives — when
   you settle an architectural question, write the rule here and the why there, and have

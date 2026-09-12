@@ -24,6 +24,7 @@ DIALOG_MARGIN: Final = 20  # A dialog's outer margin: dialogs breathe more than 
 SECTION_GAP: Final = 12  # Between sections; between blocks; between cards; body to footer.
 FIELD_GAP: Final = 8  # Fields within a section; footer buttons.
 CONTROL_GAP: Final = 12  # Between the controls on a strip: a packed row of verbs reads as one.
+CONTROL_HEIGHT: Final = 32  # Every control on a strip: a glyph button, a worded one, a combo.
 CAPTION_GAP: Final = 6  # A caption to its field, a note to its field.
 PANEL_MARGIN: Final = 16  # Side panels and tab pages.
 # A rich row (a list of two-line items, a two-line table cell): DESIGN.md's list-row rule.
@@ -47,12 +48,22 @@ ARROW_W: Final = 20
 ARROW_ROOM: Final = ARROW_W + 4
 
 
+def mix(first: str, second: str, share: float) -> str:
+    """``first`` blended ``share`` of the way towards ``second``, both ``#rrggbb``."""
+    a = [int(first.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4)]
+    b = [int(second.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4)]
+    return "#" + "".join(
+        f"{round(x * (1 - share) + y * share):02x}" for x, y in zip(a, b, strict=True)
+    )
+
+
 def as_qss_mapping(theme: Theme) -> dict[str, str]:
     """Every invariant token plus the theme's colours, for ``string.Template``.
 
     Collected by introspection rather than a hand-maintained dict, so adding a module
     constant above or a field to :class:`Theme` makes it available to the stylesheet with
-    no second edit.
+    no second edit. A few tokens are derived from the theme rather than stored on it —
+    a hairline at half strength — so a theme provider never has to know they exist.
     """
     mapping = {
         name: str(value)
@@ -63,4 +74,7 @@ def as_qss_mapping(theme: Theme) -> dict[str, str]:
         value = getattr(theme, field.name)
         if field.name != "name" and isinstance(value, str):
             mapping[field.name.upper()] = value
+    # A divider between controls, faded halfway into the ground: a rule that parts without
+    # drawing attention, where $BORDER is a hairline meant to be seen.
+    mapping["BORDER_FAINT"] = mix(theme.border, theme.bg_base, 0.5)
     return mapping

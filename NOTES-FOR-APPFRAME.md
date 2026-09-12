@@ -2525,6 +2525,35 @@ centred between a title and its key belonged to neither.
 
 **Upstream?** Yes, with the delegates.
 
+### `framework/toolbar.py` — `Toolbar`: glyphs with tooltips, folding into a … menu
+
+**What.** `Toolbar(QWidget)`: `add_verb(text, painter, slot, shortcut=, checkable=)` puts a
+`QToolButton` with a default `QAction` on the strip — icon only, the words and shortcut as
+the tooltip, re-inked from the palette's text at `SECONDARY_ALPHA` on a palette change;
+`add_widget`, `add_divider`. `resizeEvent` shows what fits from the left and hides the
+rest; a `…` button lists the hidden verbs as glyph and words in a `QMenu` rebuilt on open,
+a widget never enters it, and a divider never ends what is shown. Every control is
+`CONTROL_HEIGHT` tall by `setFixedHeight`. Its `sizeHint` is the … button's.
+
+**Why.** `QToolBar`'s » pops the hidden buttons up as glyphs again, which is nothing once
+the words live in tooltips; and a worded button, a glyph button and a button with a menu
+disagree by a few pixels under the style, so the height is set in code.
+
+**Upstream?** Yes. `ActionToolbar` becomes this fed by the registry.
+
+### `theme/__init__.py`, `theme/icons.py`, `theme/tokens.py` — the arrow, the key badge, derived tokens
+
+**What.** `drop_arrow_url(theme)` writes a 10×6 SVG in the theme's secondary ink to the temp
+dir (per colour, once) and `load_stylesheet` substitutes it as `$DROP_ARROW`; `key_badge_icon(text, colour)` paints `F1`/`M2` as a rounded chip `KEY_BADGE_W` wide at a glyph's
+height; `refresh_icon`; `tokens.mix` and a derived `$BORDER_FAINT` (the border halfway into
+the ground) beside `CONTROL_HEIGHT`. `Table`'s glyph slot is `KEY_BADGE_W` wide.
+
+**Why.** Styling a combo's drop-down takes Fusion's arrow away, Qt draws a stylesheet
+image only from a file, and a border-drawn triangle flattens into a bar at a 2× scale.
+A derived token spares every theme provider a field it would never set.
+
+**Upstream?** The arrow and the derived token, yes; the badge is this application's.
+
 ### `framework/signalling.py` — `UpdatingIndicator`, `StatusLine` (new)
 
 **What.** `UpdatingIndicator.follow(debounced)` connects `pending_changed` to a weakly-held

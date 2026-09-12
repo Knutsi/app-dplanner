@@ -398,9 +398,14 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
 - A table of mixed kinds gives every row the glyph of what it is (the tag, the layer stack,
   the card), so a reader never has to infer a kind from a column further right — and **the
   glyph slot is reserved on every row of that column**, filled or not, so titles start at
-  one x and a row that gains a kind later does not shift its neighbours. **The glyph sits
-  on the first line**, centred on the name and never on the pair of lines: a glyph half
-  way between a title and its key belongs to neither.
+  one x and a row that gains a kind later does not shift its neighbours. The slot is
+  `KEY_BADGE_W` (28 px) wide — room for a **key badge** — and a glyph sits at its left.
+  **The glyph sits on the first line**, centred on the name and never on the pair of
+  lines: a glyph half way between a title and its key belongs to neither.
+- **A milestone's row wears its key as a badge** where the glyph would be: `F1`, `M2` as a
+  rounded chip in the milestone tone (`key_badge_icon`), the key being what a milestone is
+  known by across the graph. The second line then says what the row gathers, not the key
+  again.
 - **A group heading is a spanned row nobody can pick**: bold secondary words at a plain
   row's height, no hover, no edge (`add_heading`). Nothing else separates the groups; the
   heading is the separator.
@@ -412,6 +417,36 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
   is what it `stands_in_for`.
 - **Updating**: the table keeps the last picture while an *Updating…* indicator stands at
   the right end of the control strip (*Signalling*).
+
+## Toolbars
+
+A strip of verbs over a surface is a `Toolbar` (`framework/toolbar.py`); Debug ▸ Design
+Example Table wears one.
+
+- **A verb is a glyph, and its words are the tooltip** (with the shortcut beside them). A
+  row of words is a sentence the eye has to read every time; a row of glyphs is learned
+  once, and the tooltip is there for the first time. Every glyph is one of
+  `theme/icons.py`'s painters, inked in the secondary tone and re-inked on a theme change.
+- **What no longer fits folds into a `…` menu at the strip's end**, as glyph *and* words,
+  taken from the right — never a second row, and never Qt's own overflow, which pops the
+  hidden buttons up as glyphs again. A widget among the verbs (a filter) never enters the
+  menu; it hides when there is no room for it. The strip's own size hint is the `…`
+  button's, so a page can be dragged as narrow as it likes and the strip folds rather than
+  squeezes.
+- **Every control on a strip is one height** (`CONTROL_HEIGHT`, 32 px), set in code: a
+  glyph button, a worded button and a combo box disagree by a few pixels under the style,
+  and a strip whose buttons are not one height reads as several strips.
+- **A divider is the hairline at half strength** (`$BORDER_FAINT`, the border blended
+  halfway into the ground), 6 px short of the controls' top and bottom: it parts groups
+  without being read as a control.
+- **A combo box on a strip is one of the buttons** — the quiet bordered look, the arrow's
+  room at its right — and **the list it drops down is a menu**: the overlay ground behind
+  a strong hairline, rounded, 6 px around every entry, the accent on the one under the
+  pointer. Its arrow is the theme's own SVG (`theme/__init__.py`'s `drop_arrow_url`): a
+  border-drawn triangle flattens into a bar at a 2× scale.
+- On a real surface the verbs come from the registry — `ActionToolbar` over registered
+  `ActionSpec`s becomes a `Toolbar` fed by them in the design passes; the example wires
+  plain slots to show the shape.
 
 ## Signalling
 
@@ -467,6 +502,8 @@ reaching `theme.qss` as `$NAME` for free. A literal in a layout is a copy that d
 | `SECTION_GAP` | 12 | between sections; between blocks; between cards; body to footer |
 | `FIELD_GAP` | 8 | fields within a section; footer buttons |
 | `CONTROL_GAP` | 12 | between the controls on a strip; a button's own padding is 6 / 12 |
+| `CONTROL_HEIGHT` | 32 | every control on a strip, set in code |
+| `$BORDER_FAINT` | derived | the hairline blended halfway into the ground: a strip's dividers |
 | `CAPTION_GAP` | 6 | a caption to its field, a note to its field |
 | `PANEL_MARGIN` | 16 | side panels and tab pages |
 | `ROW_PADDING_V` / `ROW_PADDING_H` | 10 / 12 | a rich row: lists and two-line cells alike |
@@ -475,7 +512,7 @@ reaching `theme.qss` as `$NAME` for free. A literal in a layout is a copy that d
 | `SECONDARY_ALPHA` | 160 | a painter's secondary ink (~63 %) |
 | `RADIUS_SM` / `RADIUS_MD` | 5 / 8 | buttons, chips, fields / wells, cards, tables, lanes |
 | `SCREEN_SHARE` | 0.8 | the screen a framed or editor dialog may claim |
-| `ICON_SIZE` (+ `ICON_GAP`) | 16 (+ 8) | a glyph, and the slot a glyph column reserves |
+| `ICON_SIZE` / `KEY_BADGE_W` (+ `ICON_GAP`) | 16 / 28 (+ 8) | a glyph; the slot a glyph column reserves, wide enough for a key badge |
 | a title | +2 pt | a dialog's title, a page's answer line, a card's title (`title_font`) |
 | a secondary line | −1 pt | a row's second line, the `EmptyState` line (`detail_font`) |
 | an edge | 2 px | a picked row's left, the active pane's top |
@@ -503,6 +540,7 @@ from the code or a screenshot, and Debug ▸ Design Example is what *yes* looks 
 10. Does a row wash on hover and pick with the edge over the quiet ground?
 11. Does an empty page swap through `EmptyState.stands_in_for`, and nothing else?
 12. Does *Updating…* stand at the strip's right from the first trigger to the rebuild's end?
+    Is the strip a `Toolbar` — glyphs with their words in tooltips, folding into `…`?
 13. Is every busy, ok and error a `StatusLine` in place, and every rewritten `QLabel` gone?
 14. Is any progress bar 4 px, accent and determinate?
 15. Does nothing fade, slide or animate except the ring and the indicator?

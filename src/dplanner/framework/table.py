@@ -44,7 +44,7 @@ from dplanner.framework.list_rows import (
     rich_row_height,
 )
 from dplanner.theme.cards import detail_font
-from dplanner.theme.icons import ICON_SIZE
+from dplanner.theme.icons import ICON_SIZE, KEY_BADGE_W
 from dplanner.theme.tokens import (
     CELL_PADDING_H,
     CELL_PADDING_V,
@@ -55,6 +55,7 @@ from dplanner.theme.tokens import (
 )
 
 EDGE_W = 2  # The picked row's accent edge — the width the active pane's top edge has.
+GLYPH_SLOT = KEY_BADGE_W  # Wide enough for a key badge; a glyph sits at its left.
 HOVER_ALPHA = 12  # The text colour at ~5 %: a wash that says the row is a target.
 GRID = 4  # Row heights land on the 4-point scale.
 
@@ -256,14 +257,14 @@ class TableDelegate(QStyledItemDelegate):
             top = rect.top() + ROW_PADDING_V + (metrics.height() - ICON_SIZE) // 2
         else:
             top = rect.top() + (rect.height() - ICON_SIZE) // 2
-        return QRect(rect.left() + self._table.padding(), top, ICON_SIZE, ICON_SIZE)
+        return QRect(rect.left() + self._table.padding(), top, GLYPH_SLOT, ICON_SIZE)
 
     def text_left(self, column: int, rect: QRect) -> int:
         """Where a cell's words start: past the padding, and past the glyph slot a glyph
         column reserves on every row, filled or not."""
         left = rect.left() + self._table.padding()
         if self._table.columns()[column].glyph:
-            left += ICON_SIZE + ICON_GAP
+            left += GLYPH_SLOT + ICON_GAP
         return left
 
     def initStyleOption(  # noqa: N802 - Qt override
@@ -319,7 +320,9 @@ class TableDelegate(QStyledItemDelegate):
         painter.save()
         icon = index.data(Qt.ItemDataRole.DecorationRole)
         if self._table.columns()[column].glyph and isinstance(icon, QIcon) and not icon.isNull():
-            icon.paint(painter, self.glyph_rect(opt.rect, metrics))
+            slot = self.glyph_rect(opt.rect, metrics)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            icon.paint(painter, slot, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         font = QFont(opt.font)
         if heading or index.data(EMPHASIS_ROLE):
@@ -354,7 +357,7 @@ class TableDelegate(QStyledItemDelegate):
         detail = str(index.data(DETAIL_ROLE) or "")
         widest = max(metrics.horizontalAdvance(text), small.horizontalAdvance(detail))
         column = index.column()
-        slot = ICON_SIZE + ICON_GAP if self._table.columns()[column].glyph else 0
+        slot = GLYPH_SLOT + ICON_GAP if self._table.columns()[column].glyph else 0
         heading = bool(index.data(HEADING_ROLE))
         height = row_height(option.font, rich=self._table.rich() and not heading)
         return QSize(widest + slot + 2 * self._table.padding(), height)

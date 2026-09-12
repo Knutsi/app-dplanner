@@ -482,6 +482,52 @@ def frame_icon(color: str | QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+def refresh_icon(color: str | QColor) -> QIcon:
+    """A circular arrow: run the rebuild again, now."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.6))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawArc(QRectF(3.0, 3.0, 10.0, 10.0), 40 * 16, 280 * 16)
+    painter.setBrush(QColor(color))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawPolygon([QPointF(13.5, 3.0), QPointF(13.5, 8.0), QPointF(9.5, 5.0)])
+    painter.end()
+    return QIcon(pixmap)
+
+
+# A step's key as a badge — the width a three-character key needs at a glyph's height.
+KEY_BADGE_W = 28
+KEY_BADGE_ALPHA = 44  # The tone washed under the letters; the border and the ink at full.
+KEY_BADGE_POINTS = 7.5
+
+
+def key_badge_icon(text: str, color: str | QColor) -> QIcon:
+    """``F1``, ``M2`` as a rounded chip in a tone: a glyph that names the step.
+
+    Where a row is a milestone the badge stands where the glyph would — the key is what a
+    milestone is known by across the graph, and a tag glyph beside a key on the second
+    line said the same thing twice.
+    """
+    pixmap = QPixmap(KEY_BADGE_W, ICON_SIZE)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    tone = QColor(color)
+    wash = QColor(tone)
+    wash.setAlpha(KEY_BADGE_ALPHA)
+    painter.setPen(_pen(tone, 1.0))
+    painter.setBrush(wash)
+    painter.drawRoundedRect(QRectF(0.5, 0.5, KEY_BADGE_W - 1.0, ICON_SIZE - 1.0), 4.0, 4.0)
+    font = painter.font()
+    font.setPointSizeF(KEY_BADGE_POINTS)
+    font.setBold(True)
+    painter.setFont(font)
+    painter.setPen(tone)
+    painter.drawText(QRectF(0.0, 0.0, KEY_BADGE_W, ICON_SIZE), Qt.AlignmentFlag.AlignCenter, text)
+    painter.end()
+    return QIcon(pixmap)
+
+
 def close_icon(color: str) -> QIcon:
     """A cross: the close button on a tab.
 
@@ -555,7 +601,7 @@ def image_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
-def list_icon(color: str) -> QIcon:
+def list_icon(color: str | QColor) -> QIcon:
     """A numbered list: the order table."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 1.2))

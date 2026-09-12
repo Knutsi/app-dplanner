@@ -168,11 +168,11 @@ def test_the_design_table_tab_opens_and_empty_trades_the_table_for_the_state(ser
     activity = services.tabs.current_activity()
     assert activity is not None and activity.title == "Design Example"
     assert activity.table.rowCount() > 0 and activity.empty.isHidden()
-    activity.empty_toggle.setChecked(True)
+    activity.empty_action.trigger()
     assert activity.table.rowCount() == 0 and activity.table.isHidden()
     assert not activity.empty.isHidden() and activity.empty.button is not None
     activity.empty.button.click()  # Add Rows: the toggle comes off and the rows come back.
-    assert not activity.empty_toggle.isChecked() and activity.table.rowCount() > 0
+    assert not activity.empty_action.isChecked() and activity.table.rowCount() > 0
     assert not activity.table.isHidden() and activity.empty.isHidden()
 
 
@@ -196,13 +196,14 @@ def test_the_strip_words_delete_with_the_count_and_add_appends(services):
     activity = services.tabs.open(DESIGN_TABLE_KIND)
     table = activity.table
     before = table.rowCount()
-    assert not activity.delete_button.isEnabled() and activity.delete_button.text() == "Delete"
+    delete = activity.delete_action
+    assert not delete.isEnabled() and delete.text() == "Delete"
     table.selectRow(1)
-    assert activity.delete_button.isEnabled() and activity.delete_button.text() == "Delete Step"
+    assert delete.isEnabled() and delete.text() == "Delete Step" == delete.toolTip()
     flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
     table.selectionModel().select(table.model().index(2, 0), flags)
-    assert activity.delete_button.text() == "Delete 2 Steps"
-    activity.delete_button.click()
-    assert table.rowCount() == before - 2 and not activity.delete_button.isEnabled()
-    activity.add_button.click()
+    assert delete.text() == "Delete 2 Steps"
+    delete.trigger()
+    assert table.rowCount() == before - 2 and not delete.isEnabled()
+    activity.add_action.trigger()
     assert table.rowCount() == before - 1

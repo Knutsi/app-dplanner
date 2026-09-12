@@ -17,7 +17,7 @@ from dplanner.framework.list_rows import (
 )
 from dplanner.framework.table import Cell, Column, Table
 from dplanner.theme import apply_theme
-from dplanner.theme.icons import ICON_SIZE, tag_icon
+from dplanner.theme.icons import tag_icon
 from dplanner.theme.themes import DARK, LIGHT
 
 STEP_ROLE = int(Qt.ItemDataRole.UserRole) + 40
@@ -137,7 +137,9 @@ def test_the_glyph_slot_is_reserved_on_every_row_of_a_glyph_column(table):
     from PySide6.QtCore import QRect
 
     box = QRect(10, 0, 200, 30)
-    assert delegate.text_left(0, box) == 10 + table.padding() + ICON_SIZE + ICON_GAP
+    from dplanner.framework.table import GLYPH_SLOT
+
+    assert delegate.text_left(0, box) == 10 + table.padding() + GLYPH_SLOT + ICON_GAP
     assert delegate.text_left(2, box) == 10 + table.padding()
     assert rect is not None
 
