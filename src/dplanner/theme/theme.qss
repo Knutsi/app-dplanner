@@ -533,7 +533,7 @@ QProgressBar::chunk {
     color: $TEXT_SECONDARY;
     border: 1px solid $BORDER;
     border-radius: ${RADIUS_SM}px;
-    padding: 5px 10px;
+    padding: 6px 12px;
 }
 
 #ToolbarButton:hover, #LayoutButton:hover, #TaskRowCancel:hover {
@@ -553,7 +553,7 @@ QProgressBar::chunk {
     background: transparent;
     border: none;
     padding: 0px;
-    spacing: 8px;
+    spacing: ${CONTROL_GAP}px;
 }
 
 /* The aspect bar seats eleven glyphs and five words in one row: tighter sides than a
@@ -578,7 +578,7 @@ QProgressBar::chunk {
     color: $TEXT_PRIMARY;
     border: 1px solid $BORDER;
     border-radius: ${RADIUS_SM}px;
-    padding: 5px ${ARROW_ROOM}px 5px 10px;
+    padding: 6px ${ARROW_ROOM}px 6px 12px;
 }
 
 #ControlBar QComboBox:hover, #DialogBody QComboBox:hover {

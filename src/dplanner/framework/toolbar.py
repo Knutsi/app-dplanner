@@ -32,8 +32,7 @@ from dplanner.framework.action_menu import fill_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import Context, ContextService
 from dplanner.theme.icons import ICON_SIZE
-
-CONTROL_GAP = 8
+from dplanner.theme.tokens import CONTROL_GAP
 
 
 def control_bar(parent: QWidget | None = None) -> QToolBar:

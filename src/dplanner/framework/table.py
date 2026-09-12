@@ -274,6 +274,9 @@ class TableDelegate(QStyledItemDelegate):
         # itself, so text cleared there comes back and prints under ours.
         option.text = ""
         option.icon = QIcon()
+        # No focus frame: the style draws one round the *current cell*, and a dotted box
+        # lingering on the last cell clicked is a second mark for what the row's edge says.
+        option.state &= ~QStyle.StateFlag.State_HasFocus
 
     def paint(
         self,

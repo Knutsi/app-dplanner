@@ -218,3 +218,15 @@ def test_a_rich_row_is_two_lines_of_two_sizes(app):
         assert table.row_height() == snap_up(rich_row_height(font))
     finally:
         table.deleteLater()
+
+
+def test_the_current_cell_wears_no_focus_frame(table):
+    """Qt draws a focus rectangle round the current cell; the row's edge is the one mark."""
+    from PySide6.QtWidgets import QStyle, QStyleOptionViewItem
+
+    table.add_row(["a", "1", ""])
+    option = QStyleOptionViewItem()
+    option.state |= QStyle.StateFlag.State_HasFocus
+    table.delegate.initStyleOption(option, table.model().index(0, 0))
+    assert not option.state & QStyle.StateFlag.State_HasFocus
+    assert option.text == "" and option.icon.isNull()

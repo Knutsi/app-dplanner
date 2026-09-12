@@ -93,7 +93,7 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.tabs import TabHost
-from dplanner.framework.toolbar import CONTROL_GAP, ActionToolbar, control_bar
+from dplanner.framework.toolbar import ActionToolbar, control_bar
 from dplanner.framework.undo import UndoService
 from dplanner.modules.time_estimates.chart import (
     PAGES,
@@ -159,6 +159,7 @@ from dplanner.modules.time_estimates.schedule import (
 )
 from dplanner.modules.time_estimates.snapshots import SaveSnapshotDialog, SnapshotPicker
 from dplanner.modules.time_estimates.view import Banner, FocusBar, MatrixView
+from dplanner.theme.tokens import CONTROL_GAP
 
 TIME_KIND = "time"
 REFRESH_DELAY_MS = 500

@@ -22,7 +22,8 @@ RADIUS_MD: Final = 8
 # disagree about a margin are two surfaces that read as two products.
 DIALOG_MARGIN: Final = 20  # A dialog's outer margin: dialogs breathe more than panels.
 SECTION_GAP: Final = 12  # Between sections; between blocks; between cards; body to footer.
-FIELD_GAP: Final = 8  # Fields within a section; controls on a strip; footer buttons.
+FIELD_GAP: Final = 8  # Fields within a section; footer buttons.
+CONTROL_GAP: Final = 12  # Between the controls on a strip: a packed row of verbs reads as one.
 CAPTION_GAP: Final = 6  # A caption to its field, a note to its field.
 PANEL_MARGIN: Final = 16  # Side panels and tab pages.
 # A rich row (a list of two-line items, a two-line table cell): DESIGN.md's list-row rule.

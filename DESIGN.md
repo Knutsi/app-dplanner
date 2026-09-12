@@ -389,7 +389,9 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
   colour at ~5 %, theme-independent like every painter's tone); a picked row wears a 2 px
   `$ACCENT` edge inside its left over the quiet `$BG_OVERLAY` ground — the edge the active
   pane wears on its top — and *gains* its ground rather than losing its tint, so a
-  milestone's row stays purple while picked (*Colour*).
+  milestone's row stays purple while picked (*Colour*). Nothing else marks it: the focus
+  frame Qt draws round the *current cell* is stripped, because a dotted box lingering on
+  the last cell clicked is a second mark, on one cell, for what the edge already says.
 - A row that is a **fixed point** among its neighbours (a milestone) goes bold, and is the
   one weight in the table: a glance down a column of quiet lines finds the milestones
   without reading. Emphasis for any other reason is size or colour, never a second bold.
@@ -463,7 +465,8 @@ reaching `theme.qss` as `$NAME` for free. A literal in a layout is a copy that d
 |---|---|---|
 | `DIALOG_MARGIN` | 20 | a dialog's outer margin |
 | `SECTION_GAP` | 12 | between sections; between blocks; between cards; body to footer |
-| `FIELD_GAP` | 8 | fields within a section; controls on a strip; footer buttons |
+| `FIELD_GAP` | 8 | fields within a section; footer buttons |
+| `CONTROL_GAP` | 12 | between the controls on a strip; a button's own padding is 6 / 12 |
 | `CAPTION_GAP` | 6 | a caption to its field, a note to its field |
 | `PANEL_MARGIN` | 16 | side panels and tab pages |
 | `ROW_PADDING_V` / `ROW_PADDING_H` | 10 / 12 | a rich row: lists and two-line cells alike |

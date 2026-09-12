@@ -2500,7 +2500,9 @@ is per cell), a 2 px `QPalette.Accent` edge on column 0 of a picked row, the res
 slot, elided one- or two-line text in the palette's `Text` (never `HighlightedText`: the
 picked ground is the quiet overlay). `add_row` stamps a tint and the host's roles on every
 cell; `add_heading` is a spanned `NoItemFlags` row; `fit_columns` opens interactive columns
-at their content. `list_rows.py` gains `TINT_ROLE` and `HEADING_ROLE`.
+at their content; `initStyleOption` also strips `State_HasFocus`, since the style's focus
+frame round the current cell lingered as a box on the last cell clicked. `list_rows.py`
+gains `TINT_ROLE` and `HEADING_ROLE`.
 
 **Why.** Three hand-written copies of one configuration disagreeing on nine settings, and
 four widgets borrowing `#OrderTable` by name. The per-row `setRowHeight` versus
@@ -2568,8 +2570,8 @@ way for the one moment a person must read carefully.
 ### `theme/tokens.py`, `theme/tones.py`, `theme/theme.qss` — tokens, status tones, and a stylesheet that names only what exists
 
 **What.** Spacing tokens (`DIALOG_MARGIN`, `SECTION_GAP`, `FIELD_GAP`, `CAPTION_GAP`,
-`PANEL_MARGIN`, `ROW_PADDING_*`, `ROW_LINE_GAP`, `CELL_PADDING_*`, `SECONDARY_ALPHA`,
-`SCREEN_SHARE`) replace copies in `text_dialog.py`, `asset_picker.py`, `image_preview.py`,
+`PANEL_MARGIN`, `CONTROL_GAP` — out of `framework/toolbar.py`, and 12 now — `ROW_PADDING_*`,
+`ROW_LINE_GAP`, `CELL_PADDING_*`, `SECONDARY_ALPHA`, `SCREEN_SHARE`) replace copies in `text_dialog.py`, `asset_picker.py`, `image_preview.py`,
 `cards.py`, `list_rows.py`, `markdown_highlight.py` and `theme/cards.py`. `STATUS_TONES`
 (`VALID_TINT`, `INVALID_TINT`, `BUSY_TINT`) move in from the canvas renderer. The
 stylesheet loses fifty-six object names the template's Writer app set — forty per cent of
