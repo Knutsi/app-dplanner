@@ -43,3 +43,24 @@ def test_an_unplaced_share_leaves_positions_to_the_layout(tmp_path: Path) -> Non
         assert 0 < placed < 30
     finally:
         store.close()
+
+
+def test_every_project_measures_and_maps(tmp_path: Path) -> None:
+    """The agent's eyes over a real plan: the geometry report and the map, for every
+    project the library holds, keyed the way every CLI row is."""
+    from dplanner.modules import _step_key
+    from dplanner.modules.project_editor.geometry import map_text, measure, text
+
+    library_file = build_library(tmp_path, steps=30)
+    store = LibraryStore(library_file)
+    library = store.load()
+    try:
+        for project in library.projects:
+            geometry = measure(library, project, key_of=_step_key)
+            assert len(geometry.cards) == len(project.steps)
+            assert geometry.bounds is not None and geometry.bounds[2] > 0
+            picture = map_text(geometry)
+            assert all(card.key in picture for card in geometry.cards)
+            assert text(geometry).startswith(f"{len(project.steps)} steps in")
+    finally:
+        store.close()

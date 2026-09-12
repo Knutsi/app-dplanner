@@ -18,7 +18,9 @@ keys exist (``FORMAT.md``'s absence rule).
 **Snapping is the gesture's, never the write's.** What reaches disk is rounded to a whole
 unit — short JSON, and a float — and lands on :data:`GRID` only because the canvas snapped
 the drag, the resize or the click while *Snap to Grid* was on. A CLI verb has no gesture
-and stores what it was given; a sort's output is what the algorithm computed.
+and stores what it was given; a sort's output is what the algorithm computed — ``tidy``
+computes on the grid — and ``layout shift``, a drag by a distance, snaps that distance
+the way the drag would.
 
 **Qt-free**, because the composition root reaches this file when it builds the CLI's
 migration list — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.

@@ -273,12 +273,22 @@ shape visible. If the waves are all singletons, revisit the links before adding 
 ## Leave the graph readable
 
 The graph is what the user reviews, so when a plan settles, make its shape carry meaning
-rather than leaving the steps wherever they landed:
+rather than leaving the steps wherever they landed. The canvas's own tools exist as verbs,
+and the loop is: look, sort, make room or tidy, look again, keep.
 
-- **Sort it.** `dplanner layout sort <project> flow` arranges by dependency depth, left to
-  right; `spine` lays the main chain on a central line with feeder work branching off it —
-  the right shape when a project drives toward milestones; `timeline` spaces steps by their
-  estimates so the graph reads as a schedule. A sort is one undo step in an open window.
+- **Look first.** `dplanner layout show <project> --map` draws the graph as text — one
+  cell per column and row pitch, each step's key in its cell, a hole as an empty cell, a
+  wide card spanning cells — so you can see the shape you are about to change or have
+  just made, and paste it into a PR beside `project graph`, which is the topology rather
+  than the picture. Without `--map` it prints the numbers: every step's position and
+  size, the bounding box, a box per wave, every overlapping pair, and the gap between
+  neighbouring columns and rows in pitches (one pitch is neighbours at the sort's own
+  spacing; two is one empty column or row between). `--json` carries the same.
+- **Sort for the shape.** `dplanner layout sort <project> flow` arranges by dependency
+  depth, left to right; `spine` lays the main chain on a central line with feeder work
+  branching off it — the right shape when a project drives toward milestones; `timeline`
+  spaces steps by their estimates so the graph reads as a schedule. A sort is one undo
+  step in an open window.
 - **Place the features, and mark the milestones.** A feature is a record in the project's
   catalogue (`dplanner feature list` — read out of a spec, or added by hand) and it is
   implemented **once**: exactly one step realises it, `step add <project> '<title>'
@@ -287,24 +297,24 @@ rather than leaving the steps wherever they landed:
   the unplaced ones. `dplanner milestone set 'Ship the beta' --label MVP` makes a step a
   milestone (`--label` omitted, one is generated); the spine sort drives toward them,
   `milestone list` reads as a roadmap, and `scope show` says what each one adds.
-- **Name the areas with regions — coarsely.** A region is a titled rectangle painted
-  behind the steps — "Database setup", "Finalize release" — pure annotation, with no
-  effect on the plan. `dplanner region add <project> "Database setup" --steps schema
-  migrate seed` wraps those steps where they sit, and reports every step the rectangle
-  actually covers — read that list, because a wrap can catch a neighbour nobody named.
-  A region earns its place by naming a phase or a theme: one or two steps per region is
-  usually too granular, and a region whose title restates a step's title says nothing. A
-  project rarely wants more than five or six regions — fewer is better, and not every
-  step needs one. Use your judgement; a handful of well-named regions is what lets the
-  user take a forty-step plan in at a glance.
-- **Sort first, regions second — and re-fit after re-sorting.** The wrap uses where steps
-  sit, so a later `layout sort` moves steps out from under their regions. When that
-  happens, `dplanner region fit <project> "Database setup" --steps schema migrate seed`
-  re-wraps a region in place, keeping its identity so saved layouts still know it.
-  `region list` shows what each region covers now — check it before handing the plan over.
-- **Save the arrangement.** `dplanner layout save <project> "review"` snapshots every step
-  position and region under a name, and the user can return to it from the canvas toolbar
-  whenever later edits scatter things.
+- **Make room, or take it back.** `dplanner layout shift <project> --x 640 --by 300`
+  pushes every step whose centre lies right of x=640 one column to the right — the
+  canvas's Divide, as a verb. A negative distance brings the near side back, `--y` cuts
+  across rows, and `--steps S7 S8` moves only those. The distance snaps to the grid, and
+  the report says what moved and what the gaps are now.
+- **Tidy for the air.** `dplanner layout tidy <project>` keeps every cluster and its
+  left-to-right, top-to-bottom order, resolves overlaps, evens the spacing to the sort
+  pitches and closes any hole wider than `--gap` (two pitches by default) to one — it
+  never re-sorts, so a hand-arranged graph keeps its arrangement and gains air. Running
+  it twice changes nothing.
+- **Look again, then keep it.** `layout show` once more: no overlaps, no gap over the
+  threshold. Then `dplanner layout save <project> "review"` snapshots every step position
+  under a name the user can return to from the canvas toolbar whenever later edits
+  scatter things. None of these verbs reshapes the graph, so none reads the topology
+  first.
+- **Do not draw regions.** A region is a titled rectangle painted behind the steps —
+  annotation the canvas may retire, and it earns nothing a tidy graph and good titles do
+  not. Add none, and leave any that exist alone.
 
 ## Working from a specification
 

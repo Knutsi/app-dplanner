@@ -11,23 +11,41 @@ arrangement without touching an algorithm.
 The gaps are chosen so the default node lands on round pitches: ``NODE_W + H_GAP`` is the
 300-point column pitch, ``NODE_H + V_GAP`` the 120-point row.
 
-**Qt-free** — ``dplanner layout sort`` runs these where no graphics stack exists.
+The sixth arrangement, :func:`tidy`, is a sort in kind but starts from where the cards
+*are*: it keeps every cluster and the left-to-right, top-to-bottom order of what is there,
+and only resolves overlaps, evens the spacing to the pitches and closes holes. The
+**lanes** it reads the picture through — :func:`lanes`, :func:`measured` — are the one
+clustering ``dplanner layout show`` reports gaps by and the map is drawn on, so what the
+report says and what a tidy does can never disagree.
+
+**Qt-free** — ``dplanner layout sort`` and ``layout tidy`` run these where no graphics
+stack exists.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from math import cos, sin, tau
 
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import depths
-from dplanner.modules.project_editor.positions import node_size
+from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, node_size, snapped
 
 type Point = tuple[float, float]
 type SizeFor = Callable[[Step], tuple[float, float]]
 type DaysFor = Callable[[Step], float | None]
+# A card's edge or extent along one axis, by id — what the lanes read a picture through.
+type Along = Callable[[StepId], float]
 
 ORIGIN = 40.0
 H_GAP = 80.0
 V_GAP = 44.0  # NODE_H + V_GAP = the 120-point row pitch; NODE_H moves owe a look here.
+# The pitches: one default card and its gap. What "a column apart" means in numbers, and
+# what tidy and the geometry report count a gap in.
+H_PITCH = NODE_W + H_GAP
+V_PITCH = NODE_H + V_GAP
+# Tidy's threshold, in pitches: the widest gap between neighbouring lanes that survives.
+# One empty column or row of deliberate air is kept; wider is a hole and closes.
+DEFAULT_AIR = 2
 # The backward lean of a fishbone rib: how far left of its attachment a rib begins.
 RIB_DX = 60.0
 # One working day of timeline, in canvas points.
@@ -357,3 +375,134 @@ def radial(
         r = radius[level]
         placed[step_id] = (r * cos(angle[step_id]) - w / 2, r * sin(angle[step_id]) - h / 2)
     return placed
+
+
+# -- tidy ---------------------------------------------------------------------------------------
+#
+# Where the five sorts read the graph, tidy reads the picture: the cards as they sit, in
+# lanes. Every rule below is there because a simpler one broke an invariant — the lanes
+# cluster on *edges* (centres split a column of mixed widths on the second run), the join is
+# *inclusive* (the flow sort centres a column by whole half-pitches), an overlap becomes a
+# *sub-row* of its own (a stack inside a cell beside a taller neighbour was not idempotent),
+# and a hole is measured against the *reach* of everything before it and *rounded* (snap
+# noise of eight points must never collapse a kept empty row).
+
+
+@dataclass(frozen=True)
+class Lane:
+    """One band of cards across an axis, and the air before it.
+
+    ``near`` and ``far`` are the band's nearest and furthest edges; ``gap`` is measured from
+    the reach of every lane before it — a tall card two lanes back still counts — and is
+    None for the first lane.
+    """
+
+    steps: tuple[StepId, ...]
+    near: float
+    far: float
+    gap: float | None
+
+
+def lanes(ids: Sequence[StepId], edge: Along, half: float) -> list[list[StepId]]:
+    """Greedy bands along one axis: the first card anchors a lane, a card joins while its
+    edge is within ``half`` of the anchor (inclusive), else it anchors the next. Ties keep
+    the order ``ids`` arrive in — project order, for every caller."""
+    found: list[list[StepId]] = []
+    anchor: float | None = None
+    for step_id in sorted(ids, key=edge):
+        if anchor is None or edge(step_id) - anchor > half:
+            found.append([])
+            anchor = edge(step_id)
+        found[-1].append(step_id)
+    return found
+
+
+def measured(bands: Sequence[Sequence[StepId]], low: Along, size: Along) -> list[Lane]:
+    """The lanes with their edges and the gap before each, in the order given."""
+    found: list[Lane] = []
+    reach: float | None = None
+    for band in bands:
+        near = min(low(step_id) for step_id in band)
+        far = max(low(step_id) + size(step_id) for step_id in band)
+        found.append(Lane(tuple(band), near, far, None if reach is None else near - reach))
+        reach = far if reach is None else max(reach, far)
+    return found
+
+
+def hole(lane: Lane, gap: float, pitch: float) -> int:
+    """How many empty whole pitches lie before a lane — none for the first, and never
+    fewer than none for one that is cramped or overlapping. Rounded: ``round`` is Python's,
+    which takes an exact half-pitch to the even count — deterministic, so acceptable."""
+    if lane.gap is None:
+        return 0
+    return max(0, round((lane.gap - gap) / pitch))
+
+
+def _spread(
+    bands: Sequence[Lane], size: Along, gap: float, pitch: float, air: int
+) -> dict[StepId, float]:
+    """Seats along one axis: lanes laid from ``ORIGIN`` at the pitch, a kept hole carried,
+    a hole wider than ``air`` closed to one gap. Accumulated exactly and snapped per lane, so
+    nothing drifts."""
+    seats: dict[StepId, float] = {}
+    at = ORIGIN
+    for lane in bands:
+        if lane.gap is not None:
+            kept = hole(lane, gap, pitch)
+            at += gap + (kept if kept + 1 <= air else 0) * pitch
+        for step_id in lane.steps:
+            seats[step_id] = snapped(at, GRID)
+        at += max(size(step_id) for step_id in lane.steps)
+    return seats
+
+
+def tidy(
+    project: Project,
+    placed: dict[StepId, Point],
+    size_for: SizeFor = node_size,
+    *,
+    air: int = DEFAULT_AIR,
+) -> dict[StepId, Point]:
+    """Keep every cluster and its order; resolve overlaps, even the spacing to the pitches,
+    close any hole wider than ``air`` pitches to one, snap to the grid and start at the
+    origin. Idempotent: a tidied graph tidies to itself, and a sorted one to itself snapped.
+
+    ``placed`` is where every step sits now (``placement.positions``); this file cannot
+    import that one, so the caller hands the picture in.
+    """
+    steps = project.steps
+    if not steps:
+        return {}
+    rects = {step.id: (*placed[step.id], *size_for(step)) for step in steps}
+    ids = [step.id for step in steps]
+
+    def left(step_id: StepId) -> float:
+        return rects[step_id][0]
+
+    def top(step_id: StepId) -> float:
+        return rects[step_id][1]
+
+    def width(step_id: StepId) -> float:
+        return rects[step_id][2]
+
+    def height(step_id: StepId) -> float:
+        return rects[step_id][3]
+
+    columns = lanes(ids, left, H_PITCH / 2)
+    column_of = {step_id: index for index, band in enumerate(columns) for step_id in band}
+    # Two cards in one column and one row overlap; the lower one takes a sub-row of its
+    # own, inserted after the row — the same line count as stacking, and stable on re-run.
+    rows: list[list[StepId]] = []
+    for band in lanes(ids, top, V_PITCH / 2):
+        taken: dict[int, int] = {}
+        sub: list[list[StepId]] = []
+        for step_id in sorted(band, key=lambda step_id: (top(step_id), left(step_id))):
+            depth = taken.get(column_of[step_id], 0)
+            taken[column_of[step_id]] = depth + 1
+            if depth == len(sub):
+                sub.append([])
+            sub[depth].append(step_id)
+        rows.extend(sub)
+    xs = _spread(measured(columns, left, width), width, H_GAP, H_PITCH, air)
+    ys = _spread(measured(rows, top, height), height, V_GAP, V_PITCH, air)
+    return {step_id: (xs[step_id], ys[step_id]) for step_id in ids}

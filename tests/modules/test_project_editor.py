@@ -2838,3 +2838,60 @@ def test_the_edit_menu_reads_history_clipboard_selection(services):
         "|",
         "Select &All Steps",
     ]
+
+
+# -- the spatial verbs: one vocabulary with the canvas -------------------------------------------
+
+
+def test_tidy_is_one_undo_step_and_offered_as_a_sort(services, project, tab):
+    """The sixth sort persists like the five before it: one entry, one Ctrl+Z."""
+    from dplanner.modules.project_editor.layout_verbs import SORT_ACTION_IDS
+
+    assert "canvas.sort_tidy" in SORT_ACTION_IDS
+    assert tab.run_action("canvas.sort_tidy")
+    assert services.undo.undo_text() == "Tidy Layout"
+    for step in project.steps:
+        assert "project_editor" in step.module_data
+    services.undo.undo()
+    for step in project.steps:
+        assert "project_editor" not in step.module_data
+
+
+def test_layout_shift_builds_the_command_the_divide_gesture_pushes(app, services, project, tab):
+    """``dplanner layout shift`` cannot reach a window's undo stack, so the claim it makes
+    — one entry, the canvas's own — is proved by the command object: the gesture's seats
+    are ``geometry.shift``'s, and ``divide_command`` on the stack undoes as one."""
+    from dplanner.modules.project_editor.geometry import divide_command, shift
+    from dplanner.modules.project_editor.placement import positions
+    from dplanner.modules.project_editor.positions import node_size
+
+    first, second, third = chain(services, project)
+    # The seats the gesture saw: the scene snaps an ambient seat onto the grid as it
+    # places the card, so they are the model's positions as the canvas shows them.
+    before = positions(services.document, project) | {
+        step_id: (seat.x(), seat.y())
+        for step_id, seat in seats_of(tab, first, second, third).items()
+    }
+    sizes = {step.id: node_size(step) for step in project.steps}
+    services.actions.run("canvas.divide_vertical", services.context.current())
+    cut = gap_between(tab, first, second)
+    drag(app, tab, cut, cut + QPointF(120.0, 0.0))
+    assert services.undo.undo_text() == "Divide Graph"
+
+    def seats():
+        return {
+            step.id: (placement_of(services, step.id)["x"], placement_of(services, step.id)["y"])
+            for step in (second, third)
+        }
+
+    gestured = seats()
+    moved = shift(before, sizes, "x", cut.x(), 120.0)
+    assert moved == gestured
+    services.undo.undo()
+
+    services.undo.push(divide_command(project, moved))
+    assert services.undo.undo_text() == "Divide Graph"
+    assert seats() == gestured
+    assert "project_editor" not in services.document.step(first.id).module_data
+    services.undo.undo()
+    assert "project_editor" not in services.document.step(second.id).module_data
