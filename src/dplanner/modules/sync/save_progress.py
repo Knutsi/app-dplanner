@@ -20,12 +20,12 @@ from collections.abc import Sequence
 from PySide6.QtWidgets import QProgressBar, QWidget
 
 from dplanner.framework.dialog import DialogFrame
-from dplanner.framework.signalling import StatusLine
+from dplanner.framework.signalling import StatusLine, Tone
 from dplanner.framework.widgets import note
 from dplanner.modules.sync.service import COMMITTING, NOTHING, PUBLISHING, SAVED
 
 # What each phase says on its repository's row. A row not yet reached says only its name.
-_PHRASES = {
+_PHRASES: dict[str, tuple[str, Tone]] = {
     PUBLISHING: ("writing the report site", "busy"),
     COMMITTING: ("committing", "busy"),
     SAVED: ("recorded", "ok"),
@@ -63,7 +63,7 @@ class SaveProgressDialog(DialogFrame):
             return
         phrase, tone = _PHRASES.get(phase, ("", "info"))
         label = self._labels[index]
-        self._rows[index].say(f"{label} — {phrase}" if phrase else label, tone)  # type: ignore[arg-type]
+        self._rows[index].say(f"{label} — {phrase}" if phrase else label, tone)
         if phase in (SAVED, NOTHING):
             self._done = max(self._done, index + 1)
             self._recount()

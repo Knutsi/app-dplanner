@@ -333,9 +333,7 @@ class SyncModule:
         # and closing again is what ends the window once it has finished.
         return False
 
-    def _begin_exit_save(
-        self, service: SyncService, message: str, chosen: list[RepoGroup]
-    ) -> bool:
+    def _begin_exit_save(self, service: SyncService, message: str, chosen: list[RepoGroup]) -> bool:
         """Start the quit-time save under its dialog; False when it could not be started."""
         labels = [self._group_label(group) for group in chosen]
         progress = SaveProgressDialog(labels, self._deps.parent)

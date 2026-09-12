@@ -491,7 +491,11 @@ and one stylesheet rule for the progress bar:
   follows the view's one `Debounced` and says *Updating…* from the first trigger to the
   rebuild's end, at the right end of the control strip, *outside* the `control_bar`
   toolbar so the » overflow can never swallow it, keeping its room while hidden so the
-  strip never reflows. The content stays; nothing dims.
+  strip never reflows. The content stays; nothing dims. **A view with no control strip
+  puts it at the right end of its caption row** — a board and a two-pane list have a
+  caption and no toolbar, and that row is their strip; give the caption the stretch and
+  the indicator the end. A view that settles once per event-loop turn — the canvas — gets
+  none: there is no span to read.
 - **Busy** — work with no known end (a probe, a fetch): a `StatusLine` in the busy tone,
   where the answer will land — a dialog footer's status slot, a page strip's note. Never a
   modal, never a caption rewritten to say *Reading…*.
@@ -513,7 +517,9 @@ and one stylesheet rule for the progress bar:
   and only for work whose end the application knows: a fetch of 12 pages, a save over 3
   repositories. Never for the debounce, never for an agent (a peer, not a task), and not
   indeterminate: an unknown fraction is *busy*, and busy is a line. (The task browser's
-  rows keep their indeterminate bars until the signalling pass reaches them.)
+  rows keep their indeterminate bars until the design pass reaches that surface — a task's
+  end really is unknown, so what they owe the rule is a busy line, not a fraction nobody
+  can compute.)
 - **Never a modal for a background fact.** A modal asks; a fact is said where it bites.
 
 ## Focus and motion
@@ -596,9 +602,6 @@ Dialogs:
 
 - `StepDetailsDialog` — designed already (no buttons, live edits); not on the frame, so
   its title is only the window's.
-- `ExitDialog` — Qt's default margins and spacing, a `QDialogButtonBox` with the platform
-  deciding the order, a bare commit-message field with no caption. The signalling pass
-  owns it.
 - `SettingsDialog` — 12 px margins, an unstyled tree with no seam against the page, a lone
   Close.
 - `ProjectDialog` — the most designed; create mode's footer at 8 px against the 12 px
@@ -648,5 +651,6 @@ Tables and lists:
 - Settings tree, Index tree, palette list — unstyled or ink-only hover.
 - Task and Agents browsers, Milestones list — widget rows laid out by hand, one of them by
   measuring strings.
-- Every debounced view but the Time tab — silent for its settle; the Time tab's
-  *Recalculating…* label becomes the indicator in the signalling pass.
+- *(done — the signalling pass)* Every debounced view now carries the indicator, and the
+  Time tab's hand-shown *Recalculating…* label is gone; `ExitDialog` is on the frame, and
+  the quit-time save has a progress dialog over its repositories.
