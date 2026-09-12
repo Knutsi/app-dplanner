@@ -1109,7 +1109,7 @@ root, stop and look for the registry or capability you have not found yet.
   colour on its step — written by the tab's controls (a matrix tile click *is* the
   team) and `dplanner schedule focus` / `schedule palette` / `schedule team` / `schedule
   milestone` alike. **Milestones are shades of one map, dealt by place in the
-  sequence** (`schedule.py`'s `PALETTES` and `shades`), never a list of hues. Under the
+  sequence** (`theme/palettes.py`'s `PALETTES` and `shades`), never a list of hues. Under the
   staffing grid, **Start dates** is what you set (the project's own, and each
   milestone's *Begin…*) and **Milestones** is what it answers — the date it lands and
   how much of it has landed on one row, led by *All milestones*, the whole plan on one
@@ -1185,6 +1185,23 @@ root, stop and look for the registry or capability you have not found yet.
   carries the value it replaced, one row per day, format 2; `dplanner estimate show`
   reads it back) — are the terminal's and the report's prose; the charts say it with
   the plots. `ARCHITECTURE.md`'s *Progress against the plan* has the reasoning.
+- **A milestone's colour is its place in the project's map, and every surface reads the
+  one answer.** `schedule.py`'s `milestone_colors(library, project, is_milestone)` is the
+  deal — `ordering.placed`'s sequence, a milestone's own chosen colour over its dealt
+  shade — walked once per project by the composition root's `_milestone_colors` and handed
+  down as a typed callback, so no module learns where a colour map is stored. Ten surfaces
+  read it: the canvas card, its badge and its tag medallion, the order table's row, rule
+  and **key badge**, the progression board's card, the Tests tab's grouping heading, the
+  Docs tab's medallion, the coverage lane, the Milestone tab's swatch, the calendar's
+  bands and the report's graph. `theme/tones.py`'s `toned(name, hex)` is the one place a
+  shade takes a tone's alphas — never re-derive them — and the maps live in
+  **`theme/palettes.py`** (Qt-free, hex strings) because three consumers need them and
+  modules never import each other. **The map is the project's, never the user's**: the
+  window commits `reports/` on every Save, so a per-user map would churn the published
+  report per committer. *View ▸ Milestone Colours* is therefore a **second presenter** of
+  the choice the Time tab's picker and `dplanner schedule palette` already write — a
+  sibling of Theme, never inside it, and greyed with its reason when no project is open.
+  `ARCHITECTURE.md`'s *Colour is a place on one map* has the reasoning.
 - **A note is a record beside the project with a label, and every briefing carries an
   index.** `modules/notes/` — `log.py` (Qt-free; `N1, N2, …` minted per project, a
   **label** from the closed `LABELS` list — `decision`, `handoff`, `spec-change`, `later`,

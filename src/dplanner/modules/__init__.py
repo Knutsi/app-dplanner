@@ -390,6 +390,42 @@ def default_modules(services: "AppServices") -> list["Module"]:
             return None
         return key_badge_icon(_step_key(step), milestone_color(step_id))
 
+    def milestone_palette(project_id: str) -> str:
+        """Which colour map a project's milestones are shaded from."""
+        from dplanner.modules.time_estimates.schedule import read_palette
+
+        if not library.has(project_id):
+            return ""
+        return read_palette(library.project(project_id)).id
+
+    def set_milestone_palette(project_id: str, palette_id: str) -> None:
+        """The same undoable write the Time tab's picker and ``schedule palette`` make —
+        one choice, three ways in, so the window and the published report cannot disagree."""
+        from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
+        from dplanner.modules.time_estimates.schedule import write_project
+
+        if not library.has(project_id):
+            return
+        project = library.project(project_id)
+        services.undo.push(
+            SetModuleDataCommand(
+                project_id,
+                TIME_ID,
+                write_project(project, palette_id=palette_id),
+                label="Milestone Palette",
+            )
+        )
+
+    def watch_milestone_palette(restate: "Callable[[], None]") -> None:
+        """Restate the menu's ticks when a project's stored map changes underneath — the
+        Time tab's picker, an undo, or a terminal's ``dplanner schedule palette`` adopted
+        from disk. One entry of one node, so the guard is the module id."""
+        from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
+
+        library.module_data_changed.connect(
+            lambda _node_id, module_id, _origin: restate() if module_id == TIME_ID else None
+        )
+
     def milestone_shade(step_id: str) -> tuple[str, str]:
         """A milestone's shade and the sentence for it: *2nd of 4 · Viridis*.
 
@@ -1108,6 +1144,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 context=services.context,
                 theme=services.theme,
                 settings_sections=services.settings_sections,
+                # View ▸ Milestone Colours writes the *project's* stored map — the same
+                # entry the Time tab's picker and `dplanner schedule palette` write. The
+                # appearance module never learns where a palette lives.
+                milestone_palette=milestone_palette,
+                set_milestone_palette=set_milestone_palette,
+                watch_palette=watch_milestone_palette,
             )
         ),
         LibraryModule(

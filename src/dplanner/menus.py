@@ -39,12 +39,26 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # sits at "theme_system"'s position and "theme" adds no rule to View itself, the shape
     # Step's "test_result" has. "tabs" holds the Tabs submenu, which is also what the tab
     # bar's right-click renders (build_menu's submenu filter), so the two can never be a
-    # hand-maintained copy.
+    # hand-maintained copy. "milestone_colors" is the Milestone Colours child menu, a
+    # *sibling* of Theme and never inside it: what it picks is the project's colour map, not
+    # this user's appearance, and an entry nested under Theme would read as a theme. It is
+    # the one project fact in this menu, and it earns the place because it is a choice about
+    # how the window looks — greyed with its reason when no project is open.
     #
     # **View is about the window.** The graph editor's own verbs used to sit here in a
     # "canvas" group, which made View half window and half drawing surface and left the
     # graph with no home of its own; they are the Graph menu below now.
-    "View": ("palette", "areas", "panels", "zoom", "theme_system", "theme", "tabs", "window"),
+    "View": (
+        "palette",
+        "areas",
+        "panels",
+        "zoom",
+        "theme_system",
+        "theme",
+        "milestone_colors",
+        "tabs",
+        "window",
+    ),
     # The planner's own vocabulary. "Project" is what the index tree's right-click menu
     # renders and "Step" is what the graph canvas's does — see framework/action_menu.py.
     # "link" holds the two-step verbs: the canvas publishes both ends into the selection

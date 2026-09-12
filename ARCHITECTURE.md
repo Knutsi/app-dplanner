@@ -3083,6 +3083,33 @@ decisions worth writing down:
   the report's own blue (`WHOLE_COLOR`), as it always was. The calendar and the list
   share the hex through `schedule.py` and never store a `QColor`, for the
   palette-snapshot reason in *The palette a painter is handed is a snapshot*.
+- **And the map is the project's, which is what let the shade leave this tab.** For a
+  while the shades lived only here: the calendar said *this is milestone 2 of 4* and the
+  graph beside it said only *this is a milestone*, in the one violet every milestone wore.
+  Joining them needed an answer to "what colour is this milestone" that any surface could
+  ask, so `milestone_colors(library, project, is_milestone)` is the deal — `placed`'s
+  sequence, an override over a dealt shade — and `phase_colors` is a lookup into it rather
+  than a second deal beside it. The maps moved to `theme/palettes.py`, Qt-free and a leaf,
+  because the appearance module lists them and modules never import each other; the
+  composition root walks each project once and hands every consumer a typed callback, the
+  `_milestone_stats` shape. `theme/tones.py`'s `toned(name, hex)` recolours a tone at its
+  own alphas, so ten painters never re-derive one and a recoloured card is exactly as loud
+  as the purple it replaced.
+
+  **The choice stayed the project's rather than becoming the user's, and that decided the
+  menu.** A per-user map was the obvious reading of "pick it in the theme menu", and it is
+  wrong twice: Save publishes `reports/` into the plan repository, so two developers would
+  churn the committed report's colours between them; and the Time tab's picker names the
+  project's map, so a window painting a user's override would have a control that lied
+  about what it was showing. So *View ▸ Milestone Colours* writes the same stored entry
+  `dplanner schedule palette` and that picker write, through the same undoable command —
+  one choice, three ways in, the *Two surfaces, one vocabulary* rule applied to a third.
+  It sits **beside** Theme rather than inside it, because it is not a theme and an entry
+  nested under one would read as a theme; and being a project fact in a window menu, it is
+  greyed with its reason when no project is open rather than hidden. The tick follows a
+  map changed from a terminal, from the Time tab or by an undo, because the module
+  subscribes to `module_data_changed` for that one id — a state callback must never read a
+  file (*The context is announced once per turn*).
 - **The page is split at a seam, and the calendar takes the width.** What you set on the
   left — focus, the staffing picker — and what it answers on the right — the colour map
   and the month arrows on one strip, the calendar, then the milestones. The seam starts
