@@ -459,6 +459,13 @@ Example Table wears one.
 - **Every control on a strip is one height** (`CONTROL_HEIGHT`, 32 px), set in code: a
   glyph button, a worded button and a combo box disagree by a few pixels under the style,
   and a strip whose buttons are not one height reads as several strips.
+- **A strip whose glyphs are read as one set is `dense`** (`Toolbar(dense=True)`): the same
+  height, narrower sides, `DENSE_GAP` between them. A strip of *verbs* folds gracefully,
+  because losing a verb to the `…` costs a click; a strip that answers a question about the
+  thing on screen — the step panel's aspect bar, *what does this step carry* — stops
+  answering it when it folds. Ten toggles at the verb strip's metrics seat five in the width
+  that panel can be; dense seats all ten. It is a mode the primitive offers, never a surface
+  styled by name.
 - **A divider is the hairline at half strength** (`$BORDER_FAINT`, the border blended
   halfway into the ground), 6 px short of the controls' top and bottom: it parts groups
   without being read as a control.
@@ -546,6 +553,7 @@ reaching `theme.qss` as `$NAME` for free. A literal in a layout is a copy that d
 | `ROW_LINE_GAP` | 4 | between a rich row's two lines |
 | `CELL_PADDING_V` / `CELL_PADDING_H` | 6 / 8 | a plain table cell, and its header section |
 | `CONTROL_GAP` | 12 | between the controls on a strip; a button's own padding is 6 / 12 |
+| `DENSE_GAP` | 4 | between the glyphs of a dense strip, and its buttons' sides (*Toolbars*) |
 | `CONTROL_HEIGHT` | 32 | every control on a strip, set in code |
 | `ICON_SIZE` (+ `ICON_GAP`) | 16 (+ 8) | a glyph, and the gap after it |
 | `KEY_BADGE_W` | 28 | a key badge, and the slot a glyph column reserves on every row |

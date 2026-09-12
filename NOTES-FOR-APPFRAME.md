@@ -2666,3 +2666,73 @@ delegate paints from the palette and a stylesheet on the widget alone is not eno
 **Why.** Three test modules would otherwise carry the same seven lines.
 
 **Upstream?** With the primitives' tests.
+
+## 29. From the step-details pass (S6)
+
+The first surface brought up to the design system after it landed — which is exactly the
+job of finding out what a primitive is missing. Three of the four notes below are things
+`Toolbar` needed the moment it was fed from an action registry rather than from hand-wired
+slots, which DESIGN.md's *Toolbars* predicted would happen "in the design passes".
+
+### `framework/toolbar.py` — `Toolbar(dense=True)`
+
+**What.** A mode that keeps `CONTROL_HEIGHT` and narrows a strip's button sides and gaps to
+`DENSE_GAP`. Set as a Qt *property* on the widget, so the stylesheet reaches it as
+`#ControlBar[dense="true"] #ToolbarButton`; no new object name.
+
+**Why.** A strip of *verbs* may fold gracefully into the `…` menu, because losing a verb
+costs a click. The aspect bar is not a strip of verbs: it answers *what does this step
+carry*, and a row that folds stops answering. Measured — the step panel cannot be narrower
+than 479 px (its tab pages set that, not the bar), leaving the strip about 356; at the verb
+strip's 45 px buttons that seats **five** of the ten Type toggles, and at the dense 29 px it
+seats **all ten**. The alternative was the surface-named exception this replaced
+(`#AspectBarTools #ToolbarButton { padding: 5px 4px }`), which is precisely what DESIGN.md
+forbids: "never styling one surface by name".
+
+**Upstream?** Yes. Any template with a state strip beside a verb strip wants the
+distinction, and expressing it as a property rather than a name is what keeps the
+stylesheet from growing a rule per surface.
+
+### `framework/toolbar.py` — `add_verb(tip=…)`
+
+**What.** An optional standing tooltip. `_retip` prefers it over the action's words.
+
+**Why.** `_retip` is connected to `action.changed` and forces the tooltip to equal the
+action's text, so a host that sets a tooltip has it reverted on the next `setText`. That is
+right for a hand-wired verb — "a verb is a glyph, and its words are the tooltip" — but a
+registry's `ActionSpec` carries both a label *and* a `tip`, and a host that rewords an
+action to carry a refusal (*disabled, never hidden*) would lose the standing explanation
+with it. The tip stands in the tooltip; the words still name the `…` menu's entry.
+
+**Upstream?** Yes, with the note that it exists for registry-fed toolbars.
+
+### `framework/dialog.py` — `showEvent` skips the tab-order pass with no footer
+
+**What.** The `setTabOrder` loop runs only when `footer_buttons()` is non-empty.
+
+**Why.** The rule it implements is "the first Tab out of the body lands on the primary".
+With no footer there is nothing to land on, and the loop still walks every tab-focusable
+widget in the body and re-links them in `findChildren` order. For a dialog whose body is a
+whole panel — the step details dialog, the frame's own worked example of a button-less
+dialog — that is about a hundred `setTabOrder` calls that make the tab order *worse* than
+the one the panel built. The focus block is untouched.
+
+**Upstream?** Yes; it is a bug in the frame, not a divergence.
+
+### `framework/aspect_bar.py` — a `refreshed` signal, and no `visible`
+
+**What.** The bar emits `refreshed` at the end of `refresh()`, and its state triple is
+`(enabled, checked)` rather than `(visible, enabled, checked)`.
+
+**Why.** Two things a host learns only by building a second reader of the bar's answer.
+(1) The details dialog's lead repeats what the bar derived, in words; a host that listened
+to the *model* for it showed the lead one gesture behind, because applying a template ends
+with the bar's own `refresh()` — after the last write anybody heard. The bar is the thing
+that knows, so the bar says so. (2) `state().visible` was dead and also unhonourable: a
+`Toolbar` re-shows whatever fits on every reflow, so a hidden verb would be resurrected by
+the next resize. *Hidden means absent; disabled means not now* already covers the case, and
+an aspect a build does not ship never reaches the registry at all.
+
+**Upstream?** The signal, yes — a derived control that another surface repeats should
+announce. The `visible` removal is specific to a strip that owns widget visibility, and is
+worth saying out loud in `Toolbar`'s docstring upstream.
