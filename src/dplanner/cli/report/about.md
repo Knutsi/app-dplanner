@@ -34,12 +34,12 @@ DPlanner is a Python application. With [uv](https://docs.astral.sh/uv/) installe
 
 ```
 uv tool install dplanner
-dplanner desktop install     # puts DPlanner in the applications menu
+dplanner install all         # the applications-menu launcher and the agent skill too
 dpw                          # or open the window straight away
 ```
 
-`dplanner --help` lists the command line; `dplanner skill install` teaches a coding agent
-the tool.
+`dplanner --help` lists the command line, and `dplanner install status` says what this
+machine has — the command, the launcher and the skill that teaches a coding agent the tool.
 
 ## Opening this plan
 

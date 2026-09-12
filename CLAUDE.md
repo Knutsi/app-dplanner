@@ -676,9 +676,24 @@ root, stop and look for the registry or capability you have not found yet.
   `dplanner desktop install` writes the launcher an applications menu opens on it:
   `cli/desktop.py`, one class per platform (a `.desktop` entry named after `APP_ID`, an
   app bundle, a Start Menu shortcut through PowerShell) behind one contract, each testable
-  on every other platform. *Tools ▸ Install dplanner Command…* writes it in the same go
-  as the command. Neither word reaches the skill. `ARCHITECTURE.md`'s *The window is a
-  word* has the reasoning.
+  on every other platform. Neither word reaches the skill. `ARCHITECTURE.md`'s *The window
+  is a word* has the reasoning.
+- **Installing is one act, and the pieces stay.** The command, the desktop launcher and the
+  agent skill go in together — `dplanner install all`, `install status`, `install remove`
+  and *Tools ▸ Install DPlanner…*, all four over `cli/install.py`'s one reader (`items`,
+  **no subprocess**: the dialog refreshes on it and the checklist will probe with it) and
+  one writer (`apply`, which reports every piece rather than stopping at the first
+  failure). `desktop …` and `skill …` remain as the pieces it is made of. The reader lives
+  in `cli/` and not in the module because `cli/` may not import `modules/`. Two rules keep
+  the command from shadowing somebody else's install, and both say so rather than acting:
+  **a worktree build never repoints it** (which is what makes the verb safe for an agent to
+  run in its own worktree) and **a `dplanner` uv did not install is left alone** (`uv tool
+  dir --bin` against the resolved command's directory — uv's answer, never a guess at its
+  layout). Removing takes out the launcher and the skill and names `uv tool uninstall` for
+  the command rather than uninstalling the program that is running. The command's state is
+  `installed` or `missing` and never `stale`: whether the one on PATH came from this build
+  cannot be told without running it. `ARCHITECTURE.md`'s *Installing is one act* has the
+  reasoning.
 - **Discarding a build is `discard_build()`, and closing the window is not enough.** Qt keeps
   a closed `QWidget` in `topLevelWidgets()`, so without `deleteLater()` the whole build —
   services, model, every module — stays reachable forever. Nobody notices in the application;

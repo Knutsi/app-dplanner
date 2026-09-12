@@ -16,14 +16,11 @@ that depends on who ran it is a diff nobody reads.
 """
 
 import contextlib
-import shlex
-import shutil
 from collections.abc import Sequence
 from pathlib import Path
 
 from dplanner.cli.command import CliCommand, CliRegistry
 from dplanner.cli.main import PROG, build_tree
-from dplanner.core.storage.locations import main_checkout
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.model import EDGE_KINDS
 from dplanner.identity import APP_NAME, APP_VERSION
@@ -135,72 +132,17 @@ def _reference(registry: CliRegistry) -> str:
     return "\n".join(lines)
 
 
-# -- installing ---------------------------------------------------------------------------------
+# -- installing the skill -----------------------------------------------------------------------
+#
+# Where it goes, how it stands, and writing and removing it. Installing the *program* — this
+# skill together with the ``dplanner`` command and the desktop launcher — is ``cli/install.py``,
+# which is built from these and from ``cli/desktop.py``'s.
 
 
 def target_dir(*, user: bool, here: Path | None = None) -> Path:
     """Where the skill goes: this user's home, or the directory being worked in."""
     base = Path.home() if user else (here or Path.cwd())
     return base / SKILL_DIR
-
-
-def install_command() -> list[str]:
-    """The command that puts ``dplanner`` on PATH, as argv.
-
-    From a source checkout that is an editable tool install, which tracks the checkout
-    instead of freezing a copy.
-    """
-    root = Path(__file__).resolve().parents[3]
-    if (root / "pyproject.toml").is_file():
-        return ["uv", "tool", "install", "--editable", str(root)]
-    return ["uv", "tool", "install", PROG]
-
-
-def tool_bin_command() -> list[str]:
-    """The command that prints where ``uv tool install`` puts executables, as argv —
-    what the window asks after an install, to point the desktop launcher at the ``dpw``
-    uv just wrote rather than the one beside the build it is running from."""
-    return ["uv", "tool", "dir", "--bin"]
-
-
-def uninstall_command() -> list[str]:
-    """The command that takes the installed ``dplanner`` tool back out, as argv."""
-    return ["uv", "tool", "uninstall", PROG]
-
-
-def path_hint() -> str | None:
-    """None when ``dplanner`` resolves on PATH; otherwise the command that puts it there.
-
-    The skill tells agents to run ``dplanner``, so a machine where that command does not
-    resolve has half an install.
-    """
-    if shutil.which(PROG) is not None:
-        return None
-    return shlex.join(install_command())
-
-
-def worktree_warning(root: Path | None = None) -> str | None:
-    """A caution when the editable install would track a git worktree, else None.
-
-    A worktree is often temporary — a branch's scratch checkout — and an editable install
-    pointing into one breaks the moment the worktree is removed. The warning names the main
-    checkout when the worktree's ``.git`` file says where it is.
-    """
-    if root is None:
-        root = Path(__file__).resolve().parents[3]
-    gitfile = root / ".git"
-    if not gitfile.is_file():  # A directory means a main checkout; a file marks a worktree.
-        return None
-    message = (
-        f"This build runs from a git worktree ({root}) — the installed command would "
-        "break when the worktree is removed."
-    )
-    main = main_checkout(root)
-    if main != root:
-        message += (
-            f" Consider installing from the main checkout:  uv tool install --editable {main}"
-        )
-    return message
 
 
 def status(files: dict[str, str], directory: Path) -> str:
@@ -291,6 +233,9 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
         return 0
 
     def do_status(context: CliContext, args: Namespace) -> int:
+        # Imported here rather than at the top: cli/install.py reads this module.
+        from dplanner.cli.install import path_hint
+
         directory = where(args)
         state = status(files(), directory)
         hint = path_hint()

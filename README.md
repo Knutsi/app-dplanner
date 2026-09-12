@@ -60,12 +60,20 @@ uv run dplanner window --library ~/plans/library.json   # another library, in it
 uv run dplanner --help                                  # the CLI; a bare `dplanner` prints this too
 ```
 
-To have it on hand outside the checkout, `uv tool install --editable .` puts `dplanner`
-and `dpw` on PATH (*Tools ▸ Install dplanner Command…* runs the same), and `dplanner
-desktop install` adds DPlanner to the applications menu — a `.desktop` entry on Linux, an
-app bundle in `~/Applications` on macOS, a Start Menu shortcut on Windows — opening that
-`dpw`; the dialog writes it in the same go. `dplanner desktop status` says whether the
-launcher still opens this build, and `desktop uninstall` takes it out.
+To put it on this machine — the `dplanner` and `dpw` commands on PATH, a launcher in the
+applications menu (a `.desktop` entry on Linux, an app bundle in `~/Applications` on macOS,
+a Start Menu shortcut on Windows) and the agent skill — installing is **one act**:
+
+```bash
+uv run dplanner install all       # or Tools ▸ Install DPlanner… in the window
+uv run dplanner install status    # what this machine has: current, stale or missing
+```
+
+`desktop install`/`status`/`uninstall` and `skill install`/`status`/`uninstall` are the
+pieces it is made of, for when one of them is what you mean. The command is left alone when
+this build is a git worktree, or when the `dplanner` on PATH was not installed by uv — both
+say so rather than shadowing it — and `install remove` takes out the launcher and the skill
+but never the program that is running (`uv tool uninstall dplanner` does that).
 
 The library file lists your projects and lives per user (`$DPLANNER_LIBRARY` also names
 one). A plan lives in a **plan repository** — a git repository holding several projects,
@@ -81,13 +89,13 @@ plan into a plan repository, out of the code it was kept in or on from one picke
 ## Working with an agent
 
 ```bash
-uv run dplanner skill install          # ~/.claude/skills/dplanner/
+uv run dplanner install all            # the skill, with the command and the launcher
 uv run dplanner skill install --repo   # ./.claude/skills/dplanner/, so it travels
 ```
 
 The skill is **generated from the command registry**, so it cannot describe a command that
-does not exist; `dplanner skill status` says whether the installed copy matches the build,
-and *Tools ▸ Install Agent Skill…* does the same from the window.
+does not exist; `dplanner install status` says whether the installed copy matches the build,
+and *Tools ▸ Install DPlanner…* does the same from the window.
 
 Commands find the current project by walking up from the working directory for
 `project.dproj`, so an agent already sitting in the repository needs no configuration. A
@@ -254,6 +262,7 @@ src/dplanner/
 │   ├── lookup.py            a key (S7 / 7), an id, a folder name, or part of a title
 │   ├── aspects.py           `aspect list`
 │   ├── desktop.py           `desktop install`/`status`/`uninstall`: the launcher an applications menu opens, one class per platform
+│   ├── install.py           `install all`/`status`/`remove`: the command, the launcher and the skill as one act, read and written together
 │   ├── assets.py            `<noun> attach`/`assets` — the per-aspect pair — and `asset list`/`uses`/`prune` over every module's areas
 │   ├── lint.py              `lint` — every module's checks over the library, one report
 │   ├── scopes.py            `scope show` — what a check, feature or milestone gathers
@@ -367,7 +376,7 @@ src/dplanner/
 │   ├── project_assets/      every asset a project carries and what uses each — the Assets
 │   │                        tab, the pool, display titles, and `dplanner asset`
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
-│   ├── install/             getting DPlanner onto this machine from the window: the agent skill, the `dplanner` command and the desktop launcher
+│   ├── install/             getting DPlanner onto this machine from the window: one dialog over `cli/install.py`, three rows and one button
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
 │   ├── appearance/          View ▸ Theme (System theme, then what every provider offers) and Settings ▸ Appearance
 │   ├── theme_omarchy/       ── one module per theme provider, each a Qt-free `themes.py`: Omarchy's

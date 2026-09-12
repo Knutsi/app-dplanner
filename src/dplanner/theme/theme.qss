@@ -1030,7 +1030,7 @@ QSplitter::handle:vertical:pressed {
 
 /* Dialog footer buttons: quiet bordered secondaries, at most one accent primary. */
 #EditReviewDialog QPushButton, #TaskBrowserDialog QPushButton, #CardPreviewDialog QPushButton,
-#AgentSkillDialog QPushButton, #CommandInstallDialog QPushButton, #ProjectDialog QPushButton,
+#InstallDialog QPushButton, #ProjectDialog QPushButton,
 #MovePlanDialog QPushButton, #RepositoriesFolderDialog QPushButton, #GhRepoListDialog QPushButton,
 #OpenProjectsDialog QPushButton {
     background-color: $BG_OVERLAY;
@@ -1043,8 +1043,7 @@ QSplitter::handle:vertical:pressed {
 #EditReviewDialog QPushButton:hover,
 #TaskBrowserDialog QPushButton:hover,
 #CardPreviewDialog QPushButton:hover,
-#AgentSkillDialog QPushButton:hover,
-#CommandInstallDialog QPushButton:hover,
+#InstallDialog QPushButton:hover,
 #ProjectDialog QPushButton:hover,
 #MovePlanDialog QPushButton:hover,
 #RepositoriesFolderDialog QPushButton:hover,
@@ -1056,8 +1055,7 @@ QSplitter::handle:vertical:pressed {
 #EditReviewDialog QPushButton:disabled,
 #TaskBrowserDialog QPushButton:disabled,
 #CardPreviewDialog QPushButton:disabled,
-#AgentSkillDialog QPushButton:disabled,
-#CommandInstallDialog QPushButton:disabled,
+#InstallDialog QPushButton:disabled,
 #ProjectDialog QPushButton:disabled,
 #MovePlanDialog QPushButton:disabled,
 #RepositoriesFolderDialog QPushButton:disabled,
@@ -1067,7 +1065,7 @@ QSplitter::handle:vertical:pressed {
 }
 
 #EditReviewDialog #PrimaryButton, #CardPreviewDialog #PrimaryButton,
-#AgentSkillDialog #PrimaryButton, #CommandInstallDialog #PrimaryButton,
+#InstallDialog #PrimaryButton,
 #ProjectDialog #PrimaryButton, #MovePlanDialog #PrimaryButton,
 #RepositoriesFolderDialog #PrimaryButton, #GhRepoListDialog #PrimaryButton,
 #OpenProjectsDialog #PrimaryButton, #SpecSourceStrip #PrimaryButton,
@@ -1080,7 +1078,7 @@ QSplitter::handle:vertical:pressed {
 }
 
 #EditReviewDialog #PrimaryButton:hover, #CardPreviewDialog #PrimaryButton:hover,
-#AgentSkillDialog #PrimaryButton:hover, #CommandInstallDialog #PrimaryButton:hover,
+#InstallDialog #PrimaryButton:hover,
 #ProjectDialog #PrimaryButton:hover, #MovePlanDialog #PrimaryButton:hover,
 #RepositoriesFolderDialog #PrimaryButton:hover, #GhRepoListDialog #PrimaryButton:hover,
 #OpenProjectsDialog #PrimaryButton:hover, #SpecSourceStrip #PrimaryButton:hover,
@@ -1089,8 +1087,8 @@ QSplitter::handle:vertical:pressed {
     border-color: $ACCENT_HOVER;
 }
 
-#EditReviewDialog #PrimaryButton:disabled, #AgentSkillDialog #PrimaryButton:disabled,
-#CommandInstallDialog #PrimaryButton:disabled, #ProjectDialog #PrimaryButton:disabled,
+#EditReviewDialog #PrimaryButton:disabled, #InstallDialog #PrimaryButton:disabled,
+#ProjectDialog #PrimaryButton:disabled,
 #MovePlanDialog #PrimaryButton:disabled, #RepositoriesFolderDialog #PrimaryButton:disabled,
 #GhRepoListDialog #PrimaryButton:disabled, #OpenProjectsDialog #PrimaryButton:disabled {
     background-color: $BG_OVERLAY;
@@ -1111,6 +1109,29 @@ QSplitter::handle:vertical:pressed {
     color: $ON_ACCENT;
     border-color: $ACCENT;
     font-weight: bold;
+}
+
+/* ---- Installing DPlanner (DESIGN.md: what/why rows in a framed well) --------------- */
+
+/* Three rows, never more, so the well is a plain frame rather than a scroll area. */
+#InstallWell {
+    background-color: $BG_SURFACE;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
+}
+
+#InstallRow {
+    border-bottom: 1px solid $BORDER;
+}
+
+/* The last row has no row below it to be parted from, and the well's own border is
+ * already there — two lines a pixel apart is what the seam rule forbids. */
+#InstallRow[last="true"] {
+    border-bottom: none;
+}
+
+#InstallRowState, #InstallRowNote {
+    color: $TEXT_SECONDARY;
 }
 
 /* ---- Task centre (DESIGN.md: what/why rows in a framed well, quiet actions) -------- */
