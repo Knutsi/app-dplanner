@@ -17,7 +17,7 @@ visible or not, so a block that reappears is already current.
 from collections.abc import Sequence
 
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, TextEdit
 from dplanner.framework.inspector import InspectorExtension, InspectorSection
@@ -62,6 +62,17 @@ class _Block(QWidget):
         layout.setSpacing(CAPTION_GAP)
         layout.addLayout(header)
         layout.addWidget(extension.widget, stretch=1)
+        if section.stretch == 0:
+            # What makes ``InspectorSection.stretch`` authoritative. A QWidgetItem reports
+            # itself expanding when the widget's *own* layout does and its policy carries
+            # GrowFlag — and the line above makes every block's layout expanding, whatever
+            # its section declared. So with the one stretch block hidden, qGeomCalc found no
+            # stretch to honour, fell through to "spread among the expansive", and grew all
+            # three survivors to a third of the tab each (328 px for a 42 px name field,
+            # whose caption and editor sank to the bottom with it). Maximum is ShrinkFlag
+            # only: no GrowFlag, no promotion, and the declared stretch decides again.
+            # Maximum rather than Fixed so a panel shorter than its blocks still compresses.
+            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
 
 
 class DetailsSection(QWidget):
@@ -78,6 +89,13 @@ class DetailsSection(QWidget):
         layout.setSpacing(BLOCK_GAP)
         for block in self._blocks:
             layout.addWidget(block, stretch=block.section.stretch)
+        # Somewhere for the leftover height to go when the block that wanted it is turned
+        # off, so the rest stay their own size at the top. Factor **zero** on purpose: at 1
+        # it would split the leftover with the description block and halve the prose editor
+        # whenever that block *is* shown. Without it the blocks scatter instead, Qt handing
+        # each an equal share of the surplus. ``addStretch`` rather than a hand-built
+        # QSpacerItem, which is the one wrapper shape ``gc_policy``'s finalizer cannot see.
+        layout.addStretch(0)
 
         # A block follows its aspect the way a tab does: toggles arrive as module data,
         # and some aspects are also implied by prose, so both writes re-ask shown_for.
