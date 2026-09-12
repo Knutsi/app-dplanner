@@ -1130,6 +1130,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 actions=services.actions,
                 tabs=services.tabs,
                 context=services.context,
+                parent=services.window,
+                debounce=services.debounce,
+                theme=services.theme,
             )
         ),
         # -- the planner ------------------------------------------------------------------

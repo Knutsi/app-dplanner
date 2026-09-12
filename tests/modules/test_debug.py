@@ -105,3 +105,84 @@ def test_the_selection_survives_a_refresh(services, journal):
     journal.record("action", "second", duration_ms=1.0)
     activity.refresh()
     assert [item.text(2) for item in activity.tree.selectedItems()] == ["first"]
+
+
+# -- Debug ▸ Design Example: the design system's living reference ------------------------
+
+
+@pytest.fixture
+def example(services, monkeypatch):
+    """The modal, captured instead of run: exec() is patched, so the action returns at once
+    and the test holds the dialog it built."""
+    from dplanner.modules.debug.design_example import DesignExampleDialog
+
+    opened = []
+
+    def capture(self):
+        opened.append(self)
+        return 0
+
+    monkeypatch.setattr(DesignExampleDialog, "exec", capture)
+    services.actions.run("debug.design_example", Context({}))
+    (dialog,) = opened
+    return dialog
+
+
+def test_the_menu_opens_the_design_example_modal_on_the_frame(example):
+    from PySide6.QtWidgets import QPushButton
+
+    assert example.title_label.text() == "Design Example" == example.windowTitle()
+    assert not example.footer.isHidden()
+    primary = example.findChild(QPushButton, "PrimaryButton")
+    assert primary is not None and primary.text() == "Apply" and primary.isDefault()
+    assert [b.text() for b in example.footer_buttons()] == ["Apply", "Cancel", "Delete Sample"]
+    assert example.table.rowCount() > 0 and example.table.columnSpan(0, 0) == 3
+
+
+def test_every_signalling_state_is_on_the_modal(example):
+    assert [line.tone() for line in example.lines] == ["info", "busy", "ok", "error"]
+    assert example.problem.tone() == "error" and not example.problem.isHidden()
+    assert example.progress.maximum() == 5 and not example.progress.isTextVisible()
+    primary = example.primary()
+    assert primary is not None and primary.isEnabled()
+    example.refuse_switch.setChecked(True)
+    assert not primary.isEnabled() and example.status.words() == "Pick a repository first"
+    example.refuse_switch.setChecked(False)
+    assert primary.isEnabled() and example.status.isHidden()
+
+
+def test_the_demo_debouncer_drives_the_updating_indicator(services, example):
+    services.debounce.set_immediate(False)
+    try:
+        assert example.updating.isHidden()
+        example.change_button.click()
+        assert not example.updating.isHidden()
+        services.debounce.flush_all()
+        assert example.updating.isHidden()
+    finally:
+        services.debounce.set_immediate(True)
+
+
+def test_the_design_table_tab_opens_and_empty_trades_the_table_for_the_state(services):
+    services.actions.run("debug.design_table", Context({}))
+    activity = services.tabs.current_activity()
+    assert activity is not None and activity.title == "Design Example"
+    assert activity.table.rowCount() > 0 and activity.empty.isHidden()
+    activity.empty_toggle.setChecked(True)
+    assert activity.table.rowCount() == 0 and activity.table.isHidden()
+    assert not activity.empty.isHidden() and activity.empty.button is not None
+    activity.empty.button.click()  # Add Rows: the toggle comes off and the rows come back.
+    assert not activity.empty_toggle.isChecked() and activity.table.rowCount() > 0
+    assert not activity.table.isHidden() and activity.empty.isHidden()
+
+
+def test_the_filter_narrows_the_table_and_a_theme_change_repaints_it(services):
+    from dplanner.modules.debug.design_example import DESIGN_TABLE_KIND, FILTERS
+
+    activity = services.tabs.open(DESIGN_TABLE_KIND)
+    everything = activity.table.rowCount()
+    activity.filter.setCurrentText(FILTERS[2])
+    milestones = activity.table.rowCount()
+    assert 0 < milestones < everything
+    services.theme.set_theme("light")
+    assert activity.table.rowCount() == milestones
