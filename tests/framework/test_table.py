@@ -100,6 +100,13 @@ def test_rich_tables_are_taller_than_plain_ones_and_follow_the_font(app):
         big_host.deleteLater()
 
 
+def test_fit_columns_opens_an_interactive_column_at_its_content(table):
+    table.add_row(["A step whose title runs on for quite a while before it ends", "1", ""])
+    before = table.columnWidth(0)
+    table.fit_columns()
+    assert table.columnWidth(0) > before
+
+
 def test_clear_rows_drops_spans_and_hover(table):
     table.add_heading("Milestone")
     table.add_row(["a"])

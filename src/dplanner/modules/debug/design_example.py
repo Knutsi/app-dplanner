@@ -135,6 +135,7 @@ def fill_sample(table: Table, ink: QColor, keep: str) -> None:
         for row in shown:
             tint = HIGHLIGHT_FILL if row.kind == "milestone" else None
             table.add_row(sample_cells(row, ink), tint=tint)
+    table.fit_columns()
 
 
 def ink_of(widget: QWidget) -> QColor:
@@ -324,7 +325,6 @@ class DesignExampleActivity(ActivityBase):
             return
         self.empty.say("")
         fill_sample(self.table, ink_of(self.widget), self.filter.currentText())
-        self.table.resizeColumnToContents(0)
 
 
 def glyph_for(kind: str, ink: QColor) -> QIcon:

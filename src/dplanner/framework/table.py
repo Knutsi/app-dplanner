@@ -218,6 +218,16 @@ class Table(QTableWidget):
         self.setRowCount(0)
         self._hover(None)
 
+    def fit_columns(self) -> None:
+        """Open every ``interactive`` column at its content's width; call after filling.
+
+        A ``contents`` column follows its cells on its own; an interactive one starts at
+        Qt's default width, which is a riddle of ellipses until the person drags it.
+        """
+        for position, column in enumerate(self._columns):
+            if column.resize == "interactive":
+                self.resizeColumnToContents(position)
+
     # -- hover -------------------------------------------------------------------------
 
     def leaveEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
