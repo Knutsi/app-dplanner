@@ -64,6 +64,10 @@ def render(app: QApplication, theme: Theme, out: Path) -> None:
     save(dialog, out, "dialog", theme, app)
     dialog.refuse_switch.setChecked(True)
     save(dialog, out, "dialog-refused", theme, app)
+    dialog.refuse_switch.setChecked(False)
+    dialog.change_button.click()  # The demo debouncer owes a run: the glyph turns.
+    save(dialog, out, "dialog-working", theme, app)
+    debounce.flush_all()
     discard(dialog)
 
     service = ThemeService(app, (BUILTIN,))

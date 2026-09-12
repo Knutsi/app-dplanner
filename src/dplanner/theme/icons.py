@@ -528,6 +528,24 @@ def key_badge_icon(text: str, color: str | QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+SPINNER_FRAMES = 12  # One turn: a frame every 30°, so the arc reads as turning, not jumping.
+
+
+def spinner_frames(color: str | QColor, count: int = SPINNER_FRAMES) -> list[QIcon]:
+    """A three-quarter arc at ``count`` rotations: the glyph of a button whose work is
+    running. Painted once per ink and stepped by ``framework/signalling.py``'s Spinner."""
+    frames = []
+    for step in range(count):
+        pixmap, painter = _canvas()
+        painter.setPen(_pen(color, 2.0))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        start = (90 - step * 360 // count) * 16
+        painter.drawArc(QRectF(2.5, 2.5, 11.0, 11.0), start, -270 * 16)
+        painter.end()
+        frames.append(QIcon(pixmap))
+    return frames
+
+
 def close_icon(color: str) -> QIcon:
     """A cross: the close button on a tab.
 

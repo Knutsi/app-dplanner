@@ -19,12 +19,17 @@ from collections.abc import Callable
 from typing import Literal
 from weakref import ref
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QWidget
+from PySide6.QtCore import QObject, Qt, QTimer
+from PySide6.QtGui import QAction, QColor, QIcon, QPalette
+from PySide6.QtWidgets import QAbstractButton, QApplication, QLabel, QWidget
 from shiboken6 import isValid
 
 from dplanner.framework.debounce import Debounced
+from dplanner.theme.icons import spinner_frames
+from dplanner.theme.tokens import SECONDARY_ALPHA
 from dplanner.theme.tones import STATUS_TONES
+
+SPIN_MS = 80  # A frame every 80 ms: one turn a second, calm rather than frantic.
 
 Tone = Literal["info", "busy", "ok", "error"]
 # A tone's entry in the theme's status vocabulary; information wears the label's own ink.
@@ -58,6 +63,77 @@ class UpdatingIndicator(QLabel):
                 live.setVisible(pending)
 
         return debounced.pending_changed.connect(show_pending)
+
+
+class Spinner(QObject):
+    """A turning arc in the glyph slot of the button whose work is running.
+
+    Attach a button or a toolbar verb that carries a glyph; while the followed
+    :class:`Debounced` owes a run (or between ``start()`` and ``stop()``) its glyph is the
+    arc, stepped a frame at a time, and the glyph it had comes back when the work is done.
+    The slot is always there, so nothing moves — which is why a button with no glyph is
+    refused: a spinner that appears beside the words is a size jump, and a layout that
+    jumps under the pointer is the one thing this must never do.
+    """
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._targets: list[QAction | QAbstractButton] = []
+        self._idle: dict[int, QIcon] = {}
+        self._frames: list[QIcon] = []
+        self._frame = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(SPIN_MS)
+        self._timer.timeout.connect(self._advance)
+
+    def attach(self, target: QAction | QAbstractButton) -> "Spinner":
+        if target.icon().isNull():
+            raise ValueError("a spinner turns in a glyph slot: give the button an idle glyph")
+        self._targets.append(target)
+        return self
+
+    def follow(self, debounced: Debounced) -> Callable[[], None]:
+        """Turn while ``debounced`` owes a run; returns the unsubscribe."""
+        spinner = ref(self)
+
+        def on_pending(pending: bool) -> None:
+            live = spinner()
+            if live is not None and isValid(live):
+                live.start() if pending else live.stop()
+
+        return debounced.pending_changed.connect(on_pending)
+
+    def is_spinning(self) -> bool:
+        return self._timer.isActive()
+
+    def start(self) -> None:
+        if self.is_spinning():
+            return
+        self._frames = spinner_frames(self._ink())
+        self._frame = 0
+        for target in self._targets:
+            self._idle[id(target)] = target.icon()  # As inked now: put back exactly this.
+            target.setIcon(self._frames[0])
+        self._timer.start()
+
+    def stop(self) -> None:
+        if not self.is_spinning():
+            return
+        self._timer.stop()
+        for target in self._targets:
+            target.setIcon(self._idle.pop(id(target), target.icon()))
+
+    def _advance(self) -> None:
+        self._frame = (self._frame + 1) % len(self._frames)
+        for target in self._targets:
+            target.setIcon(self._frames[self._frame])
+
+    def _ink(self) -> QColor:
+        parent = self.parent()
+        palette = parent.palette() if isinstance(parent, QWidget) else QApplication.palette()
+        ink = palette.color(QPalette.ColorRole.Text)
+        ink.setAlpha(SECONDARY_ALPHA)
+        return ink
 
 
 class StatusLine(QLabel):

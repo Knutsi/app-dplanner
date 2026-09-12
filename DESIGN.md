@@ -461,6 +461,11 @@ two widgets (`framework/signalling.py`):
 - **Busy** — work with no known end (a probe, a fetch): a `StatusLine` in the busy tone,
   where the answer will land — a dialog footer's status slot, a page strip's note. Never a
   modal, never a caption rewritten to say *Reading…*.
+- **Working** — the button whose verb started the work says so in its own glyph: a
+  `Spinner` turns a three-quarter arc in the glyph slot until the work is done, then the
+  glyph comes back (`attach(button).follow(debounced)`, or `start()`/`stop()` around a
+  task). The slot is always there, so nothing moves — which is why a button that starts
+  work carries a glyph beside its words, and a spinner refuses one that does not.
 - **Pending** — a fact nobody has recorded: a greyed italic line saying what is missing
   (*Facts under the thing they are about*); no glyph, because an absence is not a state.
 - **Error** — the error tone in the same place the busy was, with the remedy in its words.
@@ -485,9 +490,9 @@ two widgets (`framework/signalling.py`):
 - **Tab order is reading order through the body, then the primary, then the secondaries,
   then the destructive last**: the first Tab out of the body lands on the action the
   person came for.
-- **The only things that move are the agent ring and the Updating indicator.** No fades,
-  no slides: on a still surface every change is a change of fact, so the eye is drawn only
-  by facts.
+- **The only things that move are the agent ring, the Updating indicator and the glyph of
+  a button whose work is running.** No fades, no slides: on a still surface every change
+  is a change of fact, so the eye is drawn only by facts.
 - **Selection follows the keyboard**: arrows move the row edge and whatever follows the
   selection follows it, as a click would.
 
@@ -543,7 +548,8 @@ from the code or a screenshot, and Debug ▸ Design Example is what *yes* looks 
     Is the strip a `Toolbar` — glyphs with their words in tooltips, folding into `…`?
 13. Is every busy, ok and error a `StatusLine` in place, and every rewritten `QLabel` gone?
 14. Is any progress bar 4 px, accent and determinate?
-15. Does nothing fade, slide or animate except the ring and the indicator?
+15. Does nothing fade, slide or animate except the ring, the indicator and a working
+    button's glyph — and does that button carry a glyph, so nothing moves when it turns?
 
 **The surfaces, as audited when the system was written (September 2026)** — what makes
 each read as Qt, and so what its pass has to change. A surface not named here was not

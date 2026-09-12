@@ -2561,6 +2561,12 @@ A derived token spares every theme provider a field it would never set.
 sets rich text — a `●` coloured by `theme.tones.STATUS_TONES` for busy/ok/error, the label's
 own ink for info — and hides on "". Both `$TEXT_SECONDARY` in the stylesheet.
 
+`Spinner(parent).attach(button | action).follow(debounced)` turns a three-quarter arc
+(`theme.icons.spinner_frames`, twelve frames, one turn a second) in the target's glyph slot
+while the debouncer owes a run — or between `start()` and `stop()` — and puts the glyph it
+had back; it refuses a target with no glyph, since a spinner appearing beside the words is
+a size jump.
+
 **Why.** Every busy state was a `QLabel` rewritten by hand, and only one view said anything
 during its settle. The weak reference is the gc rule from `CLAUDE.md`: a long-lived
 plain-Python signal holding a widget's bound method is the shape that crashes the collector.

@@ -16,7 +16,7 @@ rendered in both themes. Neither reads the model, so neither follows a project.
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -34,7 +34,7 @@ from dplanner.framework.activity import ActivityBase
 from dplanner.framework.context import SCOPE_ACTIVITY, ContextNode, ContextService, activity_uri
 from dplanner.framework.debounce import SETTLE_MS, Debounced, DebounceService
 from dplanner.framework.dialog import DialogFrame
-from dplanner.framework.signalling import StatusLine, UpdatingIndicator
+from dplanner.framework.signalling import Spinner, StatusLine, UpdatingIndicator
 from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.toolbar import Toolbar
@@ -48,6 +48,7 @@ from dplanner.theme.icons import (
     list_icon,
     plus_icon,
     refresh_icon,
+    spark_icon,
     step_icon,
     tag_icon,
     trash_icon,
@@ -225,9 +226,14 @@ class DesignExampleDialog(DialogFrame):
         strip = QHBoxLayout()
         strip.setSpacing(FIELD_GAP)
         signals.addLayout(strip)
+        # A button that starts work carries a glyph, and the glyph turns while the work
+        # runs: the slot is always there, so nothing moves.
         self.change_button = QToolButton(self.body)
         self.change_button.setObjectName("ToolbarButton")
         self.change_button.setText("Change something")
+        self.change_button.setIcon(spark_icon(ink_of(self.body)))
+        self.change_button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.change_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         strip.addWidget(self.change_button)
         strip.addStretch(1)
         self.updating = UpdatingIndicator(self.body)
@@ -236,6 +242,8 @@ class DesignExampleDialog(DialogFrame):
             self._recompute, DEMO_DELAY_MS, parent=self, service=debounce
         )
         self.updating.follow(self._recompute_soon)
+        self.spinner = Spinner(self.body).attach(self.change_button)
+        self.spinner.follow(self._recompute_soon)
         self.change_button.clicked.connect(self._recompute_soon.trigger)
         self.lines = [StatusLine(self.body) for _ in range(4)]
         for line, (words, tone) in zip(
@@ -328,6 +336,8 @@ class DesignExampleActivity(ActivityBase):
             self._refresh, SETTLE_MS, parent=self.widget, service=debounce
         )
         self.updating.follow(self._refresh_soon)
+        self.spinner = Spinner(self.widget).attach(self.refresh_action)
+        self.spinner.follow(self._refresh_soon)
         self.table.itemSelectionChanged.connect(self._reword_verbs)
         self.filter.currentIndexChanged.connect(lambda _index: self._refresh_soon.trigger())
         self._unsubscribe = theme.changed.connect(self._on_theme)

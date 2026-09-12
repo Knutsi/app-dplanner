@@ -108,3 +108,52 @@ def test_a_progress_bar_is_a_four_pixel_accent_strip(themed, theme):
         assert image.pixel(180, 2) == QColor(theme.bg_overlay).rgb()
     finally:
         bar.deleteLater()
+
+
+def test_a_spinner_turns_the_glyph_while_pending_and_puts_it_back(host):
+    from PySide6.QtWidgets import QToolButton
+
+    from dplanner.framework.signalling import Spinner
+    from dplanner.theme.icons import plus_icon
+
+    service = DebounceService()
+    debounced = Debounced(lambda: None, 30, parent=host, service=service)
+    button = QToolButton(host)
+    button.setText("Change something")
+    button.setIcon(plus_icon("#ffffff"))
+    idle = button.icon().cacheKey()
+    before = button.sizeHint()
+    spinner = Spinner(host).attach(button)
+    spinner.follow(debounced)
+    debounced.trigger()
+    assert spinner.is_spinning() and button.icon().cacheKey() != idle
+    first = button.icon().cacheKey()
+    spinner._advance()
+    assert button.icon().cacheKey() != first  # The arc turned.
+    assert button.sizeHint() == before  # And nothing moved.
+    service.flush_all()
+    assert not spinner.is_spinning() and button.icon().cacheKey() == idle
+
+
+def test_a_spinner_refuses_a_button_with_no_glyph(host):
+    from PySide6.QtWidgets import QPushButton
+
+    from dplanner.framework.signalling import Spinner
+
+    with pytest.raises(ValueError):
+        Spinner(host).attach(QPushButton("Change something", host))
+
+
+def test_a_spinner_turns_a_toolbar_verb_too(host):
+    from dplanner.framework.signalling import Spinner
+    from dplanner.framework.toolbar import Toolbar
+    from dplanner.theme.icons import refresh_icon
+
+    bar = Toolbar(host)
+    refresh = bar.add_verb("Refresh", refresh_icon, lambda: None)
+    idle = refresh.icon().cacheKey()
+    spinner = Spinner(host).attach(refresh)
+    spinner.start()
+    assert refresh.icon().cacheKey() != idle
+    spinner.stop()
+    assert refresh.icon().cacheKey() == idle
