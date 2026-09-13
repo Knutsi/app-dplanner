@@ -352,6 +352,7 @@ src/dplanner/
 │   ├── toolbar.py           a strip of verbs as glyphs with their words in tooltips, in named bands folding whole into a … menu; the filter control
 │   ├── picker.py            the fuzzy picker over rich rows — the command palette, and the graph's Find
 │   ├── table.py             the table: columns declared, the rules applied once, a delegate painting what a row wears
+│   ├── row_well.py          a well of widget rows kept by key — the task and Agents browsers
 │   ├── signalling.py        Updating… over one Debounced, a spinner in a working button's glyph, a status line in a tone
 │   ├── widgets.py           the empty state that trades places with its content, the caption, the note, confirm()
 │   ├── diagnostics.py       the stall watchdog, the failure hooks, the crash log — app.main's

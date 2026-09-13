@@ -1147,6 +1147,53 @@ any rule that names its widget, so `QPushButton#PrimaryButton` still wins and a 
 restyled as the primary takes the accent. `GlyphButton` is quiet already, for a verb whose
 glyph has to follow the theme on a page that outlives it.
 
+## A roster has three shapes: a table sets values in the row, a list stays a list, a well keeps its widgets
+
+`CLAUDE.md` has the rule; this is why. The tables-and-browsers pass (S15) took the last
+hand-laid rosters onto the primitives, and each of them turned out to be one of three shapes.
+
+**A value set in a table's row belongs to the column, not to a widget in the cell.** The
+bulk Estimates tab planted a spin box and nine buttons in every row with `setCellWidget`, and
+the Time tab laid its milestone rows out by hand, measuring strings. A widget in a cell
+swallows the row's hover and pick, forces a height the font does not give, and costs a
+widget tree per row — a plan of four hundred steps is four thousand buttons rebuilt on every
+settled change. So a `Column` carries the editing: an `editor` (`NumberEditor`,
+`DateEditor`) that Qt's delegate opens over the cell, and `chips` the delegate paints and
+hit-tests from one layout, so what is clicked is what was drawn. A commit is announced once
+through `Table.edited` and the host pushes its command. Two traps came with it: a fresh
+`QTableWidgetItem` is editable by default, and the announcement runs inside Qt's
+`commitData` — or inside the click — so a host may write a cell in its slot but must never
+rebuild the table there.
+
+**The chips are the Estimates tab's reason to exist.** The pass first made the estimate a
+number typed into the cell, with the sizes as Step ▸ Estimate verbs. It read well and lost
+the page's most valuable property, which the person using it named at once: one size lit on
+every row, down every row, is a grid in which the small, the large and the unsized steps are
+seen before a number is read. The chips came back, painted rather than planted. Zero stands
+past a hairline because adding no time is a claim, not a size. The last chip opens the
+editor and wears any value off the scale, because a four-day step lighting nothing would
+read as unsized. The unit moved into the header, once, because it was being printed on
+every chip.
+
+**A roster whose rows carry verbs and outlive a tick is a well, not a table.** The task
+browser and the Agents browser were one layout written twice. Their rows carry *Cancel*,
+*Show Terminal*, *Reveal* and a dismiss, and the task centre refreshes every 250 ms: a row
+rebuilt on a tick loses the button being pressed. `RowWell.reconcile(keys, build, update)`
+keeps a row per key and updates it in place. A task's indeterminate bar became a busy
+`StatusLine`, the rule every other surface already follows: an unknown fraction is busy.
+
+**A list stays a list.** Standing note N28 said every `#OrderTable` borrower moves onto
+`Table`, and DESIGN.md says a list when there is one column of things. The implementation
+notes log is one column of things, and a one-column table would add a header nobody reads,
+so it moved onto `RichList` instead: the table's well, hover and picked edge, on the
+two-line delegate. The step panel's test roster compares an id, a name and a result down a
+column, so it became a small `Table`.
+
+**A strip has to remember what its host took off.** `Toolbar._reflow` set every item's
+visibility from the room alone, so a control a view hid came back on the next resize — the
+Documentation view's *Group by* had been doing it unnoticed. `set_shown` is the host's
+statement, and the reflow counts only what is shown. Three surfaces in the pass needed it.
+
 ## How a panel gets editors it has never heard of
 
 The step detail panel shows a Details tab first — estimate, description, figures — and a tab

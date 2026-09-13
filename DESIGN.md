@@ -28,6 +28,9 @@ re-rendering — never styling one surface by name.
 |---|---|---|---|
 | a dialog, a confirmation, a one-line prompt, what a gesture came to | `DialogFrame`, `confirm()`, `LinePrompt`, `notice()` | `framework/dialog.py`, `framework/widgets.py` | the modal: `dialog-*`, `dialog-refused-*`; every dialog on it: `s16-dialogs/` |
 | a table | `Table`, `Column`, `Cell`; `key_badge_icon` for a milestone | `framework/table.py`, `theme/icons.py` | the table tab: `table-*`, `table-selected-*` |
+| a value set in a table's row | `Column(editor=NumberEditor(…) \| DateEditor(…))`, and `chips=` for its usual values | `framework/table.py` | `s15-tables-and-browsers/estimates-*`, `time-*` |
+| rows that each carry their own verbs and outlive a refresh | `RowWell`, `WellRow` | `framework/row_well.py` | `s15-tables-and-browsers/tasks-*`, `agents-*` |
+| words in the status bar that open what they sum up | `StatusBarButton` | `framework/widgets.py` | — |
 | a strip of verbs over a surface | `Toolbar` | `framework/toolbar.py` | the table tab's strip |
 | a strip that is a tool palette | `Toolbar.add_group` | `framework/toolbar.py` | the toolbars tab: `toolbars-*`, `toolbars-folded-*` |
 | a verb the registry owns, with an arrow | `Toolbar.add_action(menu=…, data_menu=…)` | `framework/toolbar.py` | the Documentation view's strip |
@@ -42,7 +45,8 @@ re-rendering — never styling one surface by name.
 | a caption over a block, a remark under it | `caption()`, `captioned()`, `note()`, `block()` | `framework/widgets.py` | the modal's form |
 | a settings page | `settings_page()`, then `block()`s — no margin of its own | `framework/settings_registry.py` | `s16-dialogs/settings-*` |
 | a verb in a dialog's or a page's body | `quiet()`; `GlyphButton` when it carries a glyph | `framework/widgets.py` | `s16-dialogs/settings-openai-*`, `project-colocated-*` |
-| a two-line list row | `TwoLineDelegate` | `framework/list_rows.py` | the palette, the notes tab |
+| a list of rich items | `RichList` — a `QListWidget` on `TwoLineDelegate` | `framework/list_rows.py` | `s15-tables-and-browsers/notes-*` |
+| a control a strip offers only sometimes | `Toolbar.set_shown` — never `hide()` | `framework/toolbar.py` | the Time tab's day fields |
 | when a rebuild is owed | `Debounced.pending_changed` | `framework/debounce.py` | — |
 | a margin, a gap, a height | a token | `theme/tokens.py` (*Tokens*) | — |
 
@@ -406,7 +410,8 @@ reasoning, including why the count of fields was the symptom rather than the dis
 A `QListWidget` of multi-line entries uses a `QStyledItemDelegate`, not concatenated `\n`
 text: the delegate gives each row real padding, a primary/secondary text hierarchy, wrapped
 text that re-lays out on resize, and a selection state that recolours both lines legibly.
-`framework/list_rows.py`'s `TwoLineDelegate` is the one to use.
+`framework/list_rows.py`'s `RichList` is the one to use: a `QListWidget` on its
+`TwoLineDelegate`, wearing the table's well, hover and picked edge.
 
 - **A list when there is one column of things; a table when a reader compares across
   rows.** A list row is two lines — the *what* in primary ink, the *why* under it in
@@ -421,6 +426,11 @@ text that re-lays out on resize, and a selection state that recolours both lines
   two named or glyph buttons — the act, and a link where somebody else's page is the answer
   — then a `⋮` for what the row can be *told*, built when it opens. Room kept while hidden
   (the `UpdatingIndicator`'s rule), so a row that is fixed does not move the rows under it.
+- **Rows that carry verbs of their own and must outlive a refresh are a well**
+  (`RowWell`): the task and Agents browsers, where a pressed *Cancel* has to survive the
+  next tick. Rows are reconciled by key, never rebuilt; each is a title with its verbs, a
+  `StatusLine` whose tone is the row's mood, and a note — never a table row with buttons
+  planted in it.
 - **A list of things that should be true is drawn as one**: the `StatusLine`'s mark becomes
   ☑ when it is and ☐ when it is not, and the tone still carries the mood. Nothing else
   changes that glyph — a second mood glyph would be a second vocabulary.
@@ -442,8 +452,9 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
   line that is *about* the first (`detail_font`, the same step the empty state takes).
 - **Column headers are left-aligned**, whatever the column holds
   (`header.setDefaultAlignment`, not Qt's centred default). Numeric *cells* still
-  right-align so their digits line up, with the unit inside the cell (*3 d*); the header
-  reads from the left with everything else. The header stays bold secondary over one
+  right-align so their digits line up, with the unit inside the cell (*3 d*) — or once in
+  the header (*Estimates (d)*) where a column of chips would print it on every chip; the
+  header reads from the left with everything else. The header stays bold secondary over one
   hairline — it is `#InspectorCaption` laid on its side, chrome above the rows and not a
   weight among them.
 - **Row height comes from the font, never from a pixel.** The UI font is the platform's;
@@ -475,6 +486,16 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
 - **A group heading is a spanned row nobody can pick**: bold secondary words at a plain
   row's height, no hover, no edge (`add_heading`). Nothing else separates the groups; the
   heading is the separator.
+- **A value set in the row is the column's**, never a widget planted in a cell: one column
+  carries an editor (`NumberEditor`, `DateEditor`) that a double-click, F2 or a typed key
+  opens over the cell — a picked row aims its keys at it — and a commit lands in the cell
+  and is announced once, through `Table.edited`, which the host turns into its command.
+- **A column's usual values are chips**, when seeing them matters as much as setting them
+  (`Column(chips=…)`): painted in the cell, one accent-filled for the row's value, a click
+  sets it. Down the rows they line up into a grid — the Estimates tab reads small, large and
+  unsized before a number is read. A value that is a claim rather than a step on the scale
+  stands past a hairline (`Chip(apart=True)`), and beside an editor a last `…` chip opens
+  it and wears a value off the scale, so an unusual value never reads as none.
 - **No header sorting.** Every table here is a derivation whose row order *is* its
   answer — a topological order, a roster filed under headings, a log newest first. Another
   view is a selector on the control strip, in words, and it survives a rebuild; a clicked
@@ -546,6 +567,9 @@ Example Table wears one.
   accent, and a glyph left in the quiet tone disappears into it — which is why the canvas's
   mode switches carried words for as long as they did. The primitive re-inks on the toggle,
   so a glyph is legible in both states and nothing on a strip needs words to be readable.
+- **A control the host takes off stays off.** `Toolbar.set_shown(widget, False)`, never
+  `hide()`: the reflow shows whatever it measures, so a hidden combo came back on the next
+  resize. The Time tab's day fields and the Estimates tab's scope come and go this way.
 - **A face is a glyph that stands for a band of the menus** (`Toolbar.add_menu_face`):
   one control dropping a menu the action table renders, never a copy of it — the graph's
   *Options* is *Graph*'s `look` band. It has no verb under it, so it wears the layout
@@ -612,10 +636,8 @@ and one stylesheet rule for the progress bar:
 - **A progress bar is 4 px, accent, no text, no frame** — one bare `QProgressBar` rule —
   and only for work whose end the application knows: a fetch of 12 pages, a save over 3
   repositories. Never for the debounce, never for an agent (a peer, not a task), and not
-  indeterminate: an unknown fraction is *busy*, and busy is a line. (The task browser's
-  rows keep their indeterminate bars until the design pass reaches that surface — a task's
-  end really is unknown, so what they owe the rule is a busy line, not a fraction nobody
-  can compute.)
+  indeterminate: an unknown fraction is *busy*, and busy is a line. The task browser shows a
+  bar only for a task that reports its fraction; every other running task is a busy line.
 - **A remembered duration may fill a bar, under a fact that leads it.** How long the last
   run of the same operation took (`TaskService`'s duration memory, kept per user and
   machine) is a fair guess and a poor promise, so it is never the *only* thing a bar
@@ -763,29 +785,37 @@ Tables and lists:
 - *(done — S9)* Order — the first table onto the `Table` primitive: heights from the font,
   the row as the unit of hover and selection, its milestones marked by their key badge,
   bold and their own wash rather than by a rule and extra air, and an empty state. The
-  `#OrderTable` rules stay in `theme.qss` for the three widgets still borrowing them.
-- Tests — borrows `#OrderTable` by name; a spanned heading as tall as a two-line row.
-- Estimates — centred headers, an object name no stylesheet knows, an embedded spin box
-  per row, no empty state, no debounce at all.
+  `#OrderTable` rules left `theme.qss` with the last widget borrowing them (S15).
+- *(done — S15)* Tests — a `Table` under one strip of glyph verbs and selectors, results in
+  their tone, a milestone's heading in its shade at a plain row's height; the step panel's
+  roster is a small `Table` too.
+- *(done — S15)* Estimates — two columns, the step and its sizes as chips in the cell
+  (a grid down the rows), the number editor behind the last chip, an empty state per
+  filter, a debounced rebuild with its indicator.
 - LLM Calls, Telemetry — a `QTreeWidget` pretending to be a table; nesting drawn as four
   spaces; columns re-measured every second.
-- Implementation notes — the two-line delegate, frameless and borrowing `#OrderTable`.
+- *(done — S15)* Implementation notes — a `RichList` under a strip with its verbs and a
+  label filter.
 - *(done — the Specs tab pass)* Specs tree — the uniform row heights are gone, and both
   strips are `Toolbar`s of glyphs over a `StatusLine`. The pinned Topology row stays as it
   is: `EMPHASIS_ROLE` + `RULE_ROLE` together are what `list_rows.py` offers for a row that
   reads as a header, and it genuinely selects and shows a page, so it is on the primitive
   rather than faking one.
-- Assets — two lists with no object name at all; a baked empty message (now on the swap).
+- *(done — S15)* Assets — two `Table`s under one strip (attach, open, copy the path,
+  delete, clean up) and a filter over *unused* and each source.
 - *(done — the problems pass)* Problems panel — two-line rows, the finding's remedy on
   the second line, one worded face dropping the launch profiles, and an `EmptyState`
   where the list would be. It stands inside the project tab, beside the canvas. (It
   replaced the Features panel, which went with the feature catalogue.)
 - *(done — S16)* Agent profiles — a strip over a two-line table: the name over the two
   commands, the default the one bold row, its verbs greyed with the reason in their words.
-- Index tree, palette list — unstyled or ink-only hover. *(The Settings tree is done —
+- Index tree — unstyled or ink-only hover. *(The palette list is done — S15: it says when
+  nothing matches, and speaks the strips' words.)* *(The Settings tree is done —
   S16: the picker list's wash and edge, folders as headings.)*
-- Task and Agents browsers, Milestones list — widget rows laid out by hand, one of them by
-  measuring strings.
+- *(done — S15)* Task and Agents browsers — one `RowWell` on the dialog frame; a task
+  with no known fraction is a busy line. Milestones list — a `Table` with the day each
+  milestone begins set in the cell, its colour and *Begin When the Previous Lands* on the
+  Time tab's one `Toolbar`.
 - *(done — the signalling pass)* Every debounced view now carries the indicator, and the
   Time tab's hand-shown *Recalculating…* label is gone; `ExitDialog` is on the frame, and
   the quit-time save has a progress dialog over its repositories.

@@ -397,6 +397,13 @@ root, stop and look for the registry or capability you have not found yet.
   which would outrank every id-only button rule inside a body — and a `GlyphButton`, quiet
   already, when its glyph must follow the theme. `ARCHITECTURE.md`'s *A primitive carries
   the rule* has the reasoning.
+- **A roster has three shapes, and each is a primitive.** A `Table` when a reader compares
+  across rows — and a value set in the row is the column's `editor` or its `chips`, painted
+  and hit-tested by the table, never a widget planted in a cell with `setCellWidget`. A
+  `RichList` when there is one column of things. A `RowWell` when every row carries verbs of
+  its own and has to outlive a refresh (the task and Agents browsers). A strip control that
+  comes and goes is `Toolbar.set_shown`, never `hide()`, which the next reflow undoes.
+  `ARCHITECTURE.md`'s *A roster has three shapes* has the reasoning.
 - **A pane is marked only while there is another pane.** The accent edge on the group you are
   in appears when the window splits and goes when it stops being split — the same condition
   that installs `_ActiveGroupWatcher`, because it is the same fact. It lives on a one-widget
