@@ -3,16 +3,15 @@
 A mark is a per-user preference — *show me where the graph starts, where it ends, what
 floats free* — not a fact about a project, so nothing here reaches disk beside the plan
 (the module keeps it in ``user_config``). Which sockets a node has connected is derived
-every sync from the edges the canvas draws, exactly like the ordering: stored, it could
-disagree with the graph it came from the moment ``dplanner step link`` ran.
+every sync by :func:`dplanner.domain.ordering.ports`, exactly like the ordering: stored, it
+could disagree with the graph it came from the moment ``dplanner step link`` ran. That walk
+lives in the domain because ``graph.orphan`` lint asks the same question, and a module may
+not import another module's copy of an answer.
 
 Qt-free, so the derivation and the value can be tested with plain ``Step``s.
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass, replace
-
-from dplanner.domain.model import Step, StepId
 
 MARK_NAMES = ("starts", "ends", "orphans")
 
@@ -55,17 +54,3 @@ class Marks:
             return cls()
         return cls(**{name: bool(data[name]) for name in MARK_NAMES if name in data})
 
-
-def ports(steps: Sequence[Step]) -> dict[StepId, tuple[bool, bool]]:
-    """``(has incoming, has outgoing)`` per step, over every edge kind whose both ends are
-    among ``steps`` — the edges the canvas draws, and no others."""
-    ids = {step.id for step in steps}
-    incoming: set[StepId] = set()
-    outgoing: set[StepId] = set()
-    for waiter in steps:
-        for sources in waiter.edges.values():
-            for source in sources:
-                if source in ids:
-                    incoming.add(waiter.id)
-                    outgoing.add(source)
-    return {step.id: (step.id in incoming, step.id in outgoing) for step in steps}

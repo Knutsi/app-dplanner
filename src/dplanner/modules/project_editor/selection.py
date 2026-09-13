@@ -77,7 +77,7 @@ def neighbourhood(edges: Iterable[EdgeRef], picked: Iterable[StepId]) -> Neighbo
     """The neighbourhood of ``picked`` among the arrows the canvas is drawing.
 
     Derived on every selection change and every sync from the edges in front of the user,
-    exactly like ``marks.ports()`` — written down, it could disagree with the graph the
+    exactly like ``ordering.ports()`` — written down, it could disagree with the graph the
     moment ``dplanner step link`` ran with no window open to notice.
 
     **Nothing picked has no neighbourhood**, and that empty answer is what keeps a spotlight

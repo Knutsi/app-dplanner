@@ -83,7 +83,7 @@ from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
 from dplanner.modules.project_editor.look import Look
-from dplanner.modules.project_editor.marks import ports
+from dplanner.domain.ordering import ports
 from dplanner.modules.project_editor.modes import (
     CONNECT,
     DIVIDE_HORIZONTAL,

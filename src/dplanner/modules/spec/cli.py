@@ -26,6 +26,7 @@ from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.gate import digest
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, project_arg, step_arg
+from dplanner.cli.shaping import guide
 from dplanner.core.text_diff import diff_hunks
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
@@ -147,21 +148,34 @@ def commands(*, note_read: Callable[[str, str], None]) -> list[CliCommand]:
         text = read_topology(project)
         if text.strip():
             note_read(project.id, text)
-        context.report(
-            {"project": project.id, "topology": text, "digest": digest(text) if text else ""},
+        # The read that is recorded is the project's own text, never what was printed: the
+        # default travels with the build, and hashing it would un-read every project on
+        # the day `shaping.md` gained a comma.
+        default = "" if args.brief else guide()
+        own = (
             text.rstrip("\n")
             if text.strip()
-            else f"{project.title}: no topology yet — write one with "
-            f"`dplanner topology set {project.title!r} --file -`",
+            else f"{project.title}: no topology yet — read the default shape below, then "
+            f"write this project's own with `dplanner topology set {project.title!r} --file -`"
+        )
+        context.report(
+            {
+                "project": project.id,
+                "topology": text,
+                "digest": digest(text) if text else "",
+                "default": default,
+            },
+            f"{own}\n\n---\n\n{default.rstrip()}" if default else own,
         )
         return 0
 
     return [
         CliCommand(
             path=("topology", "show"),
-            summary="Print how a project's graph is shaped, and record that you read it "
-            "— the graph-editing verbs refuse until the current text has been read.",
-            configure=project_arg,
+            summary="Print how a project's graph is shaped, and the default shape beside "
+            "it, and record that you read it — the graph-editing verbs refuse until the "
+            "current text has been read.",
+            configure=_configure_topology_show,
             run=_topology_show,
             examples=("dplanner topology show 'Search rewrite'",),
         ),
@@ -304,6 +318,15 @@ def _configure_import(parser: ArgumentParser) -> None:
 def _configure_attach(parser: ArgumentParser) -> None:
     project_arg(parser)
     parser.add_argument("image", help="the file to copy in beside the specs")
+
+
+def _configure_topology_show(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument(
+        "--brief",
+        action="store_true",
+        help="the project's own text alone, without the default shape",
+    )
 
 
 def _configure_topology_set(parser: ArgumentParser) -> None:

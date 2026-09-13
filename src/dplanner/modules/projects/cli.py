@@ -60,7 +60,7 @@ from dplanner.domain.model import (
     StepId,
     TextEdit,
 )
-from dplanner.domain.ordering import placed
+from dplanner.domain.ordering import placed, ports
 from dplanner.domain.relocate import RelocateError, move_project, target_in
 from dplanner.domain.repositories import ACCEPTED, RepositoryFacts, repository_facts
 from dplanner.domain.seed import seed_project
@@ -93,7 +93,55 @@ def lint_checks() -> list[LintCheck]:
             if target not in ids
         ]
 
-    return [dangling_requires]
+    def orphan(_product: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
+        # The canvas already rings one in the refusal red — the one mark that says
+        # *something is wrong here* rather than *this is where the graph ends*. This is the
+        # same derivation, read by the terminal. A lone step is nobody's orphan.
+        if len(project.steps) < 2:
+            return []
+        connected = ports(project.steps)
+        return [
+            LintFinding(
+                check="graph.orphan",
+                subject_id=step.id,
+                subject=step.title,
+                message="is on no graph — nothing waits on it and it waits on nothing; "
+                f"link it with `dplanner step link '{step.title}' <step>`, or remove it",
+            )
+            for step in project.steps
+            if connected[step.id] == (False, False)
+        ]
+
+    def unrooted(_product: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
+        """Steps the graph starts from, when it starts from more than one.
+
+        A plan has one beginning — ``Project start`` — and everything else branches off it,
+        which is what makes *nothing precedes this* mean "here is where the work begins".
+        Report nothing when there is exactly one such step: that one is the beginning.
+        """
+        # `requires` alone: a `relates` link is a remark, not an order, so it does not
+        # make a step follow anything. Dead ids are skipped as everywhere else.
+        ids = {step.id for step in project.steps}
+        roots = [
+            step
+            for step in project.steps
+            if not any(target in ids for target in step.edges.get("requires", []))
+        ]
+        if len(roots) < 2:
+            return []
+        return [
+            LintFinding(
+                check="graph.unrooted",
+                subject_id=step.id,
+                subject=step.title,
+                message=f"starts from nowhere, and so do {len(roots) - 1} other steps — a "
+                "graph begins at one step and branches from it; link it behind the work it "
+                f"follows (`dplanner step link '{step.title}' <step>`)",
+            )
+            for step in roots
+        ]
+
+    return [dangling_requires, orphan, unrooted]
 
 
 def commands(
