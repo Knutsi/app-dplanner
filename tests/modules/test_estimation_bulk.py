@@ -177,6 +177,7 @@ def test_a_rows_title_carries_its_description_as_the_tooltip(services, project):
 
     tab = estimate_tab(services)
     assert tab.table.columnCount() == 2
+    assert tab.table.horizontalHeaderItem(1).text() == "Estimates (d)"  # The unit, once.
     assert "Skim the spec" in tab.table.item(0, 0).toolTip()
     assert "More prose." in tab.table.item(0, 0).toolTip()
 
@@ -204,7 +205,7 @@ def test_every_row_lights_the_size_it_has_so_the_column_reads_as_a_grid(services
     assert tab.table.chips_at(0, ESTIMATE_COLUMN)[8].chip.apart  # Zero stands past a rule.
     assert lit(tab, 0) == ["2"]
     assert lit(tab, 1) == ["0"]  # Adds no time: counted, and not the same as unsized.
-    assert lit(tab, 2) == ["4 d"]  # Off the scale, the last chip says the number.
+    assert lit(tab, 2) == ["4"]  # Off the scale, the last chip says the number.
     assert lit(tab, 3) == []  # Not sized at all.
     lefts = {laid.rect.left() for row in range(4) for laid in tab.table.chips_at(row, 1)[:9]}
     assert len(lefts) == 9  # One left edge per size, whatever the row: a grid.
@@ -232,7 +233,7 @@ def test_a_number_typed_in_the_cell_writes_an_undoable_estimate(services, projec
     box.setValue(0.5)
     tab.table.commitData(box)
     assert read_estimate(services.document.step(a.id)) == 0.5
-    assert tab.table.item(0, ESTIMATE_COLUMN).text() == "0.5 d"
+    assert tab.table.item(0, ESTIMATE_COLUMN).text() == "0.5"
 
     services.undo.undo()
     assert read_estimate(services.document.step(a.id)) is None
@@ -248,7 +249,7 @@ def test_a_size_clicked_on_a_row_writes_an_undoable_estimate(services, project):
 
     click_size(tab, 0, "½")
     assert read_estimate(services.document.step(a.id)) == 0.5
-    assert lit(tab, 0) == ["½"] and tab.table.item(0, ESTIMATE_COLUMN).text() == "0.5 d"
+    assert lit(tab, 0) == ["½"] and tab.table.item(0, ESTIMATE_COLUMN).text() == "0.5"
     click_size(tab, 0, "0")
     assert read_estimate(services.document.step(a.id)) == 0.0 and lit(tab, 0) == ["0"]
     services.undo.undo()  # Two clicks on one row are one burst, as typing in the panel is.
@@ -262,7 +263,7 @@ def test_the_last_chip_opens_the_number_typed_in_the_cell(services, project):
     run_estimate_open(services)
     tab = estimate_tab(services)
 
-    click_size(tab, 0, "4 d")
+    click_size(tab, 0, "4")
     assert tab.table.state() == QAbstractItemView.State.EditingState
     box = tab.table.findChild(QDoubleSpinBox)
     assert box is not None and box.value() == 4.0
@@ -280,7 +281,7 @@ def test_sizing_several_picked_rows_from_the_estimate_verbs_is_one_undo_step(ser
     assert state.enabled and state.label == "½ Day for 4 Steps"
     services.actions.run("estimate.size_2", services.context.current())
     assert [read_estimate(services.document.step(s.id)) for s in project.steps] == [0.5] * 4
-    assert [tab.table.item(row, ESTIMATE_COLUMN).text() for row in range(4)] == ["0.5 d"] * 4
+    assert [tab.table.item(row, ESTIMATE_COLUMN).text() for row in range(4)] == ["0.5"] * 4
     services.undo.undo()
     assert all(read_estimate(services.document.step(s.id)) is None for s in project.steps)
 
@@ -299,7 +300,7 @@ def test_a_change_made_elsewhere_reaches_the_row(services, project):
 
     services.undo.push(SetModuleDataCommand(a.id, "estimation", {"days": 3.0, "format": 1}))
     assert tab.table.item(0, ESTIMATE_COLUMN).data(VALUE_ROLE) == 3.0
-    assert tab.table.item(0, ESTIMATE_COLUMN).text() == "3 d"
+    assert tab.table.item(0, ESTIMATE_COLUMN).text() == "3"
 
 
 def test_the_tables_own_write_is_not_echoed_back_over_typing(services, project):

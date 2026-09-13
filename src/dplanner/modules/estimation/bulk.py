@@ -69,8 +69,9 @@ if TYPE_CHECKING:
 
 ESTIMATE_KIND = "estimate"
 
-# One step under zero is "no estimate", printed as a dash; zero is a claim of its own.
-DAYS = NumberEditor(UNESTIMATED, MAX_DAYS, QUARTER, decimals=2, suffix=" d", blank_text="—")
+# One step under zero is "no estimate", printed as a dash; zero is a claim of its own. The
+# unit is the header's, so a number off the scale reads like the sizes beside it.
+DAYS = NumberEditor(UNESTIMATED, MAX_DAYS, QUARTER, decimals=2, blank_text="—")
 # The panel's quick sizes, then zero past a rule: adding no time is a claim, not a size.
 SIZES = (
     *(Chip(days, label, size_tip(days)) for days, label in QUICK_DAYS),
@@ -78,7 +79,7 @@ SIZES = (
 )
 COLUMNS = (
     Column("Step", resize="interactive"),
-    Column("Estimate", editor=DAYS, chips=SIZES),
+    Column("Estimates (d)", editor=DAYS, chips=SIZES),
 )
 STEP_COLUMN, ESTIMATE_COLUMN = range(2)
 STEP_ROLE = HOST_ROLE
