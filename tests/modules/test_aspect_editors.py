@@ -53,7 +53,7 @@ def test_every_registered_aspect_became_a_tab_or_a_details_block(services, panel
     assert [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())] == [
         "Details",
         "Ticket",
-        "Docs",
+        "Fragment",
         "Tests",
         "Covers",
         "Agent",

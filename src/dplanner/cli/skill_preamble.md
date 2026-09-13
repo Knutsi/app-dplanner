@@ -198,9 +198,9 @@ Marking a test the status it already has succeeds, so a batch is safe to re-run.
 
 ## Writing the documentation
 
-A step's **fragment** is what it adds to the product's documentation — written while the work
-is fresh, in the words a user would read, not the words the plan used. A feature or a
-milestone then **compiles** its fragments into one document.
+A step's **documentation fragment** is what it adds to the product's documentation — written
+while the work is fresh, in the words a user would read, not the words the plan used. A
+feature or a milestone then **compiles** the fragments it gathers into its **documentation**.
 
 ```
 dplanner docs set 'Parse the query string' --file - <<'EOF'
@@ -208,24 +208,29 @@ Search accepts `field:value` pairs and bare words. Quote a phrase to keep it tog
 EOF
 ```
 
-**You are the model that compiles them.** The window has a Compile button; the CLI has the
-loop, which is three verbs:
+**You are the one who compiles them.** *Compile with Agent…* in the window launches an agent
+— perhaps you, with a briefing that ends in these verbs — and the loop works just as well
+unasked:
 
 ```
+dplanner docs show --for-project     # the compilation instructions every document follows
 dplanner docs status --json          # every collector: never / current / out of date
-dplanner docs collect Auth           # everything it would read, as one document
+dplanner docs collect Auth           # every fragment it gathers, as one document
 #  …write the document yourself…
 dplanner compiled set Auth --file signing-in.md
 ```
 
 `compiled set` stamps what it read, so the document reads as up to date until somebody edits
-a fragment behind it. Two things worth knowing:
+a fragment behind it. Three things worth knowing:
 
-- **A milestone reads its features' compiled documents**, not their fragments again. Compile
-  the features first, then the milestone, or the release notes will say everything twice.
+- **A milestone reads its features' documents**, not their fragments again. Compile the
+  features first, then the milestone, or the release notes will say everything twice.
 - **Out of date is derived, never guessed.** Editing a fragment, or linking more work behind
   a feature, marks that feature's document out of date — and recompiling a feature marks its
   milestone's. `dplanner project lint` reports them as `docs.compiled-stale`.
+- **Keep every `![](assets/…)` link as it is written.** A fragment's images live beside the
+  step that wrote it and are found by that name, so a renamed link points at nothing and an
+  invented one at nothing at all.
 
 ## Running as an agent step
 

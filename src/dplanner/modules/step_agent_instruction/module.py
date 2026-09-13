@@ -82,6 +82,7 @@ from dplanner.modules.step_agent_instruction.prompt import (
     PromptPart,
     assemble,
     conflict_prompt,
+    handover_prompt,
 )
 from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog
 from dplanner.modules.step_agent_instruction.section import (
@@ -150,9 +151,28 @@ def _no_key(_step: Step) -> str:
     return ""
 
 
+def _window_title(key: str, step: Step, note: str) -> str:
+    """What the terminal's window is called. ``note`` is what this run is *for* when it is
+    not the step's work: two runs on one step are told apart by their windows or not at
+    all."""
+    titled = f"{key} {step.title}".strip()
+    return f"{titled} ({note})" if note else titled
+
+
 def _titled(step: Step) -> str:
     """A step's title as a person reads it — the placeholder when it has none."""
     return step.title or "Untitled step"
+
+
+def _run_words(
+    harnesses: tuple[AgentHarness, ...], profile: Profile, files: launcher.LaunchFiles
+) -> str:
+    """Which agent a launch handed the work to, for a surface that records it — the CLI's
+    own name and the run's session, or just the name for a harness that mints its own id."""
+    harness = launcher.harness_of(agent_command(harnesses, profile), harnesses)
+    label = harness.label if harness is not None else "An agent"
+    session = files.session if harness is not None and harness.names_session else ""
+    return f"{label} · session {session}" if session else label
 
 
 def _our_version(node: Node, entry: str) -> str:
@@ -637,6 +657,8 @@ class StepAgentInstructionModule:
         worktree: str,
         workdir: Path | None,
         profile: Profile,
+        *,
+        note: str = "",
     ) -> tuple[bool, launcher.LaunchFiles]:
         """Open the profile's terminal on ``text`` for ``step`` in ``workdir``; the run
         is recorded only when a shell was actually spawned. Both prompts this module
@@ -660,7 +682,7 @@ class StepAgentInstructionModule:
                 agent_command=command_text,
                 worktree=worktree,
                 directory=run_dir,
-                step_title=f"{key} {step.title}".strip(),
+                step_title=_window_title(key, step, note),
                 project_id=deps.library.project_of(step.id).id,
                 harnesses=deps.harnesses,
             )
@@ -727,6 +749,102 @@ class StepAgentInstructionModule:
                 text, str(prepared.prompt_file), deps.parent, title="Resolve Conflict"
             ).exec()
         return spawned
+
+    # -- compiling a collector's documentation ------------------------------------------------
+
+    def compile_profiles(self, step_ids: Sequence[StepId]) -> list[tuple[str, str]]:
+        """Every launch profile, with why it cannot compile *these* collectors right now —
+        "" when it can. The default profile is first, as everywhere else.
+
+        The docs module renders this: the strip's verb reads the first entry's reason and its
+        dropdown greys each profile with its own. The questions are the ones ``_can_run``
+        asks, minus the step ones — an agent mark and a briefing are what a *work* run needs,
+        and a collector's document is neither.
+        """
+        deps = self._deps
+        count = len(step_ids)
+        limit = max_agents()
+        shared = ""
+        if not count:
+            shared = "nothing to compile"
+        elif count > limit:
+            shared = f"at most {limit} agents at a time (Settings ▸ Agent profiles)"
+        else:
+            by_project: dict[str, str] = {}
+            for step_id in step_ids:
+                if not deps.library.has(step_id):
+                    shared = "the step is gone"
+                    break
+                project_id = deps.library.project_of(step_id).id
+                if project_id not in by_project:
+                    by_project[project_id] = _workdir_refusal(deps.facts_for(step_id))
+                if by_project[project_id]:
+                    shared = by_project[project_id]
+                    break
+        return [
+            (profile.name, shared or launcher.template_refusal(launch_command(profile)))
+            for profile in read_profiles()
+        ]
+
+    def compile_documentation(
+        self, requests: Sequence[tuple[StepId, str]], profile_name: str = ""
+    ) -> list[tuple[StepId, str]]:
+        """Launch one agent per (collector, briefing); the launches that opened a shell, each
+        with the words naming what is working on it.
+
+        ``requests`` carries the *body* of each briefing — the docs module's own words — and
+        this wraps it with the header and the preflight every hand-over gets. The shell opens
+        where a work run's would, in the code checkout, because a document about the product
+        is written beside it; with **no worktree**, since a compile changes no code, and with
+        **no claim on the step's status**: an agent writing a feature's documentation is not
+        doing that feature's work.
+
+        The returned words are how the docs module attributes a document without guessing.
+        Reading the step's newest run back instead would credit a feature's document to
+        whichever agent happened to be working on that feature.
+        """
+        deps = self._deps
+        profile = (
+            next((one for one in read_profiles() if one.name == profile_name), None)
+            or default_profile()
+        )
+        opened: list[tuple[StepId, str]] = []
+        for step_id, body in requests:
+            if not deps.library.has(step_id):
+                continue
+            step = deps.library.step(step_id)
+            project = deps.library.project_of(step_id)
+            text = handover_prompt(
+                f"# Documentation: {_titled(step)}",
+                project.title or "Untitled project",
+                deps.briefing.preamble(step, False, deps.facts_for(step_id)),
+                body,
+            )
+            run_dir = launcher.new_run_dir()
+            spawned, prepared = self._launch(
+                step,
+                text,
+                run_dir,
+                "",
+                _workdir(deps.facts_for(step_id)),
+                profile,
+                note="documentation",
+            )
+            if not spawned:
+                # The template that refused one will refuse the rest, and the fallback is
+                # already holding this briefing — the same stop `_run` makes.
+                PromptFallbackDialog(
+                    text, str(prepared.prompt_file), deps.parent, title="Compile Documentation"
+                ).exec()
+                break
+            opened.append((step_id, _run_words(deps.harnesses, profile, prepared)))
+        if len(opened) == 1:
+            deps.status.show_status(
+                f"Agent compiling “{_titled(deps.library.step(opened[0][0]))}”", 4000
+            )
+        elif len(opened) > 1:
+            deps.status.show_status(f"{len(opened)} agents compiling documentation", 4000)
+        return opened
 
     def _preview(self, context: Context) -> None:
         step = focused_step(context, self._deps.library)

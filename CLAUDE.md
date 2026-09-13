@@ -1401,18 +1401,30 @@ root, stop and look for the registry or capability you have not found yet.
   narrow dock — because a stack of equal cards stops working at the third test.
   `ARCHITECTURE.md`'s *A test belongs to a step, and a step carries several* has the
   reasoning, including the diff trade the string body accepts.
-- **Documentation is a fragment per step and a document per collector.** The `docs` aspect
-  is what one step adds to the product's documentation; `docs_compiled` is what a feature or
-  a milestone makes of everything it gathers. Two aspect ids in one package, because a node
-  holds one prose document per module and a feature legitimately has both. **There is no
-  step kind for compiling** — a feature and a milestone already *are* the collectors, so
-  Compile is a verb on them. A milestone reads its features' *compiled* documents, not their
-  notes again (`ScopeKind.gathers` says so), which is also what makes recompiling a feature
-  mark its milestone out of date. **Staleness is a digest, never a timestamp**: a compile
-  stores the digest of what it read, and "out of date" is a comparison — so a relink that
-  changes what a collector gathers says so by itself. The CLI is where an agent compiles:
-  `docs status`, `docs collect`, then `compiled set`, which re-stamps. `ARCHITECTURE.md`'s
-  *Documentation is fragments, and a collector compiles them* has the reasoning.
+- **Documentation is a fragment per step and a document per collector, and an agent
+  compiles it.** The `docs` aspect is a step's **documentation fragment**; `docs_compiled` is
+  a collector's **documentation**, made of everything it gathers — the words on every
+  surface, while the two on-disk ids stay as they are. Two aspect ids in one package, because
+  a node holds one prose document per module and a feature legitimately has both. **There is
+  no step kind for compiling** — a feature and a milestone already *are* the collectors, so
+  compiling is a verb on them. A milestone reads its features' *compiled* documents, not
+  their fragments again (`ScopeKind.gathers` says so), which is also what makes recompiling a
+  feature mark its milestone out of date. **Staleness is a digest, never a timestamp**: a
+  compile stores the digest of what it *read*, so a relink says so by itself, while
+  hand-editing a document — or rewording the compilation instructions — does not.
+  **There is no Compile button.** *Compile with Agent…* launches the chosen profile on a
+  briefing of the fragments, the project's **compilation instructions** (`modules/docs.md`
+  beside the project; the panel card, a tab in the view, and `docs set/show --for-project`
+  are three presenters of one field) and the verb that finishes it — `dplanner compiled set
+  <key> --file -`. Two typed callbacks on `DocsDeps`, the `hand_to_agent` shape, so nothing
+  imports the agent module; the run is tracked on the collector like any other, and
+  **claims nothing about the step's status**. What the agent writes arrives from another
+  process, so **it is not undoable** and replacing a document that has text asks once.
+  *Compile Out of Date…* takes the **frontier** — never a milestone beside the features whose
+  documents it reads. Who compiled a document is the launching window's record, per user; the
+  plan's stamp says when and from what (`docs_compiled` format 2 dropped `provider`/`model`
+  with the LLM call). `ARCHITECTURE.md`'s *Documentation is fragments, and a collector
+  compiles them* has the reasoning.
 - **An LLM call is a task, and the service is GUI-bound.** `framework/llm_service.py`'s
   `complete()` is blocking network I/O, so it runs in a `TaskRunner` body and the answer
   comes back on the owner's own Qt signal — the runner has no result seam. Every call is

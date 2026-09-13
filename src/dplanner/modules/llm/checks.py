@@ -5,9 +5,10 @@ and the answer names whichever providers hold a key. The provider ids arrive fro
 composition root — a module never imports another — and the key itself is read straight
 out of the keychain, which is the only place any provider keeps one.
 
-It advises. Every AI-gated control in the application is already disabled with its reason
-(``AI_DISABLED_TIP``), so a machine without a key is a machine with fewer buttons, not a
-broken one.
+It advises, and nothing in this build needs it: compiling documentation was the one feature
+that called the service, and it launches an agent now (*Documentation is fragments*). The row
+stays because the service and its providers do — dormant on purpose, ready for whatever calls
+next — and because a person who has configured a key wants to see that it took.
 """
 
 from collections.abc import Sequence
@@ -36,7 +37,8 @@ def checks(*, providers: Sequence[tuple[str, str]]) -> list[MachineCheck]:
             label="An AI provider key",
             probe=lambda: _configured(providers),
             remedy=Remedy(
-                words="Add one under Settings ▸ LLM to turn the AI-assisted features on."
+                words="Add one under Settings ▸ LLM. No feature needs one today — the"
+                " service is here for whatever asks next."
             ),
         )
     ]

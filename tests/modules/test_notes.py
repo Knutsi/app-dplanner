@@ -358,7 +358,7 @@ def test_each_row_under_a_project_opens_its_own_tab(services, project):
     panel.tree.itemActivated.emit(row.child(0), 0)
     assert [a.title for a in services.tabs.activities()] == [
         "Discovery — Implementation notes",
-        "Discovery — Docs",
+        "Discovery — Documentation",
     ]
 
 

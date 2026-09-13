@@ -69,7 +69,7 @@ def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
     expected = [
         "Details",
         "Ticket",
-        "Docs",
+        "Fragment",
         "Tests",
         "Covers",
         "Agent",
@@ -121,7 +121,7 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
     assert visible_labels(panel) == [
         "Details",
         "Ticket",
-        "Docs",
+        "Fragment",
         "Tests",
         "Covers",
         "Agent",

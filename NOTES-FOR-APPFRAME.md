@@ -2987,3 +2987,30 @@ second widget that reimplemented the tone mapping to change one character.
 
 **Upstream?** Yes, with the constraint in the docstring: the tone is the vocabulary, the
 glyph is the surface's, and a second *mood* glyph is what the tones exist to prevent.
+
+## 35. From the documentation-compile pass (S11)
+
+**`Toolbar.add_verb` learned an arrow** (`framework/toolbar.py`). `ActionToolbar` already gave
+a button a dropdown — `_attach_menu`'s three lines: a `QMenu`, `MenuButtonPopup` so the button
+half still runs the verb, and the `hasMenu` property the stylesheet widens the arrow by — but
+only for a `(menu, submenu)` of the action table, filled through `fill_menu`. A strip that
+renders its *own* verbs had no way to offer one, and what such a strip drops down is as often
+**data** as a fixed child menu: the Documentation view's *Compile with Agent…* offers the
+launch profiles, which are a `DataMenuSpec`, and `fill_menu` deliberately leaves a data child
+menu out of a named-submenu render. So `add_verb` takes `fill: Callable[[QMenu], None]` and
+hands a `DataMenuSpec.fill` straight in, with `menu_for(action)` beside it as the test's way
+to see what the arrow would show. No new stylesheet: `#ToolbarButton::menu-button` and the
+`hasMenu` widening were already there for `ActionToolbar`'s buttons.
+
+**Worth upstreaming**, and it is the half-step N31 named: `ActionToolbar` becoming a `Toolbar`
+fed by the registry now needs only the registry-driven state, since the arrow no longer lives
+in one of them alone.
+
+**`extend-exclude = ["docs"]` in `pyproject.toml` excluded `src/dplanner/modules/docs/` too.**
+Ruff matches a slash-less pattern against *any* directory of that name, so a feature module
+called `docs` had never been linted or formatted — three unused imports and an unsorted import
+block had accumulated in plain sight, and `uv run ruff check` said "All checks passed". The
+pattern is `docs/**` now, which is root-relative. Anything in a template that excludes a
+by-name directory (`docs`, `build`, `assets`, `themes`) is a trap the same way: a module may
+legitimately be called that. Note also that `ruff format` **does** reformat Python inside
+markdown fences, which is what the exclusion was for.

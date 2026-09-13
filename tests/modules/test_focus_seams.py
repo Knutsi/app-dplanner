@@ -87,7 +87,7 @@ def test_show_docs_opens_the_docs_tab_on_the_steps_group(services, project):
     assert greyed.enabled is False and greyed.label == NO_DOCS_REASON
 
     services.actions.run(OPEN_STEP_ACTION, selection(("step", work.id)))
-    [tab] = [a for a in services.tabs.activities() if a.title.endswith("Docs")]
+    [tab] = [a for a in services.tabs.activities() if a.title.endswith("Documentation")]
     assert tab._selected == imp.id  # The note is read under the feature that gathers it.
     services.actions.run(OPEN_STEP_ACTION, selection(("step", imp.id)))
     assert tab._selected == imp.id

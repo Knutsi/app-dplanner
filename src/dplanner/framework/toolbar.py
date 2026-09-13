@@ -16,7 +16,10 @@ when its group is not the active one, not a context per group.
 ``(menu, submenu)`` whose entries belong under that button's arrow: the button runs its own
 verb on a click and renders that child menu on the arrow — through ``fill_menu``, so it is
 the menu, never a copy of it, and it is refilled on every open against the context and the
-palette of that moment.
+palette of that moment. :class:`Toolbar`'s ``add_verb(fill=…)`` is the same arrow for a strip
+that renders its own verbs rather than the table's, and it takes the filling callable
+directly, because what such a strip drops down is as often data (the launch profiles) as a
+fixed child menu.
 
 :func:`control_bar` is the other strip a tab page carries: a row of *its own* controls — a
 selector, a toggle, a spin box — that overflows into a » menu when the width is short.
@@ -228,6 +231,7 @@ class Toolbar(QWidget):
         self._items: list[_Item] = []
         self._painters: dict[QAction, Callable[[QColor], QIcon]] = {}
         self._tips: dict[QAction, str] = {}
+        self._menus_by_action: dict[QAction, QMenu] = {}
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(DENSE_GAP if dense else CONTROL_GAP)
@@ -257,6 +261,7 @@ class Toolbar(QWidget):
         shortcut: str = "",
         checkable: bool = False,
         tip: str = "",
+        fill: Callable[[QMenu], None] | None = None,
     ) -> QAction:
         """A glyph on the strip; ``text`` (and the shortcut) is its tooltip and its words in
         the … menu. The returned action is what a host enables, checks and rewords.
@@ -265,6 +270,15 @@ class Toolbar(QWidget):
         ``ActionSpec.tip``, say. It stands in the tooltip while the words still name the
         entry in the … menu, so a host that rewords an action to carry a refusal does not
         lose the standing explanation with it.
+
+        ``fill`` gives the verb an **arrow of its own**, the way ``ActionToolbar`` gives one
+        to a button that drops a child menu of the action table: ``MenuButtonPopup``, so the
+        glyph half still runs the verb and the arrow only offers the other ways of running
+        it, and the popup cleared and refilled on every open — a verb's state, its entries
+        and the theme's ink can all have changed since the last one. It takes a callable
+        rather than a menu name because what a strip drops down is as often *data* (the
+        launch profiles) as a fixed child menu, and a ``DataMenuSpec``'s own ``fill`` is
+        then handed straight in.
         """
         action = QAction(text, self)
         action.setCheckable(checkable)
@@ -283,9 +297,31 @@ class Toolbar(QWidget):
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))  # Qt's toolbar default is 24.
         button.setDefaultAction(action)
+        if fill is not None:
+            popup = QMenu(button)
+
+            def refill(menu: QMenu = popup, filler: Callable[[QMenu], None] = fill) -> None:
+                menu.clear()
+                filler(menu)
+
+            popup.aboutToShow.connect(refill)
+            button.setMenu(popup)
+            button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+            # The theme widens the arrow into a target and steps the glyph aside for it; a
+            # styled subcontrol is outside Qt's size hint, so the room has to be asked for.
+            button.setProperty("hasMenu", True)
+            self._menus_by_action[action] = popup
         self._place(_Item(button, action))
         self._reink()
         return action
+
+    def menu_for(self, action: QAction) -> QMenu | None:
+        """The dropdown a verb carries, filled as it would open — a test's way in."""
+        popup = self._menus_by_action.get(action)
+        if popup is not None:
+            popup.clear()
+            popup.aboutToShow.emit()
+        return popup
 
     def add_widget(self, widget: QWidget) -> QWidget:
         """A control that is not a verb — a filter, a grouping — among the verbs."""

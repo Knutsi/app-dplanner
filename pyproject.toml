@@ -83,8 +83,11 @@ check_untyped_defs = true
 line-length = 100
 target-version = "py313"
 src = ["src", "tests"]
-# Proposals under docs/ quote Python with aligned comments: prose, not code to format.
-extend-exclude = ["docs"]
+# Proposals under the repository's own docs/ quote Python with aligned comments: prose, not
+# code to format. The pattern is root-relative on purpose — a bare "docs" matches a directory
+# of that name anywhere, which silently took `modules/docs/` out of lint and format for as
+# long as that module has existed.
+extend-exclude = ["docs/**"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "PTH", "TID", "RUF"]
