@@ -346,7 +346,10 @@ class Toolbar(QWidget):
         self._group: _Group | None = None
         # Registry-fed verbs: the id, its action and its button, restated together.
         self._bound: list[tuple[str, QAction, QToolButton]] = []
-        self._popups: dict[QAction, tuple[QMenu, str, str | None, str | None]] = {}
+        # Action → the popup its arrow drops, and how that popup is filled when it opens.
+        # A filler rather than a menu name, because what an arrow offers is as often *data*
+        # — the launch profiles under Compile with Agent — as a band of the action table.
+        self._popups: dict[QAction, tuple[QMenu, Callable[[QMenu], None]]] = {}
         self._faces: dict[QAction, QToolButton] = {}
         self._registry: ActionRegistry | None = None
         self._context: ContextService | None = None
@@ -423,6 +426,7 @@ class Toolbar(QWidget):
         action_id: str,
         *,
         menu: tuple[str, str] | None = None,
+        data_menu: str | None = None,
     ) -> QAction:
         """A verb the registry owns, restated on every context change.
 
@@ -430,7 +434,11 @@ class Toolbar(QWidget):
         its state (:func:`action_words`), and a click goes through ``registry.run``, so the
         state gate holds even if a stale context left a button enabled. ``menu`` names the
         ``(menu, submenu)`` the button's arrow drops down — the child menu itself, refilled
-        on every open, never a copy of it.
+        on every open, never a copy of it — and ``data_menu`` names a ``DataMenuSpec``
+        instead, for a verb whose other ways of running it are data rather than a band of
+        the table: the launch profiles under *Compile with Agent*, which `fill_menu` leaves
+        out of a named-submenu render precisely because a data child menu belongs to its
+        menu rather than to one of its submenus.
         """
         self._bind(registry, context)
         spec = registry.spec(action_id)
@@ -447,7 +455,9 @@ class Toolbar(QWidget):
         )
         button = self._glyph(action)
         if menu is not None:
-            self._arrow(button, action, menu[0], menu[1])
+            self._arrow(button, action, self._table_fill(menu[0], menu[1]))
+        elif data_menu is not None:
+            self._arrow(button, action, registry.data_menu(data_menu).fill)
         self._seat(button, action)
         self._bound.append((action_id, action, button))
         self._state(action_id, action, button, context.current())
@@ -475,7 +485,7 @@ class Toolbar(QWidget):
         action = self._verb(text, icon, checkable=False, tip="", keys="")
         popup = QMenu(self)
         popup.aboutToShow.connect(lambda: self._refill(action))
-        self._popups[action] = (popup, menu, submenu, group)
+        self._popups[action] = (popup, self._table_fill(menu, submenu, group))
         action.setMenu(popup)  # So the … menu shows the face as a child menu of the same.
         # Not ``setDefaultAction``: a QToolButton takes its menu from its default action,
         # and giving it one of its own lets the action go — the face then renders its
@@ -548,7 +558,18 @@ class Toolbar(QWidget):
         button.setDefaultAction(action)
         return button
 
-    def _arrow(self, button: QToolButton, action: QAction, menu: str, submenu: str) -> None:
+    def _table_fill(
+        self, menu: str, submenu: str | None = None, group: str | None = None
+    ) -> Callable[[QMenu], None]:
+        """A filler that renders one child menu — or one band — of the action table."""
+
+        def fill(popup: QMenu) -> None:
+            assert self._registry is not None and self._context is not None
+            fill_menu(popup, self._registry, self._context, menu, submenu, group)
+
+        return fill
+
+    def _arrow(self, button: QToolButton, action: QAction, fill: Callable[[QMenu], None]) -> None:
         """The arrow beside a button, rendering one child menu of the action table.
 
         ``MenuButtonPopup``, not ``InstantPopup``: the button half still runs the verb, so
@@ -559,7 +580,7 @@ class Toolbar(QWidget):
         """
         popup = QMenu(button)
         popup.aboutToShow.connect(lambda: self._refill(action))
-        self._popups[action] = (popup, menu, submenu, None)
+        self._popups[action] = (popup, fill)
         button.setMenu(popup)
         button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         button.setProperty("hasMenu", True)
@@ -618,10 +639,9 @@ class Toolbar(QWidget):
         button.setVisible(state.visible)
 
     def _refill(self, action: QAction) -> None:
-        popup, menu, submenu, group = self._popups[action]
-        assert self._registry is not None and self._context is not None
+        popup, fill = self._popups[action]
         popup.clear()
-        fill_menu(popup, self._registry, self._context, menu, submenu, group)
+        fill(popup)
 
     def menu_for(self, action_id: str) -> QMenu | None:
         """The dropdown a registered verb's button carries, filled as it would open."""

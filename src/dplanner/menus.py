@@ -67,7 +67,10 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "features" the feature module's: the catalogue of what it delivers, placed or not.
     # "tests" is the test run's two verbs — a run belongs to a project, spans its
     # steps, and there is at most one open at a time.
-    "Project": ("edit", "documents", "features", "tests", "open"),
+    # "docs" is Compile Out of Date: one agent per document in this project whose fragments
+    # have moved on. It is the project's because it is about all of them at once — the
+    # per-collector launch is a Step verb, beside Run Agent.
+    "Project": ("edit", "documents", "docs", "features", "tests", "open"),
     # The canvas the plan is drawn on: how it is arranged and how it is looked at. Every
     # verb here steers the graph editor and nothing else, which is what makes it a menu
     # rather than a group inside View — and what tells the next person where to add one.
@@ -94,10 +97,14 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "test_result" feeds that same Test submenu with what a run *recorded*, so the rule
     # between what a test is and what it did is drawn inside the child menu — and, holding
     # no top-level entry of its own, the group adds no rule to the menu itself.
-    # "docs" is Compile Docs: an LLM writing a feature's or a milestone's document from
-    # the documentation it gathers. Its own group rather than "agent"'s, because launching
-    # a coding agent in a terminal and filling one field are not two of a kind.
-    "Step": ("edit", "link", "classify", "test_result", "agent", "docs", "open", "navigate"),
+    # "agent" holds both launches, as a band of two child menus: Run Agent, which carries a
+    # step's work out, and Compile with Agent, which writes a collector's documentation from
+    # the fragments behind it. Compiling had a "docs" group of its own while it was an LLM
+    # call — "launching a coding agent in a terminal and filling one field are not two of a
+    # kind" — and it is a coding agent in a terminal now, tracked as a run on the step and
+    # reachable through Show Agent Terminal, so the reason for the separate group went with
+    # the mechanism.
+    "Step": ("edit", "link", "classify", "test_result", "agent", "open", "navigate"),
     # "runs" is the Agent List — the live shells this window launched, a data child menu
     # rebuilt on open — above "install", what this machine has of DPlanner itself.
     "Tools": ("runs", "install"),

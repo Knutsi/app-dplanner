@@ -132,9 +132,9 @@ dplanner test add "Draft the model" "Rejects an empty query" --text "1. POST /q 
 dplanner check set "Ship the beta"       # gathers every test behind it
 dplanner test-run start --scope "Ship the beta" --label "Pre-ship 3"
 dplanner test-run mark T100 failed --note "still 500s"
-dplanner docs set "Draft the model" --file notes.md   # what this step documents
-dplanner docs status                     # which features and releases need writing up
-dplanner docs collect "Ship the beta"    # everything it documents, as one document
+dplanner docs set "Draft the model" --file notes.md   # this step's documentation fragment
+dplanner docs status                     # which features and releases need compiling
+dplanner docs collect "Ship the beta"    # every fragment it gathers, as one document
 dplanner order show search               # every step, numbered, in dependency order
 dplanner order show search --ready       # just what can be started right now
 dplanner schedule start search --date 2026-09-01
@@ -203,7 +203,7 @@ uv run dplanner report csv search --table order         # one table, to stdout
                 ├── estimation.json         a module's data
                 ├── testing.json            the tests this step keeps
                 ├── step_description.md     a module's prose
-                ├── docs.md                 what this step documents
+                ├── docs.md                 this step's documentation fragment
                 └── step_description/       a module's files
 ```
 

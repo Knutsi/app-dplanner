@@ -30,6 +30,7 @@ re-rendering — never styling one surface by name.
 | a table | `Table`, `Column`, `Cell`; `key_badge_icon` for a milestone | `framework/table.py`, `theme/icons.py` | the table tab: `table-*`, `table-selected-*` |
 | a strip of verbs over a surface | `Toolbar` | `framework/toolbar.py` | the table tab's strip |
 | a strip that is a tool palette | `Toolbar.add_group` | `framework/toolbar.py` | the toolbars tab: `toolbars-*`, `toolbars-folded-*` |
+| a verb the registry owns, with an arrow | `Toolbar.add_action(menu=…, data_menu=…)` | `framework/toolbar.py` | the Documentation view's strip |
 | a fuzzy picker over a long list | `PickerDialog`, `PickerRow` | `framework/picker.py` | the palette, and Find: `s7-graph-editor/find-*` |
 | a filter on a strip | `FilterButton` | `framework/toolbar.py` | `table-filtered-*`, `filters-*` |
 | a combo box on a strip or in a dialog | a plain `QComboBox` — the stylesheet dresses it | `theme.qss` | `dropdown-*` |
@@ -768,3 +769,9 @@ Tables and lists:
 - *(done — the signalling pass)* Every debounced view now carries the indicator, and the
   Time tab's hand-shown *Recalculating…* label is gone; `ExitDialog` is on the frame, and
   the quit-time save has a progress dialog over its repositories.
+- *(done — the documentation pass)* The Documentation view is on the primitives: its rows
+  are `TwoLineDelegate` with the state in the trailing slot (a date when there is nothing to
+  act on), its strip is a `Toolbar` whose verbs come from the registry and whose arrow drops
+  a data child menu, where a document stands is a `StatusLine`, and its own copies of
+  `CONTROL_GAP`, `SECONDARY_ALPHA` and the row paddings are gone. The explainer under its
+  caption went with them — `docs/screenshots/s11-documentation/`.

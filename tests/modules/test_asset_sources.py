@@ -141,7 +141,7 @@ def test_a_docs_image_is_used_project_wide_because_compiled_documents_carry_it(
 
     (entry,) = catalog(library, project, store.files, [docs_source()])
 
-    assert [use.where for use in entry.uses] == ["compiled docs"]
+    assert [use.where for use in entry.uses] == ["documentation"]
     assert [use.subject for use in entry.uses] == ["Ship the beta"]
     assert prunable([entry]) == []
 

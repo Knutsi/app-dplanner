@@ -1448,18 +1448,30 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 tabs=services.tabs,
                 segments=services.index_segments,
                 theme=services.theme,
-                llm=services.llm,
-                tasks=services.tasks,
-                # Read, never added to: grouping the Docs view by feature or milestone is
-                # the same walk the Tests tab makes. A fourth ScopeKind of its own would
-                # teach four tests surfaces about documentation to serve none of it.
+                # Read, never added to: grouping the Documentation view by feature or
+                # milestone is the same walk the Tests tab makes. A fourth ScopeKind of its
+                # own would teach four tests surfaces about documentation to serve none of it.
                 scopes=_scope_kinds(check_read, is_feature, milestone_read),
                 files=store.files,
-                # Its project-level card: the standing style every composed document follows.
+                # Its project-level card: the compilation instructions every document
+                # compiled in this project follows.
                 cards=services.detail_cards,
-                # The description *is* the instructions (ARCHITECTURE.md), and which prose
-                # briefs a compile is a cross-module fact, so it is decided here.
+                # The description *is* the instructions (ARCHITECTURE.md), so it is what a
+                # collector says about itself — context in the briefing, and a cross-module
+                # fact, so it is decided here.
                 instructions=description_read,
+                # Compiling is a launch: the briefing is the docs module's words, the
+                # terminal and the desk's limit are Run Agent's, and neither imports the
+                # other. The run is tracked on the collector like any other agent run.
+                compile_profiles=agent_instruction.compile_profiles,
+                compile_with_agent=agent_instruction.compile_documentation,
+                # Whether an agent is already at work on a collector — the run aspect's own
+                # reader, so the words are the status module's and not a second copy.
+                run_state=lambda step_id: (
+                    agent_run_state(library.step(step_id)) if library.has(step_id) else ""
+                ),
+                # How a step is named everywhere, for the briefing's verbs and the rows.
+                step_key=_step_key,
                 # A milestone group's medallion in the milestone's own shade — the same
                 # sequence the Tests tab's headings and the calendar show.
                 milestone_color=milestone_color,

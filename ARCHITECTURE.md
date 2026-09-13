@@ -4235,9 +4235,11 @@ A plan says what work will be done. It said nothing about what that work *produc
 reader*, so release notes and user guides were written at the end by reading back over the
 graph by hand. Two aspects close that, and the shape of them is the whole decision.
 
-A **fragment** is what one step adds to the product's documentation — `docs`, prose beside
-the step, written while the work is fresh. A **compiled document** is what a feature or a
-milestone makes of everything it gathers — `docs_compiled`, prose beside the collector.
+A **documentation fragment** is what one step adds to the product's documentation — `docs`,
+prose beside the step, written while the work is fresh. A collector's **documentation** is
+what a feature or a milestone makes of everything it gathers — `docs_compiled`, prose beside
+the collector. Those are the words on every surface; the two on-disk ids are the older ones
+and stay, because an id is a contract and a label is a sentence.
 
 **Two aspect ids in one package, not one.** A node holds exactly one prose document per
 module (`FORMAT.md`), and a feature legitimately has both: its own note, and the document
@@ -4258,6 +4260,62 @@ gets documentation without adding anything.
 
 Compile is therefore a verb on a collector, and the vocabulary is one predicate the
 composition root already wires: *is this step a collector?* is `kind_of(scopes, step)`.
+
+### Compiling launches a peer, and the window writes no document
+
+The first version compiled with an in-app LLM call: a `TaskRunner` body around
+`framework/llm_service.py`, the answer home on a queued Qt signal, the document and its stamp
+landed as one undo entry. It worked, needed a provider key in *Settings ▸ LLM* to do anything
+at all, and nobody used it — while the agents actually doing the work were already writing to
+the plan through the CLI all day. So *Compile with Agent…* launches one, with a briefing built
+from the fragments, the project's compilation instructions and the verb to finish with, and
+the window's own compiler is gone. Five things follow.
+
+**The docs module words the briefing; the launcher wraps it.** What a fragment is, which verb
+lands a document and that `assets/…` links must survive are this module's vocabulary
+(`modules/docs/prompt.py`, Qt-free); the header and the preflight every hand-over gets are the
+agent module's (`prompt.handover_prompt`, shared with the conflict hand-over). The two meet at
+two typed callbacks on `DocsDeps` — `compile_profiles` and `compile_with_agent` — wired by the
+composition root, which is `library_watch`'s `hand_to_agent`/`agent_refusal` shape exactly. A
+third module wanting a launch copies that; nothing imports the agent module.
+
+**Nothing lands on the undo stack any more.** The document arrives minutes later from another
+process and the store adopts it entry by entry, like any outside change — so *An LLM call is a
+task*'s "the result lands on the undo stack, because a person pressed a button" stops applying
+here. Ctrl+Z cannot put back a document an agent replaced, which is why the one gesture that
+would overwrite a document that has text **asks first**, once for the whole gesture, and says
+that there is no undo. Everywhere else in this application the confirmation was deleted and
+undo made the case for it; here the safety net genuinely is not there.
+
+**The run is the collector's, and it claims nothing about the work.** `_launch` hands the
+shell to the run tracker as it does for Run Agent, so a compiling agent wears the chip and the
+marching ring, appears in the Agents browser, is reachable through *Show Agent Terminal* and
+leaves a usage row when it ends — for nothing, because the collector is a step. What it does
+**not** do is `mark_started`: an agent writing a feature's documentation is not doing that
+feature's work, and the claim is made in Run Agent's own step loop rather than in `_launch`
+for exactly this reason. Two runs on one step are told apart by their terminal windows —
+`_launch` takes a `note` the window title carries (`F7 Auth (documentation)`) — and by nothing
+else, which is the pre-existing shape for two Run Agent launches on one step.
+
+**Who compiled a document is the launching window's record, not the plan's.** The stamp in the
+plan says *when* and *from what*; `provider` and `model` left it (`docs_compiled` format 2),
+because with the CLI as the only writer they would hold one value each forever. Attribution is
+the worded launch `compile_with_agent` returns, kept per collector in the docs module's own
+`user_config` — exact, where reading the step's newest `AgentRun` back would credit a feature's
+document to whichever agent happened to be working on that feature. The cost is stated rather
+than hidden: a plan opened on another machine says when a document was compiled and not by
+whom, and a compile nobody launched from a window is attributed to nothing. It is also why the
+panel's live line says *an agent is working on this step* and never *compiling this now* — the
+window cannot tell one run on a step from another, and the point of the line is to stop a
+second launch.
+
+**Compiling a whole project takes the frontier.** *Compile Out of Date…* launches one agent
+per collector whose fragments have moved on — except a collector whose own sub-collectors are
+also due, because a milestone reads its features' *compiled* documents and one launched beside
+them would read documents about to change. `collect.sub_collectors` is that question, the same
+two calls `sources_for` makes; the verb says how many are waiting, and the next gesture takes
+them. Past *Max agents launched at once* the count itself refuses, as it does for a selection
+of agent steps.
 
 ### A milestone reads its features' documents, not their notes again
 
@@ -4287,23 +4345,44 @@ sources, not over the output; a person tidying the model's prose is finishing th
 invalidating it.
 
 Three states fall out, and they are a pure function: no entry is *never compiled*, a
-matching digest is *current*, anything else is *out of date*. The Docs view draws them as a
-hollow ring, nothing at all, and a filled accent dot — nothing being the quiet common case.
+matching digest is *current*, anything else is *out of date*. The Documentation view says them
+in words, in the row's trailing slot — and **nothing at all when a document is current**,
+which is what the hollow ring and the filled dot bought before the row had words to spare.
+What the last compile *was* — how much it read, when, and which agent this desk handed it to —
+is the line underneath.
+
+The digest covers the **sources**, not the compilation instructions: rewording how every
+document should read does not mark every document out of date, exactly as hand-editing one
+does not. Both are the same rule — the digest is over what a compile *read* — and the second
+is a surface a person edits now, so it is worth saying out loud.
 
 ### Who owns which half
 
-`modules/docs/` owns both aspects, the fragment editor, the Docs folder and the Docs view;
-`collect.py` is the one derivation, Qt-free, with four readers (the view, `docs collect`,
-`docs status`, the compile prompt). The collector kinds arrive as an argument, exactly as
+`modules/docs/` owns both aspects, the fragment editor, the Docs folder and the Documentation
+view; `collect.py` is the one derivation, Qt-free, with four readers (the view, `docs collect`,
+`docs status`, the compile briefing). The collector kinds arrive as an argument, exactly as
 `TestsDeps` takes them — **nothing is added to `_scope_kinds()`**. A fourth kind there would
 have put documentation in the Tests tab's scope selector and its Group by, and given every
 collector a Covers tab it never asked for: four surfaces learning about documentation to
 serve none of it.
 
+The project's **compilation instructions** are `modules/docs.md` beside the project — the
+`docs` id spanning node kinds, which `FORMAT.md` sanctions and `step_agent_instruction`
+already does. They have three presenters over one field: the project panel's card, a tab in
+the Documentation view (two bindings, one undo stack, the standing agent instruction's shape),
+and `dplanner docs set/show --for-project`. The CLI half is not a convenience: every compile
+briefing opens with them, so an agent compiling without a window launch must be able to read
+what its document is meant to follow.
+
 ## An LLM call is a task, and the service is GUI-bound
 
 `framework/llm_service.py` shipped complete and dormant — no consumer, no tests, and no
-mention in this file. Compile is its first, and these are the rules it established.
+mention in this file. Compiling documentation was its first and, for one milestone, its only
+one; compiling launches an agent now (*Compiling launches a peer*), so the service is dormant
+again — **deliberately, and with its rules written down here rather than lost with its
+caller**. They cost nothing to keep and they are what the next AI-gated control in this
+application is owed. Read them as the contract they are, not as a description of something
+running today. (The checklist's `llm.key` row stays for the same reason and says as much.)
 
 **`complete()` is blocking network I/O.** It runs inside a `TaskRunner` body, and because
 the runner's body returns nothing, the answer comes back on the owner's own queued Qt
@@ -4320,15 +4399,19 @@ already names *Settings ▸ LLM* — as the reason, on screen rather than only i
 service re-reads its provider on every call, so a control re-asks on `config_changed` and
 configuring one ungreys the button where it stands.
 
-**The result lands on the undo stack**, unlike `github/refresh.py`'s background sync. The
-distinction is who asked: a person pressed a button, so undo must put back what was there.
+**A result a person asked for lands on the undo stack**, unlike `github/refresh.py`'s
+background sync. The distinction is who asked: a person pressed a button, so undo must put
+back what was there. Note what that rule does *not* reach — a result that arrives from another
+process, minutes later, through the CLI, as a compiled document now does; there undo is not
+the safety net and a confirmation has to be.
 
 **And the CLI cannot call it.** The service reads its preferred provider through QSettings
 and its key through the OS keychain, so it is Qt-bound by construction while `cli.py` loads
-no Qt by rule. That is not a gap to route around: the agent driving the CLI *is* a model, so
-the headless loop is `docs status` → `docs collect` → the agent writes → `compiled set`,
-which re-stamps the digest so the document it just wrote reads as current. Same reasoning as
-*Running an agent launches a peer, not a task*.
+no Qt by rule. That is not a gap to route around, and documentation is the proof: the agent
+driving the CLI *is* a model, so the loop is `docs status` → `docs collect` → the agent writes
+→ `compiled set`, which re-stamps the digest so what it just wrote reads as current — and the
+window's part is to *launch* that loop rather than to reimplement it. Same reasoning as
+*Running an agent launches a peer, not a task*, which is where that argument ended up.
 
 ## A test result is not a step status
 

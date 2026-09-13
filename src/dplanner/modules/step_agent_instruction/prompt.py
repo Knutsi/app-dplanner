@@ -202,6 +202,23 @@ def assemble(
     return AssembledPrompt(text=text, files=files, segments=segments)
 
 
+def handover_prompt(heading: str, project_title: str, preamble: str, body: str) -> str:
+    """A briefing for a run that is not carrying out the step: the header, this module's
+    own preflight, then whatever the asking module wrote.
+
+    The two hand-overs — reconciling a conflict, compiling a collector's documentation —
+    differ only in ``body``, and the body is the asking module's vocabulary: what "compile"
+    means and which verb finishes it belong to the docs module, not here. So this wraps
+    rather than composes, and the preamble is the one thing every run gets whatever it was
+    opened for.
+    """
+    lines = [heading, f"Project: {project_title}", ""]
+    if preamble:
+        lines += ["## Before you start", "", preamble, ""]
+    lines += [body.strip(), ""]
+    return "\n".join(lines)
+
+
 def conflict_prompt(
     step_title: str,
     project_title: str,
@@ -216,10 +233,7 @@ def conflict_prompt(
     result back with the verb that owns the entry. No status change and no handoff: this run
     does not carry out the step, it settles what two writers meant.
     """
-    lines = [f"# Conflict on step: {step_title}", f"Project: {project_title}", ""]
-    if preamble:
-        lines += ["## Before you start", "", preamble, ""]
-    lines += [
+    lines = [
         "## What happened",
         "",
         "The DPlanner window and a `dplanner` run changed the same entries of this plan"
@@ -245,6 +259,7 @@ def conflict_prompt(
         "",
         f"Run `dplanner agent-state clear '{step_title}'` so the window stops showing this"
         " run as live. Do not change the step's status.",
-        "",
     ]
-    return "\n".join(lines)
+    return handover_prompt(
+        f"# Conflict on step: {step_title}", project_title, preamble, "\n".join(lines)
+    )

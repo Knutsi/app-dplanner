@@ -3239,3 +3239,27 @@ already re-inks its verbs this way; the helper now does the same, and the warnin
 
 **Upstream?** Yes. A helper the template offers should be safe in the place a reader will
 first reach for it.
+
+## 37. From the documentation-compile pass (S11)
+
+**An arrow may drop *data*, not just a band of the action table** (`framework/toolbar.py`).
+§35's `add_action(menu=(menu, submenu))` gives a registry-fed verb an arrow filled through
+`fill_menu` — and `fill_menu` deliberately leaves a **data child menu** out of a named-submenu
+render, because a `DataMenuSpec` belongs to its menu rather than to one of its submenus. The
+Documentation view's *Compile with Agent…* wants exactly that under its arrow: the launch
+profiles, which are data. So `_popups` holds a **filler** (`Callable[[QMenu], None]`) instead
+of a `(menu, submenu, group)` triple — `_table_fill(...)` makes one for the table, and
+`add_action(data_menu="docs.compile_with")` hands `DataMenuSpec.fill` straight in. `_refill`
+is two lines shorter for it, and `add_menu_face` is unchanged in behaviour.
+
+**Worth upstreaming**, with §35: an arrow is "another way to run this verb", and where those
+ways come from is the caller's business.
+
+**`extend-exclude = ["docs"]` in `pyproject.toml` excluded `src/dplanner/modules/docs/` too.**
+Ruff matches a slash-less pattern against *any* directory of that name, so a feature module
+called `docs` had never been linted or formatted — three unused imports and an unsorted import
+block had accumulated in plain sight while `uv run ruff check` said "All checks passed". The
+pattern is `docs/**` now, which is root-relative. Anything in a template that excludes a
+by-name directory (`docs`, `build`, `assets`, `themes`) is a trap the same way: a module may
+legitimately be called that. Note also that `ruff format` **does** reformat Python inside
+markdown fences, which is what that exclusion was for.
