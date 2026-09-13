@@ -33,12 +33,14 @@ from PySide6.QtWidgets import (
 from dplanner.cli.command import CliError
 from dplanner.cli.shaping import guide
 from dplanner.core.anchors import locate_many
+from dplanner.domain.assets import asset_references
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Library, NodeId, Project, TextEdit
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import EntityActivity
+from dplanner.framework.asset_gallery import AssetGallery
 from dplanner.framework.autosave import FLUSH_DELAY_MS
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
@@ -51,26 +53,37 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.list_rows import DETAIL_ROLE, EMPHASIS_ROLE, RULE_ROLE, TwoLineDelegate
+from dplanner.framework.markdown_highlight import MarkdownHighlighter
+from dplanner.framework.markdown_toolbar import MarkdownToolbar
 from dplanner.framework.markdown_view import MarkdownView
+from dplanner.framework.prose_edit import ProseEdit
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.signalling import UpdatingIndicator
+from dplanner.framework.text_dialog import ExpandedTextDialog, attach_expand
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.toolbar import ActionToolbar
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import caption, note
+from dplanner.framework.widgets import (
+    EDITOR_MEASURE,
+    caption,
+    centered_column,
+    make_text_well,
+    note,
+    space_lines,
+)
 from dplanner.modules.spec.aspect import MODULE_ID, read_topology
 from dplanner.modules.spec.documents import (
     KIND_MARKDOWN,
     KIND_PDF,
     SpecDocument,
     SpecSource,
+    attach_asset,
     prune_blob,
     read_index,
     referenced_assets,
     save_body,
     write_index,
 )
-from dplanner.modules.spec.editor import SpecMarkdownEditor
 from dplanner.modules.spec.refresh import SourceRefresher
 from dplanner.modules.spec.source_kind import DocumentSourceKind
 from dplanner.modules.spec.sourced import (
@@ -255,7 +268,19 @@ class SpecsActivity(EntityActivity):
         self._notice.setContentsMargins(BLOCK_GAP, BLOCK_GAP, BLOCK_GAP, BLOCK_GAP)
         self._text = MarkdownView(self._views)
         self._pdf = PdfPageView(self._views)
-        self._editor = SpecMarkdownEditor()
+        # The prose stack's editor, like every other document in the application: the
+        # source is what is on disk, the highlighter says what it means, and an arriving
+        # file is attached and linked rather than embedded.
+        self._editor = ProseEdit(undo=undo)
+        self._editor.setObjectName("InspectorNotes")
+        self._editor.setFrameShape(ProseEdit.Shape.NoFrame)
+        self._highlighter = MarkdownHighlighter(self._editor.document(), self._editor)
+        make_text_well(self._editor)
+        self._tools = MarkdownToolbar(self._editor, undo=undo)
+        self._figures = AssetGallery(hide_when_empty=True)
+        self._editor.set_attach(self._attach)
+        self._expand = attach_expand(self._editor)
+        self._expand.clicked.connect(self._open_expanded)
         # The model autosave's rhythm: a pause in typing is when the session flushes. The
         # timer is the editor's child, so it dies with the editor: a build discarded with
         # the timer armed (a test's teardown never closes a tab) used to fire it into a
@@ -438,17 +463,60 @@ class SpecsActivity(EntityActivity):
 
     def _open_session(self, document: SpecDocument, area: ModuleFileArea, data: bytes) -> None:
         """Show ``document`` in the editor, starting its session."""
-        body = data.decode("utf-8")
         self._editing = document.name
         self._session_base = document
         self._session_last = document
         self._session_blobs = set()
-        self._editor.open_markdown(area, body)
+        self._editor.setPlainText(data.decode("utf-8"))
+        space_lines(self._editor)  # After setPlainText, or the block format is lost.
+        self._editor.document().setModified(False)
+        self._editor.document().clearUndoRedoStacks()
+        # `space_lines` is a format change, and a format change is a `contentsChange`:
+        # it arms the flush timer a moment before `setModified(False)` makes the flush a
+        # no-op. Disarm it rather than rely on that ordering holding.
+        self._flush_timer.stop()
+        # The toolbar is markdown's; a plain-text document is text and nothing else.
+        self._tools.setVisible(document.kind == KIND_MARKDOWN)
         self._forget_spans()
-        # Qt normalises the markdown it writes; say so up front when it would matter,
-        # rather than letting the first save silently reformat an imported document.
-        self._editor_note.setVisible(self._editor.body().strip() != body.strip())
+        self._show_figures()
         self._views.setCurrentWidget(self._editor_page)
+
+    def _body(self) -> str:
+        return self._editor.toPlainText()
+
+    def _attach(self, data: bytes, filename: str) -> str | None:
+        """Where a pasted or dropped file goes: the project's spec assets, the same place
+        `spec attach` writes. Off the undo stack — undoing a paste must never leave prose
+        pointing at a file that had gone — and the index records it at the next flush."""
+        # The gallery is not refreshed here: the editor types the link *after* this
+        # returns, so a scan now would find no reference to the file just written. The
+        # settle that the insert triggers is what redraws it, which also means a
+        # multi-file drop redraws once.
+        return attach_asset(self._files(self.project_id), data, filename)
+
+    def _show_figures(self) -> None:
+        """The pictures this document links to, under the editor that cannot show them."""
+        area = self._files(self.project_id)
+        linked = [
+            name for name in asset_references(self._body()) if area.read_bytes(name) is not None
+        ]
+        self._figures.set_files(linked, area.read_bytes)
+
+    def _open_expanded(self) -> None:
+        """The same document in a window — the same `QTextDocument`, so the session sees
+        what is typed there exactly as it sees what is typed here."""
+        if not self.is_editing:
+            return
+        dialog = ExpandedTextDialog.over_document(
+            self._editor.document(),
+            self._undo,
+            title=self._current_name() or "Spec",
+            attach=self._attach,
+            parent=self._widget.window(),
+        )
+        dialog.exec()
+        dialog.dispose()
+        dialog.deleteLater()
 
     def focus_editor(self) -> None:
         """Put the caret in the open document — what a freshly created one wants."""
@@ -495,7 +563,7 @@ class SpecsActivity(EntityActivity):
         area = self._files(self.project_id)
         index = read_index(self._project())
         today = datetime.now(UTC).date().isoformat()
-        body = self._editor.body()
+        body = self._body()
         try:
             docs, document, outcome, superseded = save_body(
                 area, index.documents, self._session_base, body.encode(), today
@@ -589,56 +657,28 @@ class SpecsActivity(EntityActivity):
         return page
 
     def _build_editor_page(self) -> QWidget:
-        # The formatting strip is the editor's own chrome, flush on top of the text area —
-        # the canvas toolbar idiom (`#EditorToolbar` shares `#CanvasToolbar`'s QSS), so it
-        # cannot be read as an extension of the document list's toolbar across the splitter.
+        """The editor, its markdown strip, and the pictures it cannot show.
+
+        A plain-text editor renders no image, so the figures a document links to sit in a
+        gallery under it — `CLAUDE.md`'s rule for every prose editor here. `set_files`
+        rather than `set_area`: the area holds every figure of every document in the
+        project, and what belongs under *this* editor is what *this* document links to.
+        The strip spans the page because it is the page's chrome; the text sits in a
+        column at a readable measure, because a maximised window is otherwise one very
+        long line.
+        """
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        strip = QWidget(page)
-        strip.setObjectName("EditorToolbar")
-        row = QHBoxLayout(strip)
-        row.setContentsMargins(STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN)
-        row.setSpacing(6)
-        groups: tuple[tuple[tuple[str, str, Callable[[], None]], ...], ...] = (
-            (
-                ("B", "Bold (Ctrl+B)", self._editor.toggle_bold),
-                ("I", "Italic (Ctrl+I)", self._editor.toggle_italic),
-            ),
-            (
-                ("H1", "Heading 1", lambda: self._editor.set_heading(1)),
-                ("H2", "Heading 2", lambda: self._editor.set_heading(2)),
-                ("H3", "Heading 3", lambda: self._editor.set_heading(3)),
-            ),
-            (
-                ("•", "Bullet list", self._editor.bullet_list),
-                ("1.", "Numbered list", self._editor.numbered_list),
-            ),
-            (
-                (
-                    "Image…",
-                    "Insert an image at the cursor",
-                    self._editor.insert_image_from_file,
-                ),
-            ),
-        )
-        for index, group in enumerate(groups):
-            if index:
-                rule = QWidget(strip)
-                rule.setObjectName("ToolbarRule")
-                rule.setFixedWidth(1)
-                row.addWidget(rule)
-            for face, tip, handler in group:
-                row.addWidget(_tool_button(face, tip, handler))
-        row.addStretch(1)
-        layout.addWidget(strip)
-        self._editor_note = QLabel("Editing will reformat this document to Qt's markdown style.")
-        self._editor_note.setObjectName("InspectorNote")
-        self._editor_note.setWordWrap(True)
-        self._editor_note.setVisible(False)
-        layout.addWidget(self._editor_note)
-        layout.addWidget(self._editor, 1)
+        layout.addWidget(self._tools)
+        column = QWidget(page)
+        column_layout = QVBoxLayout(column)
+        column_layout.setContentsMargins(BLOCK_GAP, BLOCK_GAP, BLOCK_GAP, BLOCK_GAP)
+        column_layout.setSpacing(CAPTION_GAP)
+        column_layout.addWidget(self._editor, 1)
+        column_layout.addWidget(self._figures)
+        layout.addWidget(centered_column(column, EDITOR_MEASURE), 1)
         return page
 
     def _publish_activity(self) -> None:
@@ -820,8 +860,8 @@ class SpecsActivity(EntityActivity):
         self._shown = (document.name, document.file)
 
     def _show_document(self, document: SpecDocument, area: ModuleFileArea, data: bytes) -> None:
-        """A PDF renders its pages, plain text is read-only (a rich-text round-trip would
-        hand it back as markdown), and markdown opens in the editor."""
+        """A PDF renders its pages, a page a source fetched is shown read-only, and a
+        document this project owns — markdown or plain text — opens in the editor."""
         if document.kind == KIND_PDF:
             self._pdf.show_pdf(data)
             self._views.setCurrentWidget(self._pdf)
@@ -836,11 +876,11 @@ class SpecsActivity(EntityActivity):
             self._text.show_markdown(body, [area])
             self._views.setCurrentWidget(self._text)
             return
-        if document.kind == KIND_MARKDOWN:
-            self._open_session(document, area, data)
-            return
-        self._text.show_text(body)
-        self._views.setCurrentWidget(self._text)
+        # Markdown *and* plain text, now that the editor is plain text itself. The old
+        # carve-out was the rich-text round-trip: a .txt pushed through `setMarkdown` and
+        # `toMarkdown` came back as markdown. Nothing round-trips any more, so a text
+        # document is edited as what it is — without the markdown strip over it.
+        self._open_session(document, area, data)
 
     def _show_source_row(self) -> None:
         """A source's own row: the first page it fetched, or where it stands."""
@@ -1061,10 +1101,17 @@ class SpecsActivity(EntityActivity):
         self._settled.trigger()
 
     def _resettle(self) -> None:
-        """What the document's text decides, recomputed after a pause in typing."""
+        """What the document's text decides, recomputed after a pause in typing: where the
+        cited passages sit, the wash over the lit ones, and which figures it links to."""
         self._apply_wash()
+        if self.is_editing:
+            self._show_figures()
 
-    def _text_well(self) -> QTextEdit | None:
+    def _text_well(self) -> ProseEdit | MarkdownView | None:
+        """Whichever of the two shows the document as text — the editor, or the read-only
+        view. They are a `QPlainTextEdit` and a `QTextBrowser`, and every call here is on
+        what the two have in common: the document, the cursor, the palette, and
+        `setExtraSelections`, which takes a `QTextEdit.ExtraSelection` on both."""
         shown = self._views.currentWidget()
         if shown is self._editor_page:
             return self._editor

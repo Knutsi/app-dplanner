@@ -1,155 +1,31 @@
-"""The spec markdown editor: Qt's round-trip, images through the area, editing sessions.
+"""The Specs tab's editor and its editing sessions.
 
-The widget-only tests build a bare ``SpecMarkdownEditor`` over a real file area — the
-first of them pins that PySide6 dispatches ``loadResource`` from the document, which is
-the one platform assumption the editor stands on. The session tests drive the built
-application the way ``tests/modules/test_spec.py`` does.
+The editor is the prose stack's — plain text, a highlighter, a markdown strip, and an
+arriving file attached beside the document and linked at the caret. So the widget half of
+this file tests *behaviour through the tab* rather than a widget of its own: there is no
+spec-specific editor left to unit-test, which is the point of the change.
+
+The session tests drive the built application the way ``tests/modules/test_spec.py`` does.
 """
-
-from pathlib import Path
-
-import pytest
-
-from dplanner.core.storage.local import LocalStorage
-from dplanner.domain.store import ModuleFileArea
-from dplanner.modules.spec.documents import attach_asset
-from dplanner.modules.spec.editor import SpecMarkdownEditor
-
-
-def one_pixel_png() -> bytes:
-    from PySide6.QtCore import QBuffer
-    from PySide6.QtGui import QColor, QImage
-
-    image = QImage(1, 1, QImage.Format.Format_RGB32)
-    image.fill(QColor("black"))
-    buffer = QBuffer()
-    buffer.open(QBuffer.OpenModeFlag.WriteOnly)
-    assert image.save(buffer, "PNG")  # type: ignore[call-overload]  # Stubs say bytes; runtime wants str.
-    buffer.close()
-    return bytes(buffer.data().data())
-
-
-@pytest.fixture
-def area(tmp_path: Path) -> ModuleFileArea:
-    return ModuleFileArea(LocalStorage(tmp_path / "ws"), "modules/spec", lambda _p: None)
-
-
-@pytest.fixture
-def editor(qapp, area):
-    widget = SpecMarkdownEditor()
-    yield widget
-    widget.deleteLater()
-
-
-# -- the round-trip and the resource seam ------------------------------------------------------
-
-
-def test_an_area_image_resolves_and_survives_the_round_trip(editor, area):
-    """Pins that PySide6 dispatches ``loadResource`` — the editor's one platform bet —
-    and that a bare `![](…)` image is not dropped by the exporter (it gains an alt)."""
-    asset = attach_asset(area, one_pixel_png(), "dot.png")
-    editor.open_markdown(area, f"# Title\n\n![]({asset})\n")
-    image = editor.loadResource(2, asset)
-    assert image is not None and not image.isNull()
-    body = editor.body()
-    assert f"![image]({asset})" in body and body.startswith("# Title")
-
-
-def test_opening_a_document_leaves_it_unmodified(editor, area):
-    editor.open_markdown(area, "plain *markdown*\n")
-    assert not editor.document().isModified()
-    editor.insertPlainText("x")
-    assert editor.document().isModified()
-
-
-# -- images in ---------------------------------------------------------------------------------
-
-
-def test_pasting_an_image_attaches_and_embeds_it(editor, area):
-    from PySide6.QtCore import QMimeData
-    from PySide6.QtGui import QImage
-
-    editor.open_markdown(area, "before\n")
-    mime = QMimeData()
-    mime.setImageData(QImage.fromData(one_pixel_png()))
-    assert editor.canInsertFromMimeData(mime)
-    editor.insertFromMimeData(mime)
-    names = area.names("assets")
-    assert len(names) == 1
-    assert f"![image](assets/{names[0]})" in editor.body()
-    assert editor.document().isModified()
-
-
-def test_dropping_an_image_file_attaches_and_embeds_it(editor, area, tmp_path):
-    from PySide6.QtCore import QMimeData, QUrl
-
-    path = tmp_path / "diagram.png"
-    path.write_bytes(one_pixel_png())
-    editor.open_markdown(area, "")
-    mime = QMimeData()
-    mime.setUrls([QUrl.fromLocalFile(str(path))])
-    assert editor.canInsertFromMimeData(mime)
-    editor.insertFromMimeData(mime)
-    names = area.names("assets")
-    assert len(names) == 1 and names[0].endswith(".png")
-    assert f"![image](assets/{names[0]})" in editor.body()
-
-
-def test_plain_text_paste_still_pastes(editor, area):
-    from PySide6.QtCore import QMimeData
-
-    editor.open_markdown(area, "")
-    mime = QMimeData()
-    mime.setText("hello")
-    editor.insertFromMimeData(mime)
-    assert "hello" in editor.body()
-
-
-# -- formatting --------------------------------------------------------------------------------
-
-
-def test_a_heading_reads_back_as_markdown_and_looks_like_one(editor, area):
-    editor.open_markdown(area, "title line\n")
-    editor.set_heading(2)
-    assert editor.body().startswith("## title line")
-    # The visual half: the block's char format carries the importer's size adjustment.
-    from PySide6.QtGui import QTextCursor, QTextFormat
-
-    cursor = QTextCursor(editor.document().firstBlock())
-    cursor.select(QTextCursor.SelectionType.LineUnderCursor)
-    adjustment = cursor.charFormat().property(QTextFormat.Property.FontSizeAdjustment)
-    assert adjustment == 2  # 4 - level, what Qt's own importer writes for h2.
-
-
-def test_bold_italic_and_lists_read_back_as_markdown(editor, area):
-    from PySide6.QtGui import QTextCursor
-
-    editor.open_markdown(area, "word\n")
-    cursor = editor.textCursor()
-    cursor.select(QTextCursor.SelectionType.Document)
-    editor.setTextCursor(cursor)
-    editor.toggle_bold()
-    assert "**word**" in editor.body()
-    editor.toggle_bold()
-    editor.toggle_italic()
-    assert "*word*" in editor.body()
-    editor.toggle_italic()
-    editor.bullet_list()
-    assert editor.body().lstrip().startswith(("- word", "* word"))
-
 
 # -- editing sessions in the built application -------------------------------------------------
 
+import pytest
 
-from dplanner.domain.commands import SetModuleDataCommand  # noqa: E402
-from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri  # noqa: E402
-from dplanner.modules.spec.aspect import MODULE_ID  # noqa: E402
-from dplanner.modules.spec.documents import (  # noqa: E402
+from dplanner.core.png import encode_rgb
+from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+from dplanner.modules.spec.aspect import MODULE_ID
+from dplanner.modules.spec.documents import (
     SpecIndex,
     import_document,
     read_index,
     write_index,
 )
+
+
+def png_bytes() -> bytes:
+    return encode_rgb(2, 2, 6, b"\x00" * 12)
 
 
 @pytest.fixture
@@ -194,7 +70,7 @@ def test_spec_new_creates_selects_and_edits(services, project, monkeypatch):
     assert document.kind == "markdown"
     activity = services.tabs.activities()[0]
     assert activity.is_editing and activity._views.currentWidget() is activity._editor_page
-    assert activity._editor.body().startswith("# Auth flow")
+    assert activity._editor.toPlainText().startswith("# Auth flow")
     # Undo removes the index entry (the blob stays, as every replace's does).
     services.undo.undo()
     assert read_index(services.document.project(project.id)).documents == []
@@ -239,17 +115,29 @@ def test_opening_a_document_without_typing_saves_nothing(services, project):
     assert document.previous is None  # Never replaced: opening is not an edit.
 
 
-def test_only_markdown_opens_in_the_editor(services, project):
-    """A PDF is not text and plain text through a rich-text round-trip would come back as
-    markdown, so those two stay read-only; markdown has no read mode at all."""
+def test_text_edits_too_now_that_nothing_round_trips_it(services, project):
+    """Plain text was read-only because a rich-text round-trip handed it back as markdown.
+    A plain-text editor round-trips it exactly, so it edits like any other document this
+    project owns — with the markdown strip off, because a .txt is text and nothing else."""
     imported(services, project, "guide", b"plain text", "guide.txt")
     imported(services, project, "auth", b"# Auth\n", "auth.md")
     activity = specs_tab(services, project)
     activity.select_document("guide")
-    assert not activity.is_editing and activity._views.currentWidget() is activity._text
-    activity.select_document("auth")
     assert activity.is_editing and activity._views.currentWidget() is activity._editor_page
+    assert not activity._tools.isVisibleTo(activity._editor_page)
+    activity.select_document("auth")
+    assert activity.is_editing and activity._tools.isVisibleTo(activity._editor_page)
     assert "spec.edit" not in {spec.id for spec in services.actions.all_specs()}
+
+
+def test_a_pdf_still_only_renders(services, project):
+    """The one document that is not text at all, and so has no editor to open."""
+    from tests.cli.spec_helpers import tiny_pdf
+
+    imported(services, project, "book", tiny_pdf("A page of it."), "book.pdf")
+    activity = specs_tab(services, project)
+    activity.select_document("book")
+    assert not activity.is_editing and activity._views.currentWidget() is activity._pdf
 
 
 def test_the_idle_flush_persists_without_leaving_the_editor(services, project):
@@ -263,7 +151,7 @@ def test_the_idle_flush_persists_without_leaving_the_editor(services, project):
     saved = current_doc(services, project, "auth")
     assert saved.file != base.file and saved.previous == base.file
     assert activity.is_editing and activity._views.currentWidget() is activity._editor_page
-    assert "typed" in activity._editor.body()
+    assert "typed" in activity._editor.toPlainText()
 
 
 def test_switching_documents_ends_the_session_with_a_flush(services, project):
@@ -275,7 +163,7 @@ def test_switching_documents_ends_the_session_with_a_flush(services, project):
     activity.select_document("other")
     assert current_doc(services, project, "auth").previous is not None
     # …and the other document has a session of its own now.
-    assert activity.is_editing and activity._editor.body().startswith("# Other")
+    assert activity.is_editing and activity._editor.toPlainText().startswith("# Other")
 
 
 def test_picking_the_topology_row_ends_the_session(services, project):
@@ -298,7 +186,8 @@ def test_a_foreign_change_to_the_edited_document_reopens_it_as_it_is(services, p
     # The model is the authority: the foreign replace stands, the unflushed typing is
     # gone, and the document is open again as it now is — a fresh session.
     assert activity.is_editing and activity._views.currentWidget() is activity._editor_page
-    assert "v2" in activity._editor.body() and "unsaved" not in activity._editor.body()
+    body = activity._editor.toPlainText()
+    assert "v2" in body and "unsaved" not in body
     assert current_doc(services, project, "auth").previous is not None
 
 
@@ -310,7 +199,7 @@ def test_a_pasted_image_is_indexed_at_save(services, project):
     activity = specs_tab(services, project)
     activity.select_document("auth")
     mime = QMimeData()
-    mime.setImageData(QImage.fromData(one_pixel_png()))
+    mime.setImageData(QImage.fromData(png_bytes()))
     activity._editor.insertFromMimeData(mime)
     activity.end_session()
     index = read_index(services.document.project(project.id))
@@ -326,3 +215,46 @@ def test_closing_the_tab_flushes_the_session(services, project):
     services.tabs.close_activity(activity)
     saved = current_doc(services, project, "auth")
     assert saved.file != base.file and saved.previous == base.file
+
+
+def test_the_expanded_window_types_into_the_same_session(services, project, monkeypatch):
+    """The dialog shows the editor's own document, so what is typed in the window is what
+    the session flushes — there is no copying back, because there was no copy."""
+    from dplanner.framework.text_dialog import ExpandedTextDialog
+
+    base = imported(services, project, "auth", b"# Auth\n", "auth.md")
+    activity = specs_tab(services, project)
+    activity.select_document("auth")
+
+    opened: list[ExpandedTextDialog] = []
+
+    def caught(dialog):
+        opened.append(dialog)
+        return 0
+
+    monkeypatch.setattr(ExpandedTextDialog, "exec", caught)
+    activity._expand.click()
+    dialog = opened[0]
+    dialog.edit.textCursor().insertText("written in the window\n")
+    assert "written in the window" in activity._editor.toPlainText()
+
+    activity.end_session()
+    saved = current_doc(services, project, "auth")
+    area = services.repo.files(project.id, MODULE_ID)
+    assert b"written in the window" in (area.read_bytes(saved.file) or b"")
+    assert saved.previous == base.file  # Still one replace, pinned to the session's base.
+
+
+def test_a_pasted_picture_appears_under_the_editor_at_once(services, project):
+    from PySide6.QtCore import QMimeData
+    from PySide6.QtGui import QImage
+
+    imported(services, project, "auth", b"# Auth\n", "auth.md")
+    activity = specs_tab(services, project)
+    activity.select_document("auth")
+    assert activity._figures._files == []
+    mime = QMimeData()
+    mime.setImageData(QImage.fromData(png_bytes()))
+    activity._editor.insertFromMimeData(mime)
+    linked = activity._figures._files
+    assert len(linked) == 1 and f"![image]({linked[0]})" in activity._editor.toPlainText()
