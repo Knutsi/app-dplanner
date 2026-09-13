@@ -36,7 +36,7 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import Context
 from dplanner.framework.session import RefreshResult, SessionControl
-from dplanner.framework.widgets import confirm
+from dplanner.framework.widgets import StatusBarButton, confirm
 from dplanner.framework.window import StatusHost
 from dplanner.framework.window_watch import WatchableRepository, WorkspaceWatcher
 from dplanner.modules.library_watch.view import (
@@ -45,7 +45,7 @@ from dplanner.modules.library_watch.view import (
     MINE,
     THEIRS,
     ConflictDialog,
-    OutsideChangesButton,
+    waiting_words,
 )
 
 MODULE_ID = "library_watch"
@@ -80,7 +80,7 @@ class LibraryWatchModule:
         # The set the dialog was last raised for: a tick that finds the same conflicts
         # again — every tick, while they wait — must not raise it again.
         self._asked: frozenset[Conflict] = frozenset()
-        self._button = OutsideChangesButton()
+        self._button = StatusBarButton("Changed here and outside — click to settle")
         # Raises the question out of the timer slot and the autosave cascade — a modal
         # from inside a flush would block whatever asked for it. Owned by the window, so a
         # refusal met on the way out (the close hook's last flush) asks nobody.
@@ -145,7 +145,7 @@ class LibraryWatchModule:
                 f"Took {adoption.applied} {noun} from outside DPlanner", 4000
             )
         self._conflicts = adoption.conflicts
-        self._button.set_waiting(len(adoption.conflicts))
+        self._button.show_text(waiting_words(len(adoption.conflicts)))
         waiting = frozenset(adoption.conflicts)
         if waiting and waiting != self._asked:
             self._asked = waiting
@@ -192,7 +192,7 @@ class LibraryWatchModule:
             deps.repo.mark_seen(conflicts)
         self._conflicts = ()
         self._asked = frozenset()
-        self._button.set_waiting(0)
+        self._button.show_text("")
         deps.autosave.resume()
 
     def _anchor(self, conflicts: Sequence[Conflict]) -> StepId | None:

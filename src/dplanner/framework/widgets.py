@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -354,3 +355,21 @@ class NumberBox(QDoubleSpinBox):
 
     def textFromValue(self, value: float) -> str:  # noqa: N802 - Qt override
         return f"{value:g}"
+
+
+class StatusBarButton(QToolButton):
+    """Quiet words in the status bar that open what they summarise — the running tasks, the
+    launched agents, the entries changed here and outside. Gone while there is nothing to
+    say, so an idle window's status bar says nothing."""
+
+    def __init__(self, tip: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("StatusBarButton")
+        self.setAutoRaise(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(tip)
+        self.hide()
+
+    def show_text(self, text: str) -> None:
+        self.setText(text)
+        self.setVisible(bool(text))

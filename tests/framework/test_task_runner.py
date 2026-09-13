@@ -6,7 +6,6 @@ import time
 import weakref
 
 import pytest
-from PySide6.QtWidgets import QWidget
 
 from dplanner.framework.task_runner import TaskRunner, TaskTimeoutError
 from dplanner.framework.tasks import TaskService
@@ -98,9 +97,6 @@ def test_task_options_land_on_the_task(app, qtbot) -> None:
     tasks = TaskService()
     runner = TaskRunner(tasks)
 
-    def factory() -> QWidget:
-        return QWidget()
-
     with qtbot.waitSignal(runner.busy_changed, timeout=5000, check_params_cb=lambda busy: not busy):
         assert runner.run(
             "Reading through",
@@ -108,14 +104,12 @@ def test_task_options_land_on_the_task(app, qtbot) -> None:
             key="readthrough",
             cancellable=True,
             keep_finished=True,
-            detail_factory=factory,
         )
         task = tasks.active()[0]
 
     assert task.key == "readthrough"
     assert task.cancellable
     assert task.keep_finished
-    assert task.detail_factory is factory
     assert tasks.finished() == [task]  # keep_finished: it lingers after the run.
 
 

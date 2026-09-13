@@ -3593,3 +3593,37 @@ estimate input.
 **Why.** `#RichList` paints the same edge from the stylesheet, and the picker's was a literal.
 
 **Upstream?** Yes.
+
+### `framework/row_well.py` — `RowWell` and `WellRow`, a well of widget rows
+
+**What.** A framed, scrolling well of rows reconciled by key (`reconcile(keys, build,
+update)`), and its row: a title with the row's own verbs (`add_button`, `add_dismiss`, which
+keep their room and never take the keyboard), a `StatusLine` whose tone is the mood, a 4 px
+determinate bar while the end is known (`show_fraction`), and a plain selectable note.
+
+**Why.** The task browser and the Agents browser were one layout written twice, the copy with
+no stylesheet at all. A row that carries buttons and has to survive a 250 ms tick with a
+pressed Cancel is not a table row, and a well that rebuilt would lose both. The task rows'
+indeterminate bars went with the copy: an unknown fraction is busy, and busy is a line.
+
+**Upstream?** Yes: an application with a task centre has this roster.
+
+### `framework/widgets.py` — `StatusBarButton`
+
+**What.** Quiet words in the status bar that open what they summarise, gone while there is
+nothing to say.
+
+**Why.** Three modules kept the same class under three names — running tasks, launched agents,
+entries changed here and outside — and only one of them had a rule in the stylesheet.
+
+**Upstream?** Yes.
+
+### `framework/tasks.py`, `framework/task_runner.py` — `detail_factory` removed
+
+**What.** A task no longer carries a factory for an expandable detail widget.
+
+**Why.** Nothing in the application ever built one: the chevron, the lead column every row
+reserved for it and the lazily built widget were machinery on every row for a case nobody had.
+
+**Upstream?** Check `template/` first: carry the removal back only if the template's own tasks
+never use it either.
