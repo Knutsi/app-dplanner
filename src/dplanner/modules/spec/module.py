@@ -196,7 +196,7 @@ class SpecModule:
                     order=30 + position,
                     submenu=ADD_SUBMENU,
                     icon=kind.icon,
-                    tip=f"Add a {kind.name} source: its pages become spec documents",
+                    tip=f"Add a {kind.name} source: its documents arrive beside this project",
                     state=self._on_a_project,
                     run=self._add_source_verb(kind),
                 )
@@ -220,10 +220,22 @@ class SpecModule:
                 menu="Project",
                 group="documents",
                 order=60,
-                tip="Fetch the selected source again; changed pages are replaced, "
+                tip="Fetch the selected source again; changed documents are replaced, "
                 "the previous version kept",
                 state=self._refresh_state,
                 run=self._refresh_source,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="spec.refresh_sources",
+                label="Refresh &All Sources",
+                menu="Project",
+                group="documents",
+                order=65,
+                tip="Fetch every source of this project again, as one undo entry",
+                state=self._refresh_all_state,
+                run=self._refresh_all,
             )
         )
         deps.actions.register(
@@ -309,12 +321,29 @@ class SpecModule:
         found = self._selected_source(context)
         if found is None:
             return DISABLED
-        status = self.refresher.status(found[1])
+        status = self.refresher.status(found[0], found[1])
         if not status.ready:
             return ActionState(enabled=False, label=f"Refresh Source — {status.message}")
         if self.refresher.is_fetching():
             return ActionState(enabled=False, label="Refresh Source — fetching…")
         return ENABLED
+
+    def _refresh_all_state(self, context: Context) -> ActionState:
+        project_id = context.focus_entity("project")
+        if project_id is None or not self._deps.library.has(project_id):
+            return DISABLED
+        if self.refresher.is_fetching():
+            return ActionState(enabled=False, label="Refresh All Sources — fetching…")
+        if not self.refresher.can_refresh(project_id):
+            return ActionState(
+                enabled=False, label="Refresh All Sources — no source is ready to fetch"
+            )
+        return ENABLED
+
+    def _refresh_all(self, context: Context) -> None:
+        project_id = context.focus_entity("project")
+        if project_id is not None and self._deps.library.has(project_id):
+            self.refresher.refresh_all(project_id)
 
     def _selected_source(self, context: Context) -> tuple[NodeId, SpecSource] | None:
         """The source the Specs tab has selected — a source row or a page inside one."""
@@ -468,7 +497,7 @@ class SpecModule:
         activity = self._deps.tabs.open(SPECS_KIND, project_id)
         assert isinstance(activity, SpecsActivity)
         activity.select_source(source.id)
-        if self.refresher.status(source).ready:
+        if self.refresher.status(project_id, source).ready:
             self.refresher.refresh(project_id, source.id)
 
     def _connect(self, project_id: NodeId, source_id: str) -> None:

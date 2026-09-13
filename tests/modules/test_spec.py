@@ -187,7 +187,10 @@ def test_the_toolbar_replaced_the_add_button(services, project):
     assert entries == [
         "New Spec Document…",
         "Import Spec Document…",
-        "Confluence Page or Folder…",
+        "Folder on This Computer…",
+        "Git Repository…",
+        "Confluence Page…",
+        "Confluence Folder…",
     ]
     assert activity._source_strip.isHidden()
 

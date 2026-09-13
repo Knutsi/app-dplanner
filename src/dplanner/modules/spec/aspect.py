@@ -50,7 +50,31 @@ def _to_format_4(data: dict[str, Any]) -> dict[str, Any]:
     return dict(data)
 
 
-DATA_FORMAT = ModuleDataFormat(MODULE_ID, 4, (_to_format_2, _to_format_3, _to_format_4))
+def _to_format_5(data: dict[str, Any]) -> dict[str, Any]:
+    """The one Confluence kind became two. A source's ``kind`` is the source kind's own id,
+    and until now one id — ``confluence`` — covered both a page's tree and a folder's, told
+    apart by the locator's ``type``. The distinction moves where it belongs: the record
+    names ``confluence_page`` or ``confluence_folder``, and the locator keeps ``type`` as
+    the cross-check every read already makes. A record of a kind that is not ours is
+    another build's and is not ours to rename; a step's entry carries figures and no
+    ``sources`` at all, and passes through."""
+    sources = data.get("sources")
+    if not isinstance(sources, list):
+        return dict(data)
+    migrated = []
+    for source in sources:
+        if not isinstance(source, dict) or source.get("kind") != "confluence":
+            migrated.append(source)
+            continue
+        locator = source.get("locator")
+        folder = isinstance(locator, dict) and locator.get("type") == "folder"
+        migrated.append({**source, "kind": "confluence_folder" if folder else "confluence_page"})
+    return {**data, "sources": migrated}
+
+
+DATA_FORMAT = ModuleDataFormat(
+    MODULE_ID, 5, (_to_format_2, _to_format_3, _to_format_4, _to_format_5)
+)
 
 ATTACHMENTS_KEY = "attachments"
 

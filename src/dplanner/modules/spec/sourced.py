@@ -13,16 +13,19 @@ refreshes, because a citation keys on the name and a title is a thing that gets 
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from pathlib import PurePosixPath
 
 from dplanner.core.fsio import slugify
-from dplanner.domain.document_source import Locator, Snapshot
+from dplanner.domain.document_source import Freshness, Locator, Snapshot
 from dplanner.domain.ids import next_id
 from dplanner.domain.store import ModuleFileArea
 from dplanner.modules.spec.documents import (
+    KIND_MARKDOWN,
     SpecDocument,
     SpecIndex,
     SpecSource,
     attach_asset,
+    document_kind,
     import_document,
     referenced_assets,
     remove_document,
@@ -136,8 +139,11 @@ def apply_snapshot(
     kept = set(snapshot.kept)
     for key, page in fetched_by_key.items():
         name = names[key]
+        # The name is the spec module's and the suffix is the kind's: a kind that started
+        # supplying whole filenames would rename every sourced row in every existing plan.
+        suffix = PurePosixPath(page.filename).suffix or ".md"
         working, document, outcome = import_document(
-            area, working, name, page.markdown.encode(), f"{name}.md", today
+            area, working, name, page.data, f"{name}{suffix}", today
         )
         counts[outcome] += 1
         stamped = replace(
@@ -149,7 +155,8 @@ def apply_snapshot(
             parent=names.get(page.parent_key, "") if page.parent_key else "",
         )
         working = [stamped if doc.name == name else doc for doc in working]
-        assets = referenced_assets(assets, page.markdown, today)
+        if document_kind(page.filename) == KIND_MARKDOWN:
+            assets = referenced_assets(assets, page.data.decode("utf-8"), today)
     gone = [key for key in existing if key not in fetched_by_key and key not in kept]
     for key in gone:
         working = remove_document(working, existing[key].name)
@@ -172,6 +179,55 @@ def apply_snapshot(
         notes=snapshot.notes,
     )
     return replace(index, documents=merged, assets=assets, sources=sources), applied
+
+
+# -- what a surface says about a source ------------------------------------------------------------
+
+
+def freshness_words(found: Freshness) -> str:
+    """What one source's last check found, for its strip — "" when it found nothing.
+
+    The noun is **document**, not *page*: three of the four kinds have no pages, and this
+    is the one place the word is chosen.
+    """
+    if not found.stale:
+        return ""
+    parts = []
+    changed = len(found.changed) + len(found.added)
+    if changed:
+        parts.append(f"{changed} document{'' if changed == 1 else 's'} changed")
+    if found.removed:
+        parts.append(f"{len(found.removed)} gone")
+    return ", ".join(parts) + " at the source — Refresh to take them in"
+
+
+def updates_words(stale: Sequence[Freshness]) -> str:
+    """Every source with updates, counted, for the line over the whole list — "" when
+    nothing has changed anywhere."""
+    sources = [found for found in stale if found.stale]
+    if not sources:
+        return ""
+    changed = sum(len(found.changed) + len(found.added) for found in sources)
+    removed = sum(len(found.removed) for found in sources)
+    parts = []
+    if changed:
+        parts.append(f"{changed} document{'' if changed == 1 else 's'} changed")
+    if removed:
+        parts.append(f"{removed} gone")
+    where = f"{len(sources)} source{'' if len(sources) == 1 else 's'}"
+    return f"{', '.join(parts)} in {where} — Refresh All to take them in"
+
+
+def locator_line(locator: Mapping[str, str]) -> str:
+    """A locator as one line, for a surface that cannot reach its kind.
+
+    The window words a locator through the kind that owns it; the terminal has no kind to
+    ask, so it prints the record — which is also the thing an agent would grep for.
+    """
+    lead = ("url", "site", "path", "ref", "subdirectory", "id", "type")
+    ordered = [key for key in lead if key in locator]
+    ordered += sorted(key for key in locator if key not in lead)
+    return " ".join(f"{key}={locator[key]}" for key in ordered)
 
 
 def tree(index: SpecIndex) -> list[Row]:
@@ -200,11 +256,19 @@ def _nested(
 
 
 def _ordered(snapshot: Snapshot, existing: Mapping[str, SpecDocument]) -> list[str]:
-    """The keys the source's documents land in: the snapshot's order, then any kept
-    key it did not order (an older kind), in their old order."""
+    """The keys the source's documents land in: the snapshot's order, then anything it did
+    not order, in the order it arrived.
+
+    A kind whose ``order`` misses a key it fetched has said something contradictory; the
+    page is still written, so it must still be placed, or it would be imported and then
+    silently dropped from the index.
+    """
     ordered = list(snapshot.keys())
     seen = set(ordered)
-    ordered.extend(key for key in existing if key not in seen)
+    for key in (*(page.key for page in snapshot.documents), *existing):
+        if key not in seen:
+            seen.add(key)
+            ordered.append(key)
     return ordered
 
 

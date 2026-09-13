@@ -67,6 +67,7 @@ __all__ = [
 def default_modules(services: "AppServices") -> list["Module"]:
     from pathlib import Path
 
+    from dplanner.core.config_dir import config_dir
     from dplanner.core.storage.git import GitStorage
     from dplanner.core.storage.github import GitHubStorage
     from dplanner.core.storage.locations import find_repo_root, origin_url, repo_storage
@@ -143,6 +144,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.spec.module import SpecDeps, SpecModule
     from dplanner.modules.spec.module import open_url as open_in_browser
     from dplanner.modules.spec_confluence.module import SpecConfluenceDeps, SpecConfluenceModule
+    from dplanner.modules.spec_folder.module import SpecFolderKind
+    from dplanner.modules.spec_git.module import SPEC_GIT_CACHE, SpecGitDeps, SpecGitKind
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_INSTRUCTION_ID
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_agent_instruction.aspect import read as agent_instruction_read
@@ -787,9 +790,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
     )
 
-    # Constructed before spec: it is the Confluence document source kind the Specs tab
-    # runs, and the credential's four doors are the keychain's, handed over as callables
-    # so a test can hand in a dict instead.
+    # Constructed before spec: it owns the two Confluence document source kinds the Specs
+    # tab runs, and the credential's four doors are the keychain's, handed over as
+    # callables so a test can hand in a dict instead.
     confluence = SpecConfluenceModule(
         SpecConfluenceDeps(
             parent=services.window,
@@ -803,6 +806,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # same seam as open_project, one level down. The document source kinds it runs are
     # named here — ``_source_kinds`` — and nowhere else; a test hands in a fake through
     # the same function.
+    # Kinds, not modules: they register nothing (the spec module mints the + menu's
+    # entries from the kinds it is handed), so there is no `register()` for the list to
+    # call. The git cache is named here and nowhere deeper — no feature module reaches
+    # `config_dir`, the same rule the topology gate's record path follows.
+    spec_folder = SpecFolderKind()
+    spec_git = SpecGitKind(
+        SpecGitDeps(tasks=services.tasks, cache_root=config_dir() / SPEC_GIT_CACHE)
+    )
     spec = SpecModule(
         SpecDeps(
             library=library,
@@ -815,7 +826,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             files=lambda node_id: store.files(node_id, SPEC_ID),
             details=services.step_details,
             tasks=services.tasks,
-            kinds=_source_kinds(confluence),
+            kinds=_source_kinds(spec_folder, spec_git, confluence.page, confluence.folder),
             passages_of=lambda project_id, document: [
                 source.quote
                 for record in read_catalogue(library.project(project_id))
@@ -1375,7 +1386,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 ),
             )
         ),
-        # Before spec: the Specs tab's + menu lists this kind, and its settings section
+        # Before spec: the Specs tab's + menu lists its kinds, and its settings section
         # must exist before the settings dialog is built.
         confluence,
         spec,
@@ -2316,10 +2327,19 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
     return (remint_for_paste, forget_for_paste, forget_usage, drop_marker_for_paste)
 
 
-def _source_kinds(confluence: "DocumentSourceKind") -> tuple["DocumentSourceKind", ...]:
-    """The document source kinds the Specs tab offers, in the + menu's order. One seam:
-    a test patches this to hand in a fake, so the whole tab is proven without Confluence."""
-    return (confluence,)
+def _source_kinds(
+    folder: "DocumentSourceKind",
+    git: "DocumentSourceKind",
+    confluence_page: "DocumentSourceKind",
+    confluence_folder: "DocumentSourceKind",
+) -> tuple["DocumentSourceKind", ...]:
+    """The document source kinds the Specs tab offers, in the + menu's order: what is on
+    this computer first, then what is fetched. One seam: a test patches this to hand in a
+    fake, so the whole tab is proven without Confluence.
+
+    Named parameters rather than ``*kinds``: the order is the menu's, and a decision
+    belongs in the function that owns it."""
+    return (folder, git, confluence_page, confluence_folder)
 
 
 def _keychain() -> "SecretStore":

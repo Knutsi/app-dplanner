@@ -80,12 +80,13 @@ class SpecDocument:
 
 @dataclass(frozen=True)
 class SpecSource:
-    """An external place documents come from — a Confluence page or folder — as the
-    index records it: the kind, a title, the kind's own locator and when it was last
-    fetched. Never a credential, never an error: those are the person's and the window's."""
+    """An external place documents come from — a folder, a git repository, a Confluence
+    page or folder — as the index records it: the kind, a title, the kind's own locator
+    and when it was last fetched. Never a credential, never an error: those are the
+    person's and the window's."""
 
-    id: str  # "src1", "src2", … — what every document's ``source`` names.
-    kind: str  # A document source kind's id: "confluence".
+    id: str  # "src1", "src2", … — minted per project; two projects both have a "src1".
+    kind: str  # A document source kind's id: "folder", "git", "confluence_page", ….
     title: str
     locator: dict[str, str]
     fetched: str = ""  # ISO date of the last fetch; "" until the first.
