@@ -417,35 +417,7 @@ QSplitter::handle:vertical:pressed {
     border-radius: ${RADIUS_MD}px;
 }
 
-/* The order table: steps in the sequence they can be done. A well on the window colour,
-   like the step list it replaces, with the row metrics DESIGN.md gives a list of rich
-   items. No grid — the alignment is the structure. */
-#OrderTable {
-    background-color: $BG_BASE;
-    border: 1px solid $BORDER;
-    border-radius: ${RADIUS_MD}px;
-    color: $TEXT_PRIMARY;
-}
-
-#OrderTable::item {
-    padding: 5px 8px;
-}
-
-#OrderTable::item:selected {
-    background-color: $BG_OVERLAY;
-    color: $TEXT_PRIMARY;
-}
-
-#OrderTable QHeaderView::section {
-    background-color: $BG_BASE;
-    color: $TEXT_SECONDARY;
-    border: none;
-    border-bottom: 1px solid $BORDER;
-    padding: 6px 8px;
-    font-weight: bold;
-}
-
-/* The debug tabs' tables (LLM Calls, Telemetry): the order table's look, since a table of
+/* The debug tabs' tables (LLM Calls, Telemetry): the table's look, since a table of
    quiet lines is a table of quiet lines whatever it lists; the detail well under each is
    a text well. */
 #LLMCallsTable, #TelemetryTable {

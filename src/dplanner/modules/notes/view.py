@@ -1,44 +1,35 @@
 """Implementation notes: the project's log as a list, the picked note's editor beside it.
 
-One row per note, newest first — the title over its id, label, when and where, a
-superseded one muted with the note that replaced it named — painted by the framework's
-two-line delegate rather than built as a widget, so a plan that has accumulated hundreds
-of handoffs costs the window nothing to lay out. Picking a row binds the editor to that
-note and nothing else; *Add Note…* records a fresh one and opens it on the title, the way
-Step ▸ New opens the details on the name; the `⋯` beside the editor carries Remove. The
-*Implementation notes* tab (``activity.py``) is the page around it, and the list follows
-the project after a quiet spell, like every table.
+One row per note, newest first — the title over its id, label, when and where, a superseded
+one muted with the note that replaced it named — in a ``RichList``: the framework's two-line
+rows in the table's well, so a plan that has accumulated hundreds of handoffs costs the
+window nothing to lay out. A log is one column of things, so it is a list and not a table.
+Picking a row binds the editor to that note and nothing else. The strip over both carries
+*Add Note…*, which records a fresh one and opens it on the title the way Step ▸ New opens
+the details on the name, *Remove Note*, greyed until a note is picked, and the labels as a
+filter. The *Implementation notes* tab (``activity.py``) is the page around it, and the list
+follows the project after a quiet spell, like every table.
 """
 
 from collections.abc import Callable
 from datetime import date
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QMenu,
-    QPushButton,
-    QSplitter,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QHBoxLayout, QListWidgetItem, QSplitter, QVBoxLayout, QWidget
 
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step
 from dplanner.framework.activity import follow_target
 from dplanner.framework.debounce import Debounced, DebounceService
-from dplanner.framework.list_rows import DETAIL_ROLE, MUTED_ROLE, TwoLineDelegate
+from dplanner.framework.list_rows import DETAIL_ROLE, HOST_ROLE, MUTED_ROLE, RichList
 from dplanner.framework.signalling import UpdatingIndicator
+from dplanner.framework.toolbar import FilterButton, Toolbar
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import EmptyState
+from dplanner.framework.widgets import EmptyState, note
 from dplanner.modules.notes.editor import NoteEditor
 from dplanner.modules.notes.log import (
     DEFAULT_LABEL,
+    LABELS,
     MODULE_ID,
     Note,
     next_note_id,
@@ -48,13 +39,14 @@ from dplanner.modules.notes.log import (
     write_log,
 )
 from dplanner.modules.notes.reach import day
+from dplanner.theme.icons import plus_icon, trash_icon
+from dplanner.theme.tokens import FIELD_GAP, SECTION_GAP
 
-NOTE_ROLE = int(Qt.ItemDataRole.UserRole) + 1
+NOTE_ROLE = HOST_ROLE
 FRESH_TITLE = "New note"
-LIST_WIDTH = 320
-BLOCK_GAP = 12
-FIELD_GAP = 6
+LIST_WIDTH = 320  # Where the seam falls to begin with; the splitter keeps the proportion.
 NO_NOTES = "No notes yet. `dplanner note add` records one from the terminal."
+NO_MATCH = "No note carries those labels. Clear the filter to see the whole log."
 
 
 def note_line(record: Note, where: str, addressed: str, superseded_by: str) -> str:
@@ -72,7 +64,7 @@ def note_line(record: Note, where: str, addressed: str, superseded_by: str) -> s
 
 
 class NotesView(QWidget):
-    """The log beside the editor for the picked note, and the button that adds to it."""
+    """The log beside the editor for the picked note, under the strip that adds to it."""
 
     def __init__(
         self,
@@ -92,62 +84,48 @@ class NotesView(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(BLOCK_GAP)
-        # The summary is a row so the indicator has a right end to stand at: this view has
-        # no control strip, and DESIGN.md's *Signalling* puts it at the strip's right.
-        head = QHBoxLayout()
-        layout.addLayout(head)
-        self.summary = QLabel(self)
-        self.summary.setObjectName("InspectorNote")
-        head.addWidget(self.summary, 1)
+        layout.setSpacing(SECTION_GAP)
+        # The verbs, then the view; the indicator outside the strip so folding never takes it.
+        strip = QHBoxLayout()
+        layout.addLayout(strip)  # Before it is filled: a parentless layout leaks its items.
+        strip.setSpacing(FIELD_GAP)
+        self.controls = Toolbar(self)
+        self.add_action = self.controls.add_verb(
+            "Add Note…",
+            plus_icon,
+            self.add_note,
+            tip="Record a decision, a handoff, a spec change, something deferred",
+        )
+        self.remove_action = self.controls.add_verb(
+            "Remove Note",
+            trash_icon,
+            self.remove_selected,
+            tip="Drop the picked note from the log; what superseded it stands alone",
+        )
+        self.controls.add_divider()
+        self.filter = FilterButton(label="Labels")
+        for label in LABELS:
+            self.filter.add_filter(label.id, label.id)
+        self.controls.add_widget(self.filter)
+        strip.addWidget(self.controls, 1)
         self.updating = UpdatingIndicator(self)
-        head.addWidget(self.updating)
+        strip.addWidget(self.updating)
+
+        # What the log holds, in words that change with it.
+        self.summary = note("", self)
+        layout.addWidget(self.summary)
 
         self.split = QSplitter(Qt.Orientation.Horizontal, self)
         self.split.setChildrenCollapsible(False)
-        roster = QWidget(self.split)
-        roster_layout = QVBoxLayout(roster)
-        roster_layout.setContentsMargins(0, 0, 0, 0)
-        roster_layout.setSpacing(FIELD_GAP)
-        self.list = QListWidget(roster)
-        self.list.setObjectName("OrderTable")  # The one list-of-rows look.
-        self.list.setFrameShape(QFrame.Shape.NoFrame)
-        self.list.setItemDelegate(TwoLineDelegate(self.list))
-        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list = RichList(self.split)
         self.list.currentItemChanged.connect(lambda *_args: self._on_pick())
-        roster_layout.addWidget(self.list, 1)
-        self.add_button = QPushButton("Add Note…", roster)
-        self.add_button.setToolTip(
-            "Record a decision, a handoff, a spec change, something deferred"
-        )
-        self.add_button.clicked.connect(self.add_note)
-        roster_layout.addWidget(self.add_button, 0, Qt.AlignmentFlag.AlignLeft)
-        self.split.addWidget(roster)
-
-        # The picked note's own verbs sit over the editor, beside what they act on.
-        self.detail = QWidget(self.split)
-        detail_layout = QVBoxLayout(self.detail)
-        detail_layout.setContentsMargins(0, 0, 0, 0)
-        detail_layout.setSpacing(FIELD_GAP)
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        header.addStretch(1)
-        self.more = QToolButton(self.detail)
-        self.more.setText("⋯")
-        self.more.setAutoRaise(True)
-        self.more.setToolTip("What to do with this note")
-        self.more.clicked.connect(self._open_menu)
-        header.addWidget(self.more)
-        detail_layout.addLayout(header)
-        self.editor = NoteEditor(library, undo, step_key, self.detail)
-        detail_layout.addWidget(self.editor, 1)
-        self.split.addWidget(self.detail)
+        self.editor = NoteEditor(library, undo, step_key, self.split)
         self.split.setStretchFactor(1, 1)
         self.split.setSizes([LIST_WIDTH, LIST_WIDTH * 2])
         layout.addWidget(self.split, 1)
 
-        # Hidden until the refresh says the log is empty; it and the split trade places —
-        # the roster's button with it, so the first note has a button of its own here.
+        # Hidden until the refresh says the log is empty; it and the split trade places, and
+        # the first note has a button of its own here.
         self.empty = EmptyState(
             parent=self, action=("Add Note…", self.add_note), stands_in_for=self.split
         )
@@ -166,7 +144,8 @@ class NotesView(QWidget):
                     library.structure_changed,
                     library.field_changed,
                 ),
-            )
+            ),
+            self.filter.changed.connect(self._refresh_soon.trigger),
         ]
         self._refresh()
 
@@ -176,6 +155,7 @@ class NotesView(QWidget):
             unsubscribe()
         self._unsubscribes.clear()
         self.editor.dispose()
+        self.controls.dispose()
 
     # -- what the tests read -------------------------------------------------------------------
 
@@ -243,9 +223,11 @@ class NotesView(QWidget):
         records = read_log(project) if project is not None else []
         replaced = {record.supersedes: record.id for record in records if record.supersedes}
         gone = superseded_ids(records)
+        wanted = set(self.filter.active())
+        shown = [record for record in reversed(records) if not wanted or record.label in wanted]
         self.list.blockSignals(True)
         self.list.clear()
-        for record in reversed(records):
+        for record in shown:
             item = QListWidgetItem(record.title or "Untitled note")
             where = self._name(project, record.step) if record.step else ""
             addressed = ", ".join(self._name(project, step) for step in record.for_steps)
@@ -260,15 +242,20 @@ class NotesView(QWidget):
             for index in range(self.list.count())
             if self.list.item(index).data(NOTE_ROLE) == self._selected
         ]
-        self.list.setCurrentRow(rows[0] if rows else (0 if records else -1))
+        self.list.setCurrentRow(rows[0] if rows else (0 if shown else -1))
         self.list.blockSignals(False)
         current = self.list.currentItem()
         self._selected = str(current.data(NOTE_ROLE)) if current is not None else None
-        standing = len(records) - len(gone)
-        self.summary.setText(
-            f"{len(records)} notes, {standing} standing — newest first" if records else ""
-        )
-        self.empty.say("" if records else NO_NOTES)
+        if not records:
+            summary = ""
+        elif wanted:
+            summary = f"{len(shown)} of {len(records)} notes shown — newest first"
+        else:
+            standing = len(records) - len(gone)
+            summary = f"{len(records)} notes, {standing} standing — newest first"
+        self.summary.setText(summary)
+        self.summary.setVisible(bool(summary))
+        self.empty.say(NO_NOTES if not records else "" if shown else NO_MATCH)
         self._show_selected()
 
     def _on_pick(self) -> None:
@@ -278,14 +265,7 @@ class NotesView(QWidget):
 
     def _show_selected(self) -> None:
         self.editor.show_record(self._project_id, self._selected)
-        self.more.setEnabled(self._selected is not None)
-
-    def _open_menu(self) -> None:
-        if self._selected is None:
-            return
-        menu = QMenu(self)
-        menu.addAction("Remove Note", self.remove_selected)
-        menu.exec(self.more.mapToGlobal(self.more.rect().bottomLeft()))
+        self.remove_action.setEnabled(self._selected is not None)
 
     def _name(self, project: Project | None, step_id: str) -> str:
         step = project.step(step_id) if project is not None else None
