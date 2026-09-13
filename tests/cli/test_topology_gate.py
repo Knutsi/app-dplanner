@@ -9,6 +9,7 @@ import json
 from io import StringIO
 
 import pytest
+from tests.cli.skill_helpers import noun_verbs
 
 from dplanner.cli.gate import TopologyGate, digest
 
@@ -174,12 +175,13 @@ def test_nothing_is_written_when_the_gate_refuses(gated_cli, workspace):
 
 
 def test_the_skill_marks_gated_verbs(gated_cli):
+    """The dagger is where an agent reads that a verb costs a `topology show` first."""
     skill = gated_cli("skill", "show")
-    assert "`dplanner step add` — " in skill
-    line = next(line for line in skill.splitlines() if "`dplanner step add`" in line)
-    assert "reads the topology first" in line
-    line = next(line for line in skill.splitlines() if "`dplanner describe set`" in line)
-    assert "reads the topology first" not in line
+    verbs = noun_verbs(skill)
+    assert "add†" in verbs["step"] and "duplicate†" in verbs["step"]
+    # Reading the graph is never gated, and `step list` sits next to verbs that are.
+    assert "list" in verbs["step"] and "list†" not in verbs["step"]
+    assert not any(verb.endswith("†") for verb in verbs["describe"])
     # Moving cards about is presentation, not shape: never gated.
-    line = next(line for line in skill.splitlines() if "`dplanner layout shift`" in line)
-    assert "reads the topology first" not in line
+    assert not any(verb.endswith("†") for verb in verbs["layout"])
+    assert "† reads the topology first" in skill

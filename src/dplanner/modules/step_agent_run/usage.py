@@ -35,7 +35,8 @@ USAGE_ORIGIN: Final[object] = object()
 
 def rows(step: Step) -> list[dict[str, Any]]:
     """The step's usage rows as stored: ``harness``, ``session``, ``input``, ``output``,
-    ``details``, ``ended``. A row this build cannot read is skipped, never a crash."""
+    ``details``, ``ended``, and ``prompt_chars`` where the run was measured. A row this
+    build cannot read is skipped, never a crash."""
     entry = step.module_data.get(MODULE_ID) or {}
     stored = entry.get("runs")
     if not isinstance(stored, list):
@@ -58,8 +59,10 @@ def totals(step: Step) -> Usage | None:
     )
 
 
-def row_for(harness: str, session: str, usage: Usage, ended: str = "") -> dict[str, Any]:
-    return {
+def row_for(
+    harness: str, session: str, usage: Usage, ended: str = "", prompt_chars: int = 0
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
         "harness": harness,
         "session": session,
         "input": usage.input,
@@ -67,6 +70,9 @@ def row_for(harness: str, session: str, usage: Usage, ended: str = "") -> dict[s
         "details": dict(usage.details),
         "ended": ended or now_stamp(),
     }
+    if prompt_chars:  # Absence is "nobody measured", FORMAT.md's rule, and it reads as none.
+        row["prompt_chars"] = prompt_chars
+    return row
 
 
 def with_row(step: Step, row: dict[str, Any]) -> dict[str, Any]:
@@ -98,6 +104,25 @@ def record(library: Library, step_id: StepId, row: dict[str, Any]) -> bool:
 def words(usage: Usage) -> str:
     """``12.3k in · 1.2k out`` — how a row or a chip says it."""
     return f"{_short(usage.input)} in · {_short(usage.output)} out"
+
+
+def row_words(row: dict[str, Any]) -> str:
+    """One recorded run as a line: the day, the harness, what it spent and — after that,
+    because it was known first and matters least — what it was handed. A row from before
+    anybody measured simply ends earlier, so the columns stay where they were."""
+    spent = words(Usage(int(row["input"]), int(row["output"])))
+    briefed = row.get("prompt_chars")
+    line = f"{str(row.get('ended', ''))[:10]}  {row.get('harness', '?')!s:9} {spent}"
+    if isinstance(briefed, int) and briefed:
+        line += f" · {brief_words(briefed)}"
+    return line
+
+
+def brief_words(chars: int) -> str:
+    """``briefed 18.4k chars`` — how every surface says what a run was handed, and "" when
+    nobody measured. *Briefed* rather than a bare number because the count beside it is
+    tokens: two quantities in one line must not be readable as the same one."""
+    return f"briefed {_short(chars)} chars" if chars else ""
 
 
 def _short(count: int) -> str:

@@ -48,7 +48,10 @@ def preamble() -> str:
 def generate(registry: CliRegistry, aspects: Sequence[AspectSpec]) -> dict[str, str]:
     """The skill, as filenames to content. Two files, because they are read differently.
 
-    ``SKILL.md`` is what an agent reads first and has to be short enough to hold in mind.
+    ``SKILL.md`` is what an agent reads first and has to be short enough to hold in mind, so
+    its command list is an **index**: one line per noun naming its verbs. A summary per verb
+    was a third of the file and said what ``reference.md`` and ``--help`` both already say —
+    and an agent that needs one has two faster ways to get it than re-reading the skill.
     ``reference.md`` is every argument of every command, which is a lookup, not a read.
     """
     return {
@@ -84,16 +87,23 @@ def _skill(registry: CliRegistry, aspects: Sequence[AspectSpec]) -> str:
         "",
     ]
     for noun, commands in registry.groups().items():
-        lines.append(f"### `{PROG} {noun}`")
-        lines.append("")
-        for command in commands:
-            # A verb that reshapes the graph runs behind the topology gate; the skill says
-            # so on the line itself, because that is where an agent reads what a verb costs.
-            gated = " *(reads the topology first)*" if command.edits_graph is not None else ""
-            lines.append(f"- `{PROG} {command.id}` — {command.summary}{gated}")
-        lines.append("")
+        # A verb that reshapes the graph runs behind the topology gate, and the dagger is
+        # where an agent reads that this one costs a `topology show` first.
+        offered = [command for command in commands if command.in_skill]
+        if not offered:  # A noun whose every verb is kept out is not a noun here at all.
+            continue
+        verbs = " · ".join(
+            command.path[1] + ("†" if command.edits_graph is not None else "")
+            for command in offered
+        )
+        lines.append(f"- `{PROG} {noun}` — {verbs}")
     lines += [
-        f"Every argument of every command is in [{REFERENCE_FILE}]({REFERENCE_FILE}).",
+        "",
+        f"† reads the topology first: `{PROG} topology show <project>` once, before it runs.",
+        "",
+        f"`{PROG} <noun> <verb> --help` names a verb's arguments and is the fastest way to"
+        f" check one; every argument of every command is also in"
+        f" [{REFERENCE_FILE}]({REFERENCE_FILE}).",
         "",
         "## Aspects a step can carry",
         "",
@@ -121,6 +131,8 @@ def _reference(registry: CliRegistry) -> str:
         "",
     ]
     for command in registry.commands():
+        if not command.in_skill:
+            continue
         lines += [f"## `{PROG} {command.id}`", "", command.summary, "", "```"]
         # The parser's own help, examples included: one rendering, so the reference and
         # `--help` cannot come to disagree.

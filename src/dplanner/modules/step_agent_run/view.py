@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.modules.step_agent_run.runs import AgentRun, describe
+from dplanner.modules.step_agent_run.usage import brief_words
 
 LINE_GAP = 8
 
@@ -42,12 +43,15 @@ def _clock(stamp: str) -> str:
 
 
 def status_text(run: AgentRun, state: str) -> str:
-    """The row's secondary line: what the run is doing, and when it began (or ended)."""
+    """The row's secondary line: what the run is doing, when it began (or ended), and what
+    it was handed. The size comes off the run, so a live one says it too — the tokens beside
+    it cannot be read back until the shell ends."""
     phrase = describe(run, state)
     when = _clock(run.ended if run.ended else run.launched)
-    if not when:
-        return phrase
-    return f"{phrase} · {'since' if run.live else 'at'} {when}"
+    if when:
+        phrase = f"{phrase} · {'since' if run.live else 'at'} {when}"
+    briefed = brief_words(run.prompt_chars)
+    return f"{phrase} · {briefed}" if briefed else phrase
 
 
 def button_text(runs: list[AgentRun], title_of: Callable[[str], str]) -> str:

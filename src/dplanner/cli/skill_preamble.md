@@ -312,9 +312,6 @@ and the loop is: look, sort, make room or tidy, look again, keep.
   under a name the user can return to from the canvas toolbar whenever later edits
   scatter things. None of these verbs reshapes the graph, so none reads the topology
   first.
-- **Do not draw regions.** A region is a titled rectangle painted behind the steps —
-  annotation the canvas may retire, and it earns nothing a tidy graph and good titles do
-  not. Add none, and leave any that exist alone.
 
 ## Working from a specification
 
@@ -500,7 +497,7 @@ then authored `step add`s.
   use one of those rather than guessing.
 - **The positional names the thing the verb acts on.** A step verb (`describe set`,
   `agent on`, `milestone set`, `estimate set`) takes the *step*; a project verb (`step add`,
-  `spec …`, `order show`, `region …`, `layout …`) takes the *project*. A step verb finds
+  `spec …`, `order show`, `layout …`) takes the *project*. A step verb finds
   its project itself — from the working directory or `--project` — never as a second
   positional.
 - **Already clear is success.** State-clearing verbs (`status clear`, `estimate clear`,
@@ -509,7 +506,7 @@ then authored `step add`s.
   safe to batch; so does `feature cite` of a passage already cited, `note add` of a title
   already recorded on that step, `progress record` of a day nothing changed on, and
   `progress remove` of a snapshot nobody saved.
-- **A verb marked *reads the topology first*** refuses until `topology show` has printed
+- **A verb marked † in the command list** refuses until `topology show` has printed
   the project's current topology on this machine. Read it once per session, and again
   after `topology set`; it costs one command and it is the shape of everything you add.
 - **Exit 1 with one line on stderr** means something you can fix. A traceback means a bug in

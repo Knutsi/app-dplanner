@@ -159,6 +159,13 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             "repository": facts.repository,
             "checkout": str(facts.checkout) if facts.checkout is not None else "",
             "prompt": assembled.text,
+            # What each block cost, so "where does a briefing's weight go?" is one verb
+            # rather than a script somebody writes again. The sizes sum to the prompt's.
+            "segments": [
+                {"origin": segment.origin, "heading": segment.heading, "chars": len(segment.text)}
+                for segment in assembled.segments
+            ],
+            "chars": len(assembled.text),
             "files": list(assembled.files),
         }
         context.report(data, assembled.text)

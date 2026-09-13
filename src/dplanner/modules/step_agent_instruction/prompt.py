@@ -83,17 +83,23 @@ EMPTY_BRIEFING = Briefing()
 
 @dataclass(frozen=True)
 class PromptSegment:
-    """A stretch of the assembled text and where it came from.
+    """A stretch of the assembled text, where it came from and what it is called.
 
     ``origin`` is one of ``header``, ``protocol`` (preamble and epilogue), ``project``,
-    ``context``, ``instruction``, ``inherited`` (the parts after the instructions).
-    Concatenating the segment texts
-    reproduces ``AssembledPrompt.text`` exactly — a display that colours by origin can
-    never show something other than what is sent.
+    ``context``, ``instruction``, ``inherited`` (the parts after the instructions), and is
+    what a display tints by. ``heading`` is the block's own markdown heading without the
+    hashes, because an origin alone cannot tell *Before you start* from *When you are done*,
+    nor one note block from the other — and "which block is this briefing's weight in?" is a
+    question somebody has to be able to ask (``agent prompt --json``).
+
+    There is one segment per block, so every block's size has a name. Concatenating the
+    segment texts reproduces ``AssembledPrompt.text`` exactly — a display that colours by
+    origin can never show something other than what is sent.
     """
 
     origin: str
     text: str
+    heading: str = ""
 
 
 @dataclass(frozen=True)
@@ -148,38 +154,33 @@ def assemble(
     after the instructions: what the project recorded for this step's worker, read once
     the work is understood.
     """
-    blocks: list[tuple[str, list[str]]] = [
-        ("header", [f"# Step: {step_title}", "", f"Project: {project_title}", ""])
+    blocks: list[tuple[str, str, list[str]]] = [
+        ("header", "Step", [f"# Step: {step_title}", "", f"Project: {project_title}", ""])
     ]
     if preamble:
-        blocks.append(("protocol", ["## Before you start", "", preamble.rstrip(), ""]))
+        blocks.append(
+            ("protocol", "Before you start", ["## Before you start", "", preamble.rstrip(), ""])
+        )
     if project_instruction or project_files:
         project_lines = ["## Project instructions", ""]
         if project_instruction:
             project_lines += [project_instruction.rstrip(), ""]
         project_lines += _files_lines(project_files)
-        blocks.append(("project", project_lines))
-    if project_sections:
-        blocks.append(
-            (
-                "project",
-                [line for section in project_sections for line in section_lines(section)],
-            )
-        )
-    if sections:
-        blocks.append(
-            ("context", [line for section in sections for line in section_lines(section)])
-        )
+        blocks.append(("project", "Project instructions", project_lines))
+    # One block per section and per part, so each one's size has a name of its own.
+    blocks += [("project", s.heading, section_lines(s)) for s in project_sections]
+    blocks += [("context", s.heading, section_lines(s)) for s in sections]
     if instruction or instruction_files:
         instruction_lines = ["## Instructions", ""]
         if instruction:
             instruction_lines += [instruction.rstrip(), ""]
         instruction_lines += _files_lines(instruction_files)
-        blocks.append(("instruction", instruction_lines))
-    if parts:
-        blocks.append(("inherited", [line for part in parts for line in section_lines(part)]))
+        blocks.append(("instruction", "Instructions", instruction_lines))
+    blocks += [("inherited", part.heading, section_lines(part)) for part in parts]
     if epilogue:
-        blocks.append(("protocol", ["## When you are done", "", epilogue.rstrip(), ""]))
+        blocks.append(
+            ("protocol", "When you are done", ["## When you are done", "", epilogue.rstrip(), ""])
+        )
     files = (
         *project_files,
         *(path for section in project_sections for path in section.files),
@@ -190,10 +191,14 @@ def assemble(
     # Each segment carries the newline that joins it to the next, so the concatenation
     # is exactly the joined text — the invariant PromptSegment promises.
     segments = tuple(
-        PromptSegment(origin, "\n".join(block) + ("\n" if index < len(blocks) - 1 else ""))
-        for index, (origin, block) in enumerate(blocks)
+        PromptSegment(
+            origin,
+            "\n".join(block) + ("\n" if index < len(blocks) - 1 else ""),
+            heading,
+        )
+        for index, (origin, heading, block) in enumerate(blocks)
     )
-    text = "\n".join(line for _origin, block in blocks for line in block)
+    text = "\n".join(line for _origin, _heading, block in blocks for line in block)
     return AssembledPrompt(text=text, files=files, segments=segments)
 
 

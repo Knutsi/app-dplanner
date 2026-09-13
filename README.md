@@ -47,8 +47,8 @@ between them, what actually landed, and how much work the plan came to on each r
 day; `dplanner progress show` prints the same, with the steps and estimates that moved it.
 What a project learns along the way — decisions, handoffs, spec changes, what was
 deferred — is one labelled log beside it (`dplanner note add`, the project panel's Notes
-card), and every agent's briefing carries an index of the notes that reach its step, with
-the ones addressed to it in full.
+card), and every agent's briefing carries an index of the notes that reach its step — the
+ones made on the work it builds on, capped per label — with the ones addressed to it in full.
 
 ## Running
 
@@ -387,7 +387,7 @@ src/dplanner/
 │   │                        Settings ▸ Reports
 │   ├── notes/               what a project records along the way — decisions, handoffs, spec changes,
 │   │                        deferrals — one labelled log (log.py), what reaches a step and the briefing's
-│   │                        index (reach.py), how the two retired modules reach it (migrate.py),
+│   │                        capped index (reach.py), how the two retired modules reach it (migrate.py),
 │   │                        `dplanner note`, and the Implementation notes tab (activity.py, view.py)
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
