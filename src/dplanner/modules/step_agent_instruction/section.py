@@ -520,7 +520,11 @@ class AgentSection(QWidget):
                 ("instruction", "This step"),
             )
         )
-        self.prompt_legend.setText(legend)
+        # What the agent will be handed, where somebody looking at the colours is already
+        # asking whether it is too much. The pane's own voice for a size (`_prose_summary`),
+        # not the run's — a briefing about to be sent and a run's recorded cost are two facts,
+        # and the module that owns each words its own.
+        self.prompt_legend.setText(f"{legend}    {_prose_summary(assembled.text)}")
         self.prompt_legend.show()
 
     def _origin_colors(self) -> dict[str, QColor]:

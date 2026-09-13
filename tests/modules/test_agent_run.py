@@ -68,6 +68,36 @@ def test_segments_reproduce_the_text_exactly_and_name_their_origins():
         "inherited",
         "protocol",
     ]
+    # And each one is named, because an origin cannot tell the two protocol blocks apart.
+    assert [segment.heading for segment in assembled.segments] == [
+        "Step",
+        "Before you start",
+        "Project instructions",
+        "Description",
+        "Instructions",
+        "Set up CI",
+        "When you are done",
+    ]
+
+
+def test_each_block_is_its_own_segment_so_every_size_has_a_name():
+    """Two note blocks used to be one segment, so neither had a size of its own. The join
+    invariant holds whatever the block count."""
+    assembled = assemble(
+        step_title="Deploy",
+        project_title="Discovery",
+        instruction="Ship it.",
+        parts=[
+            PromptPart(heading="Notes for this step", body="Read N3."),
+            PromptPart(heading="Notes so far", body="- N3 · Keys in vault"),
+        ],
+        epilogue="Report back.",
+        project_sections=[PromptPart(heading="Topology", body="A chain.")],
+    )
+    inherited = [s for s in assembled.segments if s.origin == "inherited"]
+    assert [s.heading for s in inherited] == ["Notes for this step", "Notes so far"]
+    assert "".join(segment.text for segment in assembled.segments) == assembled.text
+    assert sum(len(segment.text) for segment in assembled.segments) == len(assembled.text)
 
 
 def test_an_empty_context_leaves_no_empty_section():
@@ -1566,6 +1596,23 @@ def test_the_ticket_toggle_adds_the_empty_aspect_and_shelves_a_filled_one(servic
     services.actions.run("ticket.toggle", context)
     assert read(step) == Ticket(key="WID-14")
     assert SHELF_ID not in step.module_data
+
+
+def test_agent_prompt_reports_what_each_block_cost(cli_stdin, workspace):
+    """The measurement the briefing-size pass had to hand-roll, as a verb: where a briefing's
+    weight goes, by block, with the sizes summing to the prompt somebody is actually handed."""
+    cli_stdin("project", "create", "Discovery")
+    cli_stdin("step", "add", "Discovery", "Set up CI")
+    cli_stdin("agent", "set", "Set up CI", "--file", "-", stdin="Ship it.")
+    cli_stdin("note", "add", "Discovery", "decision", "Keys in vault")
+
+    shown = json.loads(cli_stdin("agent", "prompt", "Set up CI", "--json"))
+    assert shown["chars"] == len(shown["prompt"])
+    assert sum(block["chars"] for block in shown["segments"]) == shown["chars"]
+    named = {block["heading"]: block for block in shown["segments"]}
+    assert named["Instructions"]["origin"] == "instruction"
+    assert named["Notes so far"]["origin"] == "inherited"
+    assert named["When you are done"]["chars"] > 0
 
 
 def test_agent_prompt_carries_the_note_index_and_the_epilogue(cli_stdin, workspace):
