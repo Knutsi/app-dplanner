@@ -662,8 +662,11 @@ def main(argv: list[str]) -> int:
     sub.add_parser("sync", help="copy this worktree into the guest")
     sub.add_parser("venv", help="uv sync --locked in the guest")
     checker = sub.add_parser("check", help="pytest, ruff, mypy — all three or the ones named")
-    checker.add_argument("names", nargs="*", choices=[*CHECKS, []], default=[])
-    checker.add_argument("extra", nargs=argparse.REMAINDER)
+    checker.add_argument(
+        "words", nargs=argparse.REMAINDER,
+        help="which checks (pytest, ruff, mypy; default all three); after `--`, extra "
+        "arguments for the one check named, e.g. `check pytest -- -x tests/cli`",
+    )
     sub.add_parser("build", help="the PyInstaller build, and a smoke run of it")
     sub.add_parser("render", help="the render_*.py screenshot scripts, offscreen")
     window = sub.add_parser("window", help="open dpw on the real desktop and photograph it")
@@ -718,8 +721,12 @@ def main(argv: list[str]) -> int:
         sync_venv = f"Set-Location {GUEST_TREE}\nuv sync --locked\nexit $LASTEXITCODE"
         return target.run(sync_venv, "venv")
     if args.verb == "check":
-        extra = [word for word in args.extra if word != "--"]
-        return do_check(target, args.names, extra)
+        words = list(args.words)
+        names = words[: words.index("--")] if "--" in words else words
+        extra = words[len(names) + 1 :] if "--" in words else []
+        if extra and len(names) != 1:
+            raise SystemExit("extra arguments after `--` go to exactly one named check")
+        return do_check(target, names, extra)
     if args.verb == "build":
         return do_build(target)
     if args.verb == "render":
