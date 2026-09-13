@@ -210,3 +210,74 @@ def test_the_probe_reads_a_real_repository(app, services, tmp_path, clean_git): 
 def test_the_real_build_offers_the_git_kind(services):
     spec = services.actions.spec("spec.add_source.git")
     assert spec.label == "&Git Repository…"
+
+
+# -- the whole path, through the application the window builds -----------------------------------
+
+DOCS = {
+    "README.md": "# Handbook\n",
+    "docs/spec/README.md": "# Spec\n",
+    "docs/spec/auth.md": "# Auth\n\nWhat the modal asks for.\n",
+    "docs/spec/tokens.md": "# Tokens\n",
+}
+
+
+@pytest.fixture
+def live_git(tmp_path, monkeypatch, clean_git):  # noqa: F811
+    """The real git kind in the real build, with its cache under ``tmp_path``.
+
+    **Listed before ``services``**: the composition root resolves the cache root while it
+    builds, so the patch must already be in place — the ``fake_kind`` ordering rule.
+    """
+    monkeypatch.setattr(
+        "dplanner.core.config_dir.config_dir", lambda app="dplanner": tmp_path / "config"
+    )
+    return make_remote(tmp_path, DOCS)
+
+
+def test_a_git_source_imports_a_subdirectory_and_then_sees_an_update(
+    app, live_git, services, make_project, monkeypatch
+):
+    """The step's own test, end to end through the application the window builds: a git
+    source added by its verb, its documents nested under the subdirectory's own README,
+    and a commit upstream showing up in the next check."""
+    from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+    from dplanner.modules.spec.documents import read_index
+
+    project = make_project("Quick registration")
+    services.context.set_scope(
+        SCOPE_SELECTION, (ContextNode(selection_uri("project", project.id)),)
+    )
+
+    def accept(self):
+        self.url.setText(live_git.url)
+        self.ref.setText("main")
+        self._list()
+        wait_for(app, lambda: self.passed or self.status.tone() == "error")
+        assert self.passed, self.status.words()
+        row = next(
+            index for index, folder in enumerate(self._folders) if folder.path == "docs/spec"
+        )
+        self.table.selectRow(row)
+        return GitSourceDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(GitSourceDialog, "exec", accept)
+    services.actions.run("spec.add_source.git", services.context.current())
+    refresher = services.tabs.activities()[0]._refresher
+    wait_for(app, lambda: not refresher.is_fetching())
+
+    index = read_index(services.document.project(project.id))
+    # Keys are relative to the chosen folder; the two pages hang under its own README,
+    # by the name the spec module minted from that document's heading.
+    assert [doc.key for doc in index.documents] == ["README.md", "auth.md", "tokens.md"]
+    assert [doc.parent for doc in index.documents] == ["", "spec", "spec"]
+    assert [doc.title for doc in index.documents] == ["Spec", "Auth", "Tokens"]
+    assert index.sources[0].kind == "git" and index.sources[0].fetched
+
+    # The remote moves, and the check says which document it was — no bodies downloaded.
+    live_git.commit({"docs/spec/auth.md": "# Auth\n\nAnd what it answers.\n"}, "edit")
+    refresher.check_all(project.id)
+    wait_for(app, lambda: refresher.freshness(project.id, "src1") is not None)
+    found = refresher.freshness(project.id, "src1")
+    assert found is not None and found.changed == ("auth.md",)
+    assert not found.added and not found.removed
