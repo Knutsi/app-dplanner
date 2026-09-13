@@ -286,6 +286,75 @@ def test_more_ticks_than_the_limit_grey_the_button_with_the_count_as_the_reason(
     assert board.run_button.isEnabled(), board.run_button.toolTip()
 
 
+def _click(app, card, kind=None):
+    """A left button event on the card's centre. A hand-built event rather than QTest's:
+    QTest's press never sees a release, so `QApplication.mouseButtons()` would stay held
+    for every later test in the process."""
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    centre = QPointF(card.rect().center())
+    app.sendEvent(
+        card,
+        QMouseEvent(
+            kind or QEvent.Type.MouseButtonPress,
+            centre,
+            QPointF(card.mapToGlobal(centre.toPoint())),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+
+
+def test_clicking_a_ready_card_anywhere_ticks_it(app, services, project, tab):
+    """The tick is a thirteen-pixel target and the card is the thing being chosen, so the
+    whole card is the target — and clicking it again takes it back out of the run."""
+    card = tab.board.ready.cards()[0]
+    assert card.check_box is not None and not card.check_box.isChecked()
+
+    _click(app, card)
+    assert card.check_box.isChecked() and tab.board.ticked() == [card.step_id]
+    assert services.context.current().selected_entities("step") == [card.step_id]
+
+    _click(app, card)
+    assert not card.check_box.isChecked() and tab.board.ticked() == []
+
+
+def test_a_double_click_opens_the_details_and_leaves_the_run_alone(
+    app, services, project, tab, monkeypatch
+):
+    """Opening a card is not choosing it: the press that began the double click ticked it,
+    and the double click puts it back."""
+    from PySide6.QtCore import QEvent
+
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    shown = []
+    monkeypatch.setattr(
+        StepDetailsDialog, "exec", lambda self: shown.append(self.panel.current_step_id())
+    )
+    card = tab.board.ready.cards()[0]
+
+    _click(app, card)  # The press Qt sends first.
+    _click(app, card, QEvent.Type.MouseButtonDblClick)
+
+    assert shown == [card.step_id]
+    assert not card.check_box.isChecked() and tab.board.ticked() == []
+
+
+def test_a_cards_second_line_starts_where_its_title_does(app, services, project, tab):
+    """The tick stands beside line one and the words are one column under it: a detail that
+    began under the tick would be indented from the name it belongs to."""
+    card = tab.board.ready.cards()[0]
+    assert card.detail.isVisible() and card.detail.text() == "Unblocks 3"
+    assert card.detail.x() == card.title.x()
+    # One line tall, so its indicator sits on the title's first line however far it wraps.
+    from PySide6.QtGui import QFontMetrics
+
+    assert card.check_box.height() == QFontMetrics(card.title.font()).height()
+
+
 def test_a_build_without_an_agent_has_no_button_at_all(services, project):
     """Hidden means absent: agent_state=None is a build where the capability does not exist."""
     from dplanner.modules.progression.module import ProgressionActivity, ProgressionDeps

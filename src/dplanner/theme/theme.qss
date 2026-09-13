@@ -537,10 +537,22 @@ QProgressBar::chunk {
     padding: 6px 12px;
 }
 
-#ToolbarButton:hover, #LayoutButton:hover, #TemplateButton:hover, #TaskRowCancel:hover,
-#FilterButtonFace:hover, #FilterButtonClear:hover {
+#ToolbarButton:hover:enabled, #LayoutButton:hover:enabled, #TemplateButton:hover:enabled,
+#TaskRowCancel:hover:enabled, #FilterButtonFace:hover:enabled,
+#FilterButtonClear:hover:enabled {
     color: $TEXT_PRIMARY;
     border-color: $BORDER_STRONG;
+}
+
+/* Off. *Disabled, never hidden* only teaches while a greyed control reads as greyed, and a
+   rule that sets `color` takes the palette's disabled ink out of Qt's hands — so every quiet
+   button has to say what it looks like off, and its hover must not answer (`:enabled` above).
+   The ground goes with the ink: a bordered box in the overlay tone reads as a target. */
+#ToolbarButton:disabled, #LayoutButton:disabled, #TemplateButton:disabled,
+#TaskRowCancel:disabled, #FilterButtonFace:disabled {
+    color: $TEXT_DISABLED;
+    background-color: transparent;
+    border-color: $BORDER_FAINT;
 }
 
 /* The filter control (framework/toolbar.py's FilterButton): the face and its × are one

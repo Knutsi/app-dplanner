@@ -26,6 +26,7 @@ from PySide6.QtCore import QPoint, QRectF, QSize, Qt
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QFontMetrics,
     QIcon,
     QMouseEvent,
     QPainter,
@@ -48,7 +49,13 @@ from PySide6.QtWidgets import (
 from dplanner.domain.model import StepId
 from dplanner.domain.progression import Progression
 from dplanner.theme.icons import ICON_SIZE, KEY_BADGE_W
-from dplanner.theme.tokens import CAPTION_GAP, CONTROL_HEIGHT, FIELD_GAP, SECTION_GAP
+from dplanner.theme.tokens import (
+    CAPTION_GAP,
+    CONTROL_HEIGHT,
+    FIELD_GAP,
+    ROW_LINE_GAP,
+    SECTION_GAP,
+)
 
 # The page metrics, from the one table (DESIGN.md's *Tokens*): a card's and a lane's
 # padding are a section's gap, a row sits a field's gap from the next, and a badge stands a
@@ -218,13 +225,16 @@ class StepCard(QFrame):
         self._select = select
         self._details = details
         self._menu = menu
+        self._before_press = ticked  # What a double click puts the tick back to.
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(CARD_PADDING, CARD_PADDING, CARD_PADDING, CARD_PADDING)
-        layout.setSpacing(4)
+        layout.setSpacing(ROW_LINE_GAP)
 
-        # The heading row: a tick for a ready step, a milestone's badge, then the title —
-        # every mark top-aligned, since the title wraps and the marks belong to line one.
+        # The tick stands beside the card's words, and the words are one column: the title
+        # over what it says about itself. A second line that began under the tick would be
+        # indented from the name it belongs to, and the tick would float beside the pair
+        # rather than beside line one.
         heading = QHBoxLayout()
         layout.addLayout(heading)  # Joined before it is filled, as every row here is.
         heading.setSpacing(BADGE_GAP)
@@ -236,39 +246,70 @@ class StepCard(QFrame):
             self.check_box.setChecked(ticked)
             self.check_box.toggled.connect(lambda on: tick(step_id, on))
             heading.addWidget(self.check_box, 0, Qt.AlignmentFlag.AlignTop)
+
+        column = QVBoxLayout()
+        heading.addLayout(column, 1)
+        column.setSpacing(ROW_LINE_GAP)
+        title_row = QHBoxLayout()
+        column.addLayout(title_row)
+        title_row.setSpacing(BADGE_GAP)
         if badge is not None:
             mark = QLabel(self)
             mark.setPixmap(badge.pixmap(QSize(KEY_BADGE_W, ICON_SIZE)))
             mark.setAlignment(Qt.AlignmentFlag.AlignTop)
-            heading.addWidget(mark, 0, Qt.AlignmentFlag.AlignTop)
+            title_row.addWidget(mark, 0, Qt.AlignmentFlag.AlignTop)
         self.title = QLabel(title, self)
         self.title.setWordWrap(True)
         if dimmed:  # An upcoming step is present without asking to be read.
             self.title.setObjectName("InspectorNote")
-        heading.addWidget(self.title, 1)
+        title_row.addWidget(self.title, 1)
 
         self.detail = QLabel(detail, self)
         self.detail.setObjectName("InspectorNote")
         self.detail.setWordWrap(True)
         self.detail.setVisible(bool(detail))
-        layout.addWidget(self.detail)
+        column.addWidget(self.detail)
+
+        if self.check_box is not None:
+            # A check box centres its indicator in its own height, so a box one line tall
+            # puts the mark on the title's first line however many lines the title wraps to.
+            self.check_box.setFixedHeight(QFontMetrics(self.title.font()).height())
 
     def select(self) -> None:
         """Make this card's step the selection — the click's meaning, callable by name."""
         self._select(self.step_id)
 
+    def toggle(self) -> None:
+        """Tick the card, or untick it. A click anywhere on a ready card does this: the box
+        is a thirteen-pixel target and the card is the thing being chosen — and on this lane
+        choosing a card *is* including it in the run. A card with no tick has nothing to do
+        here (the lane is not a run) and only publishes its step."""
+        if self.check_box is not None:
+            self.check_box.setChecked(not self.check_box.isChecked())
+
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
         if event.button() == Qt.MouseButton.LeftButton:
             self._select(self.step_id)
+            self._before_press = self.check_box is not None and self.check_box.isChecked()
+            self.toggle()
         elif event.button() == Qt.MouseButton.RightButton:
             self._select(self.step_id)
             self._menu(self.step_id, event.globalPosition().toPoint())
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._details(self.step_id)
-        super().mouseDoubleClickEvent(event)
+        """Open the card. The gesture means "show me", not "tick", so the tick goes back to
+        what it was before the press that began it.
+
+        It ends here rather than in ``super()``: Qt's own default for a double click is to
+        call ``mousePressEvent`` again, which on this card would tick what was just unticked.
+        """
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mouseDoubleClickEvent(event)
+            return
+        if self.check_box is not None:
+            self.check_box.setChecked(self._before_press)
+        self._details(self.step_id)
 
 
 class StatusColumn(QFrame):

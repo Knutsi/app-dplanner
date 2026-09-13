@@ -24,7 +24,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 from scripts.synthetic_library import build_library
 
 from dplanner.app import configure_application, new_session, set_early_attributes
-from dplanner.domain.commands import AddNodeCommand
+from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.modules.progression.module import PROGRESSION_KIND
 from dplanner.modules.step_order.module import ORDER_KIND
@@ -33,10 +33,17 @@ from dplanner.theme.themes import DARK, LIGHT, Theme
 
 TAB_SIZE = (1180, 760)
 STEPS = 24
-# The synthetic plan is a chain, so its frontier is one card wide. These three wait on
-# nothing and carry an instruction, which is what the Ready lane is for and what the Run
-# Agents button counts — the board is worth looking at with work standing in it.
-READY = ("Rebuild the index writer", "Port the exporter", "Widen the spec walk")
+# The synthetic plan is a chain, so its frontier is one card wide. These wait on nothing
+# and carry an instruction, which is what the Ready lane is for and what the Run Agents
+# button counts; two of them unblock the step after, so a card shows its second line, and
+# the first is long enough to wrap — which is where the tick's alignment can be read.
+READY = (
+    "Window chrome: right panel hidden by default, an Index header toolbar, and the "
+    "viewport remembered",
+    "Specs tab as CRUD: plain-text editors with markdown tools",
+    "Design pass: tables and browsers",
+)
+FOLLOWER = "Dictation in every prose editor, through dictation providers"
 
 
 def settle(app: QApplication, turns: int = 6) -> None:
@@ -52,10 +59,15 @@ def save(widget: QWidget, out: Path, name: str, theme: Theme, app: QApplication)
 
 
 def add_ready_agents(library: Library, project: Project) -> None:
+    ready = []
     for title in READY:
         step = Step(title=title)
         AddNodeCommand(project.id, step).redo(library)
         library.set_text(step.id, "step_agent_instruction", f"{title}, carefully.")
+        ready.append(step)
+    follower = Step(title=FOLLOWER)
+    AddNodeCommand(project.id, follower).redo(library)
+    SetEdgesCommand(follower.id, "requires", [ready[0].id, ready[1].id]).redo(library)
 
 
 def render_boards(app: QApplication, theme: Theme, out: Path, root: Path) -> None:
@@ -73,11 +85,14 @@ def render_boards(app: QApplication, theme: Theme, out: Path, root: Path) -> Non
         activity = services.tabs.open(kind, project.id)
         settle(app)
         services.debounce.flush_all()
-        if kind == PROGRESSION_KIND:
-            for card in activity.board.ready.cards():
-                card.check_box.setChecked(True)  # What one press would launch.
-            settle(app)
         save(activity.widget, out, name, theme, app)
+        if kind == PROGRESSION_KIND:
+            # Again with the lane chosen: a click anywhere on a card ticks it, and the face
+            # that was greyed while the run was empty says what one press would launch.
+            for card in activity.board.ready.cards():
+                card.toggle()
+            settle(app)
+            save(activity.widget, out, f"{name}-ticked", theme, app)
     session.close()
 
 
