@@ -54,17 +54,28 @@ def specs_tab(services, project):
     return services.tabs.activities()[0]
 
 
+def answer(monkeypatch, typed):
+    """Type ``typed`` into the next LinePrompt and accept it, and hand the refusal back so
+    a test can assert what the field would have said."""
+    from dplanner.framework.dialog import LinePrompt
+
+    refusals: list[str | None] = []
+
+    def asked(_parent, _title, _caption, _verb, *, text="", placeholder="", validate=None):
+        refusals.append(validate(typed) if validate is not None else None)
+        return None if refusals[-1] else typed
+
+    monkeypatch.setattr(LinePrompt, "ask", staticmethod(asked))
+    return refusals
+
+
 def current_doc(services, project, name):
     documents = read_index(services.document.project(project.id)).documents
     return next(doc for doc in documents if doc.name == name)
 
 
 def test_spec_new_creates_selects_and_edits(services, project, monkeypatch):
-    from PySide6.QtWidgets import QInputDialog
-
-    monkeypatch.setattr(
-        QInputDialog, "getText", staticmethod(lambda *_a, **_k: ("Auth flow", True))
-    )
+    answer(monkeypatch, "Auth flow")
     services.actions.run("spec.new", select(services, project))
     document = current_doc(services, project, "auth-flow")
     assert document.kind == "markdown"
@@ -258,3 +269,76 @@ def test_a_pasted_picture_appears_under_the_editor_at_once(services, project):
     activity._editor.insertFromMimeData(mime)
     linked = activity._figures._files
     assert len(linked) == 1 and f"![image]({linked[0]})" in activity._editor.toPlainText()
+
+
+# -- renaming ------------------------------------------------------------------------------------
+# The name is the document's identity: what `spec show` addresses, what a citation keys on,
+# what a page names as its parent. Renaming it is renaming every reference to it, and the
+# tab and the terminal build the same command.
+
+
+def cited(services, project, document, quote="a passage"):
+    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
+    from dplanner.modules.feature.catalogue import (
+        FeatureRecord,
+        FeatureSource,
+        write_catalogue,
+    )
+
+    record = FeatureRecord("f1", "Login", sources=(FeatureSource(document, quote),))
+    SetModuleDataCommand(project.id, FEATURE_ID, write_catalogue([record])).redo(services.document)
+
+
+def citations(services, project):
+    from dplanner.modules.feature.catalogue import read_catalogue
+
+    return [
+        source.document
+        for record in read_catalogue(services.document.project(project.id))
+        for source in record.sources
+    ]
+
+
+def test_renaming_carries_the_citations_and_undoes_as_one(services, project, monkeypatch):
+    imported(services, project, "auth", b"# Auth\n", "auth.md")
+    cited(services, project, "auth")
+    activity = specs_tab(services, project)
+    activity.select_document("auth")
+    answer(monkeypatch, "Authentication v2")
+    services.actions.run("spec.rename", services.context.current())
+
+    documents = read_index(services.document.project(project.id)).documents
+    assert [doc.name for doc in documents] == ["authentication-v2"]  # A title is slugged.
+    assert citations(services, project) == ["authentication-v2"]
+    assert activity._current_name() == "authentication-v2"
+
+    services.undo.undo()  # One gesture, one undo — the name and the citation together.
+    assert [doc.name for doc in read_index(services.document.project(project.id)).documents] == [
+        "auth"
+    ]
+    assert citations(services, project) == ["auth"]
+
+
+def test_renaming_refuses_a_taken_name_in_the_field(services, project, monkeypatch):
+    imported(services, project, "auth", b"# Auth\n", "auth.md")
+    imported(services, project, "billing", b"# Billing\n", "billing.md")
+    activity = specs_tab(services, project)
+    activity.select_document("auth")
+    refusals = answer(monkeypatch, "billing")
+    services.actions.run("spec.rename", services.context.current())
+    assert refusals == ["a spec document named 'billing' already exists"]
+    assert {doc.name for doc in read_index(services.document.project(project.id)).documents} == {
+        "auth",
+        "billing",
+    }
+
+
+def test_renaming_the_blob_is_not_a_move(services, project, monkeypatch):
+    """The path is content-addressed, so it never carried the name to begin with."""
+    base = imported(services, project, "auth", b"# Auth\n", "auth.md")
+    activity = specs_tab(services, project)
+    activity.select_document("auth")
+    answer(monkeypatch, "auth-v2")
+    services.actions.run("spec.rename", services.context.current())
+    renamed = current_doc(services, project, "auth-v2")
+    assert renamed.file == base.file and renamed.previous == base.previous

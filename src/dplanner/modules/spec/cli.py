@@ -27,8 +27,14 @@ from dplanner.cli.gate import digest
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, project_arg, step_arg
 from dplanner.cli.shaping import guide
+from dplanner.core.fsio import slugify
 from dplanner.core.text_diff import diff_hunks
-from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
+from dplanner.domain.commands import (
+    Command,
+    CompositeCommand,
+    EditTextCommand,
+    SetModuleDataCommand,
+)
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor
 from dplanner.modules.spec.aspect import (
@@ -56,11 +62,22 @@ from dplanner.modules.spec.documents import (
     read_index,
     record_asset,
     remove_document,
+    rename_assets,
+    rename_document,
+    rename_refusal,
     write_index,
 )
 from dplanner.modules.spec.documents import anchor_sources as anchor_sources
 from dplanner.modules.spec.pdf import render_page, split_pages
 from dplanner.modules.spec.sourced import locator_line, owned_by_source, tree
+
+# The other modules' half of a rename: what else in this project points at a spec document
+# by name, as commands that move those references with it. Composed by the composition
+# root — a module never reaches into another module's data — and pushed in the same undo
+# entry as the index write, because one gesture is one undo.
+type RenameReferences = Callable[[Project, str, str], list[Command]]
+
+RENAME_LABEL = "Rename Spec Document"
 
 
 def step_author() -> StepAuthor:
@@ -139,9 +156,66 @@ def digest_of(project: Project, document_name: str) -> str:
     return document_digest(document) if document is not None else ""
 
 
-def commands(*, note_read: Callable[[str, str], None]) -> list[CliCommand]:
+def commands(
+    *,
+    note_read: Callable[[str, str], None],
+    rename_references: "RenameReferences | None" = None,
+) -> list[CliCommand]:
     """``note_read(project id, text)`` is the gate's ear: ``topology show`` calls it
-    with what it printed, so the read is recorded where the gate will look."""
+    with what it printed, so the read is recorded where the gate will look.
+
+    ``rename_references`` is the other half of a rename: a document's name is what a
+    feature's citation points at, so renaming one has to carry the citations with it. The
+    spec module may not reach into the feature module's data, so the composition root
+    hands the commands over and this verb pushes them in the same undo entry. A build
+    without it renames what it owns and nothing else.
+    """
+
+    def _rename(context: CliContext, args: Namespace) -> int:
+        project = find_project(context.library, args.project)
+        document = _document(project, args.document)
+        index = read_index(project)
+        chosen = slugify(args.name, fallback="")
+        refusal = rename_refusal(
+            index.documents, document.name, chosen, owned_by_source(index, document.name)
+        )
+        if refusal is not None:
+            raise CliError(refusal)
+        if chosen == document.name:
+            context.report(
+                {"project": project.id, "document": chosen, "renamed": False},
+                f"{chosen}: already its name",
+            )
+            return 0
+        renamed = replace(
+            index,
+            documents=rename_document(index.documents, document.name, chosen),
+            assets=rename_assets(index.assets, document.name, chosen),
+        )
+        carried = (
+            rename_references(project, document.name, chosen)
+            if rename_references is not None
+            else []
+        )
+        context.apply(
+            CompositeCommand(
+                RENAME_LABEL,
+                [
+                    SetModuleDataCommand(project.id, MODULE_ID, write_index(renamed)),
+                    *carried,
+                ],
+            )
+        )
+        also = (
+            f", and {len(carried)} other record{'' if len(carried) == 1 else 's'}"
+            if carried
+            else ""
+        )
+        context.report(
+            {"project": project.id, "document": chosen, "was": document.name, "renamed": True},
+            f"{document.name}: renamed to {chosen}{also}",
+        )
+        return 0
 
     def _topology_show(context: CliContext, args: Namespace) -> int:
         project = find_project(context.library, args.project)
@@ -243,6 +317,17 @@ def commands(*, note_read: Callable[[str, str], None]) -> list[CliCommand]:
             examples=("dplanner spec remove 'Search rewrite' auth-spec",),
         ),
         CliCommand(
+            path=("spec", "rename"),
+            summary="Rename a spec document — the name every command addresses it by, and "
+            "every feature citation with it.",
+            configure=_rename_args,
+            run=_rename,
+            examples=(
+                "dplanner spec rename 'Search rewrite' auth-spec 'Authentication v2'",
+                "dplanner spec rename 'Search rewrite' auth-spec auth-v2",
+            ),
+        ),
+        CliCommand(
             path=("spec", "diff"),
             summary="What changed between a spec document and its previous version.",
             configure=_one_document,
@@ -289,6 +374,14 @@ def commands(*, note_read: Callable[[str, str], None]) -> list[CliCommand]:
 def _one_document(parser: ArgumentParser) -> None:
     project_arg(parser)
     parser.add_argument("document", help="a spec document's name or filename")
+
+
+def _rename_args(parser: ArgumentParser) -> None:
+    _one_document(parser)
+    parser.add_argument(
+        "name",
+        help="its new name — a title is slugged into one, as `spec new` does",
+    )
 
 
 def _configure_versioned(parser: ArgumentParser) -> None:

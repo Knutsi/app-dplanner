@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from dplanner.domain.agents import AgentHarness
     from dplanner.domain.aspects import AspectSpec
     from dplanner.domain.assets import AssetSource
+    from dplanner.domain.commands import Command
     from dplanner.domain.model import Library, Project, Step
     from dplanner.domain.ordering import Placed
     from dplanner.domain.repositories import RepositoryFacts
@@ -836,6 +837,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             details=services.step_details,
             tasks=services.tasks,
             debounce=services.debounce,
+            rename_references=_rename_spec_references,
             kinds=_source_kinds(spec_folder, spec_git, confluence.page, confluence.folder),
             passages_of=lambda project_id, document: [
                 source.quote
@@ -2450,6 +2452,37 @@ def _asset_sources() -> tuple["AssetSource", ...]:
     )
 
 
+def _rename_spec_references(project: "Project", name: str, chosen: str) -> list["Command"]:
+    """What else in a project points at a spec document by its name, renamed with it.
+
+    A feature's citation keys on the document's name — the one thing that must not go
+    stale when the name moves, because a lost citation is a coverage answer that quietly
+    changes. `modules/spec/` may not import `modules/feature/`, so the cross is here,
+    and the commands ride in the rename's own undo entry. One list today; the shape is
+    what a second citing module would join.
+    """
+    from dataclasses import replace
+
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
+    from dplanner.modules.feature.catalogue import read_catalogue, write_catalogue
+
+    records = read_catalogue(project)
+    moved = [
+        replace(
+            record,
+            sources=tuple(
+                replace(source, document=chosen) if source.document == name else source
+                for source in record.sources
+            ),
+        )
+        for record in records
+    ]
+    if moved == records:
+        return []
+    return [SetModuleDataCommand(project.id, FEATURE_ID, write_catalogue(moved))]
+
+
 def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand"]:
     """Every ``dplanner <noun> <verb>``, from the same modules the window is built from.
 
@@ -2535,7 +2568,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         ),
         # `topology show` tells the gate what it printed; the gate is built here, so the
         # spec module never learns where the record lives.
-        *spec_cli.commands(note_read=gate.record),
+        *spec_cli.commands(note_read=gate.record, rename_references=_rename_spec_references),
         *estimation_cli.commands(),
         *ticket_cli.commands(),
         *description_cli.commands(),
