@@ -11,7 +11,7 @@ the fact. It lives where the answer will land: a dialog footer's status slot, th
 of a page's control strip.
 
 The indicator sits at the right end of a control strip's *layout*, outside the
-``control_bar`` toolbar, so the » overflow can never swallow it; it keeps its room while
+``Toolbar``, so folding the strip can never take it; it keeps its room while
 hidden so the strip does not reflow on every settle. It is a **turning arc and no words**:
 the words would be the only prose on a strip of controls, they are four times the arc's
 width, and every language would need its own. *Updating…* survives as the tooltip.

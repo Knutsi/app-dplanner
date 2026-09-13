@@ -578,8 +578,8 @@ and one stylesheet rule for the progress bar:
 - **Updating** — a rebuild is owed after the person's own change: `UpdatingIndicator`
   follows the view's one `Debounced` and **turns the same three-quarter arc a working
   button turns**, from the first trigger to the rebuild's end, at the right end of the
-  control strip, *outside* the `control_bar` toolbar so the » overflow can never swallow
-  it, keeping its room while hidden so the strip never reflows. The content stays; nothing
+  control strip, *outside* the `Toolbar` so folding the strip can never take it,
+  keeping its room while hidden so the strip never reflows. The content stays; nothing
   dims. **A view with no control strip puts it at the right end of its caption row** — a
   board and a two-pane list have a caption and no toolbar, and that row is their strip;
   give the caption the stretch and the indicator the end. A view that settles once per

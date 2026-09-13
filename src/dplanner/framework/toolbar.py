@@ -25,12 +25,11 @@ the menu, never a copy of it, and it is refilled on every open against the conte
 palette of that moment.
 
 :class:`ActionToolbar` is the older presenter — registry-fed like the above, but a plain
-row of *worded* buttons with no overflow of its own. Three surfaces still wear it (the
-Specs tab, the order table and the Time tab); each moves onto :class:`Toolbar` when its
-design pass comes. Write nothing new on it.
+row of *worded* buttons with no overflow of its own. The order table still wears it, and
+moves onto :class:`Toolbar` when its design pass comes. Write nothing new on it.
 
-:func:`control_bar` is the other strip a tab page carries: a row of *its own* controls — a
-selector, a toggle, a spin box — that overflows into a » menu when the width is short.
+A page's *own* controls — a selector, a spin box, a date — sit on the same :class:`Toolbar`
+through ``add_widget``, beside its verbs; ``set_shown`` is how the host takes one away.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -52,7 +51,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QSizePolicy,
-    QToolBar,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -93,28 +91,6 @@ def action_words(spec: ActionSpec, state: ActionState) -> tuple[str, str]:
     """
     label = (state.label if state.label is not None else spec.label).replace("&", "")
     return label, spec.tip or label
-
-
-def control_bar(parent: QWidget | None = None) -> QToolBar:
-    """A strip of controls on a tab page, not application chrome.
-
-    A ``QToolBar`` rather than a row of widgets because it is the one widget in Qt that
-    degrades a full control row gracefully: too narrow for its contents it grows the »
-    overflow button and puts the tail in a menu, where a plain row simply overlaps. The
-    ``#ControlBar`` rule in ``theme.qss`` takes its frame and ground away. A widget added
-    to it is wrapped in an action, and it is the *action* that carries visibility — hold
-    what ``addWidget`` returns when a control comes and goes.
-    """
-    bar = QToolBar(parent)
-    bar.setObjectName("ControlBar")
-    bar.setMovable(False)
-    bar.setFloatable(False)
-    bar.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
-    inner = bar.layout()
-    if inner is not None:
-        inner.setSpacing(CONTROL_GAP)
-        inner.setContentsMargins(0, 0, 0, 0)
-    return bar
 
 
 class ActionToolbar(QWidget):

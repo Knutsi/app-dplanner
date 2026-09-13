@@ -205,11 +205,11 @@ def test_the_milestones_csv_writes_the_report_table(services, project, tmp_path,
     assert (spec.menu, spec.group, spec.submenu) == ("File", "export", "Export")
 
 
-@pytest.mark.parametrize("kind", ["order", "time"])
-def test_the_tabs_export_button_renders_the_export_submenu(services, project, kind):
+@pytest.mark.parametrize(("kind", "strip"), [("order", "toolbar"), ("time", "controls")])
+def test_the_tabs_export_button_renders_the_export_submenu(services, project, kind, strip):
     activity = services.tabs.open(kind, project.id)
     select_project(services, project)
-    menu = activity.toolbar.menu_for("report.html")
+    menu = getattr(activity, strip).menu_for("report.html")
     assert menu is not None
     labels = [
         action.text().replace("&", "") for action in menu.actions() if not action.isSeparator()

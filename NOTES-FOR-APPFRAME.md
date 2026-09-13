@@ -3640,3 +3640,17 @@ a wide gap before a two-letter word. The roster overrode it by hand, which is th
 the primitive exists to spare.
 
 **Upstream?** Yes.
+
+### `framework/toolbar.py` — `control_bar` removed
+
+**What.** The `QToolBar` factory for a page's own controls is gone. The Tests tab and the Time
+tab, its last two callers, seat their selectors, spin boxes and dates on a `Toolbar` beside
+their verbs, through `add_widget` and `set_shown`.
+
+**Why.** Two strips on one page — a `Toolbar` of verbs and a `control_bar` of controls — folded
+by two mechanisms: whole items into `…` on one, Qt's `»` popping the tail up as widgets on the
+other. With `set_shown` the `Toolbar` covers a control that comes and goes, which was the one
+thing the `QToolBar`'s per-widget action was held for. `#ControlBar` stays: it is the object
+name `Toolbar` itself sets.
+
+**Upstream?** Only if the template never adopted `control_bar` for a surface of its own.

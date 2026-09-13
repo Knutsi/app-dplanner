@@ -655,10 +655,8 @@ QProgressBar::chunk {
     color: $TEXT_DISABLED;
 }
 
-/* A strip of controls on a tab page (framework/toolbar.py's control_bar), not application
-   chrome: no frame, no ground of its own. It is a QToolBar purely for the » overflow button,
-   which is the only widget in Qt that degrades a full control row gracefully instead of
-   squeezing it. */
+/* A strip of controls on a tab page (framework/toolbar.py's Toolbar), not application
+   chrome: no frame, no ground of its own. */
 #ControlBar {
     background: transparent;
     border: none;

@@ -349,14 +349,15 @@ def test_a_combo_box_on_a_strip_wears_the_quiet_bordered_look(themed, theme):
     its ground inside the border is the overlay the buttons wear."""
     from PySide6.QtWidgets import QComboBox
 
-    from dplanner.framework.toolbar import control_bar
+    from dplanner.framework.toolbar import Toolbar
     from dplanner.theme import apply_theme
 
     apply_theme(themed, theme)
-    bar = control_bar()
+    bar = Toolbar()
     combo = QComboBox(bar)
     combo.addItems(["All steps", "Milestones"])
-    bar.addWidget(combo)
+    bar.add_widget(combo)
+    bar.resize(bar.sizeHint())
     bar.show()
     themed.processEvents()
     try:
