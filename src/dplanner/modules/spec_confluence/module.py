@@ -48,7 +48,7 @@ SITES_KEY = "sites"  # user_config: {site origin: email} — the connected sites
 
 
 class SecretStore(Protocol):
-    """The keychain, as four callables — wired from ``framework/secrets_store`` by the
+    """The keychain, as four callables — wired from ``core/secrets`` by the
     composition root, handed as a dict by a test, so no test ever touches a real one."""
 
     def get(self, module_id: str, key: str) -> str | None: ...

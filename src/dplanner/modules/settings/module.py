@@ -7,7 +7,7 @@ configures it (the composition root hands it over as a callback; modules never i
 each other).
 
 There is deliberately no settings *schema*. Each section owns how it reads and writes its
-own values — through ``user_config`` for preferences, ``secrets_store`` for credentials —
+own values — through ``user_config`` for preferences, ``core/secrets`` for credentials —
 because there is nothing generic to say about that.
 """
 

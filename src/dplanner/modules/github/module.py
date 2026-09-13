@@ -3,7 +3,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QWidget
 
 from dplanner.domain.model import Library, StepId
@@ -13,8 +12,6 @@ from dplanner.framework.inspector import InspectorSection, InspectorSectionRegis
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.undo import UndoService
 from dplanner.modules.github.aspect import DATA_FORMAT, MODULE_ID, SPEC, enabled, write_state
-from dplanner.modules.github.gh import which_gh
-from dplanner.modules.github.notice import maybe_warn
 from dplanner.modules.github.refresh import PrRefresher
 from dplanner.modules.github.section import GithubSection
 from dplanner.theme.icons import branch_icon
@@ -27,7 +24,7 @@ class GithubDeps:
     sections: InspectorSectionRegistry
     tasks: TaskService
     actions: ActionRegistry
-    parent: QWidget  # The window: owns the refresher and parents the missing-gh notice.
+    parent: QWidget  # The window: owns the PR refresher.
     # step id -> the repository URL that step's refs belong to. project_repo's rule (the
     # project's own repository over the library's), arriving through the composition root.
     repository_for: Callable[[StepId], str]
@@ -72,10 +69,6 @@ class GithubModule:
             )
         )
         PrRefresher(deps.library, deps.tasks, deps.repository_for, parent=deps.parent).start()
-        # Deferred past the window's show; notice.py keeps it to once per process. The
-        # window is the context object: a build closed before the turn comes (a test's)
-        # must not have a warning box raised over its deleted window.
-        window = deps.parent
-        QTimer.singleShot(
-            0, window, lambda: maybe_warn(window, installed=lambda: which_gh() is not None)
-        )
+        # Nothing is raised at launch. A machine without gh still records typed refs, and the
+        # tab says so where it bites; *this machine* is the Setup Checklist's subject, which
+        # is where `checks.py` puts both gh rows. DESIGN.md's *A machine without gh*.

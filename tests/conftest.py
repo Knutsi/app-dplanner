@@ -225,6 +225,21 @@ def _no_agent_shell(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_greeting(monkeypatch):
+    """No test greets this machine.
+
+    The checklist's start-up sweep probes the machine it runs on for real — a subprocess and,
+    once the modal is open, a network request — so a suite that let it fire would be asking
+    the developer's PATH what it should be asserting, and would open a modal over whatever
+    build a test had just made. The surface itself is tested with fake probes in
+    ``tests/modules/test_checklist_dialog.py``, which turns this off deliberately.
+    """
+    from dplanner.modules.checklist import module as checklist
+
+    monkeypatch.setattr(checklist, "_greeted_this_process", True)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_session_settings():
     """Per-user state must not leak between tests.
 

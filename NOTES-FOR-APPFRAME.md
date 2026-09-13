@@ -2893,3 +2893,47 @@ renders the menu and never a copy.
 
 **Upstream?** Yes, both. Any template whose child menus are data will meet a verb whose
 seat is that menu's entries. The `palette: bool` flag already set the shape.
+
+## 33. From the checklist pass (F13)
+
+### `framework/secrets_store.py` → `core/secrets.py` — moved, unchanged
+
+**What.** The keychain wrapper — `get_secret`, `set_secret`, `delete_secret` and
+`backend_problem()` (§24) — moved from `framework/` to `core/secrets.py`. Not one line of it
+changed; the `APP_ID` service name is kept, so nothing stored is orphaned. Its old §24 entry
+still describes what it does.
+
+**Why.** The layering rules say `cli/` may not import `framework/`, and a module's Qt-free
+half (a file named in `HEADLESS_FILES`) may not either. So a headless surface could not ask
+whether this machine can keep a credential — and the checklist needed exactly that, both as
+a row in `dplanner checklist show` and as the spec-source module's own `checks()`. The file
+imports `keyring`, `contextlib`, `sys` and one constant; there was never anything Qt about
+it, and `core/config_dir.py`'s own docstring had already made the argument for its twin:
+"The GUI keeps its preferences in QSettings, but anything the CLI must also read cannot."
+
+The general shape is worth carrying up: **a per-user fact the headless surface must also
+read belongs in `core/`, not in `framework/`** — QSettings-backed preferences stay in
+`framework/user_config.py` precisely because the CLI is not meant to read them, and the two
+files now say which is which by where they live.
+
+**Upstream?** Yes. A template whose CLI is a first-class surface will hit this the first time
+a verb wants to say "no API key configured".
+
+### A shape worth naming: settle on the runner's completion, not the worker's last signal
+
+**What.** Not a framework change — a trap that cost an afternoon and belongs beside
+`framework/task_runner.py`. A dialog that runs N probes in one `TaskRunner` body and emits a
+per-item signal from inside it must **not** treat its own last worker-side signal as "the
+work is done". Both are queued from the worker, but `busy_changed(False)` is emitted by the
+runner *after* the body returns, so the body's own last emit is delivered first. A surface
+that re-enabled its button on that signal would hand the user a button whose next press finds
+`run()` still busy and returns False, doing nothing at all — silently, and only sometimes.
+
+**Why it reads as a race and is not.** `TaskRunner.run` returning False on a busy runner is
+the documented contract ("the caller keeps its own refusal message"), and it is right. The
+fix is one connection: fill rows from the worker's signals, and settle — spinner off, primary
+enabled, summary said — from `busy_changed(False)`.
+
+**Upstream?** The rule, as a paragraph in `task_runner.py`'s docstring. It is the second
+thing every multi-item body will get wrong, after the last-reference rule the file already
+warns about.

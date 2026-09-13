@@ -34,6 +34,7 @@ re-rendering — never styling one surface by name.
 | "the view is rebuilding" | `UpdatingIndicator` — a `Spinner` on its own | `framework/signalling.py` | the strip's right end, `dialog-working-*` |
 | "this button's work is running" | `Spinner` | `framework/signalling.py` | `dialog-working-*` |
 | busy, ok, error or plain information in words | `StatusLine` | `framework/signalling.py` | the modal's *Signalling* block |
+| a list of facts about this machine | one `StatusLine` per row, grouped | `modules/checklist/dialog.py` | `docs/screenshots/f13-checklist/` |
 | a page with nothing in it | `EmptyState(stands_in_for=…)` | `framework/widgets.py` | `table-empty-*` |
 | a caption over a block, a remark under it | `caption()`, `note()` | `framework/widgets.py` | the modal's form |
 | a two-line list row | `TwoLineDelegate` | `framework/list_rows.py` | the palette, the notes tab |
@@ -70,6 +71,16 @@ flows, and what each surface on the way must make unmistakable:
   gh* in its words. The Checklist is where this machine's facts live, one status line each
   with its remedy. Never ambiguous: **this is about this machine, not the project**, and
   nothing typed is lost.
+- **A machine that is not set up.** *Tools ▸ Setup Checklist…* is a status line per check,
+  grouped, each with its remedy on a second line and — where DPlanner can run the fix — a
+  plain button on the row, whose room is kept when there is nothing to press. The primary is
+  *Re-check*, and the arc turns in its glyph. It opens by itself in exactly two cases: once,
+  on a machine DPlanner has never greeted, whatever that machine has; and afterwards only
+  while the person left *"open this at start"* ticked **and** something **required** is
+  missing. Nothing advisory ever raises it — that is principle 3 below, and it is why there
+  is still no modal at launch for gh. *Tools* carries the count of what is required and
+  missing in its own words. Never ambiguous: **what would stop DPlanner, and what is only
+  worth knowing**.
 
 Five principles fall out of them, and every rule below is one of these applied:
 
