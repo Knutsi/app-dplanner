@@ -15,7 +15,7 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
-from tests.platforms import POSIX_MODE_BITS, executable_name
+from tests.platforms import POSIX_MODE_BITS
 
 from dplanner.assets import ICON_SIZES, icon_path
 from dplanner.cli import desktop
@@ -279,7 +279,7 @@ def test_the_verbs_install_report_and_uninstall(registry, launcher, tmp_path):
     # (`C:\\t\\...`) and an f-string of the raw path never matches it.
     reported = json.loads(out)
     assert reported["status"] == "installed"
-    assert reported["opens"] == str(tmp_path / "bin" / executable_name("dpw"))
+    assert reported["opens"] == str(tmp_path / "bin" / "dpw")  # What the fixture planted.
 
     elsewhere = Path("/somewhere/else/dpw")
     launcher.write(elsewhere)  # Reinstalled elsewhere since.
