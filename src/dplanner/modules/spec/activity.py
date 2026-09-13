@@ -330,6 +330,14 @@ class SpecsActivity(EntityActivity):
         splitter.setStretchFactor(1, 3)
         layout.addWidget(splitter, 1)
 
+        # Tab walks the surface in the order a person reads it: the verbs over the tree,
+        # the tree, then the document. The strips' own buttons take no focus — a verb that
+        # moved the caret away from what it was aimed at would be useless — so Tab does not
+        # stop on them, and their keys are on the editor instead. Inside the editor Tab
+        # stays Qt's own: a markdown document needs one for a nested list and a code block,
+        # and Shift+Tab is the way back out of it.
+        page.setTabOrder(self.toolbar, self.list)
+        page.setTabOrder(self.list, self._editor)
         self._widget = page
         # No `field_changed` subscription: nothing here reads a field — the list shows
         # index data, and the tab's title follows the project through `follow_entity_tabs`.

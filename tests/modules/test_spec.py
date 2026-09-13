@@ -248,3 +248,20 @@ def test_the_viewer_survives_an_index_edit_that_keeps_the_blob(services, project
     # An assets-only edit repaints the list but never rebuilds the viewer.
     assert activity._shown is shown
     assert activity.rows()[1] == ("auth", 0)
+
+
+def test_the_tree_and_the_editor_are_reachable_from_the_keyboard(services, project):
+    """Tab walks the surface in reading order. The strips are deliberately not in it —
+    their buttons take no focus, because a verb that moved the caret away from what it was
+    aimed at would be useless, and their keys live on the editor instead."""
+    from PySide6.QtCore import Qt
+
+    imported(services, project, "auth", b"# Auth\n", "auth.md")
+    activity = opened(services, project)
+    activity.select_document("auth")
+    assert activity.list.focusPolicy() != Qt.FocusPolicy.NoFocus
+    assert activity._editor.focusPolicy() != Qt.FocusPolicy.NoFocus
+    assert activity.list.nextInFocusChain() is not None
+    # Inside the editor Tab stays Qt's own: a markdown document needs one for a nested
+    # list and for a code block.
+    assert not activity._editor.tabChangesFocus()
