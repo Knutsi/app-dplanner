@@ -1289,6 +1289,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 parent=services.window,
                 debounce=services.debounce,
                 theme=services.theme,
+                tasks=services.tasks,
             )
         ),
         # -- the planner ------------------------------------------------------------------

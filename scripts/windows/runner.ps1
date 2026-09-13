@@ -19,7 +19,7 @@
   Stop it with Ctrl+C, or by dropping a file called `stop` into inbox\.
 #>
 param(
-    [string]$Root = "Z:\dplanner",
+    [string]$Root = "",
     [int]$PollMs  = 500
 )
 
@@ -33,6 +33,21 @@ $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
 # Short, because pytest's tmp_path plus this repository's test names passes 260 characters.
 $env:TEMP = 'C:\t'; $env:TMP = 'C:\t'
+
+# Where the host's shared folder turns up depends on how the container was built: dockur
+# maps it as drive Z: for an interactive logon and serves the same folder over SMB at
+# \\host.lan\Data. Try both rather than make the developer find out which by having the
+# first run fail.
+if (-not $Root) {
+    foreach ($candidate in @('Z:\', '\\host.lan\Data\', '\\host.lan\Shared\')) {
+        if (Test-Path $candidate) { $Root = Join-Path $candidate 'dplanner'; break }
+    }
+}
+if (-not $Root) {
+    Write-Host 'No shared folder found. Looked for Z:\, \\host.lan\Data and \\host.lan\Shared.'
+    Write-Host 'Pass one explicitly:  runner.ps1 -Root <path>\dplanner'
+    exit 1
+}
 
 $inbox  = Join-Path $Root 'inbox'
 $outbox = Join-Path $Root 'outbox'

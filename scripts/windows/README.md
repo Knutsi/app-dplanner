@@ -80,6 +80,11 @@ disk with it when it is removed.
 build and the logs, and `clean --all` takes the uv cache with it. `down --destroy` is the only
 expensive button and it asks.
 
+On btrfs the container warns about `/storage`, and it is right to: a raw disk image under
+copy-on-write with random writes fragments badly. `chattr +C` on the storage directory
+*before* the first boot turns CoW off for files created in it — after the image exists it is
+too late for that image. It has not been measured here, and the install worked without it.
+
 ## The files
 
 | File | What it is |

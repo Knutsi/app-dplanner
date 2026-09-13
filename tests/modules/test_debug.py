@@ -240,3 +240,80 @@ def test_the_toolbars_example_shows_every_shape_a_strip_comes_in(services):
 
     # The dense strip answers a question rather than offering verbs: two of six are on.
     assert [v.text() for v in tab.dense.verbs() if v.isChecked()] == ["Milestone", "Agent"]
+
+
+# -- Debug ▸ Windows Check -----------------------------------------------------------------
+# The Windows half of this application cannot be run from here, so what is tested here is the
+# menu entry's *refusal*: the machine's answer is computed once, at registration, and the
+# state reads it. `scripts/windows_check.py` itself is driven by hand, not by the suite.
+
+
+def test_the_windows_check_is_greyed_with_its_reason_off_omarchy(tmp_path):
+    """Disabled with the reason in its own label, never hidden. Both preconditions say what
+    is missing, because the entry is what tells a machine the capability exists at all."""
+    from dplanner.modules.debug.windows_check import probe
+
+    everywhere = lambda name: f"/usr/bin/{name}"  # noqa: E731
+    nowhere = lambda _name: None  # noqa: E731
+
+    absent = tmp_path / "windows_check.py"
+    assert "source checkout" in probe(script=absent, which=everywhere).run_refusal
+
+    harness = tmp_path / "present.py"
+    harness.write_text("", encoding="utf-8")
+    assert "omarchy-windows-vm" in probe(script=harness, which=nowhere).run_refusal
+
+    here = probe(script=harness, which=everywhere)
+    assert here.run_refusal == "" and here.script == harness
+
+
+def test_watching_the_desktop_needs_only_the_vm(tmp_path):
+    """A build with no scripts/ can still open the viewer of a VM that is running, so the two
+    verbs derive different refusals from the same two facts — refusing the cheaper one would
+    be refusing something that works."""
+    from dplanner.modules.debug.windows_check import probe
+
+    no_harness = probe(script=tmp_path / "gone.py", which=lambda name: f"/usr/bin/{name}")
+    assert no_harness.run_refusal and no_harness.watch_refusal == ""
+    assert probe(script=tmp_path / "gone.py", which=lambda _n: None).watch_refusal
+
+
+def test_the_windows_check_builds_no_command_for_a_refused_machine(tmp_path):
+    """A refused check has no script, so asking for its command is the error — rather than a
+    command naming None that fails somewhere further away."""
+    import pytest as _pytest
+
+    from dplanner.modules.debug.windows_check import command, probe
+
+    refused = probe(script=tmp_path / "missing.py", which=lambda name: f"/usr/bin/{name}")
+    with _pytest.raises(ValueError, match="source checkout"):
+        command(refused, "python")
+
+    harness = tmp_path / "present.py"
+    harness.write_text("", encoding="utf-8")
+    ready = probe(script=harness, which=lambda name: f"/usr/bin/{name}")
+    assert command(ready, "python") == ["python", str(harness), "all"]
+
+
+def test_both_windows_entries_are_registered_in_the_debug_menu(services):
+    for action_id in ("debug.windows_check", "debug.windows_desktop"):
+        spec = services.actions.spec(action_id)
+        assert spec.menu == "Debug" and spec.group == "windows"
+        state = spec.state(Context({}))
+        # On this machine each is either runnable or greyed *with a reason in the label* —
+        # never hidden, and never greyed silently.
+        assert state.visible
+        assert state.enabled or (state.label and "—" in state.label)
+
+
+def test_watching_the_desktop_hands_the_viewer_to_the_browser(services, monkeypatch):
+    """noVNC over HTTP, so the browser is the viewer and no RDP client is involved."""
+    from dplanner.modules.debug import module as debug_module
+    from dplanner.modules.debug.windows_check import VIEWER_URL
+
+    opened: list[str] = []
+    monkeypatch.setattr(debug_module, "open_url", opened.append)
+    # The spec's body directly rather than through `run`, which honours the state gate: what
+    # is under test is what the verb does, on every machine, not whether this one has a VM.
+    services.actions.spec("debug.windows_desktop").run(Context({}))
+    assert opened == [VIEWER_URL]

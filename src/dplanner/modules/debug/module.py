@@ -1,16 +1,22 @@
 """Debug module: developer-facing diagnostics — the LLM Calls tab and the Telemetry tab —
-and the design system's living reference, Debug ▸ Design Example."""
+the design system's living reference, Debug ▸ Design Example, and Debug ▸ Windows Check."""
 
+import subprocess
+import sys
 from dataclasses import dataclass
 
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.telemetry import Telemetry
-from dplanner.framework.action_registry import ActionRegistry, ActionSpec
+from dplanner.framework.action_registry import ActionRegistry, ActionSpec, ActionState
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.llm_service import LLMService
 from dplanner.framework.tabs import TabHost
+from dplanner.framework.task_runner import TaskRunner
+from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.modules.debug.design_example import (
     DESIGN_TABLE_KIND,
@@ -21,6 +27,12 @@ from dplanner.modules.debug.design_example import (
 )
 from dplanner.modules.debug.telemetry_view import TELEMETRY_KIND, TelemetryActivity
 from dplanner.modules.debug.view import LLM_CALLS_KIND, LLMCallsActivity
+from dplanner.modules.debug.windows_check import VIEWER_URL, command, probe
+
+
+def open_url(url: str) -> None:
+    """Hand a URL to the browser — one seam, so a test can watch instead."""
+    QDesktopServices.openUrl(QUrl(url))
 
 
 @dataclass(frozen=True)
@@ -33,6 +45,7 @@ class DebugDeps:
     parent: QWidget  # The example modal's.
     debounce: DebounceService  # The examples' demo debouncers settle with the window's.
     theme: ThemeService  # The example table re-inks its glyphs on a theme change.
+    tasks: TaskService  # The Windows check is minutes of blocking work, so it is a task.
 
 
 class DebugModule:
@@ -40,6 +53,10 @@ class DebugModule:
 
     def __init__(self, deps: DebugDeps) -> None:
         self._deps = deps
+        self._runner = TaskRunner(deps.tasks, parent=deps.parent)
+        # Asked once, here: an action state runs on every context change and may not walk
+        # PATH. CLAUDE.md's *A checklist is a registry of probes* has the same rule.
+        self._windows = probe()
 
     def register(self) -> None:
         deps = self._deps
@@ -121,6 +138,70 @@ class DebugModule:
                 tip="The design system's table on a tab: a control strip, the Updating "
                 "indicator at its right, an empty state that trades places with the rows",
                 run=run_open_design_table,
+            )
+        )
+
+        # -- the Windows check -------------------------------------------------------------
+        # Minutes of blocking work driving a VM, so a task rather than the GUI thread. The
+        # harness writes a log per step under ~/.local/share/dplanner-windows/logs/, which is
+        # where the output is read; what this reports is whether it passed.
+        def run_windows_check(_context: Context) -> None:
+            argv = command(self._windows, sys.executable)
+
+            def body() -> None:
+                done = subprocess.run(argv, capture_output=True, text=True, check=False)
+                if done.returncode != 0:
+                    tail = (done.stdout or done.stderr).strip().splitlines()[-12:]
+                    raise RuntimeError("Windows check failed:\n" + "\n".join(tail))
+
+            self._runner.run("Windows check", body, cancellable=False)
+
+        def windows_state(_context: Context) -> ActionState:
+            # Disabled with the reason, never hidden: the entry is what says the capability
+            # exists at all, and its label is where a machine learns what it is missing.
+            refusal = self._windows.run_refusal
+            if refusal:
+                return ActionState(enabled=False, label=f"&Windows Check — {refusal}")
+            return ActionState(enabled=not self._runner.is_busy())
+
+        deps.actions.register(
+            ActionSpec(
+                id="debug.windows_check",
+                label="&Windows Check",
+                menu="Debug",
+                group="windows",
+                order=10,
+                tip="Run the suite, the lint, the types and the frozen build on Windows, in "
+                "Omarchy's VM — logs land under ~/.local/share/dplanner-windows/logs/",
+                run=run_windows_check,
+                state=windows_state,
+            )
+        )
+
+        # Watching is its own verb, and a cheaper one: dockur serves the guest's screen as
+        # noVNC over HTTP, so the browser is the viewer and no RDP client is needed. It needs
+        # only the VM, not the harness — a build with no scripts/ can still watch one that is
+        # running, and refusing that would be refusing something that works.
+        def run_watch_windows(_context: Context) -> None:
+            open_url(VIEWER_URL)
+
+        def watch_state(_context: Context) -> ActionState:
+            refusal = self._windows.watch_refusal
+            if refusal:
+                return ActionState(enabled=False, label=f"Windows &Desktop — {refusal}")
+            return ActionState()
+
+        deps.actions.register(
+            ActionSpec(
+                id="debug.windows_desktop",
+                label="Windows &Desktop",
+                menu="Debug",
+                group="windows",
+                order=20,
+                tip="Open the Windows VM's screen in a browser — dockur serves it as noVNC, "
+                "so this is the RDP session without an RDP client",
+                run=run_watch_windows,
+                state=watch_state,
             )
         )
 

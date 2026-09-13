@@ -267,6 +267,7 @@ src/dplanner/
 ├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Features panel — docs/screenshots/s7-graph-editor/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 ├── scripts/windows_check.py       the Windows check: the three checks, the frozen build and a real window, in a VM
+├── scripts/render_windows_check.py  Debug ▸ Windows Check, live and greyed with its reason — docs/screenshots/s17-windows/
 ├── scripts/windows/              what it drives — the throwaway box, the guest provisioning, and its README
 ├── dplanner.spec                 the frozen build: onedir, two executables, one analysis (LGPL — see the docstring)
 ├── freeze/                       what PyInstaller is handed: the entry point, and the manifest of shipped files
