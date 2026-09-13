@@ -856,10 +856,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
-            # Statuses and estimates through the aspects' Qt-free readers — the board
-            # never learns what either is stored as.
+            # The statuses through the status aspect's Qt-free reader — the board never
+            # learns what one is stored as.
             status_for=step_status,
-            days_for=estimated_days,
             agent_state=lambda ctx: services.actions.spec("agent.run").state(ctx),
             # The Run Agents button drops the Step menu's own Run Agent child down — the
             # profiles, then Manage Agent Profiles… — filled as it opens, never a copy.
@@ -1055,7 +1054,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # Days and dates, computed by the domain from what the estimation module
             # stores. Neither module knows the other's name.
             step_schedule=step_schedule,
-            start_bar=estimation.create_start_bar,
             # A milestone row wears a rule and a tint; the name itself stays in the
             # trailing aspects column, which is why the milestone is not skipped here.
             milestone_label=lambda step_id: milestone_read(library.step(step_id)),
@@ -1376,7 +1374,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                     ),
                     ProjectEntry(
                         id="progression",
-                        label="Progression",
+                        label="Ready to start",
                         open=progression.open,
                         open_preview=lambda pid: progression.open(pid, preview=True),
                         icon=gauge_icon,
@@ -2563,7 +2561,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         # module's own writes (attach, name) stay in its cli.py — the `scope` split.
         *catalog_commands(sources=sources, titles=read_titles),
         *assets_cli.commands(sources=sources),
-        *order_cli.commands(),
+        *order_cli.commands(days_for=estimated_days),
         # Progression reads statuses and estimates through the aspects' Qt-free readers —
         # handed over here so no cli.py imports another module's.
         *progression_cli.commands(status_for=step_status, days_for=estimated_days),

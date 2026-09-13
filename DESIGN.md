@@ -382,7 +382,7 @@ reasoning, including why the count of fields was the symptom rather than the dis
   colour map (`theme/palettes.py`; *View ▸ Milestone Colours* and the Time tab's picker set
   the same stored choice) and every milestone is dealt a shade of it by where it falls in
   the roadmap. One hex, eight surfaces: the card on the canvas, its badge and tag medallion,
-  the order table's row and key badge, the progression board's card, the Tests tab's
+  the order table's row and key badge, the Ready-to-start board's card, the Tests tab's
   grouping heading, the Docs tab's medallion, the coverage lane, the Milestone tab's swatch,
   the calendar's band and the report — so a colour means *this milestone* wherever it is
   seen. A shade never invents an alpha: `tones.toned(name, hex)` recolours the tone the
@@ -744,8 +744,10 @@ Dialogs:
 
 Tables and lists:
 
-- Order — the one designed table, still: bold header with no hover on the rows, 5/8 px
-  cells, per-row heights, no empty state, no updating.
+- *(done — S9)* Order — the first table onto the `Table` primitive: heights from the font,
+  the row as the unit of hover and selection, its milestones marked by their key badge,
+  bold and their own wash rather than by a rule and extra air, and an empty state. The
+  `#OrderTable` rules stay in `theme.qss` for the three widgets still borrowing them.
 - Tests — borrows `#OrderTable` by name; a spanned heading as tall as a two-line row.
 - Estimates — centred headers, an object name no stylesheet knows, an embedded spin box
   per row, no empty state, no debounce at all.
