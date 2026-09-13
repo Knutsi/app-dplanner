@@ -1,6 +1,7 @@
-"""Anthropic as a vendor module: its LLM provider, its Settings page, and the one act every
-provider needs first — adding the API key, walked through in a modal. Nothing else in
-the app knows Anthropic exists — everyone else goes through LLMService."""
+"""OpenAI as a vendor module: its LLM provider, its Settings page, and the one act every
+provider needs first — adding the API key, walked through in a modal. The dictation
+providers in ``dictation.py`` run on the same key. Nothing else in the app knows OpenAI
+exists — everyone else goes through LLMService or DictationService."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,22 +19,22 @@ from dplanner.framework.settings_registry import (
     SettingsSectionRegistry,
 )
 from dplanner.framework.tasks import TaskService
-from dplanner.modules.llm_anthropic.provider import (
+from dplanner.modules.openai.provider import (
     KEY_GUIDE,
     KEYS_URL,
     MODULE_ID,
-    AnthropicProvider,
+    OpenAIProvider,
     probe_key,
 )
-from dplanner.modules.llm_anthropic.settings_page import build_page
+from dplanner.modules.openai.settings_page import build_page
 
 KEY = "api_key"
-KEY_ACTION = f"{MODULE_ID}.key"  # What a refusal names as its mend: the checklist's rule.
-SETTINGS_SECTION = "llm.anthropic"
+KEY_ACTION = "openai.key"  # What a refusal names as its mend: the checklist's rule.
+SETTINGS_SECTION = "llm.openai"
 
 
 @dataclass(frozen=True)
-class LlmAnthropicDeps:
+class LlmOpenAIDeps:
     llm_providers: LLMProviderRegistry
     llm: LLMService  # The settings page and the key dialog announce edits via config_changed.
     settings_sections: SettingsSectionRegistry
@@ -43,31 +44,31 @@ class LlmAnthropicDeps:
     open_url: Callable[[str], None]
 
 
-class LlmAnthropicModule:
+class LlmOpenAIModule:
     id = MODULE_ID
 
-    def __init__(self, deps: LlmAnthropicDeps) -> None:
+    def __init__(self, deps: LlmOpenAIDeps) -> None:
         self._deps = deps
 
     def register(self) -> None:
         deps = self._deps
-        deps.llm_providers.register(AnthropicProvider())
+        deps.llm_providers.register(OpenAIProvider())
         deps.settings_sections.register(
             SettingsSection(
                 id=SETTINGS_SECTION,
-                category=("Providers", "Anthropic"),
+                category=("Providers", "OpenAI"),
                 factory=lambda parent: build_page(deps.llm, parent),
             )
         )
         deps.actions.register(
             ActionSpec(
                 id=KEY_ACTION,
-                label="Add Anthropic API &Key…",
+                label="Add OpenAI API &Key…",
                 menu="Tools",
                 group="install",
                 order=60,
                 in_menus=False,  # Run from the palette, a provider's refusal or a checklist row.
-                tip="Create or paste the Anthropic API key this computer uses, and test it",
+                tip="Create or paste the OpenAI API key this computer uses, and test it",
                 run=self.add_key,
             )
         )
@@ -77,10 +78,10 @@ class LlmAnthropicModule:
         deps = self._deps
         dialog = ApiKeyDialog(
             deps.parent,
-            service="Anthropic",
+            service="OpenAI",
             guide=KEY_GUIDE,
             keys_url=KEYS_URL,
-            placeholder="sk-ant-…",
+            placeholder="sk-…",
             tasks=deps.tasks,
             probe=probe_key,
             open_url=deps.open_url,

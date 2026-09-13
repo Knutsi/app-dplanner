@@ -1,4 +1,4 @@
-"""``modules/llm_openai/dictation.py``: the batch endpoint and the live session, over a
+"""``modules/openai/dictation.py``: the batch endpoint and the live session, over a
 scripted socket and a stubbed client — no key, no network."""
 
 import queue
@@ -9,8 +9,8 @@ from typing import Any
 import keyring
 import pytest
 
-from dplanner.modules.llm_openai import dictation as openai_dictation
-from dplanner.modules.llm_openai.dictation import (
+from dplanner.modules.openai import dictation as openai_dictation
+from dplanner.modules.openai.dictation import (
     BATCH,
     COMMITTED,
     COMPLETED,

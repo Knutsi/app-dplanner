@@ -1617,7 +1617,7 @@ root, stop and look for the registry or capability you have not found yet.
   the whole session **one undo step**, because the verb holds `UndoService.begin_gesture`
   open from the first word to the stop and nothing can be undone under it. The whisper
   commands (`modules/dictation_whisper/`) are batch; OpenAI's Realtime session
-  (`modules/llm_openai/dictation.py`) is live, on the key the vendor module already keeps.
+  (`modules/openai/dictation.py`) is live, on the key the vendor module already keeps.
   **PySide6-Essentials ships no QtMultimedia**, so the microphone is read by a recorder
   row — `pw-record`, `parecord`, `arecord`, `ffmpeg`, `sox` — streaming raw 16-bit mono
   samples to a `QProcess` on the GUI thread (`framework/recording.py`; *Automatic* is the
@@ -1632,7 +1632,7 @@ root, stop and look for the registry or capability you have not found yet.
   — the clip's RMS is read once after a batch stop and silence is refused before a
   provider is paid. Settings ▸ Dictation is two preset fields (`modules/dictation/`), the
   checklist's two *Services* rows name `dictation.settings` as their mend, and a
-  provider's `setup_action` (`llm_openai.key`, the `ApiKeyDialog` wizard on
+  provider's `setup_action` (`openai.key`, the `ApiKeyDialog` wizard on
   `framework/key_dialog.py`) is the button beside its refusal. `ARCHITECTURE.md`'s
   *Dictation is a provider, and capture is a peer process* has the reasoning.
 - **A collector is a cone truncated at the next collector.** `domain/scope.py`'s `cone()`

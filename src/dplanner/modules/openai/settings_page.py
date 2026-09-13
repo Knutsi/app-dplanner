@@ -20,7 +20,7 @@ from dplanner.framework.settings_registry import settings_page
 from dplanner.framework.signalling import Spinner, StatusLine
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.widgets import GlyphButton, block, captioned
-from dplanner.modules.llm_openai.provider import (
+from dplanner.modules.openai.provider import (
     DEFAULT_MODEL,
     DEFAULT_REASONING_EFFORT,
     MODULE_ID,

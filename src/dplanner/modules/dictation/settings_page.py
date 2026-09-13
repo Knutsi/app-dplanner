@@ -15,7 +15,6 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QSize
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -28,10 +27,10 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.dictation import DictationProvider, Recorder, provider_by_id
 from dplanner.framework.dictation import Dictation, DictationService
+from dplanner.framework.settings_registry import settings_page
 from dplanner.framework.signalling import Spinner, StatusLine
-from dplanner.framework.widgets import caption, captioned, ink_of, note
-from dplanner.theme.icons import ICON_SIZE, microphone_icon
-from dplanner.theme.tokens import CAPTION_GAP, DIALOG_MARGIN, SECTION_GAP
+from dplanner.framework.widgets import GlyphButton, block, caption, captioned, note, quiet
+from dplanner.theme.icons import microphone_icon
 
 AUTOMATIC = "Automatic"
 NOT_FOUND = "not found"
@@ -61,21 +60,19 @@ class _Block:
 
 
 def _block(page: QWidget, layout: QVBoxLayout, title: str, name: str) -> _Block:
-    layout.addWidget(caption(title, page))
+    """A block of the page: its caption, the dropdown, the field's own caption row, the
+    field and the line under it — ``block()`` stacks them at the caption gap."""
     combo = QComboBox(page)
     combo.setObjectName(f"{name}Combo")
-    layout.addWidget(combo)
     holder = QWidget(page)
     holder.setObjectName(f"{name}Caption")
     holder_row = QHBoxLayout(holder)
     holder_row.setContentsMargins(0, 0, 0, 0)
-    layout.addWidget(holder)
     edit = QLineEdit(page)
     edit.setObjectName(f"{name}Edit")
-    layout.addWidget(edit)
     status = StatusLine(page)
     status.setObjectName(f"{name}Status")
-    layout.addWidget(status)
+    block(layout, caption(title, page), combo, holder, edit, status)
     return _Block(combo, holder, edit, status)
 
 
@@ -97,18 +94,16 @@ def build_page(
     run_action: RunAction,
     platform: str = sys.platform,
 ) -> QWidget:
-    page = QWidget(parent)
+    page, layout = settings_page(parent)
     page.setObjectName("DictationSettingsPage")
-    layout = QVBoxLayout(page)
-    layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
-    layout.setSpacing(CAPTION_GAP)
 
     # -- Transcription: which provider, and its one text ----------------------------------
     provider = _block(page, layout, "Transcription", "DictationProvider")
     for candidate in dictation.providers:
         provider.combo.addItem(provider_label(candidate), candidate.id)
     setup_row = QHBoxLayout()
-    setup_button = QPushButton("Add API key…", page)
+    layout.addLayout(setup_row)
+    setup_button = quiet(QPushButton("Add API key…", page))
     setup_button.setObjectName("DictationSetupButton")
     setup_button.setAutoDefault(False)
     where = QLabel(page)
@@ -117,8 +112,6 @@ def build_page(
     setup_row.addWidget(setup_button)
     setup_row.addWidget(where)
     setup_row.addStretch(1)
-    layout.addLayout(setup_row)
-    layout.addSpacing(SECTION_GAP)
 
     def current_provider() -> DictationProvider | None:
         return provider_by_id(dictation.providers, str(provider.combo.currentData()))
@@ -178,7 +171,6 @@ def build_page(
     for row in rows:
         installed = dictation.recorder_refusal(row.command) is None
         recorder.combo.addItem(recorder_label(row, installed), row.command)
-    layout.addSpacing(SECTION_GAP)
 
     def show_recorder() -> None:
         text = dictation.recorder_command()
@@ -210,21 +202,21 @@ def build_page(
     recorder.combo.addItem("Custom", None)  # Reflects a typed command; picks nothing.
 
     # -- Try it: the same state machine every microphone runs ---------------------------------
-    layout.addWidget(caption("Try it", page))
     trial = Dictation(dictation, page)
-    try_row = QHBoxLayout()
-    try_button = QPushButton("Dictate a sentence", page)
+    try_row = QWidget(page)
+    try_layout = QHBoxLayout(try_row)
+    try_layout.setContentsMargins(0, 0, 0, 0)
+    # A glyph button: the slot the Spinner turns in while the words are on their way.
+    try_button = GlyphButton("Dictate a sentence", microphone_icon, try_row)
     try_button.setObjectName("DictationTryButton")
     try_button.setAutoDefault(False)
-    try_button.setIcon(microphone_icon(ink_of(page)))
-    try_button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
     try_button.clicked.connect(trial.toggle)
     spinner = Spinner(page).attach(try_button)
-    heard = StatusLine(page)
+    heard = StatusLine(try_row)
     heard.setObjectName("DictationHeard")
-    try_row.addWidget(try_button)
-    try_row.addWidget(heard, 1)
-    layout.addLayout(try_row)
+    try_layout.addWidget(try_button)
+    try_layout.addWidget(heard, 1)
+    block(layout, caption("Try it", page), try_row)
     settled: list[str] = []  # Each utterance's completed transcript.
     interim: list[str] = []  # The deltas of the utterance still being said.
 
@@ -257,7 +249,6 @@ def build_page(
 
     aside = OS_DICTATION.get(platform)
     if aside:
-        layout.addSpacing(SECTION_GAP)
         layout.addWidget(note(aside, page))
     layout.addStretch(1)
 

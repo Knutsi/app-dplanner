@@ -33,7 +33,7 @@ REQUEST_TIMEOUT_S = 120.0
 FINISH_TIMEOUT_S = 10.0  # How long the last utterance's transcript is waited for.
 KEYS_URL = "https://platform.openai.com/api-keys"
 NO_KEY = "OpenAI has no API key — add one"
-SETUP_ACTION = "llm_openai.key"
+SETUP_ACTION = "openai.key"
 
 # What every Realtime event this session cares about is called.
 DELTA = "conversation.item.input_audio_transcription.delta"

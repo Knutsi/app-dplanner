@@ -30,7 +30,7 @@ from dplanner.framework.key_dialog import ApiKeyDialog
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.tasks import TaskService
 from dplanner.modules.dictation.settings_page import build_page
-from dplanner.modules.llm_openai.provider import KEY_GUIDE, KEYS_URL
+from dplanner.modules.openai.provider import KEY_GUIDE, KEYS_URL
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
@@ -109,7 +109,7 @@ def providers(*, slow: float = 0.0) -> tuple[DictationProvider, ...]:
         rate=24000,
         hint="A Realtime transcription model; the words land while you speak.",
         url=KEYS_URL,
-        setup_action="llm_openai.key",
+        setup_action="openai.key",
     )
     return (whisper, live)
 

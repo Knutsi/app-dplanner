@@ -97,7 +97,7 @@ def test_the_real_build_lists_the_provider_pages_under_providers_and_the_key_act
     assert categories["llm.openai"] == ("Providers", "OpenAI")
     assert categories["llm.anthropic"] == ("Providers", "Anthropic")
     assert categories[SETTINGS_SECTION] == ("Dictation",)
-    for action_id in ("llm_openai.key", "llm_anthropic.key"):
+    for action_id in ("openai.key", "anthropic.key"):
         assert not services.actions.spec(action_id).in_menus
 
 

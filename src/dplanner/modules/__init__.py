@@ -91,6 +91,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.domain.store import LibraryStore
     from dplanner.framework.aspect_bar import AspectTemplate
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+    from dplanner.modules.anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.appearance.module import AppearanceDeps, AppearanceModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.checklist.module import ChecklistDeps, ChecklistModule
@@ -116,9 +117,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.library.module import LibraryDeps, LibraryModule
     from dplanner.modules.library_watch.module import LibraryWatchDeps, LibraryWatchModule
     from dplanner.modules.llm.module import LlmDeps, LlmModule
-    from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
-    from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.notes.module import NotesDeps, NotesModule
+    from dplanner.modules.openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.problems.module import ProblemsDeps, ProblemsModule
     from dplanner.modules.progression.module import ProgressionDeps, ProgressionModule
     from dplanner.modules.project_assets.module import (
@@ -2792,7 +2792,7 @@ def dictation_providers() -> tuple["DictationProvider", ...]:
     fourth engine is a fourth module listed here and nothing else.
     """
     from dplanner.modules.dictation_whisper import dictation as whisper
-    from dplanner.modules.llm_openai import dictation as openai_dictation
+    from dplanner.modules.openai import dictation as openai_dictation
 
     return (*whisper.providers(), openai_dictation.LIVE, openai_dictation.BATCH)
 

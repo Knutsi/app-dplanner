@@ -463,8 +463,8 @@ src/dplanner/
 │   ├── appshell/  sync/  settings/  taskcenter/
 │   ├── debug/               diagnostics — the LLM Calls and Telemetry tabs — and Debug ▸ Design Example,
 │   │                        the design system built from the primitives, to be looked at and copied from
-│   ├── llm/  llm_openai/  llm_anthropic/  — the LLM picker, and the two vendor modules: each an LLM
-│   │                        provider, a settings page and the *Add API key…* wizard; llm_openai's
+│   ├── llm/  openai/  anthropic/  — the LLM picker, and the two vendor modules: each an LLM
+│   │                        provider, a settings page and the *Add API key…* wizard; openai's
 │   │                        dictation.py is also two dictation providers on the same key
 │   ├── dictation/           Settings ▸ Dictation (a provider and a recorder from presets, Try it),
 │   │                        the Set Up Dictation… action and the checklist's two rows

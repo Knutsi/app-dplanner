@@ -87,7 +87,7 @@ def test_the_browser_button_opens_the_keys_page_and_the_current_key_is_shown(dia
 def test_the_vendor_action_saves_a_tested_key_and_announces_it(services, monkeypatch):
     import keyring
 
-    from dplanner.modules.llm_openai import module as openai_module
+    from dplanner.modules.openai import module as openai_module
 
     stored: dict[str, str] = {}
     monkeypatch.setattr(
@@ -115,6 +115,6 @@ def test_the_vendor_action_saves_a_tested_key_and_announces_it(services, monkeyp
     announced: list[str] = []
     services.llm.config_changed.connect(lambda: announced.append("changed"))
 
-    services.actions.run("llm_openai.key", services.context.current())
+    services.actions.run("openai.key", services.context.current())
 
     assert stored == {"llm_openai.api_key": "sk-new"} and announced == ["changed"]
