@@ -3,7 +3,7 @@
     uv run python scripts/render_graph_editor.py --out docs/screenshots/s7-graph-editor
 
 What S7 reworked: the strip of verbs over the canvas as glyphs in named bands, folding
-whole bands into its ``…`` menu; the *Jump to* picker, which opens on the plan's landmarks
+whole bands into its ``…`` menu; the *Find* picker, which opens on the plan's landmarks
 and searches every step; and the Features list, standing beside the canvas inside the
 project tab rather than across the window. A whole application is built over a throwaway
 library — the tab is the tab host's, so nothing here hand-wires a surface the window would
@@ -119,13 +119,13 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     tab.select_steps([made[3]])
     settle(app)
 
-    # Jump to, while the tab is still the window's current one — it is what the verb asks.
+    # Find, while the tab is still the window's current one — it is what the verb asks.
     editor = next(m for m in services.modules if isinstance(m, ProjectEditorModule))
-    picker = editor.jump_picker()
+    picker = editor.find_picker()
     assert picker is not None
     picker.resize(*PICKER_SIZE)
     picker.show()
-    save(picker, out, "jump", theme, app)
+    save(picker, out, "find", theme, app)
     discard(picker)
 
     page = tab.widget

@@ -79,10 +79,10 @@ from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.clipboard import PastePolicy
 from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, ClipboardWatch
 from dplanner.modules.project_editor.drops import CanvasDrop
+from dplanner.modules.project_editor.find import find_rows
 from dplanner.modules.project_editor.geometry import divide_command
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import StepNodeItem
-from dplanner.modules.project_editor.jump import jump_rows
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
 from dplanner.modules.project_editor.look import Look
@@ -791,7 +791,7 @@ class ProjectEditorModule:
             select_steps=self._select_steps,
             set_mode=self._set_mode,
             frame=self._frame,
-            jump=self._jump,
+            find=self._find,
             look=lambda: self._look,
             set_look=self._set_look,
             side_panel=deps.side_panel,
@@ -920,10 +920,10 @@ class ProjectEditorModule:
         if current is not None:
             current.frame()
 
-    def jump_picker(self) -> PickerDialog | None:
-        """The Jump-to picker over the current canvas's project — built, not shown.
+    def find_picker(self) -> PickerDialog | None:
+        """The Find picker over the current canvas's project — built, not shown.
 
-        Separate from :meth:`_jump` so a test can read what the picker offers without a
+        Separate from :meth:`_find` so a test can read what the picker offers without a
         modal loop, the way ``menu_for`` opens a toolbar's dropdown without a click.
         """
         current = self._current_activity()
@@ -931,12 +931,12 @@ class ProjectEditorModule:
             return None
         project = self._deps.library.project(current.project_id)
         ink = self._deps.parent.palette().color(QPalette.ColorRole.Text)
-        rows = jump_rows(project, self._deps.step_accents(project.id), ink)
+        rows = find_rows(project, self._deps.step_accents(project.id), ink)
         return PickerDialog(
-            rows, self.reveal, self._deps.parent, placeholder="Jump to a step by name or key…"
+            rows, self.reveal, self._deps.parent, placeholder="Find a step by name or key…"
         )
 
-    def _jump(self) -> None:
-        picker = self.jump_picker()
+    def _find(self) -> None:
+        picker = self.find_picker()
         if picker is not None:
             picker.exec()

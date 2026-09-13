@@ -30,7 +30,7 @@ re-rendering — never styling one surface by name.
 | a table | `Table`, `Column`, `Cell`; `key_badge_icon` for a milestone | `framework/table.py`, `theme/icons.py` | the table tab: `table-*`, `table-selected-*` |
 | a strip of verbs over a surface | `Toolbar` | `framework/toolbar.py` | the table tab's strip |
 | a strip that is a tool palette | `Toolbar.add_group` | `framework/toolbar.py` | the graph editor's strip: `s7-graph-editor/strip-*` |
-| a fuzzy picker over a long list | `PickerDialog`, `PickerRow` | `framework/picker.py` | the palette, and Jump to: `s7-graph-editor/jump-*` |
+| a fuzzy picker over a long list | `PickerDialog`, `PickerRow` | `framework/picker.py` | the palette, and Find: `s7-graph-editor/find-*` |
 | a filter on a strip | `FilterButton` | `framework/toolbar.py` | `table-filtered-*`, `filters-*` |
 | a combo box on a strip or in a dialog | a plain `QComboBox` — the stylesheet dresses it | `theme.qss` | `dropdown-*` |
 | "the view is rebuilding" | `UpdatingIndicator` — a `Spinner` on its own | `framework/signalling.py` | the strip's right end, `dialog-working-*` |
@@ -463,7 +463,8 @@ Example Table wears one.
 - **A verb is a glyph, and its words are the tooltip** (with the shortcut beside them). A
   row of words is a sentence the eye has to read every time; a row of glyphs is learned
   once, and the tooltip is there for the first time. Every glyph is one of
-  `theme/icons.py`'s painters, inked in the secondary tone and re-inked on a theme change —
+  `theme/glyphs/`'s vendored Tabler SVGs, inked in the secondary tone and re-inked on a
+  theme change —
   and painted at the screen's device pixel ratio, because a 16-pixel pixmap shown at 16
   points on a 2× display is upscaled, and every stroke in it goes soft.
 - **A control that drops a menu asks for its arrow's room** (`ARROW_ROOM` for a split
@@ -699,7 +700,7 @@ Dialogs:
 - *(done — the graph editor pass)* `CommandPalette` is a `PickerDialog`
   (`framework/picker.py`) and the frame is styled: the menu's own ground and hairline, a
   focused field, and a picked row wearing the accent on its edge rather than a band of
-  colour. *Jump to* is the same picker over a project's steps.
+  colour. *Find Step…* is the same picker over a project's steps.
 - The Run Agent confirmation — the application's most consequential question, as a
   `QMessageBox` with a bulleted list; and fourteen `QInputDialog.getText` prompts.
 - *(done — the graph editor pass)* Help ▸ About was a `QMessageBox.about` still naming the

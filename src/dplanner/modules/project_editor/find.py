@@ -1,4 +1,4 @@
-"""*Jump to*: naming a step, and putting the viewport on it.
+"""*Find Step*: naming a step, and landing on it.
 
 A plan of three hundred steps has perhaps a dozen a person navigates by — the milestones
 and the features — so the picker opens on those and searches everything from the first
@@ -60,7 +60,7 @@ def _row(step_id: StepId, title: str, accent: NodeAccent, ink: QColor) -> Picker
     )
 
 
-def jump_rows(
+def find_rows(
     project: Project, accents: Mapping[StepId, NodeAccent], ink: QColor
 ) -> Sequence[PickerRow]:
     """Every step, the landmarks leading — milestones, then features, then the work.

@@ -1472,7 +1472,7 @@ def test_the_strip_is_named_bands_of_glyphs(services, project, tab):
     named = [name for name, _verbs in bands(tab)]
     assert named == ["Go", "Step", "Link", "Arrange", "History", "Options"]
     seated = {verb for _name, verbs in bands(tab) for verb in verbs}
-    assert {"Jump to Step…", "New Step", "Undo", "Look"} <= seated
+    assert {"Find Step…", "New Step", "Undo", "Look"} <= seated
     # Regions are on their way out, and the strip is where that shows first.
     assert not any("Region" in verb for verb in seated)
 
@@ -1480,7 +1480,7 @@ def test_the_strip_is_named_bands_of_glyphs(services, project, tab):
 def test_every_verb_on_the_strip_is_a_glyph_with_its_words_in_the_tooltip(services, project, tab):
     """A row of words is a sentence the eye rereads every time. The words are not lost —
     they lead the tooltip, and they are what the … menu lists."""
-    for action_id in ("steps.new", "steps.lasso", "canvas.mark_starts", "steps.jump"):
+    for action_id in ("steps.new", "steps.lasso", "canvas.mark_starts", "steps.find"):
         assert services.actions.spec(action_id).icon is not None, action_id
     button = toolbar_button(tab, "steps.new")
     assert button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
@@ -1514,7 +1514,7 @@ def test_closing_the_tab_lets_its_toolbars_go(services, project, tab):
     assert len(services.context.changed._slots) < before
 
 
-# -- jump to, and landing on the step ----------------------------------------------------------
+# -- finding a step, and landing on it ----------------------------------------------------------
 
 
 def editor_module(services):
@@ -1527,7 +1527,7 @@ def picked_rows(picker):
     return [picker.list.item(i).text() for i in range(picker.list.count())]
 
 
-def test_jump_to_opens_on_the_landmarks_and_searches_every_step(services, project, tab):
+def test_find_opens_on_the_landmarks_and_searches_every_step(services, project, tab):
     """A plan of three hundred steps has a dozen a person navigates by. They are what the
     picker opens on; everything is in play from the first keystroke."""
     from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
@@ -1535,7 +1535,7 @@ def test_jump_to_opens_on_the_landmarks_and_searches_every_step(services, projec
 
     first, second = project.steps
     services.undo.push(SetModuleDataCommand(first.id, MILESTONE_ID, milestone_write("Ship it")))
-    picker = editor_module(services).jump_picker()
+    picker = editor_module(services).find_picker()
     assert picker is not None
     assert picked_rows(picker) == [first.title]  # The milestone alone, before anything typed.
 
@@ -1547,16 +1547,16 @@ def test_jump_to_opens_on_the_landmarks_and_searches_every_step(services, projec
 def test_a_step_is_found_by_its_key_as_well_as_its_name(services, project, tab):
     """S7 and "build the modal" are two ways of naming one step; the graph answers to both."""
     step = project.steps[0]
-    picker = editor_module(services).jump_picker()
+    picker = editor_module(services).find_picker()
     assert picker is not None
     picker._refilter(f"S{step.number}")
     assert picked_rows(picker) == [step.title]
     picker.deleteLater()
 
 
-def test_jumping_to_a_step_puts_the_canvas_on_it(services, project, tab):
+def test_finding_a_step_puts_the_canvas_on_it(services, project, tab):
     """Selecting a step a screen away selects something nobody can see — which is what
-    Reveal in Graph did until this landed, and what Jump to must never do."""
+    Reveal in Graph did until this landed, and what Find must never do."""
     from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
     from dplanner.modules.project_editor.positions import write_position
 
@@ -1572,7 +1572,7 @@ def test_jumping_to_a_step_puts_the_canvas_on_it(services, project, tab):
     assert (after - node.body_scene_rect().center()).manhattanLength() < 1.0
 
 
-def test_jump_to_is_ctrl_f_everywhere_and_slash_on_the_canvas(services):
+def test_find_is_ctrl_f_everywhere_and_slash_on_the_canvas(services):
     """Ctrl+F is what every application means by find, and a menu shortcut is how a Ctrl
     key is bound here — every text widget reclaims it, and the state gate keeps it off a
     tab with no canvas. The bare key is the canvas's own way in, beside it."""
@@ -1581,11 +1581,11 @@ def test_jump_to_is_ctrl_f_everywhere_and_slash_on_the_canvas(services):
     from dplanner.framework.action_registry import key_sequences
     from dplanner.modules.project_editor.keymap import bound_actions
 
-    spec = services.actions.spec("steps.jump")
+    spec = services.actions.spec("steps.find")
     assert (spec.menu, spec.group) == ("Step", "navigate")
     assert spec.icon is not None
     assert QKeySequence(QKeySequence.StandardKey.Find) in key_sequences(spec.shortcut)
-    assert bound_actions(Qt.Key.Key_Slash, Qt.KeyboardModifier.NoModifier) == ("steps.jump",)
+    assert bound_actions(Qt.Key.Key_Slash, Qt.KeyboardModifier.NoModifier) == ("steps.find",)
 
 
 # -- the panel beside the canvas -----------------------------------------------------------------

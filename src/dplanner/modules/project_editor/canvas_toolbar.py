@@ -34,7 +34,7 @@ from dplanner.theme.tokens import CONTROL_GAP, FIELD_GAP
 
 GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Where you are looking leads: a graph is a place before it is a thing to edit.
-    ("Go", ("steps.jump", "canvas.frame", "order.open")),
+    ("Go", ("steps.find", "canvas.frame", "order.open")),
     ("Step", ("steps.new", "steps.rename", "steps.delete", "steps.lasso")),
     ("Link", ("steps.connect", "steps.redirect_to", "steps.unlink", "steps.isolate")),
     ("Arrange", ("canvas.sort_flow", "canvas.divide_vertical")),

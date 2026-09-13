@@ -853,14 +853,14 @@ root, stop and look for the registry or capability you have not found yet.
   licence. A component this build does not have says so in its row rather than being
   dropped. `ARCHITECTURE.md`'s *An acknowledgement is asked, not written* has the
   reasoning.
-- **Jump to is a picker, and landing on a step is centring on it.** `framework/picker.py`
+- **Find is a picker, and landing on a step is centring on it.** `framework/picker.py`
   is the one fuzzy picker — a field over `PickerRow`s, the label outranking whatever else a
   row answers to (`also`: a verb's menu path, a step's key), and `landmark` saying which
   rows a long list opens on before anything is typed. The command palette is that picker
-  over the registry; `steps.jump` (`/` on the canvas, Step ▸ navigate beside *Reveal in
+  over the registry; `steps.find` (Ctrl+F, `/` on the canvas, Step ▸ navigate beside *Reveal in
   Graph*) is it over a project's steps, opening on the milestones and features.
   `GraphView.centre_on_step` is what a pick lands with, and `select_step` calls it, so
-  `steps.reveal` centres from every view that reaches a step. Never zoom on a jump — Frame
+  `steps.reveal` centres from every view that reaches a step. Never zoom on a find — Frame
   is the verb that changes how much of the graph is in view.
 - **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
   `MENU_STRUCTURE`, so anything with a context menu owns a menu in that table — the canvas has
@@ -883,6 +883,18 @@ root, stop and look for the registry or capability you have not found yet.
   by the same table, cleared and refilled every time it opens (Tools ▸ Agent List is the
   example; a fixed verb inside one renders through `append_action`). `ARCHITECTURE.md`'s
   *A child menu of data is rebuilt when it opens* has the reasoning.
+- **The glyphs are Tabler's SVGs, vendored — a glyph key is ours, the picture is theirs.**
+  `theme/glyphs/` holds the fifty-odd this application uses (MIT; the notice is beside
+  them and Help ▸ About names the set and its version), fetched by
+  `scripts/vendor_tabler_icons.py`, which is also where what each glyph *means* here is
+  written. Adding one is a line there and running it again; changing icon sets is changing
+  that file's right-hand column. Qt's SVG renderer knows no `currentColor`, so the ink is
+  substituted into the source and the colour's **alpha becomes the painter's opacity** —
+  get that wrong and every strip reads a shade too loud. `paint_glyph` is the one painter,
+  and the canvas's medallions go through it too, so a kind's glyph on a card and the same
+  kind's glyph in a menu cannot differ. Four glyphs are still painted by hand because each
+  is a picture of *state*: the key badge (it draws text), the colour strip (a gradient),
+  the spinner (a frame per angle) and the filter funnel (two states in one width).
 - **An `ActionSpec` may carry a glyph, and only the pop-ups paint it.** `icon` is a
   `(QColor) -> QIcon` painter, rendered by `build_menu`, `append_action` and a toolbar
   dropdown — all built fresh on every open. The menu bar's QActions outlive every theme

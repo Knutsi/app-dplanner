@@ -24,6 +24,7 @@ from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.widgets import caption, note
 from dplanner.identity import APP_NAME, APP_VERSION
 from dplanner.theme.cards import title_font
+from dplanner.theme.icons import TABLER_TAG
 
 ABOUT_SIZE = (820, 620)
 MISSING = "not installed"
@@ -36,7 +37,8 @@ class Component:
     name: str
     what: str  # What it does *here* — the one line no package's metadata can supply.
     distribution: str = ""  # The installed package to ask; "" for something that is not one.
-    licence: str = ""  # Written only where there is no package to ask (Python itself).
+    licence: str = ""  # Written only where there is no package to ask.
+    release: str = ""  # Likewise: a vendored set carries the version it was taken at.
 
 
 BUILT_ON: tuple[Component, ...] = (
@@ -55,6 +57,10 @@ BUILT_ON: tuple[Component, ...] = (
         "anthropic",
     ),
     Component("Python", "the language DPlanner is written in", licence="PSF-2.0"),
+    # Vendored rather than depended on, so there is no distribution to ask: the version and
+    # the licence are what `scripts/vendor_tabler_icons.py` took, and the notice it took
+    # with them lives in `theme/glyphs/LICENSE`.
+    Component("Tabler Icons", "every glyph in the application", licence="MIT", release=TABLER_TAG),
 )
 
 
@@ -87,7 +93,8 @@ def acknowledgements() -> list[tuple[str, str, str, str]]:
     rows = []
     for part in BUILT_ON:
         if not part.distribution:
-            rows.append((part.name, part.what, platform.python_version(), part.licence))
+            release = part.release or platform.python_version()
+            rows.append((part.name, part.what, release, part.licence))
             continue
         try:
             release = dist_version(part.distribution)

@@ -3030,3 +3030,27 @@ developer's real settings, and every later run then started with the panel alrea
 the "closed" screenshot could not be taken twice. The suite's `conftest.py` already
 redirects `QSettings` to a throwaway ini directory for both reasons — a render script wants
 the same two lines, and to `clear()` between themes so each renders from the same state.
+
+### `theme/icons.py` — the glyphs are a vendored SVG set
+
+**What.** Forty-odd hand-painted `QPainter` glyphs became fifty-two Tabler SVGs (MIT) under
+`theme/glyphs/`, fetched by `scripts/vendor_tabler_icons.py`, which holds the mapping from
+*what a glyph means here* to the icon that says it. `paint_glyph(painter, rect, name,
+colour)` is the one painter; `glyph_icon(name, colour)` wraps it in a `QIcon`. The module
+went from 1,075 lines to 461, and the five `paint_*_glyph` functions and the if/elif chain
+that chose between them are gone — the kind *is* the glyph's name.
+
+**Why.** A handful of painters did not justify a resource pipeline; forty did not justify
+hand-drawing. The strokes drifted between glyphs and nobody could add one that matched.
+Copied in rather than depended on: 212 KB of files against a package, a version to resolve
+and a release cadence — and only the ones used, because the full set is six thousand files.
+
+**Watch.** Two things. **Qt's SVG renderer knows no `currentColor`** — substitute the ink
+into the source before rendering (cache the substitution; the canvas asks for the same few
+glyphs in the same few colours on every repaint). And **an SVG stroke colour carries no
+alpha**, so the colour's alpha has to become the painter's opacity; a strip's glyphs are the
+text colour at `SECONDARY_ALPHA`, so getting that wrong makes every toolbar read a shade
+too loud.
+
+**Upstream?** The mechanism, yes — a template that paints its own glyphs wants this loader.
+The set is an application's choice, and its licence notice travels with it.

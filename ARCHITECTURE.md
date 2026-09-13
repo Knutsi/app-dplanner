@@ -589,6 +589,38 @@ copy of it, and a mark added later appears under it having touched nothing. It i
 and not a verb with an arrow: there is no verb under it, so it wears the layout picker's
 look rather than the hairline that says two halves do different things.
 
+### The glyphs are somebody else's, and they are copied in
+
+Forty-odd hand-painted `QPainter` calls was the right answer at a handful and the wrong one
+at forty: the strokes drifted between glyphs, nobody could draw a new one to match, and the
+result was, in the developer's words, "ok, but not super nice". They are **Tabler Icons**
+(MIT) now — the set is the largest permissive one, which matters because this application
+needs glyphs a small set does not have: redirect to and from, isolate, divide, three kinds
+of mark.
+
+**Copied in, not depended on.** Fifty-two SVG files come to 212 KB, against a dependency
+that would bring a package, a version to resolve and a release cadence to follow — and the
+full set is over six thousand files, which no repository wants in order to use fifty.
+`scripts/vendor_tabler_icons.py` holds the mapping from *what a glyph means here* to the
+Tabler icon that says it, so the key is ours and outlives any set: changing icon sets is
+changing that file's right-hand column and running it again. The tag is pinned in
+`theme/icons.py`, because the application is what has to state the version — in Help ▸
+About, which an MIT notice and a bug report both want.
+
+**One painter, and the alpha is the painter's.** Qt's SVG renderer knows no
+`currentColor`, so the ink is substituted into the source before rendering — the trick
+`drop_arrow_url` already plays for the combo arrow — and the colour's *alpha* becomes the
+painter's opacity, because an SVG stroke colour has none. A strip's glyphs are the text
+colour at `SECONDARY_ALPHA`, so a painter that dropped the alpha would make every toolbar
+in the application read a shade too loud. The canvas's medallions go through the same
+`paint_glyph`, which is what retired the five `paint_*_glyph` functions and the if/elif
+chain that chose between them: the kind *is* the glyph's name.
+
+**What stayed hand-painted is what is a picture of state rather than of a thing**: the key
+badge draws text, the colour strip is a gradient, the spinner is a frame per angle, and the
+filter funnel is two states drawn to one width. No icon set has those, because they are not
+icons.
+
 ### An acknowledgement is asked, not written
 
 Help ▸ About was a `QMessageBox.about` naming the template's product, which is two faults in
@@ -611,7 +643,7 @@ list, because an acknowledgement that quietly shortens is worse than one that ad
 
 ### One picker, two lists
 
-*Jump to* wanted what the command palette already was: a field over rich rows, ranked by
+*Find Step…* wanted what the command palette already was: a field over rich rows, ranked by
 what was typed, one pick. The palette's constructor had the registry and the context wired
 into it, so the honest move was to lift the shape out — `framework/picker.py`'s
 `PickerDialog` over plain `PickerRow`s — and rebuild the palette on it as the half that
@@ -625,7 +657,7 @@ that into the haystack would make "ctrl" match every verb that has one.
 
 **A picker over a long list opens on its landmarks.** Three hundred steps is not a list
 anybody scrolls, so `PickerRow.landmark` says which rows are worth showing before anything
-is typed: Jump to opens on the plan's milestones and features, and everything is in play
+is typed: Find opens on the plan's milestones and features, and everything is in play
 from the first keystroke. A list with no landmarks opens whole, which is what the palette
 wants. One field on the row, and the rule is the same both ways.
 

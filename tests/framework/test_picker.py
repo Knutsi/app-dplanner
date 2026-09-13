@@ -1,6 +1,6 @@
 """The picker primitive: a field over rich rows, ranked by what was typed, and one pick.
 
-Two surfaces read this file's behaviour — the command palette and the graph's Jump to —
+Two surfaces read this file's behaviour — the command palette and the graph's Find —
 so what is asserted here is the shape both rely on: the label outranks what a row merely
 answers to, the landmarks are what an untyped picker opens on, and the pick is reported
 after the dialog has closed.

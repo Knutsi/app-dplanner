@@ -58,9 +58,9 @@ from dplanner.theme.icons import (
     connect_icon,
     divide_horizontal_icon,
     divide_vertical_icon,
+    find_icon,
     frame_icon,
     grid_icon,
-    jump_icon,
     lasso_icon,
     mark_ends_icon,
     mark_orphans_icon,
@@ -94,8 +94,8 @@ class CanvasVerbs:
     # Enter or leave a named canvas mode (modes.CONNECT, modes.LASSO, the divide pair).
     set_mode: Callable[[str, bool], None]
     frame: Callable[[], None]
-    # Raise the Jump-to picker over the window; a no-op when no canvas is current.
-    jump: Callable[[], None]
+    # Raise the Find picker over the window; a no-op when no canvas is current.
+    find: Callable[[], None]
     # The user's look — marks, spotlight, background, snapping, the side panel — and a
     # setter for the whole.
     look: Callable[[], Look]
@@ -163,10 +163,10 @@ class CanvasVerbs:
                 run=self._mode_toggle(LASSO),
             ),
             ActionSpec(
-                id="steps.jump",
+                id="steps.find",
                 # Order 4: the first of this band. Reveal takes you to the step you have
-                # already named; Jump is how you name one.
-                label="&Jump to Step…",
+                # already named; Find is how you name one.
+                label="&Find Step…",
                 menu="Step",
                 group="navigate",
                 order=4,
@@ -175,10 +175,10 @@ class CanvasVerbs:
                 # state gate keeps it off a tab with no canvas. The bare "/" in keymap.py is
                 # the canvas's own way in, the way the arrows and hjkl both move a selection.
                 shortcut=QKeySequence.StandardKey.Find,
-                icon=jump_icon,
+                icon=find_icon,
                 tip="Find a step by name or key and put the canvas on it",
                 state=self._on_a_canvas,
-                run=lambda _context: self.jump(),
+                run=lambda _context: self.find(),
             ),
             ActionSpec(
                 id="steps.reveal",

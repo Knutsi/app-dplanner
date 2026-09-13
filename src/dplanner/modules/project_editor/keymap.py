@@ -54,7 +54,7 @@ CANVAS_KEYS: Final[dict[Binding, tuple[str, ...]]] = {
     (Qt.Key.Key_F, _NONE): ("canvas.frame",),
     # "/" is what every list and every editor means by "find", and a graph is a list of
     # steps you cannot see all of at once.
-    (Qt.Key.Key_Slash, _NONE): ("steps.jump",),
+    (Qt.Key.Key_Slash, _NONE): ("steps.find",),
     (Qt.Key.Key_N, _NONE): ("steps.new",),
     (Qt.Key.Key_R, _NONE): ("steps.rename",),
     (Qt.Key.Key_S, _NONE): ("steps.lasso",),
