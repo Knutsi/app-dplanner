@@ -499,12 +499,26 @@ def default_modules(services: "AppServices") -> list["Module"]:
         project = library.project(project_id)
         stats = milestone_stats(project)
         colors = milestone_colors(project)
+        # The settled reading, never a fresh lint pass: the checks are super-linear in the
+        # size of a plan (66 ms at 300 steps) and this runs on every canvas sync.
+        flagged = problems.flagged(project_id)
         return {
-            step.id: step_accent(step, stats.get(step.id, ""), colors.get(step.id, ""))
+            step.id: step_accent(
+                step,
+                stats.get(step.id, ""),
+                colors.get(step.id, ""),
+                flagged=step.id in flagged,
+            )
             for step in project.steps
         }
 
-    def step_accent(step: "Step", milestone_stat: str, milestone_color: str = "") -> "NodeAccent":
+    def step_accent(
+        step: "Step",
+        milestone_stat: str,
+        milestone_color: str = "",
+        *,
+        flagged: bool = False,
+    ) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
 
@@ -564,6 +578,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # body, the badge and the tag medallion all take its shade of the project's map.
             tone_color=milestone_color if milestone else "",
             icons=step_type_icons(step),
+            # Something in the plan is wrong about this step. The canvas draws the
+            # squiggle; what is wrong is the Problems panel's to say.
+            flagged=flagged,
             stat_text=stat,
             stat_strong=bool(milestone),
         )
@@ -728,6 +745,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             file_modules=tuple(source.id for source in _asset_sources()),
             paste_policies=_paste_policies(),
             step_accents=step_accents,
+            accents_changed=problems.findings.flagged_changed,
             # The timeline sort reads a step's length through this seam; estimation owns it.
             days_for=estimated_days,
             # The project panel renders whatever registered a card here — the project-level

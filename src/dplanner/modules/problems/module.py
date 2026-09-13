@@ -23,6 +23,7 @@ from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.debounce import DebounceService
+from dplanner.modules.problems.findings import Findings
 from dplanner.modules.problems.panel import ProblemsPanel
 
 MODULE_ID = "problems"
@@ -61,6 +62,21 @@ class ProblemsModule:
 
     def __init__(self, deps: ProblemsDeps) -> None:
         self._deps = deps
+        # One reading of what is wrong, settled and shared: the panel lists it, the canvas
+        # draws a squiggle under every card it names. Running the checks twice would be
+        # two answers that could disagree, and lint is the expensive thing — see
+        # `findings.py` for the numbers.
+        self.findings = Findings(
+            deps.library,
+            deps.files,
+            deps.checks,
+            debounce=deps.debounce,
+            facts_of=deps.facts_of,
+        )
+
+    def flagged(self, project_id: NodeId) -> frozenset[str]:
+        """Which of this project's steps a problem is about — what the canvas asks."""
+        return self.findings.flagged(project_id)
 
     def register(self) -> None:
         """Nothing: this module owns a widget, not a surface of its own.
@@ -74,10 +90,7 @@ class ProblemsModule:
         return ProblemsPanel(
             deps.library,
             deps.actions,
-            deps.files,
-            deps.checks,
-            debounce=deps.debounce,
-            facts_of=deps.facts_of,
+            self.findings,
             key_of=deps.key_of,
             fix_profiles=deps.fix_profiles,
             fix=deps.fix,

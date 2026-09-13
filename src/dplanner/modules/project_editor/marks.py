@@ -13,23 +13,29 @@ Qt-free, so the derivation and the value can be tested with plain ``Step``s.
 
 from dataclasses import dataclass, replace
 
-MARK_NAMES = ("starts", "ends", "orphans")
+MARK_NAMES = ("starts", "ends")
 
 
 @dataclass(frozen=True)
 class Marks:
     """Which marks are on. ``starts`` colours a socket nothing arrives at, ``ends`` one
-    nothing leaves from, and ``orphans`` rings a node with neither.
+    nothing leaves from.
 
-    **All three are on by default.** A socket with nothing on it and a node with nothing
-    at all are the two things a graph can be wrong about, and both are invisible until
-    somebody thinks to look — a preference that has to be found before it can help is one
-    that helps nobody. Switching one off is the deliberate act, and it is remembered.
+    **Both are on by default.** A socket with nothing on it is what a graph can be wrong
+    about, and it is invisible until somebody thinks to look — a preference that has to be
+    found before it can help is one that helps nobody. Switching one off is the deliberate
+    act, and it is remembered.
+
+    There was a third, ``orphans``, which rang a node with no links at all in the refusal
+    red. It is gone: a node nothing touches is what ``graph.orphan`` reports, and a step a
+    lint finding is about now wears the squiggle — so the ring was a second red vocabulary
+    for a fact the general mark already covers, and a *preference* that could hide a
+    problem, which is not a way of looking. A stored ``orphans`` is ignored, as
+    ``from_json`` ignores any name it does not know.
     """
 
     starts: bool = True
     ends: bool = True
-    orphans: bool = True
 
     def is_on(self, name: str) -> bool:
         return bool(getattr(self, name))
