@@ -42,8 +42,11 @@ def _ratio() -> float:
 def _canvas(width: int = ICON_SIZE, height: int = ICON_SIZE) -> tuple[QPixmap, QPainter]:
     """A transparent pixmap and a painter over it, in glyph units whatever the screen is.
 
-    The painter is scaled by the device pixel ratio, so every glyph below is written in
-    plain 16-unit coordinates and comes out at the screen's own resolution.
+    The pixmap is the screen's own resolution and carries the ratio; **the painter is not
+    scaled**, because a paint device that declares a device pixel ratio already maps
+    logical coordinates for you. Scaling it as well applies the ratio twice, and a 16-unit
+    glyph lands in the top-left quarter of its own icon — which the offscreen platform,
+    where the ratio is always 1, cannot show you.
     """
     ratio = _ratio()
     pixmap = QPixmap(QSize(round(width * ratio), round(height * ratio)))
@@ -51,7 +54,6 @@ def _canvas(width: int = ICON_SIZE, height: int = ICON_SIZE) -> tuple[QPixmap, Q
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.scale(ratio, ratio)
     return pixmap, painter
 
 

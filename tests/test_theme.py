@@ -220,6 +220,33 @@ def test_a_dense_strips_arrow_keeps_its_room(app, theme, marker, popup, room):
     assert gained >= room - tokens.DENSE_GAP
 
 
+@pytest.mark.parametrize("ratio", (1.0, 2.0, 3.0), ids=("1x", "2x", "3x"))
+def test_a_glyph_is_the_same_picture_at_every_device_pixel_ratio(app, monkeypatch, ratio):
+    """A glyph is painted at the screen's resolution, in glyph units either way.
+
+    The pixmap grows with the ratio and carries it; the painter is *not* scaled, because a
+    paint device that declares a ratio already maps logical coordinates. Scaling it as well
+    applies the ratio twice and the glyph lands in the top-left quarter of its own icon —
+    which is what shipped, and which the offscreen platform cannot show, because there the
+    ratio is always 1. Hence a forced ratio here.
+    """
+    from dplanner.theme import icons
+
+    monkeypatch.setattr(icons, "_ratio", lambda: ratio)
+    pixmap = icons.plus_icon("#ffffff").pixmap(QSize(ICON_SIZE, ICON_SIZE), ratio)
+    image = pixmap.toImage()
+    assert image.width() == round(ICON_SIZE * ratio)  # Painted at the screen's resolution…
+
+    lit = [
+        x
+        for x in range(image.width())
+        if any(image.pixelColor(x, y).alpha() > 0 for y in range(image.height()))
+    ]
+    # …and the plus still spans the glyph's own 16 units, whatever the ratio.
+    assert min(lit) / ratio < ICON_SIZE / 4
+    assert max(lit) / ratio > 3 * ICON_SIZE / 4
+
+
 def _glyph_button(parent):
     button = QToolButton(parent)
     button.setObjectName("ToolbarButton")

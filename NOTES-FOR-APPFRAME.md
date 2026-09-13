@@ -2994,9 +2994,17 @@ rather than making pixmaps of their own.
 display is upscaled by the compositor, and every stroke in it goes soft. That is most of
 what "the icons look a bit blurry" turns out to mean, and it is four lines to fix.
 
-**Watch.** The ratio is read from `QGuiApplication` when the glyph is painted, not when the
-screen changes. Icons are repainted on a theme change, so a window dragged between a 1x and
-a 2x screen keeps the ratio it was painted at until then — which is the same trade every
+**Watch.** **Do not scale the painter as well.** A paint device that declares a device
+pixel ratio already maps logical coordinates, so `painter.scale(ratio, ratio)` applies it
+twice and a 16-unit glyph lands in the top-left quarter of its own icon. That shipped, and
+nothing here could show it: the offscreen platform reports a ratio of 1, so every render
+and every test was correct and every glyph on the developer's 2x screen was a fragment.
+`tests/test_theme.py` forces the ratio now and asserts a known glyph still spans its own
+16 units — it fails on the double scale and on no scale at all.
+
+The ratio is read from `QGuiApplication` when the glyph is painted, not when the screen
+changes. Icons are repainted on a theme change, so a window dragged between a 1x and a 2x
+screen keeps the ratio it was painted at until then — the same trade every
 `QIcon`-from-`QPixmap` in the application already makes, and the fix if it ever matters is a
 `screenChanged` hook, not a different painter.
 
