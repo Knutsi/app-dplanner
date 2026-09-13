@@ -1699,8 +1699,9 @@ And it is parented to the view rather than to the viewport, because `QGraphicsVi
 
 ### Marks are a way of looking
 
-*Mark Starts*, *Mark Ends* and *Mark Orphans* colour a node's unconnected sockets and ring a
-node with none. Three decisions sit behind three short functions.
+*Mark Starts* and *Mark Ends* colour a node's unconnected sockets. Three decisions sit
+behind two short functions — a third mark, *Orphans*, is covered at the end of this
+section by the thing that replaced it.
 
 **They are a preference, not a fact about the project.** Whether the graph's ends are lit
 says nothing about the plan, so the value never reaches the project directory — it is the
@@ -1737,13 +1738,49 @@ stored value does not mention the *class* default rather than False, which is `F
 absence rule and the only reason this change reaches anybody who already has a look on
 disk. A stored `false` still wins — somebody who switched a mark off keeps it off.
 
-The orphan's ring is the one mark drawn at full strength (`ORPHAN_RING`, and
-`ORPHAN_RING_W`, twice the agent ring's weight): the socket discs say *this is where the
-graph ends*, which is often correct, while a ring says *nothing touches this at all*, which
-almost never is. At the tint's alpha it read as a shadow of the border rather than as a
-warning. Being heavier than the ring it shares a gap with, it is the term `PAINT_MARGIN`
-takes — a decoration that reaches further than the bounding rect is clipped, and nothing
-says so.
+There was a third mark, and it is gone. The orphan's ring was the refusal red at full
+strength round a node nothing touched: the socket discs say *this is where the graph ends*,
+which is often correct, while a ring said *nothing touches this at all*, which almost never
+is. What retired it is the squiggle below — `graph.orphan` is a lint check like any other,
+so the general mark covers the case the ring was invented for, and covers it better,
+because the Problems panel then says *which* thing is wrong. A stored `orphans` is ignored
+rather than refused, which is `from_json`'s tolerance doing its job.
+
+### A problem is a squiggle, and the reading is shared
+
+A plan can be wrong about a step — no description, no estimate, a dangling `requires`, a
+feature nothing gathers — and until now the canvas could not say so. The Problems panel
+lists every finding, but it is a panel: you have to be looking at it. The mark that says
+*look here* without saying more is the squiggle every code editor draws under a line it
+cannot make sense of, and it is the right shape for exactly the reason it is in editors:
+it points, and something else explains.
+
+**It stands for every check, which is what made it worth replacing the ring with.** The
+canvas had one red mark already and it could only ever mean *orphan*; two reds a pixel
+apart for "this step has a problem" and "this step has *that* problem" is the confusion
+the seam rule exists to prevent. One mark, every check, and the panel for the rest.
+
+**The canvas never learns what a problem is.** `NodeAccent.flagged` is a boolean the
+composition root sets, the same translation every other accent gets — the editor does not
+know what lint is, any more than it knows what a milestone is.
+
+**Nothing runs lint on a canvas sync.** This is the load-bearing constraint, and it was
+measured before anything was designed around it: the checks are super-linear in the size of
+a plan — 1 ms at 40 steps, 9 ms at 120, **66 ms at 300** — and the canvas syncs once per
+event-loop turn while a title is being typed. So `modules/problems/findings.py` is one
+settled reading with two readers: `of()` hands back the last answer and asks for a fresh
+one after a quiet spell, and a project asked about for the first time answers nothing and
+arrives on the next settle. A squiggle appearing a moment after you delete a description is
+the honest behaviour — the answer is a walk of the whole plan, and the plan is what moved.
+Moving the derivation out of the panel is also what stops it being computed twice; the
+panel reads the shared one now.
+
+**Two signals, because the readers ask different questions.** Both name their project, so a
+view of one project hears its own changes and no others — `follow_project`'s rule, kept by
+hand because this is not a model signal. `changed` fires whenever the findings move, which
+is what the panel lists; `flagged_changed` fires only when the set of flagged *ids* moves,
+which is all the canvas draws. Without the second, renaming a step would change every
+message about it and repaint the canvas one settle later, every time.
 
 ### The spotlight is one derivation, and a held key lends the look
 

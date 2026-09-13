@@ -75,12 +75,20 @@ HANDLE_EMPHASIS = 1.5
 MARK_R = HANDLE_R + 1.0
 START_MARK = QColor(120, 200, 140)
 END_MARK = QColor(220, 170, 90)
-# The orphan's ring is the refusal red at full strength and twice the agent ring's weight:
-# it is the one mark that says *something is wrong here* rather than *this is where the
-# graph ends*, and at the tint's alpha over a toned body it read as a shadow of the border
-# rather than as a warning. It is on by default now, so it has to earn the glance it gets.
-ORPHAN_RING = QColor(224, 82, 82)
-ORPHAN_RING_W = 3.0
+# A problem is a squiggle under the card, the way an editor underlines a line it cannot
+# make sense of — the one gesture in software that already means *look here, and ask what
+# is wrong*. The Problems panel is the asking; this is the pointing.
+#
+# It replaced the orphan's ring, which was the refusal red at full strength round the whole
+# body. `graph.orphan` is itself a lint check, so a ring *and* a squiggle would have been
+# two red vocabularies for one fact — and the ring could only ever say *orphan*, where the
+# squiggle says *something*, which is the honest claim for a mark that stands for every
+# check there is.
+PROBLEM_INK = QColor(224, 82, 82)
+PROBLEM_W = 3.0
+PROBLEM_DROP = 4.0  # Below the body's bottom edge — clear of it, the way an underline is.
+PROBLEM_WAVE = 4.0  # Half a period: the run of one arc before it turns back.
+PROBLEM_RISE = 1.6  # How far each arc swings from the line. Shallow: a wave, not a zigzag.
 
 # A toned body colours the whole node, so its kind reads at any zoom. The tones live in
 # ``theme/tones.py`` — the aspect bar's kind buttons wear the same ones, and a checked
@@ -149,7 +157,8 @@ PAINT_MARGIN = max(
     BADGE_H / 2 + 1.0 + LIFT,
     ICON_D / 2 + 1.0 + LIFT,
     CHIP_H / 2 + 1.0,
-    RING_GAP + max(RING_W, ORPHAN_RING_W) + 1.0 + LIFT,
+    RING_GAP + RING_W + 1.0 + LIFT,
+    PROBLEM_DROP + PROBLEM_RISE + PROBLEM_W / 2 + 1.0 + LIFT,
     LIFTED_SHADOW.drop + LIFTED_SHADOW.spread + 1.0,
 )
 
@@ -195,6 +204,9 @@ class NodeAccent:
     icons: tuple[str, ...] = ()
     stat_text: str = ""  # The one number a step answers with — full ink, never faded.
     stat_strong: bool = False  # Bold the stat: this node's number is the point of it.
+    # Something in the plan is wrong about this step, so it wears the squiggle. What is
+    # wrong is the Problems panel's to say; the canvas only ever knows *that*.
+    flagged: bool = False
 
 
 @dataclass(frozen=True)
@@ -255,6 +267,8 @@ def paint_node(
     paint_body(painter, palette, body, accent, state)
     paint_spine(painter, palette, body, accent, text_colour)
     paint_marks(painter, palette, body, state)
+    if accent.flagged:
+        paint_problem(painter, body)
     if accent.chip_text:
         paint_ring(painter, body, accent.chip_tone, state.ring_phase)
     inner = body.adjusted(SPINE_W + PAD_Y, PAD_Y, -PADDING, -PAD_Y)
@@ -333,11 +347,6 @@ def paint_marks(painter: QPainter, palette: QPalette, body: QRectF, state: NodeS
     """
     incoming, outgoing = state.ports
     marks = state.marks
-    if marks.orphans and not (incoming or outgoing):
-        painter.setPen(QPen(ORPHAN_RING, ORPHAN_RING_W))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        ring = body.adjusted(-RING_GAP, -RING_GAP, RING_GAP, RING_GAP)
-        painter.drawRoundedRect(ring, RADIUS + RING_GAP, RADIUS + RING_GAP)
     painter.setPen(QPen(QColor(palette.window().color()), 1.0))
     if marks.starts and not incoming:
         painter.setBrush(START_MARK)
@@ -345,6 +354,49 @@ def paint_marks(painter: QPainter, palette: QPalette, body: QRectF, state: NodeS
     if marks.ends and not outgoing:
         painter.setBrush(END_MARK)
         painter.drawEllipse(QPointF(body.right(), body.center().y()), MARK_R, MARK_R)
+
+
+def paint_problem(painter: QPainter, body: QRectF) -> None:
+    """The squiggle under a card something is wrong with.
+
+    A run of quadratic arcs alternating either side of a line below the body — the editor's
+    underline, which everybody already reads as *there is something to see here*. It starts
+    past the spine, so it underlines the card's *content* rather than its key, and it is
+    drawn at full strength: a mark that has to be noticed cannot be a tint.
+
+    It hangs outside the body, so its reach is in :data:`PAINT_MARGIN`; the whole of it
+    travels with a lifted card because the caller lifts the painter, not the geometry.
+    """
+    pen = QPen(PROBLEM_INK, PROBLEM_W)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawPath(problem_path(body))
+
+
+def problem_path(body: QRectF) -> QPainterPath:
+    """The squiggle's own geometry, so a test can measure it without a painter."""
+    left = body.left() + LEFT_INSET
+    right = body.right() - RADIUS
+    y = body.bottom() + PROBLEM_DROP
+    path = QPainterPath()
+    if right - left < PROBLEM_WAVE:
+        return path
+    path.moveTo(left, y)
+    x, up = left, True
+    while x + PROBLEM_WAVE <= right:
+        # One arc per half period, its control point out at the swing so the curve reaches
+        # it: quadratic rather than a polyline, or the turns read as a zigzag.
+        path.quadTo(
+            x + PROBLEM_WAVE / 2,
+            y - PROBLEM_RISE * 2 if up else y + PROBLEM_RISE * 2,
+            x + PROBLEM_WAVE,
+            y,
+        )
+        x += PROBLEM_WAVE
+        up = not up
+    return path
 
 
 def spine_rect(body: QRectF) -> QRectF:

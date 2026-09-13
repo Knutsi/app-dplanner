@@ -63,7 +63,6 @@ from dplanner.theme.icons import (
     grid_icon,
     lasso_icon,
     mark_ends_icon,
-    mark_orphans_icon,
     mark_starts_icon,
     redirect_from_icon,
     redirect_to_icon,
@@ -275,13 +274,12 @@ class CanvasVerbs:
                 for index, (name, label, tip, icon) in enumerate(
                     zip(
                         MARK_NAMES,
-                        ("&Starts", "&Ends", "&Orphans"),
+                        ("&Starts", "&Ends"),
                         (
                             "Colour the left socket of every step nothing leads to",
                             "Colour the right socket of every step nothing follows",
-                            "Ring every step with no links at all",
                         ),
-                        (mark_starts_icon, mark_ends_icon, mark_orphans_icon),
+                        (mark_starts_icon, mark_ends_icon),
                         strict=True,
                     )
                 )

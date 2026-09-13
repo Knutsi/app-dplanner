@@ -31,13 +31,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.cli.lint import LintCheck, LintFinding, repository_finding
+from dplanner.cli.lint import LintFinding
 from dplanner.domain.model import Library, NodeId, Step
-from dplanner.domain.repositories import RepositoryFacts
-from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
-from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.list_rows import (
     DETAIL_ROLE,
     HOST_ROLE,
@@ -46,6 +43,7 @@ from dplanner.framework.list_rows import (
 )
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.widgets import EmptyState
+from dplanner.modules.problems.findings import Findings
 from dplanner.theme.icons import ICON_SIZE, problem_icon
 from dplanner.theme.tokens import CONTROL_HEIGHT, PANEL_MARGIN, SECTION_GAP
 
@@ -68,12 +66,9 @@ class ProblemsPanel(QWidget):
         self,
         library: Library,
         actions: ActionRegistry,
-        files: FilesFor,
-        checks: Callable[[], Sequence[LintCheck]],
+        findings: Findings,
         parent: QWidget | None = None,
         *,
-        debounce: DebounceService | None = None,
-        facts_of: Callable[[NodeId], RepositoryFacts] | None = None,
         key_of: Callable[[Step], str] = lambda _step: "",
         fix_profiles: Callable[[], Sequence[tuple[str, str]]] | None = None,
         fix: Callable[[NodeId, Sequence[LintFinding], str], bool] | None = None,
@@ -82,9 +77,7 @@ class ProblemsPanel(QWidget):
         self.setObjectName("InspectorPanel")
         self._library = library
         self._actions = actions
-        self._files = files
-        self._checks = checks
-        self._facts_of = facts_of
+        self._found_by = findings
         self._key_of = key_of
         self._fix_profiles = fix_profiles
         self._fix = fix
@@ -92,8 +85,10 @@ class ProblemsPanel(QWidget):
         self._findings: tuple[LintFinding, ...] = ()
         self._reading = ""
 
-        # After a quiet spell, not per signal: a rebuild runs every check over the project.
-        self._refresh_soon = Debounced(self._refresh, parent=self, service=debounce)
+        # The reading is the shared one's; this only redraws when it says something moved.
+        # The settle it follows is that one's too, so the indicator still turns from the
+        # first change to the answer landing.
+        self._refresh_soon = self._found_by.settle
 
         self.list = QListWidget(self)
         self.list.setObjectName("PanelList")
@@ -135,13 +130,9 @@ class ProblemsPanel(QWidget):
         layout.addWidget(self.empty, 1)
 
         # Every way a plan can change: its shape, its links, a title, and any aspect's
-        # data — a lint check may read any of them, so the panel follows all four.
+        # One subscription: the shared reading says when it has a new answer.
         self._unsubscribes = [
-            library.structure_changed.connect(lambda *_a: self._refresh_soon.trigger()),
-            library.edges_changed.connect(lambda *_a: self._refresh_soon.trigger()),
-            library.field_changed.connect(lambda *_a: self._refresh_soon.trigger()),
-            library.module_data_changed.connect(lambda *_a: self._refresh_soon.trigger()),
-            library.text_edited.connect(lambda *_a: self._refresh_soon.trigger()),
+            self._found_by.changed.connect(self._on_found),
         ]
         self._refresh()
 
@@ -190,8 +181,13 @@ class ProblemsPanel(QWidget):
         self._project_id = project_id
         self._refresh()
 
+    def _on_found(self, project_id: NodeId, *_rest: object) -> None:
+        """A fresh reading landed. Only this panel's project can change what it lists."""
+        if project_id == self._project_id:
+            self._refresh()
+
     def _refresh(self) -> None:
-        self._findings = tuple(self._found())
+        self._findings = self._found_by.of(self._project_id) if self._project_id is not None else ()
         self.list.blockSignals(True)
         self.list.clear()
         ink = self.palette().text().color()
@@ -217,29 +213,6 @@ class ProblemsPanel(QWidget):
             return ""
         node = self._library.node(subject_id)
         return self._key_of(node) if isinstance(node, Step) else ""
-
-    def _found(self) -> list[LintFinding]:
-        """Every check over this project, the repository question first, as lint runs them.
-
-        Sorted by check and then by subject, so like sits with like — a list of problems is
-        read a kind at a time.
-        """
-        project_id = self._project_id
-        if project_id is None or not self._library.has(project_id):
-            return []
-        project = self._library.project(project_id)
-        found: list[LintFinding] = []
-        if self._facts_of is not None:
-            # The plan's own repository question, asked before any module's — exactly as
-            # `project lint` asks it. The facts arrive through a callback because they
-            # are the store's, and `origin_url` is memoised on the file's mtime, so a
-            # rebuild does not shell out.
-            repository = repository_finding(project, self._facts_of(project.id))
-            if repository is not None:
-                found.append(repository)
-        for check in self._checks():
-            found += check(self._library, project, self._files)
-        return sorted(found, key=lambda finding: (finding.check, finding.subject))
 
     def _say_reading(self, reading: str) -> None:
         if reading != self._reading:
