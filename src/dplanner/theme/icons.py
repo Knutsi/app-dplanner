@@ -397,6 +397,71 @@ def problem_icon(color: str | QColor) -> QIcon:
     return glyph_icon("problem", color)
 
 
+def check_icon(color: str | QColor) -> QIcon:
+    """A tick: record the picked tests as passing."""
+    return glyph_icon("check", color)
+
+
+def skip_icon(color: str | QColor) -> QIcon:
+    """Skip forward: record them as skipped — looked at, not run."""
+    return glyph_icon("skip", color)
+
+
+def eraser_icon(color: str | QColor) -> QIcon:
+    """An eraser: take a recorded result back."""
+    return glyph_icon("eraser", color)
+
+
+def play_icon(color: str | QColor) -> QIcon:
+    """Play: open a test run over what is in scope."""
+    return glyph_icon("play", color)
+
+
+def stop_icon(color: str | QColor) -> QIcon:
+    """Stop: close the open run."""
+    return glyph_icon("stop", color)
+
+
+def archive_icon(color: str | QColor) -> QIcon:
+    """An archive box: the tests taken off the roster."""
+    return glyph_icon("archive", color)
+
+
+def eye_icon(color: str | QColor) -> QIcon:
+    """An eye: light what wants a look."""
+    return glyph_icon("eye", color)
+
+
+def attach_icon(color: str | QColor) -> QIcon:
+    """A paperclip: attach a file."""
+    return glyph_icon("attach", color)
+
+
+def clipboard_icon(color: str | QColor) -> QIcon:
+    """A clipboard: copy a path."""
+    return glyph_icon("clipboard", color)
+
+
+def sweep_icon(color: str | QColor) -> QIcon:
+    """A list struck through: clean up what nothing uses."""
+    return glyph_icon("sweep", color)
+
+
+def camera_icon(color: str | QColor) -> QIcon:
+    """A camera: keep the plan as it stands, to compare against later."""
+    return glyph_icon("camera", color)
+
+
+def calendar_off_icon(color: str | QColor) -> QIcon:
+    """A struck-out calendar: take a date of its own away."""
+    return glyph_icon("calendar-off", color)
+
+
+def palette_icon(color: str | QColor) -> QIcon:
+    """A painter's palette: a milestone's colour."""
+    return glyph_icon("palette", color)
+
+
 def step_icon(color: str | QColor) -> QIcon:
     """A card: a plain step."""
     return glyph_icon("step", color)

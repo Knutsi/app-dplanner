@@ -103,6 +103,20 @@ GLYPHS: dict[str, str] = {
     "step": "square-rounded",
     # -- what is wrong with the plan ---------------------------------------------------
     "problem": "alert-triangle",  # The Problems panel, and the count on its button.
+    # -- the tables and browsers ------------------------------------------------------
+    "check": "check",  # Record the picked tests as passing.
+    "skip": "player-skip-forward",  # Record them as skipped: looked at, not run.
+    "eraser": "eraser",  # Take a recorded result back.
+    "play": "player-play",  # Open a test run over what is in scope.
+    "stop": "player-stop",  # Close the open run.
+    "archive": "archive",  # Show the tests taken off the roster beside it.
+    "eye": "eye",  # Light what wants a look: the passages that no longer simply anchor.
+    "attach": "paperclip",  # Attach a file to the project's own pool.
+    "clipboard": "clipboard",  # Copy a path.
+    "sweep": "clear-all",  # Clean up what nothing uses.
+    "camera": "camera",  # Keep the plan as it stands, to compare against later.
+    "calendar-off": "calendar-off",  # Take a milestone's own start date away.
+    "palette": "palette",  # A milestone's colour.
 }
 
 
