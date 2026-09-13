@@ -3,7 +3,7 @@ rem The last step of the unattended install: hand over to provision.ps1 and get 
 rem
 rem Nothing is decided here. This file runs exactly once per disk, in a context with no console
 rem to watch and no way to re-run without reinstalling Windows, so all it does is copy the
-rem payload out of C:\OEM (a copy, not a mount — the host cannot read it) into C:\work, where
+rem payload out of C:\OEM (a copy, not a mount -- the host cannot read it) into C:\work, where
 rem the harness can reach it, and call the script that does the work. Everything that can go
 rem wrong lives in provision.ps1, which `windows_check.py provision` re-runs as often as needed.
 rem

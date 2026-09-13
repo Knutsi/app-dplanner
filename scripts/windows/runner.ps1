@@ -18,6 +18,12 @@
 
   Stop it with Ctrl+C, or by dropping a file called `stop` into inbox\.
 #>
+# ASCII only, on purpose. install.bat calls `powershell`, which is Windows PowerShell 5.1,
+# and 5.1 reads a .ps1 with no byte-order mark as ANSI rather than UTF-8. An em dash in a
+# double-quoted string then ends the string early, and the whole file fails to parse with an
+# error pointing thirty lines away from the character that caused it. That is how the first
+# provisioning run of this box failed. Keep the prose plain here; a BOM would also work and
+# is one silent byte for an editor to lose.
 param(
     [string]$Root = "",
     [int]$PollMs  = 500
@@ -25,7 +31,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 $ProgressPreference    = 'SilentlyContinue'
-# This repository's test names carry —, ▸ and ’. Python on Windows still writes a pipe in the
+# This repository's test names carry --, > and '. Python on Windows still writes a pipe in the
 # ANSI code page, so without UTF-8 the run dies in UnicodeEncodeError somewhere in pytest's
 # reporter and the real result is never seen.
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new()
@@ -54,11 +60,11 @@ $outbox = Join-Path $Root 'outbox'
 foreach ($d in @($Root, $inbox, $outbox, 'C:\t')) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 
 Write-Host "dplanner runner: watching $inbox"
-Write-Host "  (this window is the interactive desktop session — leave it open)"
+Write-Host "  (this window is the interactive desktop session -- leave it open)"
 
 while ($true) {
     # A heartbeat, so `windows_check.py status` can tell "the runner is not running" from
-    # "the job is slow" — two very different things to be waiting on.
+    # "the job is slow" -- two very different things to be waiting on.
     try {
         @{ at = (Get-Date -Format o); pid = $PID; user = $env:USERNAME } |
             ConvertTo-Json | Set-Content (Join-Path $Root 'runner.json') -Encoding ascii
@@ -87,7 +93,7 @@ while ($true) {
     $started = Get-Date
     try {
         # A child process rather than dot-sourcing, so a job that wedges or calls exit cannot
-        # take the runner down with it — the loop has to outlive every job it runs.
+        # take the runner down with it -- the loop has to outlive every job it runs.
         & powershell -NoProfile -ExecutionPolicy Bypass -File $mine *>&1 |
             Tee-Object -FilePath $log
         $code = $LASTEXITCODE

@@ -292,6 +292,21 @@ else {{ exit $LASTEXITCODE }}
     )
 
 
+def bootstrap_line(target: Target, *, with_ssh: bool) -> str:
+    """The one line to type into the guest when there is no way in yet.
+
+    Provisioning is what *creates* the way in, so when it fails there is nothing to re-run it
+    with — the box's first boot died on a parse error and left no sshd. This is the escape
+    hatch: type it into the viewer once and the harness takes over from there.
+    """
+    user = BoxTarget.user if with_ssh else os.environ.get("USER", "knut")
+    flag = " -WithSsh" if with_ssh else ""
+    return (
+        "powershell -NoProfile -ExecutionPolicy Bypass -File "
+        rf"{target.guest_share}\dplanner\provision.ps1 -UserName {user}{flag}"
+    )
+
+
 def do_provision(target: Target, *, with_ssh: bool) -> int:
     payload = target.share / "dplanner"
     payload.mkdir(parents=True, exist_ok=True)
@@ -508,7 +523,15 @@ def do_wait(target: Target, timeout: int) -> int:
     return 1
 
 
-def do_down(target: Target, *, destroy: bool, yes: bool) -> int:
+# What `--destroy` removes, **named one by one**. dockur keeps the downloaded Windows ISO in
+# /storage beside the disk it installed from it, and that download is 8 GB against a
+# 25-minute install — so a reinstall should not need it again. An allow-list of what to keep
+# was the first attempt and it deleted the ISO anyway: the safe direction for a rule that
+# deletes is to name what goes, so anything unexpected survives instead of disappearing.
+DISK_FILES = ("data.img", "setup.img", "windows.vars")
+
+
+def do_down(target: Target, *, destroy: bool, yes: bool, forget_iso: bool = False) -> int:
     if target.name == "omarchy":
         raise SystemExit(
             "refusing: the omarchy target is the developer's own VM, not this check's.\n"
@@ -524,8 +547,15 @@ def do_down(target: Target, *, destroy: bool, yes: bool) -> int:
                    "down", *(["-v"] if destroy else [])])
     code = subprocess.run(argv, env=environment, check=False).returncode
     if destroy:
-        shutil.rmtree(STATE / "storage", ignore_errors=True)
-        say("removed the disk")
+        storage = STATE / "storage"
+        if forget_iso:
+            shutil.rmtree(storage, ignore_errors=True)
+            say("removed the disk and the ISO — the next `up` downloads Windows again")
+        elif storage.is_dir():
+            for name in DISK_FILES:
+                (storage / name).unlink(missing_ok=True)
+            kept = next(storage.glob("*.iso"), None)
+            say("removed the disk" + (f"; kept {kept.name}" if kept else ""))
     return code
 
 
@@ -541,7 +571,12 @@ def main(argv: list[str]) -> int:
     sub.add_parser("up", help="start the throwaway box (box only)")
     waiter = sub.add_parser("wait", help="block until the target answers")
     waiter.add_argument("--timeout", type=int, default=2700)
-    sub.add_parser("provision", help="(re-)run provision.ps1 in the guest")
+    provisioner = sub.add_parser("provision", help="(re-)run provision.ps1 in the guest")
+    provisioner.add_argument(
+        "--print-bootstrap",
+        action="store_true",
+        help="print the line to type into the guest when there is no way in yet",
+    )
     sub.add_parser("sync", help="copy this worktree into the guest")
     sub.add_parser("venv", help="uv sync --locked in the guest")
     checker = sub.add_parser("check", help="pytest, ruff, mypy — all three or the ones named")
@@ -558,6 +593,11 @@ def main(argv: list[str]) -> int:
     sub.add_parser("status", help="what the target has, and what it is using")
     downer = sub.add_parser("down", help="stop the throwaway box (box only)")
     downer.add_argument("--destroy", action="store_true", help="delete the disk as well")
+    downer.add_argument(
+        "--forget-iso",
+        action="store_true",
+        help="with --destroy, throw the cached Windows ISO away too (an 8 GB download)",
+    )
     downer.add_argument("--yes", action="store_true")
     sub.add_parser("all", help="sync, venv, the three checks, build, render, collect")
 
@@ -568,11 +608,21 @@ def main(argv: list[str]) -> int:
     if args.verb == "up":
         return do_up()
     if args.verb == "down":
-        return do_down(target, destroy=args.destroy, yes=args.yes)
+        return do_down(target, destroy=args.destroy, yes=args.yes, forget_iso=args.forget_iso)
     if args.verb == "wait":
         return do_wait(target, args.timeout)
     if args.verb == "status":
         return do_status(target)
+    if args.verb == "provision" and args.print_bootstrap:
+        # Before the readiness gate below: this exists precisely for a guest that cannot be
+        # reached, and staging the payload is the half of provisioning the host can still do.
+        payload = target.share / "dplanner"
+        payload.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(HARNESS / "provision.ps1", payload / "provision.ps1")
+        shutil.copyfile(HARNESS / "runner.ps1", payload / "runner.ps1")
+        say(f"staged into {payload}\n\nType this into the guest, once:\n")
+        say("    " + bootstrap_line(target, with_ssh=box))
+        return 0
 
     trouble = target.ready()
     if trouble:
