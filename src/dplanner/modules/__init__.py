@@ -894,6 +894,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
+            debounce=services.debounce,
             # A step's description, one line for the row and the prose for its tooltip.
             # Handed as answers, so the estimation module never learns where prose lives.
             step_summary=lambda step_id: description_summary(library.step(step_id)),

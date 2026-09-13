@@ -227,6 +227,10 @@ def test_an_unestimated_step_is_noted_and_the_banner_opens_the_estimates_on_it(
     tab.banner.button.click()
     (estimates,) = [a for a in services.tabs.activities() if isinstance(a, BulkEstimateActivity)]
     assert estimates.filter_key == "unestimated"
+    # And the keyboard is already in the first unsized row's estimate.
+    from PySide6.QtWidgets import QAbstractItemView
+
+    assert estimates.table.state() == QAbstractItemView.State.EditingState
     table = estimates.table
     shown = [
         item.text()

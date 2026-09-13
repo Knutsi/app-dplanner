@@ -26,6 +26,7 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import Context, ContextService, activity_uri
+from dplanner.framework.debounce import DebounceService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
@@ -35,6 +36,7 @@ from dplanner.modules.estimation.bulk import (
     FILTER_UNESTIMATED,
     BulkEstimateActivity,
 )
+from dplanner.modules.estimation.quick_input import FREE_LABEL, QUICK_DAYS, push_estimates
 from dplanner.modules.estimation.section import EstimateSection
 from dplanner.theme.icons import gauge_icon
 
@@ -52,6 +54,7 @@ class EstimationDeps:
     actions: ActionRegistry
     context: ContextService
     tabs: TabHost
+    debounce: DebounceService
     # A step's description: one line for a row, the full prose for its tooltip. Wired by the
     # composition root; this module never learns where a description lives.
     step_summary: Callable[[StepId], str] = field(default=_no_text)
@@ -145,6 +148,8 @@ class EstimationModule:
                 run=self._open_for_context,
             )
         )
+        for spec in self._size_specs():
+            deps.actions.register(spec)
         follow_entity_tabs(
             deps.tabs,
             BulkEstimateActivity,
@@ -178,3 +183,65 @@ class EstimationModule:
         project_id = context.focus_entity("project")
         if project_id is not None and self._deps.library.has(project_id):
             self.open_for_steps(project_id)
+
+    # -- the quick sizes ---------------------------------------------------------------------
+
+    def _size_specs(self) -> list[ActionSpec]:
+        """Step ▸ Estimate: the sizes a step usually is, then *no time*, then none at all —
+        acting on every picked step as one undo entry. The Estimates tab drops this child menu
+        from its strip, the canvas's right-click renders it, and the step panel keeps its
+        chips for the one step it shows."""
+        sizes: list[tuple[str, float | None, str, str]] = [
+            (
+                f"estimate.size_{round(days * 4)}",
+                days,
+                f"{label} Day" if days <= 1 else f"{label} Days",
+                f"Size the picked steps at {label} working day{'' if days <= 1 else 's'}",
+            )
+            for days, label in QUICK_DAYS
+        ]
+        sizes.append(
+            ("estimate.size_0", 0.0, FREE_LABEL, "Count the picked steps as sized, adding no time")
+        )
+        sizes.append(
+            ("estimate.clear", None, "Clear Estimate", "Take the picked steps' estimates away")
+        )
+        return [
+            ActionSpec(
+                id=action_id,
+                label=words,
+                menu="Step",
+                group="classify",
+                # The 400s: Estimate is the classify band's fourth child menu. See menus.py.
+                submenu="Estimate",
+                order=400 + 10 * index,
+                tip=tip,
+                state=self._size_state(words),
+                run=self._sizer(days),
+            )
+            for index, (action_id, days, words, tip) in enumerate(sizes)
+        ]
+
+    def _sizable(self, context: Context) -> list[StepId]:
+        library = self._deps.library
+        return [step for step in self._selected_steps(context) if enabled(library.step(step))]
+
+    def _size_state(self, words: str) -> Callable[[Context], ActionState]:
+        def state(context: Context) -> ActionState:
+            steps = self._sizable(context)
+            if not steps:
+                return ActionState(enabled=False, label=f"{words} — pick a step")
+            if len(steps) > 1:
+                # The count says the verb is about to act on more than the eye is on.
+                return ActionState(label=f"{words} for {len(steps)} Steps")
+            return ENABLED
+
+        return state
+
+    def _sizer(self, days: float | None) -> Callable[[Context], None]:
+        def run(context: Context) -> None:
+            steps = self._sizable(context)
+            if steps:
+                push_estimates(self._deps.library, self._deps.undo, steps, days)
+
+        return run

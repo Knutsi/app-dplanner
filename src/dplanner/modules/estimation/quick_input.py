@@ -17,6 +17,8 @@ every owner — the step detail panel, a table row — pushes the same command a
 origin, and the owner is the one who knows which changes are its own.
 """
 
+from collections.abc import Sequence
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -27,7 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.core.signals import Signal
-from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, StepId
 from dplanner.framework.cards import card_rule
 from dplanner.framework.undo import UndoService
@@ -172,11 +174,28 @@ def push_estimate(
     days: float | None,
     origin: object,
 ) -> None:
-    """The one commit path: no-op when unchanged, one undoable command otherwise."""
-    previous = library.step(step_id).module_data.get(MODULE_ID, {})
-    entry = write(days, previous=previous)
-    if entry == previous:
-        return
-    undo.push(
-        SetModuleDataCommand(step_id, MODULE_ID, entry, view_origin=origin, label="Set Estimate")
-    )
+    """One step at one size: :func:`push_estimates` over a single step."""
+    push_estimates(library, undo, (step_id,), days, origin)
+
+
+def push_estimates(
+    library: Library,
+    undo: UndoService[Library],
+    step_ids: Sequence[StepId],
+    days: float | None,
+    origin: object = None,
+) -> None:
+    """The one commit path: every step at one size, as one undo entry however many there
+    are, and nothing at all for the steps already at it."""
+    commands: list[Command] = []
+    for step_id in step_ids:
+        previous = library.step(step_id).module_data.get(MODULE_ID, {})
+        entry = write(days, previous=previous)
+        if entry != previous:
+            commands.append(
+                SetModuleDataCommand(
+                    step_id, MODULE_ID, entry, view_origin=origin, label="Set Estimate"
+                )
+            )
+    if commands:
+        undo.push(commands[0] if len(commands) == 1 else CompositeCommand("Set Estimate", commands))
