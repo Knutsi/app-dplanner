@@ -77,7 +77,9 @@ def test_a_star_mid_word_leans_because_that_is_what_a_renderer_does_with_it(high
 
 
 def test_a_fenced_block_is_monospace_to_its_closing_fence(highlighted):
-    edit = highlighted("before\n```\ncode here\n```\nafter")
-    assert [run[3] for run in spans_of(edit, 0)] == []  # "before" is prose.
-    assert all(run[3] for run in spans_of(edit, 2))  # The body is monospace.
-    assert [run[3] for run in spans_of(edit, 4)] == []  # "after" is prose again.
+    """The state a block leaves behind is the only way the next one knows it is inside
+    something that opened three lines up — and getting it backwards makes *alternate*
+    lines of an ordinary paragraph read as code, which is what this pins."""
+    edit = highlighted("before\n```\ncode here\n```\nafter\nand more prose")
+    monospace = [bool([run for run in spans_of(edit, n) if run[3]]) for n in range(6)]
+    assert monospace == [False, True, True, True, False, False]

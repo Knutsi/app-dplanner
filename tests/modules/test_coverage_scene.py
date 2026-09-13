@@ -171,7 +171,7 @@ def test_the_specs_tab_jumps_back_to_the_passage(services, project, tab):
     cursor = editor.textCursor()
     cursor.setPosition(editor.document().toPlainText().index("a CSV"))
     editor.setTextCursor(cursor)
-    specs.to_coverage.click()
+    specs.to_coverage.trigger()
     assert tab.scene.lit == "passage:guide:0"
 
 

@@ -64,8 +64,12 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         # behind is what the next one reads — the one thing a per-block highlighter
         # cannot answer from its own line.
         was_inside = self.previousBlockState() == IN_FENCE
+        # A fence line flips the state and is itself part of the run; every other line
+        # keeps it. Exclusive-or says both in one expression — and it is the state the
+        # *next* block reads, which is the only way a per-block highlighter can know it
+        # is inside something that started three lines up.
         fence = _FENCE.match(text)
-        self.setCurrentBlockState(IN_FENCE if was_inside == bool(fence) else 0)
+        self.setCurrentBlockState(IN_FENCE if was_inside != bool(fence) else 0)
         if was_inside or fence:
             self.setFormat(0, len(text), code)
             return

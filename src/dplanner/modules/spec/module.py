@@ -74,7 +74,14 @@ from dplanner.modules.spec.sourced import (
     remove_source,
     source_of,
 )
-from dplanner.theme.icons import edit_icon
+from dplanner.theme.icons import (
+    edit_icon,
+    external_icon,
+    move_icon,
+    plus_icon,
+    refresh_icon,
+    trash_icon,
+)
 
 FILE_FILTER = "Spec documents (*.pdf *.md *.markdown *.txt);;All files (*)"
 
@@ -209,6 +216,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.new",
                 label="&New Spec Document…",
+                icon=plus_icon,
                 menu="Project",
                 group="documents",
                 order=10,
@@ -222,6 +230,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.add",
                 label="&Import Spec Document…",
+                icon=move_icon,
                 menu="Project",
                 group="documents",
                 order=20,
@@ -250,6 +259,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.remove",
                 label="&Remove Spec Document",
+                icon=trash_icon,
                 menu="Project",
                 group="documents",
                 order=40,
@@ -262,6 +272,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.refresh_source",
                 label="Re&fresh Source",
+                icon=refresh_icon,
                 menu="Project",
                 group="documents",
                 order=60,
@@ -275,6 +286,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.refresh_sources",
                 label="Refresh &All Sources",
+                icon=refresh_icon,
                 menu="Project",
                 group="documents",
                 order=65,
@@ -287,6 +299,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.remove_source",
                 label="Remove Sou&rce",
+                icon=trash_icon,
                 menu="Project",
                 group="documents",
                 order=70,
@@ -299,6 +312,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.open_source",
                 label="Open Source in &Browser",
+                icon=external_icon,
                 menu="Project",
                 group="documents",
                 order=80,
@@ -325,6 +339,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.open_external",
                 label="Open Document E&xternally",
+                icon=external_icon,
                 menu="Project",
                 group="documents",
                 order=50,

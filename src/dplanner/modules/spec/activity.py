@@ -17,13 +17,10 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QHBoxLayout,
-    QLabel,
     QPushButton,
-    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QTextEdit,
-    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -100,6 +97,9 @@ from dplanner.modules.spec.sourced import (
 )
 from dplanner.modules.spec.viewer import PdfPageView
 from dplanner.theme.icons import (
+    close_icon,
+    connect_icon,
+    coverage_icon,
     folder_icon,
     graph_icon,
     read_icon,
@@ -256,6 +256,7 @@ class SpecsActivity(EntityActivity):
         # in the source strip — it is true whatever row is picked, and it is the sentence
         # the badge on the tab title is the short form of.
         self.updates = StatusLine(side)
+        self.updates.setWordWrap(True)  # A sentence over a list panel's width is two lines.
         side_layout.addWidget(self.updates)
         self.list = QTreeWidget(side)
         self.list.setObjectName("SpecTree")
@@ -974,25 +975,27 @@ class SpecsActivity(EntityActivity):
         column = QVBoxLayout(strip)
         column.setContentsMargins(STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN)
         column.setSpacing(CAPTION_GAP)
+        # One line of facts, never wrapped: it is a row of short claims parted by dots, and
+        # a second line of it reads as a paragraph rather than as a caption.
+        self.source_facts = note("", strip)
+        self.source_facts.setWordWrap(False)
+        self.source_facts.setTextFormat(Qt.TextFormat.PlainText)
+        column.addWidget(self.source_facts)
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(CONTROL_GAP)
         column.addLayout(row)
-        self.source_facts = note("", strip)
-        self.source_facts.setTextFormat(Qt.TextFormat.PlainText)
-        row.addWidget(self.source_facts)
-        row.addStretch(1)
+        self.source_toolbar = Toolbar(strip)
+        for action_id in SOURCE_ACTIONS:
+            self.source_toolbar.add_action(actions, context, action_id)
+        row.addWidget(self.source_toolbar, 1)
         self.connect_button = QPushButton(strip)
         self.connect_button.setObjectName("PrimaryButton")
         self.connect_button.clicked.connect(self._connect_source)
         row.addWidget(self.connect_button)
-        self.source_toolbar = Toolbar(strip)
-        for action_id in SOURCE_ACTIONS:
-            self.source_toolbar.add_action(actions, context, action_id)
-        row.addWidget(self.source_toolbar)
-        # Plain text always — every word of it may have come from the source.
+        # `StatusLine.say` escapes what it is given, which matters here: every word of this
+        # may have come from the source.
         self.source_state = StatusLine(strip)
-        self.source_state.setTextFormat(Qt.TextFormat.PlainText)
         self.source_state.setWordWrap(True)
         column.addWidget(self.source_state)
         self._source_strip = strip
@@ -1077,35 +1080,47 @@ class SpecsActivity(EntityActivity):
             self._refresh_source_strip()
 
     def _build_document_strip(self, parent: QWidget) -> QWidget:
+        """The document's own chrome, over whatever shows it — the editor, a PDF, plain
+        text. Its verbs act on this widget's caret and this project's features rather than
+        on the context, so they are the strip's own rather than the registry's; everything
+        else about it is any other strip."""
         strip = QWidget(parent)
         strip.setObjectName("EditorToolbar")
         row = QHBoxLayout(strip)
         row.setContentsMargins(STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN)
-        row.setSpacing(6)
-        self.cited = _tool_button(
-            "Cited", "Wash every passage a feature was read from", self._toggle_cited
+        row.setSpacing(CONTROL_GAP)
+        bar = Toolbar(strip)
+        self.cited = bar.add_verb(
+            "Cited passages",
+            read_icon,
+            self._toggle_cited,
+            checkable=True,
+            tip="Wash every passage a feature was read from",
         )
-        self.cited.setCheckable(True)
-        row.addWidget(self.cited)
-        self.to_coverage = _tool_button(
-            "Coverage", "Show the passage under the caret in the coverage view", self._jump
+        self.to_coverage = bar.add_verb(
+            "Show in Coverage",
+            coverage_icon,
+            self._jump,
+            tip="Show the passage under the caret in the coverage view",
         )
         self.to_coverage.setVisible(self._open_coverage is not None)
-        row.addWidget(self.to_coverage)
-        self.cite_button = _tool_button(
-            "Cite…", "Cite the selection as a feature's passage", self._cite_selection
+        self.cite_button = bar.add_verb(
+            "Cite…",
+            connect_icon,
+            self._cite_selection,
+            tip="Cite the selection as a feature's passage",
         )
         self.cite_button.setVisible(self._cite is not None)
-        row.addWidget(self.cite_button)
-        self.lit_note = QLabel(strip)
-        self.lit_note.setObjectName("InspectorNote")
+        self.clear_button = bar.add_verb(
+            "Clear the wash", close_icon, self.clear_passages, tip="Clear the washed passages"
+        )
+        self.document_toolbar = bar
+        # The stretch is the strip's: a Toolbar's size hint is its … button, so a layout
+        # that gives it only that folds every verb away on a page with room to spare.
+        row.addWidget(bar, 1)
+        self.lit_note = note("", strip)
         row.addWidget(self.lit_note)
-        row.addStretch(1)
-        self.clear_button = _tool_button("Clear", "Clear the washed passages", self.clear_passages)
-        row.addWidget(self.clear_button)
-        # This strip is what the settle produces — the wash, the lit count, whether
-        # *Show in Coverage* is live — so it is where the turning arc belongs while one
-        # is owed. Wired where the `Debounced` is, never shown and hidden by hand.
+        # The settle's own arc: this strip is what a fresh reading of the text produces.
         self.updating = UpdatingIndicator(strip)
         self._unsubscribes.append(self.updating.follow(self._settled))
         row.addWidget(self.updating)
@@ -1248,17 +1263,3 @@ class SpecsActivity(EntityActivity):
             return
         self._cite(self.project_id, name, quote, None)
         self._forget_spans()
-
-
-def _tool_button(face: str, tip: str, handler: Callable[[], None]) -> QToolButton:
-    """A quiet formatting button: text face, no focus theft — `ActionToolbar`'s recipe,
-    minus the registry, because these verbs are the editor widget's own state."""
-    button = QToolButton()
-    button.setObjectName("ToolbarButton")
-    button.setText(face)
-    button.setToolTip(tip)
-    button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-    button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-    button.clicked.connect(lambda _checked=False: handler())
-    return button

@@ -54,9 +54,9 @@ def test_show_passages_washes_the_quotes_and_lands_on_the_focus(tab):
     plain = tab._editor.document().toPlainText()
     assert tab._editor.textCursor().position() == plain.index("Every login")
     assert tab.lit_passages() == ("import a CSV", "Every login is logged")
-    assert tab.lit_note.text() == "2 passages lit" and not tab.clear_button.isHidden()
+    assert tab.lit_note.text() == "2 passages lit" and tab.clear_button.isVisible()
     tab.clear_passages()
-    assert washed(tab) == [] and tab.lit_note.text() == "" and tab.clear_button.isHidden()
+    assert washed(tab) == [] and tab.lit_note.text() == "" and not tab.clear_button.isVisible()
 
 
 def test_a_quote_the_document_no_longer_holds_washes_nothing(tab):
@@ -66,9 +66,9 @@ def test_a_quote_the_document_no_longer_holds_washes_nothing(tab):
 
 def test_the_cited_toggle_washes_every_passage_a_feature_cites(tab):
     assert not tab.cited.isChecked()
-    tab.cited.click()
+    tab.cited.trigger()
     assert sorted(washed(tab)) == ["Every login is logged", "import a CSV"]
-    tab.cited.click()
+    tab.cited.trigger()
     assert washed(tab) == []
 
 
@@ -116,12 +116,12 @@ def test_the_caret_inside_a_cited_passage_offers_the_coverage_view(project, bare
     activity, jumps, _cites = bare
     activity.select_document("guide")
     editor = activity._editor
-    assert not activity.to_coverage.isHidden() and not activity.to_coverage.isEnabled()
+    assert activity.to_coverage.isVisible() and not activity.to_coverage.isEnabled()
     cursor = editor.textCursor()
     cursor.setPosition(editor.document().toPlainText().index("a CSV"))
     editor.setTextCursor(cursor)
     assert activity.to_coverage.isEnabled()
-    activity.to_coverage.click()
+    activity.to_coverage.trigger()
     assert jumps == [(project.id, "guide", "import a CSV")]
 
 
@@ -136,7 +136,7 @@ def test_a_selection_can_be_cited(project, bare):
     cursor.setPosition(plain.index("filler.") + 7, cursor.MoveMode.KeepAnchor)
     editor.setTextCursor(cursor)
     assert activity.cite_button.isEnabled()
-    activity.cite_button.click()
+    activity.cite_button.trigger()
     assert cites == [(project.id, "guide", "The third paragraph is filler.", None)]
 
 
@@ -155,9 +155,9 @@ def test_a_pdf_marks_the_quotes_boxes_and_lands_on_their_page(services, make_pro
 def test_the_build_wires_the_catalogue_and_the_cite_menu_in(services, project, tab):
     """The composition root hands the Specs tab the feature side: the Cited wash reads the
     catalogue, and Cite… is offered (the coverage jump arrives with the coverage module)."""
-    tab.cited.click()
+    tab.cited.trigger()
     assert len(washed(tab)) == 2
-    assert not tab.cite_button.isHidden()
+    assert tab.cite_button.isVisible()
 
 
 def test_typing_walks_the_document_once_for_a_burst_and_the_indicator_turns(
