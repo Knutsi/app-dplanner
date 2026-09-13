@@ -3,7 +3,7 @@
 Three projects in one plan repository — *Big* and *Sibling* of ``--steps`` steps each, and
 *Small* of twenty — with the mix of aspects a real plan carries: a chain with branches and
 a few plain links, statuses (a done prefix, a working band, the odd blocked step), an
-estimate on most steps, a milestone every fifteen, a feature catalogue with a feature step
+estimate on most steps, a milestone every fifteen, a feature step
 per record, agent steps, checks, two tests on most steps with three closed runs and one
 open, notes, a description on every step, and a stored position on every step (or on all
 but an ``--unplaced`` share, to price the automatic layout). Two projects of the same size
@@ -35,8 +35,8 @@ from dplanner.domain.seed import create_library, seed_project
 from dplanner.modules import default_module_formats
 from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.estimation.schedule import write_start
+from dplanner.modules.feature.aspect import FeatureSource
 from dplanner.modules.feature.aspect import write as feature_marker
-from dplanner.modules.feature.catalogue import FeatureRecord, write_catalogue
 from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
 from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.project_editor.positions import MODULE_ID as EDITOR_ID
@@ -100,7 +100,6 @@ def _fill(library: Library, project: Project, count: int, unplaced: float) -> No
             related = steps[random.randrange(0, index)].id
             SetEdgesCommand(steps[index].id, "relates", [related]).redo(library)
 
-    records: list[FeatureRecord] = []
     test_ids: list[str] = []
     for index, step in enumerate(steps):
         is_milestone = index % 15 == 14
@@ -116,11 +115,11 @@ def _fill(library: Library, project: Project, count: int, unplaced: float) -> No
         if word != "pending":
             SetModuleDataCommand(step.id, "step_status", status(word)).redo(library)
         if index % 10 == 5:
-            record = FeatureRecord(
-                f"f{len(records) + 1}", _title(index), f"The product needs **{_title(index)}**."
-            )
-            records.append(record)
-            SetModuleDataCommand(step.id, "feature", feature_marker(record.id)).redo(library)
+            SetModuleDataCommand(
+                step.id,
+                "feature",
+                feature_marker((FeatureSource("spec", f"The product needs {_title(index)}."),)),
+            ).redo(library)
         if index % 7 == 3 and not is_milestone:
             SetModuleDataCommand(step.id, "step_agent_instruction", agent_state(True)).redo(library)
             library.set_text(step.id, "step_agent_instruction", f"Do step {index} carefully.")
@@ -135,7 +134,6 @@ def _fill(library: Library, project: Project, count: int, unplaced: float) -> No
             SetModuleDataCommand(step.id, "testing", tests(own)).redo(library)
         library.set_text(step.id, "step_description", DESCRIPTION.format(n=index))
 
-    SetModuleDataCommand(project.id, "feature", write_catalogue(records)).redo(library)
     SetModuleDataCommand(project.id, "testing", runs.write(_runs(test_ids))).redo(library)
     SetModuleDataCommand(project.id, NOTES_ID, write_log(_notes(steps))).redo(library)
 

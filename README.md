@@ -247,7 +247,7 @@ src/dplanner/
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
 ├── scripts/vendor_tabler_icons.py  the fifty-odd Tabler glyphs this application uses, into theme/glyphs/ (MIT)
 ├── scripts/render_design_example.py  Debug ▸ Design Example — the modal, the table and the toolbars — both themes, to PNG
-├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Features panel — docs/screenshots/s7-graph-editor/
+├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Problems panel — docs/screenshots/s7-graph-editor/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
@@ -340,7 +340,8 @@ src/dplanner/
 │   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid,
 │   │                        the side panel; ground.py paints the background)
 │   │                        (canvas_toolbar.py is the strip in named bands; find.py the rows Find offers;
-│   │                        side_panel.py what the tab stands beside the canvas — the Features list)
+│   │                        side_panel.py what the tab stands beside the canvas — the Problems list,
+│   │                        with the count its strip button shows; panel_button.py is that button)
 │   │                        (clipboard.py is what a copied step is; clipboard_verbs.py the Edit menu's
 │   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone)
 │   │                        (its panel also hosts the modules' project-level cards)
@@ -375,10 +376,10 @@ src/dplanner/
 │   │                        `agent_usage` aspect; `dplanner usage show|list|record`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
-│   ├── feature/             the project's feature catalogue (catalogue.py: records and the
-│   │                        passages each cites) and the step that realises each: the Features
-│   │                        panel and its drag onto the canvas, the Feature tab, the Type ▸
-│   │                        Feature toggle, `dplanner feature` (cite, uncite, reanchor)
+│   ├── feature/             a step that is a feature: the Type ▸ Feature toggle, the Feature
+│   │                        tab (the spec passages it was read from), the Specs tab's Cite…
+│   │                        menu, `dplanner feature` (list, show, cite, uncite, reanchor)
+│   │                        (migrate.py collapses the old project catalogue onto its steps)
 │   ├── step_check/          a step that gathers every test it waits on — the Type ▸ Check toggle
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, the project's Tests tab and the library-wide roll call
@@ -423,6 +424,9 @@ src/dplanner/
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
 │   ├── install/             getting DPlanner onto this machine from the window: one dialog over `cli/install.py`, three rows and one button
 │   ├── checklist/           what this machine has of what DPlanner needs: the rows no feature owns, and the modal every module's rows are shown in
+│   ├── problems/            what is wrong with a plan, beside the canvas: the lint registry's
+│   │                        window half — click a row and the graph lands on its step, or
+│   │                        hand the lot to an agent
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
 │   ├── appearance/          View ▸ Theme (System theme, then what every provider offers) and Settings ▸ Appearance
 │   ├── theme_omarchy/       ── one module per theme provider, each a Qt-free `themes.py`: Omarchy's

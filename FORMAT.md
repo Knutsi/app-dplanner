@@ -296,13 +296,13 @@ beside each step — `{"x": 40.0, "y": 160.0}`, plus `"w"` and `"h"` only for a 
 resized — and the named layouts and regions beside the project (`{"layouts": {...},
 "regions": [...]}`, coordinates as whole-unit floats: a canvas gesture snaps to the grid, a
 write never does). `feature` is
-the fifth: the **catalogue** beside the project — `{"features": [{"id": "f1", "title": "…",
-"description": "…", "sources": [{"document": "auth-spec", "quote": "…", "page": 4,
-"digest": "<sha16>"}], "images": ["assets/<sha16>.png"]}]}` (format 2; format 1 held one
-`source`, wrapped into the list at open), every key but `id` and `title` omitted when
-empty — and beside a step only `{"feature": "f1"}`, the id of the record it realises. The
-record is stored because a feature nobody has placed yet is a fact the graph cannot
-derive; what a placed one *gathers* is never stored. **A passage is a quote and a digest,
+the fifth: beside a step, `{"on": true, "cites": [{"document": "auth-spec", "quote": "…",
+"page": 4, "digest": "<sha16>"}]}` (format 3; formats 1 and 2 kept a catalogue beside the
+*project* and only the record's id beside the step, collapsed onto the steps at open —
+*Retiring a module* has the absorption). A feature is a step, so its name is the step's
+title and its prose the step's description: what is stored here is the one fact nothing
+else holds, where in a specification it was read from. What it *gathers* is never stored.
+**A passage is a quote and a digest,
 never an offset.** Where the quote sits is found again on every read (`core/anchors.py`:
 exact, then fuzzy, then lost), because an offset goes stale on every keystroke of the
 in-app editor and `spec import` replaces a document with no window running to notice.
@@ -352,8 +352,7 @@ shape for the same reason.
 `{"tests": [{"id": "T100", "title": "…", "body": "…"}]}` beside a step: a *test* belongs to
 exactly one step, a step carries several, and each has its own result in a run. The body is
 markdown **inside the record** rather than in `modules/testing.md`, because a node holds
-exactly one prose document and this is N of them — `feature`'s catalogue records, each with
-a markdown `description`, are the same shape for the same reason. The trade is explicit: a body edit diffs as one changed line
+exactly one prose document and this is N of them. The trade is explicit: a body edit diffs as one changed line
 rather than line by line, which is bearable while test bodies are a few lines each. Images
 are the exception and go where a description's do, in the step's file area. Ids are minted
 per *project* and meant to be read — `T100, T101, …`, and `R100, R101, …` for runs — so a
@@ -371,10 +370,9 @@ agent is to work in the checkout itself rather than a fresh worktree (absence is
 opt-outs are the only keys ever added) — beside the step whose prose file
 may not exist at all. Both are format 1 of their existing `ModuleDataFormat`s; a step
 carrying only the old prose file still reads as agent-on, so no migration ships with them.
-A feature step's marker names its record instead (`{"feature": "f1"}`); a bare `{"on":
-true}` under `feature` — what the retired `step_feature` wrote — still reads as a feature
-to the graph, and as *unregistered* to `feature list` and lint until `feature set` mints
-its record.
+A feature is one of them: `{"on": true}` with no `cites` is a feature that was read from
+no specification, which is the whole answer — and it is what the retired `step_feature`
+module wrote, so that marker needs nothing done to it beyond its stamp.
 
 **What a step's agent runs consumed is a ledger of rows, never a total.** `agent_usage`
 (a second aspect id in `step_agent_run/`) writes `{"runs": [{"harness": "claude",
@@ -508,10 +506,12 @@ when it grew a project's start date, and the rename cost no project-format migra
 import. `modules/step_milestone/aspect.py` is the second: `step_release` became
 `step_milestone` when *release* turned out to be the wrong word for a thing that collects
 features. `modules/feature/aspect.py` is the third: `step_feature` became `feature` when a
-feature grew a catalogue beside the project and stopped being a marker on a step — and its
-converter is the one that cannot finish the job, because a per-entry converter never sees
-the project and so cannot mint the record; the entry passes through and reads as
-*unregistered* until a verb does. Three rules they make concrete:
+feature grew a catalogue beside the project and stopped being a marker on a step. Its
+converter was for a while the one that could not finish the job — a per-entry converter
+never sees the project, so it could not mint the record and the entry read as
+*unregistered* until a verb did. Format 3 put the feature back on the step, and with no
+catalogue left to be missing from the converter's `{"on": true}` is a complete answer
+again. Three rules they make concrete:
 
 - **The retired format's version is frozen forever.** `RETIRED_STEP_ESTIMATION` is format 1
   because that is what that module last wrote, whatever the successor does next.
@@ -530,3 +530,16 @@ the project and so cannot mint the record; the entry passes through and reads as
   and the loaded library, returning the owners it changed, and idempotent because it runs
   on every open. `modules/notes/migrate.py` is the worked example: the retired handoff
   aspect's prose, scope and files become a `handoff` note on the step.
+  `modules/feature/migrate.py` is the second, and it adds three things the next one will
+  want. **A created node's data goes on the object before `add_child`, and its id is never
+  returned**: the builder flushes what an absorption returns with the `module_data` and
+  `module_text` aspects only, and a node that did not exist a moment ago has no directory
+  recorded — the parent's *structure* mark is what writes the subtree. **The shelf is
+  reached from the absorption itself**, because `migrate_shelved` runs afterwards and
+  would walk a shelved entry through the per-entry chain, stamping a shape the absorption
+  meant to rewrite. And **an absorption may write into a *living* module's namespace** —
+  the feature record's description becomes the step's `step_description` prose, its
+  opt-out is lifted and its images land in that module's file area — naming the id as a
+  **string constant and never an import**, since a module may not import another. Do that
+  only where the alternative is worse: here it is keeping a second description beside the
+  step's own, which is the duplication the format change exists to remove.

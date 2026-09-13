@@ -4,7 +4,7 @@ DESIGN.md's *Dialogs* is the standard this implements. A :class:`DialogFrame` is
 subclass fills and a footer whose slots run destructive · status · stretch · secondaries ·
 primary. Enter runs the primary, Escape dismisses, a dismiss is the default only while there
 is no primary, and the first Tab out of the body lands on the primary. A dialog whose every
-edit is live carries no button and therefore no footer.
+edit is live carries one dismissal and nothing else — DESIGN.md's *Buttons*.
 
 **It prints no title and no lead of its own.** ``title`` names the window and nothing else.
 A heading inside a dialog repeats what the title bar already says and pushes the content a

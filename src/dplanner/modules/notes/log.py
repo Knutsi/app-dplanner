@@ -5,7 +5,7 @@ went one way rather than another, what a finished step wants the next worker to 
 where the work departed from the spec, what was noticed and put off. Left in a commit
 message it is found by archaeology; left in an agent's transcript it is gone with the
 session. So it is a record beside the project — ``modules/notes.json``, a list the way
-the feature catalogue is a list — and every briefing carries an *index* of the ones that
+a project's test runs are a list — and every briefing carries an *index* of the ones that
 reach the step (:mod:`.reach`), so the hundredth agent finds what the first ninety-nine
 left without reading all of it.
 

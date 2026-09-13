@@ -1487,7 +1487,7 @@ def test_the_strip_is_named_bands_of_glyphs(services, project, tab):
     """Nineteen glyphs in a row are nineteen riddles; six named bands are a tool palette.
     Where you are looking leads it — a graph is a place before it is a thing to edit."""
     named = [name for name, _verbs in bands(tab)]
-    assert named == ["Go", "Step", "Link", "Arrange", "History", "Options"]
+    assert named == ["Problems", "Go", "Step", "Link", "Arrange", "History", "Options"]
     seated = {verb for _name, verbs in bands(tab) for verb in verbs}
     assert {"Find Step…", "New Step", "Undo", "Look"} <= seated
     # Regions are on their way out, and the strip is where that shows first.
@@ -1608,11 +1608,11 @@ def test_find_is_ctrl_f_everywhere_and_slash_on_the_canvas(services):
 # -- the panel beside the canvas -----------------------------------------------------------------
 
 
-def test_the_features_list_stands_in_the_tab_not_in_the_window(services, project, tab):
-    """Where the drag onto the canvas is a short one. The window's dock no longer offers
-    it, so there is no second copy to keep in step."""
+def test_the_problems_list_stands_in_the_tab_not_in_the_window(services, project, tab):
+    """Where a problem is clicked and the canvas moves to it. The window's dock does not
+    offer it, so there is no second copy to keep in step."""
     assert tab._panel_frame is not None
-    assert "feature.panel" not in {spec.id for spec in services.panels.panels()}
+    assert "problems" not in {spec.id for spec in services.panels.panels()}
 
 
 def test_the_panel_is_shut_until_it_is_asked_for_and_then_remembered(
@@ -1625,7 +1625,7 @@ def test_the_panel_is_shut_until_it_is_asked_for_and_then_remembered(
 
     services.actions.run("canvas.side_panel", services.context.current())
     assert not frame.isHidden() and look_of(services).side_panel
-    assert toolbar_button(tab, "canvas.side_panel").isChecked()
+    assert tab._panel_button is not None and tab._panel_button.isChecked()
 
     other = services.tabs.open("project", make_project("Later").id)
     assert other._panel_frame is not None and not other._panel_frame.isHidden()
@@ -1640,7 +1640,18 @@ def test_the_panels_verb_is_the_graphs_own_chrome(services):
     spec = services.actions.spec("canvas.side_panel")
     assert (spec.menu, spec.group) == ("Graph", "panels")
     # Named for what it holds, by the composition root — this module never spells it.
-    assert spec.label == "&Features" and spec.icon is not None
+    assert spec.label == "&Problems" and spec.icon is not None
+
+
+def test_the_panel_leads_the_strip_in_a_band_of_its_own(services, project, tab):
+    """What is wrong with the plan is what you want to know before you look at it — and
+    the button carries the panel's own count, which is why it is a widget."""
+    named = [name for name, _verbs in bands(tab)]
+    assert named[0] == "Problems"
+    button = tab._panel_button
+    assert button is not None and button.parent() is not None
+    # A widget is not a verb: it never enters the … menu.
+    assert button not in [action.parent() for action in tab._toolbar.tools.verbs()]
 
 
 # -- selecting everything ----------------------------------------------------------------------

@@ -276,10 +276,12 @@ would not; the Covers tab's New/Cumulative switch is the worked example.
   and reads as such.
 - Destructive or dismissive actions (Cancel, Reject) never get the accent, and a verb that
   discards is never the default — see *Dialogs*.
-- A dialog whose every edit is live and already undoable carries **no buttons at all** —
-  there is nothing to confirm and nothing to cancel, and a Close button under a form that
-  has already saved is a line of chrome saying so. Escape and the title bar close it; the
-  step details dialog is the worked example.
+- A dialog whose every edit is live and already undoable carries **Close and nothing
+  else** — there is nothing to confirm and nothing to cancel, so no primary and no
+  Cancel; the footer is the way out rather than an answer to a question. It carries one
+  because a window manager that draws no title bar (a tiling one) leaves Escape as the
+  only way out, and a way out nothing shows is not one. The step details dialog is the
+  worked example.
 - **Past two or three verbs on one thing, the glyph buttons become a `⋯` menu.** A row of
   bordered glyphs is a row of riddles — each says its verb only in a tooltip, and the row
   grows with every feature. One `⋯` beside the thing, dropping a menu of *glyph plus
@@ -313,8 +315,9 @@ Every dialog is a `DialogFrame` (`framework/dialog.py`), and its anatomy is the 
   accent as the footer allows, so a hand travelling to the primary never crosses it, and
   the status slot between them keeps the two from reading as a pair. Cancel sits beside
   the primary, where the eye goes to leave.
-- **No buttons when every edit is live and undoable** — the frame then shows no footer
-  at all; Escape closes it. Step Details is the worked example.
+- **Close alone when every edit is live and undoable** — no primary, no Cancel, one
+  dismissal in the footer, and Escape does the same thing. Step Details is the worked
+  example; see *Buttons* for why it carries one at all.
 - **Enter runs the primary, Escape dismisses, Ctrl+Enter is Enter from a multi-line
   field.** Cancel is the default only while there is no primary, so a confirmation whose
   only verb discards work answers Enter with nothing lost — the one data-loss hazard on
@@ -704,8 +707,8 @@ looked at; look before assuming.
 
 Dialogs:
 
-- `StepDetailsDialog` — designed already (no buttons, live edits); not on the frame, so
-  its title is only the window's.
+- *(done)* `StepDetailsDialog` — live edits and one Close, on the frame; its title is the
+  window's alone.
 - `SettingsDialog` — 12 px margins, an unstyled tree with no seam against the page, a lone
   Close.
 - `ProjectDialog` — the most designed; create mode's footer at 8 px against the 12 px
@@ -713,8 +716,8 @@ Dialogs:
 - `OpenProjectsDialog`, `MovePlanDialog`, `RepositoriesFolderDialog`, `GhRepoListDialog` —
   hand-rolled footers with the right shape; no title in the body; the GitHub list's filter
   is uncaptioned and unfocused, and its status line sits in the button row.
-- `ExpandedTextDialog`, `ChartDialog`, `ImagePreviewDialog`, `FeatureDialog` — right
-  metrics, a `QDialogButtonBox(Close)`.
+- `ExpandedTextDialog`, `ChartDialog`, `ImagePreviewDialog` — right metrics, a
+  `QDialogButtonBox(Close)`.
 - `AssetPickerDialog` — Ok/Cancel box for the main insert gesture, a hand-rolled empty
   label.
 - `TaskBrowserDialog` / `AgentBrowserDialog` — a well of rows, styled once and copied
@@ -755,10 +758,10 @@ Tables and lists:
 - Specs tree — uniform row heights under a two-line delegate; a pinned header faked as a
   row.
 - Assets — two lists with no object name at all; a baked empty message (now on the swap).
-- *(done — the graph editor pass)* Features panel — two-line rows with what became of
-  each feature on the second line, a `Toolbar` of verbs over them, and an `EmptyState`
-  offering *Add Feature…* where the hint used to hide. It stands inside the project tab
-  now, beside the canvas.
+- *(done — the problems pass)* Problems panel — two-line rows, the finding's remedy on
+  the second line, one worded face dropping the launch profiles, and an `EmptyState`
+  where the list would be. It stands inside the project tab, beside the canvas. (It
+  replaced the Features panel, which went with the feature catalogue.)
 - Agent profiles — plain strings with *(default)* appended and three stock buttons.
 - Settings tree, Index tree, palette list — unstyled or ink-only hover.
 - Task and Agents browsers, Milestones list — widget rows laid out by hand, one of them by

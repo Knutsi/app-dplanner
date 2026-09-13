@@ -49,8 +49,12 @@ ARROW_W: Final = 20
 ARROW_ROOM: Final = ARROW_W + 4
 # And the room a *face* leaves — a control that is only a menu, so its arrow is Qt's plain
 # indicator rather than a target of its own: the layout picker, the aspect bar's template,
-# a strip's glyph face. Narrower than ARROW_ROOM because there is nothing to aim at.
-INDICATOR_ROOM: Final = 20
+# a strip's glyph face. The indicator is right-aligned in the padding box, so it would sit
+# flush against the border with nothing to keep it off: INDICATOR_INSET is what holds it
+# clear, and the room is the indicator, that inset and DESIGN.md's 4 px beside the words.
+INDICATOR_W: Final = 10
+INDICATOR_INSET: Final = 6
+INDICATOR_ROOM: Final = INDICATOR_W + INDICATOR_INSET + 4
 
 
 def mix(first: str, second: str, share: float) -> str:

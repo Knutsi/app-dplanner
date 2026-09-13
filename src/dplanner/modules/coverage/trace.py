@@ -48,9 +48,9 @@ class Citation:
 
 @dataclass(frozen=True)
 class Feature:
-    id: str
+    id: str  # The step's — a feature *is* a step, so the two ids are one.
     title: str
-    step: StepId | None  # The step realising it; None while it is unplaced.
+    step: StepId
     citations: tuple[Citation, ...]
 
 
@@ -214,8 +214,6 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     known = {milestone.id for milestone in milestones}
 
     def milestones_of(feature: Feature) -> list[StepId]:
-        if feature.step is None:
-            return []
         found = [held for held in owners.get(feature.step, ()) if held in known]
         return sorted(found, key=lambda held: order[held])
 
@@ -283,18 +281,17 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     # Column 1: the features, milestone-first so the lines to column 2 rarely cross.
     steps = {step.id: step for step in project.steps}
     for feature in ordered:
-        step = steps.get(feature.step) if feature.step else None
+        step = steps.get(feature.step)
         done = step is not None and readers.is_done(step)
         items.append(
             Item(
                 f"feature:{feature.id}",
                 FEATURES,
                 feature.title or UNTITLED,
-                "" if step is not None else "not placed",
+                "",
                 tone="good" if done else "feature",
                 features=frozenset({feature.id}),
-                target=("step", step.id) if step is not None else ("feature", feature.id),
-                muted=step is None,
+                target=("feature", feature.id),
             )
         )
 
@@ -303,7 +300,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     loose: list[Feature] = []
     for feature in ordered:
         held = milestones_of(feature)
-        if feature.step is not None and not held:
+        if not held:
             loose.append(feature)
         for milestone_id in held:
             gathered[milestone_id].append(feature)
@@ -395,8 +392,6 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
             links.append(Link(source, f"docs:{step_id}", tokens))
 
     for feature in ordered:
-        if feature.step is None:
-            continue
         held = milestones_of(feature)
         sources = [milestone_token(m) for m in held] or [NO_MILESTONE]
         tokens = frozenset({feature.id})

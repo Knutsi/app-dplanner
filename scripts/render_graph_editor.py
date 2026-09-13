@@ -4,7 +4,7 @@
 
 What S7 reworked: the strip of verbs over the canvas as glyphs in named bands, folding
 whole bands into its ``…`` menu; the *Find* picker, which opens on the plan's landmarks
-and searches every step; and the Features list, standing beside the canvas inside the
+and searches every step; and the panel beside the canvas — the Problems list — inside the
 project tab rather than across the window. A whole application is built over a throwaway
 library — the tab is the tab host's, so nothing here hand-wires a surface the window would
 build differently — and torn down per theme.
@@ -30,7 +30,6 @@ from dplanner.domain.model import Step
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
 from dplanner.modules.feature.aspect import write as feature_write
-from dplanner.modules.feature.catalogue import FeatureRecord, write_catalogue
 from dplanner.modules.project_editor.module import ProjectEditorModule
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.positions import write_position
@@ -43,7 +42,7 @@ PAGE_SIZE = (1180, 620)
 NARROW = 520
 PICKER_SIZE = (520, 300)
 
-# A plan with the shapes the chrome is about: a milestone to jump to, a feature to drag
+# A plan with the shapes the chrome is about: a milestone to jump to, a feature
 # from the list beside it, and work leading to both.
 STEPS = (
     ("Read the fixtures", (-300.0, -60.0), ""),
@@ -92,11 +91,6 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     directory = seed_project(workspace / f"importer-{theme.name}", "Importer")
     project = services.repo.attach(directory)
     services.document.add_child(services.document.id, project)
-    services.document.set_module_data(
-        project.id,
-        FEATURE_ID,
-        write_catalogue([FeatureRecord("f1", "Bulk import"), FeatureRecord("f2", "Dark mode")]),
-    )
     made = []
     for title, (x, y), kind in STEPS:
         step = Step(title=title)
@@ -107,7 +101,7 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
                 services.document
             )
         elif kind == "feature":
-            SetModuleDataCommand(step.id, FEATURE_ID, feature_write("f1")).redo(services.document)
+            SetModuleDataCommand(step.id, FEATURE_ID, feature_write()).redo(services.document)
         made.append(step.id)
     for waiter, source in EDGES:
         # Through the stack, so the strip's History band has something to say.
@@ -148,11 +142,14 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     page.resize(*PAGE_SIZE)
     settle(app)
 
-    # The Features list, beside the canvas where the drag onto it is a short one.
+    # The Problems list, beside the canvas where what is wrong is fixed. The verb writes
+    # the preference and fans it to every *open* tab; this page was taken out of the tab
+    # host to be sized, so the tab is no longer one of them and is told directly.
     services.actions.run("canvas.side_panel", services.context.current())
+    tab.set_look(editor._look)
     tab.frame()
     settle(app)
-    save(page, out, "features", theme, app)
+    save(page, out, "problems", theme, app)
 
     page.setParent(None)
     session.close()

@@ -21,7 +21,7 @@ lines of each function instead of the first lines of the file, and
 """
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from dplanner.core.module_data import ModuleDataFormat
 
@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from dplanner.cli import CliCommand
     from dplanner.cli.checklist import MachineCheck
     from dplanner.cli.gate import TopologyGate
+    from dplanner.cli.lint import LintCheck
     from dplanner.cli.report.parts import ReportSource
     from dplanner.domain.agents import AgentHarness
     from dplanner.domain.aspects import AspectSpec
@@ -47,7 +48,7 @@ if TYPE_CHECKING:
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
     from dplanner.modules.coverage.trace import Trace
-    from dplanner.modules.feature.catalogue import FeatureSource
+    from dplanner.modules.feature.aspect import FeatureSource
     from dplanner.modules.project_editor.clipboard import PastePolicy
     from dplanner.modules.spec.source_kind import DocumentSourceKind
     from dplanner.modules.spec_confluence.module import SecretStore
@@ -103,15 +104,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.feature.aspect import read as feature_read
-    from dplanner.modules.feature.aspect import write as feature_write
-    from dplanner.modules.feature.catalogue import (
-        FEATURE_MIME,
-        instance_of,
-        parse_drag,
-        read_catalogue,
-    )
     from dplanner.modules.feature.module import FeatureDeps, FeatureModule
-    from dplanner.modules.feature.panel import panel_context
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.github.module import GithubDeps, GithubModule
@@ -122,12 +115,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.llm_anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.llm_openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.notes.module import NotesDeps, NotesModule
+    from dplanner.modules.problems.module import ProblemsDeps, ProblemsModule
     from dplanner.modules.progression.module import ProgressionDeps, ProgressionModule
     from dplanner.modules.project_assets.module import (
         ProjectAssetsDeps,
         ProjectAssetsModule,
     )
-    from dplanner.modules.project_editor.drops import CanvasDrop
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
     from dplanner.modules.project_editor.side_panel import SidePanel
@@ -199,8 +192,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
         gauge_icon,
         graph_icon,
         image_icon,
-        layers_icon,
         list_icon,
+        problem_icon,
         spec_icon,
     )
 
@@ -222,8 +215,11 @@ def default_modules(services: "AppServices") -> list["Module"]:
             store.checkout_of(project_id),
         )
 
-    def facts_for(step_id: str) -> RepositoryFacts:
-        return facts_of(library.project_of(step_id).id)
+    def facts_for(node_id: str) -> RepositoryFacts:
+        """The facts for a step — or for a project named directly, which is what a run
+        with no step (the Problems panel's) has to ask about."""
+        node = library.node(node_id)
+        return facts_of(node.id if isinstance(node, Project) else library.project_of(node_id).id)
 
     def repository_for(step_id: str) -> str:
         """Which repository a step's GitHub refs belong to: the code repository the
@@ -650,62 +646,68 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
     )
 
-    def place_feature(project_id: str, payload: bytes, at: tuple[float, float] | None) -> list[str]:
-        """A feature dragged from the Features panel onto a canvas becomes the step that
-        realises it — born through the same ``create`` as New ▸ Feature, marked in the same
-        undo step. Refuses, in the CLI's words, a payload from another project or a record
-        that already has its instance: a feature is implemented once."""
-        from dplanner.cli.command import CliError
+    def place_feature_step(project_id: str, title: str, marker: dict[str, Any]) -> str:
+        """A feature step born where nobody pointed — the Specs tab's *New feature step…*.
 
-        parsed = parse_drag(payload)
-        if parsed is None:
-            return []
-        origin_project, feature_id = parsed
-        if origin_project != project_id:
-            raise CliError("That feature belongs to another project")
-        project = library.project(project_id)
-        record = next((r for r in read_catalogue(project) if r.id == feature_id), None)
-        if record is None:
-            raise CliError(f"No feature {feature_id} in {project.title!r} any more")
-        holder = instance_of(project, record.id)
-        if holder is not None:
-            raise CliError(
-                f"{record.title!r} is already placed as {holder.title!r} — a feature is "
-                "implemented once"
-            )
-        return [
-            project_editor.create_step(
-                project_id,
-                record.title,
-                at=at,
-                # Born as the *Feature* template above: the marker, and the estimate
-                # opted out — a collector carries no estimate of its own — so the modal
-                # lights Feature rather than the catch-all. The set written here and the
-                # template's set are the same fact; change one, change the other.
-                carrying=lambda step: [
-                    SetModuleDataCommand(step.id, FEATURE_ID, feature_write(record.id)),
-                    SetModuleDataCommand(step.id, ESTIMATION_ID, estimate_write(None, on=False)),
-                ],
-                label="Place Feature",
-            ).id
-        ]
+        It arrives as the *Feature* template: the marker, and the estimate opted out, since
+        a collector carries no estimate of its own — the set written here and the template's
+        set are the same fact; change one, change the other. Where it lands is the graph
+        editor's answer (``placement.free_spot``), so nothing is born on top of a card
+        somebody placed, and it is one undo entry like every other placed step.
+        """
+        from dplanner.modules.project_editor.placement import free_spot
 
-    # Constructed before the list because the Specs tab reads the catalogue's passages
-    # through it and cites a selection into it — the feature side of one seam; and
-    # because the graph tab stands its list beside the canvas, below.
+        return project_editor.create_step(
+            project_id,
+            title,
+            at=free_spot(library, library.project(project_id)),
+            carrying=lambda step: [
+                SetModuleDataCommand(step.id, FEATURE_ID, marker),
+                SetModuleDataCommand(step.id, ESTIMATION_ID, estimate_write(None, on=False)),
+            ],
+            label="New Feature",
+        ).id
+
+    # Constructed before the list because the Specs tab cites a selection into it — the
+    # feature side of one seam.
     feature = FeatureModule(
         FeatureDeps(
             library=library,
-            debounce=services.debounce,
             undo=services.undo,
             actions=services.actions,
-            panels=services.panels,
             sections=services.inspector_sections,
-            files=store.files,
-            theme=services.theme,
             parent=services.window,
             documents_of=lambda project_id: spec_document_names(library.project(project_id)),
             digest_of=lambda project_id, name: spec_digest_of(library.project(project_id), name),
+            # Births a feature step somewhere free on the graph; the editor is constructed
+            # below, so the call is what resolves it, not the reference.
+            place_step=lambda project_id, title, marker: place_feature_step(
+                project_id, title, marker
+            ),
+        )
+    )
+
+    # Constructed before the graph editor because the editor stands its panel beside the
+    # canvas. What it shows is the lint registry — the very list `dplanner project lint`
+    # runs — so the window and the terminal cannot disagree about what is wrong with a plan.
+    problems = ProblemsModule(
+        ProblemsDeps(
+            library=library,
+            actions=services.actions,
+            files=store.files,
+            checks=_lint_checks,
+            debounce=services.debounce,
+            parent=services.window,
+            facts_of=facts_of,
+            key_of=_step_key,
+            # Handing the problems to an agent is the agent module's — resolved lazily,
+            # since it is constructed further down and neither knows the other's name.
+            fix_profiles=lambda: agent_instruction.problem_profiles(),
+            fix=lambda project_id, findings, profile: agent_instruction.fix_problems(
+                project_id,
+                [(row.check, row.subject, row.message) for row in findings],
+                profile,
+            ),
         )
     )
 
@@ -730,11 +732,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # The project panel renders whatever registered a card here — the project-level
             # counterpart of the step panel's inspector_sections.
             cards=services.detail_cards,
-            # What the canvas takes by drop: a feature from the Features panel.
-            drops=(CanvasDrop(FEATURE_MIME, place_feature),),
-            # And what stands beside the canvas: that same list, where the drag onto the
-            # graph is a short one. The editor never learns whose widget it is.
-            side_panel=SidePanel("Features", layers_icon, feature.create_panel),
+            # What stands beside the canvas: what is wrong with this plan, where it is
+            # fixed. The editor never learns whose widget it is — only that it may carry
+            # a reading for the button that opens it.
+            side_panel=SidePanel("Problems", problem_icon, problems.create_panel),
         )
     )
 
@@ -743,26 +744,24 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # the surfaces a double-click reaches arrive as callables, and the Specs tab's is
     # resolved lazily because the two modules point at each other.
     def _step_passages(step_id: str) -> list[tuple[str, str]]:
-        """The passages a step reaches: its own record's, or its gathering features'."""
+        """The passages a step reaches: its own, or its gathering features'."""
         if not library.has(step_id):
             return []
         step = library.step(step_id)
         project = library.project_of(step_id)
-        records = {record.id: record for record in read_catalogue(project)}
-        named = [feature_read(step)] if feature_read(step) else []
-        if not named:
+        holders = [step] if is_feature(step) else []
+        if not holders:
             owners = gatherers(
                 library,
                 project,
                 carried_by=is_feature,
                 stops_at=lambda other: is_feature(other) or bool(milestone_read(other)),
             ).get(step_id, ())
-            named = [feature_read(project.step(owner) or step) or "" for owner in owners]
+            holders = [owned for owner in owners if (owned := project.step(owner)) is not None]
         return [
             (source.document, source.quote)
-            for record_id in named
-            if record_id in records
-            for source in records[record_id].sources
+            for holder in holders
+            for source in feature_read(holder) or ()
             if source.quote
         ]
 
@@ -781,11 +780,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 "docs.open_step",
                 Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)}),
             ),
-            open_feature=lambda project_id, feature_id: services.actions.run(
-                "feature.edit", panel_context(project_id, feature_id)
-            ),
             feature_of=lambda step_id: (
-                feature_read(library.step(step_id)) or None if library.has(step_id) else None
+                step_id if library.has(step_id) and is_feature(library.step(step_id)) else None
             ),
             is_milestone=lambda step_id: (
                 bool(milestone_read(library.step(step_id))) if library.has(step_id) else False
@@ -838,8 +834,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             kinds=_source_kinds(spec_folder, spec_git, confluence.page, confluence.folder),
             passages_of=lambda project_id, document: [
                 source.quote
-                for record in read_catalogue(library.project(project_id))
-                for source in record.sources
+                for step in library.project(project_id).steps
+                for source in feature_read(step) or ()
                 if source.document == document and source.quote
             ],
             cite=feature.cite_passage,
@@ -1496,10 +1492,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepCheckModule(
             StepCheckDeps(library=library, undo=services.undo, actions=services.actions)
         ),
-        # A feature is a record in the project's catalogue and, once placed, the step that
-        # realises it; it gathers the work behind it, stopping at the previous feature.
-        # The Covers tab that shows what it gathers is still the tests module's.
+        # A feature is a step: one a person would name and demo, gathering the work behind
+        # it and stopping at the previous feature. The Covers tab that shows what it
+        # gathers is still the tests module's.
         feature,
+        # Registers nothing: it owns the widget the graph tab stands beside the canvas.
+        problems,
         TestsModule(
             TestsDeps(
                 library=library,
@@ -1641,7 +1639,6 @@ def _briefing_sections(
     from dplanner.domain.scope import gatherers
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.feature.aspect import read as feature_read
-    from dplanner.modules.feature.catalogue import image_paths, read_catalogue
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.spec.aspect import attachment_paths
@@ -1661,38 +1658,28 @@ def _briefing_sections(
             PromptPart(heading="Description", body=description, files=description_files)
         )
     project = library.project_of(step.id)
-    records = {record.id: record for record in read_catalogue(project)}
 
-    def record_lines(record_id: str) -> list[str]:
-        record = records.get(record_id)
-        if record is None:
-            # A marker may name a record that was removed (undo restores either side
-            # independently); the briefing says so rather than pretending otherwise.
-            return [f"- {record_id} (no longer in the feature catalogue)"]
-        where = ""
-        if len(record.sources) == 1:
-            where = f", from {_passage_place(record.sources[0])}"
-        lines = [f"- **{record.title}** ({record.id}{where})"]
-        for source in record.sources:
-            if len(record.sources) > 1:
+    def passage_lines(holder: "Step") -> list[str]:
+        """Where one feature was read from — its step's title, then each passage."""
+        cites = feature_read(holder) or ()
+        where = f", from {_passage_place(cites[0])}" if len(cites) == 1 else ""
+        lines = [f"- **{holder.title}**{where}"]
+        for source in cites:
+            if len(cites) > 1:
                 lines.append(f"  from {_passage_place(source)}:")
             lines += [f"  > {quoted}" for quoted in source.quote.splitlines()]
         return lines
 
-    realised = feature_read(step)
-    if realised:
-        record = records.get(realised)
-        body = "\n".join(record_lines(realised))
-        if record is not None and record.description:
-            body += "\n\n" + record.description.rstrip()
-        sections.append(
-            PromptPart(
-                heading="The feature this step realises",
-                body=body,
-                files=image_paths(files, project.id, record) if record is not None else (),
+    if is_feature(step):
+        # The feature's name and its prose are this step's own — already the title of the
+        # briefing and its ## Instructions block — so what is left to say is where in the
+        # specification it was read from.
+        cites = feature_read(step) or ()
+        if cites:
+            sections.append(
+                PromptPart(heading="Read from the spec", body="\n".join(passage_lines(step)))
             )
-        )
-    elif realised is None:
+    else:
         # A work step reaches the spec through the feature it flows into: the graph's
         # answer, the same walk the Covers tab and `scope show` read.
         owners = gatherers(
@@ -1701,8 +1688,8 @@ def _briefing_sections(
             carried_by=is_feature,
             stops_at=lambda other: is_feature(other) or bool(milestone_read(other)),
         ).get(step.id, ())
-        named = [feature_read(project.step(owner) or step) for owner in owners]
-        lines = [line for record_id in named if record_id for line in record_lines(record_id)]
+        holders = [owned for owner in owners if (owned := project.step(owner)) is not None]
+        lines = [line for holder in holders for line in passage_lines(holder)]
         if lines:
             sections.append(PromptPart(heading="Flows into", body="\n".join(lines)))
     figures = attachment_paths(files, step.id)
@@ -2203,7 +2190,7 @@ def _scope_kinds(
 def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -> "Trace":
     """The coverage picture: spec passages → features → milestones → tests and docs.
 
-    The one place the spec, the feature catalogue, the collectors, the tests and the docs
+    The one place the spec, the feature steps, the collectors, the tests and the docs
     meet; each answers through its own Qt-free reader and ``coverage/trace.py`` only
     arranges them. Derived on every read, like everything the graph could contradict.
     """
@@ -2219,7 +2206,7 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
     from dplanner.modules.docs.collect import sources_for
     from dplanner.modules.docs.collect import state_of as docs_state
     from dplanner.modules.feature.aspect import is_feature
-    from dplanner.modules.feature.catalogue import instance_of, read_catalogue
+    from dplanner.modules.feature.aspect import read as feature_read
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
     from dplanner.modules.spec.cli import anchor_sources
     from dplanner.modules.spec.documents import document_text, read_index
@@ -2233,24 +2220,19 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
     scopes = _scope_kinds(check_read, is_feature, milestone_read)
 
     def features(library: "Library", project: "Project", files: "FilesFor") -> list[Feature]:
-        records = read_catalogue(project)
-        refs = [(s.document, s.quote, s.digest) for r in records for s in r.sources]
+        steps = [step for step in project.steps if is_feature(step)]
+        cited = {step.id: feature_read(step) or () for step in steps}
+        refs = [(s.document, s.quote, s.digest) for step in steps for s in cited[step.id]]
         anchors = iter(anchor_sources(files, project, refs))
-        found = []
-        for record in records:
-            instance = instance_of(project, record.id)
-            citations = tuple(
-                Citation(s.document, s.quote, s.page, next(anchors)) for s in record.sources
+        return [
+            Feature(
+                step.id,
+                step.title,
+                step.id,
+                tuple(Citation(s.document, s.quote, s.page, next(anchors)) for s in cited[step.id]),
             )
-            found.append(
-                Feature(
-                    record.id,
-                    record.title,
-                    instance.id if instance is not None else None,
-                    citations,
-                )
-            )
-        return found
+            for step in steps
+        ]
 
     def documents(project: "Project", files: "FilesFor") -> list[Document]:
         try:
@@ -2338,15 +2320,15 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
     import another's; both the window's Paste/Duplicate and ``step duplicate`` read this
     tuple. Four entries, on purpose: an id minted per project (a test's), the state of a
     shell somebody is running and what its runs consumed — both facts about the
-    original — and a feature's marker — a record has one instance, and the original
-    keeps it. Everything else a step carries copies as it is.
+    original — and a feature's passages, which were read into *that* feature and are not
+    a claim a copy may make. Everything else a step carries copies as it is.
     """
-    from dplanner.modules.feature.catalogue import drop_marker_for_paste
+    from dplanner.modules.feature.aspect import drop_cites_for_paste
     from dplanner.modules.step_agent_run.aspect import forget_for_paste
     from dplanner.modules.step_agent_run.usage import forget_for_paste as forget_usage
     from dplanner.modules.testing.aspect import remint_for_paste
 
-    return (remint_for_paste, forget_for_paste, forget_usage, drop_marker_for_paste)
+    return (remint_for_paste, forget_for_paste, forget_usage, drop_cites_for_paste)
 
 
 def _source_kinds(
@@ -2419,17 +2401,66 @@ def _llm_providers() -> tuple[tuple[str, str], ...]:
     return (("llm_openai", "OpenAI"), ("llm_anthropic", "Anthropic"))
 
 
+def _lint_checks() -> tuple["LintCheck", ...]:
+    """What a plan can be wrong about, from every module that knows a kind of wrong.
+
+    One assembler, two surfaces — ``dplanner project lint`` and the window's Problems
+    panel — because a gap in a plan is one fact whoever is asking, and a second list
+    would be a second answer. ``cli/lint.py``'s arrangement exactly, and
+    :func:`_machine_checks`'s: the verb owns the shapes and the report, each owning
+    module exports ``lint_checks()`` from its own Qt-free ``cli.py``, and nothing here
+    is imported by ``cli/``.
+
+    The order is the report's order — the graph's integrity first, then authoring, then
+    the spec.
+    """
+    from dplanner.cli.scopes import lint_checks as scope_lint
+    from dplanner.modules.docs import cli as docs_cli
+    from dplanner.modules.estimation import cli as estimation_cli
+    from dplanner.modules.feature import cli as feature_cli
+    from dplanner.modules.feature.aspect import is_feature
+    from dplanner.modules.projects import cli as projects_cli
+    from dplanner.modules.spec import cli as spec_cli
+    from dplanner.modules.step_agent_instruction import cli as agent_cli
+    from dplanner.modules.step_check.aspect import read as check_read
+    from dplanner.modules.step_description import cli as description_cli
+    from dplanner.modules.step_description.aspect import read as description_read
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.testing import cli as testing_cli
+    from dplanner.modules.testing.aspect import enabled as test_enabled
+
+    scopes = _scope_kinds(check_read, is_feature, milestone_read)
+    return (
+        *projects_cli.lint_checks(),
+        *description_cli.lint_checks(),
+        *docs_cli.lint_checks(kinds=scopes),
+        # An agent step is briefed by its description unless it carries a separate
+        # instruction; the description's reader arrives here, not by import.
+        *agent_cli.lint_checks(described=lambda step: bool(description_read(step))),
+        *estimation_cli.lint_checks(),
+        *spec_cli.lint_checks(),
+        *feature_cli.lint_checks(anchor=spec_cli.anchor_sources, key_of=_step_key),
+        *testing_cli.lint_checks(),
+        # A step's *own* tests are a different question from what it gathers; testing's
+        # Qt-free reader answers it, handed over rather than imported.
+        *scope_lint(
+            kinds=scopes,
+            covered_by=_covered_tests,
+            carries_tests=test_enabled,
+        ),
+    )
+
+
 def _asset_sources() -> tuple["AssetSource", ...]:
     """Every module's slice of the asset catalog, in reading order.
 
     The tuple both surfaces read — ``asset list``/``uses``/``prune`` and the Assets tab —
     assembled here because each ``asset_source()`` lives in its owner's Qt-free half and
     no module may import another's. The order is the report order: the prose surfaces a
-    person writes first, then what rides along to agents, then the spec's figures and
-    the features', then the pool.
+    person writes first, then what rides along to agents, then the spec's figures, then
+    the pool. A feature has no area of its own: its pictures are its step's description's.
     """
     from dplanner.modules.docs.aspect import asset_source as documentation
-    from dplanner.modules.feature.catalogue import asset_source as feature_images
     from dplanner.modules.notes.log import asset_source as notes
     from dplanner.modules.project_assets.cli import asset_source as pool
     from dplanner.modules.spec.documents import asset_source as spec_figures
@@ -2444,7 +2475,6 @@ def _asset_sources() -> tuple["AssetSource", ...]:
         instructions(),
         notes(),
         spec_figures(),
-        feature_images(),
         pool(),
     )
 
@@ -2470,7 +2500,6 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.cli.lint import commands as lint_commands
     from dplanner.cli.report.commands import commands as report_commands
     from dplanner.cli.scopes import commands as scope_commands
-    from dplanner.cli.scopes import lint_checks as scope_lint
     from dplanner.cli.skill import commands as skill_commands
     from dplanner.cli.skill import generate
     from dplanner.cli.telemetry import commands as telemetry_commands
@@ -2500,7 +2529,6 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.modules.step_check import cli as check_cli
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_description import cli as description_cli
-    from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_milestone import cli as milestone_cli
     from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_order import cli as order_cli
@@ -2508,7 +2536,6 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_ticket import cli as ticket_cli
     from dplanner.modules.testing import cli as testing_cli
-    from dplanner.modules.testing.aspect import enabled as test_enabled
     from dplanner.modules.time_estimates import cli as time_cli
 
     specs = aspect_specs()
@@ -2525,7 +2552,9 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
                 description_cli.step_author(),
                 agent_cli.step_author(),
                 estimation_cli.step_author(),
-                feature_cli.step_author(),
+                # The feature author carries the spec-passage flags: creating a feature
+                # *is* creating its step, so there is no verb of its own to put them on.
+                feature_cli.step_author(anchor=spec_cli.anchor_sources),
                 spec_cli.step_author(),
                 testing_cli.step_author(),
             ],
@@ -2546,9 +2575,9 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         *status_cli.commands(),
         *milestone_cli.commands(),
         # A feature's passages are anchored in the spec documents by the spec module's
-        # one derivation, handed across here — `feature add`, `cite`, `reanchor` and lint
-        # all judge a quote the same way.
-        *feature_cli.commands(anchor=spec_cli.anchor_sources),
+        # one derivation, handed across here — `cite`, `reanchor`, `step add --feature`
+        # and lint all judge a quote the same way.
+        *feature_cli.commands(anchor=spec_cli.anchor_sources, key_of=_step_key),
         *testing_cli.commands(),
         *check_cli.commands(),
         # What any collector gathers is one derivation asked three ways, so it is one verb
@@ -2604,25 +2633,10 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         # over here so a test can point the same verbs at a file of its own.
         *telemetry_commands(journal=journal_path(), crash_log=crash_log_path()),
         *aspect_commands(specs),
-        # Each module exports what "missing" means for its own aspect; the list order is
-        # the report order — the graph's integrity first, then authoring, then the spec.
-        *lint_commands(
-            checks=[
-                *projects_cli.lint_checks(),
-                *description_cli.lint_checks(),
-                *docs_cli.lint_checks(kinds=scopes),
-                # An agent step is briefed by its description unless it carries a separate
-                # instruction; the description's reader arrives here, not by import.
-                *agent_cli.lint_checks(described=lambda step: bool(description_read(step))),
-                *estimation_cli.lint_checks(),
-                *spec_cli.lint_checks(),
-                *feature_cli.lint_checks(anchor=spec_cli.anchor_sources),
-                *testing_cli.lint_checks(),
-                # A step's *own* tests are a different question from what it gathers;
-                # testing's Qt-free reader answers it, handed over rather than imported.
-                *scope_lint(kinds=scopes, covered_by=_covered_tests, carries_tests=test_enabled),
-            ]
-        ),
+        # Each module exports what "missing" means for its own aspect; the assembler is
+        # shared with the window's Problems panel, which is a second presenter of exactly
+        # this list.
+        *lint_commands(checks=list(_lint_checks())),
     ]
     # Every verb that declared it reshapes a graph runs behind the topology gate. Wrapped
     # before the skill reads the registry, so the skill describes the gated verbs.

@@ -376,9 +376,13 @@ def test_the_details_dialog_never_outgrows_the_screen(services, project, monkeyp
     assert dialog.height() == min(DIALOG_HEIGHT, round(available.height() * SCREEN_SHARE))
 
 
-def test_the_dialog_is_on_the_frame_with_no_footer_and_no_heading(services, project, monkeypatch):
+def test_the_dialog_is_on_the_frame_with_one_close_and_no_heading(services, project, monkeypatch):
     """F1's audit put this dialog on the frame; the frame prints no heading of its own, so
-    what it shows is the panel and the window title is the step's own name."""
+    what it shows is the panel and the window title is the step's own name.
+
+    Every edit in it is live, so there is nothing to confirm and no primary — but a window
+    manager that draws no title bar leaves Escape as the only way out, and a way out
+    nothing shows is not one. Hence Close, and nothing beside it."""
     from PySide6.QtWidgets import QLabel
 
     from dplanner.modules.step_properties.dialog import StepDetailsDialog
@@ -391,8 +395,10 @@ def test_the_dialog_is_on_the_frame_with_no_footer_and_no_heading(services, proj
     (dialog,) = opened
 
     assert dialog.windowTitle() == "Read the spec"  # The step's, so a switcher can tell them apart.
-    assert dialog.footer.isHidden()  # Every edit is live; there is nothing to confirm.
-    assert dialog.footer_buttons() == []
+    assert not dialog.footer.isHidden()
+    # One dismissal, no primary: the footer is the way out, not an answer to a question.
+    assert [button.text() for button in dialog.footer_buttons()] == ["Close"]
+    assert dialog.primary() is None
     assert dialog.findChild(QLabel, "DialogTitle") is None
     assert dialog.findChild(QLabel, "DialogLead") is None
     dialog.dispose()

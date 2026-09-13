@@ -2,10 +2,11 @@
 
 A second :class:`StepPanel` in a dialog — the sanctioned second host of the section
 contract — driven by ``show_step`` directly rather than by the context, so it stays on the
-step it was opened about. On the frame like every other dialog, and **with no footer**:
-every edit inside it is already applied and already on the undo stack, so there is nothing
-to confirm and nothing to cancel, and Escape (or the title bar) simply closes it. The frame
-shows no footer until a button arrives, which is this dialog exactly.
+step it was opened about. On the frame like every other dialog, and **carrying Close and
+nothing else**: every edit inside it is already applied and already on the undo stack, so
+there is nothing to confirm and nothing to cancel — but a window manager that draws no
+title bar leaves Escape as the only way out, and a way out nothing shows is not one. So
+the footer holds the single dismissal and no primary; DESIGN.md's *Buttons* has the rule.
 
 The frame prints no heading, so what the dialog shows is the panel and nothing above it —
 the same surface the dock anchors, briefly modal. Its **window** title is the step's own
@@ -66,6 +67,7 @@ class StepDetailsDialog(DialogFrame):
         self._unsubscribe = library.field_changed.connect(self._on_field)
 
         self.body_layout.addWidget(self.panel, 1)
+        self.add_dismiss("Close")
 
         name = self.name_edit()
         if name is not None:

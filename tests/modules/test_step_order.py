@@ -195,7 +195,7 @@ def mixed(services, project):
     from dplanner.modules.step_milestone.aspect import write
 
     _a, b, c, d = project.steps
-    services.undo.push(SetModuleDataCommand(b.id, "feature", write_feature("f1")))
+    services.undo.push(SetModuleDataCommand(b.id, "feature", write_feature()))
     services.undo.push(EditTextCommand(TextEdit(c.id, "step_agent_instruction", 0, "", "Do it.")))
     services.undo.push(SetModuleDataCommand(d.id, "step_milestone", write("MVP")))
     return project
