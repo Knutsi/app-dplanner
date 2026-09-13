@@ -4,7 +4,7 @@ that asks, and the status-bar button that keeps the question reachable after *La
 from collections.abc import Sequence
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QToolButton, QWidget
+from PySide6.QtWidgets import QLabel, QWidget
 
 from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.widgets import note
@@ -69,21 +69,9 @@ class ConflictDialog(DialogFrame):
         return self.choice
 
 
-class OutsideChangesButton(QToolButton):
-    """Hidden while nothing waits; clicking reopens the question."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("OutsideChangesButton")
-        self.setAutoRaise(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Changed here and outside — click to settle")
-        self.hide()
-
-    def set_waiting(self, count: int) -> None:
-        if not count:
-            self.hide()
-            return
-        noun = "entry" if count == 1 else "entries"
-        self.setText(f"● {count} {noun} changed here and outside")
-        self.show()
+def waiting_words(count: int) -> str:
+    """The status-bar words while entries wait to be settled — nothing while none do."""
+    if not count:
+        return ""
+    noun = "entry" if count == 1 else "entries"
+    return f"● {count} {noun} changed here and outside"

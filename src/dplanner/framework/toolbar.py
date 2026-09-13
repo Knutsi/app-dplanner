@@ -25,12 +25,11 @@ the menu, never a copy of it, and it is refilled on every open against the conte
 palette of that moment.
 
 :class:`ActionToolbar` is the older presenter — registry-fed like the above, but a plain
-row of *worded* buttons with no overflow of its own. Three surfaces still wear it (the
-Specs tab, the order table and the Time tab); each moves onto :class:`Toolbar` when its
-design pass comes. Write nothing new on it.
+row of *worded* buttons with no overflow of its own. The order table still wears it, and
+moves onto :class:`Toolbar` when its design pass comes. Write nothing new on it.
 
-:func:`control_bar` is the other strip a tab page carries: a row of *its own* controls — a
-selector, a toggle, a spin box — that overflows into a » menu when the width is short.
+A page's *own* controls — a selector, a spin box, a date — sit on the same :class:`Toolbar`
+through ``add_widget``, beside its verbs; ``set_shown`` is how the host takes one away.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -52,7 +51,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QSizePolicy,
-    QToolBar,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -93,28 +91,6 @@ def action_words(spec: ActionSpec, state: ActionState) -> tuple[str, str]:
     """
     label = (state.label if state.label is not None else spec.label).replace("&", "")
     return label, spec.tip or label
-
-
-def control_bar(parent: QWidget | None = None) -> QToolBar:
-    """A strip of controls on a tab page, not application chrome.
-
-    A ``QToolBar`` rather than a row of widgets because it is the one widget in Qt that
-    degrades a full control row gracefully: too narrow for its contents it grows the »
-    overflow button and puts the tail in a menu, where a plain row simply overlaps. The
-    ``#ControlBar`` rule in ``theme.qss`` takes its frame and ground away. A widget added
-    to it is wrapped in an action, and it is the *action* that carries visibility — hold
-    what ``addWidget`` returns when a control comes and goes.
-    """
-    bar = QToolBar(parent)
-    bar.setObjectName("ControlBar")
-    bar.setMovable(False)
-    bar.setFloatable(False)
-    bar.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
-    inner = bar.layout()
-    if inner is not None:
-        inner.setSpacing(CONTROL_GAP)
-        inner.setContentsMargins(0, 0, 0, 0)
-    return bar
 
 
 class ActionToolbar(QWidget):
@@ -240,6 +216,9 @@ class _Item:
     # a widget, which never enters the menu, and for a divider, which only parts.
     actions: Sequence[QAction] = ()
     divider: bool = False
+    # Whether the host wants it on the strip at all: a selector with nothing to choose
+    # between is left off, and the reflow must not put back what the host took away.
+    shown: bool = True
 
 
 class _Group(QWidget):
@@ -524,6 +503,26 @@ class Toolbar(QWidget):
     def add_divider(self) -> None:
         self._place(_Item(_divider(self), (), divider=True))
 
+    def set_shown(self, widget: QWidget, shown: bool) -> None:
+        """Whether a control seated here belongs on the strip right now — a selector with
+        nothing to choose between, a field only one pick needs.
+
+        The strip decides what fits, so a host that hid the widget itself would see it come
+        back on the next reflow; this is what it asks instead. A widget inside a band is
+        shown or hidden directly, since a band never re-shows its own.
+        """
+        for item in self._items:
+            if item.widget is widget:
+                item.shown = shown
+                self._reflow()
+                return
+        widget.setVisible(shown)
+
+    def is_shown(self, widget: QWidget) -> bool:
+        """What :meth:`set_shown` last said of a control — whether it belongs on the strip,
+        which a strip too narrow for it, or never laid out, cannot answer by hiding it."""
+        return next((item.shown for item in self._items if item.widget is widget), True)
+
     # -- the pieces a seat is made of ----------------------------------------------------
 
     def _verb(
@@ -742,14 +741,35 @@ class Toolbar(QWidget):
         self._reflow()
 
     def hidden_items(self) -> list[_Item]:
-        return [item for item in self._items if item.widget.isHidden()]
+        """The controls that belong on the strip and did not fit — never what was taken off
+        it, and never a divider, which parts rather than folds."""
+        return [
+            item
+            for item in self._items
+            if not item.divider and self._wanted(item) and item.widget.isHidden()
+        ]
+
+    def _wanted(self, item: _Item) -> bool:
+        """Whether an item belongs on the strip at all: the host has not taken it off, and a
+        lone verb's action is visible — a registry state may hide one."""
+        if not item.shown:
+            return False
+        if len(item.actions) == 1 and not isinstance(item.widget, _Group):
+            return item.actions[0].isVisible()
+        return True
 
     def _reflow(self) -> None:
-        """Show what fits from the left; fold the rest into the … menu."""
+        """Show what fits from the left; fold the rest into the … menu.
+
+        What the host took off the strip, or a state hid, is neither measured, shown nor
+        listed: a reflow that set every item's visibility from the room alone put back what
+        somebody had deliberately taken away.
+        """
         gap = self._layout.spacing()
-        widths = [item.widget.sizeHint().width() for item in self._items]
+        wanted = [item for item in self._items if self._wanted(item)]
+        widths = [item.widget.sizeHint().width() for item in wanted]
         room = self.width()
-        shown = len(self._items)
+        shown = len(wanted)
         if sum(widths) + gap * max(0, len(widths) - 1) > room:
             room -= self._more.sizeHint().width() + gap
             used = 0
@@ -759,19 +779,27 @@ class Toolbar(QWidget):
                     break
                 used += width + gap
                 shown += 1
-        # A divider at either end of what is shown parts nothing.
-        while shown and self._items[shown - 1].divider:
-            shown -= 1
-        for position, item in enumerate(self._items):
-            visible = position < shown and not (position == 0 and item.divider)
-            item.widget.setVisible(visible)
-        self._more.setVisible(shown < len(self._items))
+        # A divider parts two controls or nothing: never at either end of what is shown, and
+        # never beside another, which is what a control taken off between two would leave.
+        on: set[int] = set()
+        pending: _Item | None = None
+        for item in wanted[:shown]:
+            if item.divider:
+                pending = item if on else None
+                continue
+            if pending is not None:
+                on.add(id(pending))
+                pending = None
+            on.add(id(item))
+        for item in self._items:
+            item.widget.setVisible(id(item) in on)
+        self._more.setVisible(any(not item.divider and id(item) not in on for item in wanted))
 
     def _fill_more(self) -> None:
         self._menu.clear()
         pending_divider = False
         for item in self._items:
-            if not item.widget.isHidden():
+            if not item.widget.isHidden() or not self._wanted(item):
                 continue
             if item.divider:
                 pending_divider = bool(self._menu.actions())

@@ -3647,3 +3647,149 @@ providers run on the key the OpenAI LLM provider keeps.
 between them wants to know whether anything was said before it pays to find out.
 
 **Upstream?** Yes, beside `png.py`.
+
+## 43. From the tables-and-browsers pass (S15)
+
+### `framework/table.py` — a cell's ink and tooltip, and one editable column
+
+**What.** `Cell` gains `ink` (a `QColor` for the first line), `tooltip`, `value` and
+`editable`; `add_heading` takes `ink=`. `Column(editor=…)` takes a `CellEditor` —
+`NumberEditor` and `DateEditor` are the two — and a table with one turns its edit triggers on
+(double-click, F2, any key), keeps the current cell in that column so a picked row answers a
+typed digit, and announces a committed value once through `Table.edited` (a
+`core.signals.Signal`), and only when the value changed.
+
+**Why.** The Tests tab says a result in a tone and wears a milestone's shade on its grouping
+heading; the bulk Estimates tab and the Time tab's milestones set a number and a day per row.
+The Estimates tab did that with `setCellWidget`, and a widget planted in each cell swallows
+the row's hover and pick and forces a height the font does not give — the row stops being the
+unit.
+
+**Two traps.** `QTableWidgetItem` keeps `EditRole` and `DisplayRole` as one value, so the
+value behind "3 d" needs a role of its own (`VALUE_ROLE`). And a fresh `QTableWidgetItem` is
+editable by default, which never mattered while the triggers were off: `set_cell` now clears
+the flag on every cell outside an editor's column. The announcement runs inside Qt's
+`commitData`, so a host may write cells in its slot but must never `clear_rows()` there.
+
+**Upstream?** Yes: the ink and the tooltip are two lines each, and an editable column is what
+a table in any planner comes to need.
+
+### `framework/list_rows.py` — `INK_ROLE`, `VALUE_ROLE` and `RichList`
+
+**What.** Two roles below `HOST_ROLE`, and `RichList`: a `QListWidget` that sets `#RichList`
+and installs `TwoLineDelegate`, which the stylesheet gives the table's well and picked row.
+
+**Why.** Two lists borrowed `#OrderTable`, a table's look, by name. DESIGN.md's rule is a list
+when there is one column of things, so the implementation notes log stays a list — with a
+primitive of its own — rather than becoming a one-column table under a header nobody needs.
+
+**Upstream?** Yes.
+
+### `framework/toolbar.py` — `set_shown`: the reflow put back what a host hid
+
+**What.** `Toolbar.set_shown(widget, shown)`. The reflow measures, shows and lists only what
+belongs on the strip: an item a host took off, or a lone verb whose action a state hid, counts
+for nothing, and no divider is left beside another.
+
+**Why.** A defect. `_reflow` set every item's visibility from the room alone, so a combo a view
+hid — the Documentation view's *Group by* with nothing to group — came back on the next resize,
+and a registry state's `visible=False` lasted only until then. Three surfaces in this pass take
+a control off their strip while it has nothing to say.
+
+**Upstream?** Yes, as a fix.
+
+### `framework/widgets.py` — `NumberBox`
+
+**What.** The spin box that prints `0.25`, `0.5` and `3` rather than `1.00`, moved out of the
+estimate input.
+
+**Why.** The table's number editor and the step panel's estimate are the same field twice.
+
+**Upstream?** With the table editor.
+
+### `theme/tokens.py` — `EDGE_W`
+
+**What.** The picked row's 2 px edge is a token; it was a constant in `table.py`.
+
+**Why.** `#RichList` paints the same edge from the stylesheet, and the picker's was a literal.
+
+**Upstream?** Yes.
+
+### `framework/row_well.py` — `RowWell` and `WellRow`, a well of widget rows
+
+**What.** A framed, scrolling well of rows reconciled by key (`reconcile(keys, build,
+update)`), and its row: a title with the row's own verbs (`add_button`, `add_dismiss`, which
+keep their room and never take the keyboard), a `StatusLine` whose tone is the mood, a 4 px
+determinate bar while the end is known (`show_fraction`), and a plain selectable note.
+
+**Why.** The task browser and the Agents browser were one layout written twice, the copy with
+no stylesheet at all. A row that carries buttons and has to survive a 250 ms tick with a
+pressed Cancel is not a table row, and a well that rebuilt would lose both. The task rows'
+indeterminate bars went with the copy: an unknown fraction is busy, and busy is a line.
+
+**Upstream?** Yes: an application with a task centre has this roster.
+
+### `framework/widgets.py` — `StatusBarButton`
+
+**What.** Quiet words in the status bar that open what they summarise, gone while there is
+nothing to say.
+
+**Why.** Three modules kept the same class under three names — running tasks, launched agents,
+entries changed here and outside — and only one of them had a rule in the stylesheet.
+
+**Upstream?** Yes.
+
+### `framework/tasks.py`, `framework/task_runner.py` — `detail_factory` removed
+
+**What.** A task no longer carries a factory for an expandable detail widget.
+
+**Why.** Nothing in the application ever built one: the chevron, the lead column every row
+reserved for it and the lazily built widget were machinery on every row for a case nobody had.
+
+**Upstream?** Check `template/` first: carry the removal back only if the template's own tasks
+never use it either.
+
+### `framework/table.py` — the last column stretches only when no column asks to
+
+**What.** A `Table` turns `setStretchLastSection` on only when none of its columns is
+`resize="stretch"`.
+
+**Why.** Two tables in this pass put a short fact after the column that should take the slack
+— the step panel's test roster (a result after the name), the Assets tab (a use count after
+the asset) — and a last section stretching as well split the slack between the two, leaving
+a wide gap before a two-letter word. The roster overrode it by hand, which is the one-off
+the primitive exists to spare.
+
+**Upstream?** Yes.
+
+### `framework/toolbar.py` — `control_bar` removed
+
+**What.** The `QToolBar` factory for a page's own controls is gone. The Tests tab and the Time
+tab, its last two callers, seat their selectors, spin boxes and dates on a `Toolbar` beside
+their verbs, through `add_widget` and `set_shown`.
+
+**Why.** Two strips on one page — a `Toolbar` of verbs and a `control_bar` of controls — folded
+by two mechanisms: whole items into `…` on one, Qt's `»` popping the tail up as widgets on the
+other. With `set_shown` the `Toolbar` covers a control that comes and goes, which was the one
+thing the `QToolBar`'s per-widget action was held for. `#ControlBar` stays: it is the object
+name `Toolbar` itself sets.
+
+**Upstream?** Only if the template never adopted `control_bar` for a surface of its own.
+
+### `framework/table.py` — a column of chips
+
+**What.** `Column(chips=…)` paints a column's usual values as chips in the cell — one filled
+in the accent for the row's value — and a click commits a chip through the same `edited` the
+editor uses. With an editor on the column a last chip opens it over itself, and wears the
+editor's words for the value when that value is none of the chips. `Chip(apart=True)` parts a
+chip from the scale with a hairline. `Table.chips_at`, `chip_under` and `hovered_chip` are
+the read-backs; the delegate's `editorEvent` and `helpEvent` do the click and the tooltip.
+
+**Why.** The bulk Estimates tab lost its most valuable feature when the sizes became a
+number: nine chips down every row read as a grid, where the small, the large and the unsized
+steps are seen before a number is. The old tab got it by planting a spin box and nine buttons
+in every row with `setCellWidget`, which cost a widget tree per step, hid the row's hover and
+selection under the widgets and needed a taller row. Painting from one layout keeps the row
+the unit, the height the font's, and the chips aligned whatever a row holds.
+
+**Upstream?** Yes, with the table.

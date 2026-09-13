@@ -37,11 +37,12 @@ from PySide6.QtGui import (
     QPaintEvent,
     QPen,
 )
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QSpinBox, QToolButton, QToolTip, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QSpinBox, QToolButton, QToolTip, QWidget
 
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, ProjectId
 from dplanner.domain.schedule import format_days
+from dplanner.framework.signalling import StatusLine, Tone
 from dplanner.framework.undo import UndoService
 from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
@@ -49,16 +50,12 @@ from dplanner.modules.time_estimates.schedule import (
     read_efficiency,
     write_project,
 )
-
-# Secondary text as opacity rather than a theme colour — DESIGN.md exception #1, the same
-# constant the order table uses.
-SECONDARY_ALPHA = 160
+from dplanner.theme.tokens import FIELD_GAP, SECONDARY_ALPHA
 
 # Two makespans are "the same" within this; the calendar grid divides by the focus factor,
 # so exact equality with its floor would be float luck.
 FLOOR_TOLERANCE = 1e-9
 
-ROW_GAP = 8
 
 # The sequential tint: one blue, low-alpha over the surface (DESIGN.md exception #2), so
 # more time reads as more ink on every theme. The span is deliberately modest — the tint
@@ -80,9 +77,10 @@ SELECTION_PEN = 2.0
 class FocusBar(QWidget):
     """The focus factor: how much of a person's working day this project gets.
 
-    ``StartDateBar``'s twin, one module over — committed as an undoable command, echoes
-    suppressed by origin, reloaded when anything else writes the factor. It sits in the
-    page's control strip, so its caption wears the strip's label look.
+    Committed as an undoable command, echoes suppressed by origin, reloaded when anything
+    else writes the factor. It sits on the page's strip as the spin box alone — its words
+    are its suffix, its caption the tooltip — because a label beside it would be the
+    widest thing on a strip of glyphs.
     """
 
     def __init__(
@@ -98,13 +96,11 @@ class FocusBar(QWidget):
         self._project_id = project_id
         self._loading = False
 
-        caption = QLabel("Human focus", self)
-        caption.setObjectName("ToolbarLabel")
-
         self.percent = QSpinBox(self)
         self.percent.setRange(10, 100)
         self.percent.setSingleStep(5)
-        self.percent.setSuffix("%")
+        self.percent.setSuffix("% focus")
+        self.percent.setToolTip("Human focus: how much of a person's working day this project gets")
         # Arrow steps commit as they land; typing commits on Enter or focus-out, so a
         # half-typed "6" on the way to "60" never reaches the model.
         self.percent.setKeyboardTracking(False)
@@ -112,8 +108,6 @@ class FocusBar(QWidget):
 
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(ROW_GAP)
-        row.addWidget(caption)
         row.addWidget(self.percent)
 
         self._unsubscribe = library.module_data_changed.connect(self._on_module_data)
@@ -154,16 +148,15 @@ class FocusBar(QWidget):
 class Banner(QWidget):
     """What changes with the data, over the answer — and the button that acts on it.
 
-    ``say`` with words shows the line; with an ``action`` it shows the button too, and
-    ``acted`` fires when it is pressed. Without words the banner leaves the screen.
+    ``say`` with words shows the line in its tone; with an ``action`` it shows the button
+    too, and ``acted`` fires when it is pressed. Without words the banner leaves the screen.
     """
 
     acted = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.note = QLabel(self)
-        self.note.setObjectName("InspectorNote")
+        self.note = StatusLine(self)
         self.note.setWordWrap(True)
         self.button = QToolButton(self)
         self.button.setObjectName("ToolbarButton")
@@ -171,13 +164,13 @@ class Banner(QWidget):
         self.button.clicked.connect(self.acted)
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(ROW_GAP)
+        row.setSpacing(FIELD_GAP)
         row.addWidget(self.note, 1)
         row.addWidget(self.button)
         self.hide()
 
-    def say(self, words: str, *, action: str = "") -> None:
-        self.note.setText(words)
+    def say(self, words: str, tone: Tone = "info", *, action: str = "") -> None:
+        self.note.say(words, tone)
         self.button.setText(action)
         self.button.setVisible(bool(action))
         self.setVisible(bool(words))
@@ -235,7 +228,7 @@ class MatrixView(QWidget):
                 (metrics.horizontalAdvance(_human_label(count)) for count in self._humans),
                 default=0.0,
             )
-            + ROW_GAP
+            + FIELD_GAP
         )
         self._header = metrics.height() + HEADER_GAP
         width = self._gutter + len(self._agents) * (TILE_WIDTH + TILE_GAP) - TILE_GAP
@@ -312,7 +305,7 @@ class MatrixView(QWidget):
         for row, humans in enumerate(self._humans):
             seat = self._tile_rect(row, 0)
             painter.drawText(
-                QRectF(0.0, seat.top(), self._gutter - ROW_GAP, seat.height()),
+                QRectF(0.0, seat.top(), self._gutter - FIELD_GAP, seat.height()),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 _human_label(humans),
             )

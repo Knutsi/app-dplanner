@@ -56,6 +56,7 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.user_config import get_global, set_global
+from dplanner.framework.widgets import StatusBarButton
 from dplanner.framework.window import StatusHost
 from dplanner.framework.window_watch import WatchableRepository
 from dplanner.modules.step_agent_run import terminal
@@ -75,7 +76,7 @@ from dplanner.modules.step_agent_run.runs import (
     settle,
 )
 from dplanner.modules.step_agent_run.usage import record, row_for, rows, words
-from dplanner.modules.step_agent_run.view import AgentBrowserDialog, AgentStatusButton
+from dplanner.modules.step_agent_run.view import AgentBrowserDialog, button_text
 
 POLL_MS = 2000
 RUNS_KEY = "runs"
@@ -106,7 +107,7 @@ class StepAgentRunModule:
         self._deps = deps
         self._runs: list[AgentRun] = []
         self._timer: QTimer | None = None
-        self._button: AgentStatusButton | None = None
+        self._button: StatusBarButton | None = None
         self._browser: AgentBrowserDialog | None = None
 
     def register(self) -> None:
@@ -116,7 +117,7 @@ class StepAgentRunModule:
             for run in map(AgentRun.from_json, get_global(MODULE_ID, RUNS_KEY, []))
             if run is not None
         ]
-        self._button = AgentStatusButton()
+        self._button = StatusBarButton("Launched agents — click to open")
         self._button.clicked.connect(lambda: self._open_browser())
         deps.status.add_status_widget(self._button)
         self._browser = AgentBrowserDialog(
@@ -271,7 +272,7 @@ class StepAgentRunModule:
     def _refresh(self) -> None:
         if self._button is None or self._browser is None or self._timer is None:
             return
-        self._button.show_runs(self._runs, self._title_of)
+        self._button.show_text(button_text(self._runs, self._title_of))
         if self._browser.isVisible():
             self._browser.refresh(self._runs, self._focus_reason, self._resume_of, self._usage_of)
         live = any(run.live for run in self._runs)

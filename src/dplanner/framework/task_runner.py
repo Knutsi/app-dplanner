@@ -28,7 +28,6 @@ import threading
 from collections.abc import Callable
 
 from PySide6.QtCore import QObject, QTimer, Signal
-from PySide6.QtWidgets import QWidget
 
 from dplanner.framework.tasks import Task, TaskService
 
@@ -93,7 +92,6 @@ class TaskRunner(QObject):
         cancellable: bool = False,
         cancel_prompt: str | None = None,
         keep_finished: bool = False,
-        detail_factory: Callable[[], QWidget] | None = None,
     ) -> bool:
         """Start ``body`` on a daemon thread under a new Task. False when already busy —
         the caller keeps its own refusal message ("Git is busy…")."""
@@ -105,7 +103,6 @@ class TaskRunner(QObject):
             cancellable=cancellable,
             cancel_prompt=cancel_prompt,
             keep_finished=keep_finished,
-            detail_factory=detail_factory,
         )
         self.busy_changed.emit(True)
         handoff = _Handoff(self, body, self._task)

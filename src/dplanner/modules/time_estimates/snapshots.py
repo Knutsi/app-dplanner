@@ -21,26 +21,15 @@ from datetime import date
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QLabel,
-    QLineEdit,
-    QMenu,
-    QPlainTextEdit,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QLineEdit, QMenu, QPlainTextEdit, QToolButton, QWidget
 
 from dplanner.domain.schedule import format_date
+from dplanner.framework.dialog import DialogFrame
+from dplanner.framework.signalling import StatusLine
+from dplanner.framework.widgets import block, caption
 from dplanner.modules.time_estimates.progress import Pick, Snapshot, find_saved
+from dplanner.theme.tokens import SECTION_GAP
 
-# DESIGN.md: dialogs get 20 px outer margins and 12 px between sections; a caption sits
-# 6 px over its field.
-DIALOG_MARGIN = 20
-DIALOG_GAP = 12
-CAPTION_GAP = 6
 NOTE_LINES = 4
 
 # What the leading entry of each side is called.
@@ -155,45 +144,25 @@ class SnapshotPicker(QToolButton):
         menu.addAction(action)
 
 
-class SaveSnapshotDialog(QDialog):
+class SaveSnapshotDialog(DialogFrame):
     """A title the snapshot is found by, and a note on what the occasion was."""
 
     def __init__(self, taken: Sequence[str], parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Save Snapshot")
+        super().__init__("Save Snapshot", parent)
         self._taken = {title.strip().lower() for title in taken}
-        self.title = QLineEdit(self)
+        self.title = QLineEdit(self.body)
         self.title.setPlaceholderText("What we thought on 1 November")
         self.title.textChanged.connect(self._check)
-        self.note = QPlainTextEdit(self)
+        # Under the field it is about, in the error tone, only while the title is taken.
+        self.reason = StatusLine(self.body)
+        block(self.body_layout, caption("Title", self.body), self.title, self.reason)
+        self.note = QPlainTextEdit(self.body)
         self.note.setPlaceholderText("What the occasion was, for whoever compares against it")
-        metrics = self.note.fontMetrics()
-        self.note.setFixedHeight(metrics.lineSpacing() * NOTE_LINES + DIALOG_GAP)
-        self.reason = QLabel(self)
-        self.reason.setObjectName("InspectorNote")
-        self.reason.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel, self
-        )
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        column = QVBoxLayout(self)
-        column.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
-        column.setSpacing(CAPTION_GAP)
-        column.addWidget(self._caption("Title"))
-        column.addWidget(self.title)
-        column.addSpacing(DIALOG_GAP - CAPTION_GAP)
-        column.addWidget(self._caption("Note"))
-        column.addWidget(self.note)
-        column.addWidget(self.reason)
-        column.addSpacing(DIALOG_GAP - CAPTION_GAP)
-        column.addWidget(self.buttons)
+        self.note.setFixedHeight(self.note.fontMetrics().lineSpacing() * NOTE_LINES + SECTION_GAP)
+        block(self.body_layout, caption("Note", self.body), self.note)
+        self.add_dismiss()
+        self.set_primary("Save", self.accept)
         self._check()
-
-    def _caption(self, text: str) -> QLabel:
-        caption = QLabel(text, self)
-        caption.setObjectName("InspectorCaption")
-        return caption
 
     def values(self) -> tuple[str, str]:
         return self.title.text().strip(), self.note.toPlainText().strip()
@@ -202,13 +171,8 @@ class SaveSnapshotDialog(QDialog):
         """Save is offered only for a title that is new: the reason sits under the field
         rather than arriving as a refusal after the click."""
         title = self.title.text().strip()
-        if not title:
-            reason = ""
-        elif title.lower() in self._taken:
-            reason = f"A snapshot called “{title}” is already saved."
-        else:
-            reason = ""
-        self.reason.setText(reason)
-        self.reason.setVisible(bool(reason))
-        save = self.buttons.button(QDialogButtonBox.StandardButton.Save)
-        save.setEnabled(bool(title) and not reason)
+        taken = bool(title) and title.lower() in self._taken
+        self.reason.say(f"A snapshot called “{title}” is already saved." if taken else "", "error")
+        primary = self.primary()
+        if primary is not None:
+            primary.setEnabled(bool(title) and not taken)

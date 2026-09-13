@@ -16,6 +16,7 @@ from dplanner.domain.commands import AddNodeCommand, SetFieldCommand
 from dplanner.domain.model import Step
 from dplanner.modules.coverage.activity import COVERAGE_KIND
 from dplanner.modules.docs.activity import DOCS_KIND, DocsActivity
+from dplanner.modules.estimation.bulk import ESTIMATE_KIND, BulkEstimateActivity
 from dplanner.modules.notes.activity import NOTES_KIND
 from dplanner.modules.progression.module import PROGRESSION_KIND, ProgressionActivity
 from dplanner.modules.project_assets.activity import ASSETS_KIND, AssetsActivity
@@ -34,6 +35,7 @@ VIEWS = [
     pytest.param(testing.TESTS_KIND, testing.TestsActivity, "_refresh", id="tests"),
     pytest.param(DOCS_KIND, DocsActivity, "_refresh", id="docs"),
     pytest.param(ASSETS_KIND, AssetsActivity, "_refresh", id="assets"),
+    pytest.param(ESTIMATE_KIND, BulkEstimateActivity, "_refresh", id="estimates"),
 ]
 
 # Where each view keeps its indicator, from the activity the tab host hands back. The canvas
@@ -43,9 +45,11 @@ INDICATORS = [
     pytest.param(TIME_KIND, "updating", id="time"),
     pytest.param(PROGRESSION_KIND, "updating", id="progression"),
     pytest.param(testing.TESTS_KIND, "updating", id="tests"),
+    pytest.param(testing.ALL_TESTS_KIND, "updating", id="all_tests"),
     pytest.param(DOCS_KIND, "page.updating", id="docs"),
     pytest.param(ASSETS_KIND, "updating", id="assets"),
     pytest.param(COVERAGE_KIND, "updating", id="coverage"),
+    pytest.param(ESTIMATE_KIND, "updating", id="estimates"),
     pytest.param(NOTES_KIND, "view.updating", id="notes"),
 ]
 

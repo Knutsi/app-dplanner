@@ -17,7 +17,7 @@ first — but "divide vertical" matches through the path, which is the way someb
 remembers the submenu and not the entry would look for it.
 """
 
-from PySide6.QtGui import QKeySequence, QPalette
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QWidget
 
 from dplanner.framework.action_registry import (
@@ -28,6 +28,8 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.context import ContextService
 from dplanner.framework.picker import PickerDialog, PickerRow
+from dplanner.framework.toolbar import action_words
+from dplanner.framework.widgets import ink_of
 
 
 def menu_path(spec: ActionSpec) -> str:
@@ -39,13 +41,9 @@ def menu_path(spec: ActionSpec) -> str:
     return spec.menu if spec.submenu is None else spec.menu + PATH_SEPARATOR + spec.submenu
 
 
-def _plain_label(spec: ActionSpec, label: str | None) -> str:
-    return (label if label is not None else spec.label).replace("&", "")
-
-
 class CommandPalette(PickerDialog):
     def __init__(self, registry: ActionRegistry, context: ContextService, parent: QWidget) -> None:
-        ink = parent.palette().color(QPalette.ColorRole.Text)
+        ink = ink_of(parent)
         rows = []
         for spec, state in registry.runnable(context.current()):
             if not spec.palette:
@@ -55,7 +53,7 @@ class CommandPalette(PickerDialog):
             rows.append(
                 PickerRow(
                     id=spec.id,
-                    label=_plain_label(spec, state.label),
+                    label=action_words(spec, state)[0],
                     detail=path,
                     trailing=(
                         sequences[0].toString(QKeySequence.SequenceFormat.NativeText)

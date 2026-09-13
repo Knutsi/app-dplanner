@@ -158,3 +158,14 @@ def test_a_quiet_verb_wears_the_footer_look_and_a_restyled_primary_still_the_acc
         assert GlyphButton("Refresh", refresh_icon, host).property("quiet") is True
     finally:
         host.deleteLater()
+
+
+def test_a_number_box_prints_a_number_the_way_a_person_writes_it(app):
+    from dplanner.framework.widgets import NumberBox
+
+    box = NumberBox()
+    box.setDecimals(2)
+    try:
+        assert [box.textFromValue(value) for value in (0.25, 0.5, 3.0)] == ["0.25", "0.5", "3"]
+    finally:
+        box.deleteLater()

@@ -5,7 +5,8 @@ strip that names the two snapshots the plots compare."""
 from datetime import date
 
 import pytest
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, Qt
+from PySide6.QtWidgets import QDateEdit
 
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -16,6 +17,7 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Step, TextEdit
 from dplanner.domain.schedule import format_date
+from dplanner.framework.list_rows import DETAIL_ROLE, MUTED_ROLE, VALUE_ROLE
 from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
 from dplanner.modules.estimation.aspect import write as write_days
 from dplanner.modules.estimation.schedule import write_start
@@ -24,7 +26,16 @@ from dplanner.modules.step_agent_instruction.aspect import write_state
 from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
 from dplanner.modules.step_milestone.aspect import write as write_milestone_label
 from dplanner.modules.time_estimates.chart import segment_words
-from dplanner.modules.time_estimates.milestones import ALL_KEY, ALL_LABEL
+from dplanner.modules.time_estimates.milestones import (
+    ALL_KEY,
+    ALL_LABEL,
+    BEGINS_COLUMN,
+    COLOR_ROLE,
+    DAYS_COLUMN,
+    LANDED_COLUMN,
+    LANDS_COLUMN,
+)
+from dplanner.modules.time_estimates.module import NO_STEPS
 from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
     read_efficiency,
@@ -76,14 +87,55 @@ def tab(services, project):
     return services.tabs.open("time", project.id)
 
 
+def _cell(tab, row, column):
+    item = tab.milestones.item(row, column)
+    assert item is not None
+    return item
+
+
+def _row(tab, key):
+    row = tab.milestones.row_of(key)
+    assert row is not None
+    return row
+
+
 def _landings(tab):
-    return [(row.name.text(), row.when.text(), row.days.text()) for row in tab.milestones.rows]
+    return [
+        (
+            _cell(tab, row, 0).text(),
+            _cell(tab, row, LANDS_COLUMN).text(),
+            _cell(tab, row, DAYS_COLUMN).text(),
+        )
+        for row in range(tab.milestones.rowCount())
+    ]
 
 
 def _swatches(tab):
     """The milestone rows' colours, top to bottom — the whole and the remainder aside."""
     keys = tab.milestones.keys
-    return [row.swatch.color.name() for row in tab.milestones.rows if row.key in keys]
+    return [
+        _cell(tab, row, 0).data(COLOR_ROLE)
+        for row in range(tab.milestones.rowCount())
+        if tab.milestones.key_at(row) in keys
+    ]
+
+
+def _primary(dialog):
+    button = dialog.primary()
+    assert button is not None
+    return button
+
+
+def _begin(tab, key, day):
+    """Type a day into a row's Begins cell and commit it, as Enter would."""
+    table = tab.milestones
+    index = table.model().index(_row(tab, key), BEGINS_COLUMN)
+    if table.indexWidget(index) is None:
+        table.edit(index)
+    field = table.indexWidget(index)
+    assert isinstance(field, QDateEdit)
+    field.setDate(QDate(day.year, day.month, day.day))
+    table.commitData(field)
 
 
 # -- the grid and the answer -----------------------------------------------------------------
@@ -105,16 +157,16 @@ def test_selecting_a_tile_re_asks_the_question(tab):
 
 
 def test_the_lens_toggle_swaps_the_grid_not_the_answer(tab):
-    tab.project_button.click()
+    tab.lens_box.setCurrentIndex(1)  # Project days.
     assert tab.matrix.value_at(1, 1) == "4d"  # project working days now
     assert tab.landing == date(2026, 9, 16)  # the calendar keeps its dates
-    tab.calendar_button.click()
+    tab.lens_box.setCurrentIndex(0)  # Calendar days.
     assert tab.matrix.value_at(1, 1) == "1.6w"
 
 
 def test_the_matrix_follows_the_graph(services, project, tab):
     """Nothing is stored: unlinking the chain halves the makespan with two humans."""
-    tab.project_button.click()
+    tab.lens_box.setCurrentIndex(1)  # Project days.
     _read, draft, _docs = project.steps
     services.undo.push(SetEdgesCommand(draft.id, "requires", []))
     assert tab.matrix.value_at(1, 1) == "4d"  # one human still serialises
@@ -125,7 +177,7 @@ def test_the_matrix_follows_the_graph(services, project, tab):
 
 def test_more_time_wears_more_ink_and_the_floor_is_lightest(services, project, tab):
     """With the chain broken, one human sits above the 2d floor and two humans on it."""
-    tab.project_button.click()
+    tab.lens_box.setCurrentIndex(1)  # Project days.
     _read, draft, _docs = project.steps
     services.undo.push(SetEdgesCommand(draft.id, "requires", []))
     assert tab.matrix.tint_alpha(1, 1) > tab.matrix.tint_alpha(2, 1)
@@ -222,11 +274,16 @@ def test_an_unestimated_step_is_noted_and_the_banner_opens_the_estimates_on_it(
     read, _draft, _docs = project.steps
     services.undo.push(SetModuleDataCommand(read.id, ESTIMATION_ID, {}))
     assert tab.banner.isVisibleTo(tab.widget)
-    assert tab.banner.note.text() == "1 step unestimated · counted as 0d"
+    assert tab.banner.note.words() == "1 step unestimated · counted as 0d"
     assert tab.banner.button.text() == "Estimate missing"
     tab.banner.button.click()
     (estimates,) = [a for a in services.tabs.activities() if isinstance(a, BulkEstimateActivity)]
     assert estimates.filter_key == "unestimated"
+    # And the keyboard is already on the first unsized row's estimate.
+    from dplanner.modules.estimation.bulk import ESTIMATE_COLUMN
+
+    assert estimates.table.currentColumn() == ESTIMATE_COLUMN
+    assert not estimates.table.isRowHidden(estimates.table.currentRow())
     table = estimates.table
     shown = [
         item.text()
@@ -318,9 +375,9 @@ def test_the_milestones_land_in_sequence_and_the_whole_leads_the_list(services, 
         ("v1", "16 September", "1.6w"),
         ("v2", "23 September", "5d"),
     ]
-    whole = tab.milestones.rows[0]
-    assert whole.key == ALL_KEY and whole.selected  # nothing picked: the whole is
-    assert not whole.swatch.isVisibleTo(tab.widget)
+    assert tab.milestones.key_at(0) == ALL_KEY
+    assert tab.milestones.picked_key() == ALL_KEY  # nothing picked: the whole is
+    assert _cell(tab, 0, BEGINS_COLUMN).data(VALUE_ROLE) == date(2026, 9, 7)
     assert tab.landing == date(2026, 9, 23)
 
 
@@ -337,15 +394,11 @@ def test_each_milestone_wears_its_shade_of_the_palette(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, ship = staged.steps
     first, second = shades(PALETTES[0], 2)
-    assert tab.milestones.row(draft.id).swatch.color.name() == first
-    assert tab.milestones.row(ship.id).swatch.color.name() == second
-    assert tab.milestones.row(draft.id).name.text() == "v1"
-    # The step's own title stands beside the label, whole where there is room and elided
-    # where there is not — the column is as wide as the panel leaves it.
-    row = tab.milestones.row(draft.id)
-    assert row.title.full == "Draft the model"
-    row.title.resize(40, row.title.height())
-    assert row.title.text().endswith("…") and row.title.full == "Draft the model"
+    assert _cell(tab, _row(tab, draft.id), 0).data(COLOR_ROLE) == first
+    assert _cell(tab, _row(tab, ship.id), 0).data(COLOR_ROLE) == second
+    name = _cell(tab, _row(tab, draft.id), 0)
+    assert name.text() == "v1" and not name.icon().isNull()  # The key badge, in its shade.
+    assert name.data(DETAIL_ROLE) == "Draft the model"  # The step's own title under the label.
 
 
 def test_the_dealt_shades_spread_along_the_map_as_milestones_are_added(services, staged):
@@ -374,8 +427,8 @@ def test_picking_a_palette_reshades_the_milestones_and_is_undoable(services, sta
     services.undo.undo()
     assert MODULE_ID not in staged.module_data
     assert tab.palette_picker.palette_id == PALETTES[0].id  # the picker follows the model
-    assert tab.milestones.row(draft.id).swatch.color.name() == shades(PALETTES[0], 2)[0]
-    assert tab.milestones.row(ship.id).swatch.color.name() == shades(PALETTES[0], 2)[1]
+    assert _cell(tab, _row(tab, draft.id), 0).data(COLOR_ROLE) == shades(PALETTES[0], 2)[0]
+    assert _cell(tab, _row(tab, ship.id), 0).data(COLOR_ROLE) == shades(PALETTES[0], 2)[1]
 
 
 def test_the_palette_and_the_focus_factor_share_one_entry_without_clobbering(services, staged):
@@ -389,10 +442,14 @@ def test_the_palette_and_the_focus_factor_share_one_entry_without_clobbering(ser
     assert staged.module_data[MODULE_ID] == {"efficiency": 0.8, "format": 1}  # default: absent
 
 
-def test_the_swatch_menu_offers_the_palettes_shades_then_custom_and_automatic(services, staged):
+def test_the_colour_verb_offers_the_palettes_shades_then_custom_and_automatic(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, _ship = staged.steps
-    menu = tab.milestones.row(draft.id).swatch.menu()
+    assert tab.colour_menu() is None and not tab.colour_action.isEnabled()  # Nothing picked.
+    tab.milestones.selectRow(_row(tab, draft.id))
+    assert tab.colour_action.isEnabled()
+    menu = tab.colour_menu()
+    assert menu is not None
     titles = [action.text() for action in menu.actions() if not action.isSeparator()]
     assert titles[:2] == ["Viridis 1", "Viridis 2"]
     assert titles[-2:] == ["Custom…", "Automatic"]
@@ -412,86 +469,81 @@ def test_the_calendar_paints_each_stretch_and_marks_the_landing(services, staged
     assert "v2 lands" in tab.months.day_tooltip(date(2026, 9, 23))
 
 
-def test_dating_a_milestone_starts_with_the_day_the_sequence_gave_it(services, staged):
-    """*Begin…* under a milestone's name pre-fills the stretch's own start, so choosing a
-    date is one click and an edit; the cross hands the decision back to the sequence.
-    Both undo — and the landing date on the same row answers each edit."""
+def test_dating_a_milestone_starts_from_the_day_the_sequence_gave_it(services, staged):
+    """A milestone's Begins cell shows the day the sequence begins it, quieter than a day of
+    its own; typing a day there gives it one, and Begin When the Previous Lands hands the
+    decision back. Both undo — and the landing date on the same row answers each edit."""
     tab = services.tabs.open("time", staged.id)
     _read, _draft, _docs, ship = staged.steps
-    row = tab.milestones.row(ship.id).start
-    assert tab.milestones.row(ship.id).name.text() == "v2"
-    assert row.set_date.isVisibleTo(tab.widget) and not row.date.isVisibleTo(tab.widget)
-    # Until it is given one, the row says the day the sequence begins it — so a row says
-    # when its work runs, not only when it ends.
-    assert row.caption.text() == "Begins 17 Sep"
-    row.set_date.click()
-    assert ship.module_data[MODULE_ID] == {"start": "2026-09-17", "format": 1}
-    assert row.date.isVisibleTo(tab.widget) and not row.set_date.isVisibleTo(tab.widget)
-    row.date.setDate(QDate(2026, 10, 5))
-    assert ship.module_data[MODULE_ID]["start"] == "2026-10-05"
+    begins = _cell(tab, _row(tab, ship.id), BEGINS_COLUMN)
+    assert begins.text() == "17 Sep" and begins.data(MUTED_ROLE) is True
+    assert begins.flags() & Qt.ItemFlag.ItemIsEditable
+    _begin(tab, ship.id, date(2026, 10, 5))
+    assert ship.module_data[MODULE_ID] == {"start": "2026-10-05", "format": 1}
     assert _landings(tab)[2] == ("v2", "9 October", "5d")
-    assert tab.milestones.row(ship.id).start is row  # the row the edit came from survives
-    row.clear.click()
+    assert _cell(tab, _row(tab, ship.id), BEGINS_COLUMN).data(MUTED_ROLE) is False
+    tab.milestones.selectRow(_row(tab, ship.id))
+    assert tab.begin_action.isEnabled()
+    tab.begin_action.trigger()
     assert MODULE_ID not in ship.module_data
     assert _landings(tab)[2] == ("v2", "23 September", "5d")
+    assert not tab.begin_action.isEnabled()  # Greyed, with the reason in its words.
+    assert tab.begin_action.text().endswith("it already does")
     services.undo.undo()  # a burst of edits to one milestone is one step, like typing
     assert MODULE_ID not in ship.module_data
     services.undo.redo()
     assert MODULE_ID not in ship.module_data
 
 
-def test_the_project_start_is_the_leading_row_of_the_list(services, staged, project):
-    """The list leads with the whole plan, and what it begins on is the project's own
-    start — always dated, never handed back — and setting it is the calendar click's
-    twin: one undoable write of the same entry."""
+def test_the_project_start_is_the_leading_row_of_the_table(services, staged, project):
+    """The table leads with the whole plan, and what it begins on is the project's own
+    start — always dated, never handed back — and setting it is the calendar click's twin:
+    one undoable write of the same entry."""
     tab = services.tabs.open("time", staged.id)
-    leading = tab.milestones.rows[0]
-    assert leading.key == ALL_KEY and leading.name.text() == ALL_LABEL
-    row = leading.start
-    assert row.date.isVisibleTo(tab.widget)
-    assert not row.clear.isVisibleTo(tab.widget) and not row.set_date.isVisibleTo(tab.widget)
-    assert row.date.date() == QDate(2026, 9, 7)
-    row.date.setDate(QDate(2026, 9, 14))
+    assert tab.milestones.key_at(0) == ALL_KEY and _cell(tab, 0, 0).text() == ALL_LABEL
+    begins = _cell(tab, 0, BEGINS_COLUMN)
+    assert begins.data(VALUE_ROLE) == date(2026, 9, 7) and begins.data(MUTED_ROLE) is False
+    assert begins.flags() & Qt.ItemFlag.ItemIsEditable
+    _begin(tab, ALL_KEY, date(2026, 9, 14))
     assert project.module_data[ESTIMATION_ID]["start"] == "2026-09-14"
     assert tab.months.span[0] == date(2026, 9, 14)
     services.undo.undo()
-    assert row.date.date() == QDate(2026, 9, 7)
+    assert _cell(tab, 0, BEGINS_COLUMN).data(VALUE_ROLE) == date(2026, 9, 7)
 
 
 def test_a_date_the_sequence_cannot_keep_is_pushed_and_flagged(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, _draft, _docs, ship = staged.steps
-    tab.milestones.row(ship.id).start.date.setDate(QDate(2026, 9, 10))
-    tab.milestones.row(ship.id).start.start_changed.emit(date(2026, 9, 10))
-    v2 = tab.milestones.row(ship.id)
-    assert v2.when.text() == "⚠ 23 September"
-    assert "Asked to begin 10 September" in v2.toolTip()
+    _begin(tab, ship.id, date(2026, 9, 10))
+    lands = _cell(tab, _row(tab, ship.id), LANDS_COLUMN)
+    assert lands.text() == "⚠ 23 September"
+    assert "Asked to begin 10 September" in lands.toolTip()
 
 
 def test_a_chosen_colour_overrides_the_dealt_one_until_automatic(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, ship = staged.steps
-    tab.milestones.row(draft.id).swatch.color_picked.emit("#C98500")
+    tab.pick_colour(draft.id, "#C98500")
     assert draft.module_data[MODULE_ID] == {"color": "#c98500", "format": 1}
-    assert tab.milestones.row(draft.id).swatch.color.name() == "#c98500"
+    assert _cell(tab, _row(tab, draft.id), 0).data(COLOR_ROLE) == "#c98500"
     assert tab.months.band_at(date(2026, 9, 10)).color.name() == "#c98500"
     # The other is still dealt in turn — its shade is its place among two, not one.
-    assert tab.milestones.row(ship.id).swatch.color.name() == shades(PALETTES[0], 2)[1]
-    tab.milestones.row(draft.id).swatch.color_picked.emit(None)
+    assert _cell(tab, _row(tab, ship.id), 0).data(COLOR_ROLE) == shades(PALETTES[0], 2)[1]
+    tab.pick_colour(draft.id, None)
     assert MODULE_ID not in draft.module_data
 
 
 def test_a_dated_milestone_keeps_its_colour_and_vice_versa(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, _ship = staged.steps
-    tab.milestones.row(draft.id).swatch.color_picked.emit("#c98500")
-    tab.milestones.row(draft.id).start.start_changed.emit(date(2026, 9, 1))
+    tab.pick_colour(draft.id, "#c98500")
+    tab.milestones.start_changed.emit(draft.id, date(2026, 9, 1))
     assert draft.module_data[MODULE_ID] == {
         "start": "2026-09-01",
         "color": "#c98500",
         "format": 1,
     }
-    tab.milestones.row(draft.id).swatch.color_picked.emit(None)
+    tab.pick_colour(draft.id, None)
     assert draft.module_data[MODULE_ID] == {"start": "2026-09-01", "format": 1}
 
 
@@ -499,17 +551,16 @@ def test_picking_a_milestone_emphasises_it_in_the_calendar_and_the_plots(service
     """A pick highlights; it hides nothing. *All milestones* shows them all alike again."""
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, ship = staged.steps
-    whole, first, second = tab.milestones.rows
-    second.picked.emit(ship.id)
+    tab.milestones.selectRow(_row(tab, ship.id))
     assert tab.picked == ship.id
     assert tab.months.emphasised == ship.id
     assert tab.chart._data.emphasis == ship.id
-    assert second.selected and not first.selected and not whole.selected
+    assert tab.milestones.picked_key() == ship.id
     assert [s.key for s in tab.chart._data.segments] == [draft.id, ship.id]  # both stay
-    whole.picked.emit(ALL_KEY)
+    tab.milestones.selectRow(0)
     assert tab.picked is None and tab.months.emphasised is None
-    assert tab.chart._data.emphasis is None and whole.selected
-    first.picked.emit(draft.id)
+    assert tab.chart._data.emphasis is None and tab.milestones.picked_key() == ALL_KEY
+    tab.milestones.selectRow(_row(tab, draft.id))
     assert tab.picked == draft.id
     services.undo.push(SetModuleDataCommand(draft.id, MILESTONE_ID, {}))  # no longer one
     assert tab.picked is None
@@ -527,15 +578,7 @@ def test_removing_a_milestone_step_takes_its_row_with_it(services, staged):
     ]
 
 
-def test_the_milestone_rows_are_never_read_back_out_of_the_layout(monkeypatch, services, staged):
-    """A QLayoutItem wrapper is a double delete waiting for a gc pass (CLAUDE.md's crash
-    notes): ``keys`` reads the list's own dict, kept in layout order through a reorder."""
-    from PySide6.QtWidgets import QLayout
-
-    def refuse(_layout, _index):
-        raise AssertionError("itemAt() hands out a QLayoutItem wrapper; read the dict instead")
-
-    monkeypatch.setattr(QLayout, "itemAt", refuse)
+def test_the_rows_follow_the_sequence_when_the_graph_reorders_it(services, staged):
     tab = services.tabs.open("time", staged.id)
     read, draft, _docs, ship = staged.steps
     assert tab.milestones.keys == (draft.id, ship.id)
@@ -562,22 +605,22 @@ def test_the_list_scrolls_under_the_staffing_grid(services, staged, app):
     window.resize(1100, 620)
     window.show()
     app.processEvents()
-    assert tab.milestone_scroll.verticalScrollBar().maximum() > 0  # there is more than fits
+    assert tab.milestones.verticalScrollBar().maximum() > 0  # there is more than fits
     assert tab.matrix.visibleRegion().boundingRect().height() == tab.matrix.height()
     window.hide()
 
 
-def test_without_milestones_the_list_says_where_to_make_one(tab, project):
-    """The one row there is leads the list, so it is what carries the project's start —
+def test_without_milestones_the_table_says_where_to_make_one(tab, project):
+    """The one row there is leads the table, so it is what carries the project's start —
     and the note under it says how to add a milestone."""
-    assert tab.milestones.empty.isVisibleTo(tab.widget)
-    assert "Step ▸ Type ▸ Milestone" in tab.milestones.empty.text()
-    (whole,) = tab.milestones.rows
-    assert whole.name.text() == "All work" and whole.key == ""
-    assert not whole.swatch.isVisibleTo(tab.widget)
-    assert whole.start.date.date() == QDate(2026, 9, 7)
-    assert not whole.start.clear.isVisibleTo(tab.widget)  # it can never be handed back
-    whole.start.date.setDate(QDate(2026, 9, 14))
+    assert tab.no_milestones.isVisibleTo(tab.widget)
+    assert "Step ▸ Type ▸ Milestone" in tab.no_milestones.text()
+    assert tab.milestones.rowCount() == 1 and tab.milestones.key_at(0) == ""
+    assert _cell(tab, 0, 0).text() == "All work"
+    begins = _cell(tab, 0, BEGINS_COLUMN)
+    assert begins.data(VALUE_ROLE) == date(2026, 9, 7)
+    assert begins.flags() & Qt.ItemFlag.ItemIsEditable
+    _begin(tab, "", date(2026, 9, 14))
     assert project.module_data[ESTIMATION_ID]["start"] == "2026-09-14"
 
 
@@ -594,8 +637,8 @@ def test_a_loop_in_the_file_says_which_steps_wait_on_each_other(services, projec
     assert not tab.matrix.isVisibleTo(tab.widget)
     assert not tab.chart.isVisibleTo(tab.widget)
     assert tab.banner.isVisibleTo(tab.widget) and not tab.banner.button.isVisibleTo(tab.widget)
-    assert "Read the spec, Draft the model" in tab.banner.note.text()
-    assert "Unlink one" in tab.banner.note.text()
+    assert "Read the spec, Draft the model" in tab.banner.note.words()
+    assert "Unlink one" in tab.banner.note.words() and tab.banner.note.tone() == "error"
     read.edges["requires"] = []
     library.edges_changed.emit(read.id, None)
     assert tab.months.isVisibleTo(tab.widget)
@@ -605,10 +648,8 @@ def test_a_loop_in_the_file_says_which_steps_wait_on_each_other(services, projec
 def test_a_stepless_project_says_so_instead_of_a_grid_of_zeros(services, make_project):
     empty = make_project("Empty")
     tab = services.tabs.open("time", empty.id)
-    assert tab.banner.note.text() == "No steps yet"
-    assert not tab.matrix.isVisibleTo(tab.widget)
-    assert not tab.milestone_scroll.isVisibleTo(tab.widget)
-    assert not tab.months.isVisibleTo(tab.widget)
+    assert tab.empty.isVisibleTo(tab.widget) and tab.empty.text() == NO_STEPS
+    assert not tab.split.isVisibleTo(tab.widget)  # no grid, no table, no calendar
     assert tab.controls.isVisibleTo(tab.widget)  # the strip is chrome, and stays
 
 
@@ -654,16 +695,19 @@ def test_each_row_says_how_much_of_the_work_through_it_has_landed(services, stag
     library = services.document
     read, draft, _docs, ship = staged.steps
     tab = services.tabs.open("time", staged.id)
-    assert [row.progress.text() for row in tab.milestones.rows] == ["0%", "0%", "0%"]
+    landed = lambda: [  # noqa: E731 - read twice, after each write
+        _cell(tab, row, LANDED_COLUMN).text() for row in range(tab.milestones.rowCount())
+    ]
+    assert landed() == ["0%", "0%", "0%"]
     services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
     # By estimated days, the one measure: the whole (2 of 7), then v1 (2 of 4), then v2
     # (2 of 7) — everything through its stretch. The count is in the tooltip's words.
-    assert [row.progress.text() for row in tab.milestones.rows] == ["29%", "50%", "29%"]
-    assert tab.milestones.row(ship.id).progress.toolTip() == (
+    assert landed() == ["29%", "50%", "29%"]
+    assert _cell(tab, _row(tab, ship.id), LANDED_COLUMN).toolTip() == (
         "2d of 7d estimated · 1 of 4 steps done"
     )
     SetModuleDataCommand(draft.id, STATUS_ID, write_status("done")).redo(library)
-    assert [row.progress.text() for row in tab.milestones.rows] == ["57%", "100%", "57%"]
+    assert landed() == ["57%", "100%", "57%"]
 
 
 def test_the_right_half_is_no_taller_than_its_content(services, staged, tab, app):
@@ -705,7 +749,7 @@ def test_the_plots_show_the_whole_plan_a_page_at_a_time(services, staged):
         (ship.id, "v2", (date(2026, 9, 17), date(2026, 9, 23))),
     ]
     assert [s.color.name() for s in data.segments] == shades(PALETTES[0], 2)
-    tab.milestones.row(draft.id).picked.emit(draft.id)
+    tab.milestones.selectRow(_row(tab, draft.id))
     data = tab.chart._data
     assert data.emphasis == draft.id and data.emphasised is data.segments[0]
     assert data.finish == date(2026, 9, 23) and len(data.segments) == 2  # nothing hidden
@@ -821,7 +865,7 @@ def test_the_plots_compare_the_two_snapshots_the_strip_names(services, staged):
     # The start is the 7th; the record that stands in for it is the 1st's, and it says so.
     assert tab.then_picker.toolTip() == "the plan at start, recorded 1 September"
     assert tab.now_picker.toolTip() == "the plan now"
-    assert not tab.then_day_action.isVisible()
+    assert not tab.controls.is_shown(tab.then_day)
     data = tab.chart._data
     assert data.basis == "the plan at start, recorded 1 September" and data.as_of == ""
     assert data.baseline_finish == date(2026, 9, 18) and data.finish == date(2026, 9, 23)
@@ -848,7 +892,7 @@ def test_the_plots_compare_the_two_snapshots_the_strip_names(services, staged):
     # Day…: the field appears beside the picker, and the pick follows it.
     tab.then_picker.picked.emit(Pick("day", day=date(2026, 9, 3)))
     assert tab.then_pick == Pick("day", day=date(2026, 9, 3))
-    assert tab.then_day_action.isVisible() and tab.then_picker.text() == "3 September"
+    assert tab.controls.is_shown(tab.then_day) and tab.then_picker.text() == "3 September"
     assert tab.then_picker.toolTip() == "the plan at 3 September, recorded 1 September"
     tab.then_day.setDate(QDate(2030, 1, 1))  # after every record: today's own, and said
     data = tab.chart._data
@@ -858,7 +902,7 @@ def test_the_plots_compare_the_two_snapshots_the_strip_names(services, staged):
         f"recorded {format_date(date.today())}"
     )
     tab.then_picker.picked.emit(Pick("start"))
-    assert tab.then_pick.kind == "start" and not tab.then_day_action.isVisible()
+    assert tab.then_pick.kind == "start" and not tab.controls.is_shown(tab.then_day)
     assert tab.then_picker.menu_labels() == ["Plan at start", "Day…"]  # nothing saved yet
 
 
@@ -880,10 +924,10 @@ def test_a_snapshot_saved_on_purpose_is_named_kept_and_compared_against(services
     read, _draft, _docs, ship = staged.steps
     tab = services.tabs.open("time", staged.id)
     dialog = SaveSnapshotDialog([row.title for row in read_saved(staged)], tab.widget)
-    assert not dialog.buttons.button(dialog.buttons.StandardButton.Save).isEnabled()
+    assert not _primary(dialog).isEnabled()
     dialog.title.setText("Kickoff review")
     dialog.note.setPlainText("What we thought on day one")
-    assert dialog.buttons.button(dialog.buttons.StandardButton.Save).isEnabled()
+    assert _primary(dialog).isEnabled()
     assert dialog.values() == ("Kickoff review", "What we thought on day one")
     dialog.deleteLater()
     tab.save_snapshot_as("Kickoff review", "What we thought on day one")
@@ -896,8 +940,8 @@ def test_a_snapshot_saved_on_purpose_is_named_kept_and_compared_against(services
     # A taken title is refused in the dialog, with the reason under the field.
     again = SaveSnapshotDialog(["Kickoff review"], tab.widget)
     again.title.setText("kickoff review")
-    assert not again.buttons.button(again.buttons.StandardButton.Save).isEnabled()
-    assert "already saved" in again.reason.text()
+    assert not _primary(again).isEnabled()
+    assert "already saved" in again.reason.words() and again.reason.tone() == "error"
     again.deleteLater()
     # Both pickers offer it, dated.
     assert tab.then_picker.menu_labels()[1].startswith("Kickoff review · ")

@@ -164,7 +164,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
     from dplanner.modules.step_description.aspect import read as description_read
-    from dplanner.modules.step_description.aspect import summary as description_summary
     from dplanner.modules.step_description.module import (
         StepDescriptionDeps,
         StepDescriptionModule,
@@ -898,9 +897,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
+            debounce=services.debounce,
             # A step's description, one line for the row and the prose for its tooltip.
             # Handed as answers, so the estimation module never learns where prose lives.
-            step_summary=lambda step_id: description_summary(library.step(step_id)),
             describe_step=lambda step_id: description_read(library.step(step_id)),
         )
     )

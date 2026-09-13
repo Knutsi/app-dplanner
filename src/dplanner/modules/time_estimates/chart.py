@@ -119,8 +119,8 @@ from dplanner.modules.time_estimates.progress import (
     volume_scale,
 )
 from dplanner.modules.time_estimates.schedule import WHOLE_COLOR
-from dplanner.modules.time_estimates.view import SECONDARY_ALPHA
 from dplanner.theme.cards import over
+from dplanner.theme.tokens import SECONDARY_ALPHA
 
 # The two share plots are at least this tall and at most that; a tall window grows them
 # in equal parts (:meth:`ProgressChart.panels`) and the milestone plot stays a row per

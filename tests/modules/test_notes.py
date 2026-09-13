@@ -206,7 +206,10 @@ def view(notes_tab):
 
 def test_the_notes_are_a_tab_of_their_own(services, project, notes_tab):
     assert notes_tab.title == "Discovery — Implementation notes"
-    assert notes_tab.caption.text() == "Implementation notes"
+    from PySide6.QtWidgets import QLabel
+
+    heading = notes_tab.caption.findChild(QLabel, "InspectorCaption")
+    assert heading is not None and heading.text() == "Implementation notes"
     assert services.tabs.open(NOTES_KIND, project.id) is notes_tab  # One per project.
     services.tabs.close_activity(notes_tab)
     assert notes_tab.view._unsubscribes == []  # Closing disposes the view's listeners.
@@ -370,3 +373,21 @@ def test_a_reading_s_row_stands_for_its_project(services, project):
     panel.tree.setCurrentItem(row.child(1))
     uris = [node.uri for node in services.context.current().scope(SCOPE_SELECTION)]
     assert uris == [selection_uri("project", project.id)]
+
+
+def test_the_label_filter_narrows_the_log_and_says_how_much_it_shows(view):
+    from dplanner.modules.notes.view import NO_MATCH
+
+    view.filter.set_active({"handoff"})
+    assert [title for title, _line in view.rows()] == ["Keys in vault"]
+    assert view.summary.text() == "1 of 4 notes shown — newest first"
+    view.filter.set_active({"later"})
+    assert view.rows() == [] and view.empty.isVisibleTo(view) and view.empty.text() == NO_MATCH
+    view.filter.clear()
+    assert len(view.rows()) == 4 and not view.empty.isVisibleTo(view)
+
+
+def test_remove_is_greyed_until_there_is_a_note_to_remove(services, project, view):
+    assert view.remove_action.isEnabled()
+    services.undo.push(SetModuleDataCommand(project.id, MODULE_ID, {}))
+    assert not view.remove_action.isEnabled()

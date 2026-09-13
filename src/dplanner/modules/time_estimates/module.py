@@ -52,15 +52,18 @@ from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QLocale, Qt
-from PySide6.QtGui import QAction, QColor
+from PySide6.QtGui import QColor, QCursor
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QColorDialog,
+    QComboBox,
     QDateEdit,
     QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QScrollArea,
     QSplitter,
     QToolButton,
@@ -94,8 +97,9 @@ from dplanner.framework.context import (
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.tabs import TabHost
-from dplanner.framework.toolbar import ActionToolbar, control_bar
+from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import EmptyState, caption, note
 from dplanner.modules.time_estimates.chart import (
     PAGES,
     PROGRESS_PAGE,
@@ -110,8 +114,9 @@ from dplanner.modules.time_estimates.milestones import (
     ALL_LABEL,
     DATE_FORMAT,
     MilestoneEntry,
-    MilestoneList,
+    MilestoneTable,
     PalettePicker,
+    dot_icon,
 )
 from dplanner.modules.time_estimates.months import Band, MonthsView
 from dplanner.modules.time_estimates.progress import (
@@ -145,6 +150,7 @@ from dplanner.modules.time_estimates.report import milestones_table
 from dplanner.modules.time_estimates.schedule import (
     DATA_FORMAT,
     MODULE_ID,
+    SWATCH_SHADES,
     WHOLE_COLOR,
     Cell,
     TimeReport,
@@ -161,15 +167,20 @@ from dplanner.modules.time_estimates.schedule import (
 )
 from dplanner.modules.time_estimates.snapshots import SaveSnapshotDialog, SnapshotPicker
 from dplanner.modules.time_estimates.view import Banner, FocusBar, MatrixView
-from dplanner.theme.tokens import CONTROL_GAP
+from dplanner.theme.icons import calendar_off_icon, camera_icon, palette_icon
+from dplanner.theme.palettes import shades
+from dplanner.theme.tokens import CAPTION_GAP, DENSE_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 TIME_KIND = "time"
 REFRESH_DELAY_MS = 500
 
-PANEL_MARGIN = 16
-CAPTION_GAP = 6
-BLOCK_GAP = 12
-BUTTON_GAP = 4
+NO_STEPS = "No steps yet — the staffing grid and the calendar date a plan once it has some."
+NO_MILESTONES = "No milestones yet · Step ▸ Type ▸ Milestone"
+# The two ways the grid prices the plan, and what each means.
+LENSES = (
+    ("Calendar days", "Working days on the calendar, at the human focus"),
+    ("Project days", "Days of full-time work, whatever the focus"),
+)
 
 # Where the seam falls to begin with; the splitter keeps the proportion after. The left
 # holds the staffing grid and the milestone list and nothing wider, so the calendar gets
@@ -231,12 +242,6 @@ def _step_context(step_id: StepId) -> Context:
     return Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)})
 
 
-def _caption(text: str, parent: QWidget) -> QLabel:
-    caption = QLabel(text, parent)
-    caption.setObjectName("InspectorCaption")
-    return caption
-
-
 def _toggle(parent: QWidget, label: str, tip: str = "") -> QToolButton:
     button = QToolButton(parent)
     button.setObjectName("ToolbarButton")
@@ -270,80 +275,74 @@ class TimeEstimatesActivity(EntityActivity):
         self._expanded: ChartDialog | None = None
         self._syncing_team = False
 
-        # -- the strip: what the whole page is priced with -------------------------------
+        # -- the strip: its verbs, then how the page is priced and which plans it compares ----
         strip = QWidget()
         strip_row = QHBoxLayout(strip)
         strip_row.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, 0)
-        strip_row.setSpacing(CONTROL_GAP)
-        self.controls = control_bar(strip)
+        strip_row.setSpacing(FIELD_GAP)
+        self.controls = Toolbar(strip)
+        self.save_snapshot = self.controls.add_verb(
+            "Save Snapshot…",
+            camera_icon,
+            self._on_save_snapshot,
+            tip="Keep the plan as it stands today, under a title, to compare against later",
+        )
+        # Export's arrow renders File ▸ Export — the milestones' CSV, the plan's page, the
+        # PDF, the workbook — the same entries, never a copy, found where the numbers are.
+        self.controls.add_action(deps.actions, deps.context, "report.html", menu=("File", "Export"))
+        self.colour_action = self.controls.add_verb(
+            "Milestone Colour…",
+            palette_icon,
+            self._pick_colour,
+            tip="A shade of the map for the picked milestone, a colour of its own, or Automatic",
+        )
+        self.begin_action = self.controls.add_verb(
+            "Begin When the Previous Lands",
+            calendar_off_icon,
+            self._begin_with_sequence,
+            tip="Take the picked milestone's own start date away",
+        )
+        self.controls.add_divider()
         self.focus_bar = FocusBar(deps.library, deps.undo, project_id, self.controls)
-        self.controls.addWidget(self.focus_bar)
-        self.controls.addSeparator()
-        self._lenses = QButtonGroup(strip)
-        self._lenses.setExclusive(True)
-        self.calendar_button = _toggle(
-            self.controls, "Calendar days", "Working days on the calendar, at the human focus"
-        )
-        self.project_button = _toggle(
-            self.controls, "Project days", "Days of full-time work, whatever the focus"
-        )
-        for index, button in enumerate((self.calendar_button, self.project_button)):
-            self._lenses.addButton(button, index)
-            self.controls.addWidget(button)
-        self.calendar_button.setChecked(True)
-        self._lenses.idClicked.connect(self._on_lens)
-        self.controls.addSeparator()
-        palette_caption = QLabel("Milestone colours", self.controls)
-        palette_caption.setObjectName("ToolbarLabel")
-        self.controls.addWidget(palette_caption)
+        self.controls.add_widget(self.focus_bar)
+        self.lens_box = QComboBox(strip)
+        self.lens_box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.lens_box.setToolTip("Which days the staffing grid prices the plan in")
+        for index, (label, tip) in enumerate(LENSES):
+            self.lens_box.addItem(label)
+            self.lens_box.setItemData(index, tip, Qt.ItemDataRole.ToolTipRole)
+        self.lens_box.currentIndexChanged.connect(self._on_lens)
+        self.controls.add_widget(self.lens_box)
         self.palette_picker = PalettePicker(self.controls)
-        self.palette_picker.setToolTip("The colour map the milestones are shaded from")
+        self.palette_picker.setToolTip("Milestone colours: the map the milestones are shaded from")
         self.palette_picker.palette_picked.connect(self._on_palette_changed)
-        self.controls.addWidget(self.palette_picker)
-        self.controls.addSeparator()
+        self.controls.add_widget(self.palette_picker)
+        self.controls.add_divider()
         # -- which two plans the plots compare ---------------------------------------------
         compare_caption = QLabel("Compare", self.controls)
         compare_caption.setObjectName("ToolbarLabel")
-        self.controls.addWidget(compare_caption)
+        self.controls.add_widget(compare_caption)
         self.then_picker = SnapshotPicker(AT_START, self.controls)
         self.then_picker.picked.connect(self._on_then_picked)
         self.then_picker.forget.connect(self._on_forget)
-        self.controls.addWidget(self.then_picker)
+        self.controls.add_widget(self.then_picker)
         self.then_day = self._day_edit(self._on_then_day)
-        self.then_day_action = self.controls.addWidget(self.then_day)
+        self.controls.add_widget(self.then_day)
+        self.controls.set_shown(self.then_day, False)
         with_caption = QLabel("with", self.controls)
         with_caption.setObjectName("ToolbarLabel")
-        self.controls.addWidget(with_caption)
+        self.controls.add_widget(with_caption)
         self.now_picker = SnapshotPicker(LIVE, self.controls)
         self.now_picker.picked.connect(self._on_now_picked)
         self.now_picker.forget.connect(self._on_forget)
-        self.controls.addWidget(self.now_picker)
+        self.controls.add_widget(self.now_picker)
         self.now_day = self._day_edit(self._on_now_day)
-        self.now_day_action = self.controls.addWidget(self.now_day)
-        self.save_snapshot = QToolButton(self.controls)
-        self.save_snapshot.setObjectName("ToolbarButton")
-        self.save_snapshot.setText("Save snapshot…")
-        self.save_snapshot.setToolTip(
-            "Keep the plan as it stands today, under a title, to compare against later"
-        )
-        self.save_snapshot.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.save_snapshot.clicked.connect(self._on_save_snapshot)
-        self.controls.addWidget(self.save_snapshot)
+        self.controls.add_widget(self.now_day)
+        self.controls.set_shown(self.now_day, False)
         strip_row.addWidget(self.controls, 1)
-        # Export's arrow renders File ▸ Export — the milestones' CSV, the plan's page, the
-        # PDF, the workbook — the same entries, never a copy, found where the numbers are.
-        self.toolbar = ActionToolbar(
-            deps.actions,
-            deps.context,
-            ("report.html",),
-            {"report.html": "Export"},
-            strip,
-            menus={"report.html": ("File", "Export")},
-        )
-        strip_row.addWidget(self.toolbar)
         # A change to the plan re-runs the page after a quiet spell; until it has, the strip
         # says so rather than showing a picture of a plan that has since changed. At the far
-        # right, outside every toolbar, so the » overflow can never swallow it.
+        # right, outside the strip, so folding it can never take the indicator.
         self.updating = UpdatingIndicator(strip)
         strip_row.addWidget(self.updating)
 
@@ -351,32 +350,29 @@ class TimeEstimatesActivity(EntityActivity):
         settings = QWidget()
         left = QVBoxLayout(settings)
         left.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
-        left.setSpacing(CAPTION_GAP)
+        left.setSpacing(SECTION_GAP)
 
         self.matrix = MatrixView(settings)
         self.matrix.tooltip_for = self._tooltip
         self.matrix.scenario_changed.connect(self._on_team_picked)
         left.addWidget(self.matrix, 0, Qt.AlignmentFlag.AlignLeft)
 
-        left.addSpacing(BLOCK_GAP)
-        self.milestones_caption = _caption("Milestones", settings)
-        left.addWidget(self.milestones_caption)
-        self.milestones = MilestoneList(settings)
+        # The table scrolls under the staffing grid rather than taking it off the top of the
+        # page: the grid is the question the whole page answers, and a plan with thirty
+        # milestones would scroll it away exactly when it is being compared.
+        milestones = QVBoxLayout()
+        left.addLayout(milestones, 1)  # Before it is filled: a parentless layout leaks.
+        milestones.setSpacing(CAPTION_GAP)
+        self.milestones_caption = caption("Milestones", settings)
+        milestones.addWidget(self.milestones_caption)
+        self.milestones = MilestoneTable(settings)
         self.milestones.picked.connect(self._on_picked)
         self.milestones.activated.connect(self._on_activated)
-        self.milestones.color_changed.connect(self._on_color_changed)
         self.milestones.project_changed.connect(self._on_start_picked)
         self.milestones.start_changed.connect(self._on_start_changed)
-        # The list scrolls under the staffing grid rather than taking it off the top of
-        # the page: the grid is the question the whole page answers, and a plan with
-        # thirty milestones would scroll it away exactly when it is being compared.
-        self.milestone_scroll = QScrollArea(settings)
-        self.milestone_scroll.setWidget(self.milestones)
-        self.milestone_scroll.setWidgetResizable(True)
-        self.milestone_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.milestone_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.milestone_scroll.setMinimumWidth(self.milestones.minimumSizeHint().width())
-        left.addWidget(self.milestone_scroll, 1)
+        milestones.addWidget(self.milestones, 1)
+        self.no_milestones = note(NO_MILESTONES, settings)
+        milestones.addWidget(self.no_milestones)
 
         # -- right: what it answers ----------------------------------------------------------
         answer = QWidget()
@@ -392,7 +388,7 @@ class TimeEstimatesActivity(EntityActivity):
         self.pager = QWidget(answer)
         pager_row = QHBoxLayout(self.pager)
         pager_row.setContentsMargins(0, 0, 0, 0)
-        pager_row.setSpacing(BUTTON_GAP)
+        pager_row.setSpacing(DENSE_GAP)
         self.earlier = self._pager_button(self.pager, Qt.ArrowType.LeftArrow, "Earlier months")
         self.later = self._pager_button(self.pager, Qt.ArrowType.RightArrow, "Later months")
         pager_row.addWidget(self.earlier)
@@ -405,11 +401,11 @@ class TimeEstimatesActivity(EntityActivity):
         right.addWidget(self.months)
 
         # -- the plots: a page at a time -------------------------------------------------------
-        right.addSpacing(BLOCK_GAP)
+        right.addSpacing(SECTION_GAP)
         self.progress_bar = QWidget(answer)
         progress_row = QHBoxLayout(self.progress_bar)
         progress_row.setContentsMargins(0, 0, 0, 0)
-        progress_row.setSpacing(BUTTON_GAP)
+        progress_row.setSpacing(DENSE_GAP)
         self._pages = QButtonGroup(answer)
         self._pages.setExclusive(True)
         self.page_buttons: dict[str, QToolButton] = {}
@@ -453,6 +449,10 @@ class TimeEstimatesActivity(EntityActivity):
         framed.setSpacing(0)
         framed.addWidget(strip)
         framed.addWidget(self.split, 1)
+        # A project with no steps has nothing to price: the page says so where the grid and
+        # the calendar would be, and the strip stays.
+        self.empty = EmptyState(parent=frame, stands_in_for=self.split)
+        framed.addWidget(self.empty, 1)
         self._widget = frame
 
         # After a quiet spell, not per signal: a refresh is two dozen schedule simulations
@@ -526,7 +526,7 @@ class TimeEstimatesActivity(EntityActivity):
             unsubscribe()
         self._unsubscribes.clear()
         self.focus_bar.dispose()
-        self.toolbar.dispose()
+        self.controls.dispose()
 
     # -- what the tests read off the tab ------------------------------------------------------
 
@@ -682,11 +682,73 @@ class TimeEstimatesActivity(EntityActivity):
         step = self._product.step(step_id)
         self._write_milestone(step, when, read_color(step), "Date Milestone")
 
-    def _on_color_changed(self, step_id: str, color: str | None) -> None:
+    def pick_colour(self, step_id: StepId, color: str | None) -> None:
+        """A milestone's colour of its own, or None to hand it back to the map — what the
+        entries of *Milestone Colour…* call."""
         if not self._product.has(step_id):
             return
         step = self._product.step(step_id)
         self._write_milestone(step, read_start(step), color, "Colour Milestone")
+
+    def colour_menu(self) -> QMenu | None:
+        """What *Milestone Colour…* offers the picked milestone, built when it opens: the
+        map's shades, a colour of its own, and *Automatic*, which hands the shade back."""
+        step = self._picked_milestone()
+        if step is None:
+            return None
+        found = read_palette(self._project())
+        menu = QMenu(self._widget)
+        for index, hex_color in enumerate(shades(found, SWATCH_SHADES), start=1):
+            action = menu.addAction(dot_icon(QColor(hex_color)), f"{found.name} {index}")
+            action.triggered.connect(
+                lambda _checked=False, chosen=hex_color, step_id=step.id: self.pick_colour(
+                    step_id, chosen
+                )
+            )
+        menu.addSeparator()
+        custom = menu.addAction("Custom…")
+        custom.triggered.connect(lambda _checked=False, step_id=step.id: self._custom(step_id))
+        automatic = menu.addAction("Automatic")
+        automatic.setEnabled(read_color(step) is not None)
+        automatic.triggered.connect(
+            lambda _checked=False, step_id=step.id: self.pick_colour(step_id, None)
+        )
+        return menu
+
+    def _pick_colour(self) -> None:
+        menu = self.colour_menu()
+        if menu is not None:
+            menu.exec(QCursor.pos())
+
+    def _custom(self, step_id: StepId) -> None:
+        if not self._product.has(step_id):
+            return
+        current = QColor(read_color(self._product.step(step_id)) or WHOLE_COLOR)
+        picked = QColorDialog.getColor(current, self._widget, "Milestone colour")
+        if picked.isValid():
+            self.pick_colour(step_id, picked.name())
+
+    def _begin_with_sequence(self) -> None:
+        step = self._picked_milestone()
+        if step is not None and read_start(step) is not None:
+            self._on_start_changed(step.id, None)
+
+    def _picked_milestone(self) -> Step | None:
+        if self._picked is None or not self._product.has(self._picked):
+            return None
+        return self._product.step(self._picked)
+
+    def _sync_milestone_verbs(self) -> None:
+        """The picked milestone's verbs: disabled with the reason, never hidden."""
+        step = self._picked_milestone()
+        self.colour_action.setEnabled(step is not None)
+        self.colour_action.setText(
+            "Milestone Colour…" if step is not None else "Milestone Colour — pick a milestone"
+        )
+        dated = step is not None and read_start(step) is not None
+        self.begin_action.setEnabled(dated)
+        reason = "" if dated else " — pick a milestone" if step is None else " — it already does"
+        self.begin_action.setText(f"Begin When the Previous Lands{reason}")
 
     def _on_palette_changed(self, palette_id: str) -> None:
         if not self._product.has(self.project_id):
@@ -742,26 +804,29 @@ class TimeEstimatesActivity(EntityActivity):
 
     def _render(self) -> None:
         report = self._report
-        datable = report is not None and not report.cycle
+        self.empty.say(NO_STEPS if report is None else "")
+        if report is None:
+            return
+        datable = not report.cycle
         for widget in (
             self.matrix,
             self.milestones_caption,
-            self.milestone_scroll,
+            self.milestones,
+            self.no_milestones,
             self.pager,
             self.months,
             self.progress_bar,
             self.chart,
         ):
             widget.setVisible(datable)
-        if report is None:
-            self.banner.say("No steps yet")
-            return
         if report.cycle:
             names = ", ".join(step.title or "an untitled step" for step in report.cycle)
             self.banner.say(
                 f"These steps wait on each other, so nothing can be dated: {names}. "
-                "Unlink one to time the plan."
+                "Unlink one to time the plan.",
+                "error",
             )
+            self._sync_milestone_verbs()
             return
         if report.unestimated:
             count = f"{report.unestimated} step{'s' if report.unestimated != 1 else ''}"
@@ -798,7 +863,9 @@ class TimeEstimatesActivity(EntityActivity):
         self.months.show_bands(report.start, self._bands(stretches))
         self.months.emphasise(self._picked)
         entries = self._entries(stretches, now, calendar)
-        self.milestones.show_entries(entries, self._picked or ALL_KEY, found=found)
+        self.milestones.show_entries(entries, self._picked or ALL_KEY)
+        self.no_milestones.setVisible(not any(entry.is_milestone for entry in entries))
+        self._sync_milestone_verbs()
         self._render_progress(stretches, now)
 
     def _render_progress(self, stretches: list[tuple[Phase, QColor]], live: Snapshot) -> None:
@@ -821,8 +888,8 @@ class TimeEstimatesActivity(EntityActivity):
         as_of = "" if self._now.kind == "now" else pick_words(self._now, now, live.day)
         self.then_picker.show_pick(self._then, then, saved, basis, now.day)
         self.now_picker.show_pick(self._now, now, saved, as_of or "the plan now", live.day)
-        self._show_day(self.then_day_action, self.then_day, self._then)
-        self._show_day(self.now_day_action, self.now_day, self._now)
+        self._show_day(self.then_day, self._then)
+        self._show_day(self.now_day, self._now)
         segments = []
         for phase, shade in stretches:
             key = phase.milestone.id if phase.milestone else ""
@@ -855,10 +922,10 @@ class TimeEstimatesActivity(EntityActivity):
         if self._expanded is not None and isValid(self._expanded):
             self._expanded.show_data(self._plots)
 
-    def _show_day(self, action: QAction, edit: QDateEdit, pick: Pick) -> None:
+    def _show_day(self, edit: QDateEdit, pick: Pick) -> None:
         """A *Day…* pick shows its field beside the picker, loaded with the day and never
         reading its own load as a pick."""
-        action.setVisible(pick.kind == "day")
+        self.controls.set_shown(edit, pick.kind == "day")
         if pick.kind == "day" and pick.day is not None:
             self._loading_day = True
             try:
@@ -899,6 +966,7 @@ class TimeEstimatesActivity(EntityActivity):
                 key=phase.milestone.id if phase.milestone else "",
                 label=self._label(phase, stretches),
                 title=phase.milestone.title if phase.milestone else "",
+                badge=self._deps.step_key(phase.milestone) if phase.milestone else "",
                 color=color,
                 chosen=phase.milestone is not None and read_color(phase.milestone) is not None,
                 start=phase.asked,

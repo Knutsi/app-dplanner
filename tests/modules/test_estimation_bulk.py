@@ -6,6 +6,9 @@ the canvas without either module knowing the other's name.
 """
 
 import pytest
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QAbstractItemView, QDoubleSpinBox
 
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -16,8 +19,14 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, activity_uri, selection_uri
+from dplanner.framework.list_rows import VALUE_ROLE
 from dplanner.modules.estimation.aspect import read as read_estimate
-from dplanner.modules.estimation.bulk import ESTIMATE_KIND, BulkEstimateActivity
+from dplanner.modules.estimation.bulk import (
+    ESTIMATE_COLUMN,
+    ESTIMATE_KIND,
+    NONE_SIZED,
+    BulkEstimateActivity,
+)
 
 
 @pytest.fixture
@@ -49,6 +58,30 @@ def estimate_tab(services):
     return found[0] if found else None
 
 
+def editor_at(tab, row):
+    """The estimate's editor on ``row``, opened if it is not already."""
+    index = tab.table.model().index(row, ESTIMATE_COLUMN)
+    tab.table.setCurrentCell(row, ESTIMATE_COLUMN)
+    if tab.table.indexWidget(index) is None:
+        tab.table.edit(index)
+    box = tab.table.indexWidget(index)
+    assert isinstance(box, QDoubleSpinBox)
+    return box
+
+
+def click_size(tab, row, words):
+    """Click the chip reading ``words`` on ``row``'s estimate, as the pointer would."""
+    tab.widget.resize(1000, 600)
+    tab.table.horizontalHeader().resizeSection(ESTIMATE_COLUMN, 600)
+    (laid,) = [laid for laid in tab.table.chips_at(row, ESTIMATE_COLUMN) if laid.chip.text == words]
+    QTest.mouseClick(tab.table.viewport(), Qt.MouseButton.LeftButton, pos=laid.rect.center())
+
+
+def lit(tab, row):
+    """The words on the chips ``row`` has lit."""
+    return [laid.chip.text for laid in tab.table.chips_at(row, ESTIMATE_COLUMN) if laid.checked]
+
+
 def titles_on_screen(tab):
     return [
         tab.table.item(row, 0).text()
@@ -69,9 +102,9 @@ def test_the_action_opens_a_tab_scoped_to_the_selection(services, project):
     assert tab is not None
     assert tab.uri == activity_uri(ESTIMATE_KIND, project.id)
     assert titles_on_screen(tab) == ["B", "C"]
-    assert not tab._scope_bar.isHidden()
-    assert tab._selection_button.text() == "Selection (2)"
-    assert tab._selection_button.isChecked()
+    assert tab.controls.is_shown(tab.scope_box)
+    assert tab.scope_box.itemText(0) == "Selection (2)"
+    assert tab.scope_box.currentData() == "selection"
 
 
 def test_the_action_reads_the_whole_project_when_nothing_is_selected(services, project):
@@ -81,7 +114,7 @@ def test_the_action_reads_the_whole_project_when_nothing_is_selected(services, p
     tab = estimate_tab(services)
     assert tab is not None
     assert titles_on_screen(tab) == ["A", "B", "C", "D"]  # placed() order.
-    assert tab._scope_bar.isHidden()
+    assert not tab.controls.is_shown(tab.scope_box)  # One entry would teach nothing.
 
 
 def test_the_action_names_the_count_it_will_estimate(services, project):
@@ -115,7 +148,7 @@ def test_reinvoking_rescopes_the_same_tab_where_it_is(services, project):
 
     tab = estimate_tab(services)
     assert titles_on_screen(tab) == ["D"]
-    assert tab._selection_button.text() == "Selection (1)"
+    assert tab.scope_box.itemText(0) == "Selection (1)"
     assert services.tabs.group_count() == groups
 
 
@@ -124,16 +157,17 @@ def test_the_scope_can_widen_to_the_whole_project(services, project):
     run_estimate_open(services)
     tab = estimate_tab(services)
 
-    tab._whole_button.click()
+    tab.scope_box.setCurrentIndex(1)  # Whole project.
     assert titles_on_screen(tab) == ["A", "B", "C", "D"]
-    tab._selection_button.click()
+    tab.scope_box.setCurrentIndex(0)  # Back to the selection.
     assert titles_on_screen(tab) == ["D"]
 
 
 # -- what a row shows ----------------------------------------------------------------------
 
 
-def test_a_row_shows_title_and_first_description_line(services, project):
+def test_a_rows_title_carries_its_description_as_the_tooltip(services, project):
+    """Two columns: the step, and its sizes — the description is a tooltip on the name."""
     a = project.steps[0]
     services.document.set_text(
         a.id, "step_description", "# A\nSkim the spec before anything else.\nMore prose."
@@ -142,18 +176,39 @@ def test_a_row_shows_title_and_first_description_line(services, project):
     run_estimate_open(services)
 
     tab = estimate_tab(services)
-    description = tab.table.item(0, 1)
-    assert description.text() == "Skim the spec before anything else."
-    assert "More prose." in description.toolTip()
+    assert tab.table.columnCount() == 2
+    assert tab.table.horizontalHeaderItem(1).text() == "Estimates (d)"  # The unit, once.
+    assert "Skim the spec" in tab.table.item(0, 0).toolTip()
+    assert "More prose." in tab.table.item(0, 0).toolTip()
 
 
-def test_a_description_written_later_reaches_the_row(services, project):
+def test_a_description_written_later_reaches_the_tooltip(services, project):
     select(services, project.steps[0])
     run_estimate_open(services)
     tab = estimate_tab(services)
 
     services.document.set_text(project.steps[0].id, "step_description", "Now described.")
-    assert tab.table.item(0, 1).text() == "Now described."
+    assert "Now described." in tab.table.item(0, 0).toolTip()
+
+
+def test_every_row_lights_the_size_it_has_so_the_column_reads_as_a_grid(services, project):
+    a, b, c, _d = project.steps
+    services.undo.push(SetModuleDataCommand(a.id, "estimation", {"days": 2.0, "format": 1}))
+    services.undo.push(SetModuleDataCommand(b.id, "estimation", {"days": 0.0, "format": 1}))
+    services.undo.push(SetModuleDataCommand(c.id, "estimation", {"days": 4.0, "format": 1}))
+    select(services, *project.steps)
+    run_estimate_open(services)
+    tab = estimate_tab(services)
+
+    words = [laid.chip.text for laid in tab.table.chips_at(3, ESTIMATE_COLUMN)]
+    assert words == ["¼", "½", "1", "2", "3", "5", "10", "20", "0", "…"]
+    assert tab.table.chips_at(0, ESTIMATE_COLUMN)[8].chip.apart  # Zero stands past a rule.
+    assert lit(tab, 0) == ["2"]
+    assert lit(tab, 1) == ["0"]  # Adds no time: counted, and not the same as unsized.
+    assert lit(tab, 2) == ["4"]  # Off the scale, the last chip says the number.
+    assert lit(tab, 3) == []  # Not sized at all.
+    lefts = {laid.rect.left() for row in range(4) for laid in tab.table.chips_at(row, 1)[:9]}
+    assert len(lefts) == 9  # One left edge per size, whatever the row: a grid.
 
 
 def test_a_rename_reaches_the_row(services, project):
@@ -168,18 +223,73 @@ def test_a_rename_reaches_the_row(services, project):
 # -- writing estimates ---------------------------------------------------------------------
 
 
-def test_a_chip_click_writes_an_undoable_estimate(services, project):
+def test_a_number_typed_in_the_cell_writes_an_undoable_estimate(services, project):
     a = project.steps[0]
     select(services, a)
     run_estimate_open(services)
     tab = estimate_tab(services)
 
-    tab._editors[a.id].chips.button(2).click()  # ½ a day — ids count quarter-days.
+    box = editor_at(tab, 0)
+    box.setValue(0.5)
+    tab.table.commitData(box)
     assert read_estimate(services.document.step(a.id)) == 0.5
+    assert tab.table.item(0, ESTIMATE_COLUMN).text() == "0.5"
 
     services.undo.undo()
     assert read_estimate(services.document.step(a.id)) is None
-    assert tab._editors[a.id].value() is None  # The undo reached the row.
+    assert tab.table.item(0, ESTIMATE_COLUMN).data(VALUE_ROLE) is None  # The undo reached it.
+    assert tab.table.item(0, ESTIMATE_COLUMN).text() == "—"
+
+
+def test_a_size_clicked_on_a_row_writes_an_undoable_estimate(services, project):
+    a = project.steps[0]
+    select(services, a)
+    run_estimate_open(services)
+    tab = estimate_tab(services)
+
+    click_size(tab, 0, "½")
+    assert read_estimate(services.document.step(a.id)) == 0.5
+    assert lit(tab, 0) == ["½"] and tab.table.item(0, ESTIMATE_COLUMN).text() == "0.5"
+    click_size(tab, 0, "0")
+    assert read_estimate(services.document.step(a.id)) == 0.0 and lit(tab, 0) == ["0"]
+    services.undo.undo()  # Two clicks on one row are one burst, as typing in the panel is.
+    assert read_estimate(services.document.step(a.id)) is None and lit(tab, 0) == []
+
+
+def test_the_last_chip_opens_the_number_typed_in_the_cell(services, project):
+    a = project.steps[0]
+    services.undo.push(SetModuleDataCommand(a.id, "estimation", {"days": 4.0, "format": 1}))
+    select(services, a)
+    run_estimate_open(services)
+    tab = estimate_tab(services)
+
+    click_size(tab, 0, "4")
+    assert tab.table.state() == QAbstractItemView.State.EditingState
+    box = tab.table.findChild(QDoubleSpinBox)
+    assert box is not None and box.value() == 4.0
+    sizes = tab.table.chips_at(0, ESTIMATE_COLUMN)[:-1]
+    assert all(box.geometry().left() > laid.rect.right() for laid in sizes)  # The scale stays.
+
+
+def test_sizing_several_picked_rows_from_the_estimate_verbs_is_one_undo_step(services, project):
+    select(services, *project.steps)
+    run_estimate_open(services)
+    tab = estimate_tab(services)
+    tab.table.selectAll()
+
+    state = services.actions.spec("estimate.size_2").state(services.context.current())
+    assert state.enabled and state.label == "½ Day for 4 Steps"
+    services.actions.run("estimate.size_2", services.context.current())
+    assert [read_estimate(services.document.step(s.id)) for s in project.steps] == [0.5] * 4
+    assert [tab.table.item(row, ESTIMATE_COLUMN).text() for row in range(4)] == ["0.5"] * 4
+    services.undo.undo()
+    assert all(read_estimate(services.document.step(s.id)) is None for s in project.steps)
+
+
+def test_a_size_verb_is_greyed_with_its_reason_until_a_step_is_picked(services, project):
+    services.context.set_scope(SCOPE_SELECTION, ())
+    state = services.actions.spec("estimate.size_4").state(services.context.current())
+    assert state.visible and not state.enabled and state.label == "1 Day — pick a step"
 
 
 def test_a_change_made_elsewhere_reaches_the_row(services, project):
@@ -189,20 +299,22 @@ def test_a_change_made_elsewhere_reaches_the_row(services, project):
     tab = estimate_tab(services)
 
     services.undo.push(SetModuleDataCommand(a.id, "estimation", {"days": 3.0, "format": 1}))
-    assert tab._editors[a.id].days.value() == 3.0
+    assert tab.table.item(0, ESTIMATE_COLUMN).data(VALUE_ROLE) == 3.0
+    assert tab.table.item(0, ESTIMATE_COLUMN).text() == "3"
 
 
-def test_a_rows_own_write_is_not_echoed_back(services, project):
+def test_the_tables_own_write_is_not_echoed_back_over_typing(services, project):
     a = project.steps[0]
     select(services, a)
     run_estimate_open(services)
-    editor = estimate_tab(services)._editors[a.id]
+    tab = estimate_tab(services)
 
-    editor.days.setValue(2.0)
-    editor.days.editingFinished.emit()
-    editor.days.setValue(7.0)  # Typed, not yet committed.
-    services.document.set_module_data(a.id, "estimation", {"days": 2.0, "format": 1}, editor)
-    assert editor.days.value() == 7.0
+    box = editor_at(tab, 0)
+    box.setValue(2.0)
+    tab.table.commitData(box)
+    box.setValue(7.0)  # Typed, not yet committed.
+    services.document.set_module_data(a.id, "estimation", {"days": 2.0, "format": 1}, tab.table)
+    assert box.value() == 7.0
 
 
 # -- filters and the summary ---------------------------------------------------------------
@@ -214,11 +326,15 @@ def test_the_unestimated_filter_hides_what_is_sized(services, project):
     select(services, *project.steps)
     run_estimate_open(services)
     tab = estimate_tab(services)
-    tab._filters.button(1).click()  # Unestimated.
+    tab.set_filter("unestimated")
 
-    tab._editors[project.steps[0].id].chips.button(4).click()  # 1 day, from the row itself.
+    click_size(tab, 0, "1")  # From the row itself, inside the chip's own click.
     assert titles_on_screen(tab) == ["B", "C", "D"]
     assert tab.table.isRowHidden(0)
+    box = editor_at(tab, 1)
+    box.setValue(1.0)
+    tab.table.commitData(box)  # And inside the editor's own commit.
+    assert titles_on_screen(tab) == ["C", "D"]
 
 
 def test_the_estimated_filter_is_the_review_mode(services, project):
@@ -228,7 +344,7 @@ def test_the_estimated_filter_is_the_review_mode(services, project):
     run_estimate_open(services)
     tab = estimate_tab(services)
 
-    tab._filters.button(2).click()  # Estimated.
+    tab.filter_box.setCurrentIndex(tab.filter_box.findData("estimated"))
     assert titles_on_screen(tab) == ["A"]
 
 
@@ -240,9 +356,18 @@ def test_the_summary_counts_and_totals_over_the_scope(services, project):
     tab = estimate_tab(services)
 
     # The volume sentence the order table and ``estimate rollup`` print, over this scope.
-    assert tab._summary.text() == "3 days over 4 steps, 3 unestimated"
-    tab._filters.button(1).click()  # Hiding rows must not change the arithmetic.
-    assert tab._summary.text() == "3 days over 4 steps, 3 unestimated"
+    assert tab.volume.text() == "3 days over 4 steps, 3 unestimated"
+    tab.filter_box.setCurrentIndex(tab.filter_box.findData("unestimated"))
+    assert tab.volume.text() == "3 days over 4 steps, 3 unestimated"  # Hiding rows adds nothing.
+
+
+def test_a_filter_that_leaves_nothing_says_what_it_is_waiting_for(services, project):
+    select(services, *project.steps)
+    run_estimate_open(services)
+    tab = estimate_tab(services)
+    tab.filter_box.setCurrentIndex(tab.filter_box.findData("estimated"))
+    assert tab.empty.isVisibleTo(tab.widget) and tab.empty.text() == NONE_SIZED
+    assert not tab.table.isVisibleTo(tab.widget)
 
 
 # -- the model moving under the tab --------------------------------------------------------
@@ -256,7 +381,7 @@ def test_a_deleted_step_leaves_the_scope(services, project):
 
     services.undo.push(RemoveNodeCommand(b.id))
     assert titles_on_screen(tab) == ["A"]
-    assert tab._selection_button.text() == "Selection (1)"
+    assert tab.scope_box.itemText(0) == "Selection (1)"
 
 
 def test_an_emptied_scope_falls_back_to_the_whole_project(services, project):
@@ -266,7 +391,7 @@ def test_an_emptied_scope_falls_back_to_the_whole_project(services, project):
     tab = estimate_tab(services)
 
     services.undo.push(RemoveNodeCommand(a.id))
-    assert tab._scope_bar.isHidden()
+    assert not tab.controls.is_shown(tab.scope_box)
     assert titles_on_screen(tab) == ["B", "C", "D"]
 
 

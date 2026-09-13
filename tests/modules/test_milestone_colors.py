@@ -114,8 +114,14 @@ def test_the_canvas_the_order_table_and_the_calendar_paint_one_milestone_one_col
     assert rows[v2.id][0] == colors[v2.id]
 
     time_tab = services.tabs.open("time", project.id)
-    keys = time_tab.milestones.keys
-    bands = [row.swatch.color.name() for row in time_tab.milestones.rows if row.key in keys]
+    from dplanner.modules.time_estimates.milestones import COLOR_ROLE
+
+    table = time_tab.milestones
+    bands = [
+        table.item(row, 0).data(COLOR_ROLE)
+        for row in range(table.rowCount())
+        if table.key_at(row) in table.keys
+    ]
     assert bands == list(colors.values())
 
 

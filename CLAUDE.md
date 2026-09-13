@@ -397,6 +397,13 @@ root, stop and look for the registry or capability you have not found yet.
   which would outrank every id-only button rule inside a body — and a `GlyphButton`, quiet
   already, when its glyph must follow the theme. `ARCHITECTURE.md`'s *A primitive carries
   the rule* has the reasoning.
+- **A roster has three shapes, and each is a primitive.** A `Table` when a reader compares
+  across rows — and a value set in the row is the column's `editor` or its `chips`, painted
+  and hit-tested by the table, never a widget planted in a cell with `setCellWidget`. A
+  `RichList` when there is one column of things. A `RowWell` when every row carries verbs of
+  its own and has to outlive a refresh (the task and Agents browsers). A strip control that
+  comes and goes is `Toolbar.set_shown`, never `hide()`, which the next reflow undoes.
+  `ARCHITECTURE.md`'s *A roster has three shapes* has the reasoning.
 - **A pane is marked only while there is another pane.** The accent edge on the group you are
   in appears when the window splits and goes when it stops being split — the same condition
   that installs `_ActiveGroupWatcher`, because it is the same fact. It lives on a one-widget
@@ -1445,13 +1452,14 @@ root, stop and look for the registry or capability you have not found yet.
   team) and `dplanner schedule focus` / `schedule palette` / `schedule team` / `schedule
   milestone` alike. **Milestones are shades of one map, dealt by place in the
   sequence** (`theme/palettes.py`'s `PALETTES` and `shades`), never a list of hues. Under the
-  staffing grid, **Start dates** is what you set (the project's own, and each
-  milestone's *Begin…*) and **Milestones** is what it answers — the date it lands and
-  how much of it has landed on one row, led by *All milestones*, the whole plan on one
-  line. Picking a row **highlights, never hides**: the calendar and every plot keep the
-  whole project and fade what is outside the picked stretch. The focus factor, the
-  calendar-or-project-days lens, the palette and Export sit in one control strip over
-  the page (`framework/toolbar.py`'s `control_bar`), and a banner over the answer counts
+  staffing grid, **Milestones** is one table (`milestones.py`'s `MilestoneTable`): a row
+  per stretch, led by *All milestones*, the whole plan — when it begins (the day the
+  sequence gives it, quieter than a day of its own, which is typed in the cell), where it
+  lands, its days and how much of it has landed. Picking a row **highlights, never hides**: the calendar and every plot keep the
+  whole project and fade what is outside the picked stretch. *Save Snapshot…*, Export, the
+  picked milestone's colour and *Begin When the Previous Lands*, then the focus factor, the
+  calendar-or-project-days lens, the palette and the two plans compared sit in one
+  `Toolbar` over the page, and a banner over the answer counts
   the steps running as zero, with *Estimate missing* opening the Estimates tab on them
   through `TimeEstimatesDeps.estimate_missing`. A cycle a
   hand-edited file smuggled in is named by `ordering.cyclic()` and the tab says so instead

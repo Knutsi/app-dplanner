@@ -17,10 +17,11 @@ every owner — the step detail panel, a table row — pushes the same command a
 origin, and the owner is the one who knows which changes are its own.
 """
 
+from collections.abc import Sequence
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
-    QDoubleSpinBox,
     QHBoxLayout,
     QPushButton,
     QVBoxLayout,
@@ -28,10 +29,11 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.core.signals import Signal
-from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, StepId
 from dplanner.framework.cards import card_rule
 from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import NumberBox
 from dplanner.modules.estimation.aspect import MODULE_ID, write
 
 CHIP_GAP = 8
@@ -45,6 +47,7 @@ UNESTIMATED = -QUARTER
 
 FREE_LABEL = "Does not add time"
 FREE_TIP = "0 days — counted as estimated, and adds no time to the plan"
+QUARTER_TIP = "0.25 days — one agent task, about two hours with a human in the loop"
 
 # The sizes a step usually is. A quarter day is one agent task (about two hours with a
 # human in the loop), half a day is where most small human work sits, and the top of the
@@ -61,12 +64,9 @@ QUICK_DAYS = (
 )
 
 
-class _DaysBox(QDoubleSpinBox):
-    """A spin box that prints days the way ``format_days`` does: "0.25", "0.5", "3" —
-    never "1.00". Two decimals exist so a quarter day is sayable; the padding is not."""
-
-    def textFromValue(self, value: float) -> str:  # noqa: N802 - Qt override
-        return f"{value:g}"
+def size_tip(days: float) -> str:
+    """What a quick size means, in the words its chip's tooltip says wherever it is offered."""
+    return QUARTER_TIP if days == QUARTER else f"{days:g} days"
 
 
 class EstimateInput(QWidget):
@@ -77,7 +77,7 @@ class EstimateInput(QWidget):
         self._loading = False
         self.edited: Signal[()] = Signal()
 
-        self.days = _DaysBox(self)
+        self.days = NumberBox(self)
         self.days.setRange(UNESTIMATED, MAX_DAYS)
         self.days.setDecimals(2)
         self.days.setSingleStep(QUARTER)
@@ -97,16 +97,7 @@ class EstimateInput(QWidget):
         self.chips = QButtonGroup(self)
         self.chips.setExclusive(True)
         for value, label in QUICK_DAYS:
-            chip_row.addWidget(
-                self._chip(
-                    chips,
-                    value,
-                    label,
-                    "0.25 days — one agent task, about two hours with a human in the loop"
-                    if value == QUARTER
-                    else f"{value:g} days",
-                )
-            )
+            chip_row.addWidget(self._chip(chips, value, label, size_tip(value)))
         # Zero is not a size: it stands past a rule, worded as the claim it makes.
         chip_row.addWidget(card_rule(chips, vertical=True))
         self.free = self._chip(chips, 0.0, FREE_LABEL, FREE_TIP)
@@ -180,11 +171,28 @@ def push_estimate(
     days: float | None,
     origin: object,
 ) -> None:
-    """The one commit path: no-op when unchanged, one undoable command otherwise."""
-    previous = library.step(step_id).module_data.get(MODULE_ID, {})
-    entry = write(days, previous=previous)
-    if entry == previous:
-        return
-    undo.push(
-        SetModuleDataCommand(step_id, MODULE_ID, entry, view_origin=origin, label="Set Estimate")
-    )
+    """One step at one size: :func:`push_estimates` over a single step."""
+    push_estimates(library, undo, (step_id,), days, origin)
+
+
+def push_estimates(
+    library: Library,
+    undo: UndoService[Library],
+    step_ids: Sequence[StepId],
+    days: float | None,
+    origin: object = None,
+) -> None:
+    """The one commit path: every step at one size, as one undo entry however many there
+    are, and nothing at all for the steps already at it."""
+    commands: list[Command] = []
+    for step_id in step_ids:
+        previous = library.step(step_id).module_data.get(MODULE_ID, {})
+        entry = write(days, previous=previous)
+        if entry != previous:
+            commands.append(
+                SetModuleDataCommand(
+                    step_id, MODULE_ID, entry, view_origin=origin, label="Set Estimate"
+                )
+            )
+    if commands:
+        undo.push(commands[0] if len(commands) == 1 else CompositeCommand("Set Estimate", commands))

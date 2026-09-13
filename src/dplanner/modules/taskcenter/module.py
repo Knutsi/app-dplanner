@@ -2,7 +2,7 @@
 
 A status-bar button shows the running work ("Saving — 40%", "2 tasks running") or a
 lingering result ("Reading through — done"); clicking it — or View ▸ Tasks… — opens the
-task browser, where rows can be expanded, cancelled, and dismissed. A quarter-second
+task browser, where a row can be cancelled and a finished one dismissed. A quarter-second
 timer ticks ONLY while tasks are active, so estimate-derived fractions and elapsed times
 move; an idle app has no timer running.
 """
@@ -15,8 +15,9 @@ from PySide6.QtWidgets import QWidget
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.context import Context
 from dplanner.framework.tasks import TaskService
+from dplanner.framework.widgets import StatusBarButton
 from dplanner.framework.window import StatusHost
-from dplanner.modules.taskcenter.view import TaskBrowserDialog, TaskStatusButton
+from dplanner.modules.taskcenter.view import TaskBrowserDialog, button_text
 
 TICK_MS = 250
 
@@ -37,7 +38,7 @@ class TaskCenterModule:
 
     def register(self) -> None:
         deps = self._deps
-        button = TaskStatusButton()
+        button = StatusBarButton("Background tasks — click to open")
         deps.status.add_status_widget(button)
         self.button = button
         self.browser = TaskBrowserDialog(
@@ -50,7 +51,7 @@ class TaskCenterModule:
         def refresh() -> None:
             active = deps.tasks.active()
             finished = deps.tasks.finished()
-            button.show_tasks(active, finished)
+            button.show_text(button_text(active, finished))
             if self.browser.isVisible():
                 self.browser.refresh(active + finished)
             if active and not timer.isActive():

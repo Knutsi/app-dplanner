@@ -38,7 +38,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from dplanner.domain.schedule import SATURDAY, format_date, working_days_between
-from dplanner.modules.time_estimates.view import SECONDARY_ALPHA
+from dplanner.theme.tokens import SECONDARY_ALPHA
 
 MONTHS_SHOWN_AT_LEAST = 6
 MONTHS_SHOWN_AT_MOST = 12

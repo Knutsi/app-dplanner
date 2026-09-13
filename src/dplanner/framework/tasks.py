@@ -2,8 +2,7 @@
 
 Slow work normally enters this list through ``TaskRunner`` (task_runner.py), which runs
 a blocking body on a worker thread and keeps the matching Task current. The task centre
-renders whatever the list holds — a progress fraction when one is known, otherwise a
-spinner — plus an optional per-task detail widget built from ``detail_factory``.
+renders whatever the list holds — a bar when a fraction is known, otherwise a busy line.
 
 Cancellation is cooperative: ``cancel()`` sets ``cancel_requested`` on the GUI thread,
 the worker polls it and stops at its next safe point, and the task stays active until
@@ -20,11 +19,8 @@ field a worker thread may read (a plain bool, written only on the main thread).
 """
 
 import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-
-from PySide6.QtWidgets import QWidget
 
 from dplanner.core.signals import Signal
 from dplanner.core.telemetry import current
@@ -51,7 +47,6 @@ class Task:
     # cancels outright. Owned by the task so every Stop/Cancel surface asks the same.
     cancel_prompt: str | None = None
     keep_finished: bool = False  # Stay listed as done/failed until dismissed.
-    detail_factory: Callable[[], QWidget] | None = None  # Expandable row detail.
     error: str | None = None  # Set at finish when the work failed.
     timed_out: bool = False  # Set at finish when the work hit its time budget.
     duration: float | None = None  # Elapsed at finish, for "done in 32s".
@@ -117,7 +112,6 @@ class TaskService:
         cancellable: bool = False,
         cancel_prompt: str | None = None,
         keep_finished: bool = False,
-        detail_factory: Callable[[], QWidget] | None = None,
     ) -> Task:
         task = Task(
             task_id=self._next_id,
@@ -127,7 +121,6 @@ class TaskService:
             cancellable=cancellable,
             cancel_prompt=cancel_prompt,
             keep_finished=keep_finished,
-            detail_factory=detail_factory,
         )
         self._next_id += 1
         self._active[task.task_id] = task

@@ -63,13 +63,14 @@ from dplanner.theme.cards import (
     title_lines,
 )
 from dplanner.theme.icons import paint_glyph
-from dplanner.theme.tokens import SECONDARY_ALPHA
+from dplanner.theme.tokens import PANEL_MARGIN, SECONDARY_ALPHA, SECTION_GAP
 from dplanner.theme.tones import GOOD_BORDER, toned
 
-# DESIGN.md's 4-point scale: the tab page's 16, a lane's 12 inside, 12 between cards.
-MARGIN = 16.0
-LANE_PAD = 12.0
-CARD_GAP = 12.0
+# The tab page's margin, a lane's padding and the gap between cards: DESIGN.md's tokens, in
+# the scene's floats.
+MARGIN = float(PANEL_MARGIN)
+LANE_PAD = float(SECTION_GAP)
+CARD_GAP = float(SECTION_GAP)
 GUTTER = 56.0  # Room for a curve to read as a curve…
 GUTTER_NARROW = 32.0  # …and what it gives up on a narrow viewport before the lanes do.
 LANE_MIN_W = 168.0  # Two words of title beside a medallion; narrower is unreadable.

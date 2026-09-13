@@ -22,10 +22,12 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QDialog,
+    QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -345,3 +347,29 @@ def install_ctrl_wheel_zoom(editor: QAbstractScrollArea, on_steps: Callable[[int
     """
     viewport = editor.viewport()
     viewport.installEventFilter(_CtrlWheelFilter(viewport, on_steps))
+
+
+class NumberBox(QDoubleSpinBox):
+    """A spin box that prints its number the way a person writes it: "0.25", "0.5", "3" —
+    never "1.00". Decimals exist so a quarter is sayable; the padding is not."""
+
+    def textFromValue(self, value: float) -> str:  # noqa: N802 - Qt override
+        return f"{value:g}"
+
+
+class StatusBarButton(QToolButton):
+    """Quiet words in the status bar that open what they summarise — the running tasks, the
+    launched agents, the entries changed here and outside. Gone while there is nothing to
+    say, so an idle window's status bar says nothing."""
+
+    def __init__(self, tip: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("StatusBarButton")
+        self.setAutoRaise(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(tip)
+        self.hide()
+
+    def show_text(self, text: str) -> None:
+        self.setText(text)
+        self.setVisible(bool(text))

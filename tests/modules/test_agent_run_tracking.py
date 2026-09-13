@@ -372,27 +372,25 @@ def test_a_launch_is_a_span_saying_what_it_handed_over(services, step, monkeypat
 
 
 def test_the_browser_lists_runs_with_their_outcome(services, step, tmp_path):
-    from PySide6.QtWidgets import QLabel
-
     runs = module(services)
     runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"))
     runs._open_browser()
-    rows = runs._browser._rows
+    rows = runs._browser.rows()
     assert len(rows) == 1
-    row = next(iter(rows.values()))
+    (row,) = rows
     assert row.title.text() == "Deploy"
-    assert row.status.text().startswith("launched · since")
+    assert row.status.words().startswith("launched · since") and row.status.tone() == "busy"
     assert row.terminal_button.isVisibleTo(row)
 
     (tmp_path / "exit").write_text("3\n")
     runs.check()
-    assert row.status.text().startswith("failed (exit 3) · at")
+    assert row.status.words().startswith("failed (exit 3) · at")
+    assert row.status.tone() == "error"
     assert not row.terminal_button.isVisibleTo(row)
-    assert runs._browser.clear_button.isVisibleTo(runs._browser)
+    assert runs._browser.clear_button.isEnabled()
     runs._clear_ended()
-    assert runs.runs() == [] and runs._browser.findChild(QLabel, "AgentBrowserEmpty").isVisibleTo(
-        runs._browser
-    )
+    assert runs.runs() == [] and runs._browser.empty.isVisibleTo(runs._browser)
+    assert not runs._browser.clear_button.isEnabled()
 
 
 def test_the_browser_greys_show_terminal_per_run(services, step, tmp_path, monkeypatch):
@@ -408,7 +406,7 @@ def test_the_browser_greys_show_terminal_per_run(services, step, tmp_path, monke
     other.mkdir()
     runs.track(step.id, str(other / "shell"), str(other / "exit"))
     runs._open_browser()
-    in_tmux, bare = runs._browser._rows[str(tmp_path)], runs._browser._rows[str(other)]
+    in_tmux, bare = runs._browser.row(str(tmp_path)), runs._browser.row(str(other))
     assert in_tmux.terminal_button.isEnabled()
     assert not bare.terminal_button.isEnabled()
     assert bare.terminal_button.toolTip() == "no way in"
@@ -494,14 +492,14 @@ def test_an_ended_run_shows_the_command_that_picks_it_up_again(services, step, t
         " 7a1e4c2e-0000-4000-8000-000000000003\n"
     )
     runs._open_browser()
-    row = next(iter(runs._browser._rows.values()))
-    assert not row.resume.isVisibleTo(row)
+    (row,) = runs._browser.rows()
+    assert not row.note.isVisibleTo(row)
 
     (tmp_path / "exit").write_text("143\n")
     runs.check()
-    assert row.status.text().startswith("failed (exit 143)")
-    assert row.resume.isVisibleTo(row)
-    assert row.resume.text() == (
+    assert row.status.words().startswith("failed (exit 143)")
+    assert row.note.isVisibleTo(row)
+    assert row.note.text() == (
         'Pick it up again: cd "/repo/.dplanner-worktrees/s7" && claude --resume'
         " 7a1e4c2e-0000-4000-8000-000000000003"
     )
@@ -514,5 +512,5 @@ def test_an_ended_run_without_a_resume_shows_none(services, step, tmp_path):
     (tmp_path / "exit").write_text("1\n")
     runs.check()
     runs._open_browser()
-    row = next(iter(runs._browser._rows.values()))
-    assert not row.resume.isVisibleTo(row) and row.resume.text() == ""
+    (row,) = runs._browser.rows()
+    assert not row.note.isVisibleTo(row) and row.note.text() == ""
