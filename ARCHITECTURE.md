@@ -1322,7 +1322,13 @@ prints is the number a tidy acts on. One number to know: the column pitch, 300, 
 multiple of the grid, 8, so a tidy of a flow layout moves alternate columns by four
 points and nothing else — the fixed point of a sorted graph is the sorted graph snapped.
 Regions are neither carried by a tidy nor drawn on the map: they are annotation on the
-way out, and a rule written for them now would be one more thing to retire.
+way out, and a rule written for them now would be one more thing to retire. **The generated
+skill no longer names their verbs either** — the five carry `in_skill=False`, and the
+preamble's three lines telling an agent not to draw one went with them, since a skill that
+does not offer something need not forbid it. That is not the same act as deleting the verbs:
+the canvas still draws what a plan already has, and removing a verb an older script calls is
+a decision somebody should make on purpose rather than as a side effect of tidying a
+document.
 
 ### The canvas is a plane, and why that is one decision rather than three
 
@@ -1883,6 +1889,35 @@ MCP was considered and deferred. A CLI reaches every agent, including ones with 
 client; it is useful to people and to CI; and it needs no process lifecycle. If a
 Claude-specific integration is wanted later, `dplanner mcp serve` is a thin adapter over the
 same registry and introduces no second description of any command.
+
+### The command list is an index, not a manual
+
+SKILL.md's command section was a heading per noun and a bullet per verb carrying that verb's
+summary: 176 bullets, 19,793 of the file's 58,603 characters, **a third of a document every
+session loads**. And every one of those summaries was already carried twice more — as
+reference.md's own heading for that command, and again inside reference.md's fenced argparse
+help, which prints the same sentence under `usage:`. Three copies of one string, one of them
+in the file nobody gets to choose not to read.
+
+So the section is now one line per noun naming its verbs — `` `dplanner note` — add · attach
+· index · list · remove · set · show`` — with a `†` on the verbs that read the topology first
+and one legend line for it. 2,355 characters.
+
+The trade is deliberate and it is not "an agent can look it up in reference.md". That file is
+152 KB; sending an agent there to learn what `note index` does would cost more than the
+bullets saved. The answer is `dplanner note index --help`, which is a subprocess that starts
+in milliseconds, prints the arguments *and* the examples, and cannot be stale — the same
+parser the skill was generated from. An index's job is to tell you a verb **exists** and how
+it is spelled; `--help` tells you what it does; reference.md is for reading every flag of
+everything at once. Each of the three is now used for what it is good at.
+
+**A verb the skill must not teach carries `in_skill=False`.** It is the CLI twin of
+`ActionSpec.in_menus=False`, and for the same reason: a thing can be legitimately available
+and legitimately not offered. The region verbs are what it exists for — registered, runnable,
+in `--help`, in neither generated file. The alternative was a noun denylist in the generator,
+which puts knowledge of one module's retirement into `cli/skill.py`; the flag keeps it on the
+command, where the module that owns it says so. A noun whose every verb is kept out is not a
+noun in the index at all, so `region` simply does not appear.
 
 ## Lint belongs to no feature
 
@@ -2460,7 +2495,25 @@ to notice, and a stored answer would be wrong exactly when an agent is driving. 
 tab's Notes pane, `dplanner note index` and the assembled agent prompt are three readers of
 that one function and one `briefing_blocks` rendering, so no surface can describe what a
 step inherits another surface would dispute. *A note is a record with a label* below has
-the shape and why the index is an index.
+the shape, why the index is an index, and why the graph decides who a note is for.
+
+**And the index has a ceiling, which the first version did not.** A briefing is read once,
+from the top, and an index nobody finishes costs what a log costs: on a 74-step plan with
+320 standing notes the index came to 33,131 chars of a 47,157-char briefing, and the step's
+own instructions sat after it. So `index_lines` keeps at most `INDEX_LIMIT` (20) notes per
+label, the most recent, and **says what it left out** — `Decisions standing (20 of 64):`
+and a closing line naming the rest and the `note list --label` that reads them. Three
+decisions in that one sentence. *Per label* rather than one budget, because a label is what
+an agent scans by and a flood of deferred items must not starve the decisions. *The most
+recent*, because a plan's newest decisions are the ones its current work was shaped by, and
+a superseded one has already left the index. And *a verb, not a count*: a line that said
+only "44 more" would tell an agent it is missing something and not how to look. The cap
+lives in `index_lines` and not in the composition root because `briefing_blocks` is the one
+function the briefing, `dplanner note index` and the Agent tab's Notes pane share — put it
+in the root and the window would stop showing what the agent was actually handed, which is
+the whole point of that pane. `note index --all` drops it, because *does this note reach
+this step?* is a question the narrower reach makes somebody ask, and no other verb answers
+it: `note list` is the log, not what reaches a step.
 
 ## Running an agent launches a peer, not a task
 
@@ -2486,9 +2539,10 @@ the same walk the Covers tab reads), and the branch or PR the work lands on. The
 topology sits ahead of all of these as a *project section*, right after the standing
 instruction, because it frames every step the same way. The agent module renders these as opaque
 blocks; the composition root words them, exactly as it words the preamble and epilogue,
-because each names another module's vocabulary. Two block kinds, two framings: *parts* are
-context handed forward from earlier steps (`### From "…"`), *sections* are facts about this
-step (`## …`). One builder per kind lives in `modules/__init__.py` and both surfaces — Run
+because each names another module's vocabulary. Two block kinds, one framing: *parts* are
+context handed forward from earlier steps, *sections* are facts about this step, and
+`section_lines` renders both as `## …` — what differs is where they sit, not how they read.
+One builder per kind lives in `modules/__init__.py` and both surfaces — Run
 Agent and `dplanner agent prompt` — call the same two functions, so the window and the CLI
 cannot brief a step two ways. An executing agent needs `agent prompt` and nothing else;
 needing five verbs to reconstruct a briefing was the failure this replaces. Files attached at either level are **staged into the per-run
@@ -2966,6 +3020,67 @@ vendor's shape could not be added across a step that ran under two of them. So `
 is everything sent to the model and `output` everything it generated, whatever the CLI,
 and the vendor's split rides along under `details` in the vendor's words — the sum is
 honest and the breakdown is still there for whoever wants the price.
+
+### What a run was handed
+
+A ledger of what runs *cost* left the other half unrecorded: how big the briefing was that
+each one opened with. It is the number somebody wants the moment a step looks expensive, and
+it is the only one DPlanner itself is responsible for — the tokens are the model's doing, the
+briefing is ours. Nothing kept it, which is why a whole pass had to be measured with a
+throwaway script before anything could be fixed.
+
+It is measured once, in `launcher.prepare` — the one function that knows what actually
+reached `prompt.md`, rather than what some caller believed it was sending — and carried on
+`LaunchFiles`, which `record_launch` already hands to the tracker, so no signature between
+the two moved.
+
+**The run is its home, and the usage row is a copy.** `AgentRun.prompt_chars` is what the
+Agents browser reads, because the two cases a row cannot cover are the two that matter most:
+a run still going has no usage row yet, and a harness with no token reader never gets one.
+The tempting fix — write a usage row at launch with zero tokens — is worse than it looks:
+`usage.totals` would then return `Usage(0, 0)` and the step would *claim it spent nothing*
+where it currently and correctly says nothing at all. A size is a fact about the run; tokens
+are a fact about the plan's cost. Keeping them in the stores that own each is what lets a
+live run say one without lying about the other.
+
+**No format bump, and the precedent that looks like it applies does not.** `progress_history`
+went to format 2 for its `saved` key so an older build would refuse to rewrite the entry
+rather than drop what somebody had authored. Here `usage.with_row` copies every kept row
+**verbatim** and `rows()` filters without rebuilding, so an older build cannot lose
+`prompt_chars` — and it re-stamps the entry to its own version on the next write anyway, so
+the guard would not even guard. `ModuleDataFormat` requires one migration function per
+version, so the bump would have put an identity function in the tree for no reader. The rule
+worth keeping from this: **bump when an older writer would destroy the new key, not when one
+merely would not write it.**
+
+**A size does not total.** Two briefings added together is not a quantity anybody spends, so
+`usage list`, `usage.totals` and the step's own phrase stay tokens-only, and `brief_words`
+says its unit out loud — *briefed 18.4k chars* — because the number beside it on the same
+line is tokens and two magnitudes in one row must not be readable as the same quantity.
+
+**And the launch became a span.** There was none: Run Agent was timed only by the `action`
+span `ActionRegistry.run` opens. A detail on that span is not available to a verb body —
+`Telemetry.recent()` and `open_spans()` hand out **copies** by deliberate design, which
+`tests/core/test_telemetry.py` pins — and adding an accessor for the live span would be a
+write path into shared state, in `core/`, for one caller. It would also be wrong: one gesture
+launches a shell per chosen step, so three launches are three sizes and could never be one
+key on the parent. A child `action` span per launch nests under the gesture for free, renders
+in *Debug ▸ Telemetry* with no UI work, and is the shape the rest of the application already
+uses. The cost, named: a launch under the 20 ms journal floor is absent from the file — which
+only happens where a test monkeypatches the spawn, and the durable record is the run and the
+row in any case.
+
+### The briefing says what each block cost
+
+`agent prompt --json` returned the briefing as one opaque string, and `PromptSegment` carried
+only a coarse `origin` — so the two `protocol` blocks were indistinguishable from each other,
+as were the two `project` blocks, and both notes blocks fused into a single `inherited`
+segment. Finding out where 47,000 characters went therefore meant monkeypatching `assemble`
+from a script. A measurement that has to be re-invented is one nobody repeats, and "is the
+briefing too big?" is now a question with a standing answer: one segment per block, each
+carrying its own heading, and `segments` (origin, heading, chars) plus `chars` on the JSON.
+The join invariant is untouched — the segment texts still concatenate to exactly the text
+that is sent, which is what lets the Agent tab colour it without ever showing something else.
 
 ## Two repositories, two questions
 
@@ -4017,8 +4132,8 @@ kinds were the same thing wearing two shapes. Five decisions:
 - **One log, and a closed list of labels.** A decision and a handoff are both *a note the
   project made along the way*; what differs is what the note *is*, and that is a word on
   the record — `decision`, `handoff`, `spec-change`, `later`, `post-project` — from a
-  list this build owns (`log.LABELS`, a row each with its meaning, its default reach and
-  the index's heading over it). Closed on purpose: an agent reading an index line must
+  list this build owns (`log.LABELS`, a row each with its meaning and the index's heading
+  over it — and nothing about who sees it, which is the graph's to say). Closed on purpose: an agent reading an index line must
   know what the line is without opening it, and a free tag vocabulary is what every agent
   invents differently. A new kind is a row, and `note add --help`, the skill and the
   index follow. The record is the decision log's shape kept — `N1, N2, …` minted per
@@ -4039,14 +4154,43 @@ kinds were the same thing wearing two shapes. Five decisions:
   title therefore carries the weight — the skill and the epilogue both say *title it as
   the fact it is* — and the agent that skims a line and does not open it has made a
   choice the old briefing never let it make.
-- **Who sees a note is its label's business, with one stored exception.** A handoff
-  reaches the steps *after* the one it was made on (the cone the old aspect walked, plus
-  the step itself — a re-run is a pick-up too); every other label reaches the whole
-  project, because a decision or a deferred item is the project's, not a branch's. A
-  handoff everyone should see is `--reach project`, stored only when it differs from the
-  label's default (`FORMAT.md`'s absence rule), and a note made on no step has nothing to
-  be downstream of, so it reaches everyone whatever it wears. `reach.reaching()` is the
-  one derivation.
+- **Who sees a note is where it was made, with one stored exception.** Every label reaches
+  the steps *after* the one it was made on — the cone the old handoff aspect walked, plus
+  the step itself, since a re-run is a pick-up too. A note made on no step has nothing to be
+  downstream of and reaches everyone whatever it wears; **so does one whose step is gone**,
+  because a decision does not stop standing when the step that made it is deleted, and that
+  is the same sentence generalised (`reaching()` is the only place that can know, so the
+  live-id check lives there). `--reach project` lifts the one note that binds the whole plan
+  and is stored only then (`FORMAT.md`'s absence rule). `reach.reaching()` is the one
+  derivation.
+
+  **This was settled twice, and the second time reversed the first.** Originally only a
+  handoff used the graph: a decision, a spec change and a deferred item reached the whole
+  project, on the argument that each is the project's and not a branch's. Then a 74-step
+  plan with 320 standing notes was measured. The notes index was **73% of every briefing**
+  — and 267 of its ~285 lines were *byte-identical on all 57 agent steps*, because four of
+  the five labels bypassed the cone. An agent starting the fiftieth step read 171 decisions
+  and 82 deferred items, almost none of them about its work, before reaching its own
+  instructions. The argument was not wrong about what a decision *is*; it was wrong about
+  what a briefing is *for*. The graph already answers "which earlier work does this step
+  build on", and a project whose topology orders two steps that would touch the same file —
+  which is the shape DPlanner's own plans declare — has already said that a decision binding
+  you is a decision upstream of you. So the `reach` column came off `Label` entirely rather
+  than keeping one value in five rows: a one-value column is an invitation for a future row
+  to differ, and the point is that it cannot. Index 33,131 → 2,715 chars median, whole
+  briefing 47,157 → 17,497.
+
+  **Two pieces of prose had to follow, or the change would have quietly taken something
+  away.** The briefing's epilogue tells an agent to record a `decision --step <key>`, which
+  now reaches only the work after it — so the epilogue says what the reach is and when to
+  add `--reach project`. And the index's own lead-in names `note list` as the whole log,
+  because with reach narrowed *and* the index capped, an agent that suspects it is missing
+  something needs a verb. A rule that removes what somebody could read owes them the way
+  back to it.
+
+  One thing deliberately left alone: `dplanner report` carries every standing note,
+  uncapped. A publication is read by a person with a page and a scrollbar, not by an agent
+  with a budget.
 - **Adding twice is one note, and reversing is a new one — on the same step.** The
   decision log's retry safety kept, narrowed: a title already in the log *on the same
   step* is that note, reported with the verb that revises it and never duplicated. The

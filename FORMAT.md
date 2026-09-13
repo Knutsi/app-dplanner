@@ -371,7 +371,13 @@ its record.
 **What a step's agent runs consumed is a ledger of rows, never a total.** `agent_usage`
 (a second aspect id in `step_agent_run/`) writes `{"runs": [{"harness": "claude",
 "session": "<id>", "input": 12345, "output": 678, "details": {"cache_read": …,
-"cache_creation": …}, "ended": "<ISO stamp>"}]}` beside the step — one row per run,
+"cache_creation": …}, "ended": "<ISO stamp>", "prompt_chars": 18412}]}` beside the step —
+`prompt_chars` is what the briefing came to, absent for a row `dplanner usage record`
+wrote or one recorded before it was measured, and absence reads as *nobody measured*.
+It needs no format bump, and the rule is worth stating because `progress_history` below
+looks like a precedent for one: **bump when an older writer would destroy the new key,
+not when it merely would not write it.** `usage.with_row` copies every kept row verbatim
+and `rows()` filters without rebuilding, so an older build cannot drop this one. One row per run,
 appended by the window when the shell ends and by `dplanner usage record` from the
 terminal, a row per session so a record read twice replaces itself. `input` is everything
 sent to the model and `output` everything it generated, whatever the CLI; the CLI's own
@@ -445,8 +451,10 @@ ever carries it. The **note log** is the fourth: `modules/notes.json` beside the
 `{"notes": [{"id": "N1", "label": "handoff", "title": "…", "body": "…", "made":
 "2026-09-05", "step": "<step id>", "for": ["<step id>"], "reach": "project",
 "supersedes": "N0"}]}` — a record list like the feature catalogue (every key but `id`,
-`label` and `title` omitted when empty; `reach` written only when it differs from the
-label's default), ids minted per project and never reused so a later note can name the one
+`label` and `title` omitted when empty; `reach` written only for the one exception,
+`"project"` — a note reaches the steps after the one it was made on by default, so
+*downstream* is never written), ids minted per project and never reused so a later note can
+name the one
 it replaces, the label one of the closed list in `modules/notes/log.py`. It absorbed two
 earlier shapes at open — `modules/decisions.json` by takeover, and each step's
 `step_handoff.md`, `step_handoff.json` and `step_handoff/assets/` by the format's
