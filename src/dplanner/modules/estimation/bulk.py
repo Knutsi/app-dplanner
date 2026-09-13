@@ -38,7 +38,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId, TextEdit
 from dplanner.domain.ordering import placed
-from dplanner.domain.schedule import format_days
+from dplanner.domain.schedule import volume_words
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.activity import EntityActivity
 from dplanner.framework.context import (
@@ -323,13 +323,15 @@ class BulkEstimateActivity(EntityActivity):
         self._update_summary()
 
     def _update_summary(self) -> None:
-        """Counted over the scope, not the filter, so it never lies while rows are hidden."""
+        """Counted over the scope, not the filter, so it never lies while rows are hidden.
+
+        The volume sentence the order table and ``estimate rollup`` print, over this scope:
+        one wording, so the tab a person sizes steps in and the total they quote afterwards
+        cannot disagree.
+        """
         days = [read(step) for step in self._steps()]
         sized = [d for d in days if d is not None]
-        text = f"{len(sized)} of {len(days)} estimated"
-        if sized:
-            text += f" · {format_days(sum(sized))}"
-        self._summary.setText(text)
+        self._summary.setText(volume_words(sum(sized), len(days), len(days) - len(sized)))
 
     def _focus_first_row(self) -> None:
         for row in range(self.table.rowCount()):

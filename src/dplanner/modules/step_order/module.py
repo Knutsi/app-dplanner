@@ -14,25 +14,29 @@ Three seams, all established elsewhere in this application:
 - **Activating one opens its details**, by running ``steps.details`` against a context
   naming exactly that row's step — the same registry path the menus use, so whoever owns
   the dialog is not this module's business.
-- **The schedule arrives as an answer, not as data to interpret.** Whoever owns estimates
-  hands over the order already carrying days and dates, and lends the widget that sets the
-  start date. This module never learns what an estimate is stored as, and there is a working
-  default for a build with nobody to ask.
+- **The estimates arrive as an answer, not as data to interpret.** Whoever owns them hands
+  over the order already carrying each step's days. This module never learns what an
+  estimate is stored as, and there is a working default for a build with nobody to ask.
+
+What the page says under its caption is the **volume**: the estimated days the order comes
+to, over how many steps, and how many nobody has sized — the sentence ``dplanner order
+show``, ``estimate rollup`` and the Estimates tab all print (``domain/schedule.py``'s
+``volume_words``). It replaced a paragraph explaining what a wave is, which is now the
+caption's own info glyph, and the serial calendar the table used to run out beside it.
 """
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Protocol
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QVBoxLayout, QWidget
 
 from dplanner.core.fsio import write_csv
 from dplanner.domain.model import Library, NodeId, Project, ProjectId, StepId
 from dplanner.domain.ordering import Placed, placed
-from dplanner.domain.schedule import Scheduled, schedule
+from dplanner.domain.schedule import Scheduled, schedule, volume_words
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -55,6 +59,7 @@ from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import ActionToolbar
+from dplanner.framework.widgets import EmptyState, captioned, note
 from dplanner.modules.step_order.cli import wave_label
 from dplanner.modules.step_order.export import order_rows
 from dplanner.modules.step_order.view import OrderTable
@@ -67,19 +72,6 @@ PANEL_MARGIN = 16
 CAPTION_GAP = 6
 BLOCK_GAP = 12
 SWITCH_GAP = 16
-
-
-class StartBar(Protocol):
-    """The control the schedule is measured from.
-
-    Consumer-owned interface, satisfied structurally by the estimation module's start-date
-    bar via the composition root — the same arrangement as the project editor's panel.
-    """
-
-    @property
-    def widget(self) -> QWidget: ...
-
-    def dispose(self) -> None: ...
 
 
 def _no_aspects(_step_id: StepId) -> list[str]:
@@ -127,8 +119,6 @@ class StepOrderDeps:
     step_schedule: Callable[[ProjectId, Sequence[Placed]], list[Scheduled]] = field(
         default=_unscheduled
     )
-    # The widget that sets the date the schedule counts from. None is a legitimate build.
-    start_bar: Callable[[ProjectId, QWidget], StartBar] | None = None
     # The label of the milestone a step is, "" otherwise. Wired by the composition root;
     # this module never learns who owns milestones.
     milestone_label: Callable[[StepId], str] = field(default=_no_milestone)
@@ -157,14 +147,21 @@ class OrderActivity(EntityActivity):
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
         layout.setSpacing(CAPTION_GAP)
 
-        caption = QLabel("Order", page)
-        caption.setObjectName("InspectorCaption")
         # The caption row carries one quiet Export button whose arrow renders File ▸ Export
         # — the same entries, never a copy — so the exports are found where the table is.
+        # What a wave is stands behind the caption's info glyph rather than in a paragraph
+        # under it (DESIGN.md's *Words*): it is a convention, and a convention is read once.
         head = QHBoxLayout()
         layout.addLayout(head)
-        head.addWidget(caption)
-        head.addStretch(1)
+        head.addWidget(
+            captioned(
+                "Order",
+                page,
+                hint="Steps in an order that never puts one before what it waits on. "
+                "Everything in Wave 1 can be started now.",
+            ),
+            1,
+        )
         self.toolbar = ActionToolbar(
             deps.actions,
             deps.context,
@@ -177,22 +174,10 @@ class OrderActivity(EntityActivity):
         self.updating = UpdatingIndicator(page)
         head.addWidget(self.updating)
 
-        self._note = QLabel(
-            "Steps in an order that never puts one before what it waits on. Everything in the "
-            "first wave can be started now; the dates run them one after another, weekends "
-            "skipped.",
-            page,
-        )
-        self._note.setObjectName("InspectorNote")
-        self._note.setWordWrap(True)
-        layout.addWidget(self._note)
-
-        self.start_bar: StartBar | None = None
-        if deps.start_bar is not None:
-            self.start_bar = deps.start_bar(project_id, page)
-            layout.addSpacing(BLOCK_GAP)
-            layout.addWidget(self.start_bar.widget)
-            layout.addSpacing(BLOCK_GAP)
+        # A remark that changes with the data, which is what #InspectorNote is for.
+        self.volume = note("", page)
+        layout.addWidget(self.volume)
+        layout.addSpacing(BLOCK_GAP)
 
         # Two perspectives on one order: the work steps, the features, or both — the
         # milestones are the fixed points either way, so unticking both leaves the roadmap.
@@ -224,6 +209,9 @@ class OrderActivity(EntityActivity):
         self.table.customContextMenuRequested.connect(self._on_context_menu)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         layout.addWidget(self.table, 1)
+        # One swap, and the table is what it stands in for (DESIGN.md's *Words*).
+        self.empty = EmptyState(parent=page, stands_in_for=self.table)
+        layout.addWidget(self.empty, 1)
 
         self._widget = page
         # After a quiet spell, not per signal: the table is rebuilt row by row.
@@ -258,8 +246,6 @@ class OrderActivity(EntityActivity):
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
-        if self.start_bar is not None:
-            self.start_bar.dispose()
         self.toolbar.dispose()
 
     # -- internals -----------------------------------------------------------------------------
@@ -271,7 +257,12 @@ class OrderActivity(EntityActivity):
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         order = placed(self._product, self._project())
-        self.table.show_order(self._deps.step_schedule(self.project_id, order))
+        scheduled = self._deps.step_schedule(self.project_id, order)
+        self.table.show_order(scheduled)
+        sized = [row.days for row in scheduled if row.days is not None]
+        self.volume.setText(volume_words(sum(sized), len(scheduled), len(scheduled) - len(sized)))
+        self.volume.setVisible(bool(scheduled))
+        self.empty.say("" if scheduled else "Steps appear here in the order they can be done.")
 
     def _on_kinds(self) -> None:
         self.table.show_kinds(

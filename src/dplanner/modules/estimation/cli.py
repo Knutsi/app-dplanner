@@ -22,6 +22,7 @@ from dplanner.domain.schedule import (
     format_date,
     format_day_count,
     format_days,
+    volume_words,
 )
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
@@ -228,11 +229,7 @@ def _rollup(context: CliContext, args: Namespace) -> int:
         "steps": len(project.steps),
         "unestimated": missing,
     }
-    tail = f", {missing} unestimated" if missing else ""
-    context.report(
-        data,
-        f"{project.title}: {format_day_count(total)} over {len(project.steps)} steps{tail}",
-    )
+    context.report(data, f"{project.title}: {volume_words(total, len(project.steps), missing)}")
     return 0
 
 

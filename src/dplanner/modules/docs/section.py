@@ -1,13 +1,14 @@
-"""The prose editors and the banner every surface shows over a collector's document.
+"""The prose editors, and the line every surface shows over a collector's document.
 
 All three editors are :class:`~dplanner.framework.prose_section.ProseSection` — the editor,
 its image gallery, paste-and-drop, markdown highlighting and the expand-to-modal button all
 come from it. Nothing here hand-rolls an Attach button.
 
-**The banner is one widget with three sentences**, shared by the step panel's Docs tab and
-the Docs view, so "this needs recompiling" is worded once and greyed for one reason. It is
-``#InspectorNote`` over a primary button, which is DESIGN.md's sanctioned pairing: a remark
-that changes with the data, above the one action the surface exists for.
+**Where a document stands is one `StatusLine`**, shared by the step panel's Fragment tab and
+the Documentation view, so it is worded once and toned once. It carries no button: compiling
+launches an agent, and that verb's seats are the Step menu, the palette and the activity's
+strip — a surface that only *says* where a document stands cannot disagree with the verb
+about whether it can run.
 """
 
 from collections.abc import Callable
@@ -15,29 +16,30 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from PySide6.QtCore import SignalInstance
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Library, StepId
 from dplanner.domain.store import FilesFor
+from dplanner.framework.activity import follow_target
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.prose_section import FIELD_GAP, ProseSection
+from dplanner.framework.signalling import StatusLine
 from dplanner.framework.undo import UndoService
 from dplanner.modules.docs.aspect import COMPILED_ID, MODULE_ID
 from dplanner.modules.docs.collect import CompiledState
 
 STEP_PLACEHOLDER = (
-    "What this step adds to the product's documentation, for someone using it."
-    " Markdown; paste or drop an image straight in."
+    "What this step adds to the product's documentation, for someone using it. A collector"
+    " compiles these. Markdown; paste or drop an image straight in."
 )
 COMPILED_PLACEHOLDER = (
-    "The document compiled from everything this collector gathers. Edit it freely —"
-    " compiling again replaces it."
+    "The documentation compiled from every fragment this collector gathers. Edit it freely —"
+    " the next compile replaces it."
 )
 PROJECT_PLACEHOLDER = (
     "How this project's documentation should read — voice, audience, anything every"
-    " compiled document should follow."
+    " document compiled here should follow. It opens every compile briefing."
 )
 # A card grows down the stack, not with its content; six lines is what the standing agent
 # instruction's card settled on and this sits beside it.
@@ -46,60 +48,55 @@ CARD_LINES = 6
 
 @dataclass(frozen=True)
 class Standing:
-    """Where one collector's document stands: the state, what it would read, what it read."""
+    """Where one collector's document stands: the state, what it would read, what it read,
+    who this desk last launched on it, and whether an agent is working there now.
+
+    ``by`` is the module's own record of the launch it made (*"Claude Code · session 3f2a1c"*)
+    rather than anything in the plan: the stamp says when a document was compiled and from
+    what, and who compiled it is a fact about one desk's runs.
+    """
 
     state: CompiledState
     sources: int
     stamp: dict[str, Any]
+    by: str = ""
+    working: bool = False
 
 
 @dataclass(frozen=True)
 class CompileLink:
-    """What a view needs from the compile verb, in the view's own vocabulary.
+    """What a view needs in order to say where a collector's document stands.
 
-    ``state`` answers the two questions a disabled button owes an explanation for — can this
-    run, and if not, why — so every surface renders the action's own reason rather than
-    inventing preconditions that could disagree with it. ``changed`` is a **Qt** signal, so
-    the connection dies with the widget; a plain Python signal would keep a section's bound
-    method — and so the section — alive past the build that made it, leaving the collector to
-    free a QWidget Qt had already destroyed.
+    No verb: compiling is an ``ActionSpec``, so a view runs it through the registry and
+    renders the registry's own state. A link that carried its own ``run`` and ``state`` was
+    how the button came to exist in three places.
     """
 
     collects: Callable[[StepId], bool]
-    state: Callable[[StepId], tuple[bool, str]]
     standing: Callable[[StepId], Standing]
-    run: Callable[[StepId], None]
-    changed: SignalInstance
+    # What a strip renders: the compile verbs' action ids, in the order they sit. Ids rather
+    # than callables, because a presenter runs a verb through the registry and renders the
+    # registry's own state — a second path is how the button came to exist in three places.
+    verbs: tuple[str, ...] = ()
+    # (the verb that carries an arrow, the data child menu the arrow drops): the launch
+    # profiles, which are the Step menu's own child menu and never a copy of its list.
+    profile_menu: tuple[str, str] = ("", "")
 
 
-class CompileBanner(QWidget):
-    """Where a collector's document stands, and the button that moves it on."""
+class DocumentStanding(StatusLine):
+    """Where a collector's document stands, in one toned line.
+
+    A ``StatusLine`` and nothing more — DESIGN.md's *Signalling*: the glyph carries the mood,
+    the words carry the fact. Four states in the four tones and no fifth: busy while an agent
+    is working on the step, ok when the document is up to date, and the line's own ink for
+    *out of date* and *not compiled yet*, which are facts rather than faults.
+    """
 
     def __init__(self, link: CompileLink, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._link = link
         self._target: StepId = ""
-
-        column = QVBoxLayout(self)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(FIELD_GAP)
-
-        self.note = QLabel(self)
-        self.note.setObjectName("InspectorNote")
-        self.note.setWordWrap(True)
-        column.addWidget(self.note)
-
-        # One primary action per surface, and here it is the reason to be looking.
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        self.button = QPushButton("Compile", self)
-        self.button.setObjectName("PrimaryButton")
-        self.button.clicked.connect(self._on_clicked)
-        row.addWidget(self.button)
-        row.addStretch(1)
-        column.addLayout(row)
-
-        link.changed.connect(self.refresh)
+        self.setWordWrap(True)
 
     def show_target(self, step_id: StepId) -> None:
         self._target = step_id
@@ -107,23 +104,19 @@ class CompileBanner(QWidget):
 
     def refresh(self) -> None:
         if not self._target:
+            self.clear()
             return
         standing = self._link.standing(self._target)
-        runnable, reason = self._link.state(self._target)
-        self.button.setText("Compile" if standing.state == "never" else "Recompile")
-        self.button.setEnabled(runnable)
-        self.button.setToolTip(reason)
-        # Where it stands, and — when the button is off — what is in the way. A reason only
-        # in a tooltip is a reason most readers never find.
-        self.note.setText(" ".join(part for part in (state_line(standing), reason) if part))
-
-    def _on_clicked(self) -> None:
-        if self._target:
-            self._link.run(self._target)
+        if standing.working:
+            # Not "compiling this now": the window cannot tell one run on a step from
+            # another, and what the reader needs to know is that somebody is already here.
+            self.say(f"An agent is working on this step. {state_line(standing)}", "busy")
+            return
+        self.say(state_line(standing), "ok" if standing.state == "current" else "info")
 
 
 class DocsSection(ProseSection):
-    """One step's fragment — and, on a collector, the banner for its compiled document."""
+    """One step's documentation fragment — and, on a collector, where its document stands."""
 
     def __init__(
         self,
@@ -142,8 +135,8 @@ class DocsSection(ProseSection):
             field_for,
             undo,
             STEP_PLACEHOLDER,
-            expand_title="Docs",
-            attach_title="Attach to Docs",
+            expand_title="Documentation Fragment",
+            attach_title="Attach to Documentation Fragment",
         )
         self._library = library
         self._files = files
@@ -151,14 +144,22 @@ class DocsSection(ProseSection):
         self._link = compile_link
         self._target_id: str | None = None
 
-        self.banner: CompileBanner | None = None
+        self.standing: DocumentStanding | None = None
+        self._unsubscribes: list[Callable[[], None]] = []
         if compile_link is not None:
-            self.banner = CompileBanner(compile_link, self)
+            self.standing = DocumentStanding(compile_link, self)
             layout = self.layout()
             if isinstance(layout, QVBoxLayout):
-                layout.insertWidget(0, self.banner)
+                layout.insertWidget(0, self.standing)
                 layout.insertSpacing(1, FIELD_GAP)
-            self.banner.hide()
+            self.standing.hide()
+            # Where a document stands changes with a fragment nobody here is editing — a
+            # relink, another writer's `compiled set`, an agent's run ending. The panel
+            # re-asks `shown_for` on a model change but does not re-show a section, so the
+            # line follows the model itself, as the Agent tab's derived part does.
+            self._unsubscribes.append(
+                follow_target(library, lambda: self._target_id, self._refresh_standing)
+            )
 
     def show_target(self, target_id: str | None) -> None:
         super().show_target(target_id)
@@ -169,18 +170,27 @@ class DocsSection(ProseSection):
             self.set_area(lambda: files(target_id, MODULE_ID))
             if pick is not None:
                 self.set_picker(lambda: pick(target_id))
-        self._refresh_banner()
+        self._refresh_standing()
 
-    def _refresh_banner(self) -> None:
-        """A plain step has no document to be out of date; the banner is a collector's."""
-        banner, target, link = self.banner, self._target_id, self._link
-        if banner is None or link is None:
+    def dispose(self) -> None:
+        """A core signal has no widget lifetime to ride on, so the subscription is dropped
+        here: a section outliving its build would hand the collector a wrapper whose C++ side
+        Qt had already freed."""
+        for unsubscribe in self._unsubscribes:
+            unsubscribe()
+        self._unsubscribes = []
+        super().dispose()
+
+    def _refresh_standing(self) -> None:
+        """A plain step has no document to be out of date; the line is a collector's."""
+        line, target, link = self.standing, self._target_id, self._link
+        if line is None or link is None:
             return
         if target is None or not self._library.has(target) or not link.collects(target):
-            banner.hide()
+            line.hide()
             return
-        banner.show_target(target)
-        banner.show()
+        line.show_target(target)
+        line.show()
 
 
 class CompiledSection(ProseSection):
@@ -206,19 +216,16 @@ class CompiledSection(ProseSection):
             undo,
             COMPILED_PLACEHOLDER,
             margin=margin,
-            expand_title="Compiled Docs",
+            expand_title="Documentation",
         )
 
-    def show_target(self, target_id: str | None) -> None:
-        super().show_target(target_id)
 
+class InstructionsCard(ProseSection):
+    """The project's compilation instructions: what every document compiled here follows.
 
-class ProjectDocsCard(ProseSection):
-    """The project panel's Docs card: the standing style every compile is given.
-
-    The same seam and the same reasoning as the standing agent instruction — a style written
-    once beats the same three sentences repeated in three collectors. A project does no work,
-    so its ``docs.md`` collides with no documentation of its own.
+    The same seam and the same reasoning as the standing agent instruction — written once
+    beats the same three sentences repeated in three collectors, and it opens every compile
+    briefing. A project does no work, so its ``docs.md`` collides with no fragment of its own.
     """
 
     def __init__(
@@ -237,8 +244,8 @@ class ProjectDocsCard(ProseSection):
             field_for,
             undo,
             PROJECT_PLACEHOLDER,
-            expand_title="Documentation Style",
-            attach_title="Attach to Documentation Style",
+            expand_title="Compilation Instructions",
+            attach_title="Attach to Compilation Instructions",
         )
         self._files = files
         self._pick_assets = pick_assets
@@ -258,17 +265,16 @@ class ProjectDocsCard(ProseSection):
 
 
 def state_line(standing: Standing) -> str:
-    """The banner's sentence, one per state — what a run recorded, never a definition."""
-    sources = f"{standing.sources} source{'' if standing.sources == 1 else 's'}"
+    """The line's sentence, one per state — what a compile recorded, never a definition."""
+    fragments = f"{standing.sources} fragment{'' if standing.sources == 1 else 's'}"
     if standing.state == "never":
-        return f"Not compiled yet — {sources} to read."
+        return f"Not compiled yet — {fragments} to read."
     when = ago(float(standing.stamp.get("at", 0.0) or 0.0))
+    by = f" by {standing.by}" if standing.by else ""
     if standing.state == "stale":
-        return f"Out of date — compiled {when}, and what it reads has changed since."
-    model = str(standing.stamp.get("model") or "")
+        return f"Out of date — compiled {when}{by}, and what it reads has changed since."
     read = int(float(standing.stamp.get("sources", 0.0) or 0.0))
-    tail = f" · {model}" if model else ""
-    return f"Compiled {when} from {read} source{'' if read == 1 else 's'}{tail}."
+    return f"Up to date — compiled {when}{by} from {read} fragment{'' if read == 1 else 's'}."
 
 
 def ago(at: float) -> str:

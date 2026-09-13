@@ -168,6 +168,20 @@ def format_day_count(days: float) -> str:
     return f"{days:g} day" if days == 1 else f"{days:g} days"
 
 
+def volume_words(days: float, steps: int, unestimated: int) -> str:
+    """How much work a set of steps comes to: "12 days over 7 steps, 1 unestimated".
+
+    One sentence with four readers — the order table, ``dplanner order show``, ``estimate
+    rollup`` and the Estimates tab's strip — for ``format_days``'s reason one function up:
+    a tab that worded the same total differently from the terminal would be two answers to
+    one question. What is unestimated is named rather than folded in, because a total that
+    silently counted a step as nothing would read as a smaller project.
+    """
+    tail = f", {unestimated} unestimated" if unestimated else ""
+    plural = "" if steps == 1 else "s"
+    return f"{format_day_count(days)} over {steps} step{plural}{tail}"
+
+
 def schedule(
     order: Sequence[Placed],
     days_for: Callable[[Step], float | None],

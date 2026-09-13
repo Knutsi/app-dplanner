@@ -1320,7 +1320,7 @@ root, stop and look for the registry or capability you have not found yet.
   coming first-start checklist reuses. A profile's name
   follows its choices — *Claude Code in herdr* — until somebody types one, and a taken
   name is numbered rather than refused. Over a selection every chosen step goes through
-  the one profile — with a multiplexer, one pane each. The progression board's Ready
+  the one profile — with a multiplexer, one pane each. The Ready-to-start board's Ready
   lane is the same menu again: each ready card carries a tick, and the lane's *Run N
   Agents* button (top right, level with the caption) drops the child down over the
   ticked steps, publishing them as it opens.
@@ -1343,8 +1343,25 @@ root, stop and look for the registry or capability you have not found yet.
 - **Progression is derived, never stored** — `domain/progression.py` is the graph's
   readiness with a `status_for(step)` handed in like `days_for`; the board, `dplanner
   progression show` and `--json` are three readers of one function, and the frontier is a
-  per-step check, not `ordering.ready()`'s wave one. `ARCHITECTURE.md`'s *Progression is
-  the status-aware frontier* has the partition rules and why each was a decision.
+  per-step check, not `ordering.ready()`'s wave one. **The surface is named for the
+  question and the derivation for the answer**: the tab, its menu entries and its index
+  row say *Ready to start*, while the walk, the module id, the activity kind and the verb
+  stay `progression`, because the frontier is one of the six partitions it computes and a
+  renamed verb would move under every agent that has the skill. Its header is the percent
+  and the bar — the two lines under the bar said the same counts in words and then again
+  in estimated days, which the bar draws to scale; the terminal still prints both, where
+  there is no bar to read. `ARCHITECTURE.md`'s *Progression is the status-aware frontier*
+  has the partition rules and why each was a decision.
+- **The order says what order, and how much — never when.** The Order tab is the index,
+  the step, its wave and its estimate, under one line of volume (`domain/schedule.py`'s
+  `volume_words`: *62 days over 24 steps, 2 unestimated*, the sentence `order show`,
+  `estimate rollup` and the Estimates tab's strip all print). It ran a serial calendar
+  once — accumulated days, days since the last milestone, a landing date per row, from a
+  start date set on that page — and nobody schedules that way: `time_estimates` simulates
+  two pools of workers and owns the start date, so the columns and the bar are gone and
+  **wave 1 is called *Wave 1***, the words *Ready to start* now naming the board alone.
+  The CSV export and the published report keep the day counts and the dates, because a
+  spreadsheet is opened to sort and sum.
 - **Staffing what-ifs are derived; only the assumptions are stored.** The time estimates
   tab and `dplanner schedule matrix` are one derivation — `domain/schedule.py`'s
   `phases` over `parallel_finish`, a deterministic two-pool greedy simulation (longest
@@ -1443,8 +1460,8 @@ root, stop and look for the registry or capability you have not found yet.
   deal — `ordering.placed`'s sequence, a milestone's own chosen colour over its dealt
   shade — walked once per project by the composition root's `_milestone_colors` and handed
   down as a typed callback, so no module learns where a colour map is stored. Ten surfaces
-  read it: the canvas card, its badge and its tag medallion, the order table's row, rule
-  and **key badge**, the progression board's card, the Tests tab's grouping heading, the
+  read it: the canvas card, its badge and its tag medallion, the order table's row wash
+  and **key badge**, the Ready-to-start board's card, the Tests tab's grouping heading, the
   Docs tab's medallion, the coverage lane, the Milestone tab's swatch, the calendar's
   bands and the report's graph. `theme/tones.py`'s `toned(name, hex)` is the one place a
   shade takes a tone's alphas — never re-derive them — and the maps live in
@@ -1492,18 +1509,30 @@ root, stop and look for the registry or capability you have not found yet.
   narrow dock — because a stack of equal cards stops working at the third test.
   `ARCHITECTURE.md`'s *A test belongs to a step, and a step carries several* has the
   reasoning, including the diff trade the string body accepts.
-- **Documentation is a fragment per step and a document per collector.** The `docs` aspect
-  is what one step adds to the product's documentation; `docs_compiled` is what a feature or
-  a milestone makes of everything it gathers. Two aspect ids in one package, because a node
-  holds one prose document per module and a feature legitimately has both. **There is no
-  step kind for compiling** — a feature and a milestone already *are* the collectors, so
-  Compile is a verb on them. A milestone reads its features' *compiled* documents, not their
-  notes again (`ScopeKind.gathers` says so), which is also what makes recompiling a feature
-  mark its milestone out of date. **Staleness is a digest, never a timestamp**: a compile
-  stores the digest of what it read, and "out of date" is a comparison — so a relink that
-  changes what a collector gathers says so by itself. The CLI is where an agent compiles:
-  `docs status`, `docs collect`, then `compiled set`, which re-stamps. `ARCHITECTURE.md`'s
-  *Documentation is fragments, and a collector compiles them* has the reasoning.
+- **Documentation is a fragment per step and a document per collector, and an agent
+  compiles it.** The `docs` aspect is a step's **documentation fragment**; `docs_compiled` is
+  a collector's **documentation**, made of everything it gathers — the words on every
+  surface, while the two on-disk ids stay as they are. Two aspect ids in one package, because
+  a node holds one prose document per module and a feature legitimately has both. **There is
+  no step kind for compiling** — a feature and a milestone already *are* the collectors, so
+  compiling is a verb on them. A milestone reads its features' *compiled* documents, not
+  their fragments again (`ScopeKind.gathers` says so), which is also what makes recompiling a
+  feature mark its milestone out of date. **Staleness is a digest, never a timestamp**: a
+  compile stores the digest of what it *read*, so a relink says so by itself, while
+  hand-editing a document — or rewording the compilation instructions — does not.
+  **There is no Compile button.** *Compile with Agent…* launches the chosen profile on a
+  briefing of the fragments, the project's **compilation instructions** (`modules/docs.md`
+  beside the project; the panel card, a tab in the view, and `docs set/show --for-project`
+  are three presenters of one field) and the verb that finishes it — `dplanner compiled set
+  <key> --file -`. Two typed callbacks on `DocsDeps`, the `hand_to_agent` shape, so nothing
+  imports the agent module; the run is tracked on the collector like any other, and
+  **claims nothing about the step's status**. What the agent writes arrives from another
+  process, so **it is not undoable** and replacing a document that has text asks once.
+  *Compile Out of Date…* takes the **frontier** — never a milestone beside the features whose
+  documents it reads. Who compiled a document is the launching window's record, per user; the
+  plan's stamp says when and from what (`docs_compiled` format 2 dropped `provider`/`model`
+  with the LLM call). `ARCHITECTURE.md`'s *Documentation is fragments, and a collector
+  compiles them* has the reasoning.
 - **An LLM call is a task, and the service is GUI-bound.** `framework/llm_service.py`'s
   `complete()` is blocking network I/O, so it runs in a `TaskRunner` body and the answer
   comes back on the owner's own Qt signal — the runner has no result seam. Every call is
