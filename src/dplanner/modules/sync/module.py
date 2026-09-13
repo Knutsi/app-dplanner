@@ -207,7 +207,7 @@ class SyncModule:
             diff_dialog.accept()
 
         unsaved_button.clicked.connect(open_diff)
-        diff_dialog.save_button.clicked.connect(save_from_dialog)
+        diff_dialog.save_requested.connect(save_from_dialog)
         deps.chrome.add_close_guard(lambda: self._confirm_close(service))
 
         self._register_actions(service, open_diff)

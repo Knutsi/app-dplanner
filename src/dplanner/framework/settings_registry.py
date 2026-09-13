@@ -15,14 +15,34 @@ secrets — never in the workspace, never in a commit.
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+from dplanner.theme.tokens import SECTION_GAP
 
 
 @dataclass(frozen=True)
 class SettingsSection:
+    """One page of the Settings dialog.
+
+    ``factory`` returns a page that owns **no outer margin**: the frame owns the dialog's
+    margins and the dialog gives the page its inset from the seam and scrolls it when it
+    is taller than the window. Build it with :func:`settings_page` and stack its blocks
+    with ``framework.widgets.block`` — a caption over each field, never a label beside
+    it — so nine pages spell one shape.
+    """
+
     id: str  # "llm.openai" — module-prefixed, globally unique.
     category: tuple[str, ...]  # ("LLM Providers", "OpenAI") — tree path, leaf last.
     factory: Callable[[QWidget | None], QWidget]
+
+
+def settings_page(parent: QWidget | None) -> tuple[QWidget, QVBoxLayout]:
+    """A page with no outer margin and ``SECTION_GAP`` between its blocks."""
+    page = QWidget(parent)
+    layout = QVBoxLayout(page)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(SECTION_GAP)
+    return page, layout
 
 
 class SettingsSectionRegistry:

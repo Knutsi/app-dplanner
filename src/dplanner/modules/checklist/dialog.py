@@ -51,7 +51,7 @@ from dplanner.cli.checklist import (
     this_machine,
 )
 from dplanner.framework.dialog import DialogFrame
-from dplanner.framework.signalling import Spinner, StatusLine, Tone
+from dplanner.framework.signalling import TICKED, UNTICKED, Spinner, StatusLine, Tone
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.widgets import caption, note
@@ -72,10 +72,6 @@ UNMUTE = "Warn me about this again"
 COPY = "Copy the command"
 MUTED = "not warning about this"
 
-# The row's mark. A checklist is a list of things that should be true, so it reads as one:
-# ticked when it is, an empty box when it is not, and the tone still carries the mood.
-TICKED = "\u2611"
-UNTICKED = "\u2610"
 # The ⋮ that carries a row's own verbs. A character rather than a painted icon, for the
 # Project dialog's reason: it names no verb, and every platform's font has it.
 ELLIPSIS = "\u22ee"

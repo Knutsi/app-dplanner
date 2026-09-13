@@ -2,15 +2,23 @@
 
 Nothing here is a framework concept — these are the handful of things every second feature
 would otherwise reimplement slightly differently: a confirmation whose default is "no", a
-centred column at a readable measure, what an empty page says, the caption over a block
-(with its help glyph) and the remark under it, and Ctrl+wheel zoom. Add to it sparingly;
-a helper that only one feature uses belongs in that feature.
+notice for what a gesture came to, a centred column at a readable measure, what an empty
+page says, the caption over a block (with its help glyph) and the remark under it, a form
+block, a plain button whose glyph follows the theme, and Ctrl+wheel zoom. Add to it
+sparingly; a helper that only one feature uses belongs in that feature.
 """
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QEvent, QObject, Qt
-from PySide6.QtGui import QColor, QPalette, QTextBlockFormat, QTextCursor, QWheelEvent
+from PySide6.QtCore import QEvent, QObject, QSize, Qt
+from PySide6.QtGui import (
+    QColor,
+    QIcon,
+    QPalette,
+    QTextBlockFormat,
+    QTextCursor,
+    QWheelEvent,
+)
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QDialog,
@@ -24,7 +32,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.theme.cards import detail_font
 from dplanner.theme.icons import ICON_SIZE, info_icon
-from dplanner.theme.tokens import FIELD_GAP
+from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, SECONDARY_ALPHA
 
 # DESIGN.md's text-well metrics: the text never touches the frame.
 DOCUMENT_MARGIN = 12
@@ -69,6 +77,29 @@ def confirm(parent: QWidget | None, title: str, question: str, *, verb: str = "Y
     answer = dialog.exec() == QDialog.DialogCode.Accepted
     dialog.deleteLater()
     return answer
+
+
+def notice(parent: QWidget | None, title: str, text: str) -> None:
+    """What a gesture came to after its dialog had closed — a failure, a caveat — on the
+    frame: the words as the body, one Close, Enter and Escape both the way out.
+
+    The replacement for ``QMessageBox.warning`` and ``.information``, which print a
+    platform icon and arrange their sentences the platform's way. It is for a result the
+    surface that asked can no longer show: a state a dialog still on screen can say goes
+    in its footer's status slot, and a background fact is never a modal at all
+    (DESIGN.md's *Signalling*).
+    """
+    from dplanner.framework.dialog import DialogFrame
+
+    dialog = DialogFrame(title, parent)
+    said = QLabel(text, dialog.body)
+    said.setObjectName("DialogQuestion")
+    said.setWordWrap(True)
+    dialog.body_layout.addWidget(said)
+    dialog.body_layout.addStretch(0)
+    dialog.add_dismiss("Close")
+    dialog.exec()
+    dialog.deleteLater()
 
 
 def caption(text: str, parent: QWidget | None = None) -> QLabel:
@@ -135,6 +166,59 @@ def captioned(title: str, parent: QWidget, hint: str = "") -> QWidget:
         layout.addWidget(_HintGlyph(hint, row))
     layout.addStretch(1)
     return row
+
+
+def block(layout: QVBoxLayout, head: QWidget, *fields: QWidget) -> QVBoxLayout:
+    """One block of a form: its caption row, then its fields, ``CAPTION_GAP`` apart.
+
+    Blocks stand ``layout``'s own spacing apart — ``SECTION_GAP`` on a settings page or
+    a dialog body — so a form is blocks at one gap and fields at another, never a
+    hand-typed ``addSpacing``. The child layout joins ``layout`` before it is filled
+    (CLAUDE.md's layout rule).
+    """
+    column = QVBoxLayout()
+    layout.addLayout(column)
+    column.setSpacing(CAPTION_GAP)
+    column.addWidget(head)
+    for field in fields:
+        column.addWidget(field)
+    return column
+
+
+class GlyphButton(QPushButton):
+    """A plain button whose glyph follows the theme.
+
+    DESIGN.md's *Buttons*: a verb in a body — a settings page, a card — is a plain button.
+    Its glyph is painted in the secondary ink and repainted on ``PaletteChange``, as the
+    hint glyph is: a settings page lives as long as the window, so a glyph painted once
+    would wear the theme it was built under. The slot is always there, which is what lets
+    a :class:`~dplanner.framework.signalling.Spinner` turn in it without moving the words.
+    """
+
+    def __init__(
+        self,
+        text: str,
+        painter: Callable[[str | QColor], QIcon],
+        parent: QWidget | None = None,
+        *,
+        tip: str = "",
+    ) -> None:
+        super().__init__(text, parent)
+        self._painter = painter
+        self.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        if tip:
+            self.setToolTip(tip)
+        self._reink()
+
+    def _reink(self) -> None:
+        ink = ink_of(self)
+        ink.setAlpha(SECONDARY_ALPHA)
+        self.setIcon(self._painter(ink))
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        if event.type() == QEvent.Type.PaletteChange:
+            self._reink()
+        super().changeEvent(event)
 
 
 # The measure prose is comfortable to read at. Beside `centered_column` rather than in

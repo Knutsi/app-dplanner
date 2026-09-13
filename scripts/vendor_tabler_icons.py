@@ -52,6 +52,7 @@ GLYPHS: dict[str, str] = {
     "redo": "arrow-forward-up",
     "frame": "maximize",
     "refresh": "refresh",
+    "star": "star",  # The default — what a plain Run Agent… runs.
     "find": "search",  # Find a step by name or key; it is bound to Ctrl+F.
     #                   Not a focus frame: beside Frame's corners it was the same picture.
     "options": "adjustments-horizontal",  # How the graph is drawn, not what is drawn.

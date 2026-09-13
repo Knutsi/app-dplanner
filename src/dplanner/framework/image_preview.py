@@ -12,20 +12,19 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QImage, QPixmap
-from PySide6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QLabel,
-    QMessageBox,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QLabel, QWidget
 
-from dplanner.theme.tokens import DIALOG_MARGIN, SCREEN_SHARE, SECTION_GAP
+from dplanner.framework.dialog import DialogFrame
+from dplanner.theme.tokens import SCREEN_SHARE
 
 
-class ImagePreviewDialog(QDialog):
-    """One image, fitted to the screen, with its name in the title bar."""
+class ImagePreviewDialog(DialogFrame):
+    """One image, fitted to the screen, with its name in the title bar.
+
+    A fit dialog: the pixmap sizes it. Close is the only way out, with *Open Externally*
+    and *Copy Path* as quiet secondaries when there is a path, and what either came to
+    said in the footer's status slot rather than in a box over the picture.
+    """
 
     def __init__(
         self,
@@ -36,35 +35,25 @@ class ImagePreviewDialog(QDialog):
         caption: str = "",
         path: str = "",
     ) -> None:
-        super().__init__(parent)
-        self.setWindowTitle(caption or f"{name} — {image.width()} x {image.height()}")
-
-        column = QVBoxLayout(self)
-        column.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
-        column.setSpacing(SECTION_GAP)
-
-        self.image_label = QLabel(self)
+        super().__init__(caption or f"{name} — {image.width()} x {image.height()}", parent)
+        self.image_label = QLabel(self.body)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setPixmap(self._fitted(image))
-        column.addWidget(self.image_label)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
-        buttons.rejected.connect(self.reject)
-        close = buttons.button(QDialogButtonBox.StandardButton.Close)
-        if close is not None:
-            close.clicked.connect(self.reject)
+        self.body_layout.addWidget(self.image_label)
         if path:
-            external = buttons.addButton("Open Externally", QDialogButtonBox.ButtonRole.ActionRole)
-            external.clicked.connect(lambda: self._open_externally(path))
-            copy = buttons.addButton("Copy Path", QDialogButtonBox.ButtonRole.ActionRole)
-            copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(path))
-        column.addWidget(buttons)
+            self.add_button("Open Externally", lambda: self._open_externally(path))
+            self.add_button("Copy Path", lambda: self._copy_path(path))
+        self.add_dismiss("Close")
+
+    def _copy_path(self, path: str) -> None:
+        QGuiApplication.clipboard().setText(path)
+        self.status.say("Path copied", "ok")
 
     def _open_externally(self, path: str) -> None:
         # Existence is checked here, at click time, never earlier: the file can be gone by
         # now, and handing the OS a dead path fails silently on some desktops.
         if not Path(path).is_file():
-            QMessageBox.warning(self, "Open Externally", f"{path} is no longer on disk.")
+            self.status.say(f"{Path(path).name} is no longer on disk", "error")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 

@@ -79,7 +79,7 @@ def machine(tmp_path, monkeypatch):
 
 def states(dialog) -> dict[str, str]:
     return {
-        item_id: row.state.text()
+        item_id: row.item.state
         for item_id, row in zip((COMMAND, LAUNCHER, SKILL), dialog.rows, strict=True)
     }
 
@@ -92,7 +92,7 @@ def test_the_action_opens_the_dialog(services, machine, monkeypatch):
 
     (dialog,) = opened
     assert dialog.windowTitle() == "Install DPlanner"
-    assert [row.label.text() for row in dialog.rows] == [
+    assert [row.item.label for row in dialog.rows] == [
         f"{PROG} command",
         "Desktop launcher",
         "Agent skill",
@@ -104,7 +104,7 @@ def test_the_rows_say_what_this_machine_has(services, machine):
     dialog = InstallDialog(services.tasks, composition_root_files(), None)
 
     assert states(dialog) == {COMMAND: "missing", LAUNCHER: "missing", SKILL: "missing"}
-    assert dialog.primary.text() == "Install"
+    assert dialog.install_button.text() == "Install"
     assert not dialog.remove_button.isEnabled()
 
 
@@ -112,7 +112,7 @@ def test_one_button_installs_all_three(app, services, machine):
     files = composition_root_files()
     dialog = InstallDialog(services.tasks, files, None)
 
-    dialog.primary.click()
+    dialog.install_button.click()
     wait_for(app, lambda: not dialog._runner.is_busy())
     wait_for(app, lambda: dialog.output.toPlainText() != "")
 
@@ -121,21 +121,21 @@ def test_one_button_installs_all_three(app, services, machine):
     assert (machine.skill_dir / SKILL_FILE).read_text() == files[SKILL_FILE]
     # The rows re-read the disk, so what they show is what is true.
     assert states(dialog)[SKILL] == "installed"
-    assert dialog.primary.text() == "Update"
+    assert dialog.install_button.text() == "Update"
     assert dialog.remove_button.isEnabled()
 
 
 def test_a_hand_edited_skill_reads_as_stale(app, services, machine):
     files = composition_root_files()
     installed = InstallDialog(services.tasks, files, None)
-    installed.primary.click()
+    installed.install_button.click()
     wait_for(app, lambda: not installed._runner.is_busy())
     (machine.skill_dir / SKILL_FILE).write_text("edited by hand\n")
 
     dialog = InstallDialog(services.tasks, files, None)
 
     assert states(dialog)[SKILL] == "stale"
-    assert dialog.primary.text() == "Update"
+    assert dialog.install_button.text() == "Update"
 
 
 def test_a_failed_install_lands_in_the_dialog(app, services, machine, monkeypatch):
@@ -147,19 +147,20 @@ def test_a_failed_install_lands_in_the_dialog(app, services, machine, monkeypatc
     monkeypatch.setattr("dplanner.cli.install._run", refuse)
     dialog = InstallDialog(services.tasks, composition_root_files(), None)
 
-    dialog.primary.click()
+    dialog.install_button.click()
     wait_for(app, lambda: not dialog._runner.is_busy())
     wait_for(app, lambda: dialog.output.toPlainText() != "")
 
     assert "no network" in dialog.output.toPlainText()
-    assert dialog.primary.isEnabled()
+    assert dialog.install_button.isEnabled()
+    assert dialog.status.tone() == "error" and "failed" in dialog.status.words()
     # One piece failing does not stop the others: the skill is still current afterwards.
     assert states(dialog)[SKILL] == "installed"
 
 
 def test_remove_takes_out_the_launcher_and_the_skill(app, services, machine):
     dialog = InstallDialog(services.tasks, composition_root_files(), None)
-    dialog.primary.click()
+    dialog.install_button.click()
     wait_for(app, lambda: not dialog._runner.is_busy())
 
     dialog.remove_button.click()
@@ -189,7 +190,7 @@ def test_the_dialog_writes_what_the_verb_writes(app, services, machine):
     from dplanner.cli import install as installer
 
     dialog = InstallDialog(services.tasks, composition_root_files(), None)
-    dialog.primary.click()
+    dialog.install_button.click()
     wait_for(app, lambda: not dialog._runner.is_busy())
     from_window = (machine.skill_dir / SKILL_FILE).read_text()
 
@@ -197,3 +198,26 @@ def test_the_dialog_writes_what_the_verb_writes(app, services, machine):
     installer.apply(composition_root_files())
 
     assert (machine.skill_dir / SKILL_FILE).read_text() == from_window
+
+
+def test_the_dialog_is_on_the_frame_and_its_rows_read_as_a_list_of_ticks(app, services, machine):
+    """DESIGN.md's *Dialogs*: Remove at the far left as the verb that costs something, the
+    primary rightmost and Enter's; the rows a ☐/☑ list whose tone says what a gap means."""
+    from dplanner.framework.dialog import DialogFrame
+    from dplanner.framework.signalling import TICKED, UNTICKED
+
+    dialog = InstallDialog(services.tasks, composition_root_files(), None)
+    try:
+        assert isinstance(dialog, DialogFrame)
+        assert [b.text() for b in dialog.footer_buttons()] == ["Install", "Close", "Remove"]
+        assert dialog.install_button.isDefault()
+        # The command and the skill are what an agent needs; the launcher is only worth knowing.
+        assert [row.line.tone() for row in dialog.rows] == ["error", "info", "error"]
+        assert all(UNTICKED in row.line.text() for row in dialog.rows)
+        dialog.install_button.click()
+        wait_for(app, lambda: not dialog._runner.is_busy())
+        wait_for(app, lambda: dialog.output.toPlainText() != "")
+        assert dialog.rows[2].line.tone() == "ok" and TICKED in dialog.rows[2].line.text()
+        assert dialog.status.tone() == "ok"
+    finally:
+        dialog.deleteLater()

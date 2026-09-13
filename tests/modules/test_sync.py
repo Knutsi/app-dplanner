@@ -651,3 +651,26 @@ def test_a_row_still_working_when_the_save_failed_says_it_was_not_recorded(app):
         assert dialog._rows[0].words() == "~/Code/widget · 3 files — Discovery — not recorded"
     finally:
         dialog.deleteLater()
+
+
+def test_the_diff_dialog_is_on_the_frame_with_save_now_as_the_primary(app):
+    """The picker's block — caption and combo — shows only when the library spans more
+    than one repository, and Save Now is asked for, never run, by the dialog."""
+    from dplanner.framework.dialog import DialogFrame
+    from dplanner.modules.sync.view import DiffDialog
+
+    dialog = DiffDialog(None)
+    asked = []
+    dialog.save_requested.connect(lambda: asked.append(True))
+    try:
+        assert isinstance(dialog, DialogFrame)
+        assert [b.text() for b in dialog.footer_buttons()] == ["Save Now", "Close"]
+        assert dialog.save_button.isDefault()
+        dialog.set_sources([("plans", lambda: "+one")])
+        assert dialog._picker_block.isHidden()
+        dialog.set_sources([("plans", lambda: "+one"), ("widget", lambda: "-two")])
+        assert not dialog._picker_block.isHidden() and dialog._picker.count() == 2
+        dialog.save_button.click()
+        assert asked == [True]
+    finally:
+        dialog.deleteLater()

@@ -16,15 +16,7 @@ disk afterwards, so what they show is always what is true.
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (
-    QDialog,
-    QHBoxLayout,
-    QLabel,
-    QPlainTextEdit,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QPlainTextEdit, QVBoxLayout, QWidget
 
 from dplanner.cli.install import (
     LAUNCHER,
@@ -38,12 +30,26 @@ from dplanner.cli.install import (
     summary,
     worktree_warning,
 )
+from dplanner.framework.dialog import DialogFrame
+from dplanner.framework.signalling import TICKED, UNTICKED, StatusLine, Tone
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
+from dplanner.framework.widgets import make_text_well, note
 from dplanner.theme.fonts import mono_font
+from dplanner.theme.tokens import ROW_LINE_GAP, ROW_PADDING_H, ROW_PADDING_V
 
+DIALOG_SIZE = (620, 460)
 # The one button says what pressing it would do; anything already there is refreshed.
 _PRIMARY_LABELS = {"missing": "Install", "stale": "Update", "installed": "Update"}
+
+
+def _tone(item: Item) -> Tone:
+    """The Setup Checklist's rule, so the two lists read as one: a missing piece is the
+    error tone when an agent needs it — the command and the skill — and information for
+    the launcher, which is worth knowing rather than wrong."""
+    if item.state == "installed":
+        return "ok"
+    return "info" if item.id == LAUNCHER else "error"
 
 
 class _Row(QWidget):
@@ -55,49 +61,38 @@ class _Row(QWidget):
         # A QWidget subclass paints no stylesheet border unless told to; the hairline
         # between rows is a QSS border-bottom, and the last row has no row to part from.
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-
-        self.label = QLabel(item.label, self)
-        self.state = QLabel(self)
-        self.state.setObjectName("InstallRowState")
-        self.note = QLabel(self)
-        self.note.setObjectName("InstallRowNote")
-        self.note.setWordWrap(True)
-
-        title_line = QHBoxLayout()
-        title_line.setContentsMargins(0, 0, 0, 0)
-        title_line.setSpacing(12)
-        title_line.addWidget(self.label, 1)
-        title_line.addWidget(self.state)
-
+        self.line = StatusLine(self)
+        self.note = note("", self)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)  # Rich-row metrics per DESIGN.md.
-        layout.setSpacing(4)
-        layout.addLayout(title_line)
+        layout.setContentsMargins(ROW_PADDING_H, ROW_PADDING_V, ROW_PADDING_H, ROW_PADDING_V)
+        layout.setSpacing(ROW_LINE_GAP)
+        layout.addWidget(self.line)
         layout.addWidget(self.note)
         self.show_item(item)
 
     def show_item(self, item: Item) -> None:
-        self.state.setText(item.state)
+        self.item = item
+        installed = item.state == "installed"
+        self.line.say(
+            f"{item.label} — {item.state}", _tone(item), glyph=TICKED if installed else UNTICKED
+        )
         self.note.setText(item.note)
         self.setToolTip("" if item.where is None else str(item.where))
 
 
-class InstallDialog(QDialog):
+class InstallDialog(DialogFrame):
     # Worker → GUI: what the act did to each of the three, queued because it is emitted
     # off-thread. Plain Outcomes — nothing Qt crosses the seam.
     _done = Signal(list)
 
     def __init__(self, tasks: TaskService, files: dict[str, str], parent: QWidget | None) -> None:
-        super().__init__(parent)
-        self.setObjectName("InstallDialog")
-        self.setWindowTitle("Install DPlanner")
-        self.setMinimumSize(480, 380)
-        self.resize(620, 460)
+        super().__init__("Install DPlanner", parent, size=DIALOG_SIZE)
         self._files = files
         self._runner = TaskRunner(tasks, parent=self)
+        body, layout = self.body, self.body_layout
 
         read = items(self._files)
-        self.well = QWidget(self)
+        self.well = QWidget(body)
         self.well.setObjectName("InstallWell")
         self.well.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         rows = QVBoxLayout(self.well)
@@ -107,63 +102,47 @@ class InstallDialog(QDialog):
         for row in self.rows:
             rows.addWidget(row)
         self.rows[-1].setProperty("last", True)  # No row below it to be parted from.
+        layout.addWidget(self.well)
 
-        self.worktree_note = QLabel(self)
-        self.worktree_note.setObjectName("InspectorNote")
-        self.worktree_note.setWordWrap(True)
+        self.worktree_note = note("", body)
         self.worktree_note.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         warning = worktree_warning()
         if warning is None:
             self.worktree_note.hide()
         else:
             self.worktree_note.setText(warning)
+        layout.addWidget(self.worktree_note)
 
-        self.output = QPlainTextEdit(self)
+        self.output = QPlainTextEdit(body)
         self.output.setReadOnly(True)
         self.output.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.output.setFont(mono_font())
-        self.output.document().setDocumentMargin(12)
+        make_text_well(self.output)
         self.output.setPlaceholderText("What the install did appears here after it runs.")
+        # Skipped when the dialog opens — the primary is the first stop, so Enter is
+        # visibly Install — but a click still lets the pane be copied from.
+        self.output.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        layout.addWidget(self.output, 1)
 
-        self.primary = QPushButton(self)
-        self.primary.setObjectName("PrimaryButton")
-        self.primary.clicked.connect(self._install)
-        self.remove_button = QPushButton("Remove", self)
+        self.remove_button = self.add_button("Remove", self._remove, destructive=True)
         self.remove_button.setToolTip(
             "Take out the desktop launcher and the agent skill; the command stays"
         )
-        self.remove_button.clicked.connect(self._remove)
-        self.close_button = QPushButton("Close", self)
-        self.close_button.clicked.connect(self.reject)
-        # Without an explicit default Qt promotes the first auto-default button — the
-        # primary — and Enter would silently run the install.
-        self.close_button.setDefault(True)
-
-        footer = QHBoxLayout()
-        footer.setSpacing(8)
-        footer.addStretch(1)
-        footer.addWidget(self.remove_button)
-        footer.addWidget(self.primary)
-        footer.addWidget(self.close_button)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)  # Dialog metrics per DESIGN.md.
-        layout.setSpacing(12)
-        layout.addWidget(self.well)
-        layout.addWidget(self.worktree_note)
-        layout.addWidget(self.output, 1)
-        layout.addLayout(footer)
+        self.add_dismiss("Close")
+        self.install_button = self.set_primary("", self._install)
 
         self._done.connect(self._finished)
         self._runner.failed.connect(self._failed)
         self._refresh()
 
     def _refresh(self) -> None:
+        """Re-read the disk into the rows and the button; the status slot is left alone,
+        because it says what the last act came to."""
         read = items(self._files)
         for row, item in zip(self.rows, read, strict=True):
             row.show_item(item)
-        self.primary.setText(_PRIMARY_LABELS[summary(read)])
-        self.primary.setEnabled(True)
+        self.install_button.setText(_PRIMARY_LABELS[summary(read)])
+        self.install_button.setEnabled(True)
         removable = {LAUNCHER, SKILL}
         self.remove_button.setEnabled(
             any(item.state != "missing" for item in read if item.id in removable)
@@ -179,13 +158,19 @@ class InstallDialog(QDialog):
 
     def _start(self, label: str, body: Callable[[], None]) -> None:
         if self._runner.run(label, body, key="install.dplanner"):
-            self.primary.setEnabled(False)
+            self.install_button.setEnabled(False)
             self.remove_button.setEnabled(False)
+            self.status.say(f"{label}…", "busy")
 
     def _finished(self, outcomes: list[Outcome]) -> None:
         self.output.setPlainText(report_lines(outcomes))
+        if all(outcome.ok for outcome in outcomes):
+            self.status.say("Done", "ok")
+        else:
+            self.status.say("Something failed — the pane below says what", "error")
         self._refresh()
 
     def _failed(self, error: str) -> None:
         self.output.setPlainText(error)
+        self.status.say(error, "error")
         self._refresh()

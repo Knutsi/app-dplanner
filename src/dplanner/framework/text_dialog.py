@@ -30,16 +30,10 @@ the markdown strip over it is the same strip.
 from typing import Any
 
 from PySide6.QtCore import QEvent, QObject
-from PySide6.QtGui import QGuiApplication, QTextDocument
-from PySide6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QPlainTextEdit,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtGui import QTextDocument
+from PySide6.QtWidgets import QPlainTextEdit, QToolButton, QWidget
 
+from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.markdown_highlight import MarkdownHighlighter
 from dplanner.framework.markdown_toolbar import MarkdownToolbar
 from dplanner.framework.prose_edit import Attach, Pick, ProseEdit
@@ -51,14 +45,17 @@ from dplanner.framework.widgets import (
     make_text_well,
     space_lines,
 )
-from dplanner.theme.tokens import DIALOG_MARGIN, SCREEN_SHARE, SECTION_GAP
 
-# DESIGN.md: dialogs get 20 px outer margins and 12 px between sections.
 BUTTON_INSET = 4  # The expand button's distance from the editor's corner.
 
 
-class ExpandedTextDialog(QDialog):
-    """One document, briefly in a window of its own. The opener owes ``dispose()``."""
+class ExpandedTextDialog(DialogFrame):
+    """One document, briefly in a window of its own. The opener owes ``dispose()``.
+
+    An *editor* dialog on the frame — a place to work claims its share of the screen —
+    with Close alone in the footer: every keystroke is live, so there is nothing to
+    confirm and nothing to cancel.
+    """
 
     def __init__(
         self,
@@ -71,8 +68,7 @@ class ExpandedTextDialog(QDialog):
         parent: QWidget | None = None,
     ) -> None:
         """The chrome only — one of the two constructors below says where the text is."""
-        super().__init__(parent)
-        self.setWindowTitle(title)
+        super().__init__(title, parent, editor=True)
         self._binding: TextBinding[Any] | None = None
         # Only the field path makes one: on the shared-document path the owner's is
         # already on the document, and a second would recompute the same formats.
@@ -86,23 +82,9 @@ class ExpandedTextDialog(QDialog):
         self.edit.setPlaceholderText(placeholder)
         self.tools = MarkdownToolbar(self.edit, undo=undo, parent=self)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
-        buttons.rejected.connect(self.reject)
-
-        column = QVBoxLayout(self)
-        column.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
-        column.setSpacing(SECTION_GAP)
-        column.addWidget(self.tools)
-        column.addWidget(centered_column(self.edit, EDITOR_MEASURE), stretch=1)
-        column.addWidget(buttons)
-
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if screen is not None:
-            available = screen.availableGeometry()
-            self.resize(
-                round(available.width() * SCREEN_SHARE),
-                round(available.height() * SCREEN_SHARE),
-            )
+        self.body_layout.addWidget(self.tools)
+        self.body_layout.addWidget(centered_column(self.edit, EDITOR_MEASURE), stretch=1)
+        self.add_dismiss("Close")
         self.edit.setFocus()
 
     @classmethod

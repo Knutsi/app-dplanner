@@ -380,3 +380,30 @@ def test_reload_is_offered_and_discards_what_was_typed(session, project, library
     services.actions.run("library_watch.reload", services.context.current())
 
     assert [p.title for p in session.services.document.projects] == ["Agent titled"]
+
+
+def test_the_conflict_dialog_is_on_the_frame_and_a_refused_agent_keeps_its_name(app):
+    """Four ways out in the frame's slots; the reason an agent cannot run is in the
+    footer's status slot, not appended to the button (DESIGN.md's *Dialogs*)."""
+    from dplanner.framework.dialog import DialogFrame
+    from dplanner.modules.library_watch.view import MINE, ConflictDialog
+
+    dialog = ConflictDialog(["Typed here · title and summary"], "", None)
+    refused = ConflictDialog(["S7 · description"], "no agent profile is set up", None)
+    try:
+        assert isinstance(dialog, DialogFrame)
+        assert [b.text() for b in dialog.footer_buttons()] == [
+            "Resolve with Agent",
+            "Take Theirs",
+            "Keep Mine",
+            "Later",
+        ]
+        assert dialog.agent_button.isDefault() and dialog.agent_button.isEnabled()
+        assert refused.agent_button.text() == "Resolve with Agent"
+        assert not refused.agent_button.isEnabled()
+        assert refused.status.words() == "no agent profile is set up"
+        refused.mine_button.click()
+        assert refused.choice == MINE
+    finally:
+        dialog.deleteLater()
+        refused.deleteLater()

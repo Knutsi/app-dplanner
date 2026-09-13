@@ -39,6 +39,11 @@ Tone = Literal["info", "busy", "ok", "error"]
 # A tone's entry in the theme's status vocabulary; information wears the label's own ink.
 _TONE_KEYS: dict[str, str] = {"busy": "busy", "ok": "good", "error": "bad"}
 GLYPH = "●"
+# The mark of a row in a list of things that should be true: ticked when it is, an empty
+# box when it is not, and the tone still carries the mood (DESIGN.md's *Lists of rich
+# items*). The Setup Checklist's rows and the Install dialog's read as one list.
+TICKED = "\u2611"
+UNTICKED = "\u2610"
 
 
 class Spinner(QObject):

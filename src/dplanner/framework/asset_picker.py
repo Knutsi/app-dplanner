@@ -17,23 +17,17 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QGuiApplication, QIcon, QImage, QPixmap
-from PySide6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtGui import QIcon, QImage, QPixmap
+from PySide6.QtWidgets import QListWidget, QListWidgetItem, QWidget
 
+from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.mime_files import IMAGE_SUFFIXES, Payload
-from dplanner.theme.tokens import DIALOG_MARGIN, SCREEN_SHARE, SECTION_GAP
+from dplanner.framework.widgets import EmptyState
+from dplanner.theme.tokens import SECTION_GAP
 
 THUMBNAIL_SIZE = 96  # Larger than the gallery strip's 76: choosing wants a better look.
-DIALOG_WIDTH = 680
-DIALOG_HEIGHT = 460
+DIALOG_SIZE = (680, 460)
+EMPTY_WORDS = "Nothing to pick from yet — attach or paste a file first."
 
 
 @dataclass(frozen=True)
@@ -48,8 +42,9 @@ class PickerEntry:
     read: Callable[[], bytes | None] = field(default=lambda: None)
 
 
-class AssetPickerDialog(QDialog):
-    """A grid of thumbnails, extended selection, double-click accepts."""
+class AssetPickerDialog(DialogFrame):
+    """A grid of thumbnails, extended selection, double-click accepts; *Insert* is the
+    primary, refused while nothing is picked."""
 
     def __init__(
         self,
@@ -58,15 +53,11 @@ class AssetPickerDialog(QDialog):
         *,
         title: str = "Insert from Assets",
     ) -> None:
-        super().__init__(parent)
-        self.setWindowTitle(title)
+        super().__init__(title, parent, size=DIALOG_SIZE)
         self._entries = list(entries)
+        body, column = self.body, self.body_layout
 
-        column = QVBoxLayout(self)
-        column.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
-        column.setSpacing(SECTION_GAP)
-
-        self.grid = QListWidget(self)
+        self.grid = QListWidget(body)
         self.grid.setViewMode(QListWidget.ViewMode.IconMode)
         self.grid.setMovement(QListWidget.Movement.Static)
         self.grid.setIconSize(QSize(THUMBNAIL_SIZE, THUMBNAIL_SIZE))
@@ -87,37 +78,19 @@ class AssetPickerDialog(QDialog):
             if icon is not None:
                 item.setIcon(icon)
             self.grid.addItem(item)
-
-        self.empty = QLabel("Nothing to pick from yet — attach or paste a file first.", self)
-        self.empty.setObjectName("InspectorNote")
-        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
-        if ok is not None:
-            ok.setText("Insert")
-            ok.setEnabled(bool(self._entries))
-
+        column.addWidget(self.grid, 1)
         # A dialog cannot go off screen the way a panel does, so it says so in words.
-        if self._entries:
-            column.addWidget(self.grid, stretch=1)
-            self.empty.hide()
-        else:
-            column.addWidget(self.empty, stretch=1)
-            self.grid.hide()
-        column.addWidget(buttons)
+        self.empty = EmptyState("", body, stands_in_for=self.grid)
+        column.addWidget(self.empty, 1)
+        self.empty.say("" if self._entries else EMPTY_WORDS)
 
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if screen is not None:
-            available = screen.availableGeometry()
-            self.resize(
-                min(DIALOG_WIDTH, round(available.width() * SCREEN_SHARE)),
-                min(DIALOG_HEIGHT, round(available.height() * SCREEN_SHARE)),
-            )
+        self.add_dismiss()
+        self.set_primary("Insert", self.accept)
+        self.grid.itemSelectionChanged.connect(self._revalidate)
+        self._revalidate()
+
+    def _revalidate(self) -> None:
+        self.refuse(None if self.grid.selectedItems() else "")
 
     def chosen(self) -> list[Payload]:
         """The picked files as payloads, in entry order. An entry whose bytes are gone is

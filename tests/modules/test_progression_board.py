@@ -206,17 +206,19 @@ def ready_agents(services, make_project):
 
 
 def _boxes(monkeypatch):
-    """Every QMessageBox, recorded instead of blocking — the seam test_agent_run.py uses."""
-    from PySide6.QtWidgets import QMessageBox
+    """Every Run Anyway dialog, recorded instead of blocking — the seam test_agent_run.py
+    uses."""
+    from PySide6.QtWidgets import QDialog
+
+    from dplanner.modules.step_agent_instruction.run_dialog import RunAnywayDialog
 
     shown: list[str] = []
 
-    def record(box: QMessageBox) -> int:
-        shown.append(box.text())
-        return 0
+    def record(dialog: RunAnywayDialog) -> int:
+        shown.append(dialog.lead.text())
+        return int(QDialog.DialogCode.Rejected)
 
-    monkeypatch.setattr(QMessageBox, "exec", record)
-    monkeypatch.setattr(QMessageBox, "clickedButton", lambda self: None)
+    monkeypatch.setattr(RunAnywayDialog, "exec", record)
     return shown
 
 

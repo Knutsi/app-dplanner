@@ -1,10 +1,16 @@
-"""The shared widget helpers: an empty state trades places with what it stands in for, and
-the caption and the note wear the panel's names."""
+"""The shared widget helpers: an empty state trades places with what it stands in for, the
+caption and the note wear the panel's names, a form block joins its layout before it is
+filled, and a plain button's glyph follows the theme."""
 
 import pytest
-from PySide6.QtWidgets import QLabel, QWidget
+from PySide6.QtCore import QEvent
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from dplanner.framework.widgets import EmptyState, caption, note
+from dplanner.framework.widgets import EmptyState, GlyphButton, block, caption, note
+from dplanner.theme import apply_theme
+from dplanner.theme.icons import refresh_icon
+from dplanner.theme.themes import DARK, LIGHT
+from dplanner.theme.tokens import CAPTION_GAP
 
 
 @pytest.fixture
@@ -71,3 +77,53 @@ def test_confirm_is_a_frame_whose_default_never_discards(app, monkeypatch):
 def test_the_empty_state_line_is_a_point_smaller(host):
     empty = EmptyState("Nothing", host)
     assert empty.label.font().pointSizeF() == host.font().pointSizeF() - 1
+
+
+def test_notice_is_a_frame_with_one_close_and_no_primary(app, monkeypatch):
+    from PySide6.QtWidgets import QDialog, QPushButton
+
+    from dplanner.framework.dialog import DialogFrame
+    from dplanner.framework.widgets import notice
+
+    seen = []
+
+    def fake_exec(self):
+        seen.append(self)
+        return int(QDialog.DialogCode.Rejected)
+
+    monkeypatch.setattr(DialogFrame, "exec", fake_exec)
+    notice(None, "Move Plan", "The plan moved, but the checkout stayed where it was.")
+    (dialog,) = seen
+    assert dialog.windowTitle() == "Move Plan"
+    said = dialog.findChild(QLabel, "DialogQuestion")
+    assert said is not None and said.text().startswith("The plan moved") and said.wordWrap()
+    assert dialog.findChild(QPushButton, "PrimaryButton") is None
+    assert [b.text() for b in dialog.footer_buttons()] == ["Close"]
+    assert dialog.footer_buttons()[0].isDefault()
+
+
+def test_a_block_joins_its_layout_before_it_is_filled_and_stacks_at_the_caption_gap(host):
+    """A parentless layout given widgets first leaves QWidgetItem wrappers alive on the
+    Python side — the shape the boundary collector crashes on (CLAUDE.md)."""
+    column = QVBoxLayout(host)
+    head = caption("Model", host)
+    field = QLabel("gpt", host)
+    made = block(column, head, field)
+    assert made.parent() is column or column.indexOf(made) >= 0
+    assert made.spacing() == CAPTION_GAP
+    assert made.indexOf(head) == 0 and made.indexOf(field) == 1
+
+
+def test_a_glyph_button_re_inks_on_a_palette_change(themed):
+    apply_theme(themed, DARK)
+    button = GlyphButton("Refresh", refresh_icon, tip="Fetch the account's models")
+    try:
+        assert not button.icon().isNull() and button.toolTip() == "Fetch the account's models"
+        before = button.icon().cacheKey()
+        apply_theme(themed, LIGHT)
+        # A theme change reaches a widget as a PaletteChange; the offscreen platform
+        # delivers it on the next event round.
+        themed.sendEvent(button, QEvent(QEvent.Type.PaletteChange))
+        assert button.icon().cacheKey() != before
+    finally:
+        button.deleteLater()

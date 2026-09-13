@@ -71,16 +71,11 @@ class ConnectDialog(DialogFrame):
         body, layout = self.body, self.body_layout
         layout.addWidget(note(GUIDE, body))
 
-        self.open_tokens = QPushButton("Open Atlassian API Tokens in Browser", body)
-        self.open_tokens.setObjectName("openTokensPage")
-        self.open_tokens.setIcon(external_icon(ink_of(body).name()))
-        self.open_tokens.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
-        self.open_tokens.setAutoDefault(False)
-        self.open_tokens.clicked.connect(lambda: open_url(TOKENS_URL))
-        layout.addWidget(self.open_tokens, 0, Qt.AlignmentFlag.AlignLeft)
-
         self.site = self._field(body, "Site", site)
         self.site.setReadOnly(True)
+        # A fact, not a field to fill: Tab and the frame's first-field focus skip it, a
+        # click still lets it be copied.
+        self.site.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.email = self._field(body, "Email", email, placeholder="you@example.com")
         self.email.setObjectName("ConfluenceEmailEdit")
         self.token = self._field(
@@ -103,6 +98,17 @@ class ConnectDialog(DialogFrame):
         row.addStretch(1)
         self._spinner = Spinner(self).attach(self.test_button)
         layout.addStretch(1)
+
+        # Built after the fields — the frame focuses the first focusable child it finds,
+        # and the first thing to do here is type an email — and placed under the guide,
+        # where the walk it belongs to starts.
+        self.open_tokens = QPushButton("Open Atlassian API Tokens in Browser", body)
+        self.open_tokens.setObjectName("openTokensPage")
+        self.open_tokens.setIcon(external_icon(ink_of(body).name()))
+        self.open_tokens.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.open_tokens.setAutoDefault(False)
+        self.open_tokens.clicked.connect(lambda: open_url(TOKENS_URL))
+        layout.insertWidget(1, self.open_tokens, 0, Qt.AlignmentFlag.AlignLeft)
 
         self.add_dismiss()
         self.ok = self.set_primary("Connect", self.accept)

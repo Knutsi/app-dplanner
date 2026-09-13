@@ -3445,3 +3445,60 @@ node re-reads every survivor, which `retitle` already did.
 
 **Why.** It has two callers now, and `theme/tokens.py` — the other candidate — is what
 feeds `theme.qss`; a measure no stylesheet rule uses would be a token for its own sake.
+
+## 41. From the dialogs pass (S16)
+
+### `framework/widgets.py` — `notice()`, `block()`, `GlyphButton`
+
+**What.** `notice(parent, title, text)` beside `confirm()`: a fit `DialogFrame` with the
+words as `#DialogQuestion` and one Close. `block(layout, head, *fields)`: one form block —
+a child layout joined to `layout` *before* it is filled, `CAPTION_GAP` spacing, the caption
+row then its fields. `GlyphButton(text, painter, parent, *, tip)`: a plain `QPushButton`
+whose glyph is painted in the secondary ink and repainted on `PaletteChange`.
+
+**Why.** Twelve `QMessageBox.warning`/`.information` calls reported what a gesture came to
+after its dialog had closed, each printing a platform icon and arranging its sentences
+the platform's way; the frame already had `confirm()` for the question shape and nothing
+for the statement shape. Nine settings pages each hand-wrote the caption-over-field
+sub-layout the design example shows — the layout-item rule (join before filling) is easy to
+get wrong in nine places and impossible in one. And a settings page is cached for the
+window's life, so a button's glyph painted once from the palette wore the theme it was
+built under; the button is a plain one on purpose (a body verb is a plain button, and a
+`#DialogBody QPushButton` rule would outrank every id-only button rule inside a body).
+
+**Upstream?** All three.
+
+### `framework/settings_registry.py` — `settings_page()`
+
+**What.** `settings_page(parent) -> (page, layout)` with no outer margin and
+`SECTION_GAP` between blocks; the `SettingsSection` docstring states the contract.
+
+**Why.** The dialog owns the margins and the inset from its seam, and scrolls the page;
+a page that carried its own 20 px doubled the frame's. Nine pages disagreed by 20, 12 and
+none.
+
+**Upstream?** Yes, with the dialog.
+
+### `framework/signalling.py` — `TICKED` / `UNTICKED`
+
+**What.** The ☑/☐ marks moved here from the checklist module, beside `GLYPH`.
+
+**Why.** The Install dialog's rows are the same kind of list — things that should be
+true — and modules may not import each other.
+
+**Upstream?** Yes.
+
+### `framework/asset_picker.py`, `image_preview.py`, `text_dialog.py` — on the frame
+
+**What.** `AssetPickerDialog`, `ImagePreviewDialog` and `ExpandedTextDialog` subclass
+`DialogFrame`: a framed, a fit and an editor dialog respectively. The picker's *Insert* is
+the primary, refused while nothing is picked, and its empty page is an `EmptyState` that
+stands in for the grid; the preview's *Open Externally* and *Copy Path* are quiet
+secondaries and what they came to goes in the footer's status slot (the `QMessageBox` for
+a file gone from disk is gone); the expanded editor carries Close alone.
+
+**Why.** Each hand-rolled the frame's size clamp and a `QDialogButtonBox` whose platform
+decided the order; the picker's main verb had no accent and its empty state was a label
+swapped by hand.
+
+**Upstream?** Yes.

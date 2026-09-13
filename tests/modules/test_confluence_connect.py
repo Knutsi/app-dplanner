@@ -307,3 +307,25 @@ def test_the_real_build_registers_both_kinds_and_the_settings(services):
     assert any(section.id == MODULE_ID for section in services.settings_sections.sections())
     assert services.actions.spec("spec.add_source.confluence_page").label == "&Confluence Page…"
     assert services.actions.spec("spec.add_source.confluence_folder").label == "Confluence F&older…"
+
+
+def test_the_connect_dialog_opens_with_the_email_focused(app, dialog):
+    """The frame focuses the first field; the site is a fact (click to copy, never a
+    Tab stop) and the link to the tokens page comes after the fields in the chain."""
+    from PySide6.QtCore import Qt
+
+    made, _probes = dialog
+    made.show()
+    app.processEvents()
+    assert made.focusWidget() is made.email
+
+    def next_stop(widget):
+        """The next Tab stop: the raw chain also passes through what Tab skips."""
+        following = widget.nextInFocusChain()
+        while not (following.focusPolicy() & Qt.FocusPolicy.TabFocus and following.isVisible()):
+            following = following.nextInFocusChain()
+        return following
+
+    assert next_stop(made.email) is made.token
+    assert next_stop(made.site) is not made.site  # Click to copy, never a Tab stop.
+    made.hide()
