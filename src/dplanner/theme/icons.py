@@ -208,7 +208,7 @@ def isolate_icon(color: str | QColor) -> QIcon:
 
 
 def link_icon(color: str | QColor) -> QIcon:
-    """A chain: the two steps are joined."""
+    """A chain: the two steps are joined, or a markdown link joins text to an address."""
     return glyph_icon("link", color)
 
 
@@ -312,8 +312,53 @@ def image_icon(color: str | QColor) -> QIcon:
     return glyph_icon("image", color)
 
 
+# -- the markdown toolbar ---------------------------------------------------------------
+# What a mark does to the text it wraps. Four more of these — inline code, a link, a
+# picture and a numbered list — are the painters above, because the glyph for "this is
+# code" is the glyph for "the code repository" and a second copy of one SVG would be a
+# second thing to keep in step.
+
+
+def bold_icon(color: str | QColor) -> QIcon:
+    """A weighted B: the selection in bold."""
+    return glyph_icon("bold", color)
+
+
+def italic_icon(color: str | QColor) -> QIcon:
+    """A leaning I: the selection in italics."""
+    return glyph_icon("italic", color)
+
+
+def heading_icon(level: int) -> Callable[[str | QColor], QIcon]:
+    """The painter for one heading level — H1, H2 or H3.
+
+    A factory rather than three near-identical functions: the level is the only thing
+    that differs, and the toolbar wants them as a sequence anyway.
+    """
+
+    def paint(color: str | QColor) -> QIcon:
+        return glyph_icon(f"heading-{level}", color)
+
+    return paint
+
+
+def bullet_list_icon(color: str | QColor) -> QIcon:
+    """Dots and lines: an unordered list."""
+    return glyph_icon("bullet-list", color)
+
+
+def quote_icon(color: str | QColor) -> QIcon:
+    """A quotation mark: a block quote."""
+    return glyph_icon("quote", color)
+
+
+def table_icon(color: str | QColor) -> QIcon:
+    """A grid: a markdown table."""
+    return glyph_icon("table", color)
+
+
 def list_icon(color: str | QColor) -> QIcon:
-    """A numbered list: the order table."""
+    """A numbered list: the order table, and the markdown toolbar's `1.` verb."""
     return glyph_icon("list", color)
 
 
@@ -358,7 +403,7 @@ def ticket_icon(color: str | QColor) -> QIcon:
 
 
 def code_icon(color: str | QColor) -> QIcon:
-    """Angle brackets: the code repository."""
+    """Angle brackets: the code repository, and code in a markdown document."""
     return glyph_icon("code", color)
 
 

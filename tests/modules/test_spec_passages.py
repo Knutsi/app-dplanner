@@ -8,6 +8,7 @@ from tests.modules.test_spec import imported
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
 from dplanner.modules.feature.catalogue import FeatureRecord, FeatureSource, write_catalogue
+from dplanner.modules.spec import activity as activity_module
 from dplanner.modules.spec.activity import SpecsActivity
 from dplanner.modules.spec.aspect import MODULE_ID
 
@@ -156,3 +157,60 @@ def test_the_build_wires_the_catalogue_and_the_cite_menu_in(services, project, t
     tab.cited.click()
     assert len(washed(tab)) == 2
     assert not tab.cite_button.isHidden()
+
+
+def test_typing_walks_the_document_once_for_a_burst_and_the_indicator_turns(
+    services, tab, monkeypatch
+):
+    """Finding every cited passage again walks the whole document. A burst of keystrokes
+    must pay for that once, after the typing stops — and the strip must say a reading is
+    owed while it waits."""
+    tab.select_document("guide")
+    assert tab.is_editing
+    walks: list[int] = []
+    real = activity_module.locate_many
+
+    def counted(text, quotes):
+        walks.append(1)
+        return real(text, quotes)
+
+    monkeypatch.setattr(activity_module, "locate_many", counted)
+    services.debounce.set_immediate(False)
+    try:
+        for _ in range(8):
+            tab._editor.insertPlainText("x")
+        assert walks == [] and tab.updating.is_spinning()
+        services.debounce.flush_all()
+    finally:
+        services.debounce.set_immediate(True)
+    assert len(walks) == 1
+    assert not tab.updating.is_spinning()
+
+
+def test_a_caret_move_asks_nothing_of_the_document_while_a_reading_is_owed(services, tab):
+    """Between a keystroke and the settle the spans are unknown, so *Show in Coverage*
+    stands down rather than acting on a span that may have moved."""
+    tab.select_document("guide")
+    inside = tab._editor.document().toPlainText().index("import a CSV") + 2
+
+    def caret_to(position: int) -> None:
+        cursor = tab._editor.textCursor()
+        cursor.setPosition(position)
+        tab._editor.setTextCursor(cursor)
+
+    caret_to(inside)
+    tab._refresh_strip()
+    assert tab.to_coverage.isEnabled()
+    services.debounce.set_immediate(False)
+    try:
+        caret_to(tab._editor.document().characterCount() - 1)
+        tab._editor.insertPlainText("x")  # Past every passage, so none of them moves.
+        caret_to(inside)
+        tab._refresh_strip()
+        assert not tab.to_coverage.isEnabled()
+        services.debounce.flush_all()
+    finally:
+        services.debounce.set_immediate(True)
+    caret_to(inside)
+    tab._refresh_strip()
+    assert tab.to_coverage.isEnabled()

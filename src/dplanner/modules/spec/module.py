@@ -29,6 +29,7 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.context import Context, ContextService
+from dplanner.framework.debounce import DebounceService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.tasks import TaskService
@@ -85,6 +86,10 @@ class SpecDeps:
     # The step panel's Details tab — where a step's attached figures are shown.
     details: InspectorSectionRegistry
     tasks: TaskService
+    # What the tab settles its text derivations on: where a cited passage now sits, the
+    # wash over it, the figures under the editor. All three walk the whole document, so
+    # they wait for a pause in typing rather than running on every keystroke.
+    debounce: DebounceService
     # The document source kinds this build offers — one + menu entry and one way to
     # fetch each. Named by the composition root; the module runs whatever it is given.
     kinds: Sequence[DocumentSourceKind] = ()
@@ -134,6 +139,7 @@ class SpecModule:
                 deps.theme,
                 deps.undo,
                 target,
+                debounce=deps.debounce,
                 passages_of=deps.passages_of,
                 open_coverage=deps.open_coverage,
                 cite=deps.cite,

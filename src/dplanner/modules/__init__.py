@@ -835,6 +835,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             files=lambda node_id: store.files(node_id, SPEC_ID),
             details=services.step_details,
             tasks=services.tasks,
+            debounce=services.debounce,
             kinds=_source_kinds(spec_folder, spec_git, confluence.page, confluence.folder),
             passages_of=lambda project_id, document: [
                 source.quote

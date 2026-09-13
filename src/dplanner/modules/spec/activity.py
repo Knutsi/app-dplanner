@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.cli.command import CliError
 from dplanner.cli.shaping import guide
-from dplanner.core.anchors import locate
+from dplanner.core.anchors import locate_many
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Library, NodeId, Project, TextEdit
@@ -49,9 +49,11 @@ from dplanner.framework.context import (
     entity_uri,
     selection_uri,
 )
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.list_rows import DETAIL_ROLE, EMPHASIS_ROLE, RULE_ROLE, TwoLineDelegate
 from dplanner.framework.markdown_view import MarkdownView
 from dplanner.framework.prose_section import ProseSection
+from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.toolbar import ActionToolbar
 from dplanner.framework.undo import UndoService
@@ -161,6 +163,7 @@ class SpecsActivity(EntityActivity):
         undo: UndoService[Library],
         project_id: NodeId,
         *,
+        debounce: DebounceService | None = None,
         passages_of: PassagesOf | None = None,
         open_coverage: OpenCoverage | None = None,
         cite: Cite | None = None,
@@ -260,6 +263,14 @@ class SpecsActivity(EntityActivity):
         self._flush_timer = QTimer(self._editor, interval=FLUSH_DELAY_MS, singleShot=True)
         self._flush_timer.timeout.connect(self._flush_edit)
         self._editor.textChanged.connect(self._on_typed)
+        # Filled as the surfaces are built and again below; `close` runs the lot.
+        self._unsubscribes: list[Callable[[], None]] = []
+        # Everything derived from the document's *text* — where each cited passage now
+        # sits, and the wash over the lit ones — walks the whole document once per
+        # passage. That is 15 ms a keystroke on a 24 KB spec with eight citations, so it
+        # waits for a pause in typing like every other coalesced view, and the strip's
+        # indicator says one is owed. Never a worker thread: it is pure Python.
+        self._settled = Debounced(self._resettle, parent=self._editor, service=debounce)
         self._editor_page = self._build_editor_page()
         self._topology_page = self._build_topology_page(library, undo, project_id)
         self._views.addWidget(self._notice)
@@ -286,7 +297,7 @@ class SpecsActivity(EntityActivity):
         # No `field_changed` subscription: nothing here reads a field — the list shows
         # index data, and the tab's title follows the project through `follow_entity_tabs`.
         self._theme = theme
-        self._unsubscribes = [
+        self._unsubscribes += [
             library.module_data_changed.connect(self._on_module_data),
             library.text_edited.connect(self._on_text_edited),
             theme.changed.connect(lambda _theme: self._paint_toolbar(theme)),
@@ -1014,6 +1025,12 @@ class SpecsActivity(EntityActivity):
         row.addStretch(1)
         self.clear_button = _tool_button("Clear", "Clear the washed passages", self.clear_passages)
         row.addWidget(self.clear_button)
+        # This strip is what the settle produces — the wash, the lit count, whether
+        # *Show in Coverage* is live — so it is where the turning arc belongs while one
+        # is owed. Wired where the `Debounced` is, never shown and hidden by hand.
+        self.updating = UpdatingIndicator(strip)
+        self._unsubscribes.append(self.updating.follow(self._settled))
+        row.addWidget(self.updating)
         self._strip = strip
         return strip
 
@@ -1033,22 +1050,19 @@ class SpecsActivity(EntityActivity):
         return tuple(self._passages_of(self.project_id, name))
 
     def _forget_spans(self) -> None:
-        self._cited_spans = None
-        self._refresh_strip()
+        """The text moved under the cited passages, so where they sit is unknown again.
 
-    def _spans(self) -> list[tuple[int, int, str]]:
-        """Where each cited passage sits in the shown text — computed once per text."""
-        if self._cited_spans is None:
-            well = self._text_well()
-            found: list[tuple[int, int, str]] = []
-            if well is not None:
-                plain = well.document().toPlainText()
-                for quote in self._document_passages():
-                    span = locate(plain, quote)
-                    if span is not None:
-                        found.append((span[0], span[1], quote))
-            self._cited_spans = found
-        return self._cited_spans
+        Finding them costs a walk of the whole document, so this only says *stale* and
+        asks for a settle; :meth:`_resettle` is what pays. Until it runs, the strip keeps
+        the last answer it had and *Show in Coverage* stands down — a verb that might act
+        on a span that has moved is worse than one that waits.
+        """
+        self._cited_spans = None
+        self._settled.trigger()
+
+    def _resettle(self) -> None:
+        """What the document's text decides, recomputed after a pause in typing."""
+        self._apply_wash()
 
     def _text_well(self) -> QTextEdit | None:
         shown = self._views.currentWidget()
@@ -1059,17 +1073,21 @@ class SpecsActivity(EntityActivity):
         return None
 
     def _passage_under_caret(self) -> str | None:
+        """The cited passage the caret sits in, from the last settled reading — None while
+        a fresh one is owed, which is what keeps a caret move off the document."""
         well = self._text_well()
-        if well is None:
+        if well is None or self._cited_spans is None:
             return None
         at = well.textCursor().position()
-        return next((quote for start, end, quote in self._spans() if start <= at <= end), None)
+        return next((quote for start, end, quote in self._cited_spans if start <= at <= end), None)
 
     def _refresh_strip(self) -> None:
+        # Every caret move comes through here, so it may read nothing it has to derive.
+        # "Is this row a document?" is the row itself: only a document row carries a
+        # NAME_ROLE, and the topology's is the one reserved name. Asking the index instead
+        # parsed every document, source and asset of the project on each keystroke.
         name = self._current_name()
-        on_document = (
-            name is not None and name != TOPOLOGY_ROW and self._current_document() is not None
-        )
+        on_document = name is not None and name != TOPOLOGY_ROW
         self._strip.setVisible(on_document)
         if not on_document:
             return
@@ -1089,16 +1107,22 @@ class SpecsActivity(EntityActivity):
         well = self._text_well()
         if well is not None:
             plain = well.document().toPlainText()
+            # Both readings of this text at once — where every cited passage sits (what
+            # *Show in Coverage* asks about) and where the lit ones do — because each
+            # `locate` normalises the whole haystack, and one walk answers both.
+            cited = self._document_passages()
+            found = locate_many(plain, list(dict.fromkeys([*cited, *quotes])))
+            wanted = set(cited)
+            self._cited_spans = [span for span in found if span[2] in wanted]
             selections = []
             landing: int | None = None
-            for quote in quotes:
-                span = locate(plain, quote)
-                if span is None:
+            for start, end, quote in found:
+                if quote not in quotes:
                     continue
                 is_focus = bool(focus) and quote == focus
                 cursor = QTextCursor(well.document())
-                cursor.setPosition(span[0])
-                cursor.setPosition(span[1], QTextCursor.MoveMode.KeepAnchor)
+                cursor.setPosition(start)
+                cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
                 wash = QColor(well.palette().highlight().color())
                 wash.setAlpha(FOCUS_ALPHA if is_focus else WASH_ALPHA)
                 fmt = QTextCharFormat()
@@ -1108,7 +1132,7 @@ class SpecsActivity(EntityActivity):
                 selection.format = fmt
                 selections.append(selection)
                 if is_focus:
-                    landing = span[0]
+                    landing = start
             well.setExtraSelections(selections)
             if landing is not None:
                 cursor = QTextCursor(well.document())

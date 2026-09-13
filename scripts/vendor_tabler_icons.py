@@ -81,6 +81,18 @@ GLYPHS: dict[str, str] = {
     "clone": "copy",
     "move": "file-export",
     "ticket": "ticket",
+    # -- the markdown toolbar: what a mark *does* to the text it wraps -----------------
+    # Tabler's own editor set. The pictures are the ones every writing tool uses, which is
+    # the whole argument for them: a toolbar of markdown verbs is the one strip where the
+    # glyph is already learned before anybody hovers it.
+    "bold": "bold",
+    "italic": "italic",
+    "heading-1": "h-1",
+    "heading-2": "h-2",
+    "heading-3": "h-3",
+    "bullet-list": "list",  # Dots and lines; `list` below is the numbered one.
+    "quote": "blockquote",
+    "table": "table",
     # -- what a step *is*: the medallion vocabulary the canvas paints -------------------
     "tag": "tag",  # A milestone.
     "layers": "stack-2",  # A feature: it collects the work behind it.
