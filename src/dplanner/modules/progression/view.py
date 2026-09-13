@@ -1,4 +1,4 @@
-"""The progression board: a header that says how far, columns that say what moves.
+"""The Ready-to-start board: a header that says how far, columns that say what moves.
 
 Pure rendering — the domain's :class:`~dplanner.domain.progression.Progression` arrives
 computed and the board redraws wholesale, so nothing here can disagree with the model.
@@ -48,14 +48,16 @@ from PySide6.QtWidgets import (
 from dplanner.domain.model import StepId
 from dplanner.domain.progression import Progression
 from dplanner.theme.icons import ICON_SIZE, KEY_BADGE_W
-from dplanner.theme.tokens import CONTROL_HEIGHT
+from dplanner.theme.tokens import CAPTION_GAP, CONTROL_HEIGHT, FIELD_GAP, SECTION_GAP
 
-CARD_PADDING = 12
-# Between a milestone's key badge and the title it leads.
-BADGE_GAP = 6
-LANE_PADDING = 12
-COLUMN_GAP = 12
-ROW_GAP = 8
+# The page metrics, from the one table (DESIGN.md's *Tokens*): a card's and a lane's
+# padding are a section's gap, a row sits a field's gap from the next, and a badge stands a
+# caption's gap from the title it leads.
+CARD_PADDING = SECTION_GAP
+BADGE_GAP = CAPTION_GAP
+LANE_PADDING = SECTION_GAP
+COLUMN_GAP = SECTION_GAP
+ROW_GAP = FIELD_GAP
 BAR_HEIGHT = 10
 PERCENT_POINT_SIZE = 26
 
@@ -134,7 +136,14 @@ class SegmentedBar(QWidget):
 
 
 class ProgressHeader(QWidget):
-    """The big number, the bar under it, and the counts that explain the bar."""
+    """The big number and the bar under it.
+
+    Two lines used to stand under the bar — the same counts in words, then the same
+    progress again in estimated days. The bar *is* those counts, drawn to scale, and a
+    board whose job is to say what to start next should not spend three sentences on how
+    far along the project is. The terminal still prints both (``dplanner progression
+    show``), where a line costs nothing and there is no bar to read.
+    """
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -159,12 +168,7 @@ class ProgressHeader(QWidget):
         self.bar = SegmentedBar(self)
         layout.addWidget(self.bar)
 
-        self.counts = QLabel("", self)
-        self.counts.setObjectName("InspectorNote")
-        self.counts.setWordWrap(True)
-        layout.addWidget(self.counts)
-
-    def show_progress(self, progress: Progression, weighted: tuple[float, float] | None) -> None:
+    def show_progress(self, progress: Progression) -> None:
         self.percent.setText(f"{progress.percent:.0f}%")
         self.summary.setText(
             f"{len(progress.done)} of {progress.total} steps done"
@@ -178,31 +182,6 @@ class ProgressHeader(QWidget):
             len(progress.ready),
             len(progress.upcoming) + len(progress.waiting),
         )
-        parts = [
-            phrase
-            for count, phrase in (
-                (len(progress.done), f"{len(progress.done)} done"),
-                (len(progress.running), f"{len(progress.running)} running"),
-                (
-                    len(progress.attention),
-                    f"{len(progress.attention)} needs attention"
-                    if len(progress.attention) == 1
-                    else f"{len(progress.attention)} need attention",
-                ),
-                (len(progress.ready), f"{len(progress.ready)} ready"),
-                (
-                    len(progress.upcoming) + len(progress.waiting),
-                    f"{len(progress.upcoming) + len(progress.waiting)} waiting",
-                ),
-            )
-            if count
-        ]
-        lines = [" · ".join(parts)] if parts else []
-        if weighted is not None:
-            finished, total = weighted
-            lines.append(f"{finished:g} of {total:g} estimated days done")
-        self.counts.setText("\n".join(lines))
-        self.counts.setVisible(bool(lines))
 
 
 class StepCard(QFrame):
@@ -462,8 +441,8 @@ class ProgressionBoard(QWidget):
             self._ticked.discard(step_id)
         self._refresh_run()
 
-    def show_progress(self, progress: Progression, weighted: tuple[float, float] | None) -> None:
-        self.header.show_progress(progress, weighted)
+    def show_progress(self, progress: Progression) -> None:
+        self.header.show_progress(progress)
         self._ready_ids = [launchable.step.id for launchable in progress.ready[:MAX_READY]]
         self._ticked &= set(self._ready_ids)  # A step that left the lane leaves the run.
 

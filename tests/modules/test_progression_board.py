@@ -189,6 +189,103 @@ def test_ticking_ready_cards_counts_them_on_the_run_button_and_publishes_them(
     assert button.text() == "Run Agents" and board.ticked() == []
 
 
+@pytest.fixture
+def ready_agents(services, make_project):
+    """A finished step and five agent steps waiting on it: five cards in the Ready lane,
+    each briefed enough to launch. What a board looks like the morning a milestone lands."""
+    project = make_project("Discovery")
+    done = Step(title="Groundwork")
+    AddNodeCommand(project.id, done).redo(services.document)
+    set_status(services, done, "done")
+    for title in ("One", "Two", "Three", "Four", "Five"):
+        step = Step(title=title)
+        AddNodeCommand(project.id, step).redo(services.document)
+        SetEdgesCommand(step.id, "requires", [done.id]).redo(services.document)
+        services.document.set_text(step.id, "step_agent_instruction", f"Ship {title}.")
+    return project
+
+
+def _boxes(monkeypatch):
+    """Every QMessageBox, recorded instead of blocking — the seam test_agent_run.py uses."""
+    from PySide6.QtWidgets import QMessageBox
+
+    shown: list[str] = []
+
+    def record(box: QMessageBox) -> int:
+        shown.append(box.text())
+        return 0
+
+    monkeypatch.setattr(QMessageBox, "exec", record)
+    monkeypatch.setattr(QMessageBox, "clickedButton", lambda self: None)
+    return shown
+
+
+def test_the_ticked_ready_steps_launch_in_one_gesture_and_nothing_is_asked(
+    services, ready_agents, monkeypatch
+):
+    """Three ticks, one press, three peers — and no confirmation, which is not an omission.
+
+    The gate asks before launching a step whose prerequisites are not done; a step is in
+    this lane precisely because they are. The lane's rule and the gate's question are the
+    same question, so a launch from here can only ever be a quiet one — and a box that
+    never appears in the place a person launches from is worth a test saying so.
+    """
+    from dplanner.modules.step_agent_instruction import launcher
+    from dplanner.modules.step_agent_run.aspect import launched
+
+    tab = services.tabs.open("progression", ready_agents.id)
+    board = tab.board
+    prepared = []
+
+    def resolve(_template, files, _workdir):
+        prepared.append(files)
+        return ["fake-term"]
+
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
+    monkeypatch.setattr(launcher, "resolve_command", resolve)
+    boxes = _boxes(monkeypatch)
+
+    cards = board.ready.cards()[:3]
+    for card in cards:
+        card.check_box.setChecked(True)
+    assert board.run_button.text() == "Run 3 Agents"
+    assert board.run_button.isEnabled(), board.run_button.toolTip()
+
+    menu = board.run_menu()
+    default_profile = next(entry for entry in menu.actions() if not entry.isSeparator())
+    default_profile.trigger()
+
+    assert len(prepared) == 3
+    assert len({files.directory for files in prepared}) == 3
+    assert boxes == []
+    assert all(launched(services.document.step(card.step_id)) for card in cards)
+
+
+def test_more_ticks_than_the_limit_grey_the_button_with_the_count_as_the_reason(
+    services, ready_agents
+):
+    """Past *Settings ▸ Agent profiles*' limit the count itself refuses, before any step is
+    asked about — so the face says the cap rather than naming one step's problem."""
+    from dplanner.modules.step_agent_instruction.settings_page import DEFAULT_MAX_AGENTS
+
+    tab = services.tabs.open("progression", ready_agents.id)
+    board = tab.board
+    cards = board.ready.cards()
+    assert len(cards) == DEFAULT_MAX_AGENTS + 1
+
+    for card in cards:
+        card.check_box.setChecked(True)
+    assert board.run_button.text() == f"Run {len(cards)} Agents"
+    assert not board.run_button.isEnabled()
+    assert board.run_button.toolTip() == (
+        f"Run {len(cards)} Agents — at most {DEFAULT_MAX_AGENTS} at a time "
+        "(Settings ▸ Agent profiles)"
+    )
+
+    cards[0].check_box.setChecked(False)  # One fewer is the whole remedy.
+    assert board.run_button.isEnabled(), board.run_button.toolTip()
+
+
 def test_a_build_without_an_agent_has_no_button_at_all(services, project):
     """Hidden means absent: agent_state=None is a build where the capability does not exist."""
     from dplanner.modules.progression.module import ProgressionActivity, ProgressionDeps
@@ -214,9 +311,9 @@ def test_a_build_without_an_agent_has_no_button_at_all(services, project):
 def test_the_tab_is_titled_for_its_project_and_follows_a_rename(services, project, tab):
     from dplanner.domain.commands import SetFieldCommand
 
-    assert tab.title == "Discovery — Progression"
+    assert tab.title == "Discovery — Ready to start"
     services.undo.push(SetFieldCommand(project.id, "title", "Discovery Phase"))
-    assert "Discovery Phase — Progression" in [a.title for a in services.tabs.activities()]
+    assert "Discovery Phase — Ready to start" in [a.title for a in services.tabs.activities()]
 
 
 def test_a_deleted_project_takes_its_board_with_it(services, project, tab):

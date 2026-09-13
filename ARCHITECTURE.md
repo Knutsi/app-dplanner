@@ -3429,6 +3429,23 @@ ordering trap is worth naming: `TaskRunner` emits `busy_changed(False)` *before*
 
 ## Progression is the status-aware frontier
 
+**The surface is named for the question; the derivation keeps the answer's name.** A person
+opens this tab to find out what to start next, so it is called *Ready to start* — in the tab
+title, the two menu entries and the index row. Everything underneath stays `progression`:
+the walk, the module id, the activity kind, the action ids and `dplanner progression show`.
+That split is deliberate three ways. The derivation puts every step into one of six
+partitions and the frontier is only one of them, so *Ready to start* would be the wrong name
+for the function. The kind and the ids are the contract the per-user store remembers tabs by
+and the registry resolves verbs by, and renaming them would silently drop somebody's open
+tabs. And the verb is in every agent's generated skill, so renaming it moves the ground under
+an agent mid-plan for a word — a `later` note carries the question rather than this step.
+
+The board's header is the percent and the bar. It carried two more lines under the bar — the
+same counts in words (*12 done · 2 running · 5 ready*), then the same progress again in
+estimated days — and a bar drawn to scale already says both, in the one place the eye
+goes first. The terminal keeps them, because `dplanner progression show` has no bar and a
+line there costs nothing.
+
 `ordering.ready()` answers what the *graph* allows — wave one, nothing waited on. During
 execution that is the wrong question: a step deep in the graph whose prerequisites have all
 been finished is launchable today, and no wave number says so. `domain/progression.py`
@@ -3472,6 +3489,52 @@ menu's fill handed over by the root), never a copy: the board offers exactly wha
 right-click offers. Opening the menu publishes the ticked steps first, because a menu
 entry — like every presenter — acts on the context the user has now, and the face counts
 what is ticked whatever the window's selection was.
+
+**A launch from that lane never raises the prerequisite confirmation, and that is the two
+rules agreeing rather than a gap.** `agent.run` asks before launching a step whose `requires`
+do not all read done; a step is in the Ready lane precisely because they do. The board and
+the gate are asking one question — "is anything this waits on unfinished?" — so the box can
+only appear where the question can still be answered yes: the canvas, the order table, the
+palette. A test pins the silence, because a confirmation that never fires in the place people
+launch from is the kind of thing a later change removes by accident.
+
+## The order says what order, and how much — never when
+
+The Order tab ran the plan out as a calendar once: an *Accumulated* column, a *Since
+milestone* column and a *Date* per row, from a start date set on that page, one step after
+another with a single worker and weekends skipped. Every number in it was true and none of
+it was useful. Nobody works that way, and the application itself does not believe it —
+`time_estimates` simulates two pools of workers against milestone dates, and that is what
+the plan is scheduled on. Two surfaces answering *when* with different arithmetic is one
+surface too many, and the one to drop is the one nobody schedules on.
+
+What an order *can* say without claiming to know who does the work is how much work it
+holds. That is `domain/schedule.py`'s `volume_words` — *62 days over 24 steps, 2
+unestimated* — beside `format_days` and `format_day_count` for their reason: it has four
+readers (the tab, `dplanner order show`, `dplanner estimate rollup` and the Estimates tab's
+strip) and a total read in one place must not disagree with the same total read in another.
+The unestimated steps are named rather than folded in, because a total that counted them as
+nothing would read as a smaller project.
+
+Three consequences worth writing down:
+
+- **The start-date bar left with the columns.** It was the estimation module's widget lent
+  to this tab through a consumer-owned `StartBar` protocol, and this tab was its only
+  caller. The value it wrote is still the project's, still read by `schedule show` and the
+  report, and still set — from the Time tab's *Milestones ▸ Begin…*, which is where the
+  dates that matter are chosen. A protocol with no implementor and a widget with no host
+  are entropy, so both went.
+- **Wave 1 is called *Wave 1*.** It was *Ready to start*, on the argument that "wave 1" makes
+  the reader work out what it means. But the execution board now carries those words, and
+  they would name two different things: the graph's first wave (nothing before it) and the
+  status-aware frontier (nothing it waits on is left undone). Those coincide only in a
+  project where nothing has been finished — the very coincidence this document warns against
+  reading as sameness one section up. One phrase, one meaning.
+- **The CSV export and the published report keep the day counts and the dates.** A
+  spreadsheet is opened to sort, sum and chart, and a column of ISO dates is data rather
+  than a claim the window makes. The tab and its own Export button therefore disagree about
+  three columns, which is recorded as a `later` note rather than settled by making the
+  export worse.
 
 ## Time estimates: two worker pools, one greedy simulation
 

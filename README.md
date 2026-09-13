@@ -31,10 +31,10 @@ Early, and honest about it. The model, the storage layer, the index tree, the wh
 graph editor and the order view are in place and tested. Fourteen aspects ship — estimate,
 ticket, description, agent instruction, agent run, status, milestone, feature, GitHub refs,
 spec figures, tests, checks and the two documentation ones — each with verbs in the CLI and most with an editor in the step panel
-(`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: a project start date and
-the estimates give every step a running total and a date, in the order table and in
-`dplanner schedule show`. Progression reads the same graph with the statuses in hand:
-the execution board and `dplanner progression show` say what can be launched right now.
+(`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: the order table says what order the
+work goes in and how much of it there is, and `dplanner schedule show` dates it. *Ready to
+start* reads the same graph with the statuses in hand: the execution board and `dplanner
+progression show` say what can be launched right now.
 Tests are what a step must keep passing once it is done: a step carries several, a *check*
 step gathers every test it waits on, and a *test run* records what each one did. Every
 image and file a project carries is browsable in one place — the Assets tab and
@@ -154,7 +154,7 @@ the default first (what the Agent tab's button and the palette run), then *Manag
 Profiles…*; every agent in Ghostty, herdr and the platform's own terminal is there from
 the first start, and *Add Detected…* on the settings page pairs whatever agents and
 terminals are installed here. Select several ready steps — on the canvas, or by ticking them in the
-progression board and dropping its *Run N Agents* button down — and one gesture launches
+*Ready to start* board and dropping its *Run N Agents* button down — and one gesture launches
 one agent per step, all through the profile you pick. The step wears a chip and a marching ring while the shell runs, the
 chip follows what the agent reports (`dplanner agent-state set … needs-input` when it has
 a question), and the ring goes when the shell ends — finished, failed or closed, which
@@ -381,7 +381,7 @@ src/dplanner/
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
-│   ├── progression/         the execution board — what can be launched now — and `dplanner progression show`
+│   ├── progression/         the *Ready to start* board and `dplanner progression show`
 │   ├── time_estimates/      the staffing matrix, the start dates and milestones in sequence and the calendar
 │   │                        they date — `dplanner schedule matrix`, `schedule palette`, `schedule team`,
 │   │                        `schedule milestone`; and progress against the plan (progress.py derives it,

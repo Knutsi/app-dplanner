@@ -12,28 +12,33 @@ Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
 from argparse import ArgumentParser, Namespace
+from collections.abc import Callable
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext
 from dplanner.cli.lookup import find_project
+from dplanner.domain.model import Step
 from dplanner.domain.ordering import Placed, placed
-
-# What the first wave is called wherever it is shown: it is the answer to "what can I start
-# now", and saying "wave 1" instead would make the reader work that out.
-READY_LABEL = "Ready to start"
+from dplanner.domain.schedule import volume_words
 
 
 def wave_label(index: int) -> str:
-    return READY_LABEL if index == 0 else f"Wave {index + 1}"
+    """What a wave is called wherever it is shown — the table, the export, this verb.
+
+    The first wave was called *Ready to start* until the execution board took that name:
+    one phrase answering both "nothing in the graph is before this" and "nothing this waits
+    on is left undone" is the distinction the board exists to draw.
+    """
+    return f"Wave {index + 1}"
 
 
-def commands() -> list[CliCommand]:
+def commands(*, days_for: Callable[[Step], float | None]) -> list[CliCommand]:
     return [
         CliCommand(
             path=("order", "show"),
             summary="The order a project's steps can be done in, with each step's index.",
             configure=_configure,
-            run=_show,
+            run=lambda context, args: _show(context, args, days_for),
             examples=(
                 "dplanner order show search",
                 "dplanner order show search --json",
@@ -52,7 +57,7 @@ def _configure(parser: ArgumentParser) -> None:
     )
 
 
-def _show(context: CliContext, args: Namespace) -> int:
+def _show(context: CliContext, args: Namespace, days_for: Callable[[Step], float | None]) -> int:
     library = context.library
     project = find_project(library, args.project)
     found = placed(library, project)
@@ -71,16 +76,23 @@ def _show(context: CliContext, args: Namespace) -> int:
             for place in found
         ],
     }
-    context.report(data, _table(found) or "No steps yet.")
+    estimates = [days_for(place.step) for place in found]
+    sized = [days for days in estimates if days is not None]
+    volume = volume_words(sum(sized), len(estimates), len(estimates) - len(sized))
+    data |= {"days": sum(sized), "unestimated": len(estimates) - len(sized)}
+    table = _table(found)
+    context.report(data, f"{table}\n\n{volume}" if table else "No steps yet.")
     return 0
 
 
 def _table(order: list[Placed]) -> str:
-    """The graph's three columns — the order, and nothing that depends on an estimate.
+    """The graph's three columns — the order, and nothing that depends on a date.
 
-    The window's table shows these beside a schedule; here the two answers stay apart, and
-    ``dplanner schedule show`` is the one that dates them. Keeping them separate is what lets
-    ``order show`` answer "what can I start now" in a build with no estimates at all.
+    A serial calendar is what this verb stays out of: ``dplanner schedule show`` dates the
+    steps and ``schedule matrix`` simulates them, and a column of dates here would be a
+    third answer nobody asked for. The *total* under the table is the exception, because a
+    volume is the one thing an order can state without pretending to know who does the work
+    — and it is the sentence the tab, ``estimate rollup`` and the Estimates tab all print.
     """
     if not order:
         return ""

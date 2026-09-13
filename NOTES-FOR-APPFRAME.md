@@ -2987,3 +2987,64 @@ second widget that reimplemented the tone mapping to change one character.
 
 **Upstream?** Yes, with the constraint in the docstring: the tone is the vocabulary, the
 glyph is the surface's, and a second *mood* glyph is what the tones exist to prevent.
+
+## 35. From the boards pass (S9)
+
+Three changes, all in the widgets a surface is *brought up* onto — found by putting the
+first real table on the primitive and rendering it.
+
+### `framework/list_rows.py` — `HOST_ROLE`, where a view's own item roles start
+
+**What.** One constant, `int(Qt.ItemDataRole.UserRole) + 16`, documented as the first offset
+the framework's delegates never read. The roles they do read (`DETAIL_ROLE`, `MUTED_ROLE`,
+`EMPHASIS_ROLE`, `RULE_ROLE`, `TRAILING_ROLE`, `TINT_ROLE`, `HEADING_ROLE`) sit at +2 to +8.
+
+**Why.** Every view numbers its own roles from `UserRole + 1` — it is what the Qt
+documentation's examples do, and eight modules here do it. The moment such a view is moved
+onto `Table`, its second role *is* `DETAIL_ROLE` and its third *is* `MUTED_ROLE`. The order
+table stamped the milestone label at +2 and a `"#rrggbb"` shade at +3, so every milestone
+row printed its own label as a second line under each cell, spilling into the row below,
+and greyed itself for carrying a colour. Nothing failed; it rendered, and the rendering was
+wrong. A primitive that reads item data owes its hosts a published boundary, because the
+collision is silent and arrives when somebody adopts the primitive rather than when they
+write the view.
+
+**Upstream?** Yes. The constant is free and the docstring is the whole value. Consider also
+moving the framework's own roles behind a private base so the two blocks can never meet.
+
+### `framework/table.py` — a cell is measured in the weight and the width it is drawn in
+
+**What.** `TableDelegate.font_for(option, index)` is now the one answer to "what weight is
+this cell" and `elided(font, text, width)` the one answer to "how is it cut to fit";
+`paint` and `sizeHint` both go through them, and `sizeHint` measures with
+`QFontMetrics.boundingRect(text).width()` rather than `horizontalAdvance`.
+
+**Why.** Two off-by-a-hair bugs, each of which clips a column sized to its contents.
+(1) `sizeHint` measured the plain font while `paint` drew bold for `EMPHASIS_ROLE`, so the
+one row a reader scans the column for — the milestone — was the one that elided. (2)
+`elidedText` lays the text out and compares against the *layout* width, which a glyph's
+right side bearing can push a pixel past its advance: with the column sized to the advance,
+`"10"` came back as `"…"` while `"11"` fitted. A delegate that both measures and draws has
+to measure what it draws; splitting the two rules into named methods is what makes that
+checkable, and the test asserts the round trip (hint → drawn width → `elided` returns the
+text unchanged) rather than either number.
+
+**Upstream?** Yes, both. The bearing one is not specific to anything here — any
+`ResizeToContents` column under a custom delegate that elides has it.
+
+### `framework/widgets.py` — `captioned`'s hint glyph re-inks itself
+
+**What.** The info glyph beside a caption is a small `QLabel` subclass that repaints on
+`QEvent.PaletteChange`, instead of a bare `QLabel` handed a pixmap painted in
+`ink_of(parent)` once.
+
+**Why.** §33 added `captioned` with a docstring on `ink_of` warning that a colour taken out
+of the palette goes stale and that it is for something built fresh each time it is shown.
+Every caller so far was a dialog, so the warning held. The first tab page to use it would
+have kept a dark-theme glyph in the light theme — the `option.palette` trap one layer up,
+and a warning in a docstring is a trap with a sign on it rather than a fixed one. `Toolbar`
+already re-inks its verbs this way; the helper now does the same, and the warning on
+`ink_of` stands for whoever paints one by hand.
+
+**Upstream?** Yes. A helper the template offers should be safe in the place a reader will
+first reach for it.
