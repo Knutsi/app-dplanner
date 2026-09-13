@@ -52,3 +52,34 @@ def test_a_list_marker_is_formatted_and_the_content_is_not(highlighted):
 def test_plain_prose_is_left_entirely_alone(highlighted):
     edit = highlighted("Open the list and look at it.")
     assert formats_of(edit) == []
+
+
+def spans_of(edit, index=0):
+    """(start, length, italic, monospace) per format run in block ``index``."""
+    block = edit.document().findBlockByNumber(index)
+    return [
+        (r.start, r.length, r.format.fontItalic(), bool(r.format.fontFamilies()))
+        for r in block.layout().formats()
+    ]
+
+
+def test_emphasis_leans_and_a_bold_pair_is_not_mistaken_for_it(highlighted):
+    edit = highlighted("a *word* and **two words** here")
+    leaning = [(s, length) for s, length, italic, _mono in spans_of(edit) if italic]
+    assert leaning == [(2, 6)]  # Exactly "*word*", and nothing inside the bold pair.
+
+
+def test_a_star_mid_word_leans_because_that_is_what_a_renderer_does_with_it(highlighted):
+    """CommonMark opens emphasis on a single ``*`` mid-word — the thing that separates it
+    from ``_``. The highlighter agreeing with the renderer is the whole point of it."""
+    edit = highlighted("the a*b*c convention")
+    assert [(s, length) for s, length, italic, _m in spans_of(edit) if italic] == [(5, 3)]
+
+
+def test_a_fenced_block_is_monospace_to_its_closing_fence(highlighted):
+    """The state a block leaves behind is the only way the next one knows it is inside
+    something that opened three lines up — and getting it backwards makes *alternate*
+    lines of an ordinary paragraph read as code, which is what this pins."""
+    edit = highlighted("before\n```\ncode here\n```\nafter\nand more prose")
+    monospace = [bool([run for run in spans_of(edit, n) if run[3]]) for n in range(6)]
+    assert monospace == [False, True, True, True, False, False]

@@ -14,10 +14,11 @@ from pathlib import Path
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox, QWidget
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
-from dplanner.cli.command import CliError
-from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.core.fsio import slugify
+from dplanner.core.signals import Signal
+from dplanner.domain.commands import CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import (
@@ -29,6 +30,8 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.context import Context, ContextService
+from dplanner.framework.debounce import DebounceService
+from dplanner.framework.dialog import LinePrompt
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.tasks import TaskService
@@ -46,6 +49,7 @@ from dplanner.modules.spec.activity import (
     SpecsActivity,
 )
 from dplanner.modules.spec.aspect import DATA_FORMAT, MODULE_ID, read_attachments
+from dplanner.modules.spec.cli import RENAME_LABEL, RenameReferences
 from dplanner.modules.spec.documents import (
     SpecDocument,
     SpecSource,
@@ -55,12 +59,29 @@ from dplanner.modules.spec.documents import (
     new_document,
     read_index,
     remove_document,
+    rename_assets,
+    rename_document,
+    rename_refusal,
     write_index,
 )
 from dplanner.modules.spec.figures_section import FiguresSection
 from dplanner.modules.spec.refresh import SourceRefresher
 from dplanner.modules.spec.source_kind import DocumentSourceKind
-from dplanner.modules.spec.sourced import add_source, owned_by_source, remove_source, source_of
+from dplanner.modules.spec.sourced import (
+    UPDATES_MARK,
+    add_source,
+    owned_by_source,
+    remove_source,
+    source_of,
+)
+from dplanner.theme.icons import (
+    edit_icon,
+    external_icon,
+    move_icon,
+    plus_icon,
+    refresh_icon,
+    trash_icon,
+)
 
 FILE_FILTER = "Spec documents (*.pdf *.md *.markdown *.txt);;All files (*)"
 
@@ -85,6 +106,14 @@ class SpecDeps:
     # The step panel's Details tab — where a step's attached figures are shown.
     details: InspectorSectionRegistry
     tasks: TaskService
+    # What the tab settles its text derivations on: where a cited passage now sits, the
+    # wash over it, the figures under the editor. All three walk the whole document, so
+    # they wait for a pause in typing rather than running on every keystroke.
+    debounce: DebounceService
+    # The other modules' half of a rename: what else points at a document by name, as
+    # commands that move with it. The composition root composes it; the window and
+    # `dplanner spec rename` push the same one.
+    rename_references: "RenameReferences | None" = None
     # The document source kinds this build offers — one + menu entry and one way to
     # fetch each. Named by the composition root; the module runs whatever it is given.
     kinds: Sequence[DocumentSourceKind] = ()
@@ -108,6 +137,28 @@ class SpecModule:
         )
         for kind in deps.kinds:
             kind.config_changed.connect(deps.context.refresh)
+        # Which projects have updates waiting, and a signal that fires only when that set
+        # *changes*. Not `refresher.changed`, which also fires on every busy flip: the
+        # index folder rebuilds on this, and a folder redrawn on every spinner tick is a
+        # folder that flickers while a fetch runs.
+        self._badged: frozenset[str] = frozenset()
+        self.updates_changed: Signal[()] = Signal("spec.updates.changed")
+        self.refresher.changed.connect(self._on_sources_changed)
+
+    def updates_mark(self, project_id: NodeId) -> str:
+        """The mark a row or a tab title wears while this project has updates waiting —
+        "" when it has none, and "" for a project whose sources nobody has checked."""
+        return UPDATES_MARK if self.refresher.stale(project_id) else ""
+
+    def _on_sources_changed(self) -> None:
+        found = frozenset(
+            project.id
+            for project in self._deps.library.projects
+            if self.refresher.stale(project.id)
+        )
+        if found != self._badged:
+            self._badged = found
+            self.updates_changed.emit()
 
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
         self._deps.tabs.open(SPECS_KIND, project_id, preview=preview)
@@ -134,6 +185,7 @@ class SpecModule:
                 deps.theme,
                 deps.undo,
                 target,
+                debounce=deps.debounce,
                 passages_of=deps.passages_of,
                 open_coverage=deps.open_coverage,
                 cite=deps.cite,
@@ -164,6 +216,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.new",
                 label="&New Spec Document…",
+                icon=plus_icon,
                 menu="Project",
                 group="documents",
                 order=10,
@@ -177,6 +230,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.add",
                 label="&Import Spec Document…",
+                icon=move_icon,
                 menu="Project",
                 group="documents",
                 order=20,
@@ -205,6 +259,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.remove",
                 label="&Remove Spec Document",
+                icon=trash_icon,
                 menu="Project",
                 group="documents",
                 order=40,
@@ -217,6 +272,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.refresh_source",
                 label="Re&fresh Source",
+                icon=refresh_icon,
                 menu="Project",
                 group="documents",
                 order=60,
@@ -230,6 +286,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.refresh_sources",
                 label="Refresh &All Sources",
+                icon=refresh_icon,
                 menu="Project",
                 group="documents",
                 order=65,
@@ -242,6 +299,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.remove_source",
                 label="Remove Sou&rce",
+                icon=trash_icon,
                 menu="Project",
                 group="documents",
                 order=70,
@@ -254,6 +312,7 @@ class SpecModule:
             ActionSpec(
                 id="spec.open_source",
                 label="Open Source in &Browser",
+                icon=external_icon,
                 menu="Project",
                 group="documents",
                 order=80,
@@ -264,8 +323,23 @@ class SpecModule:
         )
         deps.actions.register(
             ActionSpec(
+                id="spec.rename",
+                label="Re&name Spec Document…",
+                menu="Project",
+                group="documents",
+                order=35,
+                icon=edit_icon,
+                tip="Rename the selected document — the name every command uses, and "
+                "every feature citation with it",
+                state=self._on_a_renamable_document,
+                run=self._rename,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
                 id="spec.open_external",
                 label="Open Document E&xternally",
+                icon=external_icon,
                 menu="Project",
                 group="documents",
                 order=50,
@@ -291,7 +365,9 @@ class SpecModule:
             SpecsActivity,
             deps.library.has,
             closes_on=deps.library.structure_changed,
-            retitles_on=deps.library.field_changed,
+            # The title says the project's name *and* whether a source has updates
+            # waiting, so it has two things to hear.
+            retitles_on=(deps.library.field_changed, self.updates_changed),
         )
 
     # -- actions -------------------------------------------------------------------------------
@@ -306,13 +382,22 @@ class SpecModule:
         return ENABLED if self._selected_document(context) is not None else DISABLED
 
     def _on_a_removable_document(self, context: Context) -> ActionState:
+        return self._editable(context, "Remove Spec Document")
+
+    def _on_a_renamable_document(self, context: Context) -> ActionState:
+        return self._editable(context, "Rename Spec Document")
+
+    def _editable(self, context: Context, verb: str) -> ActionState:
+        """Whether the selected document is this project's own. Remove and Rename ask the
+        same question, so they share the answer — and each is greyed in its own words,
+        because a state's label *is* the entry, not a suffix on it."""
         found = self._selected_document(context)
         if found is None:
             return DISABLED
         owner = owned_by_source(read_index(self._deps.library.project(found[0])), found[1].name)
-        if owner is not None:
-            return ActionState(enabled=False, label=f"Remove Spec Document — part of {owner.title}")
-        return ENABLED
+        if owner is None:
+            return ENABLED
+        return ActionState(enabled=False, label=f"{verb} — part of {owner.title}")
 
     def _on_a_source(self, context: Context) -> ActionState:
         return ENABLED if self._selected_source(context) is not None else DISABLED
@@ -377,19 +462,22 @@ class SpecModule:
         project_id = context.focus_entity("project")
         if project_id is None or not self._deps.library.has(project_id):
             return
-        title, accepted = QInputDialog.getText(self._deps.parent, "New Spec Document", "Title:")
-        if not accepted or not title.strip():
-            return
         project = self._deps.library.project(project_id)
         index = read_index(project)
-        today = datetime.now(UTC).date().isoformat()
-        try:
-            documents, document = new_document(
-                self._deps.files(project_id), index.documents, title.strip(), today
-            )
-        except CliError as error:
-            QMessageBox.warning(self._deps.parent, "Spec Documents", str(error))
+        title = LinePrompt.ask(
+            self._deps.parent,
+            "New Spec Document",
+            "Title",
+            "Create",
+            placeholder="Authentication",
+            validate=lambda typed: rename_refusal(index.documents, "", slugify(typed, fallback="")),
+        )
+        if title is None:
             return
+        today = datetime.now(UTC).date().isoformat()
+        documents, document = new_document(
+            self._deps.files(project_id), index.documents, title.strip(), today
+        )
         self._deps.undo.push(
             SetModuleDataCommand(
                 project_id,
@@ -456,6 +544,53 @@ class SpecModule:
                 label="Remove Spec Document",
             )
         )
+
+    def _rename(self, context: Context) -> None:
+        """The name every verb addresses the document by, and every citation with it —
+        the same `CompositeCommand` `dplanner spec rename` pushes."""
+        found = self._selected_document(context)
+        if found is None:
+            return
+        project_id, document = found
+        project = self._deps.library.project(project_id)
+        index = read_index(project)
+        typed = LinePrompt.ask(
+            self._deps.parent,
+            "Rename Spec Document",
+            "Name — what every command addresses it by",
+            "Rename",
+            text=document.name,
+            validate=lambda value: rename_refusal(
+                index.documents, document.name, slugify(value, fallback="")
+            ),
+        )
+        if typed is None:
+            return
+        chosen = slugify(typed, fallback="")
+        if chosen == document.name:
+            return
+        renamed = replace(
+            index,
+            documents=rename_document(index.documents, document.name, chosen),
+            assets=rename_assets(index.assets, document.name, chosen),
+        )
+        carried = (
+            self._deps.rename_references(project, document.name, chosen)
+            if self._deps.rename_references is not None
+            else []
+        )
+        self._deps.undo.push(
+            CompositeCommand(
+                RENAME_LABEL,
+                [
+                    SetModuleDataCommand(project_id, MODULE_ID, write_index(renamed)),
+                    *carried,
+                ],
+            )
+        )
+        activity = self._deps.tabs.open(SPECS_KIND, project_id)
+        assert isinstance(activity, SpecsActivity)
+        activity.select_document(chosen)
 
     def _open_external(self, context: Context) -> None:
         found = self._selected_document(context)

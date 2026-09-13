@@ -439,3 +439,51 @@ def test_referenced_assets_records_only_the_unrecorded(tmp_path):
     assert updated[1].id == "a2"
     # Recording is idempotent: a second pass changes nothing.
     assert referenced_assets(updated, body, "2026-08-28") == updated
+
+
+# -- renaming ------------------------------------------------------------------------------------
+
+
+def test_rename_moves_the_name_every_verb_addresses(cli, project, tmp_path):
+    path = tmp_path / "auth.md"
+    path.write_text("# Auth\n")
+    cli("spec", "import", project, str(path))
+    renamed = data(cli("spec", "rename", project, "auth", "Sign in", "--json"))
+    assert (renamed["was"], renamed["document"], renamed["renamed"]) == ("auth", "sign-in", True)
+    assert "sign-in" in cli("spec", "list", project)
+    assert "# Auth" in cli("spec", "show", project, "sign-in")
+    # The old name names nothing — the filename followed it, so nothing answers to it.
+    cli("spec", "show", project, "auth", expect=1)
+    assert "auth.md" not in cli("spec", "list", project)
+
+
+def test_rename_carries_a_features_citation_with_it(cli, project, tmp_path):
+    """A feature is a step, and its citation keys on the document's *name* — the one thing
+    a rename must not leave behind, because a lost citation is a coverage answer that
+    quietly changes."""
+    path = tmp_path / "auth.md"
+    path.write_text("# Auth\n\nOperators MUST sign in.\n")
+    cli("spec", "import", project, str(path))
+    cli("step", "add", project, "Sign in", "--feature")
+    cli("feature", "cite", "Sign in", "--document", "auth", "--quote", "Operators MUST")
+    cli("spec", "rename", project, "auth", "auth-v2")
+    cited = data(cli("feature", "list", project, "--json"))["features"][0]["cites"][0]
+    assert cited["document"] == "auth-v2"
+    # And the passage still anchors, which is the thing a stale name quietly breaks.
+    assert "lost" not in cli("coverage", "spec", project, "auth-v2").lower()
+
+
+def test_rename_refuses_a_taken_name_and_a_sourced_document(cli, project, tmp_path, workspace):
+    for name in ("auth", "billing"):
+        path = tmp_path / f"{name}.md"
+        path.write_text(f"# {name}\n")
+        cli("spec", "import", project, str(path))
+    cli("spec", "rename", project, "auth", "billing", expect=1)
+    assert "auth" in cli("spec", "list", project)
+
+
+def test_renaming_to_the_name_it_has_changes_nothing(cli, project, tmp_path):
+    path = tmp_path / "auth.md"
+    path.write_text("# Auth\n")
+    cli("spec", "import", project, str(path))
+    assert data(cli("spec", "rename", project, "auth", "auth", "--json"))["renamed"] is False

@@ -382,10 +382,6 @@ QSplitter::handle:vertical:pressed {
     border-bottom: 1px solid $BORDER;
 }
 
-#ToolbarRule {
-    background-color: $BORDER;
-}
-
 /* The map in the canvas's lower-left corner. Chrome floating over the drawing surface, so it
    takes the toolbar's colour rather than a well's — the canvas itself is $BG_BASE, and a
    well of the same colour would be a border with nothing inside it. */

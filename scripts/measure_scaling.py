@@ -83,11 +83,16 @@ from dplanner.framework.session import AppSession
 from dplanner.modules.estimation.aspect import read as estimated_days
 from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.estimation.schedule import project_schedule, start_of
+from dplanner.modules.feature import aspect as feature_aspect
+from dplanner.modules.feature.aspect import FeatureSource
+from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.project_editor.clipboard import clip, paste
 from dplanner.modules.project_editor.look import BACKGROUNDS, Look
 from dplanner.modules.project_editor.placement import auto_positions
 from dplanner.modules.project_editor.positions import MODULE_ID as EDITOR_ID
 from dplanner.modules.project_editor.positions import write_position
+from dplanner.modules.spec import aspect as spec_aspect
+from dplanner.modules.spec.documents import SpecIndex, import_document, write_index
 from dplanner.modules.step_agent_instruction.aspect import enabled as is_agent
 from dplanner.modules.step_milestone.aspect import read as milestone_label
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
@@ -432,6 +437,58 @@ def _select_many(h: Harness) -> dict[str, float]:
     h.pump()
     cleared = (time.perf_counter() - started) * 1000.0
     return {"pick20_ms": picked, "clear_ms": cleared}
+
+
+@scenario("spec_typing")
+def _spec_typing(h: Harness) -> dict[str, float]:
+    """A keystroke in the Specs editor, on a spec big enough to have citations in it.
+
+    The editor's expensive derivations — where each cited passage now sits, and the wash
+    over the lit ones — used to run on every keystroke, each one walking the whole
+    document once per passage. They are coalesced now, so this reports both halves: what
+    a keystroke holds the GUI thread for, and what one settle costs after the typing
+    stops.
+    """
+    body = "".join(
+        f"## Section {n}\n\nThe system shall record reading {n} for every site.\n\n"
+        for n in range(220)
+    )
+    quotes = [f"The system shall record reading {n} for every site." for n in range(0, 160, 20)]
+    spec_id, feature_id = spec_aspect.MODULE_ID, feature_aspect.MODULE_ID
+    area = h.store().files(h.project.id, spec_id)
+    documents, _document, _outcome = import_document(
+        area, [], "big", body.encode(), "big.md", "2026-09-13"
+    )
+    h.push(
+        SetModuleDataCommand(
+            h.project.id, spec_id, write_index(SpecIndex(documents=documents, assets=[]))
+        )
+    )
+    # A feature is a step, so the citations the editor must find again live on one.
+    h.push(
+        SetModuleDataCommand(
+            h.target.id,
+            feature_id,
+            feature_write(tuple(FeatureSource(document="big", quote=q) for q in quotes)),
+        )
+    )
+
+    activity: Any = h.services.tabs.open("specs", h.project.id)
+    activity.select_document("big")
+    h.quiet()
+    editor = activity._editor
+    cursor = editor.textCursor()
+    cursor.movePosition(cursor.MoveOperation.End)
+    editor.setTextCursor(cursor)
+
+    started = time.perf_counter()
+    for _ in range(PUSHES):
+        editor.insertPlainText("x")
+    typing = (time.perf_counter() - started) / PUSHES * 1000.0
+    started = time.perf_counter()
+    activity._resettle()
+    settle = (time.perf_counter() - started) * 1000.0
+    return {"keystroke_ms": typing, "settle_ms": settle, "kb": len(body) / 1024}
 
 
 @scenario("context_refresh")

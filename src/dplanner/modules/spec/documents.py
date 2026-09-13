@@ -415,6 +415,73 @@ def remove_document(documents: Sequence[SpecDocument], name: str) -> list[SpecDo
     return [doc for doc in documents if doc.name != name]
 
 
+def rename_refusal(
+    documents: Sequence[SpecDocument], name: str, chosen: str, source: object = None
+) -> str | None:
+    """Why ``name`` cannot become ``chosen`` — None when it can.
+
+    One sentence for both surfaces, the way :func:`binary_refusal` is: the CLI raises it
+    and the tab's prompt shows it under the field, so the dialog and the terminal cannot
+    word the same refusal two ways.
+
+    ``chosen`` arrives already slugged — a person types a title and gets a name, which is
+    what ``spec new`` does with one — so there is nothing to refuse about its characters;
+    what is left is a name that slugged to nothing, one already taken, and a document
+    whose name was never this project's to pick.
+    """
+    if source is not None:
+        return (
+            f"{name!r} was fetched by a source — its name is the source's, matched to the "
+            "page it came from, and the next refresh would put this one back"
+        )
+    if not chosen:
+        return "a spec document needs a name"
+    if any(doc.name == chosen for doc in documents if doc.name != name):
+        return f"a spec document named {chosen!r} already exists"
+    return None
+
+
+def rename_document(
+    documents: Sequence[SpecDocument], name: str, chosen: str
+) -> list[SpecDocument]:
+    """The index with ``name`` renamed to ``chosen``, and everything in it that pointed at
+    the old name pointing at the new one.
+
+    The name is the document's identity — what ``spec show`` addresses, what a citation
+    keys on, what a page names as its parent — so renaming it is renaming every reference
+    to it. What is *not* here is the other module's half: a feature's citations are the
+    composition root's to carry across, because a module never reaches into another's
+    data. The blob does not move: it is content-addressed, so its path never carried the
+    name in the first place.
+    """
+    renamed = []
+    for doc in documents:
+        parent = chosen if doc.parent == name else doc.parent
+        if doc.name == name:
+            # The filename follows, keeping its suffix. It is what the document was called
+            # when it came in — but `matching_documents` resolves a needle against it, so
+            # leaving it behind would let the old name go on addressing the document a
+            # person has just renamed, and would let two documents answer to one word.
+            stem = PurePosixPath(doc.filename)
+            renamed.append(
+                replace(doc, name=chosen, parent=parent, filename=f"{chosen}{stem.suffix}")
+            )
+        elif parent != doc.parent:
+            renamed.append(replace(doc, parent=parent))
+        else:
+            renamed.append(doc)
+    return renamed
+
+
+def rename_assets(assets: Sequence[SpecAsset], name: str, chosen: str) -> list[SpecAsset]:
+    """The asset rows, with the ones that record where they were rendered from following
+    the rename. A figure remembers its document, and a forgotten one is a figure nothing
+    can say the provenance of."""
+    return [
+        replace(asset, document=chosen) if asset.document == name else asset for asset in assets
+    ]
+
+
 def matching_documents(documents: Sequence[SpecDocument], needle: str) -> list[SpecDocument]:
     """Exact name, title or filename first, then partial names and titles — the caller
     decides how to refuse."""

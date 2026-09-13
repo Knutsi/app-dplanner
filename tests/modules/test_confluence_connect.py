@@ -153,7 +153,9 @@ def test_a_keychain_problem_refuses_up_front(services):
 
 def test_status_reads_the_connected_sites_and_never_the_keychain(confluence, secrets):
     page = confluence.page
-    assert page.status(LOCATOR) == SourceStatus(False, "Not connected to acme.atlassian.net")
+    assert page.status(LOCATOR) == SourceStatus(
+        False, "Not connected to acme.atlassian.net", connectable=True
+    )
     assert not page.status({"site": "https://evil.example", "id": "1", "type": "page"}).ready
     set_global(MODULE_ID, module_mod.SITES_KEY, {SITE: "me@acme.example"})
     assert page.status(LOCATOR).ready

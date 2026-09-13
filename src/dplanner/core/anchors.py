@@ -129,6 +129,29 @@ def locate_all(text: str, quote: str) -> list[tuple[int, int]]:
     return spans
 
 
+def locate_many(text: str, quotes: Sequence[str]) -> list[tuple[int, int, str]]:
+    """Where each of ``quotes`` sits in ``text``, case and whitespace aside, in the order
+    given; a quote that is blank or absent contributes nothing.
+
+    :func:`locate` normalises the haystack inside itself, so asking it N times walks the
+    document N times — a per-character Python loop each way. Every caller that had a list
+    of quotes was paying that: the Specs tab washed its cited passages by looping over
+    ``locate`` on every keystroke, which measured 15 ms a keystroke on a 24 KB document
+    with eight citations. One normalisation, N finds.
+    """
+    haystack, back = normalised(text)
+    found: list[tuple[int, int, str]] = []
+    for quote in quotes:
+        needle, _ = normalised(quote)
+        if not needle:
+            continue
+        hit = haystack.find(needle)
+        if hit < 0:
+            continue
+        found.append((back[hit], back[hit + len(needle) - 1] + 1, quote))
+    return found
+
+
 def fuzzy_locate(text: str, quote: str) -> tuple[int, int, float] | None:
     """The raw span of the passage most like ``quote``, and how alike it is — None when
     nothing in ``text`` reaches :data:`DRIFT_RATIO`.

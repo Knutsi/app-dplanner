@@ -480,6 +480,16 @@ root, stop and look for the registry or capability you have not found yet.
   path, opened from the corner button `attach_expand` pins onto the editor.
   `ARCHITECTURE.md`'s *Expanding an editor is a second binding, not a copy* has the
   reasoning; never copy text out into a dialog and back.
+- **Every prose editor wears the markdown strip, and a verb on it is one splice.**
+  `framework/markdown_toolbar.py` over any `ProseEdit`: dense and un-banded, because a
+  banded strip's squares put twelve verbs past the 360 px dock every prose editor lives in.
+  A verb is a pure `Splice` applied in one `insertText` — Qt reports a `contentsChange` per
+  edit *block*, so two operations inside one would make a bound host push the whole
+  document — it leaves selected whatever a second press would act on, and it seals the undo
+  either side the way `ProseEdit._embed` does. **Its keys are `QShortcut`s on the editor at
+  `WidgetShortcut`**, and `Toolbar.add_verb(keys=…)` only prints them: a shortcut on the
+  strip's own action would fire wherever the window has focus, which is the canvas-key rule
+  from the other side.
 - **A file pasted or dropped into a prose editor is attached, then linked.** `ProseEdit`
   (`framework/prose_edit.py`) content-addresses it into the module's file area — the same
   place `describe attach`, `note attach` and `test attach` write — and types
@@ -1079,14 +1089,40 @@ root, stop and look for the registry or capability you have not found yet.
   reloaded float writes as `5.0`, making a file's bytes depend on whether the project had
   been reopened. `module_data` is opaque to the model, so the coercion belongs in the
   aspect's `write()` — see `modules/estimation/aspect.py`.
-- **Editing a spec in-app is a replace, and markdown has no read mode.** Picking a markdown
-  row opens the editor and starts the session; picking another row or closing the tab ends
-  it; the idle flush persists in between. The Specs tab's markdown editor flushes a session
-  as one `spec import`-style replace: blob written straight to the file area, the index
-  through one merged command, `previous` pinned to the session's base so `spec diff` shows
-  the session. Markdown only — PDFs and plain text stay view-only — and the editor prunes
-  only blobs its own session superseded. `ARCHITECTURE.md`'s *Editing a spec in-app is a
-  replace* has the reasoning.
+- **Editing a spec in-app is a replace, and a document this project owns has no read
+  mode.** Picking its row opens the editor and starts the session; picking another row or
+  closing the tab ends it; the idle flush persists in between. The session flushes as one
+  `spec import`-style replace: blob written straight to the file area, the index through
+  one merged command, `previous` pinned to the session's base so `spec diff` shows the
+  session, and only blobs the session itself superseded pruned. **The editor is the prose
+  stack's** — a `ProseEdit` with the markdown highlighter, the markdown strip and the
+  gallery of what it links to, like every other prose editor here — so **plain text edits
+  too**: the old carve-out was the rich-text round-trip handing a `.txt` back as markdown,
+  and nothing round-trips now. A PDF is the one document that is not text, and renders.
+  Expanding it (⤢) is `ExpandedTextDialog.over_document`: the *same* `QTextDocument`, one
+  buffer and two views, because the buffer rather than the model is the authority here —
+  never store `editor.document()` in a field. `ARCHITECTURE.md`'s *Editing a spec in-app
+  is a replace* has the reasoning.
+- **Renaming a spec document moves the name every command addresses it by.** A name is the
+  document's identity — `spec show`, `spec diff`, a feature's citation, a page's `parent`,
+  an asset row's provenance — so `spec rename` and the tab's *Rename* move all of them in
+  one `CompositeCommand`, and the filename's stem follows with its suffix. The citations
+  are another module's data, so the composition root composes them
+  (`_rename_spec_references`) and both surfaces push the same object. `rename_refusal` is
+  the one sentence both use: a name that slugs to nothing, one already taken, and a
+  document a source fetched, whose name belongs to the page it came from. **Delete takes
+  the index row and never the blob** — undo has to restore a row that still points at
+  something, and `previous` is a second pointer at the same file.
+- **A source says what it has waiting, and the tab says so before you open it.**
+  `updates_words(refresher.stale(project))` is the line over the whole tree with *Refresh
+  All* beside it; `UPDATES_MARK` is its short form on the tab title and on the Specs row in
+  the index, fanned by `SpecModule.updates_changed` — a **set-diff** signal, never
+  `refresher.changed`, which also fires on every busy flip and would redraw the index
+  folder on each spinner tick. Checking follows whether a Specs tab is **open**, not
+  whether it is the pane in front, so the mark is worth looking at; a project nobody has
+  opened is not checked and wears none. A `SourceStatus` must claim `connectable` for
+  Connect to be offered — a malformed locator is a refusal no dialog lifts, and the strip
+  gives it the error tone instead.
 - **A spec source is a kind the spec module runs, and there are four.** A document may
   come from outside — a **folder** on this computer, a **git repository**, a **Confluence
   page**, a **Confluence folder** — and *where it came from* is a source record in the

@@ -110,16 +110,19 @@ def test_the_tab_lists_documents_and_follows_the_model(services, project):
     ]
 
 
-def test_a_markdown_document_renders_with_its_area_images(services, project, tmp_path):
+def test_a_markdown_document_shows_its_source_and_its_pictures_under_it(
+    services, project, tmp_path
+):
+    """A plain-text editor cannot draw a picture and does not pretend to: the link is the
+    text, and the gallery under the editor is where the figure is shown."""
     area = services.repo.files(project.id, MODULE_ID)
     asset = attach_asset(area, one_pixel_png(tmp_path), "dot.png")
-    imported(services, project, "auth", f"![]({asset})".encode(), "auth.md")
+    imported(services, project, "auth", f"# Auth\n\n![dot]({asset})\n".encode(), "auth.md")
     services.actions.run("spec.open", select(services, project))
     activity = services.tabs.activities()[0]
-    # Markdown opens in the editor; its images resolve through the area exactly as the
-    # viewer's did.
-    image = activity._editor.loadResource(2, asset)
-    assert image is not None and not image.isNull()
+    activity.select_document("auth")
+    assert f"![dot]({asset})" in activity._editor.toPlainText()
+    assert activity._figures._files == [asset]
 
 
 def test_a_pdf_document_renders_pages(services, project):
@@ -174,11 +177,11 @@ def test_the_toolbar_replaced_the_add_button(services, project):
     """The + button is the one way in: its arrow drops the Add Spec child menu, so
     Import is a menu entry rather than a second glyph, and the strip's Connect button
     stays off screen while no source is shown."""
-    from dplanner.framework.toolbar import ActionToolbar
+    from dplanner.framework.toolbar import Toolbar
 
     activity = opened(services, project)
-    assert activity.toolbar in activity.widget.findChildren(ActionToolbar)
-    assert "spec.add" not in activity.toolbar._buttons
+    assert activity.toolbar in activity.widget.findChildren(Toolbar)
+    assert activity.toolbar.button_for("spec.add") is None
     popup = activity.toolbar.menu_for("spec.new")
     assert popup is not None
     entries = [
@@ -245,3 +248,20 @@ def test_the_viewer_survives_an_index_edit_that_keeps_the_blob(services, project
     # An assets-only edit repaints the list but never rebuilds the viewer.
     assert activity._shown is shown
     assert activity.rows()[1] == ("auth", 0)
+
+
+def test_the_tree_and_the_editor_are_reachable_from_the_keyboard(services, project):
+    """Tab walks the surface in reading order. The strips are deliberately not in it —
+    their buttons take no focus, because a verb that moved the caret away from what it was
+    aimed at would be useless, and their keys live on the editor instead."""
+    from PySide6.QtCore import Qt
+
+    imported(services, project, "auth", b"# Auth\n", "auth.md")
+    activity = opened(services, project)
+    activity.select_document("auth")
+    assert activity.list.focusPolicy() != Qt.FocusPolicy.NoFocus
+    assert activity._editor.focusPolicy() != Qt.FocusPolicy.NoFocus
+    assert activity.list.nextInFocusChain() is not None
+    # Inside the editor Tab stays Qt's own: a markdown document needs one for a nested
+    # list and for a code block.
+    assert not activity._editor.tabChangesFocus()

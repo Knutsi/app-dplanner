@@ -9,6 +9,12 @@ That is worth writing once because getting it wrong is quiet. A binding left poi
 deleted node reaches the model on the next keystroke and fails to find it; a binding not
 closed before re-binding leaves the old one listening.
 
+**Every prose editor here wears the markdown strip.** The documents are markdown and the
+marks are typed by hand, so the strip is part of what a prose editor *is* rather than
+something a host opts into — which is also what gives it to the description, the notes,
+the test bodies, the documentation fragments and the feature editor without any of them
+learning a thing. It never takes focus, so the caret stays where a verb was aimed.
+
 **A document's images belong to the same section as its prose.** Give the section an
 ``attach_title`` and it grows an :class:`AssetGallery` under the editor and wires the editor's
 paste and drop into it, so a host gets the whole aspect — text, thumbnails, and Ctrl+V — from
@@ -30,6 +36,7 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from dplanner.framework.asset_gallery import AreaFor, AssetGallery
 from dplanner.framework.markdown_highlight import MarkdownHighlighter
+from dplanner.framework.markdown_toolbar import MarkdownToolbar
 from dplanner.framework.prose_edit import Pick, ProseEdit
 from dplanner.framework.text_binding import TextBinding, TextField
 from dplanner.framework.text_dialog import ExpandedTextDialog, attach_expand
@@ -69,6 +76,7 @@ class ProseSection(QWidget):
         # Every document this section edits is markdown; show its structure while the
         # text stays exactly what is on disk. Re-inked on theme change below.
         self._highlighter = MarkdownHighlighter(self.edit.document(), self.edit)
+        self.tools = MarkdownToolbar(self.edit, undo=undo, parent=self)
         self.expand_button = attach_expand(self.edit)
         self.expand_button.clicked.connect(self._open_expanded)
         self.expand_button.setEnabled(False)
@@ -76,6 +84,8 @@ class ProseSection(QWidget):
         # ``margin`` is 0 when a host (a card, the Details tab) already owns the spacing.
         layout = QVBoxLayout(self)
         layout.setContentsMargins(margin, margin, margin, margin)
+        layout.setSpacing(FIELD_GAP)
+        layout.addWidget(self.tools)
         layout.addWidget(self.edit)
 
         self.gallery: AssetGallery | None = None
@@ -86,7 +96,6 @@ class ProseSection(QWidget):
                 attach_title=attach_title,
                 hide_when_empty=hide_gallery_when_empty,
             )
-            layout.setSpacing(FIELD_GAP)
             layout.addWidget(self.gallery)
 
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
@@ -144,7 +153,7 @@ class ProseSection(QWidget):
         through the foreign-change path, so typing in either shows in both."""
         if self._field is None:
             return
-        dialog = ExpandedTextDialog(
+        dialog = ExpandedTextDialog.over_field(
             self._field,
             self._undo,
             title=self._expand_title,

@@ -1,5 +1,6 @@
 """Where a quote sits in a document, judged again on every read — the pure text half."""
 
+from dplanner.core import anchors
 from dplanner.core.anchors import (
     Anchor,
     anchor_in,
@@ -7,6 +8,7 @@ from dplanner.core.anchors import (
     covered_by,
     fuzzy_locate,
     locate,
+    locate_many,
     normalised,
     page_at,
     touched,
@@ -151,3 +153,27 @@ def test_covered_by_names_the_anchors_overlapping_a_block() -> None:
     ]
     assert covered_by(anchors, prose[0]) == ["f1"]
     assert covered_by(anchors, prose[1]) == []
+
+
+def test_locate_many_agrees_with_locate_and_walks_the_document_once(monkeypatch):
+    """The Specs tab's wash asks for every cited passage at once. It must give the same
+    answer as asking one at a time, and it must normalise the haystack once however many
+    quotes there are — that is the whole reason it exists."""
+    text = "# Auth\n\nThe user signs in with an e-mail.\n\nSessions expire after a day.\n"
+    quotes = ["the user signs in", "sessions  expire", "", "nothing like this"]
+
+    one_at_a_time = [
+        (*span, quote) for quote in quotes if (span := locate(text, quote)) is not None
+    ]
+    assert locate_many(text, quotes) == one_at_a_time
+
+    calls: list[str] = []
+    real = anchors.normalised
+
+    def counted(value):
+        calls.append(value)
+        return real(value)
+
+    monkeypatch.setattr(anchors, "normalised", counted)
+    locate_many(text, quotes)
+    assert calls.count(text) == 1

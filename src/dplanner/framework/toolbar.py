@@ -401,18 +401,26 @@ class Toolbar(QWidget):
         slot: Callable[[], object],
         *,
         shortcut: str = "",
+        keys: str = "",
         checkable: bool = False,
         tip: str = "",
     ) -> QAction:
-        """A glyph on the strip; ``text`` (and the shortcut) is its tooltip and its words in
+        """A glyph on the strip; ``text`` (and the key) is its tooltip and its words in
         the … menu. The returned action is what a host enables, checks and rewords.
+
+        ``shortcut`` **claims** the key: the action is this strip's, and a strip lives in
+        a window, so the key then fires wherever the window has focus. ``keys`` only
+        **says** it — for a key some other widget owns, which is what a verb acting on one
+        editor's caret needs (a ``QShortcut`` on the editor at ``WidgetShortcut``). Ctrl+B
+        on a toolbar's own action would reach every text field in the window, and a second
+        action carrying the same sequence makes both ambiguous and fires neither.
 
         ``tip`` is for a verb that has more to say than its words — a registered
         ``ActionSpec.tip``, say. It stands in the tooltip while the words still name the
         entry in the … menu, so a host that rewords an action to carry a refusal does not
         lose the standing explanation with it.
         """
-        action = self._verb(text, icon, checkable=checkable, tip=tip, keys=shortcut)
+        action = self._verb(text, icon, checkable=checkable, tip=tip, keys=keys or shortcut)
         if shortcut:
             action.setShortcut(shortcut)
         action.triggered.connect(lambda _checked=False: slot())

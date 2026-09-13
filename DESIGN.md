@@ -758,8 +758,11 @@ Tables and lists:
 - LLM Calls, Telemetry — a `QTreeWidget` pretending to be a table; nesting drawn as four
   spaces; columns re-measured every second.
 - Implementation notes — the two-line delegate, frameless and borrowing `#OrderTable`.
-- Specs tree — uniform row heights under a two-line delegate; a pinned header faked as a
-  row.
+- *(done — the Specs tab pass)* Specs tree — the uniform row heights are gone, and both
+  strips are `Toolbar`s of glyphs over a `StatusLine`. The pinned Topology row stays as it
+  is: `EMPHASIS_ROLE` + `RULE_ROLE` together are what `list_rows.py` offers for a row that
+  reads as a header, and it genuinely selects and shows a page, so it is on the primitive
+  rather than faking one.
 - Assets — two lists with no object name at all; a baked empty message (now on the swap).
 - *(done — the problems pass)* Problems panel — two-line rows, the finding's remedy on
   the second line, one worded face dropping the launch profiles, and an `EmptyState`

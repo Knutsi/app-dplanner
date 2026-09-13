@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from PySide6.QtWidgets import QWidget
 
+from dplanner.core.signals import Signal as CoreSignal
 from dplanner.domain.model import Library, NodeId, Project, ProjectId, TextEdit
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
@@ -22,7 +23,6 @@ from dplanner.framework.context import (
 
 if TYPE_CHECKING:
     # Runtime-imported, tabs.py would be a cycle: it imports the Activity protocol above.
-    from dplanner.core.signals import Signal as CoreSignal
     from dplanner.framework.tabs import TabHost
 
 
@@ -126,15 +126,20 @@ def follow_entity_tabs(
     still_exists: Callable[[str], bool],
     *,
     closes_on: "CoreSignal[*tuple[Any, ...]]",
-    retitles_on: "CoreSignal[*tuple[Any, ...]]",
+    retitles_on: "CoreSignal[*tuple[Any, ...]] | Sequence[CoreSignal[*tuple[Any, ...]]]",
 ) -> None:
     """Keep a module's entity tabs honest against the model, from one place.
 
     Connects two upkeep rules every entity-tab module was copying: when ``closes_on``
     fires (a structure change), a tab whose entity ``still_exists`` denies is closed;
-    when ``retitles_on`` fires (a field change), the survivors' tab titles are re-read.
-    The subscriptions live as long as the tab host — module registration is once per
-    build, so there is nothing to unhook.
+    when ``retitles_on`` fires, the survivors' tab titles are re-read. The subscriptions
+    live as long as the tab host — module registration is once per build, so there is
+    nothing to unhook.
+
+    ``retitles_on`` is usually the model's field signal, and may be several: a title that
+    also says something the model does not hold — the Specs tab's mark while a source has
+    updates waiting — has a second thing to hear. A signal that names no node re-reads
+    every survivor, which is what such a signal wants.
     """
 
     def activities() -> list[EntityActivity]:
@@ -156,7 +161,8 @@ def follow_entity_tabs(
                 tabs.set_tab_title(activity, activity.title)
 
     closes_on.connect(close_orphans)
-    retitles_on.connect(retitle)
+    for signal in [retitles_on] if isinstance(retitles_on, CoreSignal) else retitles_on:
+        signal.connect(retitle)
 
 
 type ModelSignal = CoreSignal[*tuple[Any, ...]]

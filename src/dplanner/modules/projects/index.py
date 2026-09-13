@@ -17,11 +17,13 @@ is what keeps it.
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem
 
+from dplanner.core.signals import Signal as CoreSignal
 from dplanner.domain.model import Library, NodeId, Project
 from dplanner.domain.store import ProjectProblem
 from dplanner.framework.action_menu import build_menu
@@ -67,6 +69,12 @@ class ProjectEntry:
     # The MENU_STRUCTURE menu the row's right-click renders; None means no menu.
     menu: str | None = None
     order: int = 50
+    # A mark after the label while this entry has something waiting for the person — the
+    # Specs row while a source has updates. "" for nothing, which is the usual answer.
+    badge: Callable[[NodeId], str] | None = None
+    # What says to look again. The segment rebuilds on it, coalesced like every other
+    # change; an entry with a badge and no signal would be right only by accident.
+    changed: "CoreSignal[*tuple[Any, ...]] | None" = None
 
 
 class ProjectsSegment:
@@ -101,6 +109,11 @@ class ProjectsSegment:
             # Row icons are painted in the theme's ink, and only the segment knows which
             # rows carry one — the panel's re-tint hook covers folder roots alone.
             theme.changed.connect(lambda *_args: self.rebuild()),
+            *(
+                entry.changed.connect(lambda *_args: self._rebuild_soon.trigger())
+                for entry in self._entries
+                if entry.changed is not None
+            ),
         ]
         self.rebuild()
 
@@ -192,6 +205,8 @@ class ProjectsSegment:
             for entry in self._entries:
                 child = QTreeWidgetItem([entry.label])
                 child.setData(0, Qt.ItemDataRole.UserRole, f"{project.id}:{entry.id}")
+                if entry.badge is not None:
+                    child.setText(0, f"{entry.label}{entry.badge(project.id)}")
                 child.setData(0, KIND_ROLE, "entry")
                 child.setData(0, ENTRY_ROLE, entry.id)
                 child.setData(0, PROJECT_ROLE, project.id)

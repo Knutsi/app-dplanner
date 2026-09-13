@@ -119,7 +119,7 @@ class ConfluenceKind:
             return SourceStatus(False, f"this source's address is not a Confluence {self._noun}")
         if valid["site"] in self._module.sites():
             return SourceStatus(True)
-        return SourceStatus(False, f"Not connected to {_host(valid['site'])}")
+        return SourceStatus(False, f"Not connected to {_host(valid['site'])}", connectable=True)
 
     def connect(self, parent: QWidget, locator: Locator) -> bool:
         valid = self._valid(locator)

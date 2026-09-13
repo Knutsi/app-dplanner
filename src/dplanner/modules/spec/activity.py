@@ -14,16 +14,13 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QIcon, QTextCharFormat, QTextCursor
+from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QHBoxLayout,
-    QLabel,
     QPushButton,
-    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QTextEdit,
-    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -32,13 +29,16 @@ from PySide6.QtWidgets import (
 
 from dplanner.cli.command import CliError
 from dplanner.cli.shaping import guide
-from dplanner.core.anchors import locate
+from dplanner.core.anchors import locate_many
+from dplanner.domain.assets import asset_references
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.document_source import Freshness, SourceStatus
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Library, NodeId, Project, TextEdit
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import EntityActivity
+from dplanner.framework.asset_gallery import AssetGallery
 from dplanner.framework.autosave import FLUSH_DELAY_MS
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
@@ -49,46 +49,63 @@ from dplanner.framework.context import (
     entity_uri,
     selection_uri,
 )
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.list_rows import DETAIL_ROLE, EMPHASIS_ROLE, RULE_ROLE, TwoLineDelegate
+from dplanner.framework.markdown_highlight import MarkdownHighlighter
+from dplanner.framework.markdown_toolbar import MarkdownToolbar
 from dplanner.framework.markdown_view import MarkdownView
+from dplanner.framework.prose_edit import ProseEdit
 from dplanner.framework.prose_section import ProseSection
+from dplanner.framework.signalling import StatusLine, Tone, UpdatingIndicator
+from dplanner.framework.text_dialog import ExpandedTextDialog, attach_expand
 from dplanner.framework.theme_service import ThemeService
-from dplanner.framework.toolbar import ActionToolbar
+from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import caption, note
+from dplanner.framework.widgets import (
+    EDITOR_MEASURE,
+    EmptyState,
+    caption,
+    centered_column,
+    make_text_well,
+    note,
+    space_lines,
+)
 from dplanner.modules.spec.aspect import MODULE_ID, read_topology
 from dplanner.modules.spec.documents import (
     KIND_MARKDOWN,
     KIND_PDF,
     SpecDocument,
     SpecSource,
+    attach_asset,
     prune_blob,
     read_index,
     referenced_assets,
     save_body,
     write_index,
 )
-from dplanner.modules.spec.editor import SpecMarkdownEditor
 from dplanner.modules.spec.refresh import SourceRefresher
 from dplanner.modules.spec.source_kind import DocumentSourceKind
 from dplanner.modules.spec.sourced import (
+    UPDATES_MARK,
     Applied,
     Row,
     documents_of,
     freshness_words,
     source_of,
     tree,
+    updates_words,
 )
 from dplanner.modules.spec.viewer import PdfPageView
 from dplanner.theme.icons import (
-    external_icon,
+    close_icon,
+    connect_icon,
+    coverage_icon,
     folder_icon,
     graph_icon,
-    plus_icon,
     read_icon,
     spec_icon,
-    trash_icon,
 )
+from dplanner.theme.tokens import CONTROL_GAP
 
 SPECS_KIND = "specs"
 
@@ -100,19 +117,18 @@ SOURCE_ENTITY = "spec_source"
 # The child menu the + button drops down: every way to add a spec, built-ins and kinds.
 ADD_SUBMENU = "Add Spec"
 
-TOOLBAR_ACTIONS = ("spec.new", "spec.remove", "spec.open_external")
-BUTTON_TEXT = dict.fromkeys(TOOLBAR_ACTIONS, "")  # Glyph-only; label → tooltip.
-ICONS: dict[str, Callable[[str], QIcon]] = {
-    "spec.new": plus_icon,
-    "spec.remove": trash_icon,
-    "spec.open_external": external_icon,
-}
+# The verbs over the document tree. Every glyph is the spec's own — the module keeps no
+# icon table — and `spec.new`'s arrow drops the whole *Add Spec* child menu, which is where
+# Import and every source kind live: one seat for every way of adding a document, rather
+# than a glyph each for ways that differ only in where the bytes come from.
+TOOLBAR_ACTIONS = (
+    "spec.new",
+    "spec.rename",
+    "spec.remove",
+    "spec.open_external",
+    "spec.refresh_sources",
+)
 SOURCE_ACTIONS = ("spec.refresh_source", "spec.open_source", "spec.remove_source")
-SOURCE_BUTTON_TEXT = {
-    "spec.refresh_source": "Refresh",
-    "spec.open_source": "Open",
-    "spec.remove_source": "Remove",
-}
 
 PANEL_MARGIN = 16
 CAPTION_GAP = 6
@@ -161,6 +177,7 @@ class SpecsActivity(EntityActivity):
         undo: UndoService[Library],
         project_id: NodeId,
         *,
+        debounce: DebounceService | None = None,
         passages_of: PassagesOf | None = None,
         open_coverage: OpenCoverage | None = None,
         cite: Cite | None = None,
@@ -202,6 +219,8 @@ class SpecsActivity(EntityActivity):
         self._session_last: SpecDocument | None = None
         self._session_blobs: set[str] = set()
         self._edit_origin = object()
+        # Filled as the surfaces are built and again at the end; `close` runs the lot.
+        self._unsubscribes: list[Callable[[], None]] = []
 
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -216,25 +235,35 @@ class SpecsActivity(EntityActivity):
         side_layout = QVBoxLayout(side)
         side_layout.setContentsMargins(0, 0, 0, 0)
         side_layout.setSpacing(BLOCK_GAP)
-        self.toolbar = ActionToolbar(
-            actions,
-            context,
-            TOOLBAR_ACTIONS,
-            BUTTON_TEXT,
-            side,
-            menus={"spec.new": ("Project", ADD_SUBMENU)},
-        )
-        # A trailing stretch keeps the buttons left — without it the row's spare width
-        # spreads the fixed-size buttons apart (same move as CanvasToolbar's row).
-        toolbar_row = QHBoxLayout()
-        toolbar_row.setContentsMargins(0, 0, 0, 0)
-        toolbar_row.addWidget(self.toolbar)
-        toolbar_row.addStretch(1)
-        side_layout.addLayout(toolbar_row)
+        self.toolbar = Toolbar(side)
+        for action_id in TOOLBAR_ACTIONS:
+            self.toolbar.add_action(
+                actions,
+                context,
+                action_id,
+                menu=(("Project", ADD_SUBMENU) if action_id == "spec.new" else None),
+            )
+        # Outside the strip, so the … can never swallow it, and keeping its room while
+        # hidden so the row never reflows (DESIGN.md's *Signalling*).
+        self.rebuilding = UpdatingIndicator(side)
+        strip_row = QHBoxLayout()
+        strip_row.setContentsMargins(0, 0, 0, 0)
+        strip_row.setSpacing(CONTROL_GAP)
+        strip_row.addWidget(self.toolbar, 1)
+        strip_row.addWidget(self.rebuilding)
+        side_layout.addLayout(strip_row)
+        # What every source of this project has waiting, over the whole list rather than
+        # in the source strip — it is true whatever row is picked, and it is the sentence
+        # the badge on the tab title is the short form of.
+        self.updates = StatusLine(side)
+        self.updates.setWordWrap(True)  # A sentence over a list panel's width is two lines.
+        side_layout.addWidget(self.updates)
         self.list = QTreeWidget(side)
         self.list.setObjectName("SpecTree")
         self.list.setHeaderHidden(True)
-        self.list.setUniformRowHeights(True)
+        # Two-line rows are not one height: the pinned header carries a rule under it and
+        # a row with no second line is shorter than one with it.
+        self.list.setUniformRowHeights(False)
         self.list.setIndentation(16)
         self.list.setItemDelegate(TwoLineDelegate(self.list))
         self.list.currentItemChanged.connect(lambda *_a: self._on_selection())
@@ -245,14 +274,22 @@ class SpecsActivity(EntityActivity):
         reader_layout.setContentsMargins(0, 0, 0, 0)
         reader_layout.setSpacing(0)
         self._views = QStackedWidget(reader)
-        self._notice = QLabel(self._views)
-        self._notice.setObjectName("InspectorNote")
-        self._notice.setWordWrap(True)
-        self._notice.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
-        self._notice.setContentsMargins(BLOCK_GAP, BLOCK_GAP, BLOCK_GAP, BLOCK_GAP)
+        self._notice = EmptyState(parent=self._views)
         self._text = MarkdownView(self._views)
         self._pdf = PdfPageView(self._views)
-        self._editor = SpecMarkdownEditor()
+        # The prose stack's editor, like every other document in the application: the
+        # source is what is on disk, the highlighter says what it means, and an arriving
+        # file is attached and linked rather than embedded.
+        self._editor = ProseEdit(undo=undo)
+        self._editor.setObjectName("InspectorNotes")
+        self._editor.setFrameShape(ProseEdit.Shape.NoFrame)
+        self._highlighter = MarkdownHighlighter(self._editor.document(), self._editor)
+        make_text_well(self._editor)
+        self._tools = MarkdownToolbar(self._editor, undo=undo)
+        self._figures = AssetGallery(hide_when_empty=True)
+        self._editor.set_attach(self._attach)
+        self._expand = attach_expand(self._editor)
+        self._expand.clicked.connect(self._open_expanded)
         # The model autosave's rhythm: a pause in typing is when the session flushes. The
         # timer is the editor's child, so it dies with the editor: a build discarded with
         # the timer armed (a test's teardown never closes a tab) used to fire it into a
@@ -260,6 +297,17 @@ class SpecsActivity(EntityActivity):
         self._flush_timer = QTimer(self._editor, interval=FLUSH_DELAY_MS, singleShot=True)
         self._flush_timer.timeout.connect(self._flush_edit)
         self._editor.textChanged.connect(self._on_typed)
+        # Everything derived from the document's *text* — where each cited passage now
+        # sits, and the wash over the lit ones — walks the whole document once per
+        # passage. That is 15 ms a keystroke on a 24 KB spec with eight citations, so it
+        # waits for a pause in typing like every other coalesced view, and the strip's
+        # indicator says one is owed. Never a worker thread: it is pure Python.
+        self._settled = Debounced(self._resettle, parent=self._editor, service=debounce)
+        # The tree is rebuilt whole — cleared, re-read from the index, re-expanded — so a
+        # burst of writes (a refresh landing five documents, a paste's own echo) pays for
+        # it once, and the indicator over it says one is owed.
+        self._rebuilding = Debounced(self._refresh, parent=self._editor, service=debounce)
+        self._unsubscribes.append(self.rebuilding.follow(self._rebuilding))
         self._editor_page = self._build_editor_page()
         self._topology_page = self._build_topology_page(library, undo, project_id)
         self._views.addWidget(self._notice)
@@ -282,16 +330,23 @@ class SpecsActivity(EntityActivity):
         splitter.setStretchFactor(1, 3)
         layout.addWidget(splitter, 1)
 
+        # Tab walks the surface in the order a person reads it: the verbs over the tree,
+        # the tree, then the document. The strips' own buttons take no focus — a verb that
+        # moved the caret away from what it was aimed at would be useless — so Tab does not
+        # stop on them, and their keys are on the editor instead. Inside the editor Tab
+        # stays Qt's own: a markdown document needs one for a nested list and a code block,
+        # and Shift+Tab is the way back out of it.
+        page.setTabOrder(self.toolbar, self.list)
+        page.setTabOrder(self.list, self._editor)
         self._widget = page
         # No `field_changed` subscription: nothing here reads a field — the list shows
         # index data, and the tab's title follows the project through `follow_entity_tabs`.
         self._theme = theme
-        self._unsubscribes = [
+        self._unsubscribes += [
             library.module_data_changed.connect(self._on_module_data),
             library.text_edited.connect(self._on_text_edited),
-            theme.changed.connect(lambda _theme: self._paint_toolbar(theme)),
             # The rows carry ink-coloured icons, which a copied colour would leave stale.
-            theme.changed.connect(lambda _theme: self._refresh()),
+            theme.changed.connect(lambda _theme: self._rebuilding.trigger()),
         ]
         if refresher is not None:
             self._unsubscribes += [
@@ -302,7 +357,6 @@ class SpecsActivity(EntityActivity):
         self._unsubscribes += [
             kind.config_changed.connect(self._refresh_source_strip) for kind in self._kinds.values()
         ]
-        self._paint_toolbar(theme)
         self._refresh()
 
     # -- the activity contract -----------------------------------------------------------------
@@ -313,7 +367,17 @@ class SpecsActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        return f"{self._project().title or 'Untitled project'} — Specs"
+        """The project and the tab, and a mark while a source has updates waiting.
+
+        The mark is the short form of the line over the tree, so a person sees there is
+        something to take in without opening the tab — and reads what it is by doing so.
+        """
+        mark = UPDATES_MARK if self._stale() else ""
+        return f"{self._project().title or 'Untitled project'} — Specs{mark}"
+
+    def _stale(self) -> list[Freshness]:
+        """Every source of this project the last check found something at."""
+        return self._refresher.stale(self.project_id) if self._refresher is not None else []
 
     @property
     def widget(self) -> QWidget:
@@ -333,9 +397,14 @@ class SpecsActivity(EntityActivity):
             self._refresher.watch(self.project_id)  # Check the sources now and on the interval.
 
     def on_deactivated(self) -> None:
-        self._flush_edit()  # The session survives a pane switch; unsaved typing does not wait.
-        if self._refresher is not None:
-            self._refresher.unwatch(self.project_id)
+        """The session survives a pane switch; unsaved typing does not wait.
+
+        The *watch* survives it too — `close` is what ends it. Checking follows whether a
+        Specs tab is open on this project, not whether it happens to be the pane in front:
+        a badge that only lit while you were already looking at it would say nothing. The
+        rule about the active pane is about publishing a selection, which is above.
+        """
+        self._flush_edit()
         super().on_deactivated()
 
     def close(self) -> None:
@@ -427,17 +496,60 @@ class SpecsActivity(EntityActivity):
 
     def _open_session(self, document: SpecDocument, area: ModuleFileArea, data: bytes) -> None:
         """Show ``document`` in the editor, starting its session."""
-        body = data.decode("utf-8")
         self._editing = document.name
         self._session_base = document
         self._session_last = document
         self._session_blobs = set()
-        self._editor.open_markdown(area, body)
+        self._editor.setPlainText(data.decode("utf-8"))
+        space_lines(self._editor)  # After setPlainText, or the block format is lost.
+        self._editor.document().setModified(False)
+        self._editor.document().clearUndoRedoStacks()
+        # `space_lines` is a format change, and a format change is a `contentsChange`:
+        # it arms the flush timer a moment before `setModified(False)` makes the flush a
+        # no-op. Disarm it rather than rely on that ordering holding.
+        self._flush_timer.stop()
+        # The toolbar is markdown's; a plain-text document is text and nothing else.
+        self._tools.setVisible(document.kind == KIND_MARKDOWN)
         self._forget_spans()
-        # Qt normalises the markdown it writes; say so up front when it would matter,
-        # rather than letting the first save silently reformat an imported document.
-        self._editor_note.setVisible(self._editor.body().strip() != body.strip())
+        self._show_figures()
         self._views.setCurrentWidget(self._editor_page)
+
+    def _body(self) -> str:
+        return self._editor.toPlainText()
+
+    def _attach(self, data: bytes, filename: str) -> str | None:
+        """Where a pasted or dropped file goes: the project's spec assets, the same place
+        `spec attach` writes. Off the undo stack — undoing a paste must never leave prose
+        pointing at a file that had gone — and the index records it at the next flush."""
+        # The gallery is not refreshed here: the editor types the link *after* this
+        # returns, so a scan now would find no reference to the file just written. The
+        # settle that the insert triggers is what redraws it, which also means a
+        # multi-file drop redraws once.
+        return attach_asset(self._files(self.project_id), data, filename)
+
+    def _show_figures(self) -> None:
+        """The pictures this document links to, under the editor that cannot show them."""
+        area = self._files(self.project_id)
+        linked = [
+            name for name in asset_references(self._body()) if area.read_bytes(name) is not None
+        ]
+        self._figures.set_files(linked, area.read_bytes)
+
+    def _open_expanded(self) -> None:
+        """The same document in a window — the same `QTextDocument`, so the session sees
+        what is typed there exactly as it sees what is typed here."""
+        if not self.is_editing:
+            return
+        dialog = ExpandedTextDialog.over_document(
+            self._editor.document(),
+            self._undo,
+            title=self._current_name() or "Spec",
+            attach=self._attach,
+            parent=self._widget.window(),
+        )
+        dialog.exec()
+        dialog.dispose()
+        dialog.deleteLater()
 
     def focus_editor(self) -> None:
         """Put the caret in the open document — what a freshly created one wants."""
@@ -484,7 +596,7 @@ class SpecsActivity(EntityActivity):
         area = self._files(self.project_id)
         index = read_index(self._project())
         today = datetime.now(UTC).date().isoformat()
-        body = self._editor.body()
+        body = self._body()
         try:
             docs, document, outcome, superseded = save_body(
                 area, index.documents, self._session_base, body.encode(), today
@@ -578,56 +690,28 @@ class SpecsActivity(EntityActivity):
         return page
 
     def _build_editor_page(self) -> QWidget:
-        # The formatting strip is the editor's own chrome, flush on top of the text area —
-        # the canvas toolbar idiom (`#EditorToolbar` shares `#CanvasToolbar`'s QSS), so it
-        # cannot be read as an extension of the document list's toolbar across the splitter.
+        """The editor, its markdown strip, and the pictures it cannot show.
+
+        A plain-text editor renders no image, so the figures a document links to sit in a
+        gallery under it — `CLAUDE.md`'s rule for every prose editor here. `set_files`
+        rather than `set_area`: the area holds every figure of every document in the
+        project, and what belongs under *this* editor is what *this* document links to.
+        The strip spans the page because it is the page's chrome; the text sits in a
+        column at a readable measure, because a maximised window is otherwise one very
+        long line.
+        """
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        strip = QWidget(page)
-        strip.setObjectName("EditorToolbar")
-        row = QHBoxLayout(strip)
-        row.setContentsMargins(STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN)
-        row.setSpacing(6)
-        groups: tuple[tuple[tuple[str, str, Callable[[], None]], ...], ...] = (
-            (
-                ("B", "Bold (Ctrl+B)", self._editor.toggle_bold),
-                ("I", "Italic (Ctrl+I)", self._editor.toggle_italic),
-            ),
-            (
-                ("H1", "Heading 1", lambda: self._editor.set_heading(1)),
-                ("H2", "Heading 2", lambda: self._editor.set_heading(2)),
-                ("H3", "Heading 3", lambda: self._editor.set_heading(3)),
-            ),
-            (
-                ("•", "Bullet list", self._editor.bullet_list),
-                ("1.", "Numbered list", self._editor.numbered_list),
-            ),
-            (
-                (
-                    "Image…",
-                    "Insert an image at the cursor",
-                    self._editor.insert_image_from_file,
-                ),
-            ),
-        )
-        for index, group in enumerate(groups):
-            if index:
-                rule = QWidget(strip)
-                rule.setObjectName("ToolbarRule")
-                rule.setFixedWidth(1)
-                row.addWidget(rule)
-            for face, tip, handler in group:
-                row.addWidget(_tool_button(face, tip, handler))
-        row.addStretch(1)
-        layout.addWidget(strip)
-        self._editor_note = QLabel("Editing will reformat this document to Qt's markdown style.")
-        self._editor_note.setObjectName("InspectorNote")
-        self._editor_note.setWordWrap(True)
-        self._editor_note.setVisible(False)
-        layout.addWidget(self._editor_note)
-        layout.addWidget(self._editor, 1)
+        layout.addWidget(self._tools)
+        column = QWidget(page)
+        column_layout = QVBoxLayout(column)
+        column_layout.setContentsMargins(BLOCK_GAP, BLOCK_GAP, BLOCK_GAP, BLOCK_GAP)
+        column_layout.setSpacing(CAPTION_GAP)
+        column_layout.addWidget(self._editor, 1)
+        column_layout.addWidget(self._figures)
+        layout.addWidget(centered_column(column, EDITOR_MEASURE), 1)
         return page
 
     def _publish_activity(self) -> None:
@@ -644,21 +728,20 @@ class SpecsActivity(EntityActivity):
     def _project(self) -> Project:
         return self._product.project(self.project_id)
 
-    def _paint_toolbar(self, theme: ThemeService) -> None:
-        colour = theme.current.text_secondary
-        self.toolbar.set_button_icons({a: paint(colour) for a, paint in ICONS.items()})
-
     def _on_module_data(self, node_id: str, module_id: str, origin: object) -> None:
+        """Only the *rebuild* is coalesced. Whether a foreign write landed on the open
+        document is answered now, because the session has to end before the next keystroke
+        reaches a document the model has already replaced."""
         if node_id != self.project_id or module_id != MODULE_ID:
             return
         if origin is self._edit_origin:
-            self._refresh()  # Our own flush: the list re-reads, the editor is not touched.
+            self._rebuilding.trigger()  # Our own flush: the list re-reads, the editor does not.
             return
         if self.is_editing and self._current_document() != self._session_last:
             # Somebody else — undo, the CLI after a reload, another verb — changed the
             # document under the session. The model is the authority; the session ends.
             self._abort_edit()
-        self._refresh()
+        self._rebuilding.trigger()
 
     def _on_text_edited(self, edit: TextEdit, _origin: object) -> None:
         # The topology row's second line says whether one has been written; the prose
@@ -809,8 +892,8 @@ class SpecsActivity(EntityActivity):
         self._shown = (document.name, document.file)
 
     def _show_document(self, document: SpecDocument, area: ModuleFileArea, data: bytes) -> None:
-        """A PDF renders its pages, plain text is read-only (a rich-text round-trip would
-        hand it back as markdown), and markdown opens in the editor."""
+        """A PDF renders its pages, a page a source fetched is shown read-only, and a
+        document this project owns — markdown or plain text — opens in the editor."""
         if document.kind == KIND_PDF:
             self._pdf.show_pdf(data)
             self._views.setCurrentWidget(self._pdf)
@@ -825,11 +908,11 @@ class SpecsActivity(EntityActivity):
             self._text.show_markdown(body, [area])
             self._views.setCurrentWidget(self._text)
             return
-        if document.kind == KIND_MARKDOWN:
-            self._open_session(document, area, data)
-            return
-        self._text.show_text(body)
-        self._views.setCurrentWidget(self._text)
+        # Markdown *and* plain text, now that the editor is plain text itself. The old
+        # carve-out was the rich-text round-trip: a .txt pushed through `setMarkdown` and
+        # `toMarkdown` came back as markdown. Nothing round-trips any more, so a text
+        # document is edited as what it is — without the markdown strip over it.
+        self._open_session(document, area, data)
 
     def _show_source_row(self) -> None:
         """A source's own row: the first page it fetched, or where it stands."""
@@ -854,8 +937,9 @@ class SpecsActivity(EntityActivity):
             self._shown = (root.name, root.file)
 
     def _say(self, message: str) -> None:
+        """A page with nothing to show says one short line and nothing else."""
         self._shown = None
-        self._notice.setText(message)
+        self._notice.say(message)
         self._views.setCurrentWidget(self._notice)
 
     # -- cited passages: the wash, the strip, and the two jumps ------------------------------
@@ -891,35 +975,37 @@ class SpecsActivity(EntityActivity):
     def _build_source_strip(
         self, parent: QWidget, actions: ActionRegistry, context: ContextService
     ) -> QWidget:
+        """Where the selected source stands: what it is, what it has waiting, and what
+        can be done about it. The facts are a `note` — a remark about the source, not a
+        state — and the state is one `StatusLine` in one of the four tones."""
         strip = QWidget(parent)
         strip.setObjectName("SpecSourceStrip")
         column = QVBoxLayout(strip)
         column.setContentsMargins(STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN)
         column.setSpacing(CAPTION_GAP)
+        # One line of facts, never wrapped: it is a row of short claims parted by dots, and
+        # a second line of it reads as a paragraph rather than as a caption.
+        self.source_facts = note("", strip)
+        self.source_facts.setWordWrap(False)
+        self.source_facts.setTextFormat(Qt.TextFormat.PlainText)
+        column.addWidget(self.source_facts)
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
+        row.setSpacing(CONTROL_GAP)
         column.addLayout(row)
-        self.source_facts = QLabel(strip)
-        self.source_facts.setObjectName("InspectorNote")
-        self.source_facts.setTextFormat(Qt.TextFormat.PlainText)
-        row.addWidget(self.source_facts)
-        row.addStretch(1)
+        self.source_toolbar = Toolbar(strip)
+        for action_id in SOURCE_ACTIONS:
+            self.source_toolbar.add_action(actions, context, action_id)
+        row.addWidget(self.source_toolbar, 1)
         self.connect_button = QPushButton(strip)
         self.connect_button.setObjectName("PrimaryButton")
         self.connect_button.clicked.connect(self._connect_source)
         row.addWidget(self.connect_button)
-        self.source_toolbar = ActionToolbar(
-            actions, context, SOURCE_ACTIONS, SOURCE_BUTTON_TEXT, strip
-        )
-        row.addWidget(self.source_toolbar)
-        # What changes with the data: the last check's answer, a fetch's outcome, a refusal.
-        # Plain text always — every word of it may have come from the source.
-        self.source_note = QLabel(strip)
-        self.source_note.setObjectName("InspectorNote")
-        self.source_note.setTextFormat(Qt.TextFormat.PlainText)
-        self.source_note.setWordWrap(True)
-        column.addWidget(self.source_note)
+        # `StatusLine.say` escapes what it is given, which matters here: every word of this
+        # may have come from the source.
+        self.source_state = StatusLine(strip)
+        self.source_state.setWordWrap(True)
+        column.addWidget(self.source_state)
         self._source_strip = strip
         strip.setVisible(False)
         return strip
@@ -929,6 +1015,7 @@ class SpecsActivity(EntityActivity):
         index = read_index(self._project()) if self._product.has(self.project_id) else None
         source = source_of(index, source_id) if index is not None and source_id else None
         self._source_strip.setVisible(source is not None)
+        self._refresh_updates()
         if source is None or index is None:
             return
         kind = self._kinds.get(source.kind)
@@ -942,29 +1029,42 @@ class SpecsActivity(EntityActivity):
         status = (
             self._refresher.status(self.project_id, source) if self._refresher is not None else None
         )
-        ready = status is None or status.ready
-        can_connect = kind is not None and self._connect is not None and self._refresher is not None
-        self.connect_button.setVisible(not ready and can_connect)
-        if not ready and can_connect and self._refresher is not None:
+        # Connect only where connecting is the answer: a malformed locator and a missing
+        # git are refusals no dialog can lift, and a button that opens one about the wrong
+        # thing is worse than the sentence beside it.
+        offer = status is not None and not status.ready and status.connectable
+        self.connect_button.setVisible(offer and self._connect is not None)
+        if offer and self._connect is not None and self._refresher is not None:
             again = self._refresher.needs_reconnect(self.project_id, source.id)
             self.connect_button.setText(f"{'Reconnect' if again else 'Connect'} to {name}…")
-        self.source_note.setText(self._source_words(source, status.message if status else ""))
-        self.source_note.setVisible(bool(self.source_note.text()))
+        words, tone = self._source_state(source, status)
+        self.source_state.say(words, tone)
 
-    def _source_words(self, source: SpecSource, message: str) -> str:
-        if message:
-            return message
-        if self._refresher is not None and self._refresher.is_fetching():
-            kind = self._kinds.get(source.kind)
-            return f"Fetching from {kind.name if kind is not None else source.kind}…"
-        fresh = (
-            self._refresher.freshness(self.project_id, source.id)
-            if self._refresher is not None
-            else None
-        )
-        if fresh is not None and freshness_words(fresh):
-            return freshness_words(fresh)
-        return self._applied_words.get(source.id, "")
+    def _refresh_updates(self) -> None:
+        """The line over the whole tree: every source of this project, counted."""
+        self.updates.say(updates_words(self._stale()))
+
+    def _source_state(self, source: SpecSource, status: SourceStatus | None) -> tuple[str, Tone]:
+        """Where this source stands, and in which of the four tones. In order, because
+        each answer outranks the ones under it: a refusal is what you must act on, a fetch
+        in flight is what is happening now, and *up to date* is worth saying out loud."""
+        if status is not None and not status.ready:
+            return status.message, "error"
+        if self._refresher is None:
+            return "", "info"
+        kind = self._kinds.get(source.kind)
+        if self._refresher.is_fetching():
+            return f"Fetching from {kind.name if kind is not None else source.kind}…", "busy"
+        fresh = self._refresher.freshness(self.project_id, source.id)
+        if fresh is not None and fresh.stale:
+            return freshness_words(fresh), "info"
+        if applied := self._applied_words.get(source.id):
+            return applied, "ok"
+        if not source.fetched:
+            return "Not fetched yet — Refresh to take its documents in", "info"
+        if fresh is not None:
+            return "Up to date", "ok"
+        return "", "info"
 
     def _connect_source(self) -> None:
         source_id = self._current_source()
@@ -988,32 +1088,50 @@ class SpecsActivity(EntityActivity):
             self._refresh_source_strip()
 
     def _build_document_strip(self, parent: QWidget) -> QWidget:
+        """The document's own chrome, over whatever shows it — the editor, a PDF, plain
+        text. Its verbs act on this widget's caret and this project's features rather than
+        on the context, so they are the strip's own rather than the registry's; everything
+        else about it is any other strip."""
         strip = QWidget(parent)
         strip.setObjectName("EditorToolbar")
         row = QHBoxLayout(strip)
         row.setContentsMargins(STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN)
-        row.setSpacing(6)
-        self.cited = _tool_button(
-            "Cited", "Wash every passage a feature was read from", self._toggle_cited
+        row.setSpacing(CONTROL_GAP)
+        bar = Toolbar(strip)
+        self.cited = bar.add_verb(
+            "Cited passages",
+            read_icon,
+            self._toggle_cited,
+            checkable=True,
+            tip="Wash every passage a feature was read from",
         )
-        self.cited.setCheckable(True)
-        row.addWidget(self.cited)
-        self.to_coverage = _tool_button(
-            "Coverage", "Show the passage under the caret in the coverage view", self._jump
+        self.to_coverage = bar.add_verb(
+            "Show in Coverage",
+            coverage_icon,
+            self._jump,
+            tip="Show the passage under the caret in the coverage view",
         )
         self.to_coverage.setVisible(self._open_coverage is not None)
-        row.addWidget(self.to_coverage)
-        self.cite_button = _tool_button(
-            "Cite…", "Cite the selection as a feature's passage", self._cite_selection
+        self.cite_button = bar.add_verb(
+            "Cite…",
+            connect_icon,
+            self._cite_selection,
+            tip="Cite the selection as a feature's passage",
         )
         self.cite_button.setVisible(self._cite is not None)
-        row.addWidget(self.cite_button)
-        self.lit_note = QLabel(strip)
-        self.lit_note.setObjectName("InspectorNote")
+        self.clear_button = bar.add_verb(
+            "Clear the wash", close_icon, self.clear_passages, tip="Clear the washed passages"
+        )
+        self.document_toolbar = bar
+        # The stretch is the strip's: a Toolbar's size hint is its … button, so a layout
+        # that gives it only that folds every verb away on a page with room to spare.
+        row.addWidget(bar, 1)
+        self.lit_note = note("", strip)
         row.addWidget(self.lit_note)
-        row.addStretch(1)
-        self.clear_button = _tool_button("Clear", "Clear the washed passages", self.clear_passages)
-        row.addWidget(self.clear_button)
+        # The settle's own arc: this strip is what a fresh reading of the text produces.
+        self.updating = UpdatingIndicator(strip)
+        self._unsubscribes.append(self.updating.follow(self._settled))
+        row.addWidget(self.updating)
         self._strip = strip
         return strip
 
@@ -1033,24 +1151,28 @@ class SpecsActivity(EntityActivity):
         return tuple(self._passages_of(self.project_id, name))
 
     def _forget_spans(self) -> None:
+        """The text moved under the cited passages, so where they sit is unknown again.
+
+        Finding them costs a walk of the whole document, so this only says *stale* and
+        asks for a settle; :meth:`_resettle` is what pays. Until it runs, the strip keeps
+        the last answer it had and *Show in Coverage* stands down — a verb that might act
+        on a span that has moved is worse than one that waits.
+        """
         self._cited_spans = None
-        self._refresh_strip()
+        self._settled.trigger()
 
-    def _spans(self) -> list[tuple[int, int, str]]:
-        """Where each cited passage sits in the shown text — computed once per text."""
-        if self._cited_spans is None:
-            well = self._text_well()
-            found: list[tuple[int, int, str]] = []
-            if well is not None:
-                plain = well.document().toPlainText()
-                for quote in self._document_passages():
-                    span = locate(plain, quote)
-                    if span is not None:
-                        found.append((span[0], span[1], quote))
-            self._cited_spans = found
-        return self._cited_spans
+    def _resettle(self) -> None:
+        """What the document's text decides, recomputed after a pause in typing: where the
+        cited passages sit, the wash over the lit ones, and which figures it links to."""
+        self._apply_wash()
+        if self.is_editing:
+            self._show_figures()
 
-    def _text_well(self) -> QTextEdit | None:
+    def _text_well(self) -> ProseEdit | MarkdownView | None:
+        """Whichever of the two shows the document as text — the editor, or the read-only
+        view. They are a `QPlainTextEdit` and a `QTextBrowser`, and every call here is on
+        what the two have in common: the document, the cursor, the palette, and
+        `setExtraSelections`, which takes a `QTextEdit.ExtraSelection` on both."""
         shown = self._views.currentWidget()
         if shown is self._editor_page:
             return self._editor
@@ -1059,17 +1181,21 @@ class SpecsActivity(EntityActivity):
         return None
 
     def _passage_under_caret(self) -> str | None:
+        """The cited passage the caret sits in, from the last settled reading — None while
+        a fresh one is owed, which is what keeps a caret move off the document."""
         well = self._text_well()
-        if well is None:
+        if well is None or self._cited_spans is None:
             return None
         at = well.textCursor().position()
-        return next((quote for start, end, quote in self._spans() if start <= at <= end), None)
+        return next((quote for start, end, quote in self._cited_spans if start <= at <= end), None)
 
     def _refresh_strip(self) -> None:
+        # Every caret move comes through here, so it may read nothing it has to derive.
+        # "Is this row a document?" is the row itself: only a document row carries a
+        # NAME_ROLE, and the topology's is the one reserved name. Asking the index instead
+        # parsed every document, source and asset of the project on each keystroke.
         name = self._current_name()
-        on_document = (
-            name is not None and name != TOPOLOGY_ROW and self._current_document() is not None
-        )
+        on_document = name is not None and name != TOPOLOGY_ROW
         self._strip.setVisible(on_document)
         if not on_document:
             return
@@ -1089,16 +1215,22 @@ class SpecsActivity(EntityActivity):
         well = self._text_well()
         if well is not None:
             plain = well.document().toPlainText()
+            # Both readings of this text at once — where every cited passage sits (what
+            # *Show in Coverage* asks about) and where the lit ones do — because each
+            # `locate` normalises the whole haystack, and one walk answers both.
+            cited = self._document_passages()
+            found = locate_many(plain, list(dict.fromkeys([*cited, *quotes])))
+            wanted = set(cited)
+            self._cited_spans = [span for span in found if span[2] in wanted]
             selections = []
             landing: int | None = None
-            for quote in quotes:
-                span = locate(plain, quote)
-                if span is None:
+            for start, end, quote in found:
+                if quote not in quotes:
                     continue
                 is_focus = bool(focus) and quote == focus
                 cursor = QTextCursor(well.document())
-                cursor.setPosition(span[0])
-                cursor.setPosition(span[1], QTextCursor.MoveMode.KeepAnchor)
+                cursor.setPosition(start)
+                cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
                 wash = QColor(well.palette().highlight().color())
                 wash.setAlpha(FOCUS_ALPHA if is_focus else WASH_ALPHA)
                 fmt = QTextCharFormat()
@@ -1108,7 +1240,7 @@ class SpecsActivity(EntityActivity):
                 selection.format = fmt
                 selections.append(selection)
                 if is_focus:
-                    landing = span[0]
+                    landing = start
             well.setExtraSelections(selections)
             if landing is not None:
                 cursor = QTextCursor(well.document())
@@ -1139,17 +1271,3 @@ class SpecsActivity(EntityActivity):
             return
         self._cite(self.project_id, name, quote, None)
         self._forget_spans()
-
-
-def _tool_button(face: str, tip: str, handler: Callable[[], None]) -> QToolButton:
-    """A quiet formatting button: text face, no focus theft — `ActionToolbar`'s recipe,
-    minus the registry, because these verbs are the editor widget's own state."""
-    button = QToolButton()
-    button.setObjectName("ToolbarButton")
-    button.setText(face)
-    button.setToolTip(tip)
-    button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-    button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-    button.clicked.connect(lambda _checked=False: handler())
-    return button

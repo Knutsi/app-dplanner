@@ -137,6 +137,13 @@ def captioned(title: str, parent: QWidget, hint: str = "") -> QWidget:
     return row
 
 
+# The measure prose is comfortable to read at. Beside `centered_column` rather than in
+# `theme/tokens.py`, which is what feeds `theme.qss`: no stylesheet rule wants this, and
+# every other text metric in the application — the well's margin, its line height, the
+# empty state's measure — is already here.
+EDITOR_MEASURE = 760
+
+
 def centered_column(content: QWidget, max_width: int) -> QWidget:
     """Wrap ``content`` so it sits centred at a readable measure.
 
