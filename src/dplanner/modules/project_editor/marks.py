@@ -53,4 +53,3 @@ class Marks:
         if not isinstance(data, dict):
             return cls()
         return cls(**{name: bool(data[name]) for name in MARK_NAMES if name in data})
-
