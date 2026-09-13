@@ -13,16 +13,19 @@ refreshes, because a citation keys on the name and a title is a thing that gets 
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from pathlib import PurePosixPath
 
 from dplanner.core.fsio import slugify
 from dplanner.domain.document_source import Locator, Snapshot
 from dplanner.domain.ids import next_id
 from dplanner.domain.store import ModuleFileArea
 from dplanner.modules.spec.documents import (
+    KIND_MARKDOWN,
     SpecDocument,
     SpecIndex,
     SpecSource,
     attach_asset,
+    document_kind,
     import_document,
     referenced_assets,
     remove_document,
@@ -136,8 +139,11 @@ def apply_snapshot(
     kept = set(snapshot.kept)
     for key, page in fetched_by_key.items():
         name = names[key]
+        # The name is the spec module's and the suffix is the kind's: a kind that started
+        # supplying whole filenames would rename every sourced row in every existing plan.
+        suffix = PurePosixPath(page.filename).suffix or ".md"
         working, document, outcome = import_document(
-            area, working, name, page.markdown.encode(), f"{name}.md", today
+            area, working, name, page.data, f"{name}{suffix}", today
         )
         counts[outcome] += 1
         stamped = replace(
@@ -149,7 +155,8 @@ def apply_snapshot(
             parent=names.get(page.parent_key, "") if page.parent_key else "",
         )
         working = [stamped if doc.name == name else doc for doc in working]
-        assets = referenced_assets(assets, page.markdown, today)
+        if document_kind(page.filename) == KIND_MARKDOWN:
+            assets = referenced_assets(assets, page.data.decode("utf-8"), today)
     gone = [key for key in existing if key not in fetched_by_key and key not in kept]
     for key in gone:
         working = remove_document(working, existing[key].name)

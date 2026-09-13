@@ -6,9 +6,9 @@ import time
 from dataclasses import dataclass, field
 
 import pytest
-from PySide6.QtWidgets import QInputDialog, QMessageBox
 
 from dplanner.domain.document_source import Snapshot, SourceStatus, SourceUnavailableError
+from dplanner.framework.dialog import LinePrompt
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.spec_confluence import module as module_mod
 from dplanner.modules.spec_confluence.client import Credentials
@@ -103,15 +103,17 @@ def test_connect_is_disabled_until_a_test_passes_and_again_after_an_edit(app, di
     made, probes = dialog
     assert not made.ok.isEnabled()
     made.test_button.click()
-    assert "Both" in made.status.text() and probes == []
+    assert "Both" in made.status.words() and probes == []
     made.email.setText("me@acme.example")
     made.token.setText("tok")
     made.test_button.click()
     wait_for(app, lambda: made.passed)
-    assert made.ok.isEnabled() and "Auth Overview" in made.status.text()
+    assert made.ok.isEnabled() and "Auth Overview" in made.status.words()
+    assert made.status.tone() == "ok"
     assert probes == [Credentials("me@acme.example", "tok")]
     made.token.setText("tok2")  # A change after the test: prove it again.
     assert not made.ok.isEnabled() and not made.passed
+    assert made.status.words() == "Test the connection first"
 
 
 def test_a_failing_test_keeps_connect_disabled_and_says_why(app, dialog):
@@ -119,8 +121,9 @@ def test_a_failing_test_keeps_connect_disabled_and_says_why(app, dialog):
     made.email.setText("me@acme.example")
     made.token.setText("bad")
     made.test_button.click()
-    wait_for(app, lambda: made.test_button.isEnabled() and made.status.text() != "Testing…")
-    assert made.status.text() == "acme rejected the token" and not made.ok.isEnabled()
+    wait_for(app, lambda: made.test_button.isEnabled() and made.status.tone() != "busy")
+    assert made.status.words() == "acme rejected the token" and not made.ok.isEnabled()
+    assert made.status.tone() == "error"
 
 
 def test_the_token_page_opens_through_the_seam(dialog, opened_urls):
@@ -139,21 +142,39 @@ def test_a_keychain_problem_refuses_up_front(services):
         backend_problem="no keychain service is running",
     )
     try:
-        assert "no keychain service" in made.status.text()
+        assert "no keychain service" in made.status.words()
         assert not made.test_button.isEnabled() and not made.ok.isEnabled()
     finally:
         made.deleteLater()
 
 
-# -- the module as a kind -----------------------------------------------------------------------
+# -- the two kinds over one module --------------------------------------------------------------
 
 
 def test_status_reads_the_connected_sites_and_never_the_keychain(confluence, secrets):
-    assert confluence.status(LOCATOR) == SourceStatus(False, "Not connected to acme.atlassian.net")
-    assert not confluence.status({"site": "https://evil.example", "id": "1", "type": "page"}).ready
+    page = confluence.page
+    assert page.status(LOCATOR) == SourceStatus(False, "Not connected to acme.atlassian.net")
+    assert not page.status({"site": "https://evil.example", "id": "1", "type": "page"}).ready
     set_global(MODULE_ID, module_mod.SITES_KEY, {SITE: "me@acme.example"})
-    assert confluence.status(LOCATOR).ready
+    assert page.status(LOCATOR).ready
     assert secrets.reads == 0
+
+
+def test_a_kind_is_not_ready_for_the_other_kinds_locator(confluence):
+    set_global(MODULE_ID, module_mod.SITES_KEY, {SITE: "me@acme.example"})
+    refused = confluence.folder.status(LOCATOR)
+    assert not refused.ready and refused.message.endswith("not a Confluence folder")
+    assert confluence.page.status(LOCATOR).ready
+
+
+def test_one_connection_serves_both_kinds(confluence):
+    """A site is connected, not a kind: both share the module's one config_changed."""
+    heard = []
+    confluence.page.config_changed.connect(lambda: heard.append("page"))
+    confluence.folder.config_changed.connect(lambda: heard.append("folder"))
+    confluence.forget(SITE)
+    assert heard == ["page", "folder"]
+    assert confluence.page.id == "confluence_page" and confluence.folder.id == "confluence_folder"
 
 
 def test_connect_stores_the_token_in_the_secret_store_and_the_email_in_settings(
@@ -168,11 +189,11 @@ def test_connect_stores_the_token_in_the_secret_store_and_the_email_in_settings(
     monkeypatch.setattr(ConnectDialog, "exec", accept)
     changes = []
     confluence.config_changed.connect(lambda: changes.append(True))
-    assert confluence.connect(services.window, LOCATOR)
+    assert confluence.page.connect(services.window, LOCATOR)
     assert secrets.stored == {(MODULE_ID, "token:acme.atlassian.net"): "tok"}
     assert get_global(MODULE_ID, module_mod.SITES_KEY) == {SITE: "me@acme.example"}
     assert "tok" not in str(get_global(MODULE_ID, module_mod.SITES_KEY))
-    assert changes == [True] and confluence.status(LOCATOR).ready
+    assert changes == [True] and confluence.page.status(LOCATOR).ready
     assert confluence.sites() == {SITE: "me@acme.example"}
 
     confluence.forget(SITE)
@@ -181,7 +202,7 @@ def test_connect_stores_the_token_in_the_secret_store_and_the_email_in_settings(
 
 def test_a_cancelled_dialog_stores_nothing(confluence, secrets, services, monkeypatch):
     monkeypatch.setattr(ConnectDialog, "exec", lambda self: ConnectDialog.DialogCode.Rejected)
-    assert not confluence.connect(services.window, LOCATOR)
+    assert not confluence.page.connect(services.window, LOCATOR)
     assert secrets.stored == {} and confluence.sites() == {}
 
 
@@ -196,14 +217,14 @@ def test_a_fetch_reads_the_token_only_then_and_refuses_without_one(
 
     monkeypatch.setattr(module_mod, "fetch", fake_fetch)
     with pytest.raises(SourceUnavailableError) as refused:
-        confluence.fetch(LOCATOR, {}, lambda _f: None, lambda: False)
+        confluence.page.fetch(LOCATOR, {}, lambda _f: None, lambda: False)
     assert refused.value.needs_reconnect and "no token" in str(refused.value)
     set_global(MODULE_ID, module_mod.SITES_KEY, {SITE: "me@acme.example"})
     secrets.stored[(MODULE_ID, "token:acme.atlassian.net")] = "tok"
-    confluence.fetch(LOCATOR, {}, lambda _f: None, lambda: False)
+    confluence.page.fetch(LOCATOR, {}, lambda _f: None, lambda: False)
     assert seen == [(SITE, Credentials("me@acme.example", "tok"), LOCATOR)]
     with pytest.raises(SourceUnavailableError):
-        confluence.fetch(
+        confluence.page.fetch(
             {"site": "https://evil.example", "id": "1", "type": "page"},
             {},
             lambda _f: None,
@@ -211,30 +232,52 @@ def test_a_fetch_reads_the_token_only_then_and_refuses_without_one(
         )
 
 
-def test_locate_asks_for_an_address_and_refuses_what_is_not_one(confluence, services, monkeypatch):
-    answers = iter(
-        [
-            ("https://acme.atlassian.net/wiki/x/short", True),
-            ("https://acme.atlassian.net/wiki/spaces/E/pages/7/Auth", True),
-        ]
-    )
-    warnings = []
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: next(answers))
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warnings.append(a[2]))
-    assert confluence.locate(services.window) == (
+def test_locate_asks_for_an_address_on_the_frame_and_refuses_what_is_not_one(
+    confluence, services, monkeypatch
+):
+    """The prompt refuses as the address is typed, under the field — never after the fact."""
+    typed: list[str] = []
+
+    def answer(self):
+        prompts.append(self)
+        self.field.setText(typed.pop(0))
+        return LinePrompt.DialogCode.Accepted
+
+    prompts: list[LinePrompt] = []
+    monkeypatch.setattr(LinePrompt, "exec", answer)
+
+    def refused() -> bool:
+        primary = prompts[-1].primary()
+        return primary is not None and not primary.isEnabled()
+
+    typed.append("https://acme.atlassian.net/wiki/x/short")
+    assert confluence.page.locate(services.window) is None
+    assert "short link" in prompts[-1].problem.words()
+    assert refused()
+
+    typed.append("https://acme.atlassian.net/wiki/spaces/E/pages/7/Auth")
+    assert confluence.page.locate(services.window) == (
         "Auth",
         {"site": SITE, "id": "7", "type": "page", "space": "E"},
     )
-    assert len(warnings) == 1 and "short link" in warnings[0]
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("", False))
-    assert confluence.locate(services.window) is None
+    assert prompts[-1].problem.words() == "" and not refused()
+
+    typed.append("https://acme.atlassian.net/wiki/spaces/E/pages/7/Auth")
+    assert confluence.folder.locate(services.window) is None
+    assert "Confluence Page" in prompts[-1].problem.words()
+
+    monkeypatch.setattr(LinePrompt, "exec", lambda self: LinePrompt.DialogCode.Rejected)
+    assert confluence.page.locate(services.window) is None
 
 
-def test_open_url_names_the_page_or_the_folder(confluence):
-    assert confluence.open_url(LOCATOR) == f"{SITE}/wiki/pages/viewpage.action?pageId=12345"
+def test_each_kind_opens_its_own_address(confluence):
+    assert confluence.page.open_url(LOCATOR) == f"{SITE}/wiki/pages/viewpage.action?pageId=12345"
     folder = {"site": SITE, "id": "5", "type": "folder", "space": "ENG"}
-    assert confluence.open_url(folder).endswith("/spaces/ENG/folder/5")
-    assert confluence.open_url({"site": "https://evil.example", "id": "5", "type": "page"}) == ""
+    assert confluence.folder.open_url(folder).endswith("/spaces/ENG/folder/5")
+    assert confluence.page.open_url(folder) == ""
+    assert (
+        confluence.page.open_url({"site": "https://evil.example", "id": "5", "type": "page"}) == ""
+    )
 
 
 def test_the_settings_page_lists_sites_and_forgets_one(confluence, services, secrets):
@@ -258,8 +301,7 @@ def test_the_settings_page_lists_sites_and_forgets_one(confluence, services, sec
         page.deleteLater()
 
 
-def test_the_real_build_registers_the_kind_and_its_settings(services):
+def test_the_real_build_registers_both_kinds_and_the_settings(services):
     assert any(section.id == MODULE_ID for section in services.settings_sections.sections())
-    assert (
-        services.actions.spec("spec.add_source.confluence").label == "&Confluence Page or Folder…"
-    )
+    assert services.actions.spec("spec.add_source.confluence_page").label == "&Confluence Page…"
+    assert services.actions.spec("spec.add_source.confluence_folder").label == "Confluence F&older…"

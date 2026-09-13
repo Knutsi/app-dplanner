@@ -27,12 +27,13 @@ from dplanner.theme.icons import spec_icon
 PNG = b"\x89PNG\r\n\x1a\n" + b"pixels"
 
 
-def page(key, title, body, parent="", version="1"):
+def page(key, title, body, parent="", version="1", filename="page.md"):
     return FetchedDocument(
         key=key,
         parent_key=parent,
         title=title,
-        markdown=body,
+        data=body.encode() if isinstance(body, str) else body,
+        filename=filename,
         version=version,
         url=f"https://x/{key}",
     )

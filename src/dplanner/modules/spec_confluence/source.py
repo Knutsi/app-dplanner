@@ -7,12 +7,21 @@ body and the referenced images of each page whose version is new — a page whos
 the caller already knows goes into ``Snapshot.kept`` without a byte crossing the wire.
 ``check`` is the same walk without bodies. Both take a client the module built with the
 person's credentials; nothing here reads a keychain.
+
+**Two kinds, one walk.** A *Confluence page* source and a *Confluence folder* source are
+two entries in the Add Spec menu and two ``kind`` ids in the index, and what differs
+between them is a :class:`ContentType` record — the words, and which address is accepted.
+The walk itself stays one function: a page root is a document and seeds the queue, a
+folder root only seeds it, which is one branch on a value the kind has just validated,
+not a second code path. ``expected`` is that validation: it is what refuses a folder
+address pasted into the page kind, and what stops a hand-edited plan aiming one kind at
+the other's locator.
 """
 
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import SplitResult, parse_qs, urlsplit
 
 from dplanner.domain.assets import asset_name
 from dplanner.domain.document_source import (
@@ -22,6 +31,7 @@ from dplanner.domain.document_source import (
     Locator,
     Snapshot,
     SourceUnavailableError,
+    raster_suffix,
 )
 from dplanner.modules.spec_confluence.client import (
     ChildRow,
@@ -31,7 +41,6 @@ from dplanner.modules.spec_confluence.client import (
 )
 from dplanner.modules.spec_confluence.convert import attachment_names, convert
 
-KIND = "confluence"
 MAX_PAGES = 500
 MAX_DEPTH = 20
 MAX_FETCH_BYTES = 200 * 1024 * 1024
@@ -42,54 +51,104 @@ _SPACE_KEY = re.compile(r"^[A-Za-z0-9~._-]+$")
 _VIEWPAGE = re.compile(r"^/wiki/pages/viewpage\.action$")
 _SHORT = re.compile(r"^/wiki/x/")
 
-# Raster images only, told by their first bytes: an SVG is XML that can carry script,
-# and nothing a spec needs is lost by leaving it out.
-_MAGIC: tuple[tuple[bytes, str], ...] = (
-    (b"\x89PNG\r\n\x1a\n", ".png"),
-    (b"\xff\xd8\xff", ".jpg"),
-    (b"GIF87a", ".gif"),
-    (b"GIF89a", ".gif"),
+
+@dataclass(frozen=True)
+class ContentType:
+    """What differs between a Confluence *page* source and a *folder* source: the id the
+    index records, the words a person reads, and which of the two addresses is accepted."""
+
+    type: str  # "page" | "folder" — the locator's own key, re-validated on every read.
+    kind_id: str  # What a source record's ``kind`` says: the spec module's dispatch.
+    noun: str  # "page" | "folder" — how a refusal names what was pasted.
+    label: str  # The Add Spec entry.
+    title: str  # The dialog's window title.
+    caption: str  # Over the address field.
+    placeholder: str
+
+
+PAGE = ContentType(
+    type="page",
+    kind_id="confluence_page",
+    noun="page",
+    label="&Confluence Page…",
+    title="Add Confluence Page",
+    caption="The address of a Confluence page, as copied from the browser",
+    placeholder="https://acme.atlassian.net/wiki/spaces/SPEC/pages/12345/Auth",
 )
+FOLDER = ContentType(
+    type="folder",
+    kind_id="confluence_folder",
+    noun="folder",
+    label="Confluence F&older…",
+    title="Add Confluence Folder",
+    caption="The address of a Confluence folder, as copied from the browser",
+    placeholder="https://acme.atlassian.net/wiki/spaces/SPEC/folder/12345",
+)
+OTHER = {PAGE.type: FOLDER, FOLDER.type: PAGE}
 
 
-def parse_url(text: str) -> tuple[str, Locator]:
-    """A page or folder URL as copied from the browser → (title hint, locator).
+def parse_url(text: str, expected: str) -> tuple[str, Locator]:
+    """An address as copied from the browser → (title hint, locator), for the one content
+    type ``expected`` names.
 
-    ``ValueError`` carries the one sentence a dialog shows for what cannot be read.
+    ``ValueError`` carries the one sentence a dialog shows for what cannot be read —
+    including the address that names the *other* kind, which is the refusal the split
+    exists to make possible.
     """
     parts = urlsplit(text.strip())
     site = f"{parts.scheme}://{parts.netloc}".lower()
     if not is_cloud_site(site):
-        raise ValueError("paste a page or folder address from a *.atlassian.net site")
+        raise ValueError("paste an address from a *.atlassian.net site")
     if _SHORT.match(parts.path):
         raise ValueError(
             "that is a short link — open the page and copy the address with /pages/ in it"
         )
+    found = _address(parts)
+    if found is None:
+        raise ValueError("that address does not name a Confluence page or folder")
+    content, content_id, space, slug = found
+    if content.type != expected:
+        other = OTHER[expected]
+        raise ValueError(
+            f"that is a {content.noun} address — add it with Add Spec ▸ {_plain(other.label)}"
+        )
+    locator = {"site": site, "id": content_id, "type": content.type}
+    if space:
+        locator["space"] = space
+    return slug or f"{content.noun.capitalize()} {content_id}", locator
+
+
+def _address(parts: SplitResult) -> tuple[ContentType, str, str, str] | None:
+    """(content type, id, space key, title hint) for the three addresses we read."""
     page = _PAGE_URL.match(parts.path)
     if page is not None:
         slug = (page.group(3) or "").replace("+", " ").replace("-", " ").strip()
-        locator = {"site": site, "id": page.group(2), "type": "page", "space": page.group(1)}
-        return slug or f"Page {page.group(2)}", locator
+        return PAGE, page.group(2), page.group(1), slug
     folder = _FOLDER_URL.match(parts.path)
     if folder is not None:
-        locator = {"site": site, "id": folder.group(2), "type": "folder", "space": folder.group(1)}
-        return f"Folder {folder.group(2)}", locator
+        return FOLDER, folder.group(2), folder.group(1), ""
     if _VIEWPAGE.match(parts.path):
         page_id = parse_qs(parts.query).get("pageId", [""])[0]
         if page_id.isdigit():
-            return f"Page {page_id}", {"site": site, "id": page_id, "type": "page"}
-    raise ValueError("that address does not name a Confluence page or folder")
+            return PAGE, page_id, "", ""
+    return None
 
 
-def valid_locator(locator: Mapping[str, object]) -> Locator | None:
+def _plain(label: str) -> str:
+    """A menu label without its mnemonic, for a sentence that quotes it."""
+    return label.replace("&", "").rstrip("…").strip()
+
+
+def valid_locator(locator: Mapping[str, object], expected: str) -> Locator | None:
     """The locator as this kind understands it, or None — re-checked on every read,
-    because a plan is shared and a colleague's file is input."""
+    because a plan is shared and a colleague's file is input. ``expected`` is the content
+    type the asking kind is: a record naming the other one is not this kind's to fetch."""
     site, content_id, kind = locator.get("site"), locator.get("id"), locator.get("type")
     if not isinstance(site, str) or not is_cloud_site(site):
         return None
     if not isinstance(content_id, str) or not content_id.isdigit():
         return None
-    if kind not in ("page", "folder"):
+    if kind != expected:
         return None
     valid = {"site": site, "id": content_id, "type": str(kind)}
     space = locator.get("space")
@@ -158,7 +217,7 @@ def fetch(
                         f"{page.title}: {filename} is larger than the cap and was left out"
                     )
                     continue
-                suffix = _sniff(data)
+                suffix = raster_suffix(data)
                 if suffix is None:
                     notes.append(f"{page.title}: {filename} is not a raster image and was left out")
                     continue
@@ -178,7 +237,8 @@ def fetch(
                 key=page.id,
                 parent_key=entry.parent_key,
                 title=page.title,
-                markdown=convert(page.body, image_map, page_links),
+                data=convert(page.body, image_map, page_links).encode("utf-8"),
+                filename="page.md",  # No file behind it; the suffix is what is read.
                 version=page.version or version,
                 url=page_url(locator["site"], page.id),
             )
@@ -256,12 +316,3 @@ def _walk(
             else:
                 notes.append(f"{row.title or row.id}: a {row.type}, not imported")
     return found
-
-
-def _sniff(data: bytes) -> str | None:
-    for magic, suffix in _MAGIC:
-        if data.startswith(magic):
-            return suffix
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return ".webp"
-    return None

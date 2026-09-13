@@ -8,10 +8,12 @@ from dataclasses import replace
 import pytest
 from tests.cli.spec_helpers import source
 
+from dplanner.core.module_data import migrated
 from dplanner.core.storage.local import LocalStorage
 from dplanner.domain.document_source import FetchedDocument, FetchedImage, Snapshot
 from dplanner.domain.model import Project
 from dplanner.domain.store import ModuleFileArea
+from dplanner.modules.spec.aspect import DATA_FORMAT
 from dplanner.modules.spec.documents import SpecIndex, read_index, write_index
 from dplanner.modules.spec.sourced import (
     add_source,
@@ -26,9 +28,15 @@ SITE = "https://acme.atlassian.net"
 PNG = b"\x89PNG\r\n\x1a\n" + b"pixels"
 
 
-def page(key, title, body, parent="", version="1"):
+def page(key, title, body, parent="", version="1", filename="page.md"):
     return FetchedDocument(
-        key=key, parent_key=parent, title=title, markdown=body, version=version, url=f"{SITE}/{key}"
+        key=key,
+        parent_key=parent,
+        title=title,
+        data=body.encode() if isinstance(body, str) else body,
+        filename=filename,
+        version=version,
+        url=f"{SITE}/{key}",
     )
 
 
@@ -94,7 +102,7 @@ def test_a_first_fetch_mints_names_nests_by_parent_and_counts(area, fetched):
 
 def test_a_refresh_keeps_names_when_titles_change_and_keeps_previous(area, fetched):
     index, src = add_source(
-        SpecIndex([], []), "confluence", "Auth", {"site": SITE, "id": "1", "type": "page"}
+        SpecIndex([], []), "confluence_page", "Auth", {"site": SITE, "id": "1", "type": "page"}
     )
     index, _ = apply_snapshot(area, index, src.id, fetched, "2026-09-07")
     again = Snapshot(
@@ -115,7 +123,7 @@ def test_a_refresh_keeps_names_when_titles_change_and_keeps_previous(area, fetch
 
 def test_an_unchanged_body_is_unchanged_and_the_partition_is_one_place(area, fetched):
     index, src = add_source(
-        SpecIndex([], []), "confluence", "Auth", {"site": SITE, "id": "1", "type": "page"}
+        SpecIndex([], []), "confluence_page", "Auth", {"site": SITE, "id": "1", "type": "page"}
     )
     index, _ = apply_snapshot(area, index, src.id, fetched, "2026-09-07")
     same = replace(fetched, images=())
@@ -145,13 +153,13 @@ def test_the_source_documents_keep_their_place_among_the_projects_own(area, fetc
     assert remove_source(index, src.id) == SpecIndex([], index.assets, [])
 
 
-def test_the_index_round_trips_format_4_and_reads_a_dangling_source_as_none(area, fetched):
+def test_the_index_round_trips_format_5_and_reads_a_dangling_source_as_none(area, fetched):
     index, src = add_source(
-        SpecIndex([], []), "confluence", "Auth", {"site": SITE, "id": "1", "type": "page"}
+        SpecIndex([], []), "confluence_page", "Auth", {"site": SITE, "id": "1", "type": "page"}
     )
     index, _ = apply_snapshot(area, index, src.id, fetched, "2026-09-07")
     entry = write_index(index)
-    assert entry["format"] == 4 and entry["sources"][0]["locator"] == {
+    assert entry["format"] == 5 and entry["sources"][0]["locator"] == {
         "site": SITE,
         "id": "1",
         "type": "page",
@@ -164,6 +172,53 @@ def test_the_index_round_trips_format_4_and_reads_a_dangling_source_as_none(area
     entry["documents"][1]["parent"] = "../../etc"
     entry["sources"] = write_index(index)["sources"]
     assert read_index(_holding(entry)).documents[1].parent == ""
+
+
+# -- the migration ------------------------------------------------------------------------------
+
+
+def _migrated(entry):
+    """The entry as an open would leave it: every migration from its stamp to ours."""
+    brought = migrated(entry, DATA_FORMAT)
+    assert brought is not None
+    return brought
+
+
+def test_format_5_tells_the_two_confluence_kinds_apart_by_the_locator():
+    entry = {
+        "format": 4,
+        "sources": [
+            {"id": "src1", "kind": "confluence", "locator": {"id": "1", "type": "page"}},
+            {"id": "src2", "kind": "confluence", "locator": {"id": "2", "type": "folder"}},
+        ],
+    }
+    kinds = [source["kind"] for source in _migrated(entry)["sources"]]
+    assert kinds == ["confluence_page", "confluence_folder"]
+
+
+def test_format_5_leaves_another_builds_kind_alone_and_survives_a_ragged_entry():
+    entry = {
+        "format": 4,
+        "sources": [
+            {"id": "src1", "kind": "wiki", "locator": {"type": "folder"}},
+            {"id": "src2", "kind": "confluence"},  # No locator at all: a page by default.
+            "not a source at all",
+        ],
+    }
+    sources = _migrated(entry)["sources"]
+    assert [entry if isinstance(entry, str) else entry["kind"] for entry in sources] == [
+        "wiki",
+        "confluence_page",
+        "not a source at all",
+    ]
+
+
+def test_format_5_passes_a_step_entry_through_untouched():
+    # One format covers the project's index and a step's figures; only one has sources.
+    step = {"format": 4, "attachments": [{"file": "assets/abc.png"}]}
+    assert _migrated(step)["attachments"] == step["attachments"]
+    assert _migrated(step)["format"] == 5
+    assert _migrated({"format": 4}) == {}  # Nothing to store still leaves no file behind.
 
 
 # -- the terminal -------------------------------------------------------------------------------
