@@ -10,9 +10,12 @@ gesture as a verb building the very command the canvas pushes, and the sixth sor
 (``sorts.tidy``) applied like the other five. None reshapes the graph, so none reads the
 topology first.
 
-``region add --steps`` is the agent's way in: it computes the rectangle that wraps those
-steps where they sit, so an agent can name an area of the graph without reasoning about
-canvas coordinates. ``--rect`` remains for placing one by hand.
+The ``region`` verbs stay for the window's sake and carry ``in_skill=False``: a region is
+a titled rectangle painted behind the steps, annotation on its way out, so the generated
+skill does not name them and nothing invites an agent to draw one. They still run —
+deleting a verb an older script calls is a separate decision — and ``region add --steps``
+still computes the rectangle that wraps those steps where they sit, with ``--rect`` for
+placing one by hand.
 """
 
 from argparse import ArgumentParser, Namespace
@@ -377,6 +380,7 @@ def commands(
             configure=project_arg,
             run=_region_list,
             examples=("dplanner region list discovery --json",),
+            in_skill=False,
         ),
         CliCommand(
             path=("region", "add"),
@@ -387,6 +391,7 @@ def commands(
                 'dplanner region add discovery "Database setup" --steps schema migrate seed',
                 'dplanner region add discovery "Finalize release" --rect 40 40 480 320',
             ),
+            in_skill=False,
         ),
         CliCommand(
             path=("region", "fit"),
@@ -394,6 +399,7 @@ def commands(
             configure=_region_fit_args,
             run=_region_fit,
             examples=('dplanner region fit discovery "Database setup" --steps schema seed',),
+            in_skill=False,
         ),
         CliCommand(
             path=("region", "rename"),
@@ -401,6 +407,7 @@ def commands(
             configure=_region_rename_args,
             run=_region_rename,
             examples=('dplanner region rename discovery "Database setup" "Data layer"',),
+            in_skill=False,
         ),
         CliCommand(
             path=("region", "delete"),
@@ -408,6 +415,7 @@ def commands(
             configure=_region_args,
             run=_region_delete,
             examples=('dplanner region delete discovery "Database setup"',),
+            in_skill=False,
         ),
     ]
 

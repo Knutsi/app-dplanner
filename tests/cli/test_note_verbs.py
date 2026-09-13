@@ -8,6 +8,7 @@ import pytest
 
 from dplanner.domain.store import LibraryStore
 from dplanner.modules.notes.log import read_log
+from dplanner.modules.notes.reach import INDEX_LIMIT
 
 
 def data(text):
@@ -229,6 +230,35 @@ def test_index_prints_what_the_briefing_carries(cli, cli_stdin, project):
     cli("note", "remove", project, "N2")
     cli("note", "remove", project, "N3")
     assert "No notes reach this step yet." in cli("note", "index", "S3")
+
+
+def test_a_decision_stays_on_its_branch_until_reach_project_lifts_it(cli, project):
+    """The rule the narrowed reach turns on: a choice made on a branch binds the work after
+    it, and a choice that binds the whole plan says so."""
+    cli("note", "add", project, "decision", "Vite for the bundler", "--step", "S3")
+    lift = ("--step", "S3", "--reach", "project")
+    cli("note", "add", project, "decision", "Tabs, not spaces", *lift)
+    shown = cli("note", "index", "S2")
+    assert "Tabs, not spaces" in shown and "Vite for the bundler" not in shown
+    own = cli("note", "index", "S3")
+    assert "Tabs, not spaces" in own and "Vite for the bundler" in own
+
+
+def test_index_caps_each_label_and_all_lifts_the_cap(cli, project):
+    """What the briefing carries is capped and says so; --all is how to read everything that
+    reaches the step."""
+    for n in range(1, INDEX_LIMIT + 4):
+        cli("note", "add", project, "decision", f"Choice {n}")
+    shown = cli("note", "index", "S1")
+    assert f"Decisions standing ({INDEX_LIMIT} of {INDEX_LIMIT + 3}):" in shown
+    assert "Choice 3" not in shown and f"Choice {INDEX_LIMIT + 3}" in shown
+    # The ref is quoted exactly as every other verb in the briefing quotes it.
+    assert "…and 3 earlier: `dplanner note list 'Search rewrite' --label decision`" in shown
+    assert len(data(cli("note", "index", "S1", "--json"))["index"]) == INDEX_LIMIT
+    whole = cli("note", "index", "S1", "--all")
+    assert f"Decisions standing ({INDEX_LIMIT + 3}):" in whole
+    assert "Choice 3" in whole and "earlier:" not in whole
+    assert len(data(cli("note", "index", "S1", "--all", "--json"))["index"]) == INDEX_LIMIT + 3
 
 
 def test_the_briefing_carries_the_addressed_notes_in_full_and_indexes_the_rest(

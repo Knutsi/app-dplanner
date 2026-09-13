@@ -1132,6 +1132,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # The session the command named, for a harness that names one; a harness
                 # that mints its own is found by its record once the run ends.
                 files.session if _names_session(harness) else "",
+                # What the briefing came to: measured where prompt.md was written.
+                files.prompt_chars,
             ),
             harnesses=agent_harnesses(),
             # The Agent tab's "tokens so far" line: the run tracker's ledger, worded.
@@ -2110,8 +2112,10 @@ def _agent_epilogue(library: "Library", step: "Step") -> str:
         " approval\n"
         f"- `dplanner agent-state set {ref} needs-input` when you have a question the"
         " developer must answer before you can go on\n"
-        "As you go, leave notes — the project's record, indexed into every later"
-        " briefing; `dplanner note add --help` lists the labels:\n"
+        "As you go, leave notes — the project's record, indexed into the briefing of every"
+        " step that comes after the one you made them on. That is the reach: add"
+        " `--reach project` when what you settled belongs to the whole plan rather than"
+        " this branch. `dplanner note add --help` lists the labels:\n"
         f"- `dplanner note add {project} decision '<what you chose>' --step {ref}"
         " --text '<why>'` for each choice the plan should remember (`--supersedes N3`"
         " when it reverses an earlier one)\n"
@@ -2125,7 +2129,7 @@ def _agent_epilogue(library: "Library", step: "Step") -> str:
         f" --step {ref} --file -` with what whoever picks up after you must know —"
         " where things are, what is half done, what bit you. Title it as the fact it"
         " is; the body carries the detail. Add `--for S12` for a step that must read it"
-        " in full, `--reach project` if every step should see it;"
+        " in full, `--reach project` if every step should see it regardless;"
         f" `dplanner note attach {project} <id> <file>` for files.\n"
         f"If you cannot finish, `dplanner status set {ref} blocked` and say why in the"
         " handoff note."

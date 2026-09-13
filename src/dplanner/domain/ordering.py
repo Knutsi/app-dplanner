@@ -20,6 +20,7 @@ from exposing this function everywhere instead: the activity, ``dplanner order s
 ``--json`` for anything reading programmatically.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from dplanner.domain.model import Library, Project, Step, StepId
@@ -150,3 +151,23 @@ def upstream(library: Library, project: Project, step_id: StepId) -> list[Step]:
     at the next collector, lives in ``scope.py`` beside it.
     """
     return list(cone(library, project, step_id).steps)
+
+
+def ports(steps: Sequence[Step]) -> dict[StepId, tuple[bool, bool]]:
+    """``(has incoming, has outgoing)`` per step, over every edge kind whose both ends are
+    among ``steps`` — the edges the canvas draws, and no others.
+
+    Two readers of the one walk: the canvas's orphan, start and end marks, and
+    ``graph.orphan`` lint. A step with neither is on no graph at all, and the window
+    already says so in the refusal red.
+    """
+    ids = {step.id for step in steps}
+    incoming: set[StepId] = set()
+    outgoing: set[StepId] = set()
+    for waiter in steps:
+        for sources in waiter.edges.values():
+            for source in sources:
+                if source in ids:
+                    incoming.add(waiter.id)
+                    outgoing.add(source)
+    return {step.id: (step.id in incoming, step.id in outgoing) for step in steps}

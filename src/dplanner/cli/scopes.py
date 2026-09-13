@@ -6,9 +6,10 @@ aspect would be three near-copies of the same report that could drift apart. The
 the coverage walk arrive as arguments — the composition root, the one place that may name
 every aspect, assembles them — and nothing here imports a module.
 
-The three lint checks live here for the same reason. Two of them exist only because the
-walk can answer them: a step gathered by two features is genuinely ambiguous, and a step
-carrying tests that no feature gathers is work nobody planned into a release.
+The four lint checks live here for the same reason. Three of them exist only because the
+walk can answer them: a step gathered by two features is genuinely ambiguous, a step two
+releases both reach is counted whole by each of them, and a step carrying tests that no
+feature gathers is work nobody planned into a release.
 """
 
 from argparse import ArgumentParser, Namespace
@@ -118,7 +119,7 @@ def lint_checks(
     covered_by: CoveredBy,
     carries_tests: Callable[[Step], bool],
 ) -> list[LintCheck]:
-    """Three findings the walk can answer and nothing else can.
+    """Four findings the walk can answer and nothing else can.
 
     ``carries_tests`` asks about *this step's own* tests, which is a different question from
     what it gathers: a release gathers plenty and carries none, and reporting it as work
@@ -144,22 +145,54 @@ def lint_checks(
             )
         return found
 
+    def _gathered_twice(
+        library: Library, project: Project, kind: ScopeKind, check: str, remedy: str
+    ) -> list[LintFinding]:
+        owners = gatherers(library, project, carried_by=kind.carried_by, stops_at=kind.stops_at)
+        return [
+            LintFinding(
+                check=check,
+                subject_id=step.id,
+                subject=step.title,
+                message=f"gathered by {_titles(project, owners[step.id])} at once — both "
+                f"wait on it, so both count it. {remedy}",
+            )
+            for step in project.steps
+            if len(owners.get(step.id, ())) > 1 and not kind.carried_by(step)
+        ]
+
     def shared(library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
         sub = _grouping_kind(kinds)
         if sub is None:
             return []
-        owners = gatherers(library, project, carried_by=sub.carried_by, stops_at=sub.stops_at)
+        return _gathered_twice(
+            library,
+            project,
+            sub,
+            "scope.shared",
+            f"Link one {sub.label.lower()} behind the other if only one should.",
+        )
+
+    def crosses_milestones(
+        library: Library, project: Project, _files: FilesFor
+    ) -> list[LintFinding]:
+        """A step two releases both reach without passing a third.
+
+        The same question ``scope.shared`` asks of features, asked of what partitions the
+        graph: releases are meant to be a chain, so a step hanging off two of them is work
+        two of them each count whole. One walk, two stopping rules, one report shape.
+        """
         return [
-            LintFinding(
-                check="scope.shared",
-                subject_id=step.id,
-                subject=step.title,
-                message=f"gathered by {_titles(project, owners[step.id])} at once — both "
-                f"wait on it, so both count it. Link one {sub.label.lower()} behind the "
-                "other if only one should.",
+            finding
+            for kind in _partitioning_kinds(kinds, project)
+            for finding in _gathered_twice(
+                library,
+                project,
+                kind,
+                "scope.crosses-milestones",
+                f"A {kind.label.lower()} is meant to follow the one before it; link the "
+                "later one behind the earlier, or move the step into one of them.",
             )
-            for step in project.steps
-            if len(owners.get(step.id, ())) > 1 and not sub.carried_by(step)
         ]
 
     def ungathered(library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
@@ -180,7 +213,7 @@ def lint_checks(
             if step.id not in owners and kind_of(kinds, step) is None and carries_tests(step)
         ]
 
-    return [gathers_nothing, shared, ungathered]
+    return [gathers_nothing, shared, crosses_milestones, ungathered]
 
 
 # -- shared shapes -------------------------------------------------------------------------
@@ -189,6 +222,26 @@ def lint_checks(
 def _titles(project: Project, ids: Sequence[StepId]) -> str:
     found = [project.step(step_id) for step_id in ids]
     return " and ".join(repr(step.title) for step in found if step is not None)
+
+
+def _partitioning_kinds(kinds: Sequence[ScopeKind], project: Project) -> list[ScopeKind]:
+    """The kinds that cut the graph into stretches — the releases, in this build.
+
+    Derived, not declared: a kind whose cone stops at its own carriers partitions the
+    graph (a milestone does; a check, which stops at nothing and stands for everything
+    behind it, does not), and the finest such kind is the grouping kind the other checks
+    already speak for. Asked of the project's own steps because that is where a carrier
+    exists to ask about — which also makes a project with no releases quietly answer none.
+    """
+    sub = _grouping_kind(kinds)
+    found = []
+    for kind in kinds:
+        if kind is sub:
+            continue
+        carriers = [step for step in project.steps if kind.carried_by(step)]
+        if carriers and all(kind.stops_at(step) for step in carriers):
+            found.append(kind)
+    return found
 
 
 def _grouping_kind(kinds: Sequence[ScopeKind]) -> ScopeKind | None:

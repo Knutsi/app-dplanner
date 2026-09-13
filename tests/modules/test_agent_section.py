@@ -78,6 +78,8 @@ def test_the_prompt_is_tinted_by_origin_without_changing_the_text(services, step
     legend = section.prompt_legend.text()
     assert section.prompt_legend.isVisibleTo(section)
     assert "Project" in legend and "This step" in legend
+    # And what it comes to, beside the colours: the size is the question the tab is for.
+    assert f"{len(section._assembled_now.text)} chars" in legend
 
 
 def test_the_prompt_tab_lists_every_referenced_image(services, step, section):

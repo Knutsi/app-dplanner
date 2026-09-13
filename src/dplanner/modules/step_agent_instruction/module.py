@@ -29,6 +29,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QMenu, QMessageBox, QWidget
 
+from dplanner.core.telemetry import current
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Node, Step, StepId
@@ -648,26 +649,34 @@ class StepAgentInstructionModule:
         workdir = (workdir or Path()).expanduser()
         key = deps.step_key(step)
         command_text = agent_command(deps.harnesses, profile)
-        prepared = launcher.prepare(
-            text,
-            workdir,
-            agent_command=command_text,
-            worktree=worktree,
-            directory=run_dir,
-            step_title=f"{key} {step.title}".strip(),
-            project_id=deps.library.project_of(step.id).id,
-            harnesses=deps.harnesses,
-        )
-        command = None
-        if workdir.is_dir():
-            command = launcher.resolve_command(launch_command(profile), prepared, workdir)
-        if command is None:
-            return False, prepared
-        if launcher.spawn(command, workdir, harnesses=deps.harnesses):
-            return False, prepared  # A multiplexer that refused is no shell at all.
-        harness = launcher.harness_of(command_text, deps.harnesses)
-        deps.record_launch(step.id, prepared, harness.id if harness else "")
-        return True, prepared
+        # A launch is a span of its own under the action's, not a detail on it: one gesture
+        # opens a shell per chosen step, so three launches are three sizes and could never
+        # be one key on the parent — and a verb cannot reach the enclosing span anyway,
+        # since the journal hands out copies of what is open.
+        with current().span("action", "agent.launch", step=key) as span:
+            prepared = launcher.prepare(
+                text,
+                workdir,
+                agent_command=command_text,
+                worktree=worktree,
+                directory=run_dir,
+                step_title=f"{key} {step.title}".strip(),
+                project_id=deps.library.project_of(step.id).id,
+                harnesses=deps.harnesses,
+            )
+            span.detail["prompt_chars"] = prepared.prompt_chars
+            command = None
+            if workdir.is_dir():
+                command = launcher.resolve_command(launch_command(profile), prepared, workdir)
+            if command is None:
+                span.detail["refused"] = "no terminal"
+                return False, prepared
+            if launcher.spawn(command, workdir, harnesses=deps.harnesses):
+                span.detail["refused"] = "no shell"
+                return False, prepared  # A multiplexer that refused is no shell at all.
+            harness = launcher.harness_of(command_text, deps.harnesses)
+            deps.record_launch(step.id, prepared, harness.id if harness else "")
+            return True, prepared
 
     # -- reconciling a conflict ----------------------------------------------------------------
 

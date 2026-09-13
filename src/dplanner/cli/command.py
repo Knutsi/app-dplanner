@@ -114,6 +114,11 @@ class CliCommand:
     configure: Callable[[ArgumentParser], None] = lambda _parser: None
     # False for verbs that make no sense against a library — `skill show`, for instance.
     needs_library: bool = True
+    # False for a verb the generated skill must not teach: registered, runnable, described
+    # by `--help` like any other, named by no generated file. The CLI twin of
+    # `ActionSpec.in_menus` — the region verbs are what it exists for, annotation the canvas
+    # keeps for whoever already has some, and no longer something to offer an agent.
+    in_skill: bool = True
     examples: tuple[str, ...] = ()
     # Set on a verb that reshapes a project's graph — adds or removes steps, links them,
     # places a feature: how to find that project from the parsed arguments. The

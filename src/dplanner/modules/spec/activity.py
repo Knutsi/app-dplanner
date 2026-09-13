@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.cli.command import CliError
+from dplanner.cli.shaping import guide
 from dplanner.core.anchors import locate
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.fields import ModuleTextField
@@ -54,6 +55,7 @@ from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.toolbar import ActionToolbar
 from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import caption, note
 from dplanner.modules.spec.aspect import MODULE_ID, read_topology
 from dplanner.modules.spec.documents import (
     KIND_MARKDOWN,
@@ -206,9 +208,7 @@ class SpecsActivity(EntityActivity):
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
         layout.setSpacing(CAPTION_GAP)
 
-        caption = QLabel("Specs", page)
-        caption.setObjectName("InspectorCaption")
-        layout.addWidget(caption)
+        layout.addWidget(caption("Specs", page))
 
         splitter = QSplitter(Qt.Orientation.Horizontal, page)
 
@@ -518,19 +518,35 @@ class SpecsActivity(EntityActivity):
     ) -> QWidget:
         """The topology, always editable: one prose document bound through the undo stack,
         exactly as the standing agent instruction is — no session, no Done, because the
-        text is the project's own and every keystroke is already one undoable edit."""
+        text is the project's own and every keystroke is already one undoable edit.
+
+        Under it, the **default shape** — the same text ``dplanner topology show`` prints
+        to the agent, read from the one asset, so the person writing the topology and the
+        agent reading it can never be looking at two different documents. It is under
+        rather than beside because that is what the text above is written against
+        (DESIGN.md's *Facts under the thing they are about*), and it is a splitter because
+        somebody who has read it once wants the room back. The seam is the splitter's own,
+        so neither pane draws an edge.
+        """
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(BLOCK_GAP, BLOCK_GAP, BLOCK_GAP, BLOCK_GAP)
         layout.setSpacing(CAPTION_GAP)
-        note = QLabel(
-            "How this project's graph is shaped. An agent must read it (`dplanner topology"
-            " show`) before it edits the graph from the CLI, and again whenever it changes.",
-            page,
+        split = QSplitter(Qt.Orientation.Vertical, page)
+        layout.addWidget(split)
+
+        own = QWidget()
+        own_layout = QVBoxLayout(own)
+        own_layout.setContentsMargins(0, 0, 0, 0)
+        own_layout.setSpacing(CAPTION_GAP)
+        own_layout.addWidget(
+            note(
+                "How this project's graph is shaped — what it does differently from the"
+                " default below. An agent must read it (`dplanner topology show`) before it"
+                " edits the graph from the CLI, and again whenever it changes.",
+                own,
+            )
         )
-        note.setObjectName("InspectorNote")
-        note.setWordWrap(True)
-        layout.addWidget(note)
         self.topology = ProseSection(
             lambda pid: ModuleTextField(library, pid, MODULE_ID),
             undo,
@@ -539,7 +555,26 @@ class SpecsActivity(EntityActivity):
             expand_title=TOPOLOGY_TITLE,
         )
         self.topology.show_target(project_id)
-        layout.addWidget(self.topology, 1)
+        own_layout.addWidget(self.topology, 1)
+        split.addWidget(own)
+
+        standard = QWidget()
+        standard_layout = QVBoxLayout(standard)
+        standard_layout.setContentsMargins(0, BLOCK_GAP, 0, 0)
+        standard_layout.setSpacing(CAPTION_GAP)
+        # No caption over it: the document opens with its own title and says in its first
+        # sentence what a caption would have — two titles a line apart is the thing
+        # DESIGN.md's *Hierarchy* is against.
+        self.default_shape = MarkdownView(standard)
+        self.default_shape.setFrameShape(MarkdownView.Shape.NoFrame)
+        self.default_shape.show_markdown(guide())
+        standard_layout.addWidget(self.default_shape, 1)
+        split.addWidget(standard)
+
+        # Even, not weighted to the editor: a topology is a dozen lines and the default is
+        # a document, so two thirds to the shorter one would be room nobody asked for.
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 1)
         return page
 
     def _build_editor_page(self) -> QWidget:
