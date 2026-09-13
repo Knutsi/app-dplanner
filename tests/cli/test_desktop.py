@@ -87,7 +87,7 @@ def test_the_linux_entry_is_named_after_the_app_id_and_opens_by_absolute_path(tm
     entry.write(dpw)
     text = entry.path.read_text()
     assert text.startswith("[Desktop Entry]\nType=Application\nName=DPlanner\n")
-    assert f"\nExec={dpw}\n" in text
+    assert f"\nExec={_exec_quote(str(dpw))}\n" in text
     assert f"\nTryExec={dpw}\n" in text
     assert "\nIcon=dplanner\n" in text  # By name: the hicolor theme beside the entry has it.
     assert "\nTerminal=false\n" in text
@@ -225,10 +225,10 @@ def test_status_reads_installed_stale_or_missing(tmp_path):
 def test_dpw_is_found_in_a_named_directory_then_beside_dplanner_then_on_path(tmp_path):
     beside = tmp_path / "bin"
     beside.mkdir()
-    (beside / executable_name("dpw")).write_text("")
+    (beside / "dpw").write_text("")  # The code is told platform="linux": it looks for `dpw`.
     elsewhere = str(tmp_path / "elsewhere" / "dplanner")
     assert window_executable(argv0=str(beside / "dplanner"), platform="linux", which=nothing) == (
-        beside / executable_name("dpw")
+        beside / "dpw"
     )
     on_path = window_executable(argv0=elsewhere, platform="linux", which=lambda _n: "/usr/bin/dpw")
     assert on_path == Path("/usr/bin/dpw")

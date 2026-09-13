@@ -145,7 +145,7 @@ def test_a_worktree_build_never_repoints_the_command(launcher, skill_dir, tmp_pa
     monkeypatch.setattr(
         installer, "worktree_warning", lambda: "This build runs from a git worktree (/x)."
     )
-    (tmp_path / "dpw").write_text("")
+    (tmp_path / executable_name("dpw")).write_text("")
     runner = Recorder(stdout=f"{tmp_path}\n")
 
     outcomes = apply(FILES, launcher=launcher, directory=skill_dir, run=runner, which=nothing)
@@ -154,7 +154,7 @@ def test_a_worktree_build_never_repoints_the_command(launcher, skill_dir, tmp_pa
     command = next(outcome for outcome in outcomes if outcome.id == COMMAND)
     assert command.ok and "worktree" in command.line
     # The other two are still written from this build: that is the point of not stopping.
-    assert launcher.target() == tmp_path / "dpw"
+    assert launcher.target() == tmp_path / executable_name("dpw")
     assert (skill_dir / SKILL_FILE).exists()
 
 

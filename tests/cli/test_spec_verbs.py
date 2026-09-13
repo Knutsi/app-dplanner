@@ -168,7 +168,7 @@ def test_render_makes_an_indexed_png_asset(cli, project, tmp_path, workspace):
     assert listed == [
         {
             "id": "a1",
-            "file": report["path"].split("modules/spec/")[-1],
+            "file": Path(report["path"]).as_posix().split("modules/spec/")[-1],
             "document": "s",
             "page": 1,
             "imported": listed[0]["imported"],
@@ -242,7 +242,7 @@ def test_an_attached_figure_reaches_the_agent_briefing(cli, project, tmp_path):
     finally:
         sys.stdin = real
     shown = data(cli("agent", "prompt", "Hash passwords", "--json"))
-    figures = [path for path in shown["files"] if "modules/spec/assets/" in path]
+    figures = [p for p in shown["files"] if "modules/spec/assets/" in Path(p).as_posix()]
     assert len(figures) == 1 and figures[0] in shown["prompt"]
 
 

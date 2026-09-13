@@ -343,6 +343,7 @@ def _run_script(files):
     )
 
 
+@SH
 def test_the_script_puts_the_agent_in_its_worktree_on_its_branch(pointed_repo, tmp_path):
     """End to end, in a real repository with the pointer file: the worktree is created on
     the first run, reused on the second, and the agent starts inside it on its branch."""

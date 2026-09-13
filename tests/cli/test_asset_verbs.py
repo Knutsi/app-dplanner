@@ -5,6 +5,7 @@ person's, and it has to run where a graphics stack does not exist.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -51,8 +52,9 @@ def test_asset_list_names_every_location_and_its_uses(cli, cli_stdin, tmp_path, 
     assert not by_name[described]["unused"]
     (location,) = by_name[described]["locations"]
     assert location["module"] == "step_description"
-    assert location["path"].endswith(f"steps/deploy/modules/step_description/{described}")
-    assert (workspace / "discovery" / location["path"].split("discovery/")[1]).exists()
+    where = Path(location["path"]).as_posix()  # Reported native; the suffix is spelled POSIX.
+    assert where.endswith(f"steps/deploy/modules/step_description/{described}")
+    assert (workspace / "discovery" / where.split("discovery/")[1]).exists()
     assert [use["where"] for use in location["uses"]] == ["description"]
     assert [use["title"] for use in location["uses"]] == ["Deploy"]
     assert [use["where"] for use in by_name[carried]["locations"][0]["uses"]] == ["note N1 — Keys"]
@@ -167,7 +169,7 @@ def test_the_pool_stages_an_image_and_the_sweep_leaves_it_alone(cli, tmp_path, p
 
     assert report["asset"].startswith("assets/")
     pool = workspace / "discovery" / "modules" / "project_assets" / report["asset"]
-    assert pool.exists() and report["path"].endswith(report["asset"])
+    assert pool.exists() and Path(report["path"]).as_posix().endswith(report["asset"])
 
     assert cli("asset", "prune", project).strip() == "Nothing to sweep."
     assert pool.exists()

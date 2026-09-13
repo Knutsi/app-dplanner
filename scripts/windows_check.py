@@ -428,7 +428,7 @@ def do_build(target: Target) -> int:
     return target.run(
         rf"""
 Set-Location {GUEST_TREE}
-uv run --group build pyinstaller --noconfirm --clean dplanner.spec
+uv run pyinstaller --noconfirm --clean dplanner.spec
 if ($LASTEXITCODE -ne 0) {{ exit $LASTEXITCODE }}
 # A frozen app that cannot answer --help is not built, whatever PyInstaller said.
 & dist\dplanner\dplanner.exe --help | Select-Object -First 3
