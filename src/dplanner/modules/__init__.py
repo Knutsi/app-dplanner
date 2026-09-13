@@ -1121,6 +1121,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # The session the command named, for a harness that names one; a harness
                 # that mints its own is found by its record once the run ends.
                 files.session if _names_session(harness) else "",
+                # What the briefing came to: measured where prompt.md was written.
+                files.prompt_chars,
             ),
             harnesses=agent_harnesses(),
             # The Agent tab's "tokens so far" line: the run tracker's ledger, worded.

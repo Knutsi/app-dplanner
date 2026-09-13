@@ -42,6 +42,10 @@ class AgentRun:
     # own records once the run ended — what its usage is read from and what resumes it.
     harness: str = ""
     session: str = ""
+    # What the briefing this run opened with came to, in characters. Kept here and not only
+    # on the step's usage row because a run that is still going has no usage row yet, and a
+    # harness with no token reader never gets one.
+    prompt_chars: int = 0
 
     @property
     def key(self) -> str:
@@ -63,6 +67,7 @@ class AgentRun:
             "ended": self.ended,
             "harness": self.harness,
             "session": self.session,
+            "prompt_chars": self.prompt_chars,
         }
 
     @classmethod
@@ -73,6 +78,7 @@ class AgentRun:
             return None
         try:
             code = raw.get("code")
+            briefed = raw.get("prompt_chars")
             return cls(
                 step_id=str(raw["step"]),
                 shell_file=str(raw["shell"]),
@@ -83,15 +89,29 @@ class AgentRun:
                 ended=str(raw.get("ended", "")),
                 harness=str(raw.get("harness", "")),
                 session=str(raw.get("session", "")),
+                prompt_chars=briefed if isinstance(briefed, int) else 0,
             )
         except (KeyError, TypeError, ValueError):
             return None
 
 
 def new_run(
-    step_id: str, shell_file: str, exit_file: str, harness: str = "", session: str = ""
+    step_id: str,
+    shell_file: str,
+    exit_file: str,
+    harness: str = "",
+    session: str = "",
+    prompt_chars: int = 0,
 ) -> AgentRun:
-    return AgentRun(step_id, shell_file, exit_file, now_stamp(), harness=harness, session=session)
+    return AgentRun(
+        step_id,
+        shell_file,
+        exit_file,
+        now_stamp(),
+        harness=harness,
+        session=session,
+        prompt_chars=prompt_chars,
+    )
 
 
 def run_facts(run: AgentRun) -> RunFacts:

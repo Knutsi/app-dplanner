@@ -188,11 +188,17 @@ class StepAgentRunModule:
         return list(self._runs)
 
     def track(
-        self, step_id: StepId, shell_file: str, exit_file: str, harness: str = "", session: str = ""
+        self,
+        step_id: StepId,
+        shell_file: str,
+        exit_file: str,
+        harness: str = "",
+        session: str = "",
+        prompt_chars: int = 0,
     ) -> None:
         """A shell was just spawned on the step: stamp it, remember it, start watching."""
         record_launch(self._deps.library, step_id)
-        self._runs.append(new_run(step_id, shell_file, exit_file, harness, session))
+        self._runs.append(new_run(step_id, shell_file, exit_file, harness, session, prompt_chars))
         self._store()
         self._refresh()
 
@@ -242,7 +248,11 @@ class StepAgentRunModule:
             run = replace(run, session=report.session)
         if report.usage is None:
             return run, ""
-        record(self._deps.library, run.step_id, row_for(run.harness, run.session, report.usage))
+        record(
+            self._deps.library,
+            run.step_id,
+            row_for(run.harness, run.session, report.usage, prompt_chars=run.prompt_chars),
+        )
         return run, f" — {words(report.usage)}"
 
     def _forget(self, run: AgentRun) -> None:

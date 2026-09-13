@@ -231,6 +231,8 @@ def test_prepare_writes_prompt_and_executable_script(tmp_path):
     assert files.script.stat().st_mode & 0o100
     assert str(tmp_path) in files.script.read_text()
     assert "dplanner-agent-" in str(files.directory)
+    # Measured where it was written: the one place that knows what reached the file.
+    assert files.prompt_chars == len("the prompt")
 
 
 def test_prepare_writes_a_cmd_wrapper_on_windows(tmp_path):
