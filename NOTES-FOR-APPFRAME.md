@@ -3178,3 +3178,130 @@ state over a second rule for one state.
 
 **Upstream?** The finding, yes. Any template with a split toolbar button will write this
 rule sooner or later.
+
+## 36. From the Specs-tab pass (S12)
+
+### `framework/markdown_toolbar.py` — the marks as verbs, over any `ProseEdit`
+
+**What.** `MarkdownToolbar(edit, *, undo, parent)`: a dense `Toolbar` of twelve verbs —
+bold, italic, inline code, three heading levels, two lists, quote, link, table, and the
+editor's own *Insert image…* — over one plain-text editor's selection. The transforms are
+pure functions in the same module (`wrap`, `line_prefix`, `heading`, `link`, `table`)
+returning a `Splice`: start, end, the replacing text, and what to leave selected.
+`ProseSection` builds one unconditionally, so every prose editor in the application has it.
+
+**Why.** Every prose document here is markdown kept as plain text, which leaves the marks
+to be typed. Most are two characters and nobody minds; `**` around a phrase already
+selected, a `- ` down eleven lines and a table's pipes are the ones people stop writing
+rather than type.
+
+**Watch.** Three things, each of which cost something.
+
+1. **One splice per verb, or a bound host pushes the whole document.** Qt reports
+   `contentsChange` per edit *block*: two operations inside one `beginEditBlock` collapse
+   into a single signal naming the whole document, so a `TextBinding` host would push an
+   `EditTextCommand` carrying the text twice for a bold. One contiguous `insertText`
+   reports exactly the span that moved — measured: `(12, 6, 10)` against `(0, 23, 26)`.
+2. **The buttons must not take focus.** `Toolbar` sets `NoFocus` already; without it a
+   press moves the caret out from under the verb it was aimed at.
+3. **The keys belong to the editor.** See the next entry.
+
+**Upstream?** Yes, for any template whose prose is markdown. The transforms are worth
+having on their own.
+
+### `framework/toolbar.py` — `add_verb(..., keys=)` beside `shortcut=`
+
+**What.** `shortcut` claims the key by calling `setShortcut` on the strip's own action;
+`keys` only *says* it, in the tooltip. Two lines, and the docstring that tells them apart.
+
+**Why.** A strip lives in a window, so a `QAction` shortcut on it fires wherever that
+window has focus — `CLAUDE.md`'s rule about a bare `h` on a menu-bar action eating a
+keystroke in the step editor, from the other side. Ctrl+B on a markdown strip would reach
+every text field in the window, and a second action carrying the same sequence makes both
+ambiguous and fires neither. The verb's key is a `QShortcut` on the **editor** at
+`Qt.ShortcutContext.WidgetShortcut`; the strip only prints it.
+
+**Watch.** Nothing in this application passes `shortcut=` to `add_verb`. The parameter is
+kept and documented rather than removed, because the distinction is the useful part.
+
+**Upstream?** Yes. It is two lines and it is a trap every toolbar-over-a-widget will hit.
+
+### `framework/text_dialog.py` — `over_field` and `over_document`
+
+**What.** `ExpandedTextDialog.__init__` builds only the chrome; two classmethods say where
+the text is. `over_field` is what it always did — a second `TextBinding` over the same
+`TextField`, because the model is the authority. `over_document` takes the inline editor's
+own `QTextDocument` and calls `setDocument`, for a surface where the *buffer* is the
+authority until something else persists it (here, the Specs tab's editing session, whose
+text is a content-addressed blob rather than a field).
+
+**Why.** "Expanding an editor is a second binding, not a copy" is about never copying text
+out and back. Where there is one buffer and two views, nothing is copied at all — that is
+the same rule at its base case, and the binding pair is the derived one. The alternative
+was a `TextField` adapter over the session buffer, which would have had to push a command
+per keystroke onto the application's undo stack: exactly what that model exists to avoid.
+
+**Watch.** Four measured facts.
+
+1. `QPlainTextEdit.setDocument` **refuses a document without a `QPlainTextDocumentLayout`**
+   ("Document set does not support QPlainTextDocumentLayout"). Only a document that came
+   from another `QPlainTextEdit` will do — which is what it is handed.
+2. **The borrowing view must not re-apply anything that mutates the document.** No second
+   `MarkdownHighlighter` (the owner's formats already show in both views) and no
+   `make_text_well`/`space_lines`: both are format changes, a format change is a
+   `contentsChange`, and the owner would hear it as the person typing.
+3. **The borrowing view's death invalidates the owner's Python wrapper for the document**,
+   though the C++ document survives and the owner keeps its text and its typing. Three
+   release forms were tried and none avoids it. The discipline that makes it harmless is
+   *never store `editor.document()` in a field* — ask for it.
+4. `textChanged` fires on **both** views and `isModified()` is shared, which is what lets
+   the session's flush timer arm from typing done in the dialog with no new code.
+
+**Upstream?** Yes. A template with any non-model editor wants the second constructor.
+
+### `framework/markdown_highlight.py` — emphasis, and fenced code
+
+**What.** `*italic*` leans, and a ` ``` `-fenced run is monospace to its closing fence,
+carried across blocks in `previousBlockState`.
+
+**Watch.** The state expression is **exclusive-or**, not equality: a fence line flips it
+and is itself part of the run, every other line keeps it. Written as `==` it makes every
+*other* line of an ordinary paragraph render as code — and the obvious test (a document
+that opens a fence, closes it, and ends) is the one shape that does not show it, because
+the wrong state happens to be right at both ends. Test a run of six lines either side.
+Emphasis also opens **mid-word** on a single `*` in CommonMark — that is what separates
+`*` from `_` — so `a*b*c` leans, and a highlighter that disagreed with the renderer would
+be worse than one that said nothing.
+
+**Upstream?** Yes, with the highlighter.
+
+### `core/anchors.py` — `locate_many`
+
+**What.** `locate_many(text, quotes)` gives the span of each quote, normalising the
+haystack **once**.
+
+**Why.** `locate` normalises inside itself, so N quotes walk the document N times, each a
+per-character Python loop building a list as long as the text. The Specs tab was doing that
+on every keystroke: **8 ms a keystroke** on a 15 KB document with eight citations, and
+worse with either. Two callers had a list of quotes; both have it once now.
+
+**Upstream?** Only with the anchoring module, which is this application's.
+
+### `framework/activity.py` — `retitles_on` may be several signals
+
+**What.** `follow_entity_tabs(..., retitles_on=)` takes one signal or a sequence.
+
+**Why.** A tab title that says something the model does not hold — the Specs tab's mark
+while a source has updates waiting — has a second thing to hear. A signal that names no
+node re-reads every survivor, which `retitle` already did.
+
+**Upstream?** Yes; it is three lines and it costs existing callers nothing.
+
+### `framework/widgets.py` — `EDITOR_MEASURE` moved here
+
+**What.** The 760 px reading measure lives beside `centered_column`,
+`DOCUMENT_MARGIN`, `LINE_HEIGHT_PERCENT` and `EMPTY_STATE_MEASURE` rather than in
+`text_dialog.py`.
+
+**Why.** It has two callers now, and `theme/tokens.py` — the other candidate — is what
+feeds `theme.qss`; a measure no stylesheet rule uses would be a token for its own sake.

@@ -1217,6 +1217,52 @@ arbitrary. `Maximum` rather than `Fixed`, so a panel shorter than its blocks sti
 compresses rather than clipping. `framework/cards.py`'s `CardStack` had the trailing
 spacer from the start and never hit this, because no card asks for stretch.
 
+## A markdown toolbar is verbs over a selection, and one splice each
+
+Every prose document here is markdown kept as plain text, which is the right trade for
+the binding (*A pasted image is an attachment and a link*) and leaves the marks themselves
+to be typed. Most are two characters and nobody minds. The ones people stop writing rather
+than type are the ones that are tedious in proportion to what they mark: `**` around a
+phrase already selected, a `- ` down eleven lines, a table's pipes and dashes. So those
+become verbs, and `framework/markdown_toolbar.py` is the strip.
+
+**Dense and un-banded**, against DESIGN.md's own mapping of a tool palette to
+`Toolbar.add_group`. The measurement decided it: a banded strip's buttons are squares, so
+twelve verbs in three bands come to roughly 450 px, and every `ProseSection` in the
+application lives in a ~360 px dock — *Insert* would have folded into the `…` on every
+surface, and often *Blocks* too. Dense seats them in about 330. It is the aspect bar's
+argument with the same numbers: a strip that answers a question about the thing on screen
+stops answering it when it folds, and a formatting palette that is never all there is not
+a palette.
+
+**A verb is one splice, and that is not a detail.** Qt reports `contentsChange` per edit
+*block*, so two operations inside a `beginEditBlock` collapse into a single signal naming
+the whole document — measured at `(0, 23, 26)` where one contiguous replacement reported
+`(12, 6, 10)`. A `TextBinding` host would push an `EditTextCommand` carrying the entire
+document twice for a bold. So every verb is a pure `Splice` — start, end, replacing text,
+and what to leave selected — applied in one `insertText`, sealed either side the way
+`ProseEdit._embed` seals a pasted link.
+
+**Where the selection lands is the design**, and it is one rule: a verb leaves selected
+whatever a second press of the same verb would act on. Bold leaves the bolded words, so
+pressing it again unwraps them; Heading 2 leaves the lines; Link leaves `url`, because
+typing the address is what you do next and a prompt for it is more ceremony than the two
+brackets it saves. With nothing selected a wrap puts the caret between its fences, so
+Ctrl+B and then typing works the way it does everywhere else.
+
+**The keys belong to the editor, not the strip.** `Toolbar.add_verb` gained `keys=`
+beside `shortcut=`: the first only prints the key in the tooltip, the second claims it.
+A strip lives in a window, so a `QAction` shortcut on it fires wherever that window has
+focus — the same fact as *A canvas key names action ids; it is never an
+`ActionSpec.shortcut`*, from the other side. The verbs' keys are `QShortcut`s on the
+editor at `WidgetShortcut`, which is what the spec editor was already doing for Ctrl+B
+before any of this.
+
+`ProseSection` builds one unconditionally rather than behind a flag. It is what a prose
+editor *is* here, the same way the highlighter and the expand button are; a flag would be
+a decision every host had to make again, and none of them has a reason to answer it
+differently.
+
 ## Expanding an editor is a second binding, not a copy
 
 A side panel gives prose a few hundred pixels, and some descriptions and instructions are
@@ -2256,14 +2302,86 @@ index names it (`prune_blob`). Typing inside the editor is the widget's own undo
 the application stack holds only the session-level replaces — two stacks because they hold
 two different kinds of fact, keystrokes and index states.
 
-Three edges are decisions, not accidents. **Only markdown edits in-app**: a PDF is not
-text, and plain text pushed through a rich-text round-trip would come back as markdown —
-both render read-only. **Qt normalises the markdown it writes**, so the editor only saves a
-document the user actually modified — opening one never reformats it — and says so inline
-when the first save would. **A foreign change to the edited document ends the session** and
-reopens the document as it now is: the model is the authority, unflushed keystrokes yield,
-and anything already flushed survives as a recoverable blob. An agent replacing the document under an open window resolves through
-*Two writers, one folder* like every other write.
+**The editor is the prose stack's, and two of those three edges went with the widget.**
+It was a `QTextEdit` over `setMarkdown`/`toMarkdown` — the one prose surface in the
+application that edited a document *tree* and wrote back a normalised serialisation, which
+is precisely what `framework/markdown_highlight.py` says a markdown editor here must not
+do. It is a `ProseEdit` now, with the highlighter, the markdown strip, and the figures it
+links to in a gallery under it, because a plain-text editor cannot draw a picture and
+should not pretend to. What that deleted: the standing warning that editing would reformat
+the document (plain text never reformats, so an untouched save is byte-identical by
+construction rather than by a guard), the `![](` → `![image](` rewrite on open (Qt's
+exporter dropped an empty alt; there is no exporter), and the carve-out that made a `.txt`
+read-only — its whole reason was the round-trip handing it back as markdown. A PDF is the
+one document that is not text, and renders.
+
+There was a correctness fix hiding in that swap. `document_text()` — what `feature cite`,
+lint, coverage and `anchor_in` all read — is the raw markdown **source**, while the
+rich-text editor's `toPlainText()` was the **rendered** text. So citing a heading, or any
+passage with inline markup in it, stored one string while every other reader checked
+another; they agreed for plain paragraphs and disagreed silently everywhere else. The
+editor's string is now the string every reader uses.
+
+**A foreign change to the edited document ends the session** and reopens the document as
+it now is: the model is the authority, unflushed keystrokes yield, and anything already
+flushed survives as a recoverable blob. An agent replacing the document under an open
+window resolves through *Two writers, one folder* like every other write.
+
+**Expanding it is the same buffer, not a second binding.** The dialog's other path
+(*Expanding an editor is a second binding, not a copy*) opens a `TextField` twice, because
+there the model is the authority and each view hears the other's commands as foreign. Here
+the *buffer* is the authority until the flush, so `over_document` hands the dialog the
+inline editor's own `QTextDocument`: one buffer, two views, one undo history, in step by
+construction. That is the base case of "never copy text out and back", and the binding pair
+is the derived one. The alternative — a `TextField` adapter over the session buffer — would
+have had to push a command per keystroke onto the application's undo stack, which is the
+one thing the two-stacks rule above exists to prevent. The price is a Qt fact worth
+knowing: when the borrowing view dies, the owner's *Python wrapper* for the document is
+invalidated even though the C++ document and its text survive, so nothing may hold
+`editor.document()` in a field. `NOTES-FOR-APPFRAME.md` §36 has the measurements.
+
+**A rename moves the name, and everything that points at it.** There was no rename at all,
+and a name is the one thing an agent types: `spec show`, `spec diff`, `feature cite
+--document`, the `document` key on every citation in the catalogue. Two shapes were on the
+table. Rename only a *display title* and leave the key alone — which is what a sourced page
+already does, and which cannot break anything — or move the key and carry its references.
+The first was rejected for the reason the step existed: a key that no longer describes the
+document is exactly what misleads the next agent, and a title beside a stale key leaves the
+misleading thing in place and adds a second name to learn. So the key moves, and with it
+the pages that name it as their parent, the asset rows that record where a figure came
+from, and the feature citations — the last of which is another module's data, so the
+composition root composes the commands and both surfaces push them inside one
+`CompositeCommand`. The filename's stem follows too, keeping its suffix: it is a historical
+fact, but `matching_documents` resolves a needle against it, so leaving it behind would let
+the old name go on addressing a document somebody had just renamed. What does *not* move is
+the blob, which is content-addressed and never carried the name.
+
+The honest cost is written down here because nothing can fix it: prose cannot be carried.
+A note, a description or an agent's own memory that named the old key is stale after a
+rename, and no command can find those. That is the trade the decision accepts — a stale
+sentence is a thing a person reads and corrects, where a stale *key* is a citation that
+silently stops resolving.
+
+**Delete takes the index row and never the blob.** Four reasons, any one sufficient: undo
+would restore a row pointing at nothing; blobs are content-addressed and therefore shared,
+so deleting "the file" can pull the bytes out from under a second document with identical
+content; `previous` is a second pointer at the same place, and `spec diff` reads it; and
+`FORMAT.md`'s rule is that an orphaned blob is recoverable where a dangling link is not,
+with the editing session's own churn as the single named carve-out. The workspace's git is
+the history that makes leaving it cheap.
+
+**The mark on the tab title is what this window has found.** `updates_words` — written and
+tested when the sources landed, and uncalled until now — is the line over the whole tree,
+where it is true whatever row is picked; its short form marks the tab's title and the Specs
+row in the index, so there is something to see before the tab is opened. One `stale`
+derivation, three readings. It rides a **set-diff** signal rather than the refresher's own
+`changed`, which also fires on every busy flip and would redraw the index folder on each
+spinner tick. And checking follows whether a Specs tab is **open**, not whether it is the
+pane in front — the active-pane rule is about publishing a selection, and a mark that only
+lit while you were already looking at it would say nothing. The scope that stays is the
+honest one: a project whose Specs tab nobody has opened is not being checked, and wears no
+mark. Checking every source of every project on a timer would mean a `git ls-remote`
+subprocess per source per interval on a machine nobody asked, for a dot on a row.
 
 ## A spec source is a kind the spec module runs
 
