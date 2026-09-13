@@ -1758,7 +1758,7 @@ after every flush.
 ### Storage operations that rewrite the working tree are synchronous
 
 CLAUDE.md's rule says blocking work runs through `TaskRunner`, and the sync module's own
-Save and Update honour it. Four of its operations deliberately do not, and the exception is
+Save and Update honour it. Three of its operations deliberately do not, and the exception is
 a decision, not a leak:
 
 - **Branch switch and create** (`SyncService.switch_branch_sync` / `create_branch_sync`,
@@ -1769,9 +1769,6 @@ a decision, not a leak:
   the body for the same reason, and resumes it once the tree is in the model.
 - **The branch list** before the switch dialog opens: a subprocess, but a local one, and
   the dialog's contents must be current at the moment it appears.
-- **Save at quit** (`service.save_sync()` in the close guard). The window is closing; there
-  is no task centre left to watch a task in, and returning to the event loop mid-teardown
-  is exactly the window a lost write needs.
 - **Moving a plan** (`ProjectsModule.move_plan` over `domain/relocate.move_project`). The
   project's files leave one directory for another and the store is re-pointed; the reload
   that follows discards the build, so there is no runner to come back to. The publish that
@@ -1779,9 +1776,20 @@ a decision, not a leak:
   exception, under a wait cursor: the repository was written a moment ago and the person
   is waiting on it.
 
+**Save at quit was the fourth, and it is not any more** — not because the rule bent, but
+because its reason lapsed. It read: *the window is closing; there is no task centre left to
+watch a task in, and returning to the event loop mid-teardown is exactly the window a lost
+write needs.* Both halves turn on the window closing, and the close is **deferred** now: the
+guard starts the save and answers "not yet", so nothing is tearing down while it runs, and
+the progress dialog is the watcher the task centre could not be. The cost of the old answer
+was the thing the exception never mentioned — a frozen window, for as long as publishing,
+committing and pushing several repositories takes, with no way to tell it from a hang.
+
 The boundary to keep: an operation whose completion the *running* application must observe
 before doing anything else at all may be synchronous; anything the user merely waits on goes
-through the runner. A new storage verb defaults to the runner.
+through the runner. A new storage verb defaults to the runner. And the lesson of the fourth
+one is worth keeping beside it: **before granting the exception, ask whether the constraint
+that forces it is itself a choice.** "The window is closing" was.
 
 ## Closing a window is not discarding it
 
@@ -3087,10 +3095,46 @@ project's repo and are disabled, with the reason in the label, until a project i
 
 Quitting with uncommitted planning changes asks once, honestly: a dialog listing each dirty
 repository (checked by default, with its file count and project titles) over one optional
-commit message. *Commit & Quit* records the checked rows synchronously — the documented
-save-at-quit exception to TaskRunner — and *Quit Without Committing* is a real choice, not
-a scare: autosave already put the files on disk, so nothing is lost either way; only the
-version history goes unrecorded until next time.
+commit message. *Quit Without Committing* is a real choice, not a scare: autosave already
+put the files on disk, so nothing is lost either way; only the version history goes
+unrecorded until next time.
+
+*Commit & Quit* runs the save as an ordinary task under a modal progress dialog — one
+`StatusLine` per repository, publishing then committing, over a determinate bar — and the
+**close is deferred until it ends**: the guard starts the save and returns False, and the
+dialog's own end closes the window. Three things follow, and each was a decision:
+
+- **"Not yet" is a third answer a boolean guard can give.** `UnsavedChangesHost`'s guard
+  returns whether the close may proceed, and False has always meant "the user cancelled".
+  It now also means "ask me again in a moment", which needs no protocol change because the
+  thing that asks again is ours: the dialog closes the window itself. A guard that could
+  answer asynchronously would have been a framework contract change for one caller.
+- **`show()`, never `exec()`.** The guards run inside `closeEvent`, so a nested modal loop
+  there is re-entrant by construction — and this codebase already carries the scar
+  (`modules/github/notice.py`: a nested modal loop deadlocks headless tests). The dialog is
+  modal and shown; the event loop that was already running is the one that delivers the
+  task's completion.
+- **The bar reads a fact and an estimate, and the fact leads.** How many repositories are
+  recorded is known, and it is the bar's floor. Between those steps it is filled by how
+  long the last save took — `TaskService`'s duration memory, which the application now keeps
+  across sessions (`remember=True`), because the estimate that matters most is for the save
+  a window has not run yet: quitting a session in which nobody pressed Ctrl+S. A guess that
+  could *contradict* what has landed would be worse than no guess, so `max(landed,
+  estimated)` is the whole rule, and an estimate that runs out holds at `ESTIMATE_CAP`
+  rather than reading complete. With nothing remembered the bar is the count alone.
+- **The progress is reported by the service, not inferred by the dialog.** `SyncService`
+  emits `saving(index, phase)` from inside the per-repository loop — a Qt signal, so it
+  crosses from the worker thread exactly as `notice` does, and inert when nobody is
+  listening, which is why File ▸ Save needed no change at all. The dialog tracks the index
+  it is told rather than counting its own rows, because a repository that turns out clean
+  skips a phase.
+
+A failure stands **in that dialog**, with *Close Anyway* and *Stay*, rather than being
+reported into a window that is about to go; the module's ordinary failure→`QMessageBox` hop
+stands down while the dialog is up, so it is said once, where the person is looking. One
+ordering trap is worth naming: `TaskRunner` emits `busy_changed(False)` *before*
+`failed(...)` — deliberately, so a failure handler's modal cannot delay the autosave resume
+— so the outcome is settled one event-loop turn later, by which time the error has arrived.
 
 ## Progression is the status-aware frontier
 
@@ -4151,6 +4195,35 @@ real timers (`tests/framework/test_debounce.py`) and once per converted view by 
 immediate mode off, pushing three times, and asserting one rebuild after `flush_all()`.
 Sprinkling `qtbot.wait` over a hundred tests was the alternative, and it would have made
 every one of them slower and none of them more honest.
+
+**A coalesced rebuild owes the user the fact that it is owed.** The delay buys the
+keystroke its speed by *deliberately* showing a stale picture for 300 to 500 ms, and a
+surface that shows one in silence is indistinguishable from one that is wrong. So every
+debounced view carries an `UpdatingIndicator` at the right end of its strip
+(DESIGN.md's *Signalling*), and the thing it follows is the `Debounced` itself:
+`pending_changed` goes True on the first trigger of a burst and False when the action has
+run — *or raised, or been cancelled*. That last clause is why it is a signal on the
+mechanism rather than two statements in the view. The Time tab had those two statements
+for a year — `show()` in a wrapper around `trigger()`, `hide()` as the first line of the
+rebuild — and they were correct only by inspection: nothing paired them, a rebuild that
+raised would have left the label up, and the wrapper existed for no other reason. One
+parametrized test now asserts the property for every view at once, which is the shape a
+rule wants; per-view wiring is three lines and a rule followed by whoever remembers it is
+what the primitive replaced.
+
+The canvas is the deliberate exception: at 0 ms it settles once per event-loop turn, so
+there is no span for a person to read and an indicator would only flicker.
+
+**And the indicator is a motion, not a word.** It carried *Updating…* for one step. A word
+at the end of a control strip is the only prose on a row of glyphs, it is four times the
+width of what it replaced, and it is the one thing on that strip a translation would have
+to reach; so it is the same three-quarter arc a working button turns, with the words in its
+tooltip. The point is not the pixels saved — it is that *something is running here* becomes
+**one** thing to recognise wherever it appears, rather than a word in one place and a
+turning glyph in another. `Spinner` therefore drives either: a button or toolbar verb, whose
+glyph it borrows and gives back, or a bare `QLabel` that *is* the slot and shows nothing when
+idle. `UpdatingIndicator` is the second of those with a `Debounced` attached, which is why
+wiring a view stayed three lines when the look changed.
 
 ## How the application scales
 

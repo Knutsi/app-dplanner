@@ -38,6 +38,7 @@ from dplanner.framework.context import (
     selection_uri,
 )
 from dplanner.framework.debounce import SETTLE_MS, Debounced, DebounceService
+from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.tabs import TabHost
 from dplanner.modules.coverage.scene import CoverageScene
 from dplanner.modules.coverage.trace import SPEC, Trace, flat
@@ -133,6 +134,8 @@ class CoverageActivity(EntityActivity):
         self.review.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.review.clicked.connect(self._review)
         row.addWidget(self.review)
+        self.updating = UpdatingIndicator(self.strip)
+        row.addWidget(self.updating)
         layout.addWidget(self.strip)
 
         self.scene = CoverageScene()
@@ -146,6 +149,7 @@ class CoverageActivity(EntityActivity):
         self._refresh_soon = Debounced(
             self._refresh, delay_ms=SETTLE_MS, parent=page, service=deps.debounce
         )
+        self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
             follow_project(deps.library, project_id, self._refresh_soon.trigger),
         ]

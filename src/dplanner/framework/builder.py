@@ -228,7 +228,7 @@ class AppBuilder:
             settings_sections=SettingsSectionRegistry(),
             theme=theme,
             zoom=ZoomService(),
-            tasks=TaskService(),
+            tasks=TaskService(remember=True),  # Estimates survive the session.
             llm_providers=llm_providers,
             llm=LLMService(llm_providers),
             switcher=session,

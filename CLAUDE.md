@@ -592,7 +592,14 @@ root, stop and look for the registry or capability you have not found yet.
   `services.debounce.set_immediate(True)`, so every trigger runs inline and a test asserts on
   a view the line after a push exactly as before; the deferred path is tested once with real
   timers and once per view by switching it off and calling `flush_all()`. Never
-  `qtbot.wait` for a rebuild. Never move a derivation to a worker thread for speed: it is
+  `qtbot.wait` for a rebuild. **And a coalesced view says that a rebuild is owed**: an
+  `UpdatingIndicator` (`framework/signalling.py`) at the right end of the strip — the
+  caption row, in a view with no strip — `follow()`ing the view's one `Debounced`, whose
+  `pending_changed` settles on a rebuild that raised as much as one that returned. Wire it
+  where the `Debounced` is built; never show and hide a label by hand. **It is a turning
+  arc and no words** — the same `Spinner` a working button turns, which drives a button's
+  glyph slot or a bare `QLabel` that is one; *something is running here* is one motion to
+  recognise, not a word in one place and a glyph in another. Never move a derivation to a worker thread for speed: it is
   pure Python competing for the GIL, and a thread alive at teardown is the suite's SIGSEGV
   shape — `ARCHITECTURE.md`'s *A view refresh is coalesced, and hears one project* has the
   measurements (67 ms → 0.3 ms of synchronous work per keystroke with seven tabs open).
@@ -648,9 +655,20 @@ root, stop and look for the registry or capability you have not found yet.
   means recording a version: **one commit per dirty repository, scoped to that repository's
   project directories** — several projects in one repo save as one commit, and the user's
   source code is never swept up. Quitting with dirty repos asks once, listing them
-  (`modules/sync/exit_dialog.py`). Branch verbs act on the focused project's repository.
+  (`modules/sync/exit_dialog.py`, on the dialog frame), and **the save that follows is an
+  ordinary task under a modal progress dialog** — a row per repository, publishing then
+  committing (`modules/sync/save_progress.py`) — with the **close deferred** until it ends:
+  the guard starts the save and returns False, and the dialog closes the window. That is
+  what retired the synchronous save-at-quit exception; a failure stands in that dialog
+  rather than being lost with the window. **Its bar reads the repositories recorded as a
+  floor and fills between them from how long the last save took** — `TaskService`'s
+  duration memory, kept across sessions — never an estimate that could contradict what has
+  landed. Never `exec()` a dialog from inside a close
+  guard — the guards run inside `closeEvent`, so a nested modal loop there is re-entrant.
+  Branch verbs act on the focused project's repository.
   The CLI has no timer: a run is a transaction that flushes once, at the end, and writes
-  nothing if the verb failed.
+  nothing if the verb failed. `ARCHITECTURE.md`'s *Save spans repositories; the exit dialog
+  says what it records* has the reasoning.
 - **Every model change goes through a command** on the single undo stack, and carries an
   `origin` so the view that made the edit can ignore its own echo. Two kinds of change
   bypass the stack, never the vocabulary: an external fact (the bullet below) and

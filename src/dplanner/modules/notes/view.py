@@ -33,6 +33,7 @@ from dplanner.domain.model import Library, NodeId, Project, Step
 from dplanner.framework.activity import follow_target
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.list_rows import DETAIL_ROLE, MUTED_ROLE, TwoLineDelegate
+from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import EmptyState
 from dplanner.modules.notes.editor import NoteEditor
@@ -92,9 +93,15 @@ class NotesView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(BLOCK_GAP)
+        # The summary is a row so the indicator has a right end to stand at: this view has
+        # no control strip, and DESIGN.md's *Signalling* puts it at the strip's right.
+        head = QHBoxLayout()
+        layout.addLayout(head)
         self.summary = QLabel(self)
         self.summary.setObjectName("InspectorNote")
-        layout.addWidget(self.summary)
+        head.addWidget(self.summary, 1)
+        self.updating = UpdatingIndicator(self)
+        head.addWidget(self.updating)
 
         self.split = QSplitter(Qt.Orientation.Horizontal, self)
         self.split.setChildrenCollapsible(False)
@@ -148,6 +155,7 @@ class NotesView(QWidget):
 
         # After a quiet spell, not per signal: the rows name steps, so a rename counts too.
         self._refresh_soon = Debounced(self._refresh, parent=self, service=debounce)
+        self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
             follow_target(
                 library,

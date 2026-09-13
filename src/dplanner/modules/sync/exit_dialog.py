@@ -8,19 +8,20 @@ Committing** leaves them dirty for next time, and **Cancel** stays.
 
 One commit message covers every checked repository: a quit-time save is one gesture, and
 the per-repo default ("Save: <timestamp>") stands in when the field is left empty.
+
+It is a :class:`DialogFrame` (DESIGN.md's *Dialogs*): what is at stake as the body's first
+line, the repositories under it, and a footer whose slots put *Quit Without Committing* in
+the destructive place — a different exit that costs something, as far from the accent as the
+footer allows — with Cancel beside the primary, where the eye goes to leave.
 """
 
 from dataclasses import dataclass
 
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QDialog,
-    QDialogButtonBox,
-    QLabel,
-    QLineEdit,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QCheckBox, QLineEdit, QVBoxLayout, QWidget
+
+from dplanner.framework.dialog import DialogFrame
+from dplanner.framework.widgets import caption, note
+from dplanner.theme.tokens import CAPTION_GAP
 
 
 @dataclass(frozen=True)
@@ -30,43 +31,42 @@ class DirtyRepoRow:
     label: str  # "~/Code/widget · 3 files — Search Rewrite, Billing"
 
 
-class ExitDialog(QDialog):
+class ExitDialog(DialogFrame):
     """Which dirty repositories to commit on the way out, and with what message."""
 
     def __init__(self, rows: list[DirtyRepoRow], parent: QWidget | None = None) -> None:
-        super().__init__(parent)
+        super().__init__("Record Changes Before Quitting", parent)
         self.setObjectName("ExitDialog")
-        self.setWindowTitle("Record Changes Before Quitting")
         self.discard = False
 
-        prose = QLabel("These repositories have planning changes that are not committed.")
-        prose.setWordWrap(True)
+        count = len(rows)
+        has = "repository has" if count == 1 else "repositories have"
+        self.body_layout.addWidget(
+            note(f"{count} {has} planning changes that are not committed.", self.body)
+        )
 
         self._checks: list[QCheckBox] = []
-        layout = QVBoxLayout(self)
-        layout.addWidget(prose)
         for row in rows:
-            check = QCheckBox(row.label)
+            check = QCheckBox(row.label, self.body)
             check.setChecked(True)
             self._checks.append(check)
-            layout.addWidget(check)
+            self.body_layout.addWidget(check)
 
-        self._message = QLineEdit(self)
+        field = QVBoxLayout()
+        field.setSpacing(CAPTION_GAP)
+        self.body_layout.addLayout(field)  # Before it is filled: a parentless layout leaks.
+        field.addWidget(caption("Message", self.body))
+        self._message = QLineEdit(self.body)
         self._message.setObjectName("ExitCommitMessage")
         self._message.setPlaceholderText("Describe this save (optional)")
-        layout.addWidget(self._message)
+        field.addWidget(self._message)
+        # Spare height goes to the bottom: without it a resized dialog pulls the caption
+        # away from the field it is over, which is the one thing a caption must not do.
+        self.body_layout.addStretch(1)
 
-        buttons = QDialogButtonBox(self)
-        commit = buttons.addButton("Commit && Quit", QDialogButtonBox.ButtonRole.AcceptRole)
-        skip = buttons.addButton(
-            "Quit Without Committing", QDialogButtonBox.ButtonRole.DestructiveRole
-        )
-        buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
-        commit.setDefault(True)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        skip.clicked.connect(self._quit_without_committing)
-        layout.addWidget(buttons)
+        self.add_button("Quit Without Committing", self._quit_without_committing, destructive=True)
+        self.add_dismiss()
+        self.set_primary("Commit && Quit", self.accept)
 
     def _quit_without_committing(self) -> None:
         self.discard = True

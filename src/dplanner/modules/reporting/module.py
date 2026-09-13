@@ -139,7 +139,11 @@ class ReportingModule:
             SettingsSection(
                 id=MODULE_ID,
                 category=("Reports",),
-                factory=lambda parent: build_page(parent, write_now=self.write_site),
+                factory=lambda parent: build_page(
+                    parent,
+                    write_now=self.write_site,
+                    busy_changed=self._writer.runner.busy_changed if self._writer else None,
+                ),
             )
         )
 

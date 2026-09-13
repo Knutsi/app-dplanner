@@ -28,10 +28,12 @@ from PySide6.QtWidgets import QWidget
 
 from dplanner.core.signals import Signal
 from dplanner.core.telemetry import current
+from dplanner.framework.user_config import get_global, set_global
 
 # Estimate-driven fractions stop just short of full so a task that overruns its estimate
-# shows as "almost there", never as falsely complete.
-_ESTIMATE_CAP = 0.95
+# shows as "almost there", never as falsely complete. Shared with every other surface that
+# draws a remembered duration as progress (modules/sync/save_progress.py).
+ESTIMATE_CAP = 0.95
 
 
 @dataclass
@@ -62,7 +64,7 @@ class Task:
         if self.progress is not None:
             return min(1.0, max(0.0, self.progress))
         if self.estimate is not None and self.estimate > 0:
-            return min(_ESTIMATE_CAP, self.elapsed() / self.estimate)
+            return min(ESTIMATE_CAP, self.elapsed() / self.estimate)
         return None
 
     def seconds_left(self) -> float | None:
@@ -73,17 +75,39 @@ class Task:
         return max(0.0, self.estimate - self.elapsed())
 
 
+MEMORY_ID = "tasks"
+DURATIONS_KEY = "durations"
+
+
 class TaskService:
     """The active and lingering-finished tasks, plus duration memory for estimates."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, remember: bool = False) -> None:
+        """``remember`` keeps the duration memory across sessions, per user and machine.
+
+        Off by default so a test is hermetic and a throwaway service carries no history.
+        The application turns it on, because the estimate that matters most is the one for
+        an operation this window has not run yet — the save at quit, in a session where
+        nobody pressed Ctrl+S.
+        """
         # A task started, progressed, or finished.
         self.changed: Signal[()] = Signal("tasks.changed")
 
         self._active: dict[int, Task] = {}
         self._finished: dict[int, Task] = {}
-        self._durations: dict[str, float] = {}
+        self._remember = remember
+        self._durations: dict[str, float] = self._recall() if remember else {}
         self._next_id = 1
+
+    def _recall(self) -> dict[str, float]:
+        stored = get_global(MEMORY_ID, DURATIONS_KEY, {})
+        if not isinstance(stored, dict):
+            return {}  # A hand-edited or older value is not worth a migration: start over.
+        return {str(key): float(value) for key, value in stored.items()}
+
+    def duration_of(self, key: str) -> float | None:
+        """How long the last successful run under ``key`` took, if one is remembered."""
+        return self._durations.get(key)
 
     def start(
         self,
@@ -139,6 +163,8 @@ class TaskService:
         if error is None and not task.cancel_requested and not timed_out:
             # Cancelled, failed or timed-out runs must not poison the duration memory.
             self._durations[task.key] = task.duration
+            if self._remember:
+                set_global(MEMORY_ID, DURATIONS_KEY, dict(self._durations))
 
         if task.keep_finished:
             self._finished[task.task_id] = task

@@ -55,6 +55,7 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.debounce import Debounced
 from dplanner.framework.image_preview import ImagePreviewDialog
+from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.widgets import EmptyState, confirm
 from dplanner.modules.project_assets.cli import MODULE_ID, read_titles, write_titles
 
@@ -211,6 +212,8 @@ class AssetsActivity(EntityActivity):
         self.sweep_button = QPushButton("Clean Up Unused…", page)
         self.sweep_button.clicked.connect(self._sweep)
         controls.addWidget(self.sweep_button)
+        self.updating = UpdatingIndicator(page)
+        controls.addWidget(self.updating)
         layout.addLayout(controls)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal, page)
@@ -262,6 +265,7 @@ class AssetsActivity(EntityActivity):
         # tick on an orphan timer would fire into deleted labels afterwards. Coalesced,
         # because a catalog walk lists directories: a burst of edits costs one.
         self._refresh_soon = Debounced(self._refresh, parent=page, service=deps.debounce)
+        self.updating.follow(self._refresh_soon)
         library = deps.library
         self._unsubscribes = [
             # This project only; links are not files, so edges are left out.

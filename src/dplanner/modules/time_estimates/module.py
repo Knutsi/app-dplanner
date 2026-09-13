@@ -92,6 +92,7 @@ from dplanner.framework.context import (
     selection_uri,
 )
 from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import ActionToolbar, control_bar
 from dplanner.framework.undo import UndoService
@@ -329,12 +330,6 @@ class TimeEstimatesActivity(EntityActivity):
         self.save_snapshot.clicked.connect(self._on_save_snapshot)
         self.controls.addWidget(self.save_snapshot)
         strip_row.addWidget(self.controls, 1)
-        # A change to the plan re-runs the page after a quiet spell; until it has, the
-        # strip says so rather than showing a picture of a plan that has since changed.
-        self.recalculating = QLabel("Recalculating…", strip)
-        self.recalculating.setObjectName("ToolbarLabel")
-        self.recalculating.hide()
-        strip_row.addWidget(self.recalculating)
         # Export's arrow renders File ▸ Export — the milestones' CSV, the plan's page, the
         # PDF, the workbook — the same entries, never a copy, found where the numbers are.
         self.toolbar = ActionToolbar(
@@ -346,6 +341,11 @@ class TimeEstimatesActivity(EntityActivity):
             menus={"report.html": ("File", "Export")},
         )
         strip_row.addWidget(self.toolbar)
+        # A change to the plan re-runs the page after a quiet spell; until it has, the strip
+        # says so rather than showing a picture of a plan that has since changed. At the far
+        # right, outside every toolbar, so the » overflow can never swallow it.
+        self.updating = UpdatingIndicator(strip)
+        strip_row.addWidget(self.updating)
 
         # -- left: what you set --------------------------------------------------------------
         settings = QWidget()
@@ -461,12 +461,13 @@ class TimeEstimatesActivity(EntityActivity):
         self._refresh_soon = Debounced(
             self._refresh, REFRESH_DELAY_MS, parent=self.split, service=deps.debounce
         )
+        self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
             # Every signal, this project only: a separate agent instruction is prose, and
             # carrying one marks the step as agent work — so a text edit can move a step
             # between pools — and a milestone's label and a step's title are what the
             # lists print.
-            follow_project(self._product, self.project_id, self._on_change),
+            follow_project(self._product, self.project_id, self._refresh_soon.trigger),
         ]
         self._refresh()
 
@@ -579,10 +580,6 @@ class TimeEstimatesActivity(EntityActivity):
 
     def _on_page(self, chosen: int) -> None:
         self.chart.show_page(PAGES[chosen][0])
-
-    def _on_change(self, *_args: object) -> None:
-        self.recalculating.show()
-        self._refresh_soon.trigger()
 
     def _on_then_picked(self, pick: Pick) -> None:
         """A way of looking, not a plan fact: view state, re-rendered, never stored."""
@@ -723,7 +720,6 @@ class TimeEstimatesActivity(EntityActivity):
         return milestone_colors(self._deps.library, self._project(), self._is_milestone)
 
     def _refresh(self) -> None:
-        self.recalculating.hide()
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         deps = self._deps
