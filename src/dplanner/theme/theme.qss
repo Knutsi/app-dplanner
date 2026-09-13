@@ -596,8 +596,8 @@ QProgressBar::chunk {
 
 /* The quiet bordered button: a toolbar verb, the layout picker, the task browser's in-row
  * Cancel. DESIGN.md's *Buttons*: everything that is not the one primary looks like this. */
-#ToolbarButton, #LayoutButton, #TemplateButton, #TaskRowCancel, #FilterButtonFace,
-#FilterButtonClear {
+#ToolbarButton, #LayoutButton, #TemplateButton, #PanelButton, #TaskRowCancel,
+#FilterButtonFace, #FilterButtonClear {
     background-color: $BG_OVERLAY;
     color: $TEXT_SECONDARY;
     border: 1px solid $BORDER;
@@ -605,10 +605,22 @@ QProgressBar::chunk {
     padding: 6px 12px;
 }
 
-#ToolbarButton:hover, #LayoutButton:hover, #TemplateButton:hover, #TaskRowCancel:hover,
-#FilterButtonFace:hover, #FilterButtonClear:hover {
+#ToolbarButton:hover:enabled, #LayoutButton:hover:enabled, #TemplateButton:hover:enabled,
+#PanelButton:hover:enabled, #TaskRowCancel:hover:enabled, #FilterButtonFace:hover:enabled,
+#FilterButtonClear:hover:enabled {
     color: $TEXT_PRIMARY;
     border-color: $BORDER_STRONG;
+}
+
+/* Off. *Disabled, never hidden* only teaches while a greyed control reads as greyed, and a
+   rule that sets `color` takes the palette's disabled ink out of Qt's hands — so every quiet
+   button has to say what it looks like off, and its hover must not answer (`:enabled` above).
+   The ground goes with the ink: a bordered box in the overlay tone reads as a target. */
+#ToolbarButton:disabled, #LayoutButton:disabled, #TemplateButton:disabled,
+#PanelButton:disabled, #TaskRowCancel:disabled, #FilterButtonFace:disabled {
+    color: $TEXT_DISABLED;
+    background-color: transparent;
+    border-color: $BORDER_FAINT;
 }
 
 /* The filter control (framework/toolbar.py's FilterButton): the face and its × are one
@@ -761,7 +773,7 @@ QComboBox QAbstractItemView::item:selected {
     height: 6px;
 }
 
-#ToolbarButton, #FilterButtonFace, #FilterButtonClear {
+#ToolbarButton, #PanelButton, #FilterButtonFace, #FilterButtonClear {
     /* Glyphs and words carry different metrics; one content height keeps every control on
        a strip 32 px tall — this, 6 px of padding above and below, and the hairline. */
     min-height: 18px;
@@ -774,7 +786,7 @@ QComboBox QAbstractItemView::item:selected {
     background-color: $BORDER_FAINT;
 }
 
-#ToolbarButton:checked {
+#ToolbarButton:checked, #PanelButton:checked {
     background-color: $ACCENT;
     color: $ON_ACCENT;
     border-color: $ACCENT;
@@ -782,12 +794,16 @@ QComboBox QAbstractItemView::item:selected {
 
 /* A styled QToolButton loses Qt's own room for the drop-down arrow: the box model knows
    the text and the padding and nothing about the subcontrol, so the arrow lands on the
-   last letter. Both buttons that carry a menu say where it goes and leave room for it. */
+   last letter. Both buttons that carry a menu say where it goes and leave room for it —
+   and `right` holds it off the border, which right-aligning in the padding box otherwise
+   puts it flush against: an arrow a pixel from the edge reads as a clipped button, and on
+   a fractionally scaled display that last pixel is the one that goes. */
 #ToolbarButton::menu-indicator, #LayoutButton::menu-indicator,
 #TemplateButton::menu-indicator {
     subcontrol-origin: padding;
     subcontrol-position: right center;
-    width: 10px;
+    width: ${INDICATOR_W}px;
+    right: ${INDICATOR_INSET}px;
 }
 
 /* A button whose arrow drops a family down is two targets in one: the front half runs the

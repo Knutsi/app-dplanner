@@ -387,6 +387,11 @@ def layers_icon(color: str | QColor) -> QIcon:
     return glyph_icon("layers", color)
 
 
+def problem_icon(color: str | QColor) -> QIcon:
+    """A warning triangle: what is wrong with the plan."""
+    return glyph_icon("problem", color)
+
+
 def step_icon(color: str | QColor) -> QIcon:
     """A card: a plain step."""
     return glyph_icon("step", color)

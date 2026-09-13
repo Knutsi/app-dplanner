@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
+from tests.platforms import set_home
 
 IDENTITY = (
     "-c",
@@ -42,10 +43,9 @@ def clean_git(monkeypatch, tmp_path):
     it runs in, and the code under test inherits this environment too."""
     home = tmp_path / "githome"
     home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
+    set_home(monkeypatch, home)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(home / "gitconfig"))
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(home / "gitconfig-system"))
-    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
     return home
 
@@ -56,7 +56,10 @@ class Remote:
     def __init__(self, bare: Path, work: Path) -> None:
         self.bare = bare
         self.work = work
-        self.url = f"file://{bare}"
+        # as_uri, not an f-string: on Windows the path is C:\..., and file://C:\... is neither a
+        # URL git accepts nor one source.py can parse. as_uri writes file:///C:/... there and
+        # file:///... here, which is the same answer.
+        self.url = bare.as_uri()
 
     def commit(self, files: Mapping[str, bytes | str], message: str = "change") -> str:
         for name, data in files.items():

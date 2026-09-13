@@ -18,6 +18,7 @@ from dplanner.domain.schedule import (
     next_working_day,
     schedule,
     share_at,
+    volume_words,
     working_days_after,
 )
 
@@ -70,6 +71,14 @@ def test_a_week_is_five_working_days():
     assert format_days(8) == "1.6w"
     assert format_days(0.5) == "0.5d"
     assert format_days(None) == ""
+
+
+def test_the_volume_of_a_set_of_steps_is_one_sentence():
+    """The order tab, ``order show``, ``estimate rollup`` and the Estimates tab print this,
+    so a total read in one place cannot disagree with the same total read in another."""
+    assert volume_words(12, 7, 1) == "12 days over 7 steps, 1 unestimated"
+    assert volume_words(1, 1, 0) == "1 day over 1 step"  # Neither plural is guessed at.
+    assert volume_words(0, 3, 3) == "0 days over 3 steps, 3 unestimated"
 
 
 # -- how a date reads ------------------------------------------------------------------------

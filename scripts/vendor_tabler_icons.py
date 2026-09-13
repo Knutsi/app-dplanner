@@ -100,6 +100,8 @@ GLYPHS: dict[str, str] = {
     "beaker": "flask",  # This step keeps tests.
     "shield": "shield-check",  # A check: everything behind it passing.
     "step": "square-rounded",
+    # -- what is wrong with the plan ---------------------------------------------------
+    "problem": "alert-triangle",  # The Problems panel, and the count on its button.
 }
 
 

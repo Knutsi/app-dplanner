@@ -131,7 +131,7 @@ def read_shell(run: AgentRun) -> dict[str, str]:
     and once the agent is in place ``dir`` and ``resume``), or {} before the script has
     written them."""
     try:
-        text = Path(run.shell_file).read_text()
+        text = Path(run.shell_file).read_text(encoding="utf-8")
     except OSError:
         return {}
     facts: dict[str, str] = {}
@@ -158,7 +158,7 @@ def settle(run: AgentRun, alive: Callable[[int], bool] | None = None) -> AgentRu
         return run
     exit_path = Path(run.exit_file)
     try:
-        word = exit_path.read_text().strip()
+        word = exit_path.read_text(encoding="utf-8").strip()
     except OSError:
         word = None
     if word is not None:
@@ -179,16 +179,23 @@ def _ended(run: AgentRun, outcome: str, code: int | None = None) -> AgentRun:
 
 
 def process_alive(pid: int) -> bool:
-    """Whether a process with this id still exists — the wrapper shell's, here."""
+    """Whether a process with this id still exists — the wrapper shell's, here.
+
+    The ``else`` is load-bearing rather than style: mypy exempts a block guarded by a
+    ``sys.platform`` comparison from its checks on the platform that never reaches it, and a
+    fall-through after an always-taken ``return`` is not such a block — ``mypy --platform
+    win32`` read it as dead code. One branch each, and each checked where it runs.
+    """
     if sys.platform == "win32":
         return _windows_process_alive(pid)
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True  # Somebody else's process, but a process.
-    return True
+    else:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True  # Somebody else's process, but a process.
+        return True
 
 
 def _windows_process_alive(pid: int) -> bool:

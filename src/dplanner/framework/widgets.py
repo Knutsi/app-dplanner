@@ -96,6 +96,30 @@ def ink_of(widget: QWidget) -> QColor:
     return widget.palette().color(QPalette.ColorRole.Text)
 
 
+class _HintGlyph(QLabel):
+    """The info glyph beside a caption, re-inked when the theme changes.
+
+    A pixmap ignores the stylesheet's ``color``, so the ink has to be painted in — and a
+    colour painted into a long-lived widget goes stale on the next theme, which is the
+    ``option.palette`` trap one layer up. It repaints itself on ``PaletteChange`` instead,
+    the way ``Toolbar`` re-inks its verbs, so a caption on a tab page is as safe as one in
+    a dialog built fresh each time it opens.
+    """
+
+    def __init__(self, hint: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setToolTip(hint)
+        self._reink()
+
+    def _reink(self) -> None:
+        self.setPixmap(info_icon(ink_of(self)).pixmap(ICON_SIZE, ICON_SIZE))
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        if event.type() == QEvent.Type.PaletteChange:
+            self._reink()
+        super().changeEvent(event)
+
+
 def captioned(title: str, parent: QWidget, hint: str = "") -> QWidget:
     """A caption over a block, with a standing convention behind an info glyph.
 
@@ -108,10 +132,7 @@ def captioned(title: str, parent: QWidget, hint: str = "") -> QWidget:
     layout.setSpacing(FIELD_GAP)
     layout.addWidget(caption(title, row))
     if hint:
-        glyph = QLabel(row)
-        glyph.setPixmap(info_icon(ink_of(parent)).pixmap(ICON_SIZE, ICON_SIZE))
-        glyph.setToolTip(hint)
-        layout.addWidget(glyph)
+        layout.addWidget(_HintGlyph(hint, row))
     layout.addStretch(1)
     return row
 

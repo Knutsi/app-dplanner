@@ -58,13 +58,23 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
   each point at the other. A decision that lives only in a commit message is one the next
   feature rediscovers.
 
-## Checks — run all three before finishing any task
+## Checks — run all four before finishing any task
 
 ```bash
 QT_QPA_PLATFORM=offscreen uv run pytest -q   # ALWAYS prefix the env var — see below
 uv run ruff check      # lint (ruff format for formatting)
 uv run mypy            # strict type checking, whole tree
+uv run mypy --platform win32   # the same tree as Windows sees it
 ```
+
+**`--platform win32` is a check, not a curiosity.** The application ships on Windows, and
+almost none of the suite can run there from here, so the type checker is the only reader we
+have of the Windows half — mypy skips a `sys.platform == "win32"` branch entirely on Linux,
+so that code is otherwise read by nobody until somebody runs it. It takes thirty seconds and
+it found four real errors the day it was first run. Keeping it clean costs one habit:
+**compare `sys.platform` inline where you branch on the platform**, never through a module
+constant, because mypy narrows on the comparison and a constant is opaque to it
+(`modules/spec_git/client.py` is the worked example).
 
 On a machine whose shell already presets `QT_QPA_PLATFORM` (Arch with a tiling WM, for
 instance), the `setdefault` in `tests/conftest.py` does not kick in and a bare `pytest`
@@ -75,7 +85,7 @@ window becomes active one event round late, so a focus-dependent test
 (`test_the_editor_ignores_the_echo_of_its_own_write_while_editing`) passed one evening and
 failed every run the next morning. A headless suite must not depend on the desktop's state.
 
-The suite runs on every core (`-n auto` in `pyproject.toml`) — about **half a minute** for the
+The suite runs on every core (`-n auto` in `pyproject.toml`) — about **two minutes** for the
 whole thing, so run the whole thing; there is nothing to be saved by not. Two flags are worth
 knowing while working:
 
@@ -201,6 +211,28 @@ access instead of somewhere random; the committed `TaskRunner` before this pass 
 3 under it in a 3000-round stress. `NOTES-FOR-APPFRAME.md` §15 has the sources and the
 backtraces.
 
+**A test asserts what the code produced, in the terms the code produced it.** An expected
+string carrying a path, a separator or a quoting is built from the *same object the test
+handed in* and run through the *same formatter production used* (`shlex.quote`,
+`_exec_quote`) — never retyped in one platform's spelling. Nearly every Windows failure in
+the suite was an assertion that rebuilt a path as an f-string with `/` in it, and the fix is
+not a skip: comparing against the `Path` that went in is portable **and** a better test,
+because it stops duplicating the value under test. A platform mark goes only on a test whose
+whole subject is that platform's own concept or a capability the host may not have — a POSIX
+mode bit, making a symlink — and it is phrased as the **capability**, in `tests/platforms.py`,
+so it switches itself on when a Windows developer enables Developer Mode. There are five in
+the whole suite. When the code itself reads `sys.platform`, the answer is neither: give it a
+`platform` argument with a default, as `cli/desktop.py`'s `launcher_for` does.
+
+**The Windows check is a disposable target, run by hand.** `scripts/windows_check.py` is the
+one command; `scripts/windows/README.md` is the recipe. It targets the developer's own
+Omarchy VM by default — installed, persistent, and driven through its shared folder by
+`runner.ps1`, because adding a port would mean recreating a container that is not this
+check's to recreate — or `--target box`, a throwaway `dockurr/windows` container on ports
+nothing else uses. There is deliberately **no CI**: Windows is checked rarely, on purpose, and
+`mypy --platform win32` above is the cheap guard that runs on every machine in between. Never
+leave a VM running for a check, and `clean` gives the disk back.
+
 The layering rules below are enforced by `tests/test_architecture.py`, which runs with the
 normal suite. **If it fails, fix the dependency direction — don't loosen the test.** Every
 rule has a supported way to get what the shortcut wanted: a capability protocol, a typed
@@ -320,15 +352,19 @@ root, stop and look for the registry or capability you have not found yet.
 - **A panel the graph tab hosts is not a dock panel.** A dock panel follows the *window* —
   one instance, retargeted by the context. A panel inside a project tab follows *that tab*:
   one per tab, handed a context naming its own project, so a background tab never follows
-  the tab in front. The Features list is the first — out of the window's left area and
-  beside the canvas, where the drag onto the graph is short. What goes there is a
+  the tab in front. The Problems list is the one — beside the canvas, where clicking a
+  problem and landing on its step is a short trip. What goes there is a
   `SidePanel(title, icon, build)` on `ProjectEditorDeps`, named by the composition root and
   reached through `framework/panels.py`'s `ContextPanel` protocol, so `project_editor`
-  imports nothing from `feature` and `feature` registers no panel (it offers
+  imports nothing from `problems` and `problems` registers no panel (it offers
   `create_panel()`, the `step_properties` arrangement). The seam is the splitter's and the
   panel draws no edge; whether it stands is a field on `Look`, like every other preference
-  the editor keeps. `ARCHITECTURE.md`'s *The Features list lives in the graph, not in the
-  window* has the reasoning.
+  the editor keeps. **A panel may also carry a *reading*** — `ReadingPanel`, one string and
+  a signal — which the strip's leading band shows beside its glyph as `(4)`; that is why
+  that seat is a widget (`panel_button.py`) where every other is an action, and why the
+  count is read from the panel's last settled rebuild rather than probed in a state
+  callback. `ARCHITECTURE.md`'s *The Problems list lives in the graph, not in the window*
+  has the reasoning.
 - **One panel per surface, not one per tab.** A detail panel is anchored in a window area and
   reads the context; an activity never holds one. Building it inside the tab is what made the
   step editor appear twice in a split window, and the fix deleted code rather than adding a
@@ -641,7 +677,13 @@ root, stop and look for the registry or capability you have not found yet.
   returns False for a selected step without clearing its cards — clearing tore down and
   rebuilt every card twice per gesture). **No subprocess in an action state or a structure
   listener**: `origin_url` is memoised on the config file's mtime, and the sync module
-  asks git about membership only when the *library's* children change. Measured on a
+  asks git about membership only when the *library's* children change. **And no walk
+  over a project in an action state**: a state runs on every announce, so a derivation
+  over every step is paid per keystroke — *Compile Out of Date*'s label once re-walked
+  every collector's cone on each one (198 ms at 400 steps, from a flat 4). The pattern
+  is the Problems count's: the module settles the answer once per burst in a `Debounced`
+  and the state *reads* it (`DocsModule._frontier_of`), with the settle announcing the
+  context so the label catches up; the gesture itself computes fresh. Measured on a
   74-step, 344-note plan: connect 1.7 s → tens of ms, paste 0.6 s → tens of ms; the
   suite runs the debounce service immediate, so a test that asserts coalescing switches
   it off and `flush_all()`s. `scripts/measure_scaling.py --scenarios connect,paste` is the number to
@@ -1324,7 +1366,7 @@ root, stop and look for the registry or capability you have not found yet.
   coming first-start checklist reuses. A profile's name
   follows its choices — *Claude Code in herdr* — until somebody types one, and a taken
   name is numbered rather than refused. Over a selection every chosen step goes through
-  the one profile — with a multiplexer, one pane each. The progression board's Ready
+  the one profile — with a multiplexer, one pane each. The Ready-to-start board's Ready
   lane is the same menu again: each ready card carries a tick, and the lane's *Run N
   Agents* button (top right, level with the caption) drops the child down over the
   ticked steps, publishing them as it opens.
@@ -1347,8 +1389,25 @@ root, stop and look for the registry or capability you have not found yet.
 - **Progression is derived, never stored** — `domain/progression.py` is the graph's
   readiness with a `status_for(step)` handed in like `days_for`; the board, `dplanner
   progression show` and `--json` are three readers of one function, and the frontier is a
-  per-step check, not `ordering.ready()`'s wave one. `ARCHITECTURE.md`'s *Progression is
-  the status-aware frontier* has the partition rules and why each was a decision.
+  per-step check, not `ordering.ready()`'s wave one. **The surface is named for the
+  question and the derivation for the answer**: the tab, its menu entries and its index
+  row say *Ready to start*, while the walk, the module id, the activity kind and the verb
+  stay `progression`, because the frontier is one of the six partitions it computes and a
+  renamed verb would move under every agent that has the skill. Its header is the percent
+  and the bar — the two lines under the bar said the same counts in words and then again
+  in estimated days, which the bar draws to scale; the terminal still prints both, where
+  there is no bar to read. `ARCHITECTURE.md`'s *Progression is the status-aware frontier*
+  has the partition rules and why each was a decision.
+- **The order says what order, and how much — never when.** The Order tab is the index,
+  the step, its wave and its estimate, under one line of volume (`domain/schedule.py`'s
+  `volume_words`: *62 days over 24 steps, 2 unestimated*, the sentence `order show`,
+  `estimate rollup` and the Estimates tab's strip all print). It ran a serial calendar
+  once — accumulated days, days since the last milestone, a landing date per row, from a
+  start date set on that page — and nobody schedules that way: `time_estimates` simulates
+  two pools of workers and owns the start date, so the columns and the bar are gone and
+  **wave 1 is called *Wave 1***, the words *Ready to start* now naming the board alone.
+  The CSV export and the published report keep the day counts and the dates, because a
+  spreadsheet is opened to sort and sum.
 - **Staffing what-ifs are derived; only the assumptions are stored.** The time estimates
   tab and `dplanner schedule matrix` are one derivation — `domain/schedule.py`'s
   `phases` over `parallel_finish`, a deterministic two-pool greedy simulation (longest
@@ -1447,8 +1506,8 @@ root, stop and look for the registry or capability you have not found yet.
   deal — `ordering.placed`'s sequence, a milestone's own chosen colour over its dealt
   shade — walked once per project by the composition root's `_milestone_colors` and handed
   down as a typed callback, so no module learns where a colour map is stored. Ten surfaces
-  read it: the canvas card, its badge and its tag medallion, the order table's row, rule
-  and **key badge**, the progression board's card, the Tests tab's grouping heading, the
+  read it: the canvas card, its badge and its tag medallion, the order table's row wash
+  and **key badge**, the Ready-to-start board's card, the Tests tab's grouping heading, the
   Docs tab's medallion, the coverage lane, the Milestone tab's swatch, the calendar's
   bands and the report's graph. `theme/tones.py`'s `toned(name, hex)` is the one place a
   shade takes a tone's alphas — never re-derive them — and the maps live in
@@ -1496,18 +1555,30 @@ root, stop and look for the registry or capability you have not found yet.
   narrow dock — because a stack of equal cards stops working at the third test.
   `ARCHITECTURE.md`'s *A test belongs to a step, and a step carries several* has the
   reasoning, including the diff trade the string body accepts.
-- **Documentation is a fragment per step and a document per collector.** The `docs` aspect
-  is what one step adds to the product's documentation; `docs_compiled` is what a feature or
-  a milestone makes of everything it gathers. Two aspect ids in one package, because a node
-  holds one prose document per module and a feature legitimately has both. **There is no
-  step kind for compiling** — a feature and a milestone already *are* the collectors, so
-  Compile is a verb on them. A milestone reads its features' *compiled* documents, not their
-  notes again (`ScopeKind.gathers` says so), which is also what makes recompiling a feature
-  mark its milestone out of date. **Staleness is a digest, never a timestamp**: a compile
-  stores the digest of what it read, and "out of date" is a comparison — so a relink that
-  changes what a collector gathers says so by itself. The CLI is where an agent compiles:
-  `docs status`, `docs collect`, then `compiled set`, which re-stamps. `ARCHITECTURE.md`'s
-  *Documentation is fragments, and a collector compiles them* has the reasoning.
+- **Documentation is a fragment per step and a document per collector, and an agent
+  compiles it.** The `docs` aspect is a step's **documentation fragment**; `docs_compiled` is
+  a collector's **documentation**, made of everything it gathers — the words on every
+  surface, while the two on-disk ids stay as they are. Two aspect ids in one package, because
+  a node holds one prose document per module and a feature legitimately has both. **There is
+  no step kind for compiling** — a feature and a milestone already *are* the collectors, so
+  compiling is a verb on them. A milestone reads its features' *compiled* documents, not
+  their fragments again (`ScopeKind.gathers` says so), which is also what makes recompiling a
+  feature mark its milestone out of date. **Staleness is a digest, never a timestamp**: a
+  compile stores the digest of what it *read*, so a relink says so by itself, while
+  hand-editing a document — or rewording the compilation instructions — does not.
+  **There is no Compile button.** *Compile with Agent…* launches the chosen profile on a
+  briefing of the fragments, the project's **compilation instructions** (`modules/docs.md`
+  beside the project; the panel card, a tab in the view, and `docs set/show --for-project`
+  are three presenters of one field) and the verb that finishes it — `dplanner compiled set
+  <key> --file -`. Two typed callbacks on `DocsDeps`, the `hand_to_agent` shape, so nothing
+  imports the agent module; the run is tracked on the collector like any other, and
+  **claims nothing about the step's status**. What the agent writes arrives from another
+  process, so **it is not undoable** and replacing a document that has text asks once.
+  *Compile Out of Date…* takes the **frontier** — never a milestone beside the features whose
+  documents it reads. Who compiled a document is the launching window's record, per user; the
+  plan's stamp says when and from what (`docs_compiled` format 2 dropped `provider`/`model`
+  with the LLM call). `ARCHITECTURE.md`'s *Documentation is fragments, and a collector
+  compiles them* has the reasoning.
 - **An LLM call is a task, and the service is GUI-bound.** `framework/llm_service.py`'s
   `complete()` is blocking network I/O, so it runs in a `TaskRunner` body and the answer
   comes back on the owner's own Qt signal — the runner has no result seam. Every call is
@@ -1529,8 +1600,8 @@ root, stop and look for the registry or capability you have not found yet.
   the three predicates literally: what carries a kind, where its cone stops, and — a
   separate question — which kind it is *read as a list of* (`gathers`). A milestone is read
   as its features; a feature is the finest grain and reads flat. `step_check` is a bare
-  marker with no tab of its own; a feature step names the catalogue record it realises and
-  its tab edits that record; `modules/testing/` renders what any of them gathers, because a
+  marker with no tab of its own; a feature step's tab edits the spec passages it was read
+  from; `modules/testing/` renders what any of them gathers, because a
   list of tests is testing's business. That keeps the wiring one-directional. `ARCHITECTURE.md`'s *A check is a scope over the graph* has the
   reasoning, including why exclusivity is a predicate rather than a stored list.
 - **A kind is what a node *is*; a facet is what it carries.** Milestone, Feature, Check and
@@ -1557,22 +1628,23 @@ root, stop and look for the registry or capability you have not found yet.
   canvas, not to the verb — so New twice in a row leaves two nodes rather than one hiding
   another, and naming a step is the gesture's second half. A step that arrives *carrying*
   something — a dropped feature's marker — arrives named, so it is placed but not `created`.
-- **A feature is a record, and a feature step is its instance.** The project's catalogue
-  (`modules/feature/catalogue.py`, `dplanner feature list`) holds every feature whether or
-  not it is on the graph — read out of a spec with `feature add --document --quote --page`
-  (the quote checked through the spec module's `anchor_quote`, handed across by the root),
-  or added by hand. A feature step carries only the record's id, and a record has **one**
-  instance: the Features panel's drag onto the canvas, the Type toggle, `feature set` and
-  `step add --feature` all refuse a second in the same words. Toggling off shelves the
-  marker like any aspect; deleting the step or `clear-steps` leaves the record unplaced —
-  only the feature verbs create and remove records. A work step's briefing names the
-  features it *flows into* (`scope.gatherers`); it carries no link of its own.
-  `ARCHITECTURE.md`'s *A feature is a record, and a feature step is its instance* has the
-  reasoning.
+- **A feature is a step.** There is no catalogue and no verb that creates one: `step add
+  --feature` is the door in — carrying `--document`/`--quote`/`--page`/`--strict` for a
+  feature read straight out of a spec, the quote checked through the spec module's
+  `anchor_quote` — and `step remove` the door out, which is what keeps a feature on the
+  graph *by construction*. Its name is the step's title, its prose the step's description,
+  its pictures the step's file area; what the aspect stores is only the passages it cites
+  (`{"on": true, "cites": […]}`, format 3). Two steps may both be features. Toggling off
+  shelves the passages like any aspect; `feature set`/`clear` are the toggle's CLI half.
+  A work step's briefing names the features it *flows into* (`scope.gatherers`); it
+  carries no link of its own. The project's old catalogue moves onto its steps at open
+  (`modules/feature/migrate.py`, an `absorb` pass) — **a step it creates gets its data
+  before `add_child` and its id is never returned**, or the flush raises inside the store.
+  `ARCHITECTURE.md`'s *A feature is a step* has the reasoning.
 - **A citation is a quote and a digest; its place is derived, and the trace is feature
   membership.** A feature cites N passages (`FeatureSource`: document, quote, page,
-  digest — catalogue format 2), maintained by `feature cite`/`uncite`/`reanchor` and the
-  editor's passage list. Nothing stores where a quote sits: `core/anchors.py` finds it
+  digest — on the step, feature format 3), maintained by `feature cite`/`uncite`/`reanchor`
+  and the Feature tab's passage list. Nothing stores where a quote sits: `core/anchors.py` finds it
   again on every read — exact, then fuzzy (seeded by the quote's rarest words, kept at
   `DRIFT_RATIO`), then lost — and a stamped passage in a document that changed since is
   *behind* only when the diff touched its paragraph. `coverage/trace.py` arranges
@@ -1605,14 +1677,14 @@ root, stop and look for the registry or capability you have not found yet.
   prints it alone, and the recorded digest stays the project's text — hashing the default
   would un-read every project on the day `shaping.md` gained a comma.
   `ARCHITECTURE.md`'s *The topology is read before the graph is edited* has the reasoning.
-- **A drop on the canvas is the third caller of `StepVerbs.create`.** `GraphView` accepts
-  the mime types the composition root lists as `CanvasDrop`s on `ProjectEditorDeps`
-  (`project_editor/drops.py`), records the point like a click and hands the payload up;
-  the handler lives in the root because it reads one module's catalogue and births
-  through another's `create_step`. A dropped feature is born **as the Feature template**
-  — marker and estimate opt-out in the one command, the same set the template names, so
-  the modal lights *Feature* and not the catch-all. Not a mode: Qt's drag events never
-  reach the mouse handlers, and a drop has no state to leave.
+- **A step born where nobody pointed lands somewhere free.** `placement.free_spot` reads
+  every card as the canvas draws it and opens a fresh column to the right of everything,
+  walking down a row at a time while anything is in the way — so the Specs tab's *Cite…* ▸
+  *New feature step…* never lands on a card somebody placed, and two in a row never stack.
+  It is Qt-free and deterministic; the root places through `project_editor.create_step`
+  with it, and the step arrives **as the Feature template** (marker and estimate opt-out in
+  the one command, the same set the template names). A CLI verb writes no position: it has
+  no gesture behind it, so the ambient layout answers, as it does for `step add`.
 - **The Edit menu's Cut, Copy, Paste, Duplicate, Delete and Select All are the graph's.**
   Registered by `project_editor` as ordinary `ActionSpec`s — no dispatcher until a second
   surface needs a clipboard, because a shortcut can be owned by one enabled QAction at a
@@ -1624,7 +1696,8 @@ root, stop and look for the registry or capability you have not found yet.
   (`project_editor/clipboard.py`): fresh ids, links between copies remapped and every link
   to the outside dropped, files in the payload and written after the one composite
   command, and a `PastePolicy` per module with a say (`testing` re-mints ids,
-  `step_agent_run` forgets, `feature` drops the marker — one instance per record).
+  `step_agent_run` forgets, `feature` keeps the marker and drops the passages — they were
+  read into *that* feature, and citing them again is a claim only a person can make).
   `dplanner step duplicate` is the same function.
   `ARCHITECTURE.md`'s *Edit verbs belong to the surface whose things they act on* and *Copy
   and paste are a clone through the same command* have the reasoning.

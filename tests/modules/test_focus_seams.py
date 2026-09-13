@@ -10,7 +10,8 @@ from dplanner.modules.docs.aspect import MODULE_ID as DOCS_ID
 from dplanner.modules.docs.aspect import write_state
 from dplanner.modules.docs.module import NO_DOCS_REASON, OPEN_STEP_ACTION
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-from dplanner.modules.feature.catalogue import FeatureRecord, read_catalogue, write_catalogue
+from dplanner.modules.feature.aspect import read as feature_read
+from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.feature.module import FeatureModule
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
 from dplanner.modules.testing.aspect import MODULE_ID as TESTING_ID
@@ -19,7 +20,7 @@ from dplanner.modules.testing.aspect import Test, write
 
 @pytest.fixture
 def project(services, make_project):
-    """work → Import (feature f1); work carries two tests and a docs note."""
+    """work → Import (a feature); work carries two tests and a docs note."""
     project = make_project("Discovery")
     work, imp = Step(title="work"), Step(title="Import")
     for step in (work, imp):
@@ -28,10 +29,7 @@ def project(services, make_project):
     library = services.document
     tests = write([Test("T100", "one"), Test("T101", "two")])
     library.set_module_data(work.id, TESTING_ID, tests)
-    library.set_module_data(
-        project.id, FEATURE_ID, write_catalogue([FeatureRecord("f1", "Import")])
-    )
-    library.set_module_data(imp.id, FEATURE_ID, {"feature": "f1", "format": 2})
+    library.set_module_data(imp.id, FEATURE_ID, feature_write())
     library.set_module_data(work.id, DOCS_ID, write_state(True))
     library.apply_text_edit(TextEdit(work.id, DOCS_ID, 0, "", "What work adds."))
     return project
@@ -69,7 +67,7 @@ def test_the_details_dialog_lands_on_the_feature_tab(services, project, monkeypa
         return 0
 
     monkeypatch.setattr(StepDetailsDialog, "exec", fake_exec)
-    services.actions.run("steps.details", selection(("step", imp.id), ("feature", "f1")))
+    services.actions.run("steps.details", selection(("step", imp.id), ("feature", imp.id)))
     assert seen == ["Feature"]
     # A thing the step does not hold is nobody's: the dialog opens as it always does.
     services.actions.run("steps.details", selection(("step", imp.id), ("test", "T999")))
@@ -87,32 +85,40 @@ def test_show_docs_opens_the_docs_tab_on_the_steps_group(services, project):
     assert greyed.enabled is False and greyed.label == NO_DOCS_REASON
 
     services.actions.run(OPEN_STEP_ACTION, selection(("step", work.id)))
-    [tab] = [a for a in services.tabs.activities() if a.title.endswith("Docs")]
+    [tab] = [a for a in services.tabs.activities() if a.title.endswith("Documentation")]
     assert tab._selected == imp.id  # The note is read under the feature that gathers it.
     services.actions.run(OPEN_STEP_ACTION, selection(("step", imp.id)))
     assert tab._selected == imp.id
 
 
 def test_the_cite_menu_appends_a_stamped_passage(services, project):
+    _work, imp = project.steps
     module = next(m for m in services.modules if isinstance(m, FeatureModule))
     menu = module.cite_menu(project.id, "spec", "Operators MUST import", 3)
-    assert [a.text() for a in menu.actions() if a.text()] == ["f1  Import", "New feature…"]
+    assert [a.text() for a in menu.actions() if a.text()] == ["Import", "New feature step…"]
     menu.actions()[0].trigger()
-    [record] = read_catalogue(project)
-    [source] = record.sources
+    cites = feature_read(imp)
+    assert cites is not None
+    [source] = cites
     assert (source.document, source.quote, source.page) == ("spec", "Operators MUST import", 3)
     assert services.undo.undo_text() == "Cite Passage"
     # The same passage again, spaced and cased differently, is not a second.
     module.cite_menu(project.id, "spec", "operators must IMPORT", 3).actions()[0].trigger()
-    assert len(read_catalogue(project)[0].sources) == 1
+    assert len(feature_read(imp) or ()) == 1
 
 
-def test_the_cite_menu_can_mint_a_feature(services, project, monkeypatch):
+def test_the_cite_menu_can_start_a_feature_step(services, project, monkeypatch):
     from PySide6.QtWidgets import QInputDialog
 
     module = next(m for m in services.modules if isinstance(m, FeatureModule))
     monkeypatch.setattr(QInputDialog, "getText", lambda *_a, **_k: ("Export", True))
     module.cite_menu(project.id, "spec", "MAY export", None).actions()[-1].trigger()
-    records = read_catalogue(project)
-    assert [(r.id, r.title) for r in records] == [("f1", "Import"), ("f2", "Export")]
-    assert records[1].sources[0].quote == "MAY export"
+    born = project.steps[-1]
+    assert born.title == "Export"
+    born_cites = feature_read(born)
+    assert born_cites is not None and born_cites[0].quote == "MAY export"
+    # Somewhere free: nothing was pointed at, so it earns a position of its own.
+    from dplanner.modules.project_editor.positions import read_position
+
+    assert read_position(born) is not None
+    assert services.undo.undo_text() == "New Feature"

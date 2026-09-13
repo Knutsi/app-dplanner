@@ -47,7 +47,7 @@ def test_the_key_letter_follows_the_kind_and_the_number_stays(services, project,
     assert node(tab, step)._accent.key_text == "S2"
     services.undo.push(SetModuleDataCommand(step.id, check.MODULE_ID, check.write(True)))
     assert node(tab, step)._accent.key_text == "C2"
-    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write("f1")))
+    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write()))
     assert node(tab, step)._accent.key_text == "F2"
     services.undo.push(SetModuleDataCommand(step.id, milestone.MODULE_ID, milestone.write("MVP")))
     assert node(tab, step)._accent.key_text == "M2"
@@ -83,7 +83,7 @@ def test_a_release_is_a_highlighted_node_with_a_tag(services, project, tab):
 
 def test_a_feature_is_a_teal_node_with_a_layer_medallion(services, project, tab):
     step = project.steps[0]
-    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write("f1")))
+    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write()))
     accent = node(tab, step)._accent
     assert accent.body_tone == "feature"
     assert "layers" in accent.icons
@@ -92,7 +92,7 @@ def test_a_feature_is_a_teal_node_with_a_layer_medallion(services, project, tab)
 def test_a_milestone_outranks_a_feature_on_the_body(services, project, tab):
     """The coarser claim wins the colour; the finer one keeps its medallion."""
     step = project.steps[1]
-    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write("f1")))
+    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write()))
     services.undo.push(SetModuleDataCommand(step.id, milestone.MODULE_ID, milestone.write("MVP")))
     accent = node(tab, step)._accent
     assert accent.body_tone == "highlight"
@@ -101,7 +101,7 @@ def test_a_milestone_outranks_a_feature_on_the_body(services, project, tab):
 
 def test_a_done_feature_reads_finished(services, project, tab):
     step = project.steps[0]
-    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write("f1")))
+    services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write()))
     services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("done")))
     accent = node(tab, step)._accent
     assert accent.body_tone == "good" and accent.muted is True

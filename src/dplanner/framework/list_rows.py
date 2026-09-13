@@ -36,6 +36,12 @@ TRAILING_ROLE = int(Qt.ItemDataRole.UserRole) + 6
 TINT_ROLE = int(Qt.ItemDataRole.UserRole) + 7
 # The row is a group heading spanning the table: bold secondary words, never selected.
 HEADING_ROLE = int(Qt.ItemDataRole.UserRole) + 8
+# Where a *host's* own roles start — the step id on a row, which milestone it is. Everything
+# below this belongs to the delegates here, and a view that numbered its own roles from
+# ``UserRole + 1`` had the order table draw its milestone label as a second line and grey
+# every cell that carried a colour (2026-09-13). Number yours from this and nothing can
+# collide with a role the framework adds later either.
+HOST_ROLE = int(Qt.ItemDataRole.UserRole) + 16
 
 TRAILING_GAP = 12  # Between the name and the note at the right, so neither crowds the other.
 

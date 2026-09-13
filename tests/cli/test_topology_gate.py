@@ -102,7 +102,7 @@ def gated_cli(workspace, cli_library, tmp_path):
 GATED = [
     ("step", "add", "Discovery", "Deploy"),
     ("project", "clear-steps", "Discovery"),
-    ("feature", "add", "Discovery", "Bulk import"),
+    ("step", "add", "Discovery", "Bulk import", "--feature"),
 ]
 
 
@@ -122,10 +122,10 @@ def test_the_topology_must_be_read_before_the_graph_is_edited(gated_cli):
     gated_cli("step", "add", "Discovery", "Test", "--after", "Deploy")
     gated_cli("step", "unlink", "Test", "Deploy")
     gated_cli("step", "link", "Test", "Deploy")
-    gated_cli("feature", "add", "Discovery", "Bulk import")
-    gated_cli("feature", "set", "Deploy", "--feature", "f1")
+    gated_cli("step", "add", "Discovery", "Bulk import", "--feature")
+    gated_cli("feature", "set", "Deploy")
     gated_cli("feature", "clear", "Deploy")
-    gated_cli("feature", "remove", "Discovery", "f1")
+    gated_cli("step", "remove", "Bulk import")
     gated_cli("step", "remove", "Test")
     gated_cli("step", "duplicate", "Deploy")
 
@@ -157,11 +157,11 @@ def test_content_edits_are_never_gated(gated_cli):
     gated_cli("topology", "set", "Discovery 2", "--file", "-", stdin="Shape.")
     gated_cli("topology", "show", "Discovery 2")
     gated_cli("step", "add", "Discovery 2", "Deploy")
-    gated_cli("feature", "add", "Discovery 2", "Bulk import")
+    gated_cli("step", "add", "Discovery 2", "Bulk import", "--feature")
     gated_cli("topology", "set", "Discovery 2", "--file", "-", stdin="Shape, revised.")
     gated_cli("step", "rename", "Deploy", "--title", "Ship")
     gated_cli("describe", "set", "Ship", "--file", "-", stdin="The release step.")
-    gated_cli("feature", "edit", "Discovery 2", "f1", "--title", "CSV import")
+    gated_cli("feature", "uncite", "Bulk import", "--all")
     gated_cli("estimate", "set", "Ship", "--days", "1")
     assert "changed since you read it" in gated_cli("step", "add", "Discovery 2", "Test", expect=1)
 

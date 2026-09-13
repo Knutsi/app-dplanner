@@ -17,12 +17,13 @@ Three tables were written by hand before this one and disagreed on nine settings
 at a time. ``modules/debug/design_example.py`` is the reference to copy from.
 """
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 from PySide6.QtCore import QEvent, QModelIndex, QPersistentModelIndex, QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPalette
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QFontMetricsF, QIcon, QPainter, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
@@ -99,6 +100,20 @@ class Cell:
 
 def snap_up(value: int) -> int:
     return -(-value // GRID) * GRID
+
+
+def text_width(font: QFont, text: str) -> int:
+    """The narrowest width ``text`` is drawn whole in, in ``font``.
+
+    Two measures, and the wider wins, because each falls short on a real font. Qt elides
+    against the *fractional* advance, so an integer advance rounded down (15 for 15.3)
+    elides "10" in DejaVu Sans — the ceiling never does, on every font this was swept
+    over. And ink can reach past the advance — a glyph's side bearing, Liberation Sans's
+    "1" — which does not elide but is clipped when painted, so the bounding rect counts
+    too. ``sizeHint`` measures with this so a column sized to its contents shows them.
+    """
+    laid_out = math.ceil(QFontMetricsF(font).horizontalAdvance(text))
+    return max(laid_out, QFontMetrics(font).boundingRect(text).width())
 
 
 def row_height(font: QFont, rich: bool) -> int:
@@ -279,6 +294,22 @@ class TableDelegate(QStyledItemDelegate):
         # lingering on the last cell clicked is a second mark for what the row's edge says.
         option.state &= ~QStyle.StateFlag.State_HasFocus
 
+    def font_for(
+        self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
+    ) -> QFont:
+        """A cell's weight: bold for a heading and for a fixed point among its rows.
+
+        One answer, so what ``sizeHint`` measures is what ``paint`` draws.
+        """
+        font = QFont(option.font)
+        if index.data(HEADING_ROLE) or index.data(EMPHASIS_ROLE):
+            font.setBold(True)
+        return font
+
+    def elided(self, font: QFont, text: str, width: int) -> str:
+        """``text`` as it will be drawn in ``font``, cut to ``width``."""
+        return QFontMetrics(font).elidedText(text, Qt.TextElideMode.ElideRight, width)
+
     def paint(
         self,
         painter: QPainter,
@@ -324,26 +355,23 @@ class TableDelegate(QStyledItemDelegate):
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             icon.paint(painter, slot, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        font = QFont(opt.font)
-        if heading or index.data(EMPHASIS_ROLE):
-            font.setBold(True)
+        font = self.font_for(opt, index)
         painter.setFont(font)
         painter.setPen(primary)
         text = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         detail = str(index.data(DETAIL_ROLE) or "")
         align = opt.displayAlignment
-        elide = Qt.TextElideMode.ElideRight
         if detail:
             line = QRect(left, opt.rect.top() + ROW_PADDING_V, width, metrics.height())
-            painter.drawText(line, align, QFontMetrics(font).elidedText(text, elide, width))
+            painter.drawText(line, align, self.elided(font, text, width))
             small = QFontMetrics(detail_font(opt.font))
             painter.setFont(detail_font(opt.font))
             painter.setPen(secondary)
             line = QRect(left, line.top() + metrics.height() + ROW_LINE_GAP, width, small.height())
-            painter.drawText(line, align, small.elidedText(detail, elide, width))
+            painter.drawText(line, align, self.elided(detail_font(opt.font), detail, width))
         else:
             line = QRect(left, opt.rect.top(), width, opt.rect.height())
-            painter.drawText(line, align, QFontMetrics(font).elidedText(text, elide, width))
+            painter.drawText(line, align, self.elided(font, text, width))
         painter.restore()
 
     def sizeHint(  # noqa: N802 - Qt override
@@ -351,13 +379,18 @@ class TableDelegate(QStyledItemDelegate):
     ) -> QSize:
         """What the delegate draws, measured — the blanked option would size to nothing —
         at the row height the header was set to, so ``resizeColumnsToContents`` agrees."""
-        metrics = option.fontMetrics
-        small = QFontMetrics(detail_font(option.font))
+        heading = bool(index.data(HEADING_ROLE))
+        # Measured in the weight it will be *painted* in — a bold milestone is wider than
+        # the same words plain — and by ``text_width``, which is what keeps ``elided`` from
+        # cutting a cell the column was supposed to fit: "10" became "…" twice, on two
+        # fonts, for two different reasons.
         text = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         detail = str(index.data(DETAIL_ROLE) or "")
-        widest = max(metrics.horizontalAdvance(text), small.horizontalAdvance(detail))
+        widest = max(
+            text_width(self.font_for(option, index), text),
+            text_width(detail_font(option.font), detail),
+        )
         column = index.column()
         slot = GLYPH_SLOT + ICON_GAP if self._table.columns()[column].glyph else 0
-        heading = bool(index.data(HEADING_ROLE))
         height = row_height(option.font, rich=self._table.rich() and not heading)
         return QSize(widest + slot + 2 * self._table.padding(), height)

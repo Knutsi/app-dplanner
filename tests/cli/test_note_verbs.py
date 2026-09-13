@@ -3,6 +3,7 @@ briefing carries of it, and how the two retired modules reach it. No ``qapp`` fi
 this is an agent's workflow."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -187,7 +188,8 @@ def test_attach_copies_the_file_in_and_links_it_from_the_body(cli, project, tmp_
     diagram.write_bytes(b"png-bytes")
     cli("note", "add", project, "handoff", "See the diagram", "--step", "S1")
     said = data(cli("note", "attach", project, "N1", str(diagram), "--json"))
-    assert said["asset"].startswith("assets/") and said["path"].endswith(said["asset"])
+    assert said["asset"].startswith("assets/")
+    assert Path(said["path"]).as_posix().endswith(said["asset"])
     assert log(cli_library)[0].body == f"![diagram]({said['asset']})"
     # Attaching the same bytes again links nothing twice.
     cli("note", "attach", project, "N1", str(diagram))

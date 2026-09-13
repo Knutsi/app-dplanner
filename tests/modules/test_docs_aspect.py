@@ -13,6 +13,7 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.scope import ScopeKind
 from dplanner.domain.store import LibraryStore
 from dplanner.modules.docs.aspect import (
+    COMPILED_FORMAT,
     COMPILED_ID,
     MODULE_ID,
     enabled,
@@ -24,13 +25,14 @@ from dplanner.modules.docs.aspect import (
     write_state,
 )
 from dplanner.modules.docs.collect import (
+    Source,
     as_markdown,
     digest,
     fragments,
     sources_for,
     state_of,
-    user_prompt,
 )
+from dplanner.modules.docs.prompt import compile_body
 
 
 @pytest.fixture
@@ -81,10 +83,25 @@ def test_the_two_aspects_keep_separate_documents():
 
 def test_the_stamp_writes_its_numbers_as_floats():
     """FORMAT.md: a file's bytes must not depend on whether the project was reopened."""
-    stamp = write_stamp("abc", 1756000000, "OpenAI", "gpt-5", 4)
+    stamp = write_stamp("abc", 1756000000, 4)
     assert isinstance(stamp["at"], float)
     assert isinstance(stamp["sources"], float)
     assert stamp["digest"] == "abc"
+
+
+def test_the_stamp_does_not_say_who_wrote_it():
+    """Every compile is landed by `dplanner compiled set` now, so `provider` and `model`
+    would be two keys with one value each forever. Which agent a window launched is that
+    window's record, not the plan's."""
+    stamp = write_stamp("abc", 1756000000, 4)
+    assert set(stamp) == {"digest", "at", "sources", "format"}
+    assert stamp["format"] == 2
+
+
+def test_a_format_one_stamp_loses_the_writer_and_keeps_its_digest():
+    written = {"digest": "abc", "at": 1.0, "provider": "OpenAI", "model": "gpt-5", "sources": 4.0}
+    [migration] = COMPILED_FORMAT.migrations
+    assert migration(written) == {"digest": "abc", "at": 1.0, "sources": 4.0}
 
 
 # -- the graph ---------------------------------------------------------------------------------
@@ -130,8 +147,8 @@ def document(step, body):
 
 
 def compile_it(library, project, step, body):
-    """Stand in for a run of the LLM: store a document and stamp what it read."""
-    stamp = write_stamp(digest(sources_for(KINDS, library, project, step.id)), 1.0, "F", "m", 1)
+    """Stand in for a compiling agent: store a document and stamp what it read."""
+    stamp = write_stamp(digest(sources_for(KINDS, library, project, step.id)), 1.0, 1)
     step.module_text[COMPILED_ID] = body
     step.module_data[COMPILED_ID] = stamp
 
@@ -283,11 +300,48 @@ def test_relinking_the_graph_makes_a_document_stale():
     assert state_of(KINDS, library, project, auth.id) == "stale"
 
 
-def test_the_prompt_drops_a_block_it_has_nothing_for():
-    """A project with no house style must not be told there isn't one."""
-    assert "House style" not in user_prompt("", "Be brief", "notes")
-    assert "House style" in user_prompt("Second person", "Be brief", "notes")
-    assert "(nothing yet)" in user_prompt("", "", "")
+def briefing(**over):
+    """The compile briefing's body, over a step with one fragment unless told otherwise."""
+    step = Step(title="Write the parser")
+    fields = {
+        "key": "F5",
+        "kind": "feature",
+        "instructions": "",
+        "about": "",
+        "sources": [Source(step, "Search accepts field:value pairs.")],
+    }
+    return compile_body(**{**fields, **over})
+
+
+def test_the_briefing_drops_a_block_it_has_nothing_for():
+    """A project with no compilation instructions must not be told there are none."""
+    assert "Compilation instructions" not in briefing()
+    assert "Compilation instructions" in briefing(instructions="Second person")
+    assert "What this feature is" not in briefing()
+    assert "What this feature is" in briefing(about="Signing in with a password")
+
+
+def test_the_briefing_says_what_to_read_and_the_verb_that_lands_it():
+    """The agent is handed the fragments and the one verb that finishes the job — keyed by
+    the step's key, which is how a step is named everywhere."""
+    text = briefing()
+    assert "Search accepts field:value pairs." in text
+    assert "dplanner compiled set F5 --file -" in text
+    # The fragments nest under the block that introduces them: the wrapper's header is the
+    # only `#`, so a fragment's own heading is one deeper than the briefing's blocks.
+    assert "### Write the parser" in text
+
+
+def test_the_briefing_protects_the_image_links_and_the_checkout():
+    """A fragment's images live beside their own step and are found by name, so a rewritten
+    link points at nothing; and the run's whole output is one `dplanner` call."""
+    text = briefing()
+    assert "![](assets/…)" in text
+    assert "Write nothing in this checkout" in text
+
+
+def test_a_collector_with_nothing_to_read_says_so_rather_than_inventing():
+    assert "nothing yet" in briefing(sources=[])
 
 
 # -- the fragment verbs ------------------------------------------------------------------------
@@ -321,6 +375,25 @@ def test_clearing_twice_is_success_and_writes_nothing(cli):
 
 def test_collect_says_so_when_there_is_nothing_behind(cli):
     assert "nothing behind it" in cli("docs", "collect", "Write the parser")
+
+
+def test_the_projects_compilation_instructions_are_readable_and_writable(
+    cli, cli_stdin, workspace, reload
+):
+    """Every compile briefing opens with them, so an agent compiling without a window must
+    be able to read them — and a `--for-project` write carries no mark, since a project has
+    no Type toggle."""
+    assert "no compilation instructions" in cli("docs", "show", "--for-project", "Discovery")
+    cli_stdin("docs", "set", "--for-project", "Discovery", "--file", "-", stdin="Second person.\n")
+    folder = workspace / "discovery" / "modules"
+    assert (folder / "docs.md").read_text() == "Second person.\n"
+    assert not (folder / "docs.json").exists()
+    assert "Second person." in cli("docs", "show", "--for-project", "Discovery")
+    assert read(reload().projects[0]) == "Second person.\n"
+
+
+def test_naming_a_step_and_the_project_at_once_is_refused(cli):
+    assert "not both" in cli("docs", "show", "Write the parser", "--for-project", expect=1)
 
 
 # -- the agent's loop --------------------------------------------------------------------------

@@ -1,35 +1,25 @@
-"""The feature module: the marker and the catalogue on disk, the Type toggle, New ▸
-Feature, and the Feature tab. The CLI half is ``tests/cli/test_feature_verbs.py``; the
-panel and the drop are ``test_feature_panel.py``.
+"""The feature module: the aspect on disk, the migration off the catalogue, the Type
+toggle and the Feature tab. The CLI half is ``tests/cli/test_feature_verbs.py``.
 """
 
 import json
 
 import pytest
 
-from dplanner.domain.commands import AddNodeCommand, RemoveNodeCommand
-from dplanner.domain.model import Library, Project, Step
+from dplanner.domain.commands import AddNodeCommand
+from dplanner.domain.model import Project, Step
 from dplanner.modules.feature.aspect import (
     MODULE_ID,
     RETIRED_STEP_FEATURE,
+    FeatureSource,
+    cited_at,
     clear,
+    drop_cites_for_paste,
     is_feature,
+    passages_phrase,
     read,
     summary,
     write,
-)
-from dplanner.modules.feature.catalogue import (
-    FeatureRecord,
-    FeatureSource,
-    drag_payload,
-    drop_marker_for_paste,
-    instance_of,
-    next_feature_id,
-    parse_drag,
-    placements,
-    read_catalogue,
-    registration,
-    write_catalogue,
 )
 
 # -- the aspect, with no application at all ----------------------------------------------------
@@ -41,60 +31,53 @@ def test_absence_reads_as_not_a_feature():
     assert summary(Step(title="A")) == ""
 
 
-def test_the_marker_names_the_record():
+def test_a_bare_marker_is_a_whole_feature():
     step = Step(title="A")
-    step.module_data[MODULE_ID] = write("f3")
-    assert read(step) == "f3" and is_feature(step)
-    assert summary(step) == "feature f3"
-    assert step.module_data[MODULE_ID] == {"feature": "f3", "format": 2}
+    step.module_data[MODULE_ID] = write()
+    assert read(step) == () and is_feature(step)
+    assert summary(step) == "feature"
+    assert step.module_data[MODULE_ID] == {"on": True, "format": 3}
 
 
-def test_a_retired_marker_reads_as_unregistered():
-    step = Step(title="A")
-    step.module_data[MODULE_ID] = {"on": True}
-    assert read(step) == "" and is_feature(step)
-    assert summary(step) == "feature (unregistered)"
-    assert RETIRED_STEP_FEATURE.module_id == "step_feature"
-
-
-def test_clear_writes_nothing_and_an_empty_id_is_refused():
-    assert clear() == {}
-    with pytest.raises(ValueError):
-        write("")
-
-
-# -- the catalogue -----------------------------------------------------------------------------
-
-
-def test_the_catalogue_round_trips_and_omits_what_is_empty():
-    records = [
-        FeatureRecord("f1", "Bulk import"),
-        FeatureRecord(
-            "f2",
-            "Dark mode",
-            description="Night.",
-            sources=(
-                FeatureSource("spec", "must be dark", 4, "abcdef0123456789"),
-                FeatureSource("spec"),
-            ),
-            images=("assets/abc.png",),
-        ),
-    ]
-    entry = write_catalogue(records)
-    assert entry["features"][0] == {"id": "f1", "title": "Bulk import"}
-    assert entry["features"][1]["sources"] == [
+def test_the_passages_round_trip_and_what_is_empty_is_left_out():
+    cites = (
+        FeatureSource("spec", "must be dark", 4, "abcdef0123456789"),
+        FeatureSource("spec"),
+    )
+    entry = write(cites)
+    assert entry["cites"] == [
         {"document": "spec", "quote": "must be dark", "page": 4, "digest": "abcdef0123456789"},
         {"document": "spec"},
     ]
-    assert entry["format"] == 2
-    project = Project(title="P")
-    project.module_data[MODULE_ID] = json.loads(json.dumps(entry))
-    assert read_catalogue(project) == records
-    assert write_catalogue([]) == {}
-    assert next_feature_id(records) == "f3"
+    step = Step(title="A")
+    step.module_data[MODULE_ID] = json.loads(json.dumps(entry))
+    assert read(step) == cites
+    assert summary(step) == "feature · spec p.4 +1"
+    assert passages_phrase(()) == "cites nothing"
 
 
-def test_format_1_wraps_the_one_source_and_leaves_a_step_marker_alone():
+def test_a_passage_is_matched_by_its_document_and_its_wording():
+    cites = (FeatureSource("spec", "Must be\n dark"),)
+    assert cited_at(cites, "spec", "must  BE dark") == 0
+    assert cited_at(cites, "other", "Must be dark") is None
+    assert cited_at((), "spec", "anything") is None
+
+
+def test_clear_writes_nothing_and_the_retired_module_is_named():
+    assert clear() == {}
+    assert RETIRED_STEP_FEATURE.module_id == "step_feature"
+
+
+def test_a_retired_marker_converts_to_a_whole_feature():
+    from dplanner.modules.feature.aspect import _from_step_feature
+
+    assert _from_step_feature({"on": True}, {}) == {"on": True, "format": 3}
+    # An entry this build already wrote wins: a project half-written by both keeps it.
+    already = {"on": True, "cites": [{"document": "spec"}], "format": 3}
+    assert _from_step_feature({"on": True}, already) == already
+
+
+def test_format_1_wraps_the_one_source_and_leaves_the_rest_to_the_absorption():
     from dplanner.core.module_data import migrated
     from dplanner.modules.feature.aspect import DATA_FORMAT
 
@@ -106,61 +89,25 @@ def test_format_1_wraps_the_one_source_and_leaves_a_step_marker_alone():
         ],
     }
     new = migrated(old, DATA_FORMAT)
-    assert new is not None and new["format"] == 2
+    assert new is not None and new["format"] == 3
+    # Format 2's shape is reached on the way, and format 3 carries both old shapes
+    # through untouched — the absorption is what reads them, once it can see the project.
     assert new["features"][0]["sources"] == [{"document": "spec", "quote": "q", "page": 2}]
     assert "source" not in new["features"][0] and "sources" not in new["features"][1]
     marker = migrated({"feature": "f1", "format": 1}, DATA_FORMAT)
-    assert marker is not None and marker["feature"] == "f1" and marker["format"] == 2
+    assert marker is not None and marker["feature"] == "f1" and marker["format"] == 3
 
 
-def bare_project():
-    """A project in a library with no store behind it — enough for the catalogue."""
-    library = Library()
-    project = Project(title="P")
-    library.add_child(library.id, project)
-    return library, project
-
-
-def test_placements_and_instance_read_the_markers():
-    library, project = bare_project()
-    one, two, three = Step(title="One"), Step(title="Two"), Step(title="Three")
-    for step in (one, two, three):
-        library.add_child(project.id, step)
-    one.module_data[MODULE_ID] = write("f1")
-    two.module_data[MODULE_ID] = write("f1")
-    three.module_data[MODULE_ID] = {"on": True}
-    assert placements(project) == {"f1": [one, two]}
-    assert instance_of(project, "f1") is one
-    assert instance_of(project, "f2") is None
-
-
-def test_registration_is_a_record_and_a_marker_or_nothing():
-    library, project = bare_project()
+def test_a_pasted_feature_step_is_a_feature_citing_nothing():
     step = Step(title="Search")
-    library.add_child(project.id, step)
-    for command in registration(project, step):
-        command.redo(library)
-    assert read(step) == "f1"
-    assert [r.title for r in read_catalogue(project)] == ["Search"]
-    # Already registered: nothing to do, so nothing to undo.
-    assert registration(project, step) == []
+    step.module_data[MODULE_ID] = write((FeatureSource("spec", "a quote"),))
+    plain = Step(title="Plain")
+    drop_cites_for_paste(Project(title="P"), [step, plain])
+    assert read(step) == () and is_feature(step)
+    assert MODULE_ID not in plain.module_data
 
 
-def test_a_drag_payload_round_trips_and_garbage_is_nothing():
-    assert parse_drag(drag_payload("p1", "f2")) == ("p1", "f2")
-    assert parse_drag(b"not json") is None
-    assert parse_drag(json.dumps({"project": "p1"}).encode()) is None
-    assert parse_drag(json.dumps([1, 2]).encode()) is None
-
-
-def test_a_pasted_feature_step_is_a_plain_copy():
-    step = Step(title="Search")
-    step.module_data[MODULE_ID] = write("f1")
-    drop_marker_for_paste(Project(title="P"), [step])
-    assert MODULE_ID not in step.module_data
-
-
-# -- the Type toggle and New ▸ Feature ----------------------------------------------------------
+# -- the Type toggle and the Feature template ---------------------------------------------------
 
 
 def select(services, step):
@@ -186,61 +133,28 @@ def test_the_feature_toggle_sits_in_the_type_submenu(services):
     assert spec.menu == "Step" and spec.group == "classify" and spec.submenu == "Type"
 
 
-def test_toggling_on_mints_a_record_and_off_keeps_it(services, project, step):
+def test_toggling_off_shelves_the_passages_and_on_brings_them_back(services, step):
     select(services, step)
     services.actions.run("feature.toggle", services.context.current())
-    assert read(step) == "f1"
-    assert [r.title for r in read_catalogue(project)] == ["Bulk import"]
+    assert read(step) == ()
     assert services.undo.undo_text() == "Add Feature"
+    services.document.set_module_data(
+        step.id, MODULE_ID, write((FeatureSource("spec", "a quote"),))
+    )
 
     services.actions.run("feature.toggle", services.context.current())
     assert read(step) is None
-    # The record stays, unplaced: nothing a person wrote is lost, and undo is exact.
-    assert [r.id for r in read_catalogue(project)] == ["f1"]
-    assert instance_of(project, "f1") is None
-    # The shelf remembers which feature the step was: on again is the same instance.
     services.actions.run("feature.toggle", services.context.current())
-    assert read(step) == "f1" and [r.id for r in read_catalogue(project)] == ["f1"]
+    assert read(step) == (FeatureSource("spec", "a quote"),)
     services.undo.undo()
+    assert read(step) is None
     services.undo.undo()
-    assert read(step) == "f1"
-    services.undo.undo()
-    assert read(step) is None and read_catalogue(project) == []
+    assert read(step) == (FeatureSource("spec", "a quote"),)
 
 
-def test_a_shelved_feature_taken_by_another_step_is_not_restored(services, project, step):
-    other = Step(title="Other")
-    AddNodeCommand(project.id, other).redo(services.document)
-    select(services, step)
-    services.actions.run("feature.toggle", services.context.current())
-    services.actions.run("feature.toggle", services.context.current())  # Shelved: f1.
-    services.document.set_module_data(other.id, MODULE_ID, write("f1"))
-    services.actions.run("feature.toggle", services.context.current())
-    # A feature is implemented once: the step becomes a new feature instead.
-    assert read(step) == "f2" and [r.id for r in read_catalogue(project)] == ["f1", "f2"]
-
-
-def test_toggling_an_unregistered_step_registers_it(services, project, step):
-    services.document.set_module_data(step.id, MODULE_ID, {"on": True})
-    select(services, step)
-    assert services.actions.spec("feature.toggle").state(services.context.current()).checked
-    services.actions.run("feature.toggle", services.context.current())
-    assert read(step) == "f1" and read_catalogue(project)[0].title == "Bulk import"
-
-
-def test_deleting_the_instance_leaves_the_record_unplaced(services, project, step):
-    select(services, step)
-    services.actions.run("feature.toggle", services.context.current())
-    services.undo.push(RemoveNodeCommand(step.id))
-    assert instance_of(project, "f1") is None
-    assert [r.id for r in read_catalogue(project)] == ["f1"]
-    services.undo.undo()
-    assert instance_of(project, "f1") is not None
-
-
-def test_the_feature_template_registers_a_new_step(services, project, monkeypatch):
+def test_the_feature_template_makes_the_step_a_feature(services, project, monkeypatch):
     """New births a plain step and opens its details; the Feature template there runs
-    the toggle, which is where the record is minted."""
+    the toggle."""
     from dplanner.modules.step_properties.dialog import StepDetailsDialog
 
     opened = []
@@ -250,8 +164,7 @@ def test_the_feature_template_registers_a_new_step(services, project, monkeypatc
     created = project.steps[-1]
     (dialog,) = opened
     dialog.panel.bar.template("Feature").trigger()
-    assert read(created) == "f1"
-    assert [r.title for r in read_catalogue(project)] == ["New step"]
+    assert read(created) == ()
     dialog.dispose()
 
 
@@ -272,7 +185,7 @@ def tab_labels(panel):
     ]
 
 
-def test_the_feature_tab_follows_the_marker(services, project, step):
+def test_the_feature_tab_follows_the_marker(services, step):
     select(services, step)
     panel = step_panel(services)
     assert "Feature" not in tab_labels(panel)
@@ -282,28 +195,17 @@ def test_the_feature_tab_follows_the_marker(services, project, step):
     assert "Feature" not in tab_labels(panel)
 
 
-def test_the_feature_tab_edits_the_record(services, project, step):
-    from dplanner.modules.feature.section import FeatureSection
+def test_the_feature_tab_edits_the_steps_own_passages(services, step):
+    from dplanner.modules.feature.editor import FeatureEditor
 
     select(services, step)
     services.actions.run("feature.toggle", services.context.current())
     panel = step_panel(services)
-    section = next(e for e in panel._extensions if isinstance(e, FeatureSection))
-    assert section.editor.title.text() == "Bulk import"
-    section.editor.title.setText("CSV import")
-    section.editor.title.editingFinished.emit()
-    assert read_catalogue(project)[0].title == "CSV import"
-    assert services.undo.undo_text() == "Edit Feature f1"
-
-
-def test_an_unregistered_step_offers_to_register(services, project, step):
-    from dplanner.modules.feature.section import FeatureSection
-
-    services.document.set_module_data(step.id, MODULE_ID, {"on": True})
-    select(services, step)
-    panel = step_panel(services)
-    section = next(e for e in panel._extensions if isinstance(e, FeatureSection))
-    assert section._pages.currentWidget() is section.unregistered
-    section.register_button.click()
-    assert read(step) == "f1"
-    assert section._pages.currentWidget() is section.editor
+    editor = next(e for e in panel._extensions if isinstance(e, FeatureEditor))
+    assert editor.cites() == ()
+    editor.add_passage.click()
+    assert len(read(step) or ()) == 1
+    editor.quote.setPlainText("must be dark")
+    editor.quote.editing_finished.emit()
+    assert (read(step) or ())[0].quote == "must be dark"
+    assert services.undo.undo_text() == "Edit Passages"

@@ -7,6 +7,7 @@ from io import StringIO
 
 import pytest
 from tests.cli.skill_helpers import noun_verbs
+from tests.platforms import set_home
 
 from dplanner.cli.install import install_command, path_hint, worktree_warning
 from dplanner.cli.main import WINDOW_SHORTCUT, WINDOW_WORD, run
@@ -220,7 +221,7 @@ def test_repo_install_travels_with_the_repository(registry, tmp_path, monkeypatc
 
 
 def test_user_install_goes_to_the_home_directory(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    set_home(monkeypatch, tmp_path)
     assert target_dir(user=True) == tmp_path / ".claude" / "skills" / "dplanner"
 
 

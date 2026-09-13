@@ -84,7 +84,8 @@ from dplanner.modules.estimation.aspect import read as estimated_days
 from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.estimation.schedule import project_schedule, start_of
 from dplanner.modules.feature import aspect as feature_aspect
-from dplanner.modules.feature.catalogue import FeatureRecord, FeatureSource, write_catalogue
+from dplanner.modules.feature.aspect import FeatureSource
+from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.project_editor.clipboard import clip, paste
 from dplanner.modules.project_editor.look import BACKGROUNDS, Look
 from dplanner.modules.project_editor.placement import auto_positions
@@ -463,12 +464,14 @@ def _spec_typing(h: Harness) -> dict[str, float]:
             h.project.id, spec_id, write_index(SpecIndex(documents=documents, assets=[]))
         )
     )
-    record = FeatureRecord(
-        id="bench",
-        title="Recording",
-        sources=tuple(FeatureSource(document="big", quote=q, page=None) for q in quotes),
+    # A feature is a step, so the citations the editor must find again live on one.
+    h.push(
+        SetModuleDataCommand(
+            h.target.id,
+            feature_id,
+            feature_write(tuple(FeatureSource(document="big", quote=q) for q in quotes)),
+        )
     )
-    h.push(SetModuleDataCommand(h.project.id, feature_id, write_catalogue([record])))
 
     activity: Any = h.services.tabs.open("specs", h.project.id)
     activity.select_document("big")

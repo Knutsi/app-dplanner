@@ -1,13 +1,12 @@
 """``dplanner docs …`` and ``dplanner compiled …`` — the fragments a step contributes, and
 the document a collector makes of them.
 
-**This is where an agent does the compiling.** ``LLMService`` reads its preferred provider
-through ``framework/user_config.py`` (QSettings) and its keys through the OS keychain, so it
-is GUI-bound by construction, and this file loads no Qt by rule. There is therefore no
-``docs compile`` verb — and none is wanted, because the agent driving the CLI *is* a model.
-The loop is three verbs:
+**This is where the compiling happens, whoever asked for it.** There is no ``docs compile``
+verb and none is wanted: an agent driving this CLI *is* the compiler, and the window's
+*Compile with Agent…* launches one with a briefing that ends in these very verbs. The loop is
+three of them:
 
-    dplanner docs status --json               what needs writing, and why
+    dplanner docs status --json               what needs compiling, and why
     dplanner docs collect 'Auth'              the fragments to work from
     dplanner compiled set 'Auth' --file out.md   lands it, stamped current
 
@@ -24,7 +23,7 @@ import time
 from argparse import ArgumentParser, Namespace
 from collections.abc import Sequence
 
-from dplanner.cli import CliCommand, CliContext
+from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.assets import step_asset_commands
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
@@ -35,7 +34,7 @@ from dplanner.domain.commands import (
     EditTextCommand,
     SetModuleDataCommand,
 )
-from dplanner.domain.model import Library, Project, Step, TextEdit
+from dplanner.domain.model import Library, Node, Project, Step, TextEdit
 from dplanner.domain.scope import ScopeKind
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
@@ -51,6 +50,7 @@ from dplanner.modules.docs.aspect import (
 from dplanner.modules.docs.collect import (
     as_markdown,
     collectors,
+    compiled_state,
     digest,
     sources_for,
     state_of,
@@ -124,31 +124,35 @@ def commands(*, kinds: Sequence[ScopeKind] = ()) -> list[CliCommand]:
     return [
         CliCommand(
             path=("docs", "set"),
-            summary="Replace what a step contributes to the documentation, from a file or stdin.",
-            configure=_configure_set,
+            summary="Replace this step's documentation fragment, from a file or stdin.",
+            configure=_configure_fragment_set,
             run=_set,
             examples=(
                 "dplanner docs set 'Write the parser' --file notes.md",
                 "echo '## Query syntax' | dplanner docs set 'Write the parser' --file -",
+                "dplanner docs set --for-project --file house-style.md",
             ),
         ),
         CliCommand(
             path=("docs", "clear"),
-            summary="This step documents nothing. Drops its prose and its mark together.",
+            summary="This step documents nothing. Drops its fragment and its mark together.",
             configure=step_arg,
             run=_clear,
             examples=("dplanner docs clear 'Write the parser'",),
         ),
         CliCommand(
             path=("docs", "show"),
-            summary="Print what one step contributes to the documentation.",
-            configure=step_arg,
+            summary="Print one step's documentation fragment.",
+            configure=_project_target,
             run=_show,
-            examples=("dplanner docs show 'Write the parser'",),
+            examples=(
+                "dplanner docs show 'Write the parser'",
+                "dplanner docs show --for-project",
+            ),
         ),
         CliCommand(
             path=("docs", "collect"),
-            summary="What a feature or milestone would compile from, as one markdown document.",
+            summary="Every fragment a feature or milestone gathers, as one markdown document.",
             configure=step_arg,
             run=collect,
             examples=(
@@ -158,7 +162,7 @@ def commands(*, kinds: Sequence[ScopeKind] = ()) -> list[CliCommand]:
         ),
         CliCommand(
             path=("docs", "status"),
-            summary="Every feature and milestone: whether its documentation needs writing.",
+            summary="Every feature and milestone: whether its documentation needs compiling.",
             configure=_configure_status,
             run=status,
             examples=("dplanner docs status", "dplanner docs status search --json"),
@@ -168,7 +172,7 @@ def commands(*, kinds: Sequence[ScopeKind] = ()) -> list[CliCommand]:
         # read at a glance.
         CliCommand(
             path=("compiled", "set"),
-            summary="Store a compiled document for a collector and stamp it as up to date.",
+            summary="Store a collector's documentation and stamp it as up to date.",
             configure=_configure_set,
             run=compiled_set,
             examples=(
@@ -178,14 +182,14 @@ def commands(*, kinds: Sequence[ScopeKind] = ()) -> list[CliCommand]:
         ),
         CliCommand(
             path=("compiled", "show"),
-            summary="Print a collector's compiled documentation.",
+            summary="Print a collector's documentation.",
             configure=step_arg,
             run=_compiled_show,
             examples=("dplanner compiled show Auth",),
         ),
         CliCommand(
             path=("compiled", "clear"),
-            summary="Drop a collector's compiled document and its stamp together.",
+            summary="Drop a collector's documentation and its stamp together.",
             configure=step_arg,
             run=_compiled_clear,
             examples=("dplanner compiled clear Auth",),
@@ -194,8 +198,9 @@ def commands(*, kinds: Sequence[ScopeKind] = ()) -> list[CliCommand]:
             "docs",
             MODULE_ID,
             file_help="the image to copy in beside the step",
-            attach_summary="Add an image beside a step's documentation and print the path.",
-            assets_summary="List the images a step's documentation keeps.",
+            attach_summary="Add an image beside a step's documentation fragment and print"
+            " the path.",
+            assets_summary="List the images a step's documentation fragment keeps.",
             example_step="'Write the parser'",
             attached_text=lambda name: f"{name}\nReference it from the markdown as ![]({name})",
         ),
@@ -210,8 +215,30 @@ def _configure_status(parser: ArgumentParser) -> None:
     )
 
 
+def _project_target(parser: ArgumentParser) -> None:
+    """A step, or the project instead. The compilation instructions live beside the project
+    (``FORMAT.md``), and a briefing carries them, so an agent compiling without a window must
+    be able to read and write them too — ``dplanner agent set --for-project``'s shape."""
+    parser.add_argument("step", nargs="?", help="step id, folder name, or part of its title")
+    parser.add_argument(
+        "--for-project",
+        dest="for_project",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="PROJECT",
+        help="the project instead: its compilation instructions, which open every compile"
+        " briefing (defaults to the current project)",
+    )
+
+
 def _configure_set(parser: ArgumentParser) -> None:
     step_arg(parser)
+    parser.add_argument("--file", required=True, help="a markdown file, or - for stdin")
+
+
+def _configure_fragment_set(parser: ArgumentParser) -> None:
+    _project_target(parser)
     parser.add_argument("--file", required=True, help="a markdown file, or - for stdin")
 
 
@@ -219,29 +246,40 @@ def _step(context: CliContext, needle: str) -> Step:
     return find_step(context.library, needle)
 
 
+def _target(context: CliContext, args: Namespace) -> Node:
+    """The step or the project the verb addresses — exactly one of the two."""
+    if (args.step is None) == (args.for_project is None):
+        raise CliError("name a step, or --for-project, but not both")
+    if args.for_project is not None:
+        if args.for_project:
+            return find_project(context.library, args.for_project)
+        return context.project
+    return find_step(context.library, args.step, context.current)
+
+
 # -- the fragments -----------------------------------------------------------------------------
 
 
 def _set(context: CliContext, args: Namespace) -> int:
     """Write the prose and the mark together, so a step written to by an agent shows its
-    tab in a window without anybody also having to toggle the aspect on."""
+    tab in a window without anybody also having to toggle the aspect on.
+
+    With ``--for-project`` it writes the project's compilation instructions instead, which
+    carry no mark: a project has no Type toggle, and nothing gathers a project.
+    """
     body = body_from(args.file)
-    step = _step(context, args.step)
-    current = read(step)
+    node = _target(context, args)
+    label = "Set Compilation Instructions" if isinstance(node, Project) else "Set Docs"
     # One positioned edit over the whole document, labelled so a burst of GUI typing and a
     # whole-file replacement never coalesce into one undo step.
     written: list[Command] = [
-        EditTextCommand(TextEdit(step.id, MODULE_ID, 0, current, body), label="Set Docs")
+        EditTextCommand(TextEdit(node.id, MODULE_ID, 0, read(node), body), label=label)
     ]
-    if not step.module_data.get(MODULE_ID):
-        written.append(
-            SetModuleDataCommand(step.id, MODULE_ID, write_state(True), label="Set Docs")
-        )
-    context.apply(written[0] if len(written) == 1 else CompositeCommand("Set Docs", written))
-    context.report(
-        {"step": step.id, "characters": len(body)},
-        f"{step.title}: {len(body)} characters",
-    )
+    if isinstance(node, Step) and not node.module_data.get(MODULE_ID):
+        written.append(SetModuleDataCommand(node.id, MODULE_ID, write_state(True), label=label))
+    context.apply(written[0] if len(written) == 1 else CompositeCommand(label, written))
+    named = getattr(node, "title", "") or "the project"
+    context.report({"step": node.id, "characters": len(body)}, f"{named}: {len(body)} characters")
     return 0
 
 
@@ -259,9 +297,10 @@ def _clear(context: CliContext, args: Namespace) -> int:
 
 
 def _show(context: CliContext, args: Namespace) -> int:
-    step = _step(context, args.step)
-    body = read(step)
-    context.report({"step": step.id, "markdown": body}, body or "(documents nothing)")
+    node = _target(context, args)
+    body = read(node)
+    empty = "(no compilation instructions)" if isinstance(node, Project) else "(documents nothing)"
+    context.report({"step": node.id, "markdown": body}, body or empty)
     return 0
 
 
@@ -282,7 +321,7 @@ def _collect(context: CliContext, args: Namespace, kinds: Sequence[ScopeKind]) -
             ],
             "markdown": body,
         },
-        body or f"{step.title}: nothing behind it carries documentation",
+        body or f"{step.title}: nothing behind it carries a documentation fragment",
     )
     return 0
 
@@ -303,7 +342,7 @@ def _status(context: CliContext, args: Namespace, kinds: Sequence[ScopeKind]) ->
     for project in projects:
         for step in collectors(kinds, project):
             found = sources_for(kinds, library, project, step.id)
-            state = state_of(kinds, library, project, step.id)
+            state = compiled_state(step, found)
             rows.append(
                 {
                     "project": project.id,
@@ -341,7 +380,7 @@ def _compiled_set(context: CliContext, args: Namespace, kinds: Sequence[ScopeKin
                 SetModuleDataCommand(
                     step.id,
                     COMPILED_ID,
-                    write_stamp(digest(found), time.time(), "cli", "", len(found)),
+                    write_stamp(digest(found), time.time(), len(found)),
                     label="Set Compiled Docs",
                 ),
             ],

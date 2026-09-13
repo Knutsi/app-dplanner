@@ -168,7 +168,7 @@ def test_render_makes_an_indexed_png_asset(cli, project, tmp_path, workspace):
     assert listed == [
         {
             "id": "a1",
-            "file": report["path"].split("modules/spec/")[-1],
+            "file": Path(report["path"]).as_posix().split("modules/spec/")[-1],
             "document": "s",
             "page": 1,
             "imported": listed[0]["imported"],
@@ -242,7 +242,7 @@ def test_an_attached_figure_reaches_the_agent_briefing(cli, project, tmp_path):
     finally:
         sys.stdin = real
     shown = data(cli("agent", "prompt", "Hash passwords", "--json"))
-    figures = [path for path in shown["files"] if "modules/spec/assets/" in path]
+    figures = [p for p in shown["files"] if "modules/spec/assets/" in Path(p).as_posix()]
     assert len(figures) == 1 and figures[0] in shown["prompt"]
 
 
@@ -458,12 +458,16 @@ def test_rename_moves_the_name_every_verb_addresses(cli, project, tmp_path):
 
 
 def test_rename_carries_a_features_citation_with_it(cli, project, tmp_path):
+    """A feature is a step, and its citation keys on the document's *name* — the one thing
+    a rename must not leave behind, because a lost citation is a coverage answer that
+    quietly changes."""
     path = tmp_path / "auth.md"
     path.write_text("# Auth\n\nOperators MUST sign in.\n")
     cli("spec", "import", project, str(path))
-    cli("feature", "add", project, "Sign in", "--document", "auth", "--quote", "Operators MUST")
+    cli("step", "add", project, "Sign in", "--feature")
+    cli("feature", "cite", "Sign in", "--document", "auth", "--quote", "Operators MUST")
     cli("spec", "rename", project, "auth", "auth-v2")
-    cited = data(cli("feature", "list", project, "--json"))["features"][0]["sources"][0]
+    cited = data(cli("feature", "list", project, "--json"))["features"][0]["cites"][0]
     assert cited["document"] == "auth-v2"
     # And the passage still anchors, which is the thing a stale name quietly breaks.
     assert "lost" not in cli("coverage", "spec", project, "auth-v2").lower()

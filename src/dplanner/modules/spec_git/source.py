@@ -34,8 +34,9 @@ import hashlib
 import logging
 import re
 import shutil
+import stat
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from time import time
@@ -393,7 +394,7 @@ def _bring_trees(
     whole class of "why is it importing somebody else's files".
     """
     if directory.is_dir() and not _is_ours(directory, locator):
-        shutil.rmtree(directory, ignore_errors=True)
+        _remove_tree(directory)
     said = ""
     if not directory.is_dir():
         said = _clone(directory, locator, cancelled)
@@ -435,7 +436,7 @@ def _clone(directory: Path, locator: Locator, cancelled: Callable[[], bool]) -> 
     never trusted, and the next run deletes it unseen.
     """
     partial = directory.parent / f"{directory.name}.partial"
-    shutil.rmtree(partial, ignore_errors=True)
+    _remove_tree(partial)
     directory.parent.mkdir(parents=True, exist_ok=True)
     args = [
         *hardening(scheme_of(locator["url"]), directory.parent / "no-hooks"),
@@ -506,7 +507,8 @@ def _materialise(
     info = directory / ".git" / "info"
     if locator["path"]:
         info.mkdir(parents=True, exist_ok=True)
-        (info / "sparse-checkout").write_text(f"/{locator['path']}/\n")
+        pattern = f"/{locator['path']}/\n"
+        (info / "sparse-checkout").write_text(pattern, encoding="utf-8", newline="\n")
         _git(directory, locator, "config", "core.sparseCheckout", "true")
     _git(
         directory,
@@ -605,7 +607,26 @@ def _sweep(cache_root: Path, keep: Path) -> None:
     cutoff = time() - CACHE_DAYS * 24 * 60 * 60
     for found in _cached(cache_root):
         if found != keep and found.stat().st_mtime < cutoff:
-            shutil.rmtree(found, ignore_errors=True)
+            _remove_tree(found)
+
+
+def _remove_tree(directory: Path) -> None:
+    """Delete a cache directory, git objects included.
+
+    git writes its pack and object files read-only, and on Windows that is enough to make
+    ``shutil.rmtree`` fail on every one of them — silently, under ``ignore_errors``, leaving
+    a half-deleted directory that is neither ours nor absent. The next fetch then ran
+    against it and reported "not a git repository". The handler clears the bit and retries,
+    which is the documented recipe; a directory that is already gone is fine.
+    """
+
+    def unlock_and_retry(function: Callable[[str], object], path: str, _exc: BaseException) -> None:
+        with suppress(OSError):
+            Path(path).chmod(stat.S_IWRITE)
+            function(path)
+
+    if directory.exists():
+        shutil.rmtree(directory, onexc=unlock_and_retry)
 
 
 def _cached(cache_root: Path) -> list[Path]:

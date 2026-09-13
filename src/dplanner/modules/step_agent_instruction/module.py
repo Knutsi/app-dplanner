@@ -32,7 +32,7 @@ from PySide6.QtWidgets import QMenu, QMessageBox, QWidget
 from dplanner.core.telemetry import current
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, Node, Step, StepId
+from dplanner.domain.model import Library, Node, NodeId, Step, StepId
 from dplanner.domain.progression import DONE
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import Conflict, FilesFor
@@ -72,6 +72,7 @@ from dplanner.modules.step_agent_instruction.aspect import (
 from dplanner.modules.step_agent_instruction.profiles import (
     Profile,
     default_profile,
+    profile_named,
     read_profiles,
     seed_profiles,
 )
@@ -82,6 +83,8 @@ from dplanner.modules.step_agent_instruction.prompt import (
     PromptPart,
     assemble,
     conflict_prompt,
+    handover_prompt,
+    problems_prompt,
 )
 from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog
 from dplanner.modules.step_agent_instruction.section import (
@@ -150,9 +153,38 @@ def _no_key(_step: Step) -> str:
     return ""
 
 
+def _profiles_refused(shared: str) -> list[tuple[str, str]]:
+    """Every launch profile and why it cannot run: ``shared`` when the gesture itself is
+    refused, else the profile's own terminal. The default first, as everywhere this list
+    is shown, and plain data so a panel can render it without learning what a profile is."""
+    return [
+        (profile.name, shared or launcher.template_refusal(launch_command(profile)))
+        for profile in read_profiles()
+    ]
+
+
+def _window_title(subject: str, note: str) -> str:
+    """What the terminal's window is called. ``subject`` is the step's key and title, or
+    the project a run with no step is about; ``note`` is what this run is *for* when it is
+    not the step's work: two runs on one step are told apart by their windows or not at
+    all."""
+    return f"{subject} ({note})" if note else subject
+
+
 def _titled(step: Step) -> str:
     """A step's title as a person reads it — the placeholder when it has none."""
     return step.title or "Untitled step"
+
+
+def _run_words(
+    harnesses: tuple[AgentHarness, ...], profile: Profile, files: launcher.LaunchFiles
+) -> str:
+    """Which agent a launch handed the work to, for a surface that records it — the CLI's
+    own name and the run's session, or just the name for a harness that mints its own id."""
+    harness = launcher.harness_of(agent_command(harnesses, profile), harnesses)
+    label = harness.label if harness is not None else "An agent"
+    session = files.session if harness is not None and harness.names_session else ""
+    return f"{label} · session {session}" if session else label
 
 
 def _our_version(node: Node, entry: str) -> str:
@@ -548,7 +580,17 @@ class StepAgentInstructionModule:
         assembled = self._assembled(step, staged)
         worktree = self._run_name(step) if uses_worktree(step) else ""
         workdir = _workdir(deps.facts_for(step.id))
-        spawned, prepared = self._launch(step, assembled.text, run_dir, worktree, workdir, profile)
+        spawned, prepared = self._launch(
+            assembled.text,
+            run_dir,
+            worktree,
+            workdir,
+            profile,
+            project_id=deps.library.project_of(step.id).id,
+            subject=f"{deps.step_key(step)} {step.title}".strip(),
+            key=deps.step_key(step),
+            step_id=step.id,
+        )
         if not spawned:
             # No shell was started, so nothing is stamped and nothing is claimed: the
             # fallback hands over the prompt.
@@ -631,37 +673,53 @@ class StepAgentInstructionModule:
 
     def _launch(
         self,
-        step: Step,
         text: str,
         run_dir: Path,
         worktree: str,
         workdir: Path | None,
         profile: Profile,
+        *,
+        project_id: NodeId,
+        subject: str,
+        key: str = "",
+        note: str = "",
+        step_id: StepId | None = None,
     ) -> tuple[bool, launcher.LaunchFiles]:
-        """Open the profile's terminal on ``text`` for ``step`` in ``workdir``; the run
-        is recorded only when a shell was actually spawned. Both prompts this module
-        launches come through here, so a change to how a terminal opens is made once.
+        """Open the profile's terminal on ``text`` in ``workdir``; the run is recorded only
+        when a shell was actually spawned, and only when it is *a step's*.
+
+        ``subject`` is what the terminal's window is named after — a step's key and title,
+        or the project a plan-wide run is about — ``note`` what this run is *for* when it
+        is not the step's work, and ``key`` what the journal records it by. Every prompt
+        this module launches comes through here, so a change to how a terminal opens is
+        made once.
+
+        **A run with no step is not recorded.** The tracker keys a run by the step it is
+        working on: a plan-wide fix has none, so it gets no chip, no end-of-shell watch
+        and no usage row. That is a gap said out loud rather than a zero invented.
 
         What the status bar says, and whether the step is claimed in progress, is the
         **caller's**: one launch names its step, a run over a selection counts what opened
         and claims each step as it goes, and neither is true of the other."""
         deps = self._deps
         workdir = (workdir or Path()).expanduser()
-        key = deps.step_key(step)
         command_text = agent_command(deps.harnesses, profile)
         # A launch is a span of its own under the action's, not a detail on it: one gesture
         # opens a shell per chosen step, so three launches are three sizes and could never
         # be one key on the parent — and a verb cannot reach the enclosing span anyway,
         # since the journal hands out copies of what is open.
-        with current().span("action", "agent.launch", step=key) as span:
+        # A run with no step is journalled by the plan it is about: the detail key says
+        # which of the two a reader is looking at, rather than one key meaning both.
+        named = {"step": key} if step_id is not None else {"plan": subject}
+        with current().span("action", "agent.launch", **named) as span:
             prepared = launcher.prepare(
                 text,
                 workdir,
                 agent_command=command_text,
                 worktree=worktree,
                 directory=run_dir,
-                step_title=f"{key} {step.title}".strip(),
-                project_id=deps.library.project_of(step.id).id,
+                step_title=_window_title(subject, note),
+                project_id=project_id,
                 harnesses=deps.harnesses,
             )
             span.detail["prompt_chars"] = prepared.prompt_chars
@@ -675,8 +733,53 @@ class StepAgentInstructionModule:
                 span.detail["refused"] = "no shell"
                 return False, prepared  # A multiplexer that refused is no shell at all.
             harness = launcher.harness_of(command_text, deps.harnesses)
-            deps.record_launch(step.id, prepared, harness.id if harness else "")
+            if step_id is not None:
+                deps.record_launch(step_id, prepared, harness.id if harness else "")
             return True, prepared
+
+    # -- fixing what is wrong with the plan ----------------------------------------------------
+
+    def problem_profiles(self) -> list[tuple[str, str]]:
+        """Every launch profile, and why it cannot open a terminal here ("" when it can).
+
+        Plain data, so the Problems panel can list and grey them without learning what a
+        profile is — the default first, as everywhere this list is shown. Nothing is shared
+        to refuse on: one agent, one plan, and no step to be wrong about.
+        """
+        return _profiles_refused("")
+
+    def fix_problems(
+        self, project_id: NodeId, problems: Sequence[tuple[str, str, str]], profile_name: str
+    ) -> bool:
+        """Launch the named profile on what lint says is wrong with a plan.
+
+        **No worktree, and the shell opens in the plan's own repository**: this agent
+        changes the plan and not the code, so a checkout of the code would be the wrong
+        room to stand in — the conflict hand-over's reasoning, for the same reason. The
+        run has no step, so nothing is recorded and nothing is claimed in progress.
+        """
+        deps = self._deps
+        profile = profile_named(profile_name) or default_profile()
+        project = deps.library.project(project_id)
+        title = project.title or "Untitled project"
+        facts = deps.facts_for(project_id)
+        text = problems_prompt(title, str(facts.plan_root or ""), problems)
+        spawned, prepared = self._launch(
+            text,
+            launcher.new_run_dir(),
+            "",
+            facts.plan_root,
+            profile,
+            project_id=project_id,
+            subject=f"Problems — {title}",
+        )
+        if spawned:
+            deps.status.show_status(f"Agent launched on {len(problems)} problems", 4000)
+        else:
+            PromptFallbackDialog(
+                text, str(prepared.prompt_file), deps.parent, title="Fix Problems"
+            ).exec()
+        return spawned
 
     # -- reconciling a conflict ----------------------------------------------------------------
 
@@ -709,7 +812,8 @@ class StepAgentInstructionModule:
                 continue
             ours = run_dir / "mine" / conflict.path
             ours.parent.mkdir(parents=True, exist_ok=True)
-            ours.write_text(_our_version(library.node(conflict.node_id), conflict.entry))
+            mine = _our_version(library.node(conflict.node_id), conflict.entry)
+            ours.write_text(mine, encoding="utf-8", newline="\n")
             entries.append((conflict.path, str(ours)))
         text = conflict_prompt(
             step_title=_titled(step),
@@ -718,7 +822,15 @@ class StepAgentInstructionModule:
             entries=entries,
         )
         spawned, prepared = self._launch(
-            step, text, run_dir, "", facts.plan_root, default_profile()
+            text,
+            run_dir,
+            "",
+            facts.plan_root,
+            default_profile(),
+            project_id=library.project_of(step_id).id,
+            subject=f"{deps.step_key(step)} {step.title}".strip(),
+            key=deps.step_key(step),
+            step_id=step.id,
         )
         if spawned:
             deps.status.show_status(f"Agent launched on “{_titled(step)}”", 4000)
@@ -727,6 +839,102 @@ class StepAgentInstructionModule:
                 text, str(prepared.prompt_file), deps.parent, title="Resolve Conflict"
             ).exec()
         return spawned
+
+    # -- compiling a collector's documentation ------------------------------------------------
+
+    def compile_profiles(self, step_ids: Sequence[StepId]) -> list[tuple[str, str]]:
+        """Every launch profile, with why it cannot compile *these* collectors right now —
+        "" when it can. The default profile is first, as everywhere else.
+
+        The docs module renders this: the strip's verb reads the first entry's reason and its
+        dropdown greys each profile with its own. The questions are the ones ``_can_run``
+        asks, minus the step ones — an agent mark and a briefing are what a *work* run needs,
+        and a collector's document is neither.
+        """
+        deps = self._deps
+        count = len(step_ids)
+        limit = max_agents()
+        shared = ""
+        if not count:
+            shared = "nothing to compile"
+        elif count > limit:
+            shared = f"at most {limit} agents at a time (Settings ▸ Agent profiles)"
+        else:
+            by_project: dict[str, str] = {}
+            for step_id in step_ids:
+                if not deps.library.has(step_id):
+                    shared = "the step is gone"
+                    break
+                project_id = deps.library.project_of(step_id).id
+                if project_id not in by_project:
+                    by_project[project_id] = _workdir_refusal(deps.facts_for(step_id))
+                if by_project[project_id]:
+                    shared = by_project[project_id]
+                    break
+        return _profiles_refused(shared)
+
+    def compile_documentation(
+        self, requests: Sequence[tuple[StepId, str]], profile_name: str = ""
+    ) -> list[tuple[StepId, str]]:
+        """Launch one agent per (collector, briefing); the launches that opened a shell, each
+        with the words naming what is working on it.
+
+        ``requests`` carries the *body* of each briefing — the docs module's own words — and
+        this wraps it with the header and the preflight every hand-over gets. The shell opens
+        where a work run's would, in the code checkout, because a document about the product
+        is written beside it; with **no worktree**, since a compile changes no code, and with
+        **no claim on the step's status**: an agent writing a feature's documentation is not
+        doing that feature's work.
+
+        The returned words are how the docs module attributes a document without guessing.
+        Reading the step's newest run back instead would credit a feature's document to
+        whichever agent happened to be working on that feature.
+        """
+        deps = self._deps
+        profile = (
+            next((one for one in read_profiles() if one.name == profile_name), None)
+            or default_profile()
+        )
+        opened: list[tuple[StepId, str]] = []
+        for step_id, body in requests:
+            if not deps.library.has(step_id):
+                continue
+            step = deps.library.step(step_id)
+            project = deps.library.project_of(step_id)
+            text = handover_prompt(
+                f"# Documentation: {_titled(step)}",
+                project.title or "Untitled project",
+                deps.briefing.preamble(step, False, deps.facts_for(step_id)),
+                body,
+            )
+            run_dir = launcher.new_run_dir()
+            spawned, prepared = self._launch(
+                text,
+                run_dir,
+                "",
+                _workdir(deps.facts_for(step_id)),
+                profile,
+                project_id=project.id,
+                subject=f"{deps.step_key(step)} {step.title}".strip(),
+                key=deps.step_key(step),
+                note="documentation",
+                step_id=step.id,
+            )
+            if not spawned:
+                # The template that refused one will refuse the rest, and the fallback is
+                # already holding this briefing — the same stop `_run` makes.
+                PromptFallbackDialog(
+                    text, str(prepared.prompt_file), deps.parent, title="Compile Documentation"
+                ).exec()
+                break
+            opened.append((step_id, _run_words(deps.harnesses, profile, prepared)))
+        if len(opened) == 1:
+            deps.status.show_status(
+                f"Agent compiling “{_titled(deps.library.step(opened[0][0]))}”", 4000
+            )
+        elif len(opened) > 1:
+            deps.status.show_status(f"{len(opened)} agents compiling documentation", 4000)
+        return opened
 
     def _preview(self, context: Context) -> None:
         step = focused_step(context, self._deps.library)

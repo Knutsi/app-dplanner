@@ -34,8 +34,8 @@ from dplanner.domain.seed import create_library, seed_project
 from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.estimation.schedule import write_start
+from dplanner.modules.feature.aspect import FeatureSource
 from dplanner.modules.feature.aspect import write as feature_marker
-from dplanner.modules.feature.catalogue import FeatureRecord, write_catalogue
 from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
 from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.spec.aspect import read_topology
@@ -123,7 +123,6 @@ def _steps(library: Library, project_id: str) -> list[Step]:
         step = Step(title=title)
         AddNodeCommand(project_id, step).redo(library)
         steps.append(step)
-    records = []
     for index, (title, days, requires, word, kind) in enumerate(PLAN):
         step = steps[index]
         if requires:
@@ -135,14 +134,15 @@ def _steps(library: Library, project_id: str) -> list[Step]:
         if kind == "milestone":
             SetModuleDataCommand(step.id, "step_milestone", milestone(title)).redo(library)
         if kind == "feature":
-            record = FeatureRecord(f"f{index}", title, f"The product needs **{title.lower()}**.")
-            records.append(record)
-            SetModuleDataCommand(step.id, "feature", feature_marker(record.id)).redo(library)
+            SetModuleDataCommand(
+                step.id,
+                "feature",
+                feature_marker((FeatureSource("spec", f"The product needs {title.lower()}."),)),
+            ).redo(library)
         if kind == "check":
             SetModuleDataCommand(step.id, "step_check", {"on": True}).redo(library)
         if kind == "agent":
             SetModuleDataCommand(step.id, "step_agent_instruction", {"on": True}).redo(library)
-    SetModuleDataCommand(project_id, "feature", write_catalogue(records)).redo(library)
     SetEdgesCommand(steps[8].id, "relates", [steps[6].id]).redo(library)
     return steps
 

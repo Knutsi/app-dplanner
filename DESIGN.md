@@ -30,6 +30,7 @@ re-rendering — never styling one surface by name.
 | a table | `Table`, `Column`, `Cell`; `key_badge_icon` for a milestone | `framework/table.py`, `theme/icons.py` | the table tab: `table-*`, `table-selected-*` |
 | a strip of verbs over a surface | `Toolbar` | `framework/toolbar.py` | the table tab's strip |
 | a strip that is a tool palette | `Toolbar.add_group` | `framework/toolbar.py` | the toolbars tab: `toolbars-*`, `toolbars-folded-*` |
+| a verb the registry owns, with an arrow | `Toolbar.add_action(menu=…, data_menu=…)` | `framework/toolbar.py` | the Documentation view's strip |
 | a fuzzy picker over a long list | `PickerDialog`, `PickerRow` | `framework/picker.py` | the palette, and Find: `s7-graph-editor/find-*` |
 | a filter on a strip | `FilterButton` | `framework/toolbar.py` | `table-filtered-*`, `filters-*` |
 | a combo box on a strip or in a dialog | a plain `QComboBox` — the stylesheet dresses it | `theme.qss` | `dropdown-*` |
@@ -276,10 +277,12 @@ would not; the Covers tab's New/Cumulative switch is the worked example.
   and reads as such.
 - Destructive or dismissive actions (Cancel, Reject) never get the accent, and a verb that
   discards is never the default — see *Dialogs*.
-- A dialog whose every edit is live and already undoable carries **no buttons at all** —
-  there is nothing to confirm and nothing to cancel, and a Close button under a form that
-  has already saved is a line of chrome saying so. Escape and the title bar close it; the
-  step details dialog is the worked example.
+- A dialog whose every edit is live and already undoable carries **Close and nothing
+  else** — there is nothing to confirm and nothing to cancel, so no primary and no
+  Cancel; the footer is the way out rather than an answer to a question. It carries one
+  because a window manager that draws no title bar (a tiling one) leaves Escape as the
+  only way out, and a way out nothing shows is not one. The step details dialog is the
+  worked example.
 - **Past two or three verbs on one thing, the glyph buttons become a `⋯` menu.** A row of
   bordered glyphs is a row of riddles — each says its verb only in a tooltip, and the row
   grows with every feature. One `⋯` beside the thing, dropping a menu of *glyph plus
@@ -313,8 +316,9 @@ Every dialog is a `DialogFrame` (`framework/dialog.py`), and its anatomy is the 
   accent as the footer allows, so a hand travelling to the primary never crosses it, and
   the status slot between them keeps the two from reading as a pair. Cancel sits beside
   the primary, where the eye goes to leave.
-- **No buttons when every edit is live and undoable** — the frame then shows no footer
-  at all; Escape closes it. Step Details is the worked example.
+- **Close alone when every edit is live and undoable** — no primary, no Cancel, one
+  dismissal in the footer, and Escape does the same thing. Step Details is the worked
+  example; see *Buttons* for why it carries one at all.
 - **Enter runs the primary, Escape dismisses, Ctrl+Enter is Enter from a multi-line
   field.** Cancel is the default only while there is no primary, so a confirmation whose
   only verb discards work answers Enter with nothing lost — the one data-loss hazard on
@@ -382,7 +386,7 @@ reasoning, including why the count of fields was the symptom rather than the dis
   colour map (`theme/palettes.py`; *View ▸ Milestone Colours* and the Time tab's picker set
   the same stored choice) and every milestone is dealt a shade of it by where it falls in
   the roadmap. One hex, eight surfaces: the card on the canvas, its badge and tag medallion,
-  the order table's row and key badge, the progression board's card, the Tests tab's
+  the order table's row and key badge, the Ready-to-start board's card, the Tests tab's
   grouping heading, the Docs tab's medallion, the coverage lane, the Milestone tab's swatch,
   the calendar's band and the report — so a colour means *this milestone* wherever it is
   seen. A shade never invents an alpha: `tones.toned(name, hex)` recolours the tone the
@@ -704,8 +708,8 @@ looked at; look before assuming.
 
 Dialogs:
 
-- `StepDetailsDialog` — designed already (no buttons, live edits); not on the frame, so
-  its title is only the window's.
+- *(done)* `StepDetailsDialog` — live edits and one Close, on the frame; its title is the
+  window's alone.
 - `SettingsDialog` — 12 px margins, an unstyled tree with no seam against the page, a lone
   Close.
 - `ProjectDialog` — the most designed; create mode's footer at 8 px against the 12 px
@@ -713,8 +717,8 @@ Dialogs:
 - `OpenProjectsDialog`, `MovePlanDialog`, `RepositoriesFolderDialog`, `GhRepoListDialog` —
   hand-rolled footers with the right shape; no title in the body; the GitHub list's filter
   is uncaptioned and unfocused, and its status line sits in the button row.
-- `ExpandedTextDialog`, `ChartDialog`, `ImagePreviewDialog`, `FeatureDialog` — right
-  metrics, a `QDialogButtonBox(Close)`.
+- `ExpandedTextDialog`, `ChartDialog`, `ImagePreviewDialog` — right metrics, a
+  `QDialogButtonBox(Close)`.
 - `AssetPickerDialog` — Ok/Cancel box for the main insert gesture, a hand-rolled empty
   label.
 - `TaskBrowserDialog` / `AgentBrowserDialog` — a well of rows, styled once and copied
@@ -744,8 +748,10 @@ Dialogs:
 
 Tables and lists:
 
-- Order — the one designed table, still: bold header with no hover on the rows, 5/8 px
-  cells, per-row heights, no empty state, no updating.
+- *(done — S9)* Order — the first table onto the `Table` primitive: heights from the font,
+  the row as the unit of hover and selection, its milestones marked by their key badge,
+  bold and their own wash rather than by a rule and extra air, and an empty state. The
+  `#OrderTable` rules stay in `theme.qss` for the three widgets still borrowing them.
 - Tests — borrows `#OrderTable` by name; a spanned heading as tall as a two-line row.
 - Estimates — centred headers, an object name no stylesheet knows, an embedded spin box
   per row, no empty state, no debounce at all.
@@ -758,10 +764,10 @@ Tables and lists:
   reads as a header, and it genuinely selects and shows a page, so it is on the primitive
   rather than faking one.
 - Assets — two lists with no object name at all; a baked empty message (now on the swap).
-- *(done — the graph editor pass)* Features panel — two-line rows with what became of
-  each feature on the second line, a `Toolbar` of verbs over them, and an `EmptyState`
-  offering *Add Feature…* where the hint used to hide. It stands inside the project tab
-  now, beside the canvas.
+- *(done — the problems pass)* Problems panel — two-line rows, the finding's remedy on
+  the second line, one worded face dropping the launch profiles, and an `EmptyState`
+  where the list would be. It stands inside the project tab, beside the canvas. (It
+  replaced the Features panel, which went with the feature catalogue.)
 - Agent profiles — plain strings with *(default)* appended and three stock buttons.
 - Settings tree, Index tree, palette list — unstyled or ink-only hover.
 - Task and Agents browsers, Milestones list — widget rows laid out by hand, one of them by
@@ -769,3 +775,9 @@ Tables and lists:
 - *(done — the signalling pass)* Every debounced view now carries the indicator, and the
   Time tab's hand-shown *Recalculating…* label is gone; `ExitDialog` is on the frame, and
   the quit-time save has a progress dialog over its repositories.
+- *(done — the documentation pass)* The Documentation view is on the primitives: its rows
+  are `TwoLineDelegate` with the state in the trailing slot (a date when there is nothing to
+  act on), its strip is a `Toolbar` whose verbs come from the registry and whose arrow drops
+  a data child menu, where a document stands is a `StatusLine`, and its own copies of
+  `CONTROL_GAP`, `SECONDARY_ALPHA` and the row paddings are gone. The explainer under its
+  caption went with them — `docs/screenshots/s11-documentation/`.

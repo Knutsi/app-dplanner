@@ -57,16 +57,16 @@ you work. So:
   collects back, how to read a spec into features and milestones, how big a step should be
   and how to link it. **Shaping a graph is that document's subject and not this one's**, so
   read it before you add a step; `--brief` prints the project's own text alone on later
-  reads. The graph-editing verbs (`step add`, `step link`, `feature add`, …) refuse until
+  reads. The graph-editing verbs (`step add`, `step link`, `feature set`, …) refuse until
   the current topology has been read on this machine, and refuse again when it changes; a
   project with none refuses until one is written (`topology set`). Say what you found and
   what you propose before you change it.
 - **Make small, named changes — and author them whole.** One `step add` per step, carrying
   everything the step needs in the same call: `--describe-file F`, `--agent` if an agent
   will execute it, `--days N`, `--attach a1`, `--test 'what must keep being true'`,
-  `--after` for its dependencies, and `--feature f1` on the one step that realises a
-  feature. One authored step is one line in the diff and one thing the user can disagree
-  with; five half-steps are noise.
+  `--after` for its dependencies, and `--feature` on a step that *is* a feature (with
+  `--document`/`--quote` where it was read out of a spec). One authored step is one line in
+  the diff and one thing the user can disagree with; five half-steps are noise.
 - **The description is the briefing.** Write one good description per step — what it is,
   what done means (see *Writing descriptions*) — and mark agent-executed steps with
   `--agent` (or `dplanner agent on` later). The executing agent receives the description
@@ -102,8 +102,10 @@ you work. So:
   written. Two agents writing at once are serialised by the stale-workspace check: the
   loser is told and runs the command again.
 - **Re-planning?** `dplanner project clear-steps <project>` removes every step at once and
-  keeps the specs, the features (unplaced again), the topology and the start date — then
-  rebuild with authored `step add`s.
+  keeps the specs, the topology and the start date — then rebuild with authored `step
+  add`s. A feature is a step, so the features go with them: re-read them out of the spec
+  (`coverage spec <doc> --uncovered` says what nobody cites) rather than expecting a
+  catalogue to have survived.
 
 ## Writing descriptions
 
@@ -174,8 +176,8 @@ Three shapes are worth knowing:
 
 - **A collector** is a step that stands for the work behind it. Three kinds, one derivation:
   a **check** (`dplanner check set`) gathers *everything* it waits on; a **feature step**
-  (the one step that realises a record from `feature list` — `step add --feature f1`, or
-  `feature set`) gathers its own work up to the previous feature; a **milestone**
+  (`step add … --feature`, or `feature set` on one that exists) gathers its own work up to
+  the previous feature; a **milestone**
   (`dplanner milestone set`) gathers the features it adds since the previous milestone.
   None of them stores what it holds — it is read off the graph, so linking more work behind
   one widens it automatically, and `--scope` takes any of the three.
@@ -198,9 +200,9 @@ Marking a test the status it already has succeeds, so a batch is safe to re-run.
 
 ## Writing the documentation
 
-A step's **fragment** is what it adds to the product's documentation — written while the work
-is fresh, in the words a user would read, not the words the plan used. A feature or a
-milestone then **compiles** its fragments into one document.
+A step's **documentation fragment** is what it adds to the product's documentation — written
+while the work is fresh, in the words a user would read, not the words the plan used. A
+feature or a milestone then **compiles** the fragments it gathers into its **documentation**.
 
 ```
 dplanner docs set 'Parse the query string' --file - <<'EOF'
@@ -208,24 +210,29 @@ Search accepts `field:value` pairs and bare words. Quote a phrase to keep it tog
 EOF
 ```
 
-**You are the model that compiles them.** The window has a Compile button; the CLI has the
-loop, which is three verbs:
+**You are the one who compiles them.** *Compile with Agent…* in the window launches an agent
+— perhaps you, with a briefing that ends in these verbs — and the loop works just as well
+unasked:
 
 ```
+dplanner docs show --for-project     # the compilation instructions every document follows
 dplanner docs status --json          # every collector: never / current / out of date
-dplanner docs collect Auth           # everything it would read, as one document
+dplanner docs collect Auth           # every fragment it gathers, as one document
 #  …write the document yourself…
 dplanner compiled set Auth --file signing-in.md
 ```
 
 `compiled set` stamps what it read, so the document reads as up to date until somebody edits
-a fragment behind it. Two things worth knowing:
+a fragment behind it. Three things worth knowing:
 
-- **A milestone reads its features' compiled documents**, not their fragments again. Compile
-  the features first, then the milestone, or the release notes will say everything twice.
+- **A milestone reads its features' documents**, not their fragments again. Compile the
+  features first, then the milestone, or the release notes will say everything twice.
 - **Out of date is derived, never guessed.** Editing a fragment, or linking more work behind
   a feature, marks that feature's document out of date — and recompiling a feature marks its
   milestone's. `dplanner project lint` reports them as `docs.compiled-stale`.
+- **Keep every `![](assets/…)` link as it is written.** A fragment's images live beside the
+  step that wrote it and are found by that name, so a renamed link points at nothing and an
+  invented one at nothing at all.
 
 ## Running as an agent step
 
@@ -324,7 +331,7 @@ The rules that follow from that shape:
 Prefer building the project up with authored `step add`s: the user sees each step arrive
 whole and can stop you. To move an agreed plan into a **new** project in one command,
 `dplanner project export | dplanner project import` carries every step's aspects and prose
-and the project's own — the feature catalogue, the topology, its standing agent instruction
+and the project's own — the topology, its standing agent instruction
 — import always creates, never merges. (Module *files* — spec blobs, attached images — stay
 behind; import the spec and re-attach figures after.) To rebuild an **existing** project, `project clear-steps`
 then authored `step add`s.

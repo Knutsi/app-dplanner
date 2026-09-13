@@ -278,24 +278,27 @@ def test_a_pasted_picture_appears_under_the_editor_at_once(services, project):
 
 
 def cited(services, project, document, quote="a passage"):
+    """A feature step of this project, citing one passage of ``document``."""
+    from dplanner.domain.commands import AddNodeCommand
+    from dplanner.domain.model import Step
     from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-    from dplanner.modules.feature.catalogue import (
-        FeatureRecord,
-        FeatureSource,
-        write_catalogue,
-    )
+    from dplanner.modules.feature.aspect import FeatureSource
+    from dplanner.modules.feature.aspect import write as feature_write
 
-    record = FeatureRecord("f1", "Login", sources=(FeatureSource(document, quote),))
-    SetModuleDataCommand(project.id, FEATURE_ID, write_catalogue([record])).redo(services.document)
+    step = Step(title="Login")
+    AddNodeCommand(project.id, step).redo(services.document)
+    SetModuleDataCommand(
+        step.id, FEATURE_ID, feature_write((FeatureSource(document, quote),))
+    ).redo(services.document)
 
 
 def citations(services, project):
-    from dplanner.modules.feature.catalogue import read_catalogue
+    from dplanner.modules.feature.aspect import read as feature_read
 
     return [
-        source.document
-        for record in read_catalogue(services.document.project(project.id))
-        for source in record.sources
+        cite.document
+        for step in services.document.project(project.id).steps
+        for cite in feature_read(step) or ()
     ]
 
 

@@ -82,20 +82,25 @@ should do.
    been read on this machine, and refuse again whenever it changes — the topology is what
    keeps a forty-step plan the right shape, and reading it is cheaper than reshaping the
    plan.
-4. **Read the features out of the spec.** One `dplanner feature add <project> '<title>'
-   --document <doc> --quote '…' --page N` per feature you find — the things a person would
-   name, demo and test, cut the way the topology says. The quote is checked against the
-   document and the page recorded (found automatically when the quote is); when the same
-   sentence appears on several pages, `--page` records the occurrence you mean — any page
-   the quote anchors on is accepted, another warns and names them. Add `--strict` when a quote that does
-   not anchor should stop you rather than warn; `--describe-file` for what the feature is
-   in a person's words; `--image` for a mock-up. A feature is often described in more than
-   one place: `feature cite <project> f1 --document <doc> --quote '…'` adds a second
-   passage, `feature uncite` takes one away. Every passage is stamped with the document
-   as it was when you read it, which is what lets *When the spec changes* say what changed. The catalogue
-   is the durable trace of your reading — the next agent starts from `feature list`, not
-   from scratch — and **`dplanner coverage spec <project> <doc> --uncovered`** lists the
-   paragraphs no feature was read from yet: read it before you call the reading done.
+4. **Read the features out of the spec, as steps.** A feature *is* a step — the thing a
+   person would name, demo and test — so reading one out of the spec is creating it:
+   `dplanner step add <project> '<title>' --feature --document <doc> --quote '…' --page N`,
+   cut the way the topology says. The quote is checked against the document and the page
+   recorded (found automatically when the quote is); when the same sentence appears on
+   several pages, `--page` records the occurrence you mean — any page the quote anchors on
+   is accepted, another warns and names them. Add `--strict` when a quote that does not
+   anchor should stop you rather than warn, and `--describe-file` for what the feature is
+   in a person's words. A feature is often described in more than one place: `feature cite
+   '<title>' --document <doc> --quote '…'` adds a second passage, `feature uncite` takes
+   one away. Every passage is stamped with the document as it was when you read it, which
+   is what lets *When the spec changes* say what changed. The graph is the durable trace of
+   your reading — the next agent starts from `feature list`, not from scratch — and
+   **`dplanner coverage spec <project> <doc> --uncovered`** lists the paragraphs no feature
+   was read from yet: read it before you call the reading done.
+
+   You may not know a feature's work steps yet, and that is fine: its step stands on the
+   graph on its own until you link the work into it at step 8. `project lint` calls it an
+   orphan meanwhile, which is the plan telling you the truth about itself.
 5. **Collect the features into milestones.** A milestone is a release. Decide what is in
    each one — *Ask, then propose* when the spec does not say — and mark the step that
    closes it: `dplanner milestone set <step> --label MVP`. Each release's work branches
@@ -105,7 +110,7 @@ should do.
    holds, and `milestone list` reads as the roadmap.
 6. **Render the figures once.** `spec render <project> <doc> --page N` turns a page into
    an image asset (`spec assets` lists them); one rendered page can serve several steps,
-   and `feature attach <project> f1 <path>` puts one on a feature.
+   and `describe attach <step> <path>` puts one on a step's description.
 7. **Create the work steps authored, not as bare titles.** A step with only a title is not
    a plan — the agent who picks it up has nothing to execute. One `step add` carries it
    all: `--after` its dependencies (see *Linking honestly*, and *Cutting steps for an agent* for how big one should be), `--describe-file` (what it is
@@ -116,15 +121,15 @@ should do.
    description. The standalone verbs (`describe set`, `agent on`, `estimate set`, `spec
    attach-to-step`) remain for editing later. A work step's briefing names the feature it
    flows into, with the passage it was read from — so it needs no citation of its own.
-8. **Place each feature once.** `step add <project> '<title>' --feature f1 --after <its
-   work steps>` is the step that realises the feature; the work upstream flows into it,
-   and `scope show` prints what it gathers. A record has exactly one such step — a second
-   is refused — and `feature list` says which are placed. Follow the topology for what
-   comes after (a check, a review). `agent prompt <step>` shows exactly what any executing
-   agent will receive — read it and ask whether it is enough to work from.
+8. **Link the work into its feature.** `dplanner step link '<feature>' '<work step>'`
+   makes the feature wait on the work that flows into it, and `scope show '<feature>'`
+   prints what it then gathers. A feature you only thought of here is born the same way it
+   was at step 4, with `step add … --feature`. Follow the topology for what comes after — a
+   check, a review. `agent prompt <step>` shows exactly what any executing agent will
+   receive: read it and ask whether it is enough to work from.
 9. **Run `dplanner project lint <project>` before handing the plan over.** It lists every
    step missing a description or estimate, every agent step with nothing to brief it,
-   every feature no step realises (and any realised twice), every passage that drifted or
+   every passage that drifted or
    was lost since the spec changed (and every one whose paragraph changed around it), a project with no topology, and every description image
    reference that resolves to nothing — each with the verb that fixes it — and exits 1
    until the plan is complete. Hand over clean.
@@ -132,11 +137,11 @@ should do.
    `spec diff <project> <doc>` to see what moved (PDFs diff by their text layers);
    **`coverage review <project>`** for every passage that no longer simply anchors — *behind*
    (the paragraph around it changed: re-read it), *drifted* (reworded: `feature reanchor
-   <project> <f> --accept-drift` takes the new text), *lost* (gone: `feature cite` the
+   <project> <step> --accept-drift` takes the new text), *lost* (gone: `feature cite` the
    passage as it reads now, or `reanchor --drop-lost`) — each with its verb; `feature
    reanchor <project> --all` once you have read what changed, to re-stamp the rest;
    **`coverage spec <project> <doc> --uncovered`** for what the new text says that nobody
-   cites yet — cite it into a feature, or `feature add` one; then adjust the work behind
+   cites yet — cite it into a feature, or `step add … --feature` a new one; then adjust the work behind
    the features that changed, and if the *shape* changed, `topology set` it, `topology
    show` it, and say what you changed. `coverage show <project>` prints the whole trace
    — spec → features → milestones → tests and docs — to check the plan still answers the
@@ -210,12 +215,10 @@ and the loop is: look, sort, make room or tidy, look again, keep.
   one that draws the picture at the top of this document; `timeline`
   spaces steps by their estimates so the graph reads as a schedule. A sort is one undo
   step in an open window.
-- **Place the features, and mark the milestones.** A feature is a record in the project's
-  catalogue (`dplanner feature list` — read out of a spec, or added by hand) and it is
-  implemented **once**: exactly one step realises it, `step add <project> '<title>'
-  --feature f1 --after <its work>`, and the work upstream of that step flows into the
-  feature. `feature list` says which are placed and which are not; `project lint` reports
-  the unplaced ones. `dplanner milestone set 'Ship the beta' --label MVP` makes a step a
+- **Cut the features, and mark the milestones.** A feature *is* a step — `step add
+  <project> '<title>' --feature --after <its work>`, read out of a spec or named by hand —
+  and the work upstream of it flows into it. `feature list` says which steps are features
+  and what each was read from. `dplanner milestone set 'Ship the beta' --label MVP` makes a step a
   milestone (`--label` omitted, one is generated); the spine sort drives toward them,
   `milestone list` reads as a roadmap, and `scope show` says what each one adds.
 - **Make room, or take it back.** `dplanner layout shift <project> --x 640 --by 300`

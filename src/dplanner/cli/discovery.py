@@ -174,7 +174,7 @@ def _project_id_at(directory: Path) -> str:
     """The id ``project.dproj`` in ``directory`` declares, or "" when it cannot be read —
     a torn or hand-broken file is no reason to fail a lookup that has other answers."""
     try:
-        raw = json.loads((directory / PROJECT_META).read_text())
+        raw = json.loads((directory / PROJECT_META).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return ""
     return str(raw.get("id", "")) if isinstance(raw, dict) else ""

@@ -2,7 +2,7 @@
 
 A dock panel is anchored in one of the window's *areas* and follows whatever the window is
 focused on; this one is inside one tab and follows that tab's project, which is why it is
-not a ``PanelSpec``. What goes in it is another module's — the Features list is the first —
+not a ``PanelSpec``. What goes in it is another module's — the Problems list is the first —
 so the composition root hands over a :class:`SidePanel`: a name, a glyph and a way to build
 the widget. This package never learns whose.
 
@@ -10,12 +10,18 @@ The widget it builds is reached through ``framework/panels.py``'s ``ContextPanel
 protocol, which such a panel already satisfies structurally: it is told which project to
 show by being handed a context naming *this tab's* project, so a tab in the background
 never follows the tab in front.
+
+A panel may also answer :class:`ReadingPanel` — one short string the strip's button shows
+beside the panel's glyph, and a signal when it changes. That is how a count reaches the
+toolbar without the editor learning what is being counted, and it is a *reading*: the
+panel computes it on its own settled rebuild, and the button reads what it last said.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
-from PySide6.QtCore import QEvent, QSize, Qt
+from PySide6.QtCore import QEvent, QSize, Qt, SignalInstance
 from PySide6.QtGui import QColor, QIcon, QPalette
 from PySide6.QtWidgets import QHBoxLayout, QToolButton, QVBoxLayout, QWidget
 
@@ -28,6 +34,20 @@ from dplanner.theme.tokens import CAPTION_GAP, PANEL_MARGIN, SECONDARY_ALPHA, SE
 # A side panel opens at the width the window's own left area opens at, so a list of
 # features reads the same whichever side of the seam it is on.
 SIDE_PANEL_WIDTH = 280
+
+
+@runtime_checkable
+class ReadingPanel(Protocol):
+    """A panel that has a short something to say on the strip that opens it.
+
+    Optional — the host asks ``isinstance`` — so a panel with nothing to count implements
+    nothing and its button is the glyph alone.
+    """
+
+    # A Qt signal carrying the new reading, connected by the host.
+    reading_changed: SignalInstance
+
+    def reading(self) -> str: ...
 
 
 @dataclass(frozen=True)

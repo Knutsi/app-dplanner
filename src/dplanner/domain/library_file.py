@@ -63,7 +63,7 @@ def read_library_file(path: Path, *, strict: bool = False) -> list[LibraryEntry]
     having left the library.
     """
     try:
-        raw = json.loads(path.read_text())
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         if strict:
             raise

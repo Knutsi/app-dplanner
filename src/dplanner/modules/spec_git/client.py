@@ -63,7 +63,10 @@ _FORCED = {
 _BATCH_SSH = "ssh -o BatchMode=yes -o ConnectTimeout=10"
 
 # Its own process group, so a kill reaches the ssh or the credential helper git started.
-_WINDOWS = sys.platform.startswith("win")
+# sys.platform is compared inline at each use rather than kept in a constant: mypy narrows on
+# the comparison and then checks each branch only against the platform that reaches it. A
+# constant is opaque to it, and `mypy --platform win32` reported os.killpg, os.getpgid and
+# signal.SIGKILL missing from a branch Windows never runs.
 _NEW_GROUP: int = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 
 _git_path: str | None = None
@@ -172,8 +175,8 @@ def run_git(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=environment(extra_env),
-        start_new_session=not _WINDOWS,
-        creationflags=_NEW_GROUP if _WINDOWS else 0,
+        start_new_session=sys.platform != "win32",
+        creationflags=_NEW_GROUP if sys.platform == "win32" else 0,
     )
     deadline = monotonic() + timeout
     while True:
@@ -212,7 +215,7 @@ def _verb(args: Sequence[str]) -> str:
 
 def _end(started: "subprocess.Popen[bytes]") -> None:
     with suppress(OSError):
-        if _WINDOWS:
+        if sys.platform == "win32":
             started.kill()
         else:
             os.killpg(os.getpgid(started.pid), signal.SIGKILL)

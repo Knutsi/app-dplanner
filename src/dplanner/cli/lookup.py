@@ -50,7 +50,7 @@ def body_from(file_arg: str) -> str:
     path = Path(file_arg)
     if not path.is_file():
         raise CliError(f"no such file: {file_arg}")
-    return path.read_text()
+    return path.read_text(encoding="utf-8")
 
 
 def find_project(library: Library, needle: str) -> Project:

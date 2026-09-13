@@ -6,9 +6,11 @@ from tests.cli.spec_helpers import tiny_pdf
 from tests.modules.test_spec import imported
 
 from dplanner.core import anchors
-from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
+from dplanner.domain.model import Step
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-from dplanner.modules.feature.catalogue import FeatureRecord, FeatureSource, write_catalogue
+from dplanner.modules.feature.aspect import FeatureSource
+from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.spec import activity as activity_module
 from dplanner.modules.spec.activity import SpecsActivity
 from dplanner.modules.spec.aspect import MODULE_ID
@@ -29,11 +31,12 @@ Every login is logged with the operator's name.
 def project(services, make_project):
     project = make_project("Discovery")
     imported(services, project, "guide", GUIDE.encode(), "guide.md")
-    records = [
-        FeatureRecord("f1", "Import", sources=(FeatureSource("guide", "import a CSV"),)),
-        FeatureRecord("f2", "Logging", sources=(FeatureSource("guide", "Every login is logged"),)),
-    ]
-    SetModuleDataCommand(project.id, FEATURE_ID, write_catalogue(records)).redo(services.document)
+    for title, quote in (("Import", "import a CSV"), ("Logging", "Every login is logged")):
+        step = Step(title=title)
+        AddNodeCommand(project.id, step).redo(services.document)
+        SetModuleDataCommand(
+            step.id, FEATURE_ID, feature_write((FeatureSource("guide", quote),))
+        ).redo(services.document)
     return project
 
 
@@ -152,9 +155,10 @@ def test_a_pdf_marks_the_quotes_boxes_and_lands_on_their_page(services, make_pro
     assert second._boxes == []
 
 
-def test_the_build_wires_the_catalogue_and_the_cite_menu_in(services, project, tab):
+def test_the_build_wires_the_features_and_the_cite_menu_in(services, project, tab):
     """The composition root hands the Specs tab the feature side: the Cited wash reads the
-    catalogue, and Cite… is offered (the coverage jump arrives with the coverage module)."""
+    feature steps, and Cite… is offered (the coverage jump arrives with the coverage
+    module)."""
     tab.cited.trigger()
     assert len(washed(tab)) == 2
     assert tab.cite_button.isVisible()

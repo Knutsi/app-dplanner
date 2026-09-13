@@ -187,6 +187,42 @@ def test_a_buttons_dropdown_arrow_is_a_target_of_its_own(app, theme):
 
 
 @pytest.mark.parametrize("theme", (DARK, LIGHT), ids=("dark", "light"))
+@pytest.mark.parametrize("name", ("TemplateButton", "LayoutButton"))
+def test_a_faces_indicator_stands_clear_of_its_border(app, theme, name):
+    """A face's arrow is right-aligned in the padding box, which puts it flush against the
+    border unless something holds it off.
+
+    It did, and the arrow's ink reached to within a pixel of the button's own edge — which
+    reads as a clipped control, and on a fractionally scaled display that pixel is the one
+    that goes. Rendered rather than read, because a subcontrol offset is exactly the kind
+    of rule that silently does not apply. The ground is read from the render rather than
+    from the theme: an application-wide stylesheet is already on this widget.
+    """
+    button = QToolButton()
+    button.setObjectName(name)
+    button.setText("Template")
+    button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+    button.setMenu(QMenu(button))
+    button.setStyleSheet(load_stylesheet(theme))
+    button.resize(button.sizeHint())
+    button.show()
+    app.processEvents()
+
+    image = button.grab().toImage()
+    # The middle band only: a rounded corner leaves whatever is behind the widget in the
+    # pixels outside its own arc, which is neither ground nor ink.
+    middle = range(button.height() // 2 - 4, button.height() // 2 + 4)
+    band = [image.pixel(x, y) for x in range(button.width()) for y in middle]
+    ground = max(set(band), key=band.count)  # What the button is mostly made of.
+
+    # The inset the rule reserves is the button's own ground all the way to its border,
+    # which is the outermost two columns (a hairline and what antialiasing spills).
+    for x in range(button.width() - tokens.INDICATOR_INSET, button.width() - 2):
+        column = [image.pixel(x, y) for y in middle]
+        assert all(pixel == ground for pixel in column), f"ink at x={x} of {button.width()}"
+
+
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=("dark", "light"))
 @pytest.mark.parametrize(
     ("marker", "popup", "room"),
     (

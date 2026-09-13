@@ -1,26 +1,20 @@
-"""The order view: waves and dates on screen, and the seams it reaches other features through."""
+"""The order view: waves and volume on screen, and the seams it reaches other features through."""
 
 import json
-from datetime import date, timedelta
+from datetime import date
 
 import pytest
-from PySide6.QtCore import QDate
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
-from dplanner.domain.schedule import format_date
 from dplanner.framework.context import SCOPE_SELECTION
+from dplanner.framework.list_rows import EMPHASIS_ROLE, TINT_ROLE
+from dplanner.framework.table import row_height
 from dplanner.modules.step_order.view import (
-    ACCUMULATED_COLUMN,
     ASPECTS_COLUMN,
-    DATE_COLUMN,
     ESTIMATE_COLUMN,
     MILESTONE_ROLE,
-    MILESTONE_ROW_EXTRA,
-    ROW_HEIGHT,
-    SINCE_MILESTONE_COLUMN,
     TITLE_COLUMN,
-    _MilestoneRowDelegate,
 )
 
 
@@ -58,7 +52,7 @@ def test_the_steps_are_a_numbered_table_in_order(services, project, tab):
     """The topological index is the first column, because the first thing wanted from a
     sorted sequence is a position."""
     assert rows_on_screen(tab) == [
-        ("1", "A", "Ready to start"),
+        ("1", "A", "Wave 1"),
         ("2", "B", "Wave 2"),
         ("3", "C", "Wave 2"),
         ("4", "D", "Wave 3"),
@@ -70,8 +64,8 @@ def test_the_table_follows_the_graph(services, project, tab):
     _a, b, _c, _d = project.steps
     services.undo.push(SetEdgesCommand(b.id, "requires", []))
     assert rows_on_screen(tab)[:2] == [
-        ("1", "A", "Ready to start"),
-        ("2", "B", "Ready to start"),
+        ("1", "A", "Wave 1"),
+        ("2", "B", "Wave 1"),
     ]
 
     services.undo.undo()
@@ -109,48 +103,53 @@ def test_a_release_row_is_marked_and_keeps_its_name(services, project, tab):
         for column in range(table.columnCount())
     )
     # The one weight in the table — DESIGN.md's Tables: a milestone is a fixed point, found
-    # by a glance down the column.
-    title = table.item(release_row, TITLE_COLUMN).font()
-    plain = table.item(0, TITLE_COLUMN).font()
-    assert title.bold() and not plain.bold()
-    assert title.pointSizeF() == plain.pointSizeF()
+    # by a glance down the column. The weight is the delegate's, so it is read off the role
+    # the primitive paints from rather than off a font set on the item.
+    assert table.item(release_row, TITLE_COLUMN).data(EMPHASIS_ROLE)
+    assert not table.item(0, TITLE_COLUMN).data(EMPHASIS_ROLE)
     assert "MVP" in table.item(release_row, ASPECTS_COLUMN).text()
-    assert isinstance(table.itemDelegate(), _MilestoneRowDelegate)
+    # Its key as a badge in the glyph slot and a wash under the row — the marks the table
+    # primitive gives a fixed point. The rule that used to close the block went with the
+    # hand-rolled delegate: three marks say it, and a fourth was a fourth thing to learn.
+    assert not table.item(release_row, TITLE_COLUMN).icon().isNull()
+    assert table.item(release_row, TITLE_COLUMN).data(TINT_ROLE) is not None
+    assert table.item(0, TITLE_COLUMN).data(TINT_ROLE) is None
 
 
-def test_a_release_date_is_highlighted(services, project, tab):
-    from dplanner.modules.step_milestone.aspect import write
+def test_the_page_states_the_volume_and_not_a_calendar(services, project, tab):
+    """What the order can honestly say about time: how much work, over how many steps.
 
-    d = project.steps[3]
-    services.undo.push(SetModuleDataCommand(d.id, "estimation", {"days": 2.0, "format": 1}))
-    services.undo.push(SetModuleDataCommand(d.id, "step_milestone", write("MVP")))
-
-    from PySide6.QtCore import Qt
-
-    item = tab.table.item(3, DATE_COLUMN)
-    assert item.font().bold()
-    assert not tab.table.item(0, DATE_COLUMN).font().bold()
-    # No faded brush was set: the date keeps the palette's full-strength, live foreground.
-    assert item.data(Qt.ItemDataRole.ForegroundRole) is None
-
-
-def test_a_release_row_gets_air_and_a_plain_row_does_not(services, project, tab):
-    from dplanner.modules.step_milestone.aspect import write
-
-    d = project.steps[3]
-    services.undo.push(SetModuleDataCommand(d.id, "step_milestone", write("MVP")))
-
-    assert tab.table.rowHeight(3) == ROW_HEIGHT + MILESTONE_ROW_EXTRA
-    assert tab.table.rowHeight(0) == ROW_HEIGHT
-    assert not tab.table.item(0, TITLE_COLUMN).data(MILESTONE_ROLE)
-
-
-def test_the_days_accumulate_down_the_order(services, project, tab):
-    for step, days in zip(project.steps, (1.0, 2.0, 3.0, 4.0), strict=True):
+    The serial dates it used to run out — a step a day after the one before, from a start
+    date set on this page — were never how the work happens; the Time tab simulates two
+    pools of workers, and this line is the one number that holds whoever does it.
+    """
+    for step, days in zip(project.steps[:3], (1.0, 2.0, 3.0), strict=True):
         services.undo.push(SetModuleDataCommand(step.id, "estimation", {"days": days}))
 
-    accumulated = [tab.table.item(row, ACCUMULATED_COLUMN).text() for row in range(4)]
-    assert accumulated == ["1d", "3d", "6d", "2w"]
+    assert tab.volume.text() == "6 days over 4 steps, 1 unestimated"
+    assert [column.title for column in tab.table.columns()] == ["#", "Step", "Wave", "Estimate", ""]
+
+
+def test_a_project_with_no_steps_swaps_the_table_for_what_would_be_there(services, make_project):
+    empty = make_project("Fresh")
+    tab = services.tabs.open("order", empty.id)
+
+    assert not tab.table.isVisible() and tab.empty.isVisible()
+    assert not tab.volume.isVisible()
+    AddNodeCommand(empty.id, Step(title="A")).redo(services.document)
+    assert tab.table.isVisible() and not tab.empty.isVisible()
+
+
+def test_every_row_is_one_height_and_it_comes_from_the_font(services, project, tab):
+    """DESIGN.md's *Tables*: a fixed pixel height clips at twelve points, and a milestone
+    is marked by what it wears rather than by the room around it."""
+    from dplanner.modules.step_milestone.aspect import write
+
+    services.undo.push(SetModuleDataCommand(project.steps[3].id, "step_milestone", write("MVP")))
+
+    expected = row_height(tab.table.font(), rich=False)
+    assert tab.table.verticalHeader().defaultSectionSize() == expected
+    assert {tab.table.rowHeight(row) for row in range(4)} == {expected}
 
 
 def test_column_headers_read_from_the_left(services, project, tab):
@@ -158,32 +157,6 @@ def test_column_headers_read_from_the_left(services, project, tab):
     from PySide6.QtCore import Qt
 
     assert tab.table.horizontalHeader().defaultAlignment() & Qt.AlignmentFlag.AlignLeft
-
-
-def test_a_release_row_says_how_long_since_the_one_before(services, project, tab):
-    """The span a milestone closes: its accumulated total minus the previous milestone's. The
-    first milestone measures from the start of the plan."""
-    from dplanner.modules.step_milestone.aspect import write
-
-    for step, days in zip(project.steps, (1.0, 2.0, 3.0, 4.0), strict=True):
-        services.undo.push(SetModuleDataCommand(step.id, "estimation", {"days": days}))
-    services.undo.push(SetModuleDataCommand(project.steps[2].id, "step_milestone", write("v1")))
-    services.undo.push(SetModuleDataCommand(project.steps[3].id, "step_milestone", write("v2")))
-
-    column = [tab.table.item(row, SINCE_MILESTONE_COLUMN).text() for row in range(4)]
-    assert column == ["", "", "6d", "4d"]
-    assert not tab.table.isColumnHidden(SINCE_MILESTONE_COLUMN)
-
-
-def test_the_since_milestone_column_waits_for_a_release_and_an_estimate(services, project, tab):
-    """A column of blanks says less than an absent one — same rule as the Date column."""
-    from dplanner.modules.step_milestone.aspect import write
-
-    assert tab.table.isColumnHidden(SINCE_MILESTONE_COLUMN)
-    services.undo.push(SetModuleDataCommand(project.steps[0].id, "estimation", {"days": 3.0}))
-    assert tab.table.isColumnHidden(SINCE_MILESTONE_COLUMN)  # Nothing yet to measure to.
-    services.undo.push(SetModuleDataCommand(project.steps[3].id, "step_milestone", write("MVP")))
-    assert not tab.table.isColumnHidden(SINCE_MILESTONE_COLUMN)
 
 
 @pytest.fixture
@@ -195,7 +168,7 @@ def mixed(services, project):
     from dplanner.modules.step_milestone.aspect import write
 
     _a, b, c, d = project.steps
-    services.undo.push(SetModuleDataCommand(b.id, "feature", write_feature("f1")))
+    services.undo.push(SetModuleDataCommand(b.id, "feature", write_feature()))
     services.undo.push(EditTextCommand(TextEdit(c.id, "step_agent_instruction", 0, "", "Do it.")))
     services.undo.push(SetModuleDataCommand(d.id, "step_milestone", write("MVP")))
     return project
@@ -240,41 +213,6 @@ def test_the_switches_narrow_the_order_to_steps_or_features_and_keep_the_milesto
     # A rebuild keeps the perspective.
     services.undo.push(SetEdgesCommand(mixed.steps[2].id, "requires", []))
     assert shown() == ["A", "C", "D"]
-
-
-def test_there_is_no_date_column_until_something_is_estimated(services, project, tab):
-    """A column of blanks says less than an absent one. The blank is now "nobody sized this"
-    rather than "nobody dated the project" — a project with no start date starts today."""
-    assert tab.table.isColumnHidden(DATE_COLUMN)
-
-    services.undo.push(SetModuleDataCommand(project.steps[0].id, "estimation", {"days": 3.0}))
-    assert not tab.table.isColumnHidden(DATE_COLUMN)
-
-    tab.start_bar.date.setDate(QDate(2026, 9, 7))  # A Monday.
-    # Through the shared formatter, so the table and the terminal cannot read differently.
-    assert tab.table.item(0, DATE_COLUMN).text() == format_date(date(2026, 9, 9))
-
-
-def test_the_bar_opens_on_today_and_writes_nothing(services, project, tab):
-    """A project nobody dated starts today — derived, so opening a tab still dirties nothing.
-    Storing it would be wrong by tomorrow, and would dirty the workspace to say so."""
-    assert tab.start_bar.date.date().toPython() == date.today()
-    assert "estimation" not in project.module_data
-    assert not services.undo.can_undo()
-
-
-def test_the_start_date_is_written_to_the_project_and_undoable(services, project, tab):
-    """The bar belongs to another module; the order view only lends it a place to stand.
-
-    The day picked is a week out rather than a fixed one: the bar opens on today and
-    writes nothing for the date it already holds, so a fixed day makes the test pass or
-    fail depending on the day it is run — it failed on 7 September 2026."""
-    picked = date.today() + timedelta(days=7)
-    tab.start_bar.date.setDate(QDate(picked.year, picked.month, picked.day))
-    assert project.module_data["estimation"]["start"] == picked.isoformat()
-
-    services.undo.undo()
-    assert "estimation" not in project.module_data
 
 
 def test_the_tab_is_titled_for_its_project_and_follows_a_rename(services, project, tab):
@@ -370,7 +308,7 @@ def test_the_export_rows_carry_numbers_a_spreadsheet_can_compute_with(services, 
     )
 
     assert rows[0][:3] == ["#", "Step", "Wave"]
-    assert rows[1][:5] == ["1", "A", "Ready to start", "1", "1"]
+    assert rows[1][:5] == ["1", "A", "Wave 1", "1", "1"]
     # The milestone row: 10 accumulated days, all of them since the start (no milestone before),
     # landing on the tenth working day after the Monday start.
     assert rows[4][3:8] == ["4", "10", "10", "2026-09-18", "MVP"]
@@ -418,8 +356,17 @@ def test_the_cli_gives_the_same_answer(cli):
     ready = json.loads(cli("order", "show", "Discovery", "--ready", "--json"))["steps"]
     assert [s["title"] for s in ready] == ["A"]
 
-    # The window and the terminal show the same three columns.
-    assert cli("order", "show", "Discovery").splitlines()[0].split() == ["#", "Step", "Wave"]
+    # The window and the terminal show the same three columns, and state the same volume.
+    printed = cli("order", "show", "Discovery")
+    assert printed.splitlines()[0].split() == ["#", "Step", "Wave"]
+    assert printed.splitlines()[-1] == "0 days over 2 steps, 2 unestimated"
+
+    cli("estimate", "set", "A", "--days", "1.5")
+    volume = json.loads(cli("order", "show", "Discovery", "--json"))
+    assert (volume["days"], volume["unestimated"]) == (1.5, 1)
+    assert cli("order", "show", "Discovery").splitlines()[-1] == (
+        "1.5 days over 2 steps, 1 unestimated"
+    )
 
 
 def test_a_background_table_does_not_publish_its_selection(services, project, tab):

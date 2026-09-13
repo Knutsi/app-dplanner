@@ -469,7 +469,7 @@ def test_a_feature_gathers_only_what_is_new_since_the_previous_one(services, pro
     for step in (login, importer, reporting, export):
         give(services, step, f"T{step.title[:2]}")
     for step in (importer, export):
-        services.document.set_module_data(step.id, FEATURE_ID, feature_write("f1"))
+        services.document.set_module_data(step.id, FEATURE_ID, feature_write())
 
     section = covers(services, export.id)
     # Login and Import went to the Import feature; Export owns Reporting and itself, and
@@ -487,7 +487,7 @@ def test_the_cumulative_reading_is_the_whole_cone(services, project):
     for step in (login, importer, export):
         give(services, step, f"T{step.title[:2]}")
     for step in (importer, export):
-        services.document.set_module_data(step.id, FEATURE_ID, feature_write("f1"))
+        services.document.set_module_data(step.id, FEATURE_ID, feature_write())
 
     section = covers(services, export.id)
     assert section.mode_bar.isVisibleTo(section) is True
@@ -507,7 +507,7 @@ def test_the_first_feature_in_a_project_is_offered_no_switch(services, project):
 
     login, importer = chain(services, project, "Login", "Import")
     give(services, login, "T100")
-    services.document.set_module_data(importer.id, FEATURE_ID, feature_write("f1"))
+    services.document.set_module_data(importer.id, FEATURE_ID, feature_write())
 
     section = covers(services, importer.id)
     # Nothing behind it to hand off to, so both readings are the same answer.
@@ -526,7 +526,7 @@ def test_a_release_gathers_the_features_behind_it(services, project):
     give(services, importer, "TIm")
     give(services, export, "TEx")
     for step in (importer, export):
-        services.document.set_module_data(step.id, FEATURE_ID, feature_write("f1"))
+        services.document.set_module_data(step.id, FEATURE_ID, feature_write())
     for step, label in ((first, "v1"), (second, "v2")):
         services.document.set_module_data(step.id, MILESTONE_ID, milestone_write(label))
 
@@ -611,7 +611,7 @@ def test_the_tests_tab_can_be_read_by_feature(services, make_project):
     for step in (login, importer, export, orphan):
         give(services, step, f"T{step.title[:2]}")
     for step in (importer, export):
-        services.document.set_module_data(step.id, FEATURE_ID, feature_write("f1"))
+        services.document.set_module_data(step.id, FEATURE_ID, feature_write())
 
     activity = services.tabs.open(TESTS_KIND, project.id)
     table = activity.page.table
@@ -646,7 +646,7 @@ def test_a_step_two_features_both_wait_on_is_filed_under_both(services, make_pro
         feature = Step(title=title)
         AddNodeCommand(project.id, feature).redo(services.document)
         SetEdgesCommand(feature.id, "requires", [shared.id]).redo(services.document)
-        services.document.set_module_data(feature.id, FEATURE_ID, feature_write("f1"))
+        services.document.set_module_data(feature.id, FEATURE_ID, feature_write())
 
     activity = services.tabs.open(TESTS_KIND, project.id)
     activity.group_box.setCurrentIndex(activity.group_box.findData(FEATURE_ID))

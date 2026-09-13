@@ -80,7 +80,9 @@ class ReportingDeps:
 
 class _Writer(QObject):
     """Owns the runner; what a body wrote comes back on a queued Qt signal, the one seam
-    a runner has (``docs/module.py``'s ``_Compiler`` is the precedent)."""
+    a runner has — and the parenting is deliberate: a parentless QObject holding a
+    self-connected signal is a cycle Python frees whenever the collector next runs, which may
+    be inside somebody else's event loop. Parented, it dies with the build."""
 
     written = QtSignal(str, str)  # (what, path)
 
@@ -266,7 +268,9 @@ class ReportingModule:
         def body() -> None:
             if kind in ("html", "preview"):
                 path.write_text(
-                    page.render(report, about=page.about_text(report)), encoding="utf-8"
+                    page.render(report, about=page.about_text(report)),
+                    encoding="utf-8",
+                    newline="\n",
                 )
             elif kind == "pdf":
                 paper.write(report, path)

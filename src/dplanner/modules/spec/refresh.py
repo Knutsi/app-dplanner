@@ -5,8 +5,9 @@ the GUI thread into plain values, the kind's blocking call on the worker, the an
 back on a queued Qt signal, applied on the GUI thread after re-checking the world.
 
 Two things differ from the PR refresher, on purpose. **A fetch lands on the undo stack**:
-a person pressed Refresh (or added the source), so Ctrl+Z must put the documents back —
-the Compile Docs precedent, not the background sync's. And **a check writes nothing**: it
+a person pressed Refresh (or added the source), so Ctrl+Z must put the documents back, where
+a background sync of an external fact applies its command directly. And **a check writes
+nothing**: it
 compares versions and remembers the answer here, per window, so the Specs tab can say
 "3 documents changed" and wait for the person. A source whose credential is refused is
 remembered as *needs reconnect* until its kind says the configuration changed.

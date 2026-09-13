@@ -6,9 +6,9 @@ markdown *and* PDFs — import extracts a PDF's text layer, and ``--page`` narro
 page; ``path`` still hands over the original file), ``render`` a page into an image and
 ``attach-to-step`` it so a figure travels with the step's briefing, and — when the spec is
 replaced — ``diff`` what changed (PDFs diff by their text layers). What the spec *asks for*
-is read into features (``dplanner feature add``, ``feature cite``), whose quotes this module
-anchors through :func:`~dplanner.modules.spec.documents.anchor_sources`, handed across by
-the composition root.
+is read into features (``dplanner step add --feature``, ``feature cite``), whose quotes
+this module anchors through :func:`~dplanner.modules.spec.documents.anchor_sources`,
+handed across by the composition root.
 
 The **topology** is the project's prose beside the documents: ``topology set`` writes it
 and ``topology show`` prints it — and records that it was read, which is what the gate in

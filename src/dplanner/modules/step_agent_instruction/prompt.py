@@ -202,6 +202,23 @@ def assemble(
     return AssembledPrompt(text=text, files=files, segments=segments)
 
 
+def handover_prompt(heading: str, project_title: str, preamble: str, body: str) -> str:
+    """A briefing for a run that is not carrying out the step: the header, this module's
+    own preflight, then whatever the asking module wrote.
+
+    The two hand-overs — reconciling a conflict, compiling a collector's documentation —
+    differ only in ``body``, and the body is the asking module's vocabulary: what "compile"
+    means and which verb finishes it belong to the docs module, not here. So this wraps
+    rather than composes, and the preamble is the one thing every run gets whatever it was
+    opened for.
+    """
+    lines = [heading, f"Project: {project_title}", ""]
+    if preamble:
+        lines += ["## Before you start", "", preamble, ""]
+    lines += [body.strip(), ""]
+    return "\n".join(lines)
+
+
 def conflict_prompt(
     step_title: str,
     project_title: str,
@@ -216,10 +233,7 @@ def conflict_prompt(
     result back with the verb that owns the entry. No status change and no handoff: this run
     does not carry out the step, it settles what two writers meant.
     """
-    lines = [f"# Conflict on step: {step_title}", f"Project: {project_title}", ""]
-    if preamble:
-        lines += ["## Before you start", "", preamble, ""]
-    lines += [
+    lines = [
         "## What happened",
         "",
         "The DPlanner window and a `dplanner` run changed the same entries of this plan"
@@ -245,6 +259,61 @@ def conflict_prompt(
         "",
         f"Run `dplanner agent-state clear '{step_title}'` so the window stops showing this"
         " run as live. Do not change the step's status.",
+    ]
+    return handover_prompt(
+        f"# Conflict on step: {step_title}", project_title, preamble, "\n".join(lines)
+    )
+
+
+def problems_prompt(
+    project_title: str,
+    plan_root: str,
+    problems: Sequence[tuple[str, str, str]],
+) -> str:
+    """The briefing for an agent sent at what is wrong with a plan.
+
+    ``problems`` is one ``(check, subject, message)`` per finding, exactly as
+    ``dplanner project lint`` reports them — every message already names the verb that
+    closes its gap, which is the whole reason this prompt can be short.
+
+    The third hand-over, and the one with no step at all: no worktree, no briefing of a
+    step's own, and a preamble written here rather than by the briefing, since that one is
+    per step and says step-specific things. What it carries is the plan's own repository,
+    the list, and the order to read the topology first — the verbs that reshape a graph are
+    behind that gate, and an agent that has not been through it will be refused by the
+    first one it tries.
+    """
+    preamble = ""
+    if plan_root:
+        preamble = (
+            f"You are in the plan's own repository, `{plan_root}`. This run changes the"
+            " **plan** and nothing else: do not edit code, and do not switch branches."
+            " Never kill a process by name or pattern — other agents may be running with"
+            " the same names."
+        )
+    lines = [
+        "## What `dplanner project lint` reports",
+        "",
+        "Every line names the verb that closes it.",
         "",
     ]
-    return "\n".join(lines)
+    for check, subject, message in problems:
+        lines.append(f"- **{subject}** — {message}  `[{check}]`")
+    lines += [
+        "",
+        "## Instructions",
+        "",
+        f"Run `dplanner topology show '{project_title}'` first: it prints how this graph is"
+        " meant to be shaped, and the verbs that reshape one are refused until you have."
+        " Then close each finding above with the verb it names, asking the developer"
+        " whenever a fix would change what the plan *means* rather than how it is"
+        " recorded. A finding you decide to live with is one to say so about rather than"
+        " silently leave.",
+        "",
+        "## When you are done",
+        "",
+        f"Run `dplanner project lint '{project_title}'` again and report what is left.",
+    ]
+    return handover_prompt(
+        f"# Problems in the plan: {project_title}", project_title, preamble, "\n".join(lines)
+    )

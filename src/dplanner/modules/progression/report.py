@@ -81,7 +81,7 @@ def report_source(
                     40,
                     Table(
                         READY_TABLE_ID,
-                        "What can start now",
+                        "Ready to start",
                         (Column("Key", "key"), Column("Step"), Column("Unlocks", "number")),
                         rows,
                         note="Nothing these wait on is left undone; first the ones that "

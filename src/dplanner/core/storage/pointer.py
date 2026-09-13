@@ -33,7 +33,7 @@ def read_index(root: Path) -> list[str]:
     index = root / POINTER_FILE
     if not index.is_file():
         return []
-    return [line.strip() for line in index.read_text().splitlines() if line.strip()]
+    return [line.strip() for line in index.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def resolve_index(root: Path) -> list[tuple[str, Path]]:
@@ -42,7 +42,8 @@ def resolve_index(root: Path) -> list[tuple[str, Path]]:
 
 
 def write_index(root: Path, lines: Sequence[str]) -> None:
-    (root / POINTER_FILE).write_text("".join(f"{line}\n" for line in lines))
+    text = "".join(f"{line}\n" for line in lines)
+    (root / POINTER_FILE).write_text(text, encoding="utf-8", newline="\n")
 
 
 def add_to_index(project_dir: Path) -> Path | None:

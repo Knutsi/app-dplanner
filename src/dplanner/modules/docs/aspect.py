@@ -23,8 +23,8 @@ The stores, chosen by content, exactly as ``step_description`` chooses:
 
 The ``docs`` namespace spans node kinds, which ``FORMAT.md`` sanctions and
 ``step_agent_instruction`` already does: beside a **project**, ``modules/docs.md`` is the
-standing documentation style, prepended to every compile. A project does no work, so there is
-no documentation-of-its-own for that to collide with.
+project's *compilation instructions*, which open every compile briefing. A project does no
+work, so there is no fragment of its own for that to collide with.
 """
 
 from collections.abc import Sequence
@@ -46,7 +46,21 @@ MODULE_ID = "docs"
 COMPILED_ID = "docs_compiled"
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
-COMPILED_FORMAT = ModuleDataFormat(COMPILED_ID)
+
+
+def _drop_writer(data: dict[str, Any]) -> dict[str, Any]:
+    """Format 1 → 2: the writer's name leaves the stamp.
+
+    Format 1 recorded ``provider`` and ``model``, because the window compiled with an LLM call
+    and the answer named itself. Compiling launches an agent now, so every stamp is written by
+    ``dplanner compiled set`` — two keys with one value each forever. Which agent compiled a
+    document is the launching window's record (``modules/docs``'s per-user ``compiled_by``),
+    never the plan's: the plan says when it was compiled and from what.
+    """
+    return {key: value for key, value in data.items() if key not in ("provider", "model")}
+
+
+COMPILED_FORMAT = ModuleDataFormat(COMPILED_ID, version=2, migrations=(_drop_writer,))
 
 
 # -- the fragment ------------------------------------------------------------------------------
@@ -93,16 +107,16 @@ def asset_source() -> AssetSource:
 
         note(
             asset_references(read(project)),
-            AssetUse("project", project.id, project.title, "documentation style"),
+            AssetUse("project", project.id, project.title, "compilation instructions"),
         )
         for step in project.steps:
             note(
                 asset_references(read(step)),
-                AssetUse("step", step.id, step.title, "documentation"),
+                AssetUse("step", step.id, step.title, "documentation fragment"),
             )
             note(
                 asset_references(read_compiled(step)),
-                AssetUse("step", step.id, step.title, "compiled docs"),
+                AssetUse("step", step.id, step.title, "documentation"),
             )
 
         holders: list[NodeId] = [project.id, *(step.id for step in project.steps)]
@@ -149,39 +163,36 @@ def read_digest(step: Step) -> str:
     return found if isinstance(found, str) else ""
 
 
-def write_stamp(digest: str, at: float, provider: str, model: str, sources: int) -> dict[str, Any]:
-    """What one compile recorded. ``at`` and ``sources`` are floats: a module that writes a
-    number owes it one, or a file's bytes would depend on whether the project had been
-    reopened (``FORMAT.md``)."""
+def write_stamp(digest: str, at: float, sources: int) -> dict[str, Any]:
+    """What one compile recorded: the fingerprint of what it read, when, and how much.
+
+    ``at`` and ``sources`` are floats: a module that writes a number owes it one, or a file's
+    bytes would depend on whether the project had been reopened (``FORMAT.md``). Who compiled
+    it is deliberately absent — see :func:`_drop_writer`.
+    """
     return stamped(
-        {
-            "digest": digest,
-            "at": float(at),
-            "provider": provider,
-            "model": model,
-            "sources": float(sources),
-        },
+        {"digest": digest, "at": float(at), "sources": float(sources)},
         COMPILED_FORMAT.version,
     )
 
 
 def compiled_summary(step: Step) -> str:
-    return "compiled docs" if read_compiled(step) else ""
+    return "documentation" if read_compiled(step) else ""
 
 
 # Last, because they name the pieces above: the declarations everything else reads.
 SPEC = AspectSpec(
     id=MODULE_ID,
-    label="Docs",
-    summary="What a step contributes to the product's documentation, in markdown.",
+    label="Documentation fragment",
+    summary="What one step contributes to the product's documentation, in markdown.",
     data_format=DATA_FORMAT,
     phrase=summary,
 )
 
 COMPILED_SPEC = AspectSpec(
     id=COMPILED_ID,
-    label="Compiled Docs",
-    summary="The document a feature or milestone compiles from the documentation it gathers.",
+    label="Documentation",
+    summary=("The documentation a feature or milestone compiles from the fragments it gathers."),
     data_format=COMPILED_FORMAT,
     phrase=compiled_summary,
 )

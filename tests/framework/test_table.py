@@ -15,7 +15,7 @@ from dplanner.framework.list_rows import (
     MUTED_ROLE,
     TINT_ROLE,
 )
-from dplanner.framework.table import Cell, Column, Table
+from dplanner.framework.table import Cell, Column, Table, text_width
 from dplanner.theme import apply_theme
 from dplanner.theme.icons import tag_icon
 from dplanner.theme.themes import DARK, LIGHT
@@ -220,6 +220,75 @@ def test_a_rich_row_is_two_lines_of_two_sizes(app):
         assert table.row_height() == snap_up(rich_row_height(font))
     finally:
         table.deleteLater()
+
+
+def test_a_width_measured_for_a_text_never_elides_it_on_any_installed_font(app):
+    """Qt elides against the fractional advance and paints the ink, and a font can make
+    either the wider one: DejaVu Sans rounds "10"'s advance down, Liberation Sans's "1"
+    reaches past its advance. The measure has to hold on whatever fonts a machine has."""
+    from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics
+
+    families = QFontDatabase.families()[:40]  # Bounded: a desktop can list hundreds.
+    assert families
+    for family in families:
+        for bold in (False, True):
+            font = QFont(family, 10)
+            font.setBold(bold)
+            metrics = QFontMetrics(font)
+            for text in ("10", "15", "1", "Wave 15", "Release v1", "0.5 d"):
+                width = text_width(font, text)
+                assert metrics.elidedText(text, Qt.TextElideMode.ElideRight, width) == text
+                assert metrics.boundingRect(text).width() <= width
+
+
+def test_a_column_sized_to_its_contents_shows_them_whole(app):
+    """Two rules meet here, and each of them clipped a real table before it was written.
+
+    A cell is *measured* in the weight it is painted in, so a bold milestone does not
+    elide in a column its plain neighbours sized; and it is measured by the width the
+    text lays out to rather than by its advance, which a glyph's right side bearing can
+    exceed by a pixel — enough to render "10" as an ellipsis.
+    """
+    from PySide6.QtWidgets import QStyleOptionViewItem
+
+    made = Table((Column("#", numeric=True), Column("Wave")))
+    made.add_row(("10", "Wave 15"))
+    made.add_row((Cell("15", emphasis=True), Cell("Wave 15", emphasis=True)))
+    option = QStyleOptionViewItem()
+    made.initViewItemOption(option)
+
+    for column in (0, 1):
+        plain = made.delegate.sizeHint(option, made.model().index(0, column))
+        bold = made.delegate.sizeHint(option, made.model().index(1, column))
+        assert bold.width() >= plain.width()
+        for row in (0, 1):
+            index = made.model().index(row, column)
+            drawn = made.delegate.sizeHint(option, index).width() - 2 * made.padding()
+            cell = made.item(row, column)
+            assert cell is not None
+            text = cell.text()
+            font = made.delegate.font_for(option, index)
+            assert made.delegate.elided(font, text, drawn) == text
+    made.deleteLater()
+
+
+def test_a_host_numbers_its_own_roles_from_one_the_delegate_never_reads(table):
+    """``HOST_ROLE`` is the promise: what a view stamps on its rows is its own business.
+
+    The order table numbered its roles from ``UserRole + 1`` and collided with
+    ``DETAIL_ROLE``, so every milestone row printed its label as a second line and greyed
+    itself through ``MUTED_ROLE``. A host that starts here cannot, and neither can it
+    collide with a role the framework adds later.
+    """
+    from dplanner.framework.list_rows import HOST_ROLE
+
+    framework_roles = {DETAIL_ROLE, MUTED_ROLE, EMPHASIS_ROLE, HEADING_ROLE, TINT_ROLE}
+    assert all(role < HOST_ROLE for role in framework_roles)
+
+    table.add_row(("A", "1", "ok"), data={HOST_ROLE: "step-7"})
+    item = table.item(0, 0)
+    assert item.data(HOST_ROLE) == "step-7"
+    assert not item.data(DETAIL_ROLE) and not item.data(MUTED_ROLE)
 
 
 def test_the_current_cell_wears_no_focus_frame(table):

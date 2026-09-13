@@ -4,7 +4,7 @@
 
 The surfaces S6 reworked: the aspect bar's toggles on the left and the template it amounts
 to on the right, the Details tab stacking from the top whatever is turned off, and the
-dialog on ``DialogFrame`` with a title, a lead and no footer. A whole application is built
+dialog on ``DialogFrame`` with one Close in its footer. A whole application is built
 over a throwaway library — the panel is the dock's, so nothing here hand-wires a surface
 the window would build differently — and torn down per theme.
 """
