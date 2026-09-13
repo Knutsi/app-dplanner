@@ -31,6 +31,11 @@ Reach = Callable[[], str]
 REACH_URL = "https://api.github.com/"
 REACH_TIMEOUT_S = 3.0
 
+# Where to read about a tool this checklist cannot install for you. A row names one only
+# when the address is certain: a guessed link is a worse answer than no link.
+GIT_URL = "https://git-scm.com/downloads"
+AZ_URL = "https://learn.microsoft.com/cli/azure/install-azure-cli"
+
 
 def _run(command: list[str]) -> "subprocess.CompletedProcess[str]":
     return subprocess.run(command, capture_output=True, text=True, check=False)
@@ -98,6 +103,8 @@ def checks(
             probe=lambda: _git(which, runner),
             remedy=Remedy(
                 words="Every plan lives in a git repository; DPlanner cannot open one without it.",
+                url=GIT_URL,
+                packages={"": "git", "windows": "Git.Git"},
             ),
             required=True,
         ),
@@ -117,9 +124,13 @@ def checks(
             label="Azure CLI (az)",
             probe=lambda: _az(which, runner),
             remedy=Remedy(
+                # No packages: az is a Microsoft repository or a install script on most
+                # distributions, and `apt install azure-cli` on a stock machine simply
+                # fails. The page says the truth for whichever one this is.
                 words="DPlanner never calls az — this row is here for the work you plan, "
                 "not for DPlanner.",
                 command="az login",
+                url=AZ_URL,
             ),
         ),
     ]

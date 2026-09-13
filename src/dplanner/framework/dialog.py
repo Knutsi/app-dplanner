@@ -12,6 +12,12 @@ line and a half down; a dialog is small and its content is what the person came 
 question a confirmation asks is *content* and belongs in the body, which is where
 ``confirm()`` puts it.
 
+**The one exception is a dialog that opens itself.** :meth:`set_heading` prints a heading
+over the body, and it is for a surface nobody asked for: the person clicked no entry and
+read no title in passing, so the window's name is the one thing they were never told. The
+Setup Checklist is the case it exists for. A dialog a gesture opened must not call it —
+that gesture already said what this is.
+
 The frame names its *parts* — ``#DialogBody``, ``#DialogFooter`` — and leaves its own
 object name to the subclass, so the stylesheet reaches every dialog through two constant
 names and no dialog is ever added to a selector list. ``ARCHITECTURE.md``'s *A primitive
@@ -27,6 +33,7 @@ from PySide6.QtGui import QGuiApplication, QKeyEvent, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QPushButton,
     QVBoxLayout,
@@ -35,6 +42,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.framework.signalling import StatusLine
 from dplanner.framework.widgets import caption
+from dplanner.theme.cards import title_font
 from dplanner.theme.tokens import CAPTION_GAP, DIALOG_MARGIN, FIELD_GAP, SCREEN_SHARE, SECTION_GAP
 
 # A fit-to-content dialog is never narrower than this: a one-line prompt or a confirmation
@@ -105,6 +113,19 @@ class DialogFrame(QDialog):
         """What the window and the task switcher call this dialog. Nothing is drawn in the
         body: the frame prints no heading of its own."""
         self.setWindowTitle(text)
+
+    def set_heading(self, text: str) -> QLabel:
+        """Print ``text`` over the body — **only** for a dialog that opens itself.
+
+        See the module docstring: a surface the person did not ask for is the one that has
+        to name itself, because nothing on the way in did. Calling this from a dialog a menu
+        entry or a button opened is the heading DESIGN.md's *Dialogs* rules out.
+        """
+        label = QLabel(text, self.body)
+        label.setObjectName("DialogHeading")
+        label.setFont(title_font(label.font()))
+        self.body_layout.insertWidget(0, label)
+        return label
 
     # -- the footer --------------------------------------------------------------------
 

@@ -289,6 +289,39 @@ Five decisions carry it.
   bites. That is what retired `github/notice.py`: DESIGN.md had already ruled that box out
   ("A machine without gh. No modal at launch"), and this is where those facts live now.
 
+Three things the surface itself settled, after the first pass was seen.
+
+**It is the one dialog that prints a heading.** Every other dialog in the application
+starts at its content, because a gesture opened it and that gesture already said what it
+is. This one can arrive unasked — at a first start, or when something required has gone
+missing since — and a window somebody did not summon is the only one whose name they were
+never told. `DialogFrame.set_heading` exists for that case and says so, and the rule is the
+test: a dialog a menu entry opened must not call it.
+
+**A remedy may name packages instead of a command**, and `install_line` turns them into the
+line *this* machine would actually run: `yay -S github-cli` on an Arch box, `sudo apt
+install gh` on Ubuntu, `brew install gh` on a Mac. Two small tables do it — `MANAGERS`, one
+line per package manager, and `FAMILIES`, one entry per distribution family naming the
+managers to try — and a manager is only offered when it is **on PATH**, because suggesting
+`brew install` on a Mac without Homebrew is a second thing to go and install, said as if it
+were the answer. The family comes from `/etc/os-release`'s `ID` and then its `ID_LIKE`,
+which is why **a derivative needs no row of its own and must not get one**: Omarchy says
+`ID_LIKE=arch` and is an Arch machine for this purpose, as every Ubuntu spin is a Debian
+one. (Omarchy's own `omarchy-pkg-install` is an interactive picker, not a line to paste, so
+it is deliberately absent from `MANAGERS`.) A check that cannot name a line it is *sure* of
+names none and carries a `url` instead — `azure-cli` is a Microsoft repository or an install
+script on most distributions, and `apt install azure-cli` on a stock machine simply fails. A
+wrong install command is worse than a link.
+
+**Muting changes what nags, never what is true.** A row's `⋮` carries *Don't warn me about
+this again*, kept per user by id. The row still shows and still says what it found; what
+muting takes away is the error tone, the footer's count, the count in the menu entry, and —
+since a start-up sweep exists only to decide whether to speak — the probe itself. The CLI
+never reads it: `dplanner checklist show` is the machine's truth, and an agent gating a
+handover on it must not inherit somebody's decision to live with a gap. That is the same
+split as *Where the user left off is remembered by key*: a preference is the person's, and
+the plan — here, the machine — is not.
+
 One thing had to move to make it possible. A file named in `HEADLESS_FILES` may import
 `core/`, `domain/` and `cli/` and **not** `framework/`, and `cli/` may not import `framework/`
 at all — so with the keychain wrapper under `framework/`, neither the verb nor any module's

@@ -77,9 +77,13 @@ uv run dplanner checklist show    # or Tools ▸ Setup Checklist… in the windo
 ```
 
 It exits 1 while something **required** is missing (git, the command, the skill) and 0 while
-the rest is only advice, so an agent can gate on it; `--json` for the rows as data. The
-window opens the same list once on a machine it has never greeted, and after that only while
-you leave its switch on and something required is missing.
+the rest is only advice, so an agent can gate on it; `--json` for the rows as data. Where
+there is an install line to give, it is **this machine's** — `yay -S github-cli` on Arch or
+Omarchy, `sudo apt install gh` on Ubuntu, `brew install gh` on a Mac — and where there is
+not, the row links to the page that knows. The window opens the same list once on a machine
+it has never greeted, and after that only while you leave its switch on and something
+required is missing; a row's `⋮` can tell it to stop warning about that one for good, which
+changes what nags and never what `checklist show` reports.
 
 `desktop install`/`status`/`uninstall` and `skill install`/`status`/`uninstall` are the
 pieces it is made of, for when one of them is what you mean. The command is left alone when

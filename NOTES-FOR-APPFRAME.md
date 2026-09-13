@@ -2937,3 +2937,31 @@ enabled, summary said — from `busy_changed(False)`.
 **Upstream?** The rule, as a paragraph in `task_runner.py`'s docstring. It is the second
 thing every multi-item body will get wrong, after the last-reference rule the file already
 warns about.
+
+### `framework/dialog.py` — `DialogFrame.set_heading(text)`
+
+**What.** Prints a heading over the body, in `title_font` under `#DialogHeading`. Off by
+default and documented as the exception, not the option: §28 took the title and the lead out
+of the body and that stands.
+
+**Why.** A dialog that **opens itself** is the one case the reasoning behind §28 does not
+cover. That reasoning is "the title bar already says it, and the gesture that opened this
+said it too" — but a surface nobody asked for had no gesture, and a person looking at a
+window they did not summon is owed its name. DPlanner's Setup Checklist can arrive at a
+first start; every other dialog here still prints nothing.
+
+**Upstream?** Yes, with the sentence that makes it an exception. A template that ships the
+no-heading rule alone will grow a hand-rolled heading label the first time something opens
+unbidden, and then a second one that is styled differently.
+
+### `framework/signalling.py` — `StatusLine.say(..., glyph=…)`
+
+**What.** The mark beside the words may be given per call; `●` stays the default.
+
+**Why.** A surface whose rows *are* a list of things that should be true reads as a list of
+ticks — ☑ when it is, ☐ when it is not — and the **tone** still carries the mood, which is
+what the vocabulary actually is. The glyph was a module constant, so the alternative was a
+second widget that reimplemented the tone mapping to change one character.
+
+**Upstream?** Yes, with the constraint in the docstring: the tone is the vocabulary, the
+glyph is the surface's, and a second *mood* glyph is what the tones exist to prevent.

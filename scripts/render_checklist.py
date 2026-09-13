@@ -23,7 +23,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 from dplanner.cli.checklist import MachineCheck, Reading, Remedy
 from dplanner.framework.tasks import TaskService
-from dplanner.modules.checklist.dialog import ChecklistDialog
+from dplanner.modules.checklist.dialog import DIALOG_SIZE, ChecklistDialog
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
@@ -77,7 +77,18 @@ def machine() -> list[MachineCheck]:
             remedy=INSTALL,
         ),
         row("git.installed", "Git and GitHub", "git", "git version 2.51.0", required=True),
-        row("github.gh", "Git and GitHub", "GitHub CLI (gh)", "/usr/bin/gh"),
+        row(
+            "github.gh",
+            "Git and GitHub",
+            "GitHub CLI (gh)",
+            "not on PATH",
+            ok=False,
+            remedy=Remedy(
+                words="Branches and pull requests are typed rather than picked without it.",
+                url="https://cli.github.com",
+                packages={"": "gh", "arch": "github-cli", "windows": "GitHub.cli"},
+            ),
+        ),
         row(
             "github.auth",
             "Git and GitHub",
@@ -140,8 +151,10 @@ def render(app: QApplication, theme: Theme, out: Path) -> None:
     apply_theme(app, theme)
     tasks = TaskService()
 
-    # No resize: the dialog's own size is what a person gets, and what the image should show.
+    # The dialog's own size, set here because DialogFrame clamps to 80 % of the screen and
+    # the offscreen platform's screen is smaller than any desktop's.
     dialog = ChecklistDialog(machine(), tasks, lambda _action: None)
+    dialog.resize(*DIALOG_SIZE)
     dialog.show()
     save(dialog, out, "checklist", theme, app)
     discard(dialog)
@@ -161,11 +174,24 @@ def render(app: QApplication, theme: Theme, out: Path) -> None:
         for check in machine()
     ]
     working = ChecklistDialog(held, tasks, lambda _action: None)
+    working.resize(*DIALOG_SIZE)
     working.show()
     save(working, out, "checklist-checking", theme, app)
     gate.set()
     settle(app)
     discard(working)
+
+    # A row's ⋮: what one check can be told, apart from what the machine says about it.
+    told = ChecklistDialog(machine(), tasks, lambda _action: None)
+    told.resize(*DIALOG_SIZE)
+    told.show()
+    settle(app)
+    row = next(one for one in told.rows if one.check.id == "github.gh")
+    menu = row.menu()
+    menu.popup(row.menu_button.mapToGlobal(row.menu_button.rect().bottomLeft()))
+    save(menu, out, "checklist-row-menu", theme, app)
+    menu.hide()
+    discard(told)
 
 
 def main(argv: list[str]) -> int:

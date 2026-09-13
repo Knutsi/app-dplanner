@@ -296,7 +296,12 @@ Every dialog is a `DialogFrame` (`framework/dialog.py`), and its anatomy is the 
   dialog's content is what the person opened it for, and it starts at the top. The title
   names the **window**, for the switcher, and nothing is drawn from it. What a dialog is
   about is said by its content — the question a confirmation asks, the caption over a
-  prompt's field — never by a heading over it. Then **the footer as a band**, edge to edge
+  prompt's field — never by a heading over it.
+- **The one exception is a dialog that opens itself** (`set_heading`). A surface nobody
+  asked for is the only one that has to name itself: the person clicked no entry, read no
+  title in passing, and has a window in front of them they did not summon. The Setup
+  Checklist is the case, and the rule is the test — **a dialog a gesture opened must not
+  call it**, because that gesture already said what this is. Then **the footer as a band**, edge to edge
   below the page: the elevated ground under a faint hairline, its buttons 12 px inside it.
   It is the one place a dialog has a second ground, so the eye finds the way out without
   reading.
@@ -404,6 +409,13 @@ text that re-lays out on resize, and a selection state that recolours both lines
   in secondary ink, measured first so the name elides against what is left.
 - **Hairlines only under a pinned row that heads the list**; between ordinary rows the
   padding is the separator.
+- **A row's own verbs sit at its right, and a row that has none keeps their room.** At most
+  two named or glyph buttons — the act, and a link where somebody else's page is the answer
+  — then a `⋮` for what the row can be *told*, built when it opens. Room kept while hidden
+  (the `UpdatingIndicator`'s rule), so a row that is fixed does not move the rows under it.
+- **A list of things that should be true is drawn as one**: the `StatusLine`'s mark becomes
+  ☑ when it is and ☐ when it is not, and the tone still carries the mood. Nothing else
+  changes that glyph — a second mood glyph would be a second vocabulary.
 
 ## Tables
 

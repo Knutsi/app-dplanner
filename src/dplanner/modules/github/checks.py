@@ -12,6 +12,10 @@ different acts, and a row that said "gh is not right" would name neither.
 from dplanner.cli.checklist import MachineCheck, Reading, Remedy
 from dplanner.modules.github.gh import gh_refusal, which_gh
 
+GH_URL = "https://cli.github.com"
+# What each family calls it; the rest use "gh". `install_line` picks by this machine.
+GH_PACKAGES = {"": "gh", "arch": "github-cli", "alpine": "github-cli", "windows": "GitHub.cli"}
+
 
 def _installed() -> Reading:
     found = which_gh()
@@ -34,7 +38,8 @@ def checks() -> list[MachineCheck]:
             probe=_installed,
             remedy=Remedy(
                 words="Branches and pull requests are typed rather than picked without it.",
-                command="see https://cli.github.com",
+                url=GH_URL,
+                packages=GH_PACKAGES,
             ),
         ),
         MachineCheck(
@@ -45,6 +50,7 @@ def checks() -> list[MachineCheck]:
             remedy=Remedy(
                 words="Sign in so DPlanner can list branches and pull requests.",
                 command="gh auth login",
+                url=GH_URL,
             ),
         ),
     ]

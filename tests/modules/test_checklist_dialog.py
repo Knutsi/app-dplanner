@@ -11,12 +11,30 @@ import time
 
 import pytest
 
-from dplanner.cli.checklist import MachineCheck, Reading, Remedy
+from dplanner.cli.checklist import Machine, MachineCheck, Reading, Remedy
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec, MenuStructure
 from dplanner.menus import MENU_STRUCTURE
 from dplanner.modules.checklist import module as checklist_module
-from dplanner.modules.checklist.dialog import AT_START, CHECKING, GREETING, ChecklistDialog
-from dplanner.modules.checklist.module import ChecklistDeps, ChecklistModule, at_start, greeted
+from dplanner.modules.checklist.dialog import (
+    AT_START,
+    CHECKING,
+    COPY,
+    GREETING,
+    HEADING,
+    MUTE,
+    TICKED,
+    UNMUTE,
+    UNTICKED,
+    ChecklistDialog,
+    Preferences,
+)
+from dplanner.modules.checklist.module import (
+    ChecklistDeps,
+    ChecklistModule,
+    at_start,
+    greeted,
+    muted,
+)
 
 
 def wait_for(app, predicate, timeout=5.0):
@@ -68,11 +86,14 @@ def sample():
     ]
 
 
+ARCH = Machine("arch", "yay")  # A fixed machine: the suite reads the same on any box.
+
+
 @pytest.fixture
 def settled(app, services, sample):
     """A dialog whose first sweep has landed, with the remedies it ran recorded."""
     ran: list[str] = []
-    dialog = ChecklistDialog(sample, services.tasks, ran.append, services.window)
+    dialog = ChecklistDialog(sample, services.tasks, ran.append, services.window, machine=ARCH)
     wait_for(app, lambda: dialog.status.tone() != "busy")
     return dialog, ran
 
@@ -142,6 +163,132 @@ def test_a_row_too_narrow_for_its_words_cuts_them_rather_than_widening_the_dialo
     assert row.line.words() != row.said
     assert row.line.words().endswith("…")
     assert row.said in row.toolTip()  # Nothing is lost: the full words are the tooltip.
+
+
+def test_the_dialog_prints_its_name_because_nobody_asked_for_it(settled):
+    """The one dialog in the application with a heading: it opens itself, so the window's
+    name is the one thing the person was never told on the way in."""
+    dialog, _ran = settled
+    from PySide6.QtWidgets import QLabel
+
+    headings = [
+        label.text()
+        for label in dialog.body.findChildren(QLabel)
+        if label.objectName() == "DialogHeading"
+    ]
+
+    assert headings == [HEADING]
+    assert dialog.windowTitle() == HEADING
+
+
+def test_a_row_is_ticked_when_it_is_true_and_an_empty_box_when_it_is_not(settled):
+    dialog, _ran = settled
+    marks = {row.check.id: row.line.text() for row in dialog.rows}
+
+    assert TICKED in marks["git.installed"]
+    assert UNTICKED in marks["install.skill"]
+    assert UNTICKED in marks["github.gh"]
+
+
+def test_a_failing_row_carries_the_line_this_machine_would_run(app, services):
+    """The distro's own words: the same check reads `yay -S` here and `brew install` on a
+    Mac, because the table is asked rather than a command being written into the check."""
+    remedy = Remedy(words="Needed to pick branches.", packages={"": "gh", "arch": "github-cli"})
+    dialog = ChecklistDialog(
+        [check("github.gh", "Git and GitHub", ok=False, detail="not on PATH", remedy=remedy)],
+        services.tasks,
+        lambda _id: None,
+        services.window,
+        machine=ARCH,
+    )
+    wait_for(app, lambda: dialog.status.tone() != "busy")
+
+    assert "yay -S github-cli" in dialog.rows[0].why_words
+
+
+def test_a_row_with_somewhere_to_read_offers_the_link_and_one_without_does_not(app, services):
+    with_url = check(
+        "github.gh",
+        "Git and GitHub",
+        ok=False,
+        remedy=Remedy(words="Needed.", url="https://cli.github.com"),
+    )
+    without = check("secrets.keychain", ok=False, remedy=Remedy(words="Needed."))
+    dialog = ChecklistDialog(
+        [with_url, without], services.tasks, lambda _id: None, services.window, machine=ARCH
+    )
+    wait_for(app, lambda: dialog.status.tone() != "busy")
+    rows = {row.check.id: row for row in dialog.rows}
+
+    assert rows["github.gh"].link is not None
+    assert "https://cli.github.com" in rows["github.gh"].link.toolTip()
+    assert not rows["github.gh"].link.isHidden()
+    assert rows["secrets.keychain"].link is None
+
+
+# -- what a row can be told ------------------------------------------------------------------
+
+
+def test_every_row_can_be_told_not_to_warn_again(settled):
+    dialog, _ran = settled
+    rows = {row.check.id: row for row in dialog.rows}
+
+    assert [label for label, _run in rows["git.installed"].entries()] == [MUTE]
+    # A row with a line to type offers it; one without keeps the menu to the one verb.
+    assert [label for label, _run in rows["install.skill"].entries()] == [MUTE, COPY]
+
+
+def test_copying_a_command_puts_this_machines_own_line_on_the_clipboard(settled, app):
+    from PySide6.QtWidgets import QApplication
+
+    dialog, _ran = settled
+    row = next(one for one in dialog.rows if one.check.id == "install.skill")
+    _label, run = next((label, run) for label, run in row.entries() if label == COPY)
+
+    run()
+
+    assert QApplication.clipboard().text() == "dplanner install all"
+
+
+def test_a_muted_row_stops_counting_and_stops_shouting(app, services):
+    told: list[tuple[str, bool]] = []
+    dialog = ChecklistDialog(
+        [check("install.skill", "DPlanner", ok=False, detail="not installed", required=True)],
+        services.tasks,
+        lambda _id: None,
+        services.window,
+        prefs=Preferences(on_mute=lambda check_id, on: told.append((check_id, on))),
+        machine=ARCH,
+    )
+    wait_for(app, lambda: dialog.status.tone() != "busy")
+    assert dialog.status.tone() == "error"
+
+    row = dialog.rows[0]
+    _label, mute = next((label, run) for label, run in row.entries() if label == MUTE)
+    mute()
+
+    assert told == [("install.skill", True)]
+    # Muting changes what nags, never what is true: the row still says what it found.
+    assert "not installed" in row.said
+    assert row.line.tone() == "info"
+    assert dialog.counted() == []
+    assert dialog.status.words() == "This machine has everything."
+    assert [label for label, _run in row.entries()] == [UNMUTE]
+
+
+def test_a_row_starts_muted_when_the_person_muted_it_last_time(app, services):
+    dialog = ChecklistDialog(
+        [check("az.installed", "Other tools", ok=False, detail="not installed")],
+        services.tasks,
+        lambda _id: None,
+        services.window,
+        prefs=Preferences(muted=frozenset({"az.installed"})),
+        machine=ARCH,
+    )
+    wait_for(app, lambda: dialog.status.tone() != "busy")
+
+    assert dialog.counted() == []
+    assert [label for label, _run in dialog.rows[0].entries()] == [UNMUTE]
 
 
 # -- the work -----------------------------------------------------------------------------
@@ -433,3 +580,49 @@ def test_the_start_up_sweep_asks_only_the_required_rows(app, services, monkeypat
 
     assert asked == ["git.installed"]
     assert opened(built) is None  # Nothing required is wanting, so nothing is said.
+
+
+def test_a_muted_required_row_is_neither_probed_nor_said(app, services, monkeypatch):
+    """Muting is what the person asked for: the start-up sweep does not even look."""
+    asked: list[str] = []
+
+    def watched(check_id, *, required):
+        def probe():
+            asked.append(check_id)
+            return Reading(ok=False, detail="not installed")
+
+        return MachineCheck(
+            id=check_id, group="DPlanner", label=check_id, probe=probe, required=required
+        )
+
+    built = ChecklistModule(
+        ChecklistDeps(
+            actions=ActionRegistry(MenuStructure(MENU_STRUCTURE)),
+            context=services.context,
+            tasks=services.tasks,
+            parent=services.window,
+            checks=lambda: [watched("install.skill", required=True)],
+        )
+    )
+    built.register()
+    checklist_module.set_greeted()
+    checklist_module.set_muted("install.skill", True)
+
+    starts(built, monkeypatch)
+
+    assert muted() == {"install.skill"}
+    assert asked == []  # Nothing probed, so nothing to say.
+    assert built.missing() == 0
+    assert opened(built) is None
+
+
+def test_unmuting_puts_the_row_back_in_the_count(app, module, monkeypatch):
+    checklist_module.set_greeted()
+    starts(module, monkeypatch)
+    wait_for(app, lambda: module.missing() > 0)
+
+    checklist_module.set_muted("install.skill", True)
+    assert module.missing() == 0  # Read afresh: the count is a question, not a cache.
+
+    checklist_module.set_muted("install.skill", False)
+    assert module.missing() == 1

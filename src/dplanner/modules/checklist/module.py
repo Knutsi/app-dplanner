@@ -31,11 +31,12 @@ from dplanner.framework.context import Context, ContextService
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.user_config import get_global, set_global
-from dplanner.modules.checklist.dialog import ChecklistDialog
+from dplanner.modules.checklist.dialog import ChecklistDialog, Preferences
 
 MODULE_ID = "checklist"
 GREETED_KEY = "greeted"
 AT_START_KEY = "show_when_missing"
+MUTED_KEY = "muted"
 LABEL = "&Setup Checklist"
 START_TASK_KEY = "checklist.start"
 
@@ -60,6 +61,23 @@ def at_start() -> bool:
 
 def set_at_start(on: bool) -> None:
     set_global(MODULE_ID, AT_START_KEY, bool(on))
+
+
+def muted() -> frozenset[str]:
+    """The checks the person has asked not to be warned about, by id.
+
+    Muting changes what nags and never what is true: the row still shows and still says
+    what it found, and ``dplanner checklist show`` — the machine's truth, which an agent
+    gates on — never reads this at all.
+    """
+    stored = get_global(MODULE_ID, MUTED_KEY, [])
+    return frozenset(str(one) for one in stored) if isinstance(stored, list) else frozenset()
+
+
+def set_muted(check_id: str, on: bool) -> None:
+    kept = set(muted())
+    kept.add(check_id) if on else kept.discard(check_id)
+    set_global(MODULE_ID, MUTED_KEY, sorted(kept))
 
 
 @dataclass(frozen=True)
@@ -111,11 +129,16 @@ class ChecklistModule:
         return ActionState(label=f"{LABEL} ({missing})…" if missing else f"{LABEL}…")
 
     def missing(self) -> int:
-        """Required rows the last sweep found wanting. Read; nothing is probed here."""
+        """Required rows the last sweep found wanting, minus the ones the person asked not
+        to be warned about. Read; nothing is probed here."""
+        silent = muted()
         return sum(
             1
             for check in self._checks
-            if check.required and check.id in self._readings and not self._readings[check.id].ok
+            if check.required
+            and check.id not in silent
+            and check.id in self._readings
+            and not self._readings[check.id].ok
         )
 
     # -- opening ------------------------------------------------------------------------
@@ -130,8 +153,12 @@ class ChecklistModule:
             self._deps.tasks,
             self._remedy,
             self._deps.parent,
-            at_start=at_start(),
-            on_at_start=set_at_start,
+            prefs=Preferences(
+                at_start=at_start(),
+                muted=muted(),
+                on_at_start=set_at_start,
+                on_mute=set_muted,
+            ),
             greeting=greeting,
         )
         # A bound method, never a lambda closing over the dialog: the connection lives on
@@ -156,7 +183,10 @@ class ChecklistModule:
             return
         if not at_start():
             return
-        required = [check for check in self._checks if check.required]
+        # A muted check is not probed at all: the only thing a start-up sweep decides is
+        # whether to say something, and this one has been told not to.
+        silent = muted()
+        required = [check for check in self._checks if check.required and check.id not in silent]
         if not required:
             return
         self._runner = TaskRunner(self._deps.tasks, parent=self._deps.parent)
