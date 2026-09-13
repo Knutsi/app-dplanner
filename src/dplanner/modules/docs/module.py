@@ -38,7 +38,7 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import Context, ContextService
-from dplanner.framework.debounce import DebounceService
+from dplanner.framework.debounce import SETTLE_MS, Debounced, DebounceService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
@@ -61,7 +61,7 @@ from dplanner.modules.docs.aspect import (
     read_stamp,
     write_state,
 )
-from dplanner.modules.docs.collect import Source, sources_for, state_of, sub_collectors
+from dplanner.modules.docs.collect import Source, frontier, sources_for, state_of
 from dplanner.modules.docs.prompt import compile_body
 from dplanner.modules.docs.section import (
     CompileLink,
@@ -78,6 +78,7 @@ STALE_ACTION = "docs.compile_stale"
 NOTHING_REASON = "Nothing to compile — no step behind this one carries a documentation fragment"
 NOT_COLLECTOR_REASON = "Compile with Agent — only a feature, milestone or check compiles one"
 NOTHING_STALE_REASON = "Compile Out of Date — every document in this project is up to date"
+CHECKING_REASON = "Compile Out of Date — checking which documents are out of date…"
 WAITING_REASON = "waiting for a feature's document to be compiled first"
 OPEN_STEP_ACTION = "docs.open_step"
 NO_DOCS_REASON = "Show Documentation — this step has no documentation and gathers none"
@@ -161,11 +162,32 @@ class DocsModule:
 
     def __init__(self, deps: DocsDeps) -> None:
         self._deps = deps
+        # The out-of-date frontier per project, as last settled. The menu-bar state reads
+        # this and never walks the graph — see ``_frontier_of``.
+        self._frontiers: dict[NodeId, tuple[list[StepId], list[StepId]]] = {}
+        self._fresh: set[NodeId] = set()
+        self._wanted: set[NodeId] = set()
+        self._reading = False
+        self._settle = Debounced(
+            self._settle_frontiers, SETTLE_MS, parent=deps.parent, service=deps.debounce
+        )
 
     # -- registration ----------------------------------------------------------------------
 
     def register(self) -> None:
         deps = self._deps
+        # Any change to the plan may move a document in or out of date — a fragment, a
+        # title in a heading, a link, a kind, a compile landing — so every one forgets what
+        # was settled; the next read asks again, after the burst.
+        library = deps.library
+        for signal in (
+            library.structure_changed,
+            library.edges_changed,
+            library.field_changed,
+            library.text_edited,
+            library.module_data_changed,
+        ):
+            signal.connect(lambda *_args: self._fresh.clear())
         deps.sections.register(
             InspectorSection(
                 id=f"{MODULE_ID}.tab",
@@ -418,7 +440,10 @@ class DocsModule:
         project_id = context.focus_entity("project")
         if not project_id or not self._deps.library.has(project_id):
             return ActionState(enabled=False, label="Compile Out of Date — no project is open")
-        ready, waiting = self._stale(project_id)
+        settled = self._frontier_of(project_id)
+        if settled is None:
+            return ActionState(enabled=False, label=CHECKING_REASON)
+        ready, waiting = settled
         count = len(ready)
         verb = "Compile Out of Date" if count <= 1 else f"Compile {count} Out of Date"
         if not ready:
@@ -437,36 +462,50 @@ class DocsModule:
     def _compile_stale(self, context: Context) -> None:
         project_id = context.focus_entity("project")
         if project_id and self._deps.library.has(project_id):
-            ready, _waiting = self._stale(project_id)
+            # The gesture reads the plan as it is now, not as the label last saw it.
+            ready, _waiting = self._frontier(project_id)
             self._launch(ready, "")
 
-    def _stale(self, project_id: NodeId) -> tuple[list[StepId], list[StepId]]:
-        """Which of this project's documents want compiling, and which must wait.
+    def _frontier(self, project_id: NodeId) -> tuple[list[StepId], list[StepId]]:
+        library = self._deps.library
+        return frontier(self._deps.scopes, library, library.project(project_id))
 
-        **A collector whose own sub-collectors are out of date waits**, because a milestone
-        reads its features' *compiled* documents: launching both at once would have the
-        milestone read a document that is about to change, and ``docs status``'s advice says
-        as much to an agent. So one gesture takes the frontier and the next takes what it
-        unblocked — which is also why the verb says how many are waiting.
+    def _frontier_of(self, project_id: NodeId) -> tuple[list[StepId], list[StepId]] | None:
+        """The project's frontier as last settled, or None while none has been.
+
+        An action's state runs on every context announce — every keystroke, click and
+        selection — so it may not walk the graph: at four hundred steps the frontier is a
+        fifth of a second, and computing it here made every keystroke cost that. The walk
+        runs once per burst instead, ``SETTLE_MS`` after the last change, on the projects
+        somebody asked about; the state reads the last answer, and a settle that changed it
+        announces the context so the label catches up. In the suite's immediate regime the
+        trigger runs inline and the answer is always current.
         """
-        deps = self._deps
-        library = deps.library
-        project = library.project(project_id)
-        due = {
-            step.id
-            for step in project.steps
-            if self._collects(step.id)
-            and state_of(deps.scopes, library, project, step.id) != "current"
-            and self._sources(step.id)
-        }
-        ready: list[StepId] = []
-        waiting: list[StepId] = []
-        for step in project.steps:
-            if step.id not in due:
+        if project_id not in self._fresh:
+            self._wanted.add(project_id)
+            self._reading = True
+            try:
+                self._settle.trigger()
+            finally:
+                self._reading = False
+        return self._frontiers.get(project_id)
+
+    def _settle_frontiers(self) -> None:
+        library = self._deps.library
+        wanted, self._wanted = self._wanted, set()
+        changed = False
+        for project_id in wanted:
+            if not library.has(project_id):
+                self._frontiers.pop(project_id, None)
                 continue
-            behind = {sub.id for sub in sub_collectors(deps.scopes, library, project, step.id)}
-            (waiting if behind & due else ready).append(step.id)
-        return ready, waiting
+            answer = self._frontier(project_id)
+            changed |= self._frontiers.get(project_id) != answer
+            self._frontiers[project_id] = answer
+            self._fresh.add(project_id)
+        # A read that ran the settle inline is about to use the answer; only a settle the
+        # timer ran has a label to catch up.
+        if changed and not self._reading:
+            self._deps.context.refresh()
 
     def _launch(self, step_ids: Sequence[StepId], profile: str) -> None:
         """Hand one briefing per collector to the launcher, after asking about the documents

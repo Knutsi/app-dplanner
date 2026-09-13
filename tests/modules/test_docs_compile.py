@@ -303,6 +303,63 @@ def test_only_the_milestone_is_due_once_its_feature_is_current(services, project
     assert "# Signing in" in briefing(services)  # The milestone reads the feature's document.
 
 
+def test_the_out_of_date_label_reads_a_settled_answer_and_never_walks_the_graph(
+    services, project, terminal, monkeypatch
+):
+    """An action's state runs on every context announce — every keystroke — so it reads the
+    frontier as last settled. The walk runs once per burst, after the change, and the settle
+    announces the context so the menu bar's label catches up."""
+    import dplanner.modules.docs.collect as collect
+
+    services.debounce.set_immediate(False)
+    select_project(services, project.id)
+    asked = state(services, STALE_ACTION)
+    assert asked.enabled is False and "checking" in asked.label  # Owed, not computed here.
+    services.debounce.flush_all()
+    ready = state(services, STALE_ACTION)
+    assert ready.enabled is True and "1 waiting" in ready.label
+
+    walks = []
+    real = collect.sources_for
+
+    def counted(*args):
+        walks.append(args)
+        return real(*args)
+
+    monkeypatch.setattr(collect, "sources_for", counted)
+    for _ in range(10):
+        assert state(services, STALE_ACTION).label == ready.label
+    assert walks == []
+
+    heard = []
+    services.context.changed.connect(lambda _context: heard.append(True))
+    landed(services, project, by_title(project, "Auth"))
+    landed(services, project, by_title(project, "Release v1"))
+    walks.clear()  # `landed` digests what it lands; the state must add nothing to that.
+    # Until the burst settles the label says what it last knew, and nothing has walked...
+    assert state(services, STALE_ACTION).label == ready.label
+    assert walks == []
+    services.debounce.flush_all()
+    # ...then one settle recomputes it and announces the context.
+    settled = state(services, STALE_ACTION)
+    assert settled.enabled is False and "up to date" in settled.label
+    assert heard
+
+
+def test_compiling_out_of_date_reads_the_plan_as_it_is_not_as_the_label_last_saw_it(
+    services, project, terminal
+):
+    services.debounce.set_immediate(False)
+    select_project(services, project.id)
+    services.debounce.flush_all()
+    assert "1 waiting" in state(services, STALE_ACTION).label
+    landed(services, project, by_title(project, "Auth"))
+    # The label still owes a settle; the gesture does not wait for it.
+    services.actions.run(STALE_ACTION, services.context.current())
+    assert len(terminal) == 1
+    assert "# Signing in" in briefing(services)  # The milestone, reading the landed document.
+
+
 def test_replacing_a_document_that_has_text_is_asked_about_once(
     services, project, terminal, replacing
 ):

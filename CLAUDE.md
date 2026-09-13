@@ -667,7 +667,13 @@ root, stop and look for the registry or capability you have not found yet.
   returns False for a selected step without clearing its cards — clearing tore down and
   rebuilt every card twice per gesture). **No subprocess in an action state or a structure
   listener**: `origin_url` is memoised on the config file's mtime, and the sync module
-  asks git about membership only when the *library's* children change. Measured on a
+  asks git about membership only when the *library's* children change. **And no walk
+  over a project in an action state**: a state runs on every announce, so a derivation
+  over every step is paid per keystroke — *Compile Out of Date*'s label once re-walked
+  every collector's cone on each one (198 ms at 400 steps, from a flat 4). The pattern
+  is the Problems count's: the module settles the answer once per burst in a `Debounced`
+  and the state *reads* it (`DocsModule._frontier_of`), with the settle announcing the
+  context so the label catches up; the gesture itself computes fresh. Measured on a
   74-step, 344-note plan: connect 1.7 s → tens of ms, paste 0.6 s → tens of ms; the
   suite runs the debounce service immediate, so a test that asserts coalescing switches
   it off and `flush_all()`s. `scripts/measure_scaling.py --scenarios connect,paste` is the number to
