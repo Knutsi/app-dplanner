@@ -13,13 +13,14 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.modules.notes.activity import NOTES_KIND
 from dplanner.modules.notes.editor import NoteEditor
 from dplanner.modules.notes.log import (
+    LABEL_IDS,
     MODULE_ID,
     Note,
     read_log,
     same_note,
     write_log,
 )
-from dplanner.modules.notes.reach import briefing_blocks, reaching
+from dplanner.modules.notes.reach import briefing_blocks, listed_within, reaching
 from dplanner.modules.notes.view import FRESH_TITLE
 
 
@@ -49,22 +50,19 @@ def key_of(step):
 # -- what reaches a step -------------------------------------------------------------------------
 
 
-def test_a_handoff_reaches_the_steps_after_the_one_it_was_made_on():
+@pytest.mark.parametrize("label", LABEL_IDS)
+def test_a_note_reaches_the_steps_after_the_one_it_was_made_on(label):
+    """One rule for every label: the graph says who a note is for. A decision made on a
+    branch nothing waits on binds nobody else, and `--reach project` is how to say it does."""
     library, project, steps = build({"A": [], "B": ["A"], "C": ["B"], "D": []})
-    log(library, project, Note("N1", "handoff", "Keys", step=steps["A"].id))
+    log(library, project, Note("N1", label, "Keys", step=steps["A"].id))
     assert [n.id for n in reaching(library, steps["C"]).listed] == ["N1"]
     assert reaching(library, steps["D"]).listed == ()
     # The step itself sees its own note: a re-run is a pick-up too.
     assert [n.id for n in reaching(library, steps["A"]).listed] == ["N1"]
 
 
-def test_a_decision_reaches_every_step_wherever_it_was_made():
-    library, project, steps = build({"A": [], "B": []})
-    log(library, project, Note("N1", "decision", "SQLite", step=steps["A"].id))
-    assert [n.id for n in reaching(library, steps["B"]).listed] == ["N1"]
-
-
-def test_reach_project_lifts_a_handoff_to_everyone_and_no_step_means_everyone():
+def test_reach_project_lifts_a_note_to_everyone_and_no_step_means_everyone():
     library, project, steps = build({"A": [], "B": []})
     log(
         library,
@@ -73,6 +71,16 @@ def test_reach_project_lifts_a_handoff_to_everyone_and_no_step_means_everyone():
         Note("N2", "handoff", "Nowhere in particular"),
     )
     assert [n.id for n in reaching(library, steps["B"]).listed] == ["N1", "N2"]
+
+
+def test_a_note_whose_step_is_gone_still_reaches_everyone():
+    """A decision does not stop standing because the step that made it was deleted, and a
+    deleted step leaves nothing to be downstream of — the same sentence as no step at all."""
+    library, project, steps = build({"A": [], "B": []})
+    log(library, project, Note("N1", "decision", "SQLite", step=steps["A"].id))
+    assert reaching(library, steps["B"]).listed == ()
+    library.remove_child(steps["A"].id)
+    assert [n.id for n in reaching(library, steps["B"]).listed] == ["N1"]
 
 
 def test_a_note_addressed_to_a_step_is_carried_in_full_and_not_listed_twice():
@@ -91,6 +99,29 @@ def test_a_note_addressed_to_a_step_is_carried_in_full_and_not_listed_twice():
     other = briefing_blocks(project, reaching(library, steps["A"]), key_of)
     assert [b.heading for b in other] == ["Notes so far"]
     assert "N1 · Retry logic is a stub" in other[0].body and "client.py" not in other[0].body
+
+
+def test_an_index_keeps_the_newest_per_label_and_says_what_it_left_out():
+    """The ceiling: a briefing is read from the top, so the index names its newest and points
+    at the verb that reads the rest rather than running on."""
+    library, project, steps = build({"A": []})
+    log(
+        library,
+        project,
+        *[Note(f"N{n}", "decision", f"Choice {n}") for n in range(1, 26)],
+        Note("N26", "later", "One deferred thing"),
+    )
+    index = reaching(library, steps["A"])
+    (block,) = briefing_blocks(project, index, key_of, limit=3)
+    assert "Decisions standing (3 of 25):" in block.body
+    assert "- N25 · Choice 25" in block.body and "- N23 · Choice 23" in block.body
+    assert "Choice 22" not in block.body
+    assert "…and 22 earlier: `dplanner note list Discovery --label decision`" in block.body
+    # A group inside the cap is untouched, and says one number.
+    assert "Deferred (1):" in block.body and "earlier" not in block.body.split("Deferred")[1]
+    # The rows the index names are the ones --json reports.
+    assert [n.id for n in listed_within(index.listed, 3)] == ["N23", "N24", "N25", "N26"]
+    assert listed_within(index.listed, None) == index.listed
 
 
 def test_a_superseded_note_leaves_the_index_and_the_index_groups_by_label():
@@ -258,9 +289,9 @@ def test_the_editor_shows_the_record_and_commits_each_field_as_it_is_left(
     record = read_log(project)[3]
     assert record.title == "Keys in 1Password" and record.label == "later"
     assert record.for_steps == (project.steps[0].id, project.steps[1].id)
-    # A label that reaches everyone by default has nothing for the box to lift.
-    assert not editor.everyone.isEnabled() and editor.everyone.isChecked()
-    assert record.reach == ""
+    # Every label reaches downstream, so the lift stands whatever the label becomes.
+    assert editor.everyone.isEnabled() and editor.everyone.isChecked()
+    assert record.reach == "project"
     assert services.undo.undo_text() == "Edit Note N4"
 
 

@@ -46,8 +46,10 @@ from dplanner.modules.notes.log import (
     write_log,
 )
 from dplanner.modules.notes.reach import (
+    INDEX_LIMIT,
     briefing_blocks,
     full_lines,
+    listed_within,
     reaching,
     when_where,
 )
@@ -234,13 +236,17 @@ def commands(*, key_of: Callable[[Step], str]) -> list[CliCommand]:
         project = context.library.project_of(step.id)
         index = reaching(context.library, step)
         by = _by(read_log(project))
-        blocks = briefing_blocks(project, index, key_of)
+        limit = None if args.all else INDEX_LIMIT
+        blocks = briefing_blocks(project, index, key_of, limit)
         text = "\n\n".join(f"## {block.heading}\n\n{block.body}" for block in blocks)
+        # The rows the briefing's index actually names, so --json and the text agree about
+        # what was carried; --all is how to see everything that reaches the step.
+        listed = index.listed if limit is None else listed_within(index.listed, limit)
         context.report(
             {
                 "step": step.id,
                 "for_this_step": [_row(project, n, by.get(n.id, "")) for n in index.addressed],
-                "index": [_row(project, n, by.get(n.id, "")) for n in index.listed],
+                "index": [_row(project, n, by.get(n.id, "")) for n in listed],
             },
             text or "No notes reach this step yet.",
         )
@@ -307,12 +313,22 @@ def commands(*, key_of: Callable[[Step], str]) -> list[CliCommand]:
         CliCommand(
             path=("note", "index"),
             summary="What a step's briefing carries: the notes addressed to it in full, and "
-            "the index of everything else that reaches it.",
-            configure=step_arg,
+            "the index of everything else that reaches it; --all drops the per-label cap, "
+            "which is how to check whether a note reaches a step at all.",
+            configure=_configure_index,
             run=_index,
-            examples=("dplanner note index S9",),
+            examples=("dplanner note index S9", "dplanner note index S9 --all"),
         ),
     ]
+
+
+def _configure_index(parser: ArgumentParser) -> None:
+    step_arg(parser)
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="every note that reaches the step, past the cap the briefing stops at",
+    )
 
 
 def _configure_body(parser: ArgumentParser) -> None:
@@ -359,7 +375,12 @@ def _configure_set(parser: ArgumentParser) -> None:
         "--for", dest="for_steps", nargs="+", metavar="STEP", help="the steps it is for"
     )
     whom.add_argument("--for-nobody", action="store_true", help="addressed to no step")
-    parser.add_argument("--reach", choices=REACHES, help="who sees it in their index")
+    parser.add_argument(
+        "--reach",
+        choices=REACHES,
+        help="who sees it in their index: every step of the project, or only the steps after"
+        " --step (the default)",
+    )
     link = parser.add_mutually_exclusive_group()
     link.add_argument("--supersedes", metavar="N", help="the earlier note this replaces")
     link.add_argument("--clear-supersedes", action="store_true", help="it replaces nothing")
