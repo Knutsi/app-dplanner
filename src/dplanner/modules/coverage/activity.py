@@ -1,5 +1,5 @@
 """The Coverage tab: one project's trace, drawn — with a strip above it saying, per
-document, how much of the spec is cited and how many passages want a look.
+document, how much of the spec is cited, and the verb that lights what wants a look.
 
 The tab owns nothing the trace does not: it asks ``trace_of`` on every coalesced change
 of its project, hands the answer to the scene, and turns the scene's gestures into the
@@ -13,15 +13,7 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QKeyEvent, QPainter, QResizeEvent
-from PySide6.QtWidgets import (
-    QGraphicsView,
-    QHBoxLayout,
-    QLabel,
-    QSizePolicy,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QGraphicsView, QHBoxLayout, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, StepId
 from dplanner.domain.store import FilesFor
@@ -40,11 +32,19 @@ from dplanner.framework.context import (
 from dplanner.framework.debounce import SETTLE_MS, Debounced, DebounceService
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.tabs import TabHost
+from dplanner.framework.toolbar import Toolbar
+from dplanner.framework.widgets import EmptyState, note
 from dplanner.modules.coverage.scene import CoverageScene
-from dplanner.modules.coverage.trace import SPEC, Trace, flat
+from dplanner.modules.coverage.trace import FEATURES, MILESTONES, OUTCOMES, SPEC, Trace, flat
+from dplanner.theme.icons import eye_icon
+from dplanner.theme.tokens import CONTROL_GAP, FIELD_GAP
 
 COVERAGE_KIND = "coverage"
-STRIP_MARGIN = 8
+NO_DOCUMENTS = "No spec documents — import one to trace it"
+NOTHING_TRACED = (
+    "Nothing to trace yet. Import a spec on the Specs tab, and cite its passages from the "
+    "features that deliver them."
+)
 
 type TraceOf = Callable[[Library, Project, FilesFor], Trace]
 # (project, document, quotes, focus) → the Specs tab washed at those passages.
@@ -115,24 +115,25 @@ class CoverageActivity(EntityActivity):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        # The Specs tab's strip: flush over the view on the editor's ground, its verbs then
+        # what the data says, the indicator at the far right outside the verbs.
         self.strip = QWidget(page)
         self.strip.setObjectName("EditorToolbar")
         row = QHBoxLayout(self.strip)
-        row.setContentsMargins(STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN)
-        row.setSpacing(12)
-        self.summary = QLabel(self.strip)
-        self.summary.setObjectName("InspectorNote")
+        row.setContentsMargins(FIELD_GAP, FIELD_GAP, FIELD_GAP, FIELD_GAP)
+        row.setSpacing(CONTROL_GAP)
+        self.controls = Toolbar(self.strip)
+        self.review_action = self.controls.add_verb(
+            "Review",
+            eye_icon,
+            self._review,
+            tip="Light every passage that no longer simply anchors",
+        )
+        # The stretch is the strip's: a Toolbar's size hint is its … button.
+        row.addWidget(self.controls, 1)
+        self.summary = note("", self.strip)
+        self.summary.setWordWrap(False)
         row.addWidget(self.summary)
-        row.addStretch(1)
-        self.review = QToolButton(self.strip)
-        self.review.setObjectName("ToolbarButton")
-        self.review.setText("Review")
-        self.review.setToolTip("Light every passage that no longer simply anchors")
-        self.review.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        self.review.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.review.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.review.clicked.connect(self._review)
-        row.addWidget(self.review)
         self.updating = UpdatingIndicator(self.strip)
         row.addWidget(self.updating)
         layout.addWidget(self.strip)
@@ -143,6 +144,8 @@ class CoverageActivity(EntityActivity):
         self.scene.menu_requested.connect(self._on_menu)
         self.view = CoverageView(self.scene, page)
         layout.addWidget(self.view, 1)
+        self.empty = EmptyState(parent=page, stands_in_for=self.view)
+        layout.addWidget(self.empty, 1)
         self._widget = page
 
         self._refresh_soon = Debounced(
@@ -172,6 +175,7 @@ class CoverageActivity(EntityActivity):
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes = []
+        self.controls.dispose()
 
     def focus(self, item_id: str) -> None:
         """Light ``item_id``'s path and bring it into view — a jump's landing."""
@@ -206,8 +210,11 @@ class CoverageActivity(EntityActivity):
         if self.trace.unsourced:
             count = len(self.trace.unsourced)
             said.append(f"{count} feature{'' if count == 1 else 's'} citing nothing")
-        self.summary.setText("   ".join(said) or "No spec documents — import one to trace it")
-        self.review.setEnabled(any(doc.review for doc in self.trace.documents))
+        self.summary.setText("   ".join(said) or NO_DOCUMENTS)
+        self.review_action.setEnabled(any(doc.review for doc in self.trace.documents))
+        # Four empty lanes say nothing; a project with nothing in any of them says so instead.
+        traced = any(self.trace.column(column) for column in (SPEC, FEATURES, MILESTONES, OUTCOMES))
+        self.empty.say("" if traced else NOTHING_TRACED)
 
     def _review(self) -> None:
         """Pick the first passage that wants a look; the others are its neighbours."""

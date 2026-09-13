@@ -73,7 +73,7 @@ def test_the_lanes_hold_the_trace(project, tab):
     assert len(ids(tab, OUTCOMES)) == 30
     assert len(tab.scene.links) == 2 + 2 + 30
     assert "guide · 2 of 3 paragraphs cited" in tab.summary.text()
-    assert not tab.review.isEnabled()
+    assert not tab.review_action.isEnabled()
 
 
 def test_a_pick_lights_the_path_and_scrolls_every_other_lane(project, tab):
@@ -191,3 +191,11 @@ def test_the_tab_follows_the_project(services, project, tab):
     _work, _imp, beta, _export = project.steps
     services.document.set_module_data(beta.id, MILESTONE_ID, {})
     assert ids(tab, MILESTONES) == ["bucket:none"]
+
+
+def test_a_project_with_nothing_to_trace_says_so_where_the_lanes_would_be(services, make_project):
+    empty = services.tabs.open("coverage", make_project("Nothing yet").id)
+    assert isinstance(empty, CoverageActivity)
+    page = empty.widget
+    assert empty.empty.isVisibleTo(page) and not empty.view.isVisibleTo(page)
+    assert empty.summary.text() == "No spec documents — import one to trace it"
