@@ -2583,7 +2583,7 @@ had back; it refuses a target with no glyph, since a spinner appearing beside th
 a size jump.
 
 **Why.** Every busy state was a `QLabel` rewritten by hand, and only one view said anything
-during its settle. The weak reference is the gc rule from `CLAUDE.md`: a long-lived
+during its settle. The weak reference is the gc rule from the `suite-crash` skill: a long-lived
 plain-Python signal holding a widget's bound method is the shape that crashes the collector.
 
 **Upstream?** Yes. The tones are the theme's; a framework that ships `Debounced` should
@@ -3445,3 +3445,15 @@ node re-reads every survivor, which `retitle` already did.
 
 **Why.** It has two callers now, and `theme/tokens.py` — the other candidate — is what
 feeds `theme.qss`; a measure no stylesheet rule uses would be a token for its own sake.
+
+### `framework/gc_policy.py`, `asset_gallery.py`, `toolbar.py` — citations repointed
+
+**What.** Comments only: three framework comments that cited a crash narrative in
+`CLAUDE.md` now cite where it lives — the `suite-crash` project skill, `CLAUDE.md`'s *Qt
+objects* rules, and `NOTES-FOR-APPFRAME.md` §14, which `toolbar.py` had attributed to
+`CLAUDE.md` by mistake.
+
+**Why.** The rulebook split (S35): `CLAUDE.md` is the core every session loads, the rules
+about one area moved to `.claude/rules/`, and the diagnosis of a crash moved to a skill.
+
+**Upstream?** No — the citations are this application's documents.

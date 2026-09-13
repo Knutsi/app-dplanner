@@ -59,7 +59,7 @@ class DebugModule:
         self._deps = deps
         self._runner = TaskRunner(deps.tasks, parent=deps.parent)
         # Asked once, here: an action state runs on every context change and may not walk
-        # PATH. CLAUDE.md's *A checklist is a registry of probes* has the same rule.
+        # PATH. CLAUDE.md's *The context is announced once per event-loop turn*.
         self._windows = probe()
 
     def register(self) -> None:

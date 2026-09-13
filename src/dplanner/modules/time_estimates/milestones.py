@@ -149,7 +149,7 @@ def reconcile[W: QWidget, E](
     """The rows for ``entries``, in their order, at the top of the layout: gone keys
     leave, new keys are made, the rest move. Returns the rows keyed in layout order, so
     a reader never asks the layout — a QLayoutItem wrapper ``itemAt()`` hands out is a
-    double delete waiting for a gc pass (CLAUDE.md's crash notes)."""
+    double delete waiting for a gc pass (the `suite-crash` skill)."""
     wanted = {key_of(entry) for entry in entries}
     for key in tuple(rows):
         if key not in wanted:

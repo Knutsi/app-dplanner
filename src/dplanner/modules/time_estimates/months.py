@@ -134,8 +134,8 @@ class MonthsView(QWidget):
         # *layout* asks (`heightForWidth`) rather than the widget resizing itself in its
         # own resize event. The latter is a loop inside a scroll area — the new height
         # toggles the scrollbar, the scrollbar changes the width, the width changes the
-        # height — and it once took the process down 184,800 frames deep. CLAUDE.md's
-        # *Checks* has the episode.
+        # height — and it once took the process down 184,800 frames deep. The
+        # `suite-crash` skill has the episode.
         policy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)

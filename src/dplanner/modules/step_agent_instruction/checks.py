@@ -5,7 +5,7 @@ approach item 6 of the step that added the checklist says so outright — an age
 multiplexer are recommended, never blocking.
 
 **One row for the agent CLI, not one per harness.** A fourth agent must be a fourth module
-and no new file anywhere else (CLAUDE.md's harness rule), so the row is built from the
+and no new file anywhere else (`.claude/rules/agents.md`), so the row is built from the
 harness tuple the composition root hands over and reads each one's ``binary`` — the field
 the contract has carried unread since it was added. The row's words name which were found.
 

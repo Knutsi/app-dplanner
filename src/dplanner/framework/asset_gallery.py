@@ -134,7 +134,7 @@ class AssetGallery(QWidget):
         # The row joins the column *before* it is filled. A parentless QHBoxLayout given a
         # widget and a stretch first leaves a QWidgetItem and a QSpacerItem wrapper alive on
         # the Python side — the double-delete shape the boundary collector crashed on
-        # (CLAUDE.md's *A QLayoutItem wrapper is a double delete waiting for a gc pass*).
+        # (CLAUDE.md's *Qt objects* rules; the `suite-crash` skill has the crash).
         attach_row = QHBoxLayout()
         column.addLayout(attach_row)
         attach_row.setSpacing(ITEM_GAP)

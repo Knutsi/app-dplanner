@@ -1,6 +1,6 @@
 """The 2026-09-04 layout-item double delete, on demand — and the finalizer that closes it.
 
-CLAUDE.md's *A QLayoutItem wrapper is a double delete waiting for a gc pass* named the
+`suite-crash`'s *A QLayoutItem wrapper is a double delete waiting for a gc pass* named the
 mechanism; this script builds the order it needs. Python's collector clears garbage in its
 list order, and a full collection walks generation 0 before generation 1 (each younger
 generation is appended to the tail of the oldest one, generation 0 first). So a young

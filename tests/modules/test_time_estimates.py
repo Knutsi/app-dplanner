@@ -528,8 +528,8 @@ def test_removing_a_milestone_step_takes_its_row_with_it(services, staged):
 
 
 def test_the_milestone_rows_are_never_read_back_out_of_the_layout(monkeypatch, services, staged):
-    """A QLayoutItem wrapper is a double delete waiting for a gc pass (CLAUDE.md's crash
-    notes): ``keys`` reads the list's own dict, kept in layout order through a reorder."""
+    """A QLayoutItem wrapper is a double delete waiting for a gc pass (the `suite-crash`
+    skill): ``keys`` reads the list's own dict, kept in layout order through a reorder."""
     from PySide6.QtWidgets import QLayout
 
     def refuse(_layout, _index):

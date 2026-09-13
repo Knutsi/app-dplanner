@@ -693,7 +693,7 @@ class SpecsActivity(EntityActivity):
         """The editor, its markdown strip, and the pictures it cannot show.
 
         A plain-text editor renders no image, so the figures a document links to sit in a
-        gallery under it — `CLAUDE.md`'s rule for every prose editor here. `set_files`
+        gallery under it — `.claude/rules/step-panel.md`'s rule for every prose editor. `set_files`
         rather than `set_area`: the area holds every figure of every document in the
         project, and what belongs under *this* editor is what *this* document links to.
         The strip spans the page because it is the page's chrome; the text sits in a

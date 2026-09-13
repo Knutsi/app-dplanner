@@ -19,8 +19,8 @@ detaching the wrapper from its parent, which hands the wrapper ownership of a C+
 its parent still holds. A wrapper cleared before its parent — a ``QWidgetItem`` from
 ``itemAt``, a ``QSpacerItem`` from ``addStretch``, a ``viewport()``, a ``document()`` —
 then deletes that object on its way out, and the parent deletes it again: the double
-delete the 2026-09-04 crashes were (CLAUDE.md, *A QLayoutItem wrapper is a double delete
-waiting for a gc pass*). The fix on shiboken's ``dev`` branch (PYSIDE-2221) invalidates a
+delete the 2026-09-04 crashes were (the `suite-crash` skill's *A `QLayoutItem` wrapper is a double
+delete waiting for a gc pass*). The fix on shiboken's ``dev`` branch (PYSIDE-2221) invalidates a
 cleared wrapper's children instead; nothing released has it. Python gives us the same
 moment from the outside: it runs every finalizer of a garbage cycle before it clears any
 object in it (PEP 442). So every QObject wrapper's ``__del__`` invalidates the wrappers of
