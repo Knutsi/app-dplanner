@@ -1972,8 +1972,8 @@ and anything already flushed survives as a recoverable blob. An agent replacing 
 ## A spec source is a kind the spec module runs
 
 The spec was always a file somebody put beside the project. Now it may live somewhere
-else and change there — a Confluence page or folder first, other systems later — and the
-question was where the machinery for that belongs. Two shapes were on the table: each
+else and change there — a folder on this computer, a git repository, a Confluence page, a
+Confluence folder — and the question was where the machinery for that belongs. Two shapes were on the table: each
 source module owns its own tree, task and index writes and the spec module hands it a
 writer seam; or the spec module runs every source and a source module is nothing but a
 *kind* — how to ask for a location, whether it is connected, how to connect, how to fetch
@@ -1981,16 +1981,22 @@ and how to check. The second won, for the reason the asset catalog and the repor
 sources did: the interesting logic (records, nesting, the write, the undo entry, the
 freshness note, the strip) is the same for every source, and writing it once in the
 consumer is what makes the second kind a fetcher and a dialog. The contract is a
-`Protocol` in `modules/spec/source_kind.py`, consumer-owned like `CanvasDrop`; the
-Confluence module satisfies it structurally and the composition root hands the kinds in
-as `SpecDeps.kinds`. The Qt-free shapes they exchange — `Snapshot`, `FetchedDocument`,
+`Protocol` in `modules/spec/source_kind.py`, consumer-owned like `CanvasDrop`; each kind
+module satisfies it structurally and the composition root hands the kinds in as
+`SpecDeps.kinds`. The four that shipped are the proof it was the right split: the folder
+kind is a hundred lines over a shared walk, and the git kind — by far the largest — adds
+a subprocess door and a dialog and changes nothing in `modules/spec/`. The Qt-free shapes they exchange — `Snapshot`, `FetchedDocument`,
 `Freshness`, `SourceStatus`, `SourceUnavailableError` — sit in
 `domain/document_source.py`, beside `AssetSource`, because the spec module's headless
 core reads them and the kind's headless half constructs them and neither may import the
 other.
 
-**A fetched page is an ordinary spec document.** Its markdown is a content-addressed
-blob under `documents/`, its images are `assets/<sha16><suffix>` in the same area, and
+**A fetched document is an ordinary spec document.** It arrives as **bytes and the
+filename it had where it came from** — markdown, plain text or a PDF — and lands as a
+content-addressed blob under `documents/` whose *stem is the name the spec module minted*
+and whose *suffix is the kind's*, which is what decides how it is read and what stops a
+kind renaming every row of an existing plan by changing its mind about filenames. Its
+images are `assets/<sha16><suffix>` in the same area, and
 the index row carries what makes it a *sourced* one: `source` (the record), `key` (the
 kind's own id for the page), `version` (the kind's stamp, compared and never
 interpreted), `parent` (the document above it, by name) and `title`. Absence keeps its
@@ -2007,19 +2013,100 @@ name, and a title is a thing people edit — with the page matched by `(source, 
 precedent, not the PR refresher's off-stack write, and `break_coalescing()` runs first
 because the toolbar's buttons take no focus and two refreshes would otherwise merge into
 one entry. The check is the other half of "check, then ask": on the interval, while a
-Specs tab shows the project, the kind compares versions (two or three requests for a tree,
-no bodies) and the strip says "3 pages changed at the source — Refresh"; nothing is
-downloaded until the person asks. Both run on `TaskRunner`s in `spec/refresh.py`, the
+Specs tab shows the project, `check_all` compares versions (two or three requests for a
+tree, no bodies) and the strip says "3 documents changed at the source — Refresh"; nothing
+is downloaded until the person asks. Both run on `TaskRunner`s in `spec/refresh.py`, the
 `github/refresh.py` shape; a refusal that names the credential (a 401) is remembered per
-window as *needs reconnect* until the kind's `config_changed` says otherwise.
+window as *needs reconnect* until the kind's `config_changed` says otherwise. Both
+memories are keyed by **(project, source)**: a source id is minted per project, so two
+open projects both have a `src1`, and a dict keyed on the id alone had one project's
+freshness answering for the other's — invisible while only the selected source was ever
+asked, and a wrong number the moment something counts them.
 
-**Fetching is window-only.** The token could be read by the CLI too — it is in the OS
-keychain, which a shell can reach — and the decision was that it must not be: an agent's
-shell runs with the person's keychain but not the person's judgement, and a spec source
-is the one place the plan touches a credential that opens something outside the plan.
-So `spec list` shows the tree and its provenance, `spec show` and `spec diff` read the
-snapshot, `spec import` and `spec remove` refuse a sourced page with a pointer to the
-tab, and adding, refreshing and removing a source are window acts. The LLM service's
+**One kind, one thing — and a kind is a record, not a code path.** The Confluence module
+shipped as a single kind whose locator carried `type: page | folder`, so the Add Spec menu
+offered one entry for two different acts and a person pasting a folder address into it got
+whatever the walk made of it. They are two kinds now, and the interesting part is what did
+*not* fork: the walk is still one function, because the only difference between a page
+source and a folder source is where the queue is seeded, and that is a branch on a value
+the kind has just validated. What forked is data — a frozen `ContentType` with the id, the
+words and the content type each kind accepts — and one `ConfluenceKind` class constructed
+twice over it, on a module that keeps the client, the credential, the Connect dialog and
+the settings page, because connecting to a site serves whichever of the two a source is.
+The payoff is a sentence that could not exist before: *that is a folder address — add it
+with Add Spec ▸ Confluence Folder*. The same `expected` argument is what stops a
+hand-edited plan aiming one kind at the other's locator, which is the reason it is checked
+on every read and not only at the door.
+
+**A folder walk is domain's, because two kinds read it and modules never import each
+other.** `domain/document_folder.py` sits beside `document_source.py` for the reason
+`AssetSource` sits beside the asset catalog. Two decisions inside it are worth the ink. A
+**version is a digest over the body and the pictures it links**: the body alone leaves a
+document unchanged when a diagram beside it is redrawn, so the row is kept, and the page
+goes on showing a blob that is no longer what the author drew — silent, and only visible
+to somebody who looks at the picture. And `is_document` is **exported**, because the git
+kind's `check` derives the same key set from a git tree without reading a byte; two rules
+for what a document is would make a check lie about every file in the gap between them.
+The nesting rule — a directory's `README.md` is the parent of its siblings, a directory
+without one is transparent — was chosen because it can only *add* structure where somebody
+already wrote the page that means it, and degrades to exactly flat otherwise.
+
+**A git source's checkout is the person's cache, and the guard runs before the download.**
+The plan is committed and shared, so megabytes of somebody else's repository cannot live
+in it; the checkout goes under `config_dir()`, keyed on url + ref + path, one directory
+per source — sharing one checkout between two sources would mean one fetch's sparse
+pattern applied to the other's tree, which imports the wrong folder and says nothing. The
+harder question was the size guard. A person pointing at a monorepo must be steered to a
+subdirectory *before* they wait for it, and git will not report a blob's size without
+fetching the blob — so the guard counts, it does not weigh: `--filter=blob:none` brings
+the commit and all its trees and no content, the listing says how many files and how many
+documents each folder holds, and an oversized one is refused in the dialog, beside the
+folder, while it is being chosen. `GIT_NO_LAZY_FETCH` is set on the listing so an
+accidental content read fails loudly instead of quietly downloading the repository behind
+the guard's back, and the sparse pattern is written non-cone because cone mode also
+materialises every file at the levels *above* the chosen folder — which would make the
+guard have measured the wrong thing.
+
+**A git document's version is its blob oid, not the commit.** `Freshness` is per document,
+and a commit id moves for every file in the repository: using it would make the tab say
+*everything changed* every ten minutes after anybody touched anything. A blob oid is a
+content digest git has already computed and hands back from a tree for free, so `check` is
+one `ls-remote` and, only when that moved, one blobless tree fetch and a comparison — no
+bodies, and an honest answer. What the cache remembers is the last commit taken in, as a
+ref inside itself: not the locator (which is shared and would drift per machine), not a
+field on the source record (the plan would carry a fact about one person's disk), and not
+per-window memory (that is what the last *check* found, which is a different thing). Its
+disposability is the point: wipe the cache and the next check pays one tree fetch.
+
+**`locate` may reach the network; what it may not do is block the GUI thread.** The
+contract said *no network*, which was the shape that rule took for Confluence, whose
+locate is a URL parse and whose network needs a credential only `connect` can obtain. The
+git kind's whole reason is *which folder?*, and that cannot be answered without asking the
+remote. The alternatives were worse in ways this step was meant to avoid: moving the probe
+into `connect()` makes adding a source two gestures, the first of which adds something
+that does not work and trips the `spec.source.unfetched` lint; and typing the subdirectory
+blind means meeting the size guard as a failed fetch. So the docstring says the rule it
+always meant — never block the GUI thread — and the git dialog probes on a `TaskRunner`,
+the way the Connect dialog already did.
+
+**One gesture is one undo entry, and the one-source case is not a special case.**
+*Refresh All Sources* had two honest shapes: land each source as it arrives (N entries, N
+Ctrl+Zs to undo one press) or collect and land together. The second is what a person means
+by pressing one button, and `UndoService.gesture` already does it — with the detail that
+makes the design cheap: a gesture holding exactly *one* push places that push itself, with
+its own label. So `refresh` is `refresh_all` over a list of one, refreshing a single source
+writes precisely what it wrote before, and no `if len(...) == 1` appears anywhere. A
+source that refuses is skipped inside the gesture and reported after it closes, because a
+failure must never cost the sources that succeeded.
+
+**Fetching stays window-only, and the reason changed.** It used to be the credential: the
+token is in the keychain, a shell could reach it, and an agent's shell runs with the
+person's keychain but not their judgement. A folder source has no credential at all, so
+that argument does not reach it. The one that does is simpler and covers all four: a fetch
+pulls bytes from outside the plan *into* it, and choosing to do that is a person's act.
+`spec list` shows the tree, its kinds and its locators, `spec show` and `spec diff` read
+the snapshot, `spec import` and `spec remove` refuse a sourced document with a pointer to
+the tab, and adding, refreshing and removing a source are window acts. The LLM service's
 rule (*An LLM call is a task*) is the same rule from the other side.
 
 **The credential is the person's, per site, per machine, and `status()` never touches

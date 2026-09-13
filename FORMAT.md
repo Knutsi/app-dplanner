@@ -312,15 +312,23 @@ comparison, and a passage read before stamps existed (`""`) is judged by its mat
 the project, the figures beside a step, and the project's **topology** — how its graph is
 shaped — as `modules/spec.md`, the project's one prose document under that id. **A
 document may come from a source** (format 4): the index gains `"sources": [{"id":
-"src1", "kind": "confluence", "title": "Auth Overview", "locator": {"site":
+"src1", "kind": "confluence_page", "title": "Auth Overview", "locator": {"site":
 "https://acme.atlassian.net", "id": "12345", "type": "page"}, "fetched": "2026-09-07"}]`,
 and a fetched document's row carries `"source": "src1"`, `"key": "12345"` (the kind's own
 id), `"version": "7"` (the kind's stamp, a string compared for equality), `"parent":
 "auth-overview"` (the document above it, by name; siblings in list order) and `"title"`.
 A row without `source` is the project's own and editable — absence kept its meaning, so
-no reader learned a key. The locator is the kind's and JSON-safe; it never carries a
-credential (the token is the keychain's, the connected sites `user_config`'s) and it is
-re-validated on every read, because a plan is shared.
+no reader learned a key. **`kind` is a document source kind's own id** and the locator is
+that kind's, JSON-safe: `folder`'s is `{"path": "/home/knut/specs"}`, `git`'s is
+`{"url": …, "ref": "main", "path": "docs/spec"}` (whose `version` is the file's git blob
+oid), `confluence_page`'s and `confluence_folder`'s carry the site and the content id.
+It never carries a credential — the Confluence token is the keychain's, the connected
+sites `user_config`'s, and a git address with a user name and password in it is refused
+rather than stored — and it is re-validated on every read, because a plan is shared.
+**Format 5** split the one `confluence` kind in two: a stored record becomes
+`confluence_page` or `confluence_folder` by its locator's `type`, which is the migration
+the split needed — a read-time shim would have let a format-4 build write the old id back
+over it on the next refresh.
 `step_agent_instruction` does the same with prose: the
 step's own instruction beside the step, the project's standing instruction (prepended to
 every briefing) as `modules/step_agent_instruction.md` beside the project, images in the
