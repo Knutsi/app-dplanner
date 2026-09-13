@@ -7,6 +7,7 @@ runner, and the module end to end — a launch tracked, an exit clearing the chi
 verbs greyed with their reasons.
 """
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -81,6 +82,13 @@ def test_a_run_round_trips_through_the_user_store_shape(run):
     assert AgentRun.from_json(run.to_json()) == run
     assert AgentRun.from_json({"step": "s"}) is None  # A row this build cannot read.
     assert AgentRun.from_json("nonsense") is None
+    assert AgentRun.from_json(replace(run, prompt_chars=18_412).to_json()) == replace(
+        run, prompt_chars=18_412
+    )
+    # A row from before the size was measured, or one with nonsense in its place, reads as
+    # "nobody measured" rather than refusing the whole run.
+    unmeasured = AgentRun.from_json({**run.to_json(), "prompt_chars": "many"})
+    assert unmeasured is not None and unmeasured.prompt_chars == 0
 
 
 def test_the_live_state_is_what_a_row_says(run):
@@ -334,6 +342,33 @@ def test_run_agent_hands_the_shell_to_the_tracker(services, step, monkeypatch):
     assert Path(tracked.shell_file).name == "shell" and Path(tracked.exit_file).name == "exit"
     assert Path(tracked.exit_file).parent.name.startswith("dplanner-agent-")
     assert aspect.read(services.document.step(step.id)) == "launched"
+    # And what it was handed: the briefing as it actually reached prompt.md.
+    briefing = Path(tracked.shell_file).parent / "prompt.md"
+    assert tracked.prompt_chars == len(briefing.read_text()) > 0
+
+
+def test_a_launch_is_a_span_saying_what_it_handed_over(services, step, monkeypatch):
+    """One gesture can open a shell per chosen step, so the size cannot be a detail on the
+    action's own span — each launch opens one of its own under it."""
+    from dplanner.modules.step_agent_instruction import launcher
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, write_state
+
+    journal = services.telemetry  # The build's journal is the process's.
+    journal.clear()
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write_state(True)))
+    services.document.set_text(step.id, "step_description", "Ship it.")
+    monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["true"])
+    monkeypatch.setattr(launcher, "spawn", lambda *_a, **_kw: None)
+    select(services, step)
+    services.actions.run("agent.run", services.context.current())
+    (tracked,) = module(services).runs()
+    launch = next(span for span in journal.recent() if span.name == "agent.launch")
+    assert launch.kind == "action"
+    assert launch.detail["prompt_chars"] == tracked.prompt_chars
+    assert launch.detail["step"] == "S1"
+    # Under the action the gesture ran, so the journal says which verb opened it.
+    action = next(span for span in journal.recent() if span.name == "agent.run")
+    assert launch.parent == action.span_id
 
 
 def test_the_browser_lists_runs_with_their_outcome(services, step, tmp_path):

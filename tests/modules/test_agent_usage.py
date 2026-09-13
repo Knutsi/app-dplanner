@@ -41,6 +41,26 @@ def test_rows_accumulate_and_a_session_recorded_twice_is_one_row():
     assert usage.words(Usage(2_500_000, 12)) == "2.5M in · 12 out"
 
 
+def test_what_a_run_was_handed_rides_on_its_row_and_never_totals():
+    """A size is per-run: two briefings added together is not a quantity anybody spends, so
+    the step's own phrase stays tokens-only however many runs carried one."""
+    step = Step(title="A")
+    step.module_data[usage.MODULE_ID] = usage.with_row(
+        step, usage.row_for("claude", "s1", Usage(1000, 100), prompt_chars=18_412)
+    )
+    (row,) = usage.rows(step)
+    assert row["prompt_chars"] == 18_412
+    assert usage.brief_words(18_412) == "briefed 18.4k chars"
+    assert usage.totals(step) == Usage(1000, 100)
+    assert usage.summary(step) == "tokens: 1.0k in · 100 out"
+    # Nobody measured: absence, not a zero, and nothing said.
+    plain = usage.row_for("claude", "s2", Usage(1, 1))
+    assert "prompt_chars" not in plain and usage.brief_words(0) == ""
+    # The line `usage show` prints, which is where both facts are read together.
+    assert usage.row_words(row).endswith("1.0k in · 100 out · briefed 18.4k chars")
+    assert usage.row_words(plain).endswith("1 in · 1 out")
+
+
 def test_a_row_this_build_cannot_read_is_skipped():
     step = Step(title="A")
     step.module_data[usage.MODULE_ID] = {"runs": [{"input": "many"}, {"input": 3, "output": 4}, 7]}
@@ -86,7 +106,7 @@ def test_an_ended_run_reads_its_tokens_back_and_records_them_on_the_step(
     tree = tmp_path / "tree"
     _transcript(tmp_path / "claude", session, str(tree), input_tokens=12000, output_tokens=345)
     runs = module(services)
-    runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"), "claude", session)
+    runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"), "claude", session, 18_412)
     (tmp_path / "shell").write_text(f"pid=1\nsession={session}\ndir={tree}\n")
     services.autosave.flush_now()
     (tmp_path / "exit").write_text("0\n")
@@ -96,7 +116,10 @@ def test_an_ended_run_reads_its_tokens_back_and_records_them_on_the_step(
     assert "12.0k in · 345 out" in services.window.statusBar().currentMessage()
     runs._open_browser()
     (row,) = runs._browser._rows.values()
-    assert row.status.text().endswith("12.0k in · 345 out")
+    # What it was handed sits with what it spent, the size first because it was known first.
+    assert row.status.text().endswith("briefed 18.4k chars · 12.0k in · 345 out")
+    (recorded,) = usage.rows(services.document.step(step.id))
+    assert recorded["prompt_chars"] == 18_412
 
 
 def test_a_harness_that_mints_its_own_id_is_found_and_becomes_resumable(
@@ -133,12 +156,17 @@ def test_a_harness_that_mints_its_own_id_is_found_and_becomes_resumable(
 def test_a_run_with_no_record_ends_as_before(services, step, tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     runs = module(services)
-    runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"), "claude", "s")
+    runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"), "claude", "s", 18_412)
     services.autosave.flush_now()
     (tmp_path / "exit").write_text("0\n")
     runs.check()
     assert runs.runs()[0].outcome == "finished"
     assert usage.totals(services.document.step(step.id)) is None
+    # No record means no row, and a faked zero-token one would have the step claim it spent
+    # nothing rather than say nothing — so what it was handed is said off the run instead.
+    runs._open_browser()
+    (row,) = runs._browser._rows.values()
+    assert row.status.text().endswith("briefed 18.4k chars")
     # A session named up front still resumes, record or no record.
     assert runs._resume_of(runs.runs()[0]) == "claude --resume s"
 
@@ -192,10 +220,13 @@ def test_usage_show_list_and_record(cli, tmp_path, monkeypatch):
     shown = json.loads(cli("usage", "show", "S1", "--json"))
     assert [(r["harness"], r["input"]) for r in shown["runs"]] == [("codex", 12000), ("claude", 5)]
     assert (shown["input"], shown["output"]) == (12005, 807)
+    # `usage record` measures no briefing: the window launched none of these runs.
+    assert [r["prompt_chars"] for r in shown["runs"]] == [None, None]
     listed = json.loads(cli("usage", "list", "discovery", "--json"))
     assert listed["input"] == 12005 and listed["steps"][0]["title"] == "Deploy"
     text = cli("usage", "show", "S1")
     assert "total: 12.0k in · 807 out over 2 runs" in text
+    assert "briefed" not in text  # A row nobody measured simply ends earlier.
 
     err = cli("usage", "record", "S1", "--agent", "claude", "--input", "1", expect=1)
     assert "both --input and --output" in err

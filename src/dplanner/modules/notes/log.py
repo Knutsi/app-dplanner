@@ -48,8 +48,9 @@ MODULE_ID = "notes"
 RECORDS_KEY = "notes"
 ID_PREFIX = "N"
 
-# Who a note reaches by default: every step of the project, or only the steps after the
-# one it was made on. Stored on the record only when it differs from the label's default.
+# Who a note reaches: the steps after the one it was made on, or every step of the project.
+# Downstream is the default for every label — the graph is what says who a note is for —
+# and PROJECT is stored on the record only when somebody lifted that one note.
 PROJECT: Final = "project"
 DOWNSTREAM: Final = "downstream"
 REACHES: Final = (DOWNSTREAM, PROJECT)
@@ -59,7 +60,6 @@ REACHES: Final = (DOWNSTREAM, PROJECT)
 class Label:
     id: str
     meaning: str  # One line, printed wherever the list is offered.
-    reach: str  # The default reach for a note wearing this label.
     group: str  # The index's heading over the notes wearing it.
 
 
@@ -69,23 +69,20 @@ LABELS: Final[tuple[Label, ...]] = (
     Label(
         "decision",
         "a choice and why — stands until a later note supersedes it",
-        PROJECT,
         "Decisions standing",
     ),
     Label(
         "handoff",
         "what whoever picks up after this step needs to know",
-        DOWNSTREAM,
         "Handoffs from the steps before this one",
     ),
     Label(
         "spec-change",
         "where the work departed from the spec, so the spec can follow",
-        PROJECT,
         "Spec changes",
     ),
-    Label("later", "work noticed and deferred inside this project", PROJECT, "Deferred"),
-    Label("post-project", "to do once the project has shipped", PROJECT, "After the project"),
+    Label("later", "work noticed and deferred inside this project", "Deferred"),
+    Label("post-project", "to do once the project has shipped", "After the project"),
 )
 LABEL_IDS: Final = tuple(label.id for label in LABELS)
 DEFAULT_LABEL: Final = "decision"
@@ -102,7 +99,7 @@ class Note:
     made: str = ""  # The day it was written, ISO; "" when nobody said.
     step: str = ""  # The step it was made on, by id; "" for a project-wide note.
     supersedes: str = ""  # An earlier note this one reverses or replaces.
-    reach: str = ""  # PROJECT or DOWNSTREAM; "" is the label's default.
+    reach: str = ""  # PROJECT when this one note was lifted; "" is downstream.
     for_steps: tuple[str, ...] = ()  # Steps whose briefing carries this note in full.
 
 
@@ -119,10 +116,13 @@ def check_label(label_id: str) -> str:
 
 
 def reach_of(note: Note) -> str:
-    """Who the note reaches: its own word, else the label's default — and a note made on
-    no step has nothing to be downstream of, so it reaches the project."""
-    reach = note.reach if note.reach in REACHES else label_of(note.label).reach
-    return reach if note.step else PROJECT
+    """Who the note reaches: the steps after the one it was made on, unless the note itself
+    says otherwise. A note made on no step has nothing to be downstream of, so it reaches
+    the project whatever it wears — as does one whose step is gone (:func:`.reach.reaching`,
+    which is the only place that can know)."""
+    if not note.step:
+        return PROJECT
+    return note.reach if note.reach in REACHES else DOWNSTREAM
 
 
 def read_log(project: Project) -> list[Note]:
@@ -156,7 +156,7 @@ def notes_in(entry: dict[str, Any]) -> list[Note]:
 def write_log(records: Sequence[Note]) -> dict[str, Any]:
     """The entry for these records — ``{}`` (remove the file) when there are none. Every
     key but the id, the label and the title is omitted when empty, FORMAT.md's absence
-    rule; the reach is written only when it differs from the label's default."""
+    rule; the reach is written only when it differs from the default."""
     return stamped(entry_rows(records), FORMAT_VERSION)
 
 
@@ -169,7 +169,7 @@ def entry_rows(records: Sequence[Note]) -> dict[str, Any]:
         for key in ("body", "made", "step", "supersedes"):
             if getattr(record, key):
                 row[key] = getattr(record, key)
-        if record.reach in REACHES and record.reach != label_of(record.label).reach:
+        if record.reach == PROJECT:  # Downstream is the default, so only the lift is written.
             row["reach"] = record.reach
         if record.for_steps:
             row["for"] = list(record.for_steps)

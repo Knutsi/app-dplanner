@@ -30,12 +30,10 @@ from dplanner.domain.model import Library, NodeId, Project, Step
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.undo import UndoService
 from dplanner.modules.notes.log import (
-    DOWNSTREAM,
     LABELS,
     MODULE_ID,
     PROJECT,
     Note,
-    label_of,
     read_log,
     with_note,
     write_log,
@@ -138,7 +136,7 @@ class NoteEditor(QWidget):
         self.addressed.editingFinished.connect(self._commit_addressed)
         self.everyone = QCheckBox("Every step sees it", self)
         self.everyone.setToolTip(
-            "A handoff reaches only the steps after the one it was made on; this lifts it"
+            "A note reaches only the steps after the one it was made on; this lifts it"
             " to the whole project"
         )
         self.everyone.toggled.connect(lambda _on: self._commit_links())
@@ -236,9 +234,9 @@ class NoteEditor(QWidget):
         self.step.setCurrentIndex(max(self.step.findData(record.step if record else ""), 0))
 
     def _fill_reach(self, record: Note | None) -> None:
-        # The box only means something on a note whose label reaches downstream by
-        # default and that was made on a step; elsewhere it is already true.
-        if record is None or not record.step or label_of(record.label).reach != DOWNSTREAM:
+        # A note made on no step has nothing to be downstream of, so it already reaches
+        # everyone and the box has nothing to say; on any other note it does.
+        if record is None or not record.step:
             self.everyone.setEnabled(False)
             self.everyone.setChecked(True)
             return
@@ -292,7 +290,7 @@ class NoteEditor(QWidget):
         label = str(self.label.currentData() or record.label)
         step = str(self.step.currentData() or "")
         reach = ""
-        if step and label_of(label).reach == DOWNSTREAM and self.everyone.isChecked():
+        if step and self.everyone.isChecked():
             reach = PROJECT
         self._push(
             replace(
