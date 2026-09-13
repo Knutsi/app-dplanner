@@ -151,6 +151,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
     from dplanner.modules.step_agent_instruction.aspect import write_state as agent_write_state
     from dplanner.modules.step_agent_instruction.module import (
+        RUN_MENU_ID,
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
     )
@@ -840,7 +841,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
             status_for=step_status,
             days_for=estimated_days,
             agent_state=lambda ctx: services.actions.spec("agent.run").state(ctx),
-            agent_run=lambda ctx: services.actions.run("agent.run", ctx),
+            # The Run Agents button drops the Step menu's own Run Agent child down — the
+            # profiles, then Manage Agent Profiles… — filled as it opens, never a copy.
+            agent_menu=lambda menu: services.actions.data_menu(RUN_MENU_ID).fill(menu),
             # A milestone on the board leads with its key in its own shade: a lane already
             # says where the work stands, so the one colour that is not a status says what
             # the work is leading to.
@@ -1073,6 +1076,17 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
     )
 
+    # Built ahead of the list: the agent module deep-links to its own settings page
+    # through it. Registered last, since its dialog must see every other module's
+    # settings sections.
+    settings = SettingsModule(
+        SettingsDeps(
+            actions=services.actions,
+            settings_sections=services.settings_sections,
+            parent=services.window,
+        )
+    )
+
     # Built ahead of the list too: the library watcher hands an entry two writers changed
     # at once to this module's launcher, and it is listed before this module.
     agent_instruction = StepAgentInstructionModule(
@@ -1123,6 +1137,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # the ticket, composed here from aspects the agent module never reads.
             step_key=_step_key,
             ticket_key=_ticket_key,
+            # Manage Agent Profiles… lands on the module's own settings page.
+            open_settings=settings.open,
         )
     )
 
@@ -1532,13 +1548,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         # Last: its dialog is built during register() and must see every other module's
         # settings sections.
-        SettingsModule(
-            SettingsDeps(
-                actions=services.actions,
-                settings_sections=services.settings_sections,
-                parent=services.window,
-            )
-        ),
+        settings,
     ]
 
 

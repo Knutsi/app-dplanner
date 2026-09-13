@@ -128,15 +128,18 @@ dplanner layout tidy search              # air between the cards, nothing re-sor
 dplanner project export search > plan.json   # and `import` reads the same shape back
 ```
 
-**Run Agent is the window's way in.** *Step ▸ Run Agent…* opens a terminal at the
+**Run Agent is the window's way in.** *Step ▸ Run Agent* opens a terminal at the
 repository root with the step's briefing — through a **launch profile** from *Settings ▸
-Agent*: a name over an agent (Claude Code, Codex, OpenCode — each a module that says
-what its CLI can do) and a terminal or multiplexer (Ghostty, iTerm, Terminal, Windows
-Terminal, kitty, WezTerm and the rest; herdr, zellij and tmux to land several agents
-side by side — marked when not installed). The first profile is what *Run Agent…* runs;
-*Step ▸ Run Agent With* offers the others. Select several ready steps — on the canvas,
-in the progression board — and one gesture launches one agent per step, all through the
-profile you pick. The step wears a chip and a marching ring while the shell runs, the
+Agent profiles*: a name over an agent (Claude Code, Codex, OpenCode — each a module that
+says what its CLI can do) and a terminal or multiplexer (Ghostty, iTerm, Terminal,
+Windows Terminal, kitty, WezTerm and the rest; herdr, zellij and tmux to land several
+agents side by side — marked when not installed). The child menu lists every profile,
+the default first (what the Agent tab's button and the palette run), then *Manage Agent
+Profiles…*; every agent in Ghostty, herdr and the platform's own terminal is there from
+the first start, and *Add Detected…* on the settings page pairs whatever agents and
+terminals are installed here. Select several ready steps — on the canvas, or by ticking them in the
+progression board and dropping its *Run N Agents* button down — and one gesture launches
+one agent per step, all through the profile you pick. The step wears a chip and a marching ring while the shell runs, the
 chip follows what the agent reports (`dplanner agent-state set … needs-input` when it has
 a question), and the ring goes when the shell ends — finished, failed or closed, which
 the status bar says, with the tokens the run consumed once its CLI's record has been read
@@ -334,7 +337,8 @@ src/dplanner/
 │   │                             Agent (`launcher.py`: the terminal and multiplexer table,
 │   │                             the run name a worktree and branch carry, the wrapper script
 │   │                             that prepares the worktree and reports back; `profiles.py`:
-│   │                             the named agent-and-terminal pairs Run Agent With offers)
+│   │                             the named agent-and-terminal pairs Run Agent offers, seeded once;
+│   │                             `detect_dialog.py`: the installed pairings, ticked and added)
 │   ├── agent_claude/        ── one module per agent CLI, each a Qt-free `harness.py`: the
 │   ├── agent_codex/            command, how it resumes, the marks it leaves in its shells, and
 │   ├── agent_opencode/         a reader of its own records (`domain/agents.py` is the contract)

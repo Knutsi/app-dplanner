@@ -3,8 +3,10 @@ what a launch records on the step.
 
 A **profile** (``profiles.py``) is one answer to Run Agent's two questions — which agent
 CLI, and which terminal or multiplexer it opens in — under a name. The page is a list of
-them beside an editor for the picked one; the first is the default *Run Agent…* runs, the
-rest are the entries of *Step ▸ Run Agent With*, and *Make Default* moves one to the top.
+them beside an editor for the picked one; the first is the default *Run Agent…* runs, all
+of them are the entries of *Step ▸ Run Agent*, and *Make Default* moves one to the top.
+*Add Detected…* (``detect_dialog.py``) pairs the agents and terminals installed on this
+machine and adds the ticked ones.
 
 **Sane defaults, options laid out.** Both of a profile's choices are a dropdown of known
 rows over an editable field: the agent is one of the harnesses this build knows — Claude
@@ -47,6 +49,7 @@ from collections.abc import Callable
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -60,6 +63,7 @@ from PySide6.QtWidgets import (
 from dplanner.domain.agents import AgentHarness
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
+from dplanner.modules.step_agent_instruction.detect_dialog import DetectedProfilesDialog
 from dplanner.modules.step_agent_instruction.launcher import (
     TerminalPreset,
     current_command,
@@ -68,6 +72,7 @@ from dplanner.modules.step_agent_instruction.launcher import (
 )
 from dplanner.modules.step_agent_instruction.profiles import (
     Profile,
+    add_profiles,
     default_profile,
     read_profiles,
     suggested_name,
@@ -207,6 +212,12 @@ class ProfileList(QWidget):
         self.default_button = QPushButton("Make Default", self)
         self.default_button.setObjectName("AgentProfileDefault")
         self.default_button.clicked.connect(self._make_default)
+        self.detect_button = QPushButton("Add Detected…", self)
+        self.detect_button.setObjectName("AgentProfileDetect")
+        self.detect_button.setToolTip(
+            "Find the agent CLIs and terminals installed here and add their pairings"
+        )
+        self.detect_button.clicked.connect(self._detect)
 
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
@@ -216,6 +227,7 @@ class ProfileList(QWidget):
         buttons.addWidget(self.add_button)
         buttons.addWidget(self.remove_button)
         buttons.addWidget(self.default_button)
+        buttons.addWidget(self.detect_button)
         buttons.addStretch(1)
         self.reload(0)
 
@@ -262,6 +274,16 @@ class ProfileList(QWidget):
             profiles.insert(0, profiles.pop(row))
             write_profiles(profiles)
             self.reload(0)
+
+    def _detect(self) -> None:
+        """Add Detected…: the pairings this machine can run, ticked in a modal, appended
+        through the same rule the seed uses — a pairing already meant is never doubled."""
+        dialog = DetectedProfilesDialog(self._harnesses, self, platform=self._platform)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            before = len(read_profiles())
+            add_profiles(dialog.chosen(), self._harnesses, self._platform)
+            self.reload(before)
+        dialog.deleteLater()
 
 
 def build_page(
@@ -347,7 +369,7 @@ def build_page(
     layout.addWidget(QLabel("Profiles", page))
     layout.addWidget(
         _note(
-            "Run Agent… runs the default profile; the others are Step ▸ Run Agent With.",
+            "Run Agent… runs the default profile; Step ▸ Run Agent lists them all.",
             page,
         )
     )

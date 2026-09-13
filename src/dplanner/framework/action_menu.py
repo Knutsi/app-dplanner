@@ -99,7 +99,7 @@ def fill_menu(
     what a nested level would mean flat is nobody's question yet.
 
     A **data child menu** (`DataMenuSpec`) is placed by the same key and filled when it
-    opens, as the bar's is — so a menu's right-click offers *Run Agent With* because the
+    opens, as the bar's is — so a menu's right-click offers *Run Agent* because the
     Step menu does, and never a copy of it. It is a child of the menu itself, so a named
     ``submenu`` render leaves it out.
     """
@@ -158,6 +158,8 @@ def fill_menu(
             data_child.aboutToShow.connect(lambda s=spec, c=data_child: _fill_data(s, c))
             continue
         if submenu is not None and spec.submenu != submenu:
+            continue
+        if not spec.in_menus:
             continue
         state = spec.state(context)
         if not state.visible:

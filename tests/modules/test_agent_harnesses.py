@@ -368,6 +368,179 @@ def test_the_two_old_settings_read_as_the_default_profile(app):
     assert [p.name for p in read_profiles()] == ["Mine", "Codex in herdr"]
 
 
+def test_the_known_pairings_are_seeded_once_and_never_doubled(app):
+    """Every harness in Ghostty, herdr and Automatic, added after what is stored — a
+    pairing already there by its choices is skipped whatever it is named, the stored
+    default stays first, and a second seed (or a removal) is honoured by the flag."""
+    from dplanner.framework.user_config import get_global
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
+    from dplanner.modules.step_agent_instruction.launcher import HERDR_COMMAND
+    from dplanner.modules.step_agent_instruction.profiles import (
+        SEEDED_KEY,
+        Profile,
+        read_profiles,
+        seed_profiles,
+        write_profiles,
+    )
+
+    write_profiles([Profile("Mine", "", "ghostty -e {script}"), Profile("Codex", "codex {prompt}")])
+    added = seed_profiles(HARNESSES, platform="linux")
+    names = [p.name for p in read_profiles()]
+    assert names[:2] == ["Mine", "Codex"]  # The stored list, its default still first.
+    assert (
+        [p.name for p in added]
+        == names[2:]
+        == [
+            "Claude Code in herdr",
+            "Claude Code",
+            "Codex in Ghostty",
+            "Codex in herdr",
+            "OpenCode in Ghostty",
+            "OpenCode in herdr",
+            "OpenCode",
+        ]
+    )
+    herdr = next(p for p in added if p.name == "Codex in herdr")
+    assert (herdr.agent_command, herdr.launch_command) == ("codex {prompt}", HERDR_COMMAND)
+    assert get_global(MODULE_ID, SEEDED_KEY) is True
+    # Seeded: a removal stands, and nothing is added twice.
+    write_profiles(read_profiles()[:3])
+    assert seed_profiles(HARNESSES, platform="linux") == []
+    assert len(read_profiles()) == 3
+
+
+def test_a_fresh_machine_is_seeded_around_its_default_and_no_harness_seeds_nothing(app):
+    from dplanner.framework.user_config import get_global
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
+    from dplanner.modules.step_agent_instruction.profiles import (
+        SEEDED_KEY,
+        read_profiles,
+        seed_profiles,
+    )
+
+    assert seed_profiles((), platform="linux") == [] and get_global(MODULE_ID, SEEDED_KEY) is None
+    seed_profiles(HARNESSES, platform="darwin")
+    names = [p.name for p in read_profiles()]
+    # The unnamed old-settings profile — Claude Code in Automatic — is named by its
+    # choices as it is first written, and stands for that pairing, so it is not doubled.
+    assert names[:3] == ["Claude Code", "Claude Code in Ghostty", "Claude Code in herdr"]
+    assert names.count("Claude Code") == 1 and len(names) == 9
+    assert len({(p.agent_command, p.launch_command) for p in read_profiles()}) == 9
+
+
+def test_the_window_seeds_the_profiles_when_it_is_built(services):
+    from dplanner.modules.step_agent_instruction.profiles import read_profiles
+
+    assert len(read_profiles()) == 9
+
+
+def test_manage_agent_profiles_opens_settings_on_the_profiles_page(services, monkeypatch):
+    from dplanner.modules.settings.module import SettingsModule
+    from dplanner.modules.step_agent_instruction.module import SETTINGS_SECTION
+
+    settings = next(m for m in services.modules if isinstance(m, SettingsModule))
+    monkeypatch.setattr(settings.dialog, "show", lambda: None)
+    services.actions.run("agent.profiles", services.context.current())
+    current = settings.dialog._tree.currentItem()
+    assert current is not None and current.text(0) == "Agent profiles"
+    assert settings.dialog._pane.currentWidget() is settings.dialog._pages[SETTINGS_SECTION]
+    spec = services.actions.spec("agent.profiles")
+    assert (spec.menu, spec.submenu, spec.in_menus) == ("Step", "Run Agent", False)
+
+
+def test_detection_pairs_what_this_machine_has_and_says_what_it_lacks(app):
+    """Every harness in every terminal row and Automatic: the agent by its command on
+    PATH, the terminal by its row's probe, a stored pairing marked present."""
+    from dplanner.modules.step_agent_instruction.launcher import HERDR_COMMAND
+    from dplanner.modules.step_agent_instruction.profiles import (
+        Profile,
+        detect_pairings,
+        write_profiles,
+    )
+
+    write_profiles([Profile("Mine", "", "ghostty -e {script}")])
+    found = {"claude": "/bin/claude", "ghostty": "/bin/ghostty", "herdr": "/bin/herdr"}
+    rows = detect_pairings(HARNESSES, platform="linux", which=found.get, env={})
+    by_name = {row.profile.name: row for row in rows}
+    assert by_name["Claude Code in Ghostty"].present  # "Mine" already means it.
+    assert by_name["Claude Code in Ghostty"].remark == "already in the list"
+    herdr = by_name["Claude Code in herdr"]
+    assert herdr.runnable and not herdr.present and herdr.remark == ""
+    assert herdr.profile.launch_command == HERDR_COMMAND
+    assert by_name["Claude Code"].runnable  # Automatic is always found.
+    assert by_name["Codex in herdr"].remark == "codex not found"
+    assert by_name["Codex in kitty"].remark == "codex not found, terminal not found"
+    assert not by_name["Claude Code in tmux"].terminal_found  # env probe, $TMUX unset.
+    assert [r.profile.name for r in rows if r.runnable and not r.present] == [
+        "Claude Code in herdr",
+        "Claude Code",
+    ]
+
+
+def test_the_detected_profiles_dialog_ticks_the_runnable_and_adds_the_ticked(app):
+    from PySide6.QtCore import Qt
+
+    from dplanner.modules.step_agent_instruction.detect_dialog import (
+        NOTHING_TICKED,
+        DetectedProfilesDialog,
+    )
+    from dplanner.modules.step_agent_instruction.profiles import (
+        Profile,
+        add_profiles,
+        read_profiles,
+        write_profiles,
+    )
+
+    write_profiles([Profile("Mine", "", "ghostty -e {script}")])
+    found = {"claude": "/bin/claude", "codex": "/bin/codex", "ghostty": "/bin/ghostty"}
+    dialog = DetectedProfilesDialog(HARNESSES, platform="linux", which=found.get, env={})
+    ticked = [p.name for p in dialog.chosen()]
+    assert ticked == ["Claude Code", "Codex in Ghostty", "Codex"]
+    assert dialog.primary_button.text() == "Add 3 Profiles" and dialog.primary_button.isEnabled()
+    present = next(i for i in range(dialog.list.count()) if "already" in dialog.list.item(i).text())
+    assert not dialog.list.item(present).flags() & Qt.ItemFlag.ItemIsEnabled
+    for index in range(dialog.list.count()):
+        dialog.list.item(index).setCheckState(Qt.CheckState.Unchecked)
+    assert not dialog.primary_button.isEnabled() and dialog.status.words() == NOTHING_TICKED
+    dialog.list.item(dialog.list.count() - 1).setCheckState(Qt.CheckState.Checked)  # OpenCode.
+    assert dialog.primary_button.text() == "Add Profile"
+    added = add_profiles(dialog.chosen(), HARNESSES, "linux")
+    assert [p.name for p in added] == ["OpenCode"]
+    assert [p.name for p in read_profiles()] == ["Mine", "OpenCode"]
+    assert add_profiles(dialog.chosen(), HARNESSES, "linux") == []  # Meant already.
+    dialog.deleteLater()
+
+
+def test_the_settings_page_adds_the_detected_profiles(app, monkeypatch):
+    from PySide6.QtWidgets import QDialog, QPushButton
+
+    from dplanner.modules.step_agent_instruction import settings_page
+    from dplanner.modules.step_agent_instruction.detect_dialog import DetectedProfilesDialog
+    from dplanner.modules.step_agent_instruction.profiles import (
+        Profile,
+        read_profiles,
+        write_profiles,
+    )
+
+    write_profiles([Profile("Mine", "", "")])
+    found = {"claude": "/bin/claude", "ghostty": "/bin/ghostty"}
+
+    class Detected(DetectedProfilesDialog):
+        def __init__(self, harnesses, parent=None, *, platform):
+            super().__init__(harnesses, parent, platform=platform, which=found.get, env={})
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(settings_page, "DetectedProfilesDialog", Detected)
+    page = settings_page.build_page(None, platform="linux", harnesses=HARNESSES)
+    button = page.findChild(QPushButton, "AgentProfileDetect")
+    assert button is not None
+    button.click()
+    assert [p.name for p in read_profiles()] == ["Mine", "Claude Code in Ghostty"]
+    page.deleteLater()
+
+
 def test_a_profile_is_named_by_its_choices():
     from dplanner.modules.step_agent_instruction.profiles import Profile, suggested_name
 
@@ -521,10 +694,21 @@ def test_run_agent_with_lists_the_profiles_and_launches_through_the_picked_one(
     select(services, step)
     menu = services.window.dynamic_menubar.data_menu("agent.run_with")
     labels = [a.text() for a in menu.actions()]
-    assert labels == ["Claude in Ghostty (default)", "Codex in herdr — herdr is not installed"]
+    assert labels == [
+        "Claude in Ghostty (default)",
+        "Codex in herdr — herdr is not installed",
+        "",  # The rule before the way to Settings.
+        "&Manage Agent Profiles…",
+    ]
     assert menu.actions()[0].isEnabled() and not menu.actions()[1].isEnabled()
+    assert menu.actions()[2].isSeparator() and menu.actions()[3].isEnabled()
     state = services.actions.spec("agent.run").state(services.context.current())
     assert state.enabled  # Run Agent… is the default profile, whose terminal is fine.
+    # The verb's seat is the child menu: neither it nor the Settings link is listed flat.
+    step_menu = services.window.dynamic_menubar._menus["Step"]
+    flat = [a.text() for a in step_menu.actions() if not a.isSeparator()]
+    assert "Run &Agent…" not in flat and "&Manage Agent Profiles…" not in flat
+    assert "Run Agent" in flat  # The child menu's own entry.
 
     monkeypatch.setattr(launcher, "template_refusal", lambda *a, **k: "")
     launched: list[tuple[list[str], str]] = []

@@ -2867,3 +2867,29 @@ poison the memory, which matters more once it outlives the session.
 **Upstream?** Yes, behind the same default-off flag. A template's `TaskService` should be
 able to estimate on a machine's second run without the host application inventing its own
 store.
+
+## 32. From the agent-profiles pass
+
+### `framework/action_registry.py` — `ActionSpec.in_menus`, and `ActionRegistry.data_menu(id)`
+
+**What.** A spec flag, default True. False keeps the spec out of the menu bar
+(`menubar.py`'s `_add_spec` creates no QAction) and out of every pop-up (`action_menu.py`'s
+`fill_menu` skips it), while the spec keeps its `menu`/`group`/`submenu` for validation and
+for the palette's path, and stays runnable from the palette, a button or a data menu's
+`append_action`. `register` refuses such a spec with a `shortcut`. And a by-id accessor for
+`DataMenuSpec`s, the sibling of `spec(id)`.
+
+**Why.** The Step menu held *Run Agent…* flat beside *Run Agent With ▸*, two entries for
+one act. Folding the verb into the data child menu — the profiles, the default marked,
+then *Manage Agent Profiles…* — left `agent.run` with no seat: it must stay registered
+(the Agent tab's button, the progression board and the palette run it), and the registry
+required a menu for every spec. The alternatives were a fake `menu` (the validator refuses
+it, rightly) or `visible=False` in its state (which also takes it out of the palette and
+makes `run` refuse it). The shortcut refusal is the trap the flag would otherwise set: a
+QAction is what fires a shortcut, and an unseated spec has none. The accessor is for a
+button elsewhere — the progression board's *Run N Agents* — that drops the same child
+menu down: the root hands over `registry.data_menu(id).fill`, so the second surface
+renders the menu and never a copy.
+
+**Upstream?** Yes, both. Any template whose child menus are data will meet a verb whose
+seat is that menu's entries. The `palette: bool` flag already set the shape.

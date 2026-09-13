@@ -86,6 +86,12 @@ class SettingsDialog(QDialog):
         self._tree.expandAll()
         self._select_first()
 
+    def show_section(self, section_id: str) -> None:
+        """Land on one section's page — a deep link from the surface it configures."""
+        item = self._find_item(self._tree, lambda i: i.data(0, _SECTION_ROLE) == section_id)
+        if item is not None:
+            self._tree.setCurrentItem(item)
+
     def _select_first(self) -> None:
         """Select the first leaf — a no-op once there already is a selection, so a rebuild
         never disturbs where the user left off."""

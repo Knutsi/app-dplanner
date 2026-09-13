@@ -160,12 +160,33 @@ def test_a_background_board_does_not_publish_its_selection(services, project, ta
     assert services.context.current().selected_entities("step") == []
 
 
-def test_a_ready_card_offers_run_agent_wearing_the_gates_own_reason(services, project, tab):
-    """The button renders the real action's state — the reason is the gate's, never a copy."""
-    button = tab.board.ready.cards()[0].run_button
-    assert button is not None
+def test_ticking_ready_cards_counts_them_on_the_run_button_and_publishes_them(
+    services, project, tab
+):
+    """The Ready lane's button renders the real action's state over the ticked steps —
+    the reason is the gate's, never a copy — and its dropdown is the Step menu's own Run
+    Agent child, which acts on the ticked steps because opening it publishes them."""
+    board = tab.board
+    button = board.run_button
+    assert button is not None and button.text() == "Run Agents" and not button.isEnabled()
+    assert button.toolTip().startswith("Tick the ready steps")
+    cards = board.ready.cards()
+    assert all(card.check_box is not None for card in cards)
+
+    cards[0].check_box.setChecked(True)
+    assert button.text() == "Run 1 Agent"
     assert not button.isEnabled()  # No instruction, no checkout: the gate says why.
     assert button.toolTip().startswith("Run Agent — ")
+    assert board.ticked() == [cards[0].step_id]
+
+    menu = board.run_menu()
+    assert menu is not None
+    labels = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert labels[-1] == "&Manage Agent Profiles…" and len(labels) > 1
+    assert services.context.current().selected_entities("step") == [cards[0].step_id]
+
+    cards[0].check_box.setChecked(False)
+    assert button.text() == "Run Agents" and board.ticked() == []
 
 
 def test_a_build_without_an_agent_has_no_button_at_all(services, project):
@@ -182,7 +203,8 @@ def test_a_build_without_an_agent_has_no_button_at_all(services, project):
         ),
         project.id,
     )
-    assert all(card.run_button is None for card in activity.board.ready.cards())
+    assert activity.board.run_button is None
+    assert all(card.check_box is None for card in activity.board.ready.cards())
     activity.close()
     # Built bare, so no tab host will delete the page: a top-level widget left to the
     # boundary collector dies inside it, which is how a worker segfaulted on this test.
