@@ -6,6 +6,7 @@ import sys
 from io import StringIO
 
 import pytest
+from tests.cli.skill_helpers import noun_verbs
 
 from dplanner.cli.install import install_command, path_hint, worktree_warning
 from dplanner.cli.main import WINDOW_SHORTCUT, WINDOW_WORD, run
@@ -26,20 +27,51 @@ def files(registry):
     return generate(registry, aspect_specs())
 
 
-def test_every_command_appears_exactly_once(registry, files):
+def test_every_noun_is_one_line_naming_its_verbs(registry, files):
     """The point of generating it: the skill cannot describe a command that does not exist,
-    and cannot omit one that does."""
+    and cannot omit one it offers. A summary per verb was a third of the file and said what
+    `--help` says, so the index names the verbs and nothing else."""
+    verbs = noun_verbs(files[SKILL_FILE])
+    for noun, commands in registry.groups().items():
+        offered = {command.path[1] for command in commands if command.in_skill}
+        if not offered:
+            assert noun not in verbs  # A noun with nothing to offer is not a noun here.
+            continue
+        # A set, not a containment check: a verb printed twice is as wrong as one missing.
+        assert {verb.removesuffix("†") for verb in verbs[noun]} == offered
+
+
+def test_the_command_index_is_an_index(files):
+    """The size rule this shape exists for — 19,793 chars of per-verb summaries before it.
+    A regression here is somebody putting the prose back."""
     skill = files[SKILL_FILE]
-    for command in registry.commands():
-        # The index bullet specifically: the prose above it may mention a command too.
-        assert skill.count(f"- `dplanner {command.id}` — ") == 1
+    section = skill[skill.index("## Commands") : skill.index("## Aspects a step can carry")]
+    assert len(section) < 4_000, len(section)
 
 
-def test_every_command_has_its_arguments_in_the_reference(registry, files):
+def test_every_offered_command_has_its_arguments_in_the_reference(registry, files):
     reference = files[REFERENCE_FILE]
     for command in registry.commands():
+        if not command.in_skill:
+            assert f"## `dplanner {command.id}`" not in reference
+            continue
         assert f"## `dplanner {command.id}`" in reference
         assert f"usage: dplanner {command.id}" in reference
+
+
+def test_a_verb_kept_out_of_the_skill_is_still_a_verb(registry, files):
+    """`in_skill=False` is the CLI twin of `ActionSpec.in_menus`: registered and runnable,
+    named by no generated file. The region verbs are what it exists for."""
+    kept_out = [command.id for command in registry.commands() if not command.in_skill]
+    assert kept_out == [
+        "region add",
+        "region delete",
+        "region fit",
+        "region list",
+        "region rename",
+    ]
+    for name, text in files.items():
+        assert "region" not in text.lower(), name
 
 
 def test_every_aspect_is_described(files):
@@ -51,14 +83,14 @@ def test_the_edge_vocabulary_is_described(files):
     assert "cycles are refused" in files[SKILL_FILE]
 
 
-def test_the_skill_teaches_the_spatial_loop_and_not_regions(files):
-    """Look, sort, make room or tidy, look again, keep — and no regions drawn."""
+def test_the_skill_teaches_the_spatial_loop_and_never_mentions_regions(files):
+    """Look, sort, make room or tidy, look again, keep. A skill that does not offer regions
+    need not forbid them either — the prohibition went with the verbs."""
     skill = " ".join(files[SKILL_FILE].split())
     assert "layout show <project> --map" in skill
     assert "layout shift <project> --x 640 --by 300" in skill
     assert "layout tidy <project>" in skill
-    assert "Do not draw regions" in skill
-    assert "Sort first, regions second" not in skill
+    assert "region" not in skill.lower()
 
 
 def test_the_skill_teaches_description_as_the_briefing(files):

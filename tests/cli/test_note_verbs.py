@@ -236,7 +236,8 @@ def test_a_decision_stays_on_its_branch_until_reach_project_lifts_it(cli, projec
     """The rule the narrowed reach turns on: a choice made on a branch binds the work after
     it, and a choice that binds the whole plan says so."""
     cli("note", "add", project, "decision", "Vite for the bundler", "--step", "S3")
-    cli("note", "add", project, "decision", "Tabs, not spaces", "--step", "S3", "--reach", "project")
+    lift = ("--step", "S3", "--reach", "project")
+    cli("note", "add", project, "decision", "Tabs, not spaces", *lift)
     shown = cli("note", "index", "S2")
     assert "Tabs, not spaces" in shown and "Vite for the bundler" not in shown
     own = cli("note", "index", "S3")
