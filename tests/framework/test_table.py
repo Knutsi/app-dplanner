@@ -15,7 +15,7 @@ from dplanner.framework.list_rows import (
     MUTED_ROLE,
     TINT_ROLE,
 )
-from dplanner.framework.table import Cell, Column, Table
+from dplanner.framework.table import Cell, Column, Table, text_width
 from dplanner.theme import apply_theme
 from dplanner.theme.icons import tag_icon
 from dplanner.theme.themes import DARK, LIGHT
@@ -220,6 +220,25 @@ def test_a_rich_row_is_two_lines_of_two_sizes(app):
         assert table.row_height() == snap_up(rich_row_height(font))
     finally:
         table.deleteLater()
+
+
+def test_a_width_measured_for_a_text_never_elides_it_on_any_installed_font(app):
+    """Qt elides against the fractional advance and paints the ink, and a font can make
+    either the wider one: DejaVu Sans rounds "10"'s advance down, Liberation Sans's "1"
+    reaches past its advance. The measure has to hold on whatever fonts a machine has."""
+    from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics
+
+    families = QFontDatabase.families()[:40]  # Bounded: a desktop can list hundreds.
+    assert families
+    for family in families:
+        for bold in (False, True):
+            font = QFont(family, 10)
+            font.setBold(bold)
+            metrics = QFontMetrics(font)
+            for text in ("10", "15", "1", "Wave 15", "Release v1", "0.5 d"):
+                width = text_width(font, text)
+                assert metrics.elidedText(text, Qt.TextElideMode.ElideRight, width) == text
+                assert metrics.boundingRect(text).width() <= width
 
 
 def test_a_column_sized_to_its_contents_shows_them_whole(app):
