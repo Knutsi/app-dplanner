@@ -65,7 +65,6 @@ class CoverageDeps:
     # None in a build without that surface.
     show_passages: ShowPassages | None = None
     open_docs: Callable[[NodeId, StepId], None] | None = None
-    open_feature: Callable[[NodeId, str], None] | None = None
     # What a step is, for the Step ▸ open verbs' states — the aspects' Qt-free readers.
     feature_of: Callable[[StepId], str | None] = lambda _step: None
     is_milestone: Callable[[StepId], bool] = lambda _step: False
@@ -232,6 +231,8 @@ class CoverageActivity(EntityActivity):
             return target.split("\0", 1)[0]
         if kind == "docs":
             return target
+        if kind == "feature":
+            return target  # A feature's id is its step's.
         return None
 
     def _on_picked(self, item_id: str) -> None:
@@ -264,8 +265,10 @@ class CoverageActivity(EntityActivity):
             deps.show_passages(self.project_id, target, quotes, "")
         elif kind == "docs" and deps.open_docs is not None:
             deps.open_docs(self.project_id, target)
-        elif kind == "feature" and deps.open_feature is not None:
-            deps.open_feature(self.project_id, target)
+        elif kind == "feature":
+            # A feature is a step: its details dialog, landing on the Feature tab — the
+            # same thing a test row does with the Tests tab.
+            self._details(target, ("feature", target))
 
     def _details(self, step_id: StepId, *extra: tuple[str, str]) -> None:
         if not self._deps.library.has(step_id):

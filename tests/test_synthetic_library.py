@@ -5,7 +5,7 @@ from pathlib import Path
 from scripts.synthetic_library import build_library
 
 from dplanner.domain.store import LibraryStore
-from dplanner.modules.feature.catalogue import read_catalogue
+from dplanner.modules.feature.aspect import is_feature
 from dplanner.modules.project_editor.positions import read_position
 from dplanner.modules.step_milestone.aspect import read as milestone_label
 from dplanner.modules.testing import runs
@@ -25,7 +25,7 @@ def test_the_library_reads_back_with_the_mix_it_promises(tmp_path: Path) -> None
         assert all(read_position(step) is not None for step in big.steps)
         assert any(milestone_label(step) for step in big.steps)
         assert any(step.edges.get("requires") for step in big.steps)
-        assert read_catalogue(big)
+        assert any(is_feature(step) for step in big.steps)
         assert runs.open_run(runs.read(big)) is not None
         assert all(step.module_text.get("step_description") for step in big.steps)
     finally:

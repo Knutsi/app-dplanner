@@ -352,15 +352,19 @@ root, stop and look for the registry or capability you have not found yet.
 - **A panel the graph tab hosts is not a dock panel.** A dock panel follows the *window* —
   one instance, retargeted by the context. A panel inside a project tab follows *that tab*:
   one per tab, handed a context naming its own project, so a background tab never follows
-  the tab in front. The Features list is the first — out of the window's left area and
-  beside the canvas, where the drag onto the graph is short. What goes there is a
+  the tab in front. The Problems list is the one — beside the canvas, where clicking a
+  problem and landing on its step is a short trip. What goes there is a
   `SidePanel(title, icon, build)` on `ProjectEditorDeps`, named by the composition root and
   reached through `framework/panels.py`'s `ContextPanel` protocol, so `project_editor`
-  imports nothing from `feature` and `feature` registers no panel (it offers
+  imports nothing from `problems` and `problems` registers no panel (it offers
   `create_panel()`, the `step_properties` arrangement). The seam is the splitter's and the
   panel draws no edge; whether it stands is a field on `Look`, like every other preference
-  the editor keeps. `ARCHITECTURE.md`'s *The Features list lives in the graph, not in the
-  window* has the reasoning.
+  the editor keeps. **A panel may also carry a *reading*** — `ReadingPanel`, one string and
+  a signal — which the strip's leading band shows beside its glyph as `(4)`; that is why
+  that seat is a widget (`panel_button.py`) where every other is an action, and why the
+  count is read from the panel's last settled rebuild rather than probed in a state
+  callback. `ARCHITECTURE.md`'s *The Problems list lives in the graph, not in the window*
+  has the reasoning.
 - **One panel per surface, not one per tab.** A detail panel is anchored in a window area and
   reads the context; an activity never holds one. Building it inside the tab is what made the
   step editor appear twice in a split window, and the fix deleted code rather than adding a
@@ -1554,8 +1558,8 @@ root, stop and look for the registry or capability you have not found yet.
   the three predicates literally: what carries a kind, where its cone stops, and — a
   separate question — which kind it is *read as a list of* (`gathers`). A milestone is read
   as its features; a feature is the finest grain and reads flat. `step_check` is a bare
-  marker with no tab of its own; a feature step names the catalogue record it realises and
-  its tab edits that record; `modules/testing/` renders what any of them gathers, because a
+  marker with no tab of its own; a feature step's tab edits the spec passages it was read
+  from; `modules/testing/` renders what any of them gathers, because a
   list of tests is testing's business. That keeps the wiring one-directional. `ARCHITECTURE.md`'s *A check is a scope over the graph* has the
   reasoning, including why exclusivity is a predicate rather than a stored list.
 - **A kind is what a node *is*; a facet is what it carries.** Milestone, Feature, Check and
@@ -1582,22 +1586,23 @@ root, stop and look for the registry or capability you have not found yet.
   canvas, not to the verb — so New twice in a row leaves two nodes rather than one hiding
   another, and naming a step is the gesture's second half. A step that arrives *carrying*
   something — a dropped feature's marker — arrives named, so it is placed but not `created`.
-- **A feature is a record, and a feature step is its instance.** The project's catalogue
-  (`modules/feature/catalogue.py`, `dplanner feature list`) holds every feature whether or
-  not it is on the graph — read out of a spec with `feature add --document --quote --page`
-  (the quote checked through the spec module's `anchor_quote`, handed across by the root),
-  or added by hand. A feature step carries only the record's id, and a record has **one**
-  instance: the Features panel's drag onto the canvas, the Type toggle, `feature set` and
-  `step add --feature` all refuse a second in the same words. Toggling off shelves the
-  marker like any aspect; deleting the step or `clear-steps` leaves the record unplaced —
-  only the feature verbs create and remove records. A work step's briefing names the
-  features it *flows into* (`scope.gatherers`); it carries no link of its own.
-  `ARCHITECTURE.md`'s *A feature is a record, and a feature step is its instance* has the
-  reasoning.
+- **A feature is a step.** There is no catalogue and no verb that creates one: `step add
+  --feature` is the door in — carrying `--document`/`--quote`/`--page`/`--strict` for a
+  feature read straight out of a spec, the quote checked through the spec module's
+  `anchor_quote` — and `step remove` the door out, which is what keeps a feature on the
+  graph *by construction*. Its name is the step's title, its prose the step's description,
+  its pictures the step's file area; what the aspect stores is only the passages it cites
+  (`{"on": true, "cites": […]}`, format 3). Two steps may both be features. Toggling off
+  shelves the passages like any aspect; `feature set`/`clear` are the toggle's CLI half.
+  A work step's briefing names the features it *flows into* (`scope.gatherers`); it
+  carries no link of its own. The project's old catalogue moves onto its steps at open
+  (`modules/feature/migrate.py`, an `absorb` pass) — **a step it creates gets its data
+  before `add_child` and its id is never returned**, or the flush raises inside the store.
+  `ARCHITECTURE.md`'s *A feature is a step* has the reasoning.
 - **A citation is a quote and a digest; its place is derived, and the trace is feature
   membership.** A feature cites N passages (`FeatureSource`: document, quote, page,
-  digest — catalogue format 2), maintained by `feature cite`/`uncite`/`reanchor` and the
-  editor's passage list. Nothing stores where a quote sits: `core/anchors.py` finds it
+  digest — on the step, feature format 3), maintained by `feature cite`/`uncite`/`reanchor`
+  and the Feature tab's passage list. Nothing stores where a quote sits: `core/anchors.py` finds it
   again on every read — exact, then fuzzy (seeded by the quote's rarest words, kept at
   `DRIFT_RATIO`), then lost — and a stamped passage in a document that changed since is
   *behind* only when the diff touched its paragraph. `coverage/trace.py` arranges
@@ -1630,14 +1635,14 @@ root, stop and look for the registry or capability you have not found yet.
   prints it alone, and the recorded digest stays the project's text — hashing the default
   would un-read every project on the day `shaping.md` gained a comma.
   `ARCHITECTURE.md`'s *The topology is read before the graph is edited* has the reasoning.
-- **A drop on the canvas is the third caller of `StepVerbs.create`.** `GraphView` accepts
-  the mime types the composition root lists as `CanvasDrop`s on `ProjectEditorDeps`
-  (`project_editor/drops.py`), records the point like a click and hands the payload up;
-  the handler lives in the root because it reads one module's catalogue and births
-  through another's `create_step`. A dropped feature is born **as the Feature template**
-  — marker and estimate opt-out in the one command, the same set the template names, so
-  the modal lights *Feature* and not the catch-all. Not a mode: Qt's drag events never
-  reach the mouse handlers, and a drop has no state to leave.
+- **A step born where nobody pointed lands somewhere free.** `placement.free_spot` reads
+  every card as the canvas draws it and opens a fresh column to the right of everything,
+  walking down a row at a time while anything is in the way — so the Specs tab's *Cite…* ▸
+  *New feature step…* never lands on a card somebody placed, and two in a row never stack.
+  It is Qt-free and deterministic; the root places through `project_editor.create_step`
+  with it, and the step arrives **as the Feature template** (marker and estimate opt-out in
+  the one command, the same set the template names). A CLI verb writes no position: it has
+  no gesture behind it, so the ambient layout answers, as it does for `step add`.
 - **The Edit menu's Cut, Copy, Paste, Duplicate, Delete and Select All are the graph's.**
   Registered by `project_editor` as ordinary `ActionSpec`s — no dispatcher until a second
   surface needs a clipboard, because a shortcut can be owned by one enabled QAction at a
@@ -1649,7 +1654,8 @@ root, stop and look for the registry or capability you have not found yet.
   (`project_editor/clipboard.py`): fresh ids, links between copies remapped and every link
   to the outside dropped, files in the payload and written after the one composite
   command, and a `PastePolicy` per module with a say (`testing` re-mints ids,
-  `step_agent_run` forgets, `feature` drops the marker — one instance per record).
+  `step_agent_run` forgets, `feature` keeps the marker and drops the passages — they were
+  read into *that* feature, and citing them again is a claim only a person can make).
   `dplanner step duplicate` is the same function.
   `ARCHITECTURE.md`'s *Edit verbs belong to the surface whose things they act on* and *Copy
   and paste are a clone through the same command* have the reasoning.

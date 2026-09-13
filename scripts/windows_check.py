@@ -45,8 +45,17 @@ GUEST_TREE = r"C:\work\dplanner"
 # pointing at a path that does not exist over there, so find_repo_root would succeed and every
 # git call after it fail. `.venv` holds Linux binaries the guest replaces with its own.
 EXCLUDES = (
-    ".git", ".venv", "__pycache__", "*.py[cod]", ".pytest_cache", ".ruff_cache",
-    ".mypy_cache", "dist", "build", "*.egg-info", "scripts/windows/storage",
+    ".git",
+    ".venv",
+    "__pycache__",
+    "*.py[cod]",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
+    "dist",
+    "build",
+    "*.egg-info",
+    "scripts/windows/storage",
 )
 
 # Prepended to every job. Set here rather than machine-wide: a developer's own Windows will not
@@ -79,7 +88,7 @@ class Target:
     """Where the checks run, and how a job reaches it."""
 
     name: str
-    share: Path       # the guest's shared folder, as this host sees it
+    share: Path  # the guest's shared folder, as this host sees it
     guest_share: str  # the same folder, as the guest sees it
 
     def run(self, script: str, label: str, *, quiet: bool = False) -> int:
@@ -144,8 +153,14 @@ class OmarchyTarget(Target):
     def put_tree(self, local: Path, guest: str) -> int:
         staging = self.share / "dplanner" / "worktree"
         staging.mkdir(parents=True, exist_ok=True)
-        argv = ["rsync", "-a", "--delete", *[f"--exclude={pattern}" for pattern in EXCLUDES],
-                f"{local}/", f"{staging}/"]
+        argv = [
+            "rsync",
+            "-a",
+            "--delete",
+            *[f"--exclude={pattern}" for pattern in EXCLUDES],
+            f"{local}/",
+            f"{staging}/",
+        ]
         say(f"rsync -> {staging}")
         code = stream(argv, "sync-host", quiet=True)
         if code != 0:
@@ -189,16 +204,29 @@ class BoxTarget(Target):
     def _ssh(self) -> list[str]:
         keys = STATE / "oem" / "id_ed25519"
         return [
-            "ssh", "-p", self.port, "-i", str(keys),
-            "-o", "IdentitiesOnly=yes",
-            "-o", "StrictHostKeyChecking=accept-new",
+            "ssh",
+            "-p",
+            self.port,
+            "-i",
+            str(keys),
+            "-o",
+            "IdentitiesOnly=yes",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
             # A reinstall changes the host key; without its own file that means a confusing
             # failure and a manual ssh-keygen -R.
-            "-o", f"UserKnownHostsFile={STATE / 'known_hosts'}",
-            "-o", "ConnectTimeout=5",
+            "-o",
+            f"UserKnownHostsFile={STATE / 'known_hosts'}",
+            "-o",
+            "ConnectTimeout=5",
             # A ten-minute build must not be dropped as idle.
-            "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=40",
-            "-o", "LogLevel=ERROR", f"{self.user}@127.0.0.1",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=40",
+            "-o",
+            "LogLevel=ERROR",
+            f"{self.user}@127.0.0.1",
         ]
 
     def ready(self) -> str:
@@ -211,8 +239,16 @@ class BoxTarget(Target):
         # -EncodedCommand, because ssh re-joins argv into one string and whatever shell is on
         # the far side gets a say in the quoting. Base64 removes the whole question.
         payload = base64.b64encode((PREAMBLE + script).encode("utf-16-le")).decode("ascii")
-        argv = [*self._ssh(), "powershell", "-NoProfile", "-NonInteractive",
-                "-ExecutionPolicy", "Bypass", "-EncodedCommand", payload]
+        argv = [
+            *self._ssh(),
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-EncodedCommand",
+            payload,
+        ]
         return stream(argv, label, quiet=quiet)
 
     # Files go over the same SSH session as everything else, as a tar stream: Windows has
@@ -234,13 +270,23 @@ class BoxTarget(Target):
         if (code := self.run(wipe, "sync-wipe", quiet=True)) != 0:
             return code
         packer = subprocess.Popen(
-            ["tar", "-C", str(local), *[f"--exclude={pattern}" for pattern in EXCLUDES],
-             "-cf", "-", "."],
+            [
+                "tar",
+                "-C",
+                str(local),
+                *[f"--exclude={pattern}" for pattern in EXCLUDES],
+                "-cf",
+                "-",
+                ".",
+            ],
             stdout=subprocess.PIPE,
         )
         unpack = subprocess.run(
             [*self._ssh(), f'tar.exe -xf - -C "{guest}"'],
-            stdin=packer.stdout, capture_output=True, text=True, check=False,
+            stdin=packer.stdout,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         packer.wait()
         if unpack.returncode != 0 or packer.returncode != 0:
@@ -255,8 +301,12 @@ class BoxTarget(Target):
             [*self._ssh(), f'if (Test-Path "{guest}") {{ tar.exe -cf - -C "{guest}" . }}'],
             stdout=subprocess.PIPE,
         )
-        unpack = subprocess.run(["tar", "-xf", "-", "-C", str(local)],
-                                stdin=puller.stdout, capture_output=True, check=False)
+        unpack = subprocess.run(
+            ["tar", "-xf", "-", "-C", str(local)],
+            stdin=puller.stdout,
+            capture_output=True,
+            check=False,
+        )
         puller.wait()
         return unpack.returncode or puller.returncode
 
@@ -323,8 +373,12 @@ def stream(argv: Sequence[str], label: str, *, quiet: bool = False) -> int:
     log = logs_dir() / f"{label}.log"
     with log.open("w", encoding="utf-8") as sink:
         process = subprocess.Popen(
-            list(argv), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            encoding="utf-8", errors="replace", bufsize=1,
+            list(argv),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
         )
         assert process.stdout is not None
         for line in process.stdout:
@@ -345,7 +399,9 @@ def docker(argv: Sequence[str]) -> list[str]:
     """
     probe = subprocess.run(
         ["docker", "version", "--format", "{{.Server.Version}}"],
-        capture_output=True, check=False, timeout=20,
+        capture_output=True,
+        check=False,
+        timeout=20,
     )
     if probe.returncode == 0:
         return ["docker", *argv]
@@ -359,11 +415,12 @@ def docker(argv: Sequence[str]) -> list[str]:
     hint = (
         "  Your account is in the docker group but this shell is not — its credentials\n"
         "  predate the change. Start a fresh login shell, or `exec newgrp docker`.\n"
-        if stale else
-        "  `sudo usermod -aG docker $USER`, then log out and back in.\n"
+        if stale
+        else "  `sudo usermod -aG docker $USER`, then log out and back in.\n"
     )
     raise SystemExit(
-        "docker: permission denied on /var/run/docker.sock\n" + hint
+        "docker: permission denied on /var/run/docker.sock\n"
+        + hint
         + "  Only `up` and `down` on the --target box need docker. Everything else runs\n"
         "  against a VM that is already up — including the default --target omarchy."
     )
@@ -581,7 +638,8 @@ def do_up() -> int:
     if not key.is_file():
         subprocess.run(
             ["ssh-keygen", "-t", "ed25519", "-N", "", "-C", "dplanner-windows", "-f", str(key)],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         say("generated a key for the box")
     shutil.copyfile(key.with_suffix(".pub"), STATE / "oem" / "authorized_keys")
@@ -629,8 +687,9 @@ def do_down(target: Target, *, destroy: bool, yes: bool, forget_iso: bool = Fals
             "20-30 minutes. Pass --yes if that is what you want."
         )
     environment = {**os.environ, "DPLANNER_WIN_HOME": str(STATE)}
-    argv = docker(["compose", "-f", str(HARNESS / "docker-compose.yml"),
-                   "down", *(["-v"] if destroy else [])])
+    argv = docker(
+        ["compose", "-f", str(HARNESS / "docker-compose.yml"), "down", *(["-v"] if destroy else [])]
+    )
     code = subprocess.run(argv, env=environment, check=False).returncode
     if destroy:
         storage = STATE / "storage"
@@ -667,7 +726,8 @@ def main(argv: list[str]) -> int:
     sub.add_parser("venv", help="uv sync --locked in the guest")
     checker = sub.add_parser("check", help="pytest, ruff, mypy — all three or the ones named")
     checker.add_argument(
-        "words", nargs=argparse.REMAINDER,
+        "words",
+        nargs=argparse.REMAINDER,
         help="which checks (pytest, ruff, mypy; default all three); after `--`, extra "
         "arguments for the one check named, e.g. `check pytest -- -x tests/cli`",
     )

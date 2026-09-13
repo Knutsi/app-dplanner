@@ -3263,3 +3263,41 @@ pattern is `docs/**` now, which is root-relative. Anything in a template that ex
 by-name directory (`docs`, `build`, `assets`, `themes`) is a trap the same way: a module may
 legitimately be called that. Note also that `ruff format` **does** reformat Python inside
 markdown fences, which is what that exclusion was for.
+
+## 38. From the problems-panel pass (S30)
+
+### A live-edit dialog needs one dismissal, because a title bar is not a given
+
+`framework/dialog.py` gained no code; its docstring changed one sentence. The rule it
+stated — *a dialog whose every edit is live carries no button and therefore no footer* —
+assumed the window manager draws a title bar with a close box. On a tiling WM (Hyprland,
+and every other one a developer might be using) there is none, so Escape was the only way
+out of the step details dialog and nothing on screen said so. The rule is now **Close and
+nothing else**: no primary, no Cancel — there is still nothing to confirm — but a footer
+with one dismissal, so the way out is visible.
+
+**Upstream?** Yes. `DialogFrame` is the template's, and the assumption it encoded is one
+any application built from it will inherit. The change is one `add_dismiss("Close")` in
+the subclass and a sentence in the frame's docstring; the frame itself already did the
+right thing.
+
+### A styled subcontrol needs holding off the border, not just room in front of it
+
+`theme.qss`'s `::menu-indicator` rules gave a face's drop-down arrow its `width` and its
+`padding-right`, and right-aligned it in the padding box — which puts it *flush against the
+inside of the border*. The arrow's ink reached to within one pixel of the button's edge; it
+reads as a clipped control, and on a fractionally scaled display that pixel is the one that
+goes. A `right:` offset (`INDICATOR_INSET`, 6 px) holds it clear, and `INDICATOR_ROOM` is
+now derived as indicator + inset + the 4 px beside the words rather than typed.
+
+The test is a render, not a read: `tests/test_theme.py` grabs the button, takes the ground
+as the commonest colour in its middle band (an application-wide stylesheet is already on
+the widget, so the theme's own `bg_overlay` is not necessarily what was painted), and
+asserts the reserved inset is that ground all the way to the outermost two columns. It
+fails with the `right:` removed.
+
+**Watch.** This is the third bug in the same family — a styled subcontrol is outside Qt's
+size hint and outside its own box model's intuitions. `ARROW_ROOM`, `INDICATOR_ROOM` and
+now `INDICATOR_INSET` all exist because of it.
+
+**Upstream?** The finding and the test shape, yes.

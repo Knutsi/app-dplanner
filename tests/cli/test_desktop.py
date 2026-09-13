@@ -285,8 +285,7 @@ def test_the_verbs_install_report_and_uninstall(registry, launcher, tmp_path):
     launcher.write(elsewhere)  # Reinstalled elsewhere since.
     code, out, _err = invoke(registry, "desktop", "status")
     assert out == (
-        f"stale  {launcher.path}\nopens {elsewhere}\n"
-        f"this build's is {tmp_path / 'bin' / 'dpw'}\n"
+        f"stale  {launcher.path}\nopens {elsewhere}\nthis build's is {tmp_path / 'bin' / 'dpw'}\n"
     )
 
     code, out, _err = invoke(registry, "desktop", "uninstall")

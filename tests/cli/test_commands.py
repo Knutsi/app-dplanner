@@ -561,29 +561,20 @@ def test_agent_prompt_is_a_self_contained_briefing(cli, cli_stdin, tmp_path):
     spec = tmp_path / "spec.txt"
     spec.write_text("The system must deploy on tag.\n")
     cli("spec", "import", "Discovery", str(spec))
-    cli(
-        "feature",
-        "add",
-        "Discovery",
-        "Deploy on tag",
-        "--document",
-        "spec",
-        "--quote",
-        "must deploy on tag",
-    )
-    cli("feature", "set", "Deploy", "--feature", "f1")
+    cli("feature", "set", "Deploy")
+    cli("feature", "cite", "Deploy", "--document", "spec", "--quote", "must deploy on tag")
     cli("github", "set", "Deploy", "--branch", "deploy-work")
 
     prompt = data(cli("agent", "prompt", "Deploy", "--json"))["prompt"]
     assert "## Topology" in prompt and "Views are features." in prompt
     assert "## Description" in prompt and "The release step." in prompt
-    assert "**Deploy on tag** (f1, from spec)" in prompt
+    assert "**Deploy**, from spec" in prompt
     assert "> must deploy on tag" in prompt
     assert "Branch: deploy-work" in prompt
     # The project's shape, then what the step is, then why it exists, then how to do it.
     assert prompt.index("## Topology") < prompt.index("## Description")
-    assert prompt.index("## Description") < prompt.index("## The feature")
-    assert prompt.index("## The feature") < prompt.index("## Instructions")
+    assert prompt.index("## Description") < prompt.index("## Read from the spec")
+    assert prompt.index("## Read from the spec") < prompt.index("## Instructions")
     assert prompt.index("## Instructions") < prompt.index("Ship it.")
 
 
@@ -595,41 +586,22 @@ def test_agent_prompt_tells_a_work_step_which_feature_it_flows_into(cli, cli_std
     spec.write_text("Operators can register a reading.\n")
     cli("spec", "import", "Discovery", str(spec))
     cli(
-        "feature",
-        "add",
-        "Discovery",
-        "Quick registration",
-        "--document",
-        "spec",
-        "--quote",
-        "register a reading",
-    )
-    cli(
         "step",
         "add",
         "Discovery",
         "Quick registration",
         "--feature",
-        "f1",
+        "--document",
+        "spec",
+        "--quote",
+        "register a reading",
         "--after",
         "Build the form",
     )
     prompt = data(cli("agent", "prompt", "Build the form", "--json"))["prompt"]
     assert "## Flows into" in prompt
-    assert "**Quick registration** (f1, from spec)" in prompt
+    assert "**Quick registration**, from spec" in prompt
     assert "> register a reading" in prompt
-
-
-def test_agent_prompt_says_when_a_feature_record_is_gone(cli, cli_stdin, workspace):
-    """A marker may name a record that is gone (undo restores either side on its own);
-    the briefing says so rather than pretending the step is plain."""
-    cli("project", "create", "Discovery")
-    cli("step", "add", "Discovery", "Deploy")
-    cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
-    entry = next(workspace.glob("*/steps/deploy/modules")) / "feature.json"
-    entry.write_text(json.dumps({"feature": "f9", "format": 1}))
-    prompt = data(cli("agent", "prompt", "Deploy", "--json"))["prompt"]
-    assert "f9 (no longer in the feature catalogue)" in prompt
 
 
 def test_agent_prompt_lists_description_figures_as_files(cli, cli_stdin, tmp_path):
@@ -764,7 +736,6 @@ def test_step_add_authors_the_whole_step_in_one_call(cli, cli_stdin, tmp_path):
     spec = tmp_path / "spec.md"
     spec.write_text("The rule is argon2id.")
     cli("spec", "import", "Discovery", str(spec))
-    cli("feature", "add", "Discovery", "Hashing", "--document", "spec", "--quote", "argon2id")
     figure = tmp_path / "fig.png"
     figure.write_bytes(b"png bytes")
     cli("spec", "attach", "Discovery", str(figure))
@@ -785,7 +756,6 @@ def test_step_add_authors_the_whole_step_in_one_call(cli, cli_stdin, tmp_path):
         "--days",
         "3",
         "--feature",
-        "f1",
         "--attach",
         "a1",
         "--after",
@@ -799,7 +769,7 @@ def test_step_add_authors_the_whole_step_in_one_call(cli, cli_stdin, tmp_path):
     assert data(cli("agent", "show", "Hash passwords", "--json"))["markdown"] == "Use argon2id."
     shown = data(cli("step", "show", "Hash passwords", "--json"))
     assert shown["aspects"]["estimation"]["days"] == 3.0
-    assert shown["aspects"]["feature"]["feature"] == "f1"
+    assert shown["aspects"]["feature"]["on"] is True
     assert shown["aspects"]["spec"]["attachments"][0]["asset"] == "a1"
     # One call, and the authoring lint checks have nothing left to say about this step.
     report = data(cli("project", "lint", "Discovery", "--json", expect=1))
@@ -812,7 +782,7 @@ def test_a_failing_author_leaves_no_step_behind(cli, tmp_path):
     cli("project", "create", "Discovery")
     cli("step", "add", "Discovery", "Doomed", "--days", "-1", expect=1)
     assert data(cli("step", "list", "Discovery", "--json"))["steps"] == []
-    cli("step", "add", "Discovery", "Doomed", "--feature", "f9", expect=1)
+    cli("step", "add", "Discovery", "Doomed", "--document", "spec", expect=1)
     assert data(cli("step", "list", "Discovery", "--json"))["steps"] == []
 
 
@@ -841,16 +811,16 @@ def test_clear_steps_keeps_the_project_and_what_it_owns(cli, tmp_path):
     spec = tmp_path / "spec.md"
     spec.write_text("# Spec")
     cli("spec", "import", "Discovery", str(spec))
-    cli("feature", "add", "Discovery", "A rule")
-    cli("feature", "set", "A", "--feature", "f1")
+    cli("feature", "set", "A")
 
     report = data(cli("project", "clear-steps", "Discovery", "--json"))
     assert len(report["removed"]) == 3
     assert data(cli("step", "list", "Discovery", "--json"))["steps"] == []
-    # The re-plan keeps everything the steps did not own: the feature is unplaced again.
+    # The re-plan keeps everything the steps did not own — the start date, the specs. A
+    # feature is a step now, so it goes with the steps: there is no record to outlive one.
     assert data(cli("schedule", "show", "Discovery", "--json"))["start"] == "2026-09-01"
-    listed = data(cli("feature", "list", "Discovery", "--json"))["features"]
-    assert [(row["feature"], row["step"]) for row in listed] == [("f1", None)]
+    assert data(cli("feature", "list", "Discovery", "--json"))["features"] == []
+    assert data(cli("spec", "list", "Discovery", "--json"))["documents"]
 
 
 def test_clear_steps_on_an_empty_project_is_a_calm_zero(cli):

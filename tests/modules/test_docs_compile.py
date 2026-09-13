@@ -99,7 +99,7 @@ def project(services, make_project, tmp_path):
     SetEdgesCommand(auth.id, "requires", [parser.id]).redo(library)
     SetEdgesCommand(v1.id, "requires", [auth.id]).redo(library)
     services.undo.push(SetModuleDataCommand(parser.id, MODULE_ID, write_state(True)))
-    services.undo.push(SetModuleDataCommand(auth.id, "feature", feature_write("f1")))
+    services.undo.push(SetModuleDataCommand(auth.id, "feature", feature_write()))
     services.undo.push(SetModuleDataCommand(v1.id, "step_milestone", milestone_write("v1")))
     library.set_text(parser.id, MODULE_ID, "Parses queries.")
     return project

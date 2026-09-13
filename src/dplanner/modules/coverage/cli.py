@@ -37,14 +37,14 @@ _ADVICE = {
     "behind": "re-read the passage, then `dplanner feature reanchor {project} {feature}`",
     "drifted": "`dplanner feature reanchor {project} {feature} --accept-drift` takes the new "
     "wording",
-    "lost": "`dplanner feature cite {project} {feature} --document {document} --quote …` the "
+    "lost": "`dplanner feature cite {feature} --document {document} --quote …` the "
     "passage as it reads now, or `feature reanchor {project} {feature} --drop-lost`",
-    "missing": "`dplanner spec import` the document again, or `feature uncite {project} {feature}"
-    " --document {document}`",
-    "unsourced": "`dplanner feature cite {project} {feature} --document <D> --quote …` — "
+    "missing": "`dplanner spec import` the document again, or "
+    "`feature uncite {feature} --document {document}`",
+    "unsourced": "`dplanner feature cite {feature} --document <D> --quote …` — "
     "`dplanner coverage spec {project} <D> --uncovered` shows what is unclaimed",
-    "uncited": "`dplanner coverage spec {project} {document} --uncovered`, then `feature add` or "
-    "`feature cite`",
+    "uncited": "`dplanner coverage spec {project} {document} --uncovered`, then "
+    "`dplanner step add {project} <name> --feature --document {document} --quote …`",
 }
 
 
@@ -244,9 +244,11 @@ def _render_show(trace: Trace, *, document: str | None, feature: str | None) -> 
         return f"  [{item.state}]" if item.state and item.state not in ("anchored",) else ""
 
     def feature_lines(fid: str, indent: str) -> None:
+        # A feature is named by its step's title and keyed by its step's id, which is a
+        # uuid nobody reads: the title is the name, and the id is what `--json` carries.
         item = by_id[f"feature:{fid}"]
         note = f"  ({item.detail})" if item.detail else ""
-        lines.append(f"{indent}{fid} {item.title}{note}")
+        lines.append(f"{indent}{item.title}{note}")
         seen_features.add(fid)
         for target in downstream.get(item.id, ()):
             if target not in keep:
@@ -320,6 +322,15 @@ def _render_spec(
     return "\n".join([*lines, tail])
 
 
+def _named(trace: Trace, feature_id: str) -> str:
+    """A feature as a person would type it: the step's title, which `find_step` resolves.
+
+    The trace keys a feature by its step's id, and an id nobody can type is no remedy.
+    """
+    item = trace.item(f"feature:{feature_id}")
+    return repr(item.title if item is not None else feature_id)
+
+
 def _review_rows(trace: Trace, project: Project) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     name = repr(project.title)
@@ -335,7 +346,7 @@ def _review_rows(trace: Trace, project: Project) -> list[dict[str, str]]:
                     "document": document,
                     "what": f'{item.state}: "{item.title}" in {document}',
                     "advice": _ADVICE[item.state].format(
-                        project=name, feature=fid, document=document
+                        project=name, feature=_named(trace, fid), document=document
                     ),
                 }
             )
@@ -346,7 +357,7 @@ def _review_rows(trace: Trace, project: Project) -> list[dict[str, str]]:
                 "subject": feature.id,
                 "document": "",
                 "what": f"unsourced: {feature.title} cites no spec passage",
-                "advice": _ADVICE["unsourced"].format(project=name, feature=feature.id),
+                "advice": _ADVICE["unsourced"].format(project=name, feature=repr(feature.title)),
             }
         )
     for doc in trace.documents:

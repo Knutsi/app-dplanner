@@ -15,8 +15,12 @@ The last band is a **face**, not a verb: one glyph dropping the Graph menu's ``l
 — framing, the marks, the spotlight, the grid and the ground. Those were six worded
 switches on the strip once, which is what a row of words costs; how the graph is *drawn* is
 a question asked rarely and answered in a menu, where each choice can say what it means.
-The panel toggle sits beside it for the same reason: it is about this tab, not about the
-plan.
+
+The **first** band is the panel beside the canvas, alone. It leads the strip because what
+is wrong with the plan is the thing you want to know before you start looking at it, and
+it stands apart because it is a reading and not a verb like its neighbours: the button
+carries the panel's own count beside its glyph, which is why it is a widget
+(:mod:`.panel_button`) where every other seat on the strip is an action.
 
 The layout picker sits **in** the Arrange band, at its end. It is not a verb — it names
 the arrangement the canvas is showing — so it is added as a *widget*, which means it hides
@@ -35,8 +39,13 @@ from dplanner.framework.toolbar import Toolbar
 from dplanner.theme.icons import options_icon
 from dplanner.theme.tokens import CONTROL_GAP, FIELD_GAP
 
+# The leading band: the panel beside the canvas, and nothing else in it.
+PANEL_BAND = "Problems"
+
 GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    # Where you are looking leads: a graph is a place before it is a thing to edit.
+    # What is wrong with the plan leads, in a band of its own — see the module docstring.
+    (PANEL_BAND, ()),
+    # Then where you are looking: a graph is a place before it is a thing to edit.
     ("Go", ("steps.find", "canvas.frame", "order.open")),
     ("Step", ("steps.new", "steps.rename", "steps.delete", "steps.lasso")),
     ("Link", ("steps.connect", "steps.redirect_to", "steps.unlink", "steps.isolate")),
@@ -57,11 +66,11 @@ MENUS: dict[str, tuple[str, str]] = {
 # Where the layout picker sits: it names the arrangement, which is this band's business.
 PICKER_BAND = "Arrange"
 
-# The last band: how the graph is drawn, and what stands beside it. Both are about this
-# tab rather than about the plan, which is what puts them together and at the end.
+# The last band: how the graph is drawn — about this tab rather than about the plan.
 OPTIONS = "Options"
 LOOK_FACE = "Look"
 LOOK_MENU = ("Graph", "look")
+# The verb the leading band's button runs: the panel beside the canvas.
 PANEL_ACTION = "canvas.side_panel"
 
 
@@ -75,6 +84,7 @@ class CanvasToolbar(QWidget):
         parent: QWidget | None = None,
         groups: Sequence[tuple[str, Sequence[str]]] = GROUPS,
         picker: QWidget | None = None,
+        panel_button: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("CanvasToolbar")
@@ -86,16 +96,19 @@ class CanvasToolbar(QWidget):
         # themselves keep the strip's own gap and a hairline between them.
         self.tools = Toolbar(self, dense=True)
         for label, action_ids in groups:
+            if label == PANEL_BAND and panel_button is None:
+                continue  # A build with nothing beside the canvas grows no band for it.
             self.tools.add_group(label)
             for action_id in action_ids:
                 self.tools.add_action(actions, context, action_id, menu=MENUS.get(action_id))
+            if label == PANEL_BAND and panel_button is not None:
+                self.tools.add_widget(panel_button)
             if label == PICKER_BAND and picker is not None:
                 self.tools.add_widget(picker)
         self.tools.add_group(OPTIONS)
         self.look = self.tools.add_menu_face(
             LOOK_FACE, options_icon, actions, context, LOOK_MENU[0], group=LOOK_MENU[1]
         )
-        self.tools.add_action(actions, context, PANEL_ACTION)
         row.addWidget(self.tools, 1)
 
     def button(self, action_id: str) -> QToolButton | None:

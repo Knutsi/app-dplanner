@@ -773,11 +773,36 @@ Agents browser, `feature.reveal` — now lands on it. The zoom is untouched: Fra
 verb that changes how much of the graph is in view, and a jump that also zoomed would lose
 the scale somebody had chosen to work at.
 
-### The Features list lives in the graph, not in the window
+### The Problems list lives in the graph, not in the window
 
-The Features panel was a `PanelSpec` in the window's left area, and its one gesture is a
-drag onto the canvas — across the window, past the index tree, over the strip. It stands
-inside the project tab now, beside the canvas, where that drag is a short one.
+What is wrong with a plan is fixed on the graph: you click a problem and the canvas moves
+to the step it is about. So the panel stands inside the project tab, beside the canvas,
+where that trip is a short one. (It took the slot the Features panel had, which went with
+the feature catalogue — *A feature is a step*.)
+
+**What it shows is the lint registry, not a second one.** `cli/lint.py` already owns the
+shapes and every module already exports `lint_checks()` from its own Qt-free `cli.py`; the
+composition root's `_lint_checks()` assembles them once and hands the same tuple to
+`dplanner project lint` and to `ProblemsDeps.checks`. That is `_machine_checks`'s
+arrangement exactly, and it is what makes the window and the terminal unable to disagree
+about what is wrong with a plan. A second registry would have been the entropy: a gap in a
+plan is one fact whoever is asking.
+
+**The count on the strip is a reading, and a reading is read, never computed.** The panel
+is built with the tab whether or not the frame is shown, so it keeps answering while it is
+hidden, and the button beside the canvas reads the last answer. No action state ever runs a
+lint pass — the checklist's rule, and the reason its own count sits in a menu label. The
+panel says the reading through a `ReadingPanel`, one string and a signal, so
+`project_editor` never learns what is being counted; that is also why the button is a
+widget where every other seat on the strip is an action, since a `Toolbar` renders a verb
+as a glyph with its words in the tooltip and a count has to be seen.
+
+**A run that fixes a plan has no step, and is not recorded.** The panel hands its findings
+to the agent module through two plain-data callbacks the root wires (the
+`LibraryWatchDeps.hand_to_agent` arrangement); the launch has no worktree and opens in the
+*plan's* own repository, because that agent changes the plan and not the code. `AgentRun`
+is keyed by the step it is working on, so a plan-wide run gets no chip, no end-of-shell
+watch and no usage row. That is a gap said out loud rather than a zero invented.
 
 **A panel inside a tab is not a dock panel**, and the difference is which question it
 follows. A dock panel follows *the window* — one instance, retargeted by the context on
@@ -4506,45 +4531,73 @@ recognises the moment. None needs action today.
   parallelism, once listed here, landed as `parallel_finish` and the time estimates tab —
   see *Time estimates: two worker pools, one greedy simulation*.)
 
-## A feature is a record, and a feature step is its instance
+## A feature is a step
 
 A specification used to be read into **requirements**: quoted obligations in the spec
 module's index, linked N:M to steps, cited in briefings, checked by lint. It was honest and
 it was the wrong grain. Nobody demos a requirement; people name, build and test *features*,
 and the graph already knew that — a feature step gathers the work that flows into it, and
-`dplanner scope show` reads it. What was missing was the feature *before* it is on the graph:
-the thing a person reads out of the spec, adds by hand, drags into place.
+`dplanner scope show` reads it.
 
-So a feature is now a **record** in the project's catalogue (`modules/feature/catalogue.py`)
-— title, description, where in the spec it was read from, images — and a feature step
-carries only the record's id. The record is stored because an unplaced feature is a fact the
-graph cannot derive; membership is still never stored, for every reason *Deriving rather than
-storing* gives. Three consequences are the design:
+The next answer was a **record**: a feature in the project's catalogue whether or not it
+was on the graph, which a step later became the instance of. That bought one thing — the
+feature *before* somebody cuts a step for it — and it cost a parallel store. With steps as
+cheap as they are, the trade stopped paying:
 
-- **A feature is implemented once.** One record, at most one step naming it. The drop, the
-  Type toggle, `feature set` and `step add --feature` all refuse a second instance in the
-  same words, and `feature.duplicate` names one that arrived by hand. That is what lets the
-  Features panel say *placed* or *not placed* and mean it.
-- **Records outlive their instances.** Toggling Feature off, deleting the step, `project
-  clear-steps` — each clears the marker and leaves the record in the catalogue, unplaced.
-  Undo has to restore either side independently, which is the rule an edge to a deleted
-  step already follows; and a record somebody wrote is never lost to a gesture on the
-  graph. Only the feature verbs create and remove records.
-- **A work step reaches the spec through the feature it flows into.** No link on the step:
-  its briefing lists the features `scope.gatherers` says own it, with the passages they were
-  read from. A citation that was N:M on requirements is a walk on features, and it cannot
-  go stale when `dplanner step link` rewires the graph with no window open.
+- the record's `title` was the step's title and its `description` the step's description,
+  so a feature had two of each and they drifted;
+- *placed*, *unplaced*, *duplicate* and *unregistered* were four half-states, each with a
+  lint check, a refusal and a phrase in the panel;
+- undo had to restore either side independently, because the record outlived its step.
 
-The trace is therefore graph → feature step → record → spec passage. The quote is still
-checked against the document — on `feature add`, and on every lint — through the spec
-module's `anchor_quote`, handed across by the composition root: the record belongs to one
-module and the document to another. Two things were deliberately not done. Requirements
-were not converted into features: a requirement was a citation and a feature is a thing, and
-only a person reading the spec again can say which citations were features — so the spec's
-format 3 drops the key and the skill says how to read them out afresh. And the marker the
-retired `step_feature` module wrote is not minted into a record at open: a per-entry
-converter cannot see the project, so it passes through and reads as *unregistered* — still a
-feature to the graph, named by lint, registered by the first `feature set`.
+**So a feature is simply a step that carries the feature aspect.** Its name is the step's
+title, its description the step's prose, its pictures the step's file area, and the only
+fact that was ever the record's own — the specification passages it was read out of — is
+the aspect's own data (`{"on": true, "cites": […]}`, format 3). Three consequences are the
+design:
+
+- **There is no verb that creates a feature.** `step add --feature` is the door in and
+  `step remove` the door out, which is what keeps a feature on the graph *by
+  construction* rather than by a check that notices when it is not. The passage flags
+  (`--document`, `--quote`, `--page`, `--strict`) live on that same author, because
+  *authoring a step is one verb, many modules* and creating a feature is creating its step.
+  Two steps may both be features; the one-instance rule went with the thing there was one
+  instance of.
+- **Four lint checks ceased to exist.** `feature.unplaced`, `feature.duplicate`,
+  `feature.dangling` and `feature.unregistered` each named a state the model can no longer
+  be in. What survives is the passage checks — a quote that no longer anchors — which are
+  about the *spec* moving, not about the plan being half-made.
+- **A work step still reaches the spec through the feature it flows into.** No link on the
+  step: its briefing lists the features `scope.gatherers` says own it, with the passages
+  they were read from. A citation that was N:M on requirements is a walk on features, and
+  it cannot go stale when `dplanner step link` rewires the graph with no window open.
+
+The trace is therefore graph → feature step → spec passage, one hop shorter than it was.
+The quote is still checked against the document — on `step add --feature`, on `feature
+cite`, and on every lint — through the spec module's `anchor_quote`, handed across by the
+composition root: the aspect belongs to one module and the document to another.
+
+**The catalogue moves onto the steps at open, and that needs an `absorb`.** One module id
+served both the project's catalogue and the step's marker, and a per-entry converter never
+sees the project — so `modules/feature/migrate.py` is the format's `absorb` pass
+(`modules/notes/migrate.py` is the other one). A placed record's passages go onto its step;
+its description joins the step's prose, with a *Catalogued as "…"* line above it where the
+two titles differed, so nothing a person wrote is dropped and nothing is invented; an
+unplaced record becomes the step it always meant to be. Three things are worth knowing
+before touching it: **a created step's data goes on the `Step` before `add_child` and its
+id is never returned** (the builder flushes a returned id with the `module_data` and
+`module_text` aspects only, and a step that did not exist a moment ago has no directory
+recorded yet — the project's *structure* mark is what writes the subtree); **the shelf is
+reached from here**, because `migrate_shelved` runs afterwards and would stamp a shelved
+marker to format 3 with its record id still in it; and **it writes into a living module's
+namespace** (`step_description`'s prose, opt-out and file area, named as a string constant
+and never imported) — the alternative, a `description` inside the feature entry, would
+re-create exactly the duplication this removes.
+
+One pleasing consequence: the retired `step_feature` module wrote a bare `{"on": true}`,
+and FORMAT.md used to call its converter "the one that cannot finish the job" because it
+could not mint a record. With no catalogue left to be missing from, `{"on": true}` is now
+a whole answer — a feature that cites nothing.
 
 ## A citation is a quote and a digest; its place is derived
 

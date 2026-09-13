@@ -8,8 +8,8 @@ a location, whether it is connected, how to connect, and how to fetch and check.
 fifth kind — a wiki, a shared drive — is a fetcher and a dialog, nothing else. The
 composition root hands the kinds in as ``SpecDeps.kinds``; the Qt-free shapes they
 exchange are :mod:`dplanner.domain.document_source`'s. Consumer-owned, like
-``project_editor/drops.py``'s ``CanvasDrop``, and promoted to ``framework/`` only when a
-second consumer appears.
+``project_editor/side_panel.py``'s ``SidePanel``, and promoted to ``framework/`` only
+when a second consumer appears.
 """
 
 from collections.abc import Callable, Mapping

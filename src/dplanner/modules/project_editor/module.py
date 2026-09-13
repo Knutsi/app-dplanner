@@ -28,11 +28,10 @@ one project, so a tab opened later wears the same look and a second window would
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QMimeData, QPointF, Qt
+from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QMenu, QSplitter, QVBoxLayout, QWidget
 
-from dplanner.cli.command import CliError
 from dplanner.domain.commands import (
     Command,
     CompositeCommand,
@@ -75,11 +74,10 @@ from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.window import StatusHost
-from dplanner.modules.project_editor.canvas_toolbar import CanvasToolbar
+from dplanner.modules.project_editor.canvas_toolbar import PANEL_ACTION, CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.clipboard import PastePolicy
 from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, ClipboardWatch
-from dplanner.modules.project_editor.drops import CanvasDrop
 from dplanner.modules.project_editor.find import find_rows
 from dplanner.modules.project_editor.geometry import divide_command
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
@@ -105,6 +103,7 @@ from dplanner.modules.project_editor.modes import (
     RegionCreateMode,
 )
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
+from dplanner.modules.project_editor.panel_button import PanelButton
 from dplanner.modules.project_editor.placement import below, positions
 from dplanner.modules.project_editor.positions import (
     DATA_FORMAT,
@@ -130,6 +129,7 @@ from dplanner.modules.project_editor.selection import (
 )
 from dplanner.modules.project_editor.side_panel import (
     SIDE_PANEL_WIDTH,
+    ReadingPanel,
     SidePanel,
     SidePanelFrame,
 )
@@ -193,8 +193,6 @@ class ProjectEditorDeps:
     # sources, and what a copy may not carry is each owner's policy — see clipboard.py.
     file_modules: tuple[str, ...] = ()
     paste_policies: tuple[PastePolicy, ...] = ()
-    # What the canvas takes by drop, named by the composition root — see drops.py.
-    drops: tuple[CanvasDrop, ...] = ()
     # What the project tab hosts beside the canvas — see side_panel.py. None means this
     # build has nothing to put there, and the toggle is hidden rather than greyed.
     side_panel: SidePanel | None = None
@@ -227,12 +225,11 @@ class ProjectActivity(EntityActivity):
             base_mode=IdleMode,
             status=lambda text: deps.status.show_status(text, 4000),
             run_action=self.run_action,
-            accepts=self._accepts_drop,
-            dropped=self._on_drop,
         )
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
         self._panel_frame: SidePanelFrame | None = None
+        self._panel_button: PanelButton | None = None
         self._split: QSplitter | None = None
         self._page, self._toolbar = self._build_page()
         # After the page, because the side panel is part of the look now; still before the
@@ -320,6 +317,8 @@ class ProjectActivity(EntityActivity):
             self._panel_frame.setVisible(look.side_panel)
             if look.side_panel:
                 self._give_the_panel_its_width()
+        if self._panel_button is not None:
+            self._panel_button.refresh()  # Its face follows the verb it runs.
 
     def frame(self) -> None:
         self._view.frame_content()
@@ -371,11 +370,17 @@ class ProjectActivity(EntityActivity):
             self._deps.context,
             self._layout_verbs,
         )
+        spec = self._deps.side_panel
+        if spec is not None:
+            self._panel_button = PanelButton(
+                PANEL_ACTION, spec.icon, self._deps.actions, self._deps.context
+            )
         toolbar = CanvasToolbar(
             self._deps.actions,
             self._deps.context,
             page,
             picker=self._layout_button,
+            panel_button=self._panel_button,
         )
         column.addWidget(toolbar)
         column.addWidget(self._beside_the_canvas(page), 1)
@@ -392,7 +397,13 @@ class ProjectActivity(EntityActivity):
         spec = self._deps.side_panel
         if spec is None:
             return self._view
-        self._panel_frame = SidePanelFrame(spec.title, spec.build(), self._toggle_side_panel)
+        content = spec.build()
+        # A panel that has a reading — a count of what is wrong — says so on the strip's
+        # button. One string: this module never learns what is being counted.
+        if isinstance(content, ReadingPanel) and self._panel_button is not None:
+            self._panel_button.set_reading(content.reading())
+            content.reading_changed.connect(self._panel_button.set_reading)
+        self._panel_frame = SidePanelFrame(spec.title, content, self._toggle_side_panel)
         self._panel_frame.show_context(Context({SCOPE_ACTIVITY: self.activity_nodes()}))
         split = QSplitter(Qt.Orientation.Horizontal, page)
         split.addWidget(self._view)
@@ -631,26 +642,6 @@ class ProjectActivity(EntityActivity):
             height = max(ys) - min(ys) if ys else 0.0
             self._view.note_click(QPointF(*below(point.x(), point.y() + height)))
 
-    def _accepts_drop(self, mime: QMimeData) -> bool:
-        return any(mime.hasFormat(drop.mime_type) for drop in self._deps.drops)
-
-    def _on_drop(self, mime: QMimeData, scene_pos: QPointF) -> None:
-        """Something dropped on empty canvas: the handler for its type places it, and a
-        refusal — a feature already placed, a payload from another project — goes to the
-        status bar in the same words the CLI would use."""
-        for drop in self._deps.drops:
-            if not mime.hasFormat(drop.mime_type):
-                continue
-            at = self._snapped(*centred_on(scene_pos.x(), scene_pos.y()))
-            try:
-                placed = drop.place(self.project_id, bytes(mime.data(drop.mime_type).data()), at)
-            except CliError as error:
-                self._deps.status.show_status(str(error), 4000)
-                return
-            if placed:
-                self.note_placed(placed)
-            return
-
     def note_created(self, step_id: StepId) -> None:
         """One step was just born here — by New or a double-click, never a paste.
 
@@ -817,8 +808,8 @@ class ProjectEditorModule:
         carrying: Callable[[Step], Sequence[Command]] | None = None,
         label: str = "New Step",
     ) -> Step:
-        """Give birth to a step the way New does — the seam a drop handler in the
-        composition root places through, so a dropped feature is one undo step with its
+        """Give birth to a step the way New does — the seam the composition root places
+        through, so a feature step born from the Specs tab is one undo step with its
         marker and its position like any other placed step."""
         return self._verbs.create(project_id, title, at=at, carrying=carrying, label=label)
 

@@ -21,11 +21,8 @@ dragging for free, because the scene never sees it.
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QMimeData, QPointF, QRect, QRectF, Qt, QTimer
+from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer
 from PySide6.QtGui import (
-    QDragEnterEvent,
-    QDragMoveEvent,
-    QDropEvent,
     QFocusEvent,
     QKeyEvent,
     QMouseEvent,
@@ -527,17 +524,9 @@ class GraphView(QGraphicsView):
         status: Callable[[str], None],
         run_action: Callable[[str], bool],
         parent: QWidget | None = None,
-        accepts: Callable[[QMimeData], bool] = lambda _mime: False,
-        dropped: Callable[[QMimeData, QPointF], None] = lambda _mime, _pos: None,
     ) -> None:
         super().__init__(scene, parent)
         self.setObjectName("GraphView")
-        # A drop is a one-shot gesture, not a mode: Qt's drag events never reach the
-        # mouse handlers below, and a mode has state to enter and leave where a drop has
-        # neither. So it takes the double-click's road — record the point, hand it up.
-        self._accepts = accepts
-        self._dropped = dropped
-        self.setAcceptDrops(True)
         self.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
@@ -590,27 +579,6 @@ class GraphView(QGraphicsView):
         """Remember a point as the last one pointed at — also called for a context menu
         raised by the keyboard, which sends no press."""
         self.last_click = scene_pos
-
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802 - Qt override
-        if self._accepts(event.mimeData()):
-            event.acceptProposedAction()
-            return
-        super().dragEnterEvent(event)
-
-    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802 - Qt override
-        if self._accepts(event.mimeData()):
-            event.acceptProposedAction()
-            return
-        super().dragMoveEvent(event)
-
-    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802 - Qt override
-        if not self._accepts(event.mimeData()):
-            super().dropEvent(event)
-            return
-        scene_pos = self.mapToScene(event.position().toPoint())
-        self.note_click(scene_pos)
-        self._dropped(event.mimeData(), scene_pos)
-        event.acceptProposedAction()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
         self.note_click(self.mapToScene(event.position().toPoint()))
