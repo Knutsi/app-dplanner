@@ -458,17 +458,20 @@ def test_the_instructions_tab_edits_the_projects_own_document(services, project,
 
 
 def test_the_strip_carries_the_verbs_and_greys_them_with_their_reasons(services, project, view):
+    """The strip renders the registry's own state, and a rebuild refreshes the context so a
+    fragment deleted elsewhere greys the verb where it stands."""
     view.page.list.setCurrentRow(0)
     assert view.page.verbs[COMPILE_ACTION].isEnabled() is True
     services.document.set_text(by_title(project, "Write the parser").id, MODULE_ID, "")
     services.debounce.flush_all()
     assert view.page.verbs[COMPILE_ACTION].isEnabled() is False
+    assert NOTHING_REASON in view.page.verbs[COMPILE_ACTION].toolTip()
 
 
 def test_the_strips_arrow_drops_the_launch_profiles(services, project, view):
     """The Step menu's own child menu, never a copy of its list."""
     view.page.list.setCurrentRow(0)
-    menu = view.page.controls.menu_for(view.page.verbs[COMPILE_ACTION])
+    menu = view.page.controls.menu_for(COMPILE_ACTION)
     assert menu is not None
     labels = [action.text() for action in menu.actions() if action.text()]
     assert any("(default)" in label for label in labels)

@@ -1,6 +1,6 @@
 # Debug ▸ Design Example, rendered
 
-The design system's two reference surfaces (`src/dplanner/modules/debug/design_example.py`),
+The design system's three reference surfaces (`src/dplanner/modules/debug/design_example.py`),
 rendered offscreen in the dark and the light theme by `scripts/render_design_example.py`:
 
 ```
@@ -22,3 +22,5 @@ which primitive.
 | `filters-*` | the filter's popup: checkable entries that stay open while toggled |
 | `dropdown-*` | the combo's list in the menu's look |
 | `table-empty-*` | the empty state trading places with the table, its verb under the line |
+| `toolbars-*` | the toolbars tab: a flat strip of verbs, a tool palette in named bands of squares, the same palette cut short so a band folds, and the dense strip that answers a question rather than offering verbs |
+| `toolbars-folded-*` | what a folded band looks like in the `…` menu: glyph *and* words, a rule where each band begins |

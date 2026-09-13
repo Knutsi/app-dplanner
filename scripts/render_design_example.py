@@ -28,6 +28,7 @@ from dplanner.framework.theme_service import ThemeService
 from dplanner.modules.debug.design_example import (
     DesignExampleActivity,
     DesignExampleDialog,
+    DesignExampleToolbars,
 )
 from dplanner.theme import apply_theme
 from dplanner.theme.providers import BUILTIN
@@ -35,6 +36,7 @@ from dplanner.theme.themes import DARK, LIGHT, Theme
 
 DIALOG_SIZE = (760, 800)
 TABLE_SIZE = (900, 520)
+TOOLBARS_SIZE = (900, 560)
 
 
 def settle(app: QApplication) -> None:
@@ -98,6 +100,21 @@ def render(app: QApplication, theme: Theme, out: Path) -> None:
     save(page, out, "table-empty", theme, app)
     activity.close()
     discard(page)
+
+    toolbars = DesignExampleToolbars(ContextService(), service)
+    strips = toolbars.widget
+    strips.resize(*TOOLBARS_SIZE)
+    strips.show()
+    settle(app)
+    save(strips, out, "toolbars", theme, app)
+    # And the … menu a band folds into, opened where a reader would open it.
+    more = toolbars.folded._more
+    more.menu().popup(strips.mapToGlobal(more.pos()))
+    settle(app)
+    save(more.menu(), out, "toolbars-folded", theme, app)
+    more.menu().hide()
+    toolbars.close()
+    discard(strips)
 
 
 def main(argv: list[str]) -> int:

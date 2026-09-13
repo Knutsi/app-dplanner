@@ -14,8 +14,10 @@ from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.modules.debug.design_example import (
     DESIGN_TABLE_KIND,
+    DESIGN_TOOLBARS_KIND,
     DesignExampleActivity,
     DesignExampleDialog,
+    DesignExampleToolbars,
 )
 from dplanner.modules.debug.telemetry_view import TELEMETRY_KIND, TelemetryActivity
 from dplanner.modules.debug.view import LLM_CALLS_KIND, LLMCallsActivity
@@ -119,5 +121,27 @@ class DebugModule:
                 tip="The design system's table on a tab: a control strip, the Updating "
                 "indicator at its right, an empty state that trades places with the rows",
                 run=run_open_design_table,
+            )
+        )
+
+        def design_toolbars_factory(_target: str | None) -> DesignExampleToolbars:
+            return DesignExampleToolbars(deps.context, deps.theme)
+
+        deps.tabs.register_factory(DESIGN_TOOLBARS_KIND, design_toolbars_factory)
+
+        def run_open_design_toolbars(_context: Context) -> None:
+            deps.tabs.open(DESIGN_TOOLBARS_KIND)
+
+        deps.actions.register(
+            ActionSpec(
+                id="debug.design_toolbars",
+                label="Design Example Tool&bars",
+                menu="Debug",
+                group="design",
+                order=30,
+                tip="Every shape a strip of verbs comes in: the flat strip, a tool "
+                "palette's named bands, the same palette folding for want of room, and "
+                "the dense strip that answers a question rather than offering verbs",
+                run=run_open_design_toolbars,
             )
         )

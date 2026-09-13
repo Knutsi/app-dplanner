@@ -17,12 +17,12 @@ should be quiet — and what a compile *was* is on the second line: how much it 
 landed and which agent this desk handed it to.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QAction, QColor, QIcon
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -148,9 +148,6 @@ class DocsActivity(EntityActivity):
             # Every signal, this project only — a fragment is prose, so text edits count.
             follow_project(self._library, self.project_id, self._refresh_soon.trigger),
         ]
-        # The strip's verbs read the application's action state, so they follow the context
-        # the way every other presenter of these specs does — once per event-loop turn.
-        self._context_off = deps.context.changed.connect(lambda _context: self._show_verbs())
         self._refresh()
 
     # -- the activity contract -------------------------------------------------------------
@@ -175,7 +172,7 @@ class DocsActivity(EntityActivity):
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes = []
-        self._context_off()
+        self.page.controls.dispose()
 
     def show_collector(self, step_id: StepId) -> None:
         """Select the group that is ``step_id``'s — its own, when it collects, else the
@@ -207,7 +204,10 @@ class DocsActivity(EntityActivity):
         self.page.lead(*_headline(self._groups))
         self.page.say("" if self._groups else NOTHING_YET)
         self._show_selected()
-        self._show_verbs()
+        # What a compile *can* read has just changed, and a strip restates on the context
+        # rather than on the model — the theme toggles' path, and coalesced like theirs, so
+        # deleting the last fragment greys the verb where it stands.
+        self._deps.context.refresh()
 
     def _sync_grouping(self, project: Project) -> None:
         """Only kinds this project actually has: a selector offering nothing teaches nothing."""
@@ -321,20 +321,6 @@ class DocsActivity(EntityActivity):
         self._selected = item.data(GROUP_ROLE) if item is not None else None
         self._show_selected()
         self._publish()
-        # The publish is synchronous, so the verbs can be asked about the row just picked
-        # without waiting for the announcement that follows it.
-        self._show_verbs()
-
-    def _show_verbs(self) -> None:
-        context = self._deps.context.current()
-        specs = [self._deps.actions.spec(action_id) for action_id in self._link.verbs]
-        self.page.show_verbs(
-            [
-                (spec.id, state.enabled, state.label or spec.label)
-                for spec in specs
-                if (state := spec.state(context)) is not None
-            ]
-        )
 
     def _current(self) -> Group | None:
         found = [group for group in self._groups if group.key == self._selected]
@@ -406,21 +392,20 @@ class _DocsPage(QWidget):
         self.controls = Toolbar(self)
         # Creation before the verbs on the selection — DESIGN.md's strip order — and the
         # arrow drops the profiles, which is the *same* child menu the Step menu offers.
-        self.verbs: dict[str, QAction] = {}
+        # Registry-fed: the glyph, the words and the reason are the spec's and its state's,
+        # restated on every context change, so this strip cannot disagree with the menu about
+        # whether a compile can run. The arrow drops the launch profiles — the Step menu's own
+        # child menu, never a copy of its list.
         dropped, menu_id = link.profile_menu
-
-        def runner(action_id: str) -> Callable[[], None]:
-            return lambda: deps.actions.run(action_id, deps.context.current())
-
-        for action_id in link.verbs:
-            spec = deps.actions.spec(action_id)
-            self.verbs[action_id] = self.controls.add_verb(
-                spec.label.replace("&", ""),
-                spec.icon or read_icon,
-                runner(action_id),
-                tip=spec.tip,
-                fill=deps.actions.data_menu(menu_id).fill if action_id == dropped else None,
+        self.verbs = {
+            action_id: self.controls.add_action(
+                deps.actions,
+                deps.context,
+                action_id,
+                data_menu=menu_id if action_id == dropped else None,
             )
+            for action_id in link.verbs
+        }
         self.controls.add_divider()
         self.group_box = QComboBox(self.controls)
         self.group_box.setMinimumWidth(SELECTOR_WIDTH)
@@ -499,17 +484,6 @@ class _DocsPage(QWidget):
     def offer_grouping(self, offered: bool) -> None:
         """Whether Group by has a choice to offer."""
         self.group_action.setVisible(offered)
-
-    def show_verbs(self, states: Sequence[tuple[str, bool, str]]) -> None:
-        """Grey each verb with its own reason, as every other presenter of these specs does:
-        a strip that decided for itself when a compile can run would be a second set of
-        preconditions to keep in step with the action's."""
-        for action_id, enabled, label in states:
-            verb = self.verbs.get(action_id)
-            if verb is None:
-                continue
-            verb.setEnabled(enabled)
-            verb.setText(label.replace("&", ""))
 
     def _reink(self, ink: str) -> None:
         """A colour copied out of the palette onto a widget goes stale, so the rows' glyphs

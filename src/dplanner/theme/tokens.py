@@ -47,6 +47,10 @@ ARROW_W: Final = 20
 # The room a worded button leaves for it: the arrow's width and DESIGN.md's 4 px beside it.
 # A styled subcontrol is outside Qt's size hint, so the text runs under the arrow without it.
 ARROW_ROOM: Final = ARROW_W + 4
+# And the room a *face* leaves — a control that is only a menu, so its arrow is Qt's plain
+# indicator rather than a target of its own: the layout picker, the aspect bar's template,
+# a strip's glyph face. Narrower than ARROW_ROOM because there is nothing to aim at.
+INDICATOR_ROOM: Final = 20
 
 
 def mix(first: str, second: str, share: float) -> str:
@@ -76,8 +80,11 @@ def as_qss_mapping(theme: Theme) -> dict[str, str]:
         if field.name != "name" and isinstance(value, str):
             mapping[field.name.upper()] = value
     # A divider between controls, faded halfway into the ground: a rule that parts without
-    # drawing attention, where $BORDER is a hairline meant to be seen.
-    mapping["BORDER_FAINT"] = mix(theme.border, theme.bg_base, 0.5)
+    # drawing attention, where $BORDER is a hairline meant to be seen. It fades towards the
+    # *elevated* ground and not the page's, because that is the ground a strip of verbs
+    # sits on — faded into the page's it came out three levels from the canvas strip on the
+    # light theme, which is a divider that parts nothing.
+    mapping["BORDER_FAINT"] = mix(theme.border, theme.bg_elevated, 0.5)
     # The accent washed over the overlay ground: a control that is *on* (a filter) without
     # being filled, so its words keep their ink.
     mapping["ACCENT_WASH"] = mix(theme.bg_overlay, theme.accent, 0.22)

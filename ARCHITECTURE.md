@@ -618,9 +618,13 @@ drawing-surface menu, and it left the surface this application is mostly *about*
 heading of its own: the fastest way to a divide was the command palette, which then said
 only *Vertical*.
 
-They are a top-level **Graph** menu now, in three groups: `arrange` (the Sort, Layout and
-Divide child menus — moving cards, from the wholesale to one cut at a time), `regions`, and
-`look` (what is drawn without moving anything). View went back to being about the window.
+They are a top-level **Graph** menu now, in four groups: `arrange` (the Sort, Layout and
+Divide child menus — moving cards, from the wholesale to one cut at a time), `regions`,
+`look` (what is drawn without moving anything) and `panels` (what stands *beside* the
+canvas inside the tab). View went back to being about the window — which is what decides
+where the Features panel's switch sits: the panel is inside one project's tab, so it is
+the graph's chrome and not the window's, and View ▸ Panels is about the areas around the
+tabs.
 
 **What did *not* move is the point of the split.** Connect, Link, Unlink, Isolate and the
 Redirect pair stayed on **Step**, because a link is a fact about the steps it joins, and
@@ -629,6 +633,174 @@ a copy of one*) — moving them would have taken the graph's most-used verbs off
 own context menu to file them more tidily. Lasso stayed in Step's `navigate` group for the
 same reason: it selects steps. The test is not "which surface does this run on" — every one
 of these runs on the canvas — but "what is it about": a step, or the drawing of them.
+
+### A strip of verbs is cut into bands, and a band folds whole
+
+The canvas strip carried nine words and eleven glyphs in six unlabelled groups, and read
+as a sentence rather than as a tool palette. DESIGN.md's *Toolbars* had already said what a
+strip of verbs is — a glyph with its words in the tooltip — and named this conversion as
+owed: the strip was built on `ActionToolbar`, the presenter that predates the `Toolbar`
+primitive and has no overflow of its own.
+
+**The band is the structure a toolbar has, so it is named.** Nineteen glyphs in a row are
+nineteen riddles; *Go · Step · Link · Arrange · History · Options* is a thing to learn
+once, and the name under a band is structure rather than an explainer — it says what the
+glyphs above it are *for*, where a word on each button would repeat the tooltip. The bands
+are spelled out in `canvas_toolbar.py` rather than inferred from the menus, where these
+verbs sit under four different headings: what a person reaches for together is not what a
+menu bar files together.
+
+**And the band is the unit that folds.** A canvas can always be dragged narrower than its
+own strip. The old answer was Qt's `»`, which pops the hidden buttons up as glyphs again —
+no help at all to somebody who could not read the glyph on the strip. The primitive takes
+a whole band off from the right and lists it in the `…` menu as glyph **and** words, with a
+rule where each band begins: half a band on the strip and half in a menu says less than
+either, because the bands are how the strip is read.
+
+**A band's buttons are squares, and only a band's.** A palette is a grid of targets of one
+size, and a square is also what puts a glyph in the middle of its button rather than a few
+pixels left of centre. It is the *banded* strip that gets it, not every dense one: the
+aspect bar seats ten toggles in a 360 px dock, and squaring them costs it two — which for a
+row that answers "what does this step carry" is the row not answering. The two strips want
+opposite things from the same primitive, so the property says which.
+
+**And a control that is not a verb goes in the band it is about.** The layout picker names
+the arrangement the canvas is showing, so it sits at the end of *Arrange*, added as a
+widget — which never enters the `…` menu and hides when there is no room, the way a filter
+does. It stood *outside* the strip while the strip was one undifferentiated row and the
+rule was "it must survive every width"; beside a row of named bands a lone worded button
+past the end read as something that had fallen off, and the band it belongs to says what it
+is better than its own isolation did.
+
+**The glyphs come from the specs.** Every verb on the strip carries `ActionSpec.icon` now,
+which is what let the module's own `ICONS` table — and the `_WORDED` map beside it — be
+deleted rather than extended. A module that adds a verb to the strip adds its glyph where
+the verb is registered, and the strip learns nothing.
+
+**A checked glyph takes `$ON_ACCENT`.** The standing reason the mode switches and the marks
+were *words* was that a checked button is filled with the accent and a glyph painted in the
+quiet tone vanishes into it. The fix belongs in the primitive, not in an exception per
+surface: `Toolbar` re-inks a verb's glyph on its toggle, taking the ink from the palette's
+`BrightText`, which `theme/palette.py` now carries the theme's `on_accent` in (it held
+`accent_hover`, which nothing ever read). A painter has no stylesheet, and the palette is
+the only way it can learn a colour the stylesheet writes.
+
+**The marks became a face.** Six worded switches on a strip of glyphs was a row half words,
+and *how the graph is drawn* is a question asked rarely and answered best in a menu, where
+each choice says what it means. *Options* is one glyph dropping the Graph menu's `look`
+band — rendered through `fill_menu`'s new `group` filter, so it is the menu and never a
+copy of it, and a mark added later appears under it having touched nothing. It is a face
+and not a verb with an arrow: there is no verb under it, so it wears the layout picker's
+look rather than the hairline that says two halves do different things.
+
+### The glyphs are somebody else's, and they are copied in
+
+Forty-odd hand-painted `QPainter` calls was the right answer at a handful and the wrong one
+at forty: the strokes drifted between glyphs, nobody could draw a new one to match, and the
+result was, in the developer's words, "ok, but not super nice". They are **Tabler Icons**
+(MIT) now — the set is the largest permissive one, which matters because this application
+needs glyphs a small set does not have: redirect to and from, isolate, divide, three kinds
+of mark.
+
+**Copied in, not depended on.** Fifty-two SVG files come to 212 KB, against a dependency
+that would bring a package, a version to resolve and a release cadence to follow — and the
+full set is over six thousand files, which no repository wants in order to use fifty.
+`scripts/vendor_tabler_icons.py` holds the mapping from *what a glyph means here* to the
+Tabler icon that says it, so the key is ours and outlives any set: changing icon sets is
+changing that file's right-hand column and running it again. The tag is pinned in
+`theme/icons.py`, because the application is what has to state the version — in Help ▸
+About, which an MIT notice and a bug report both want.
+
+**One painter, and the alpha is the painter's.** Qt's SVG renderer knows no
+`currentColor`, so the ink is substituted into the source before rendering — the trick
+`drop_arrow_url` already plays for the combo arrow — and the colour's *alpha* becomes the
+painter's opacity, because an SVG stroke colour has none. A strip's glyphs are the text
+colour at `SECONDARY_ALPHA`, so a painter that dropped the alpha would make every toolbar
+in the application read a shade too loud. The canvas's medallions go through the same
+`paint_glyph`, which is what retired the five `paint_*_glyph` functions and the if/elif
+chain that chose between them: the kind *is* the glyph's name.
+
+**What stayed hand-painted is what is a picture of state rather than of a thing**: the key
+badge draws text, the colour strip is a gradient, the spinner is a frame per angle, and the
+filter funnel is two states drawn to one width. No icon set has those, because they are not
+icons.
+
+### An acknowledgement is asked, not written
+
+Help ▸ About was a `QMessageBox.about` naming the template's product, which is two faults in
+one line: a platform dialog where every other surface is a `DialogFrame`, and a name nobody
+had looked at since the fork. What replaced it answers the question a licence page is for.
+
+**The list of components is ours; every fact beside it is the installation's.** A package
+cannot say what it *does here* — "the OS keychain a source's token is kept in" is a sentence
+about this application — so that line is written. The version and the licence are read from
+`importlib.metadata`, in the order the answers got vaguer: `License-Expression` (an SPDX
+expression, and the one to believe), then the free-text `License`, then the trove
+classifiers, which say *MIT License* where the package itself says *MIT*. Asked the other
+way round, two components under one licence read as two different ones.
+
+A hand-kept licence table is a table that drifts, and the one thing an acknowledgement must
+not do is claim the wrong licence: a dependency bumped to a version under different terms
+would go on saying the old ones. And a component this build does not have — an optional
+one, a source checkout missing a wheel — says so in its row rather than vanishing from the
+list, because an acknowledgement that quietly shortens is worse than one that admits a gap.
+
+### One picker, two lists
+
+*Find Step…* wanted what the command palette already was: a field over rich rows, ranked by
+what was typed, one pick. The palette's constructor had the registry and the context wired
+into it, so the honest move was to lift the shape out — `framework/picker.py`'s
+`PickerDialog` over plain `PickerRow`s — and rebuild the palette on it as the half that
+knows what a verb is. A third picker is a list of rows, not a third dialog.
+
+**A label match always wins.** A row is searched by its name first and by what it *also*
+answers to second — the menu path for a verb, the key for a step — so a verb actually
+called what was typed is never pushed under one merely filed there. `also` is deliberately
+separate from what the row *shows*: a palette row's shortcut sits at its right, and folding
+that into the haystack would make "ctrl" match every verb that has one.
+
+**A picker over a long list opens on its landmarks.** Three hundred steps is not a list
+anybody scrolls, so `PickerRow.landmark` says which rows are worth showing before anything
+is typed: Find opens on the plan's milestones and features, and everything is in play
+from the first keystroke. A list with no landmarks opens whole, which is what the palette
+wants. One field on the row, and the rule is the same both ways.
+
+**Landing is centring.** `steps.reveal` opened the project's tab and called `setSelected`,
+which selects a step that may be a screen away — a reveal that reveals nothing. The canvas
+grew `GraphView.centre_on_step`, and `ProjectActivity.select_step` calls it, so every view
+that reaches a step through the registry — the order table, the progression board, the
+Agents browser, `feature.reveal` — now lands on it. The zoom is untouched: Frame is the
+verb that changes how much of the graph is in view, and a jump that also zoomed would lose
+the scale somebody had chosen to work at.
+
+### The Features list lives in the graph, not in the window
+
+The Features panel was a `PanelSpec` in the window's left area, and its one gesture is a
+drag onto the canvas — across the window, past the index tree, over the strip. It stands
+inside the project tab now, beside the canvas, where that drag is a short one.
+
+**A panel inside a tab is not a dock panel**, and the difference is which question it
+follows. A dock panel follows *the window* — one instance, retargeted by the context on
+every change (*Where a panel goes*). A panel inside a tab follows *that tab*: there is one
+per project tab, and each is handed a context naming its own project, so a tab in the
+background never follows the tab in front. That is the same rule as "only the active pane
+speaks for the user", read from the other side.
+
+**The seam belongs to the splitter and the module never learns whose widget it is.** The
+canvas and the panel meet in a `QSplitter`, so the line between them is the one every
+splitter in the application wears and the panel draws no edge of its own. What goes in it
+is named by the composition root as a `SidePanel` — a title, a glyph and a way to build the
+widget — and reached through `framework/panels.py`'s existing `ContextPanel` protocol,
+which the features list already satisfied structurally. `project_editor` imports nothing
+from `feature`; `feature` registers no panel and offers a `create_panel()` instead, the
+arrangement `step_properties` already uses for the step panel.
+
+**Whether it stands is a preference, so it is a field on `Look`.** The marks, the
+spotlight, the ground and the snapping are one value kept per user and fanned to every
+canvas; a panel beside the canvas says no more about the plan than a grid does, and the
+plumbing — a key, a setter, a fan-out, a context refresh so the switch re-reads itself —
+already exists. A second copy of it for one boolean is what `look.py` was written to
+prevent.
 
 ### The command palette says where a verb lives
 

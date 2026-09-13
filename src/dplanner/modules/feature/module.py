@@ -27,7 +27,7 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
-from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
+from dplanner.framework.panels import PanelRegistry
 from dplanner.framework.step_selection import focused_step
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
@@ -130,21 +130,20 @@ class FeatureModule:
                 ),
             )
         )
-        # Order 20: under the Index, which is 10 — the drag starts beside the tree and
-        # ends on the canvas.
-        deps.panels.register(
-            PanelSpec(
-                id=PANEL_ID,
-                title="Features",
-                factory=lambda: FeaturesPanel(
-                    deps.library, deps.actions, deps.theme, debounce=deps.debounce
-                ),
-                area=PanelArea.LEFT,
-                order=20,
-            )
-        )
         for spec in self._verb_specs():
             deps.actions.register(spec)
+
+    def create_panel(self) -> FeaturesPanel:
+        """The features list, for whoever hosts it.
+
+        It is the graph tab that does — the drag onto the canvas is what the list is for,
+        and a trip across the window is a long one for it — so this module registers no
+        panel and offers the widget instead, the way ``step_properties`` offers the step
+        panel. The host tells it which project to show; it follows a context like any
+        panel, and acts through the registry like any surface.
+        """
+        deps = self._deps
+        return FeaturesPanel(deps.library, deps.actions, deps.theme, debounce=deps.debounce)
 
     # -- the verbs ---------------------------------------------------------------------------
 

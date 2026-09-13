@@ -75,6 +75,7 @@ def fill_menu(
     context_service: ContextService,
     menu: str,
     submenu: str | None = None,
+    group: str | None = None,
 ) -> QMenu:
     """One menu's visible actions into an existing pop-up; a disabled one is greyed, not
     omitted.
@@ -98,6 +99,12 @@ def fill_menu(
     submenu down. It names exactly one level: every caller renders a one-level child, and
     what a nested level would mean flat is nobody's question yet.
 
+    Naming a ``group`` renders just that band of the menu, child menus and all — for a
+    toolbar face that stands for one band rather than for one verb (the graph strip's
+    *Options* is *Graph*'s ``look``). It composes with neither ``submenu`` nor the other
+    way about: a band is a run of top-level entries, and a child menu of one of them is
+    already inside it.
+
     A **data child menu** (`DataMenuSpec`) is placed by the same key and filled when it
     opens, as the bar's is — so a menu's right-click offers *Run Agent* because the
     Step menu does, and never a copy of it. It is a child of the menu itself, so a named
@@ -115,7 +122,7 @@ def fill_menu(
             lambda _checked=False, sid=spec.id: actions.run(sid, context_service.current())
         )
 
-    def child_menu(path: str, group: str) -> QMenu:
+    def child_menu(path: str, entry_group: str) -> QMenu:
         """The child menu at ``path``, creating each missing level here.
 
         A new level is an entry of its container, so the container's group bookkeeping
@@ -132,14 +139,14 @@ def fill_menu(
             child = submenus.get(so_far)
             if child is None:
                 if container_path is None:
-                    if previous_group is not None and group != previous_group:
+                    if previous_group is not None and entry_group != previous_group:
                         target.addSeparator()
-                    previous_group = group
+                    previous_group = entry_group
                 else:
                     # A container made in this same walk has no entry yet: no rule.
-                    if submenu_group.get(container_path, group) != group:
+                    if submenu_group.get(container_path, entry_group) != entry_group:
                         container.addSeparator()
-                    submenu_group[container_path] = group
+                    submenu_group[container_path] = entry_group
                 child = submenus[so_far] = container.addMenu(title)
             container, container_path = child, so_far
         return container
@@ -147,6 +154,8 @@ def fill_menu(
     placed: list[ActionSpec | DataMenuSpec] = [*actions.all_specs(), *actions.data_menus()]
     for spec in sorted(placed, key=actions.menus.sort_key):
         if spec.menu != menu:
+            continue
+        if group is not None and spec.group != group:
             continue
         if isinstance(spec, DataMenuSpec):
             if submenu is not None:
@@ -189,6 +198,7 @@ def build_menu(
     menu: str,
     parent: QWidget,
     submenu: str | None = None,
+    group: str | None = None,
 ) -> QMenu:
     """A fresh pop-up holding one menu's visible actions — see :func:`fill_menu`."""
-    return fill_menu(QMenu(parent), actions, context_service, menu, submenu)
+    return fill_menu(QMenu(parent), actions, context_service, menu, submenu, group)

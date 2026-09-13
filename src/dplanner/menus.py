@@ -78,8 +78,10 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # about, from the wholesale to the one cut at a time. "regions" is the Region submenu —
     # the titled areas drawn behind the graph, which the canvas's own right-click renders
     # over one. "look" is what is drawn without moving anything: framing, the marks, the
-    # grid and the ground.
-    "Graph": ("arrange", "regions", "look"),
+    # grid and the ground — the band the canvas strip's Options face renders whole.
+    # "panels" is what stands *beside* the canvas inside the tab: the graph's own chrome,
+    # where View ▸ Panels is about the areas around the tabs.
+    "Graph": ("arrange", "regions", "look", "panels"),
     # "edit" is New, Rename and Delete. New is one verb: a step is born plain and the
     # details dialog opens on it, where the aspect bar says what it is.
     # "open" is a surface about the selection — the Step-side mirror of Project's

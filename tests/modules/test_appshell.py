@@ -163,3 +163,44 @@ def test_the_move_shortcut_yields_to_word_selection_in_a_text_editor(session, pr
     QTest.keyClick(editor, Qt.Key.Key_Right, ctrl_shift)
     assert services.tabs.group_count() == 2  # Unchanged: the editor claimed the key…
     assert editor.textCursor().selectedText()  # …and spent it on selecting a word.
+
+
+# -- what this is, and what it stands on -------------------------------------------------------
+
+
+def test_the_acknowledgements_are_asked_of_the_installation(app):
+    """A hand-kept licence table drifts, and the one thing an acknowledgement must not do is
+    claim the wrong licence — so every version and licence beside a name is the installed
+    distribution's own answer."""
+    from importlib.metadata import version as dist_version
+
+    from dplanner.modules.appshell.about import BUILT_ON, MISSING, acknowledgements
+
+    rows = acknowledgements()
+    assert [row[0] for row in rows] == [part.name for part in BUILT_ON]
+    named = {row[0]: row for row in rows}
+    assert named["keyring"][2] == dist_version("keyring")
+    assert named["keyring"][3] == "MIT"
+    # Qt is the licence that matters most, and it is the expression PySide6 declares.
+    assert "LGPL" in named["Qt for Python (PySide6)"][3]
+    # Python is not a distribution, so its row is written — and still says a version.
+    assert named["Python"][2] not in ("", MISSING)
+    assert all(version and licence for _n, _w, version, licence in rows)
+
+
+def test_about_says_what_dplanner_is_built_on(session, monkeypatch):
+    """Help ▸ About is a DialogFrame over that list, not a QMessageBox — which prints a
+    platform icon and arranges its sentences the platform's way."""
+    from dplanner.identity import APP_NAME
+    from dplanner.modules.appshell.about import AboutDialog, acknowledgements
+
+    services = session.services
+    spec = services.actions.spec("appshell.about")
+    assert APP_NAME in spec.label and "Writer" not in spec.label
+
+    opened: list[AboutDialog] = []
+    monkeypatch.setattr(AboutDialog, "exec", lambda self: opened.append(self))
+    services.actions.run("appshell.about", services.context.current())
+    (dialog,) = opened
+    assert dialog.table.rowCount() == len(acknowledgements())
+    assert dialog.windowTitle() == f"About {APP_NAME}"
