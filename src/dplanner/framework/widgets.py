@@ -22,6 +22,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QDialog,
+    QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
@@ -345,3 +346,11 @@ def install_ctrl_wheel_zoom(editor: QAbstractScrollArea, on_steps: Callable[[int
     """
     viewport = editor.viewport()
     viewport.installEventFilter(_CtrlWheelFilter(viewport, on_steps))
+
+
+class NumberBox(QDoubleSpinBox):
+    """A spin box that prints its number the way a person writes it: "0.25", "0.5", "3" —
+    never "1.00". Decimals exist so a quarter is sayable; the padding is not."""
+
+    def textFromValue(self, value: float) -> str:  # noqa: N802 - Qt override
+        return f"{value:g}"

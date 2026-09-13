@@ -3526,3 +3526,70 @@ and give a scroll area that is only a frame `NoFocus`; the same order decided th
 Confluence dialog focused its *Open tokens page* button before its email field.
 
 **Upstream?** As a sentence in the frame's docstring, yes.
+
+## 42. From the tables-and-browsers pass (S15)
+
+### `framework/table.py` — a cell's ink and tooltip, and one editable column
+
+**What.** `Cell` gains `ink` (a `QColor` for the first line), `tooltip`, `value` and
+`editable`; `add_heading` takes `ink=`. `Column(editor=…)` takes a `CellEditor` —
+`NumberEditor` and `DateEditor` are the two — and a table with one turns its edit triggers on
+(double-click, F2, any key), keeps the current cell in that column so a picked row answers a
+typed digit, and announces a committed value once through `Table.edited` (a
+`core.signals.Signal`), and only when the value changed.
+
+**Why.** The Tests tab says a result in a tone and wears a milestone's shade on its grouping
+heading; the bulk Estimates tab and the Time tab's milestones set a number and a day per row.
+The Estimates tab did that with `setCellWidget`, and a widget planted in each cell swallows
+the row's hover and pick and forces a height the font does not give — the row stops being the
+unit.
+
+**Two traps.** `QTableWidgetItem` keeps `EditRole` and `DisplayRole` as one value, so the
+value behind "3 d" needs a role of its own (`VALUE_ROLE`). And a fresh `QTableWidgetItem` is
+editable by default, which never mattered while the triggers were off: `set_cell` now clears
+the flag on every cell outside an editor's column. The announcement runs inside Qt's
+`commitData`, so a host may write cells in its slot but must never `clear_rows()` there.
+
+**Upstream?** Yes: the ink and the tooltip are two lines each, and an editable column is what
+a table in any planner comes to need.
+
+### `framework/list_rows.py` — `INK_ROLE`, `VALUE_ROLE` and `RichList`
+
+**What.** Two roles below `HOST_ROLE`, and `RichList`: a `QListWidget` that sets `#RichList`
+and installs `TwoLineDelegate`, which the stylesheet gives the table's well and picked row.
+
+**Why.** Two lists borrowed `#OrderTable`, a table's look, by name. DESIGN.md's rule is a list
+when there is one column of things, so the implementation notes log stays a list — with a
+primitive of its own — rather than becoming a one-column table under a header nobody needs.
+
+**Upstream?** Yes.
+
+### `framework/toolbar.py` — `set_shown`: the reflow put back what a host hid
+
+**What.** `Toolbar.set_shown(widget, shown)`. The reflow measures, shows and lists only what
+belongs on the strip: an item a host took off, or a lone verb whose action a state hid, counts
+for nothing, and no divider is left beside another.
+
+**Why.** A defect. `_reflow` set every item's visibility from the room alone, so a combo a view
+hid — the Documentation view's *Group by* with nothing to group — came back on the next resize,
+and a registry state's `visible=False` lasted only until then. Three surfaces in this pass take
+a control off their strip while it has nothing to say.
+
+**Upstream?** Yes, as a fix.
+
+### `framework/widgets.py` — `NumberBox`
+
+**What.** The spin box that prints `0.25`, `0.5` and `3` rather than `1.00`, moved out of the
+estimate input.
+
+**Why.** The table's number editor and the step panel's estimate are the same field twice.
+
+**Upstream?** With the table editor.
+
+### `theme/tokens.py` — `EDGE_W`
+
+**What.** The picked row's 2 px edge is a token; it was a constant in `table.py`.
+
+**Why.** `#RichList` paints the same edge from the stylesheet, and the picker's was a literal.
+
+**Upstream?** Yes.

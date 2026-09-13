@@ -1,7 +1,7 @@
 """Render the surfaces the tables-and-browsers pass brings up, in the dark and the light theme.
 
-    uv run python scripts/render_tables_and_browsers.py --out docs/screenshots/s15-tables-and-browsers
-    uv run python scripts/render_tables_and_browsers.py --prefix before-   # on the parent commit
+    uv run python scripts/render_tables_and_browsers.py
+    uv run python scripts/render_tables_and_browsers.py --prefix before-  # on the parent commit
 
 Every surface is the real one, built by a whole application over a synthetic library, so
 nothing here hand-wires a view the window would build differently: the Tests tab and the

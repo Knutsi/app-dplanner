@@ -37,6 +37,8 @@ CELL_PADDING_V: Final = 6
 CELL_PADDING_H: Final = 8
 # ~63 %: DESIGN.md's opacity-derived secondary text, for a painter that has only the palette.
 SECONDARY_ALPHA: Final = 160
+# The accent edge a picked row wears on its left — the width the active pane's top edge has.
+EDGE_W: Final = 2
 # The slice of the screen a framed or editor-sized dialog claims. A float is Python-only:
 # ``as_qss_mapping`` takes ints and strings, and a stylesheet has no use for a ratio.
 SCREEN_SHARE: Final = 0.8

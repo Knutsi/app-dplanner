@@ -1021,6 +1021,25 @@ QToolButton[repoTool="true"]:hover {
     font-weight: bold;
 }
 
+/* A list of two-line rows (framework/list_rows.py's RichList): the table's well and its
+   picked row — the delegate paints the accent edge over the quiet ground — for a roster
+   that is one column of things. The selection ink stays the text's, not the highlight's. */
+#RichList {
+    background-color: $BG_BASE;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
+    color: $TEXT_PRIMARY;
+    selection-color: $TEXT_PRIMARY;
+}
+
+#RichList::item:hover {
+    background-color: $BG_ELEVATED;
+}
+
+#RichList::item:selected {
+    background-color: $BG_OVERLAY;
+}
+
 /* ---- Dialogs (framework/dialog.py) ------------------------------------------------- */
 
 /* The frame names its parts, and every dialog on it is styled through these names — never

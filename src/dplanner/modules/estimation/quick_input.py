@@ -20,7 +20,6 @@ origin, and the owner is the one who knows which changes are its own.
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
-    QDoubleSpinBox,
     QHBoxLayout,
     QPushButton,
     QVBoxLayout,
@@ -32,6 +31,7 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, StepId
 from dplanner.framework.cards import card_rule
 from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import NumberBox
 from dplanner.modules.estimation.aspect import MODULE_ID, write
 
 CHIP_GAP = 8
@@ -61,14 +61,6 @@ QUICK_DAYS = (
 )
 
 
-class _DaysBox(QDoubleSpinBox):
-    """A spin box that prints days the way ``format_days`` does: "0.25", "0.5", "3" —
-    never "1.00". Two decimals exist so a quarter day is sayable; the padding is not."""
-
-    def textFromValue(self, value: float) -> str:  # noqa: N802 - Qt override
-        return f"{value:g}"
-
-
 class EstimateInput(QWidget):
     """Days, set by hand or by chip. Emits ``edited``; the owner commits."""
 
@@ -77,7 +69,7 @@ class EstimateInput(QWidget):
         self._loading = False
         self.edited: Signal[()] = Signal()
 
-        self.days = _DaysBox(self)
+        self.days = NumberBox(self)
         self.days.setRange(UNESTIMATED, MAX_DAYS)
         self.days.setDecimals(2)
         self.days.setSingleStep(QUARTER)

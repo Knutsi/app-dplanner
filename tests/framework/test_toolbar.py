@@ -2,6 +2,8 @@
 folded into a … menu as glyph and words, a widget hidden rather than listed, one height —
 and, for a strip that is a tool palette, named bands that fold whole."""
 
+from itertools import pairwise
+
 import pytest
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QComboBox, QWidget
@@ -277,3 +279,50 @@ def test_a_face_drops_a_band_of_the_menus_and_folds_as_a_child_menu(host, app):
     entries = bar.face_menu(face).actions()
     listed = [a.text().replace("&", "") for a in entries if not a.isSeparator()]
     assert listed == ["Frame Graph", "Snap to Grid"]  # The band, and nothing from Step.
+
+
+# -- what the host takes off the strip -----------------------------------------------------
+
+
+def test_a_widget_the_host_takes_off_stays_off_through_every_reflow(host, app):
+    bar, combo, _ran = strip(host, app)
+    bar.set_shown(combo, False)
+    assert combo.isHidden()
+    for width in (799, 120, 800):
+        bar.resize(width, bar.height())
+        app.processEvents()
+        assert combo.isHidden()
+    assert bar.hidden_items() == [] and bar._more.isHidden()
+    shown = [item for item in bar._items if not item.widget.isHidden()]
+    # The combo stood between two dividers; with it gone they must not meet.
+    assert not any(a.divider and b.divider for a, b in pairwise(shown))
+    bar.set_shown(combo, True)
+    assert not combo.isHidden()
+
+
+def test_a_verb_a_state_hides_stays_hidden_through_a_reflow(host, app):
+    from dplanner.framework.action_registry import ActionState
+
+    registry = registry_with(
+        ActionSpec(
+            id="steps.new",
+            label="&New Step",
+            menu="Step",
+            group="edit",
+            icon=plus_icon,
+            state=lambda _context: ActionState(visible=False),
+            run=lambda _context: None,
+        )
+    )
+    bar = Toolbar(host)
+    bar.add_verb("Refresh", refresh_icon, lambda: None)
+    bar.add_action(registry, ContextService(), "steps.new")
+    host.resize(600, 60)
+    host.show()
+    app.processEvents()
+    for width in (500, 120, 600):
+        bar.resize(width, bar.height())
+        app.processEvents()
+        button = bar.button_for("steps.new")
+        assert button is not None and button.isHidden()
+    assert bar._more.isHidden()

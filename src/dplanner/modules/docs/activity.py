@@ -410,7 +410,7 @@ class _DocsPage(QWidget):
         self.controls.add_divider()
         self.group_box = QComboBox(self.controls)
         self.group_box.setMinimumWidth(SELECTOR_WIDTH)
-        self.group_action = self.controls.add_widget(self.group_box)
+        self.controls.add_widget(self.group_box)
         strip.addWidget(self.controls, 1)
         self.updating = UpdatingIndicator(self)
         strip.addWidget(self.updating)
@@ -484,7 +484,7 @@ class _DocsPage(QWidget):
 
     def offer_grouping(self, offered: bool) -> None:
         """Whether Group by has a choice to offer."""
-        self.group_action.setVisible(offered)
+        self.controls.set_shown(self.group_box, offered)
 
     def _reink(self, ink: str) -> None:
         """A colour copied out of the palette onto a widget goes stale, so the rows' glyphs
