@@ -84,9 +84,10 @@ NO_DOCS_REASON = "Show Documentation — this step has no documentation and gath
 # Which agent this module launched on a collector, per user and per machine: a fact about
 # one desk's runs, never the plan (*Attribution comes from the run*). Keyed by step id.
 LAUNCHES_KEY = "compiled_by"
-# The step panel's tab; SPEC.label is the aspect's full name, which that strip has no room
-# for. Two words for one thing is a cost, and a tab bar that elides every label is worse.
-TAB_LABEL = "Fragment"
+# The step panel's tab. SPEC.label is the aspect's full name — what `aspect list` and the
+# skill print — and that strip has no room for it: nine tabs already, and a tab bar that
+# elides every label is worse than a short name. *Docs* is the one this tab has always had.
+TAB_LABEL = "Docs"
 
 
 @dataclass(frozen=True)
