@@ -1,12 +1,18 @@
-"""An in-tab action toolbar: one button per action id, restated on every context change.
+"""Strips of controls a tab page carries, and the verbs on them.
 
-The registry stays the single source of truth — this presenter renders a chosen subset of
+:class:`Toolbar` is **the** strip of verbs (DESIGN.md's *Toolbars*): glyphs with their
+words in tooltips, folding into a ``…`` menu, optionally cut into named bands. Its verbs
+come either from the host (:meth:`Toolbar.add_verb`, a glyph and a slot) or from the action
+registry (:meth:`Toolbar.add_action`), and a band may end in a *face*
+(:meth:`Toolbar.add_menu_face`) — one glyph dropping a band of the menus down.
+
+The registry stays the single source of truth — a presenter here renders a chosen subset of
 specs as buttons, exactly as the menu bar renders all of them as QActions. Shortcuts stay
-with the menu bar's QActions; a click here goes through ``registry.run``, so the state
-gate holds even if a stale context left a button enabled. Toolbars live inside tabs, so
-unlike the app-lifetime menu bar they must be ``dispose()``d when their tab closes.
+with the menu bar's QActions; a click here goes through ``registry.run``, so the state gate
+holds even if a stale context left a button enabled. Strips live inside tabs, so unlike the
+app-lifetime menu bar they must be ``dispose()``d when their tab closes.
 
-**It renders the application's action state, not its own tab's.** A toolbar in a background
+**A strip renders the application's action state, not its own tab's.** One in a background
 tab — or in a tab group the user is not in — shows what the *active* surface can do, because
 there is one ``ContextService``. Invisible while only one tab is on screen; visible once the
 window is split. If that ever matters, the fix is a ``set_active(bool)`` that greys the row
@@ -17,6 +23,11 @@ when its group is not the active one, not a context per group.
 verb on a click and renders that child menu on the arrow — through ``fill_menu``, so it is
 the menu, never a copy of it, and it is refilled on every open against the context and the
 palette of that moment.
+
+:class:`ActionToolbar` is the older presenter — registry-fed like the above, but a plain
+row of *worded* buttons with no overflow of its own. Three surfaces still wear it (the
+Specs tab, the order table and the Time tab); each moves onto :class:`Toolbar` when its
+design pass comes. Write nothing new on it.
 
 :func:`control_bar` is the other strip a tab page carries: a row of *its own* controls — a
 selector, a toggle, a spin box — that overflows into a » menu when the width is short.
@@ -38,19 +49,50 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
+    QLabel,
     QMenu,
     QSizePolicy,
     QToolBar,
     QToolButton,
+    QVBoxLayout,
     QWidget,
 )
 
 from dplanner.core.signals import Signal
 from dplanner.framework.action_menu import fill_menu
-from dplanner.framework.action_registry import ActionRegistry
+from dplanner.framework.action_registry import (
+    ActionRegistry,
+    ActionSpec,
+    ActionState,
+    key_sequences,
+)
 from dplanner.framework.context import Context, ContextService
-from dplanner.theme.icons import FILTER_ICON_W, ICON_SIZE, close_icon, filter_icon
-from dplanner.theme.tokens import CONTROL_GAP, CONTROL_HEIGHT, DENSE_GAP, SECONDARY_ALPHA
+from dplanner.theme.cards import detail_font
+from dplanner.theme.icons import (
+    FILTER_ICON_W,
+    ICON_SIZE,
+    blank_icon,
+    close_icon,
+    filter_icon,
+)
+from dplanner.theme.tokens import (
+    CAPTION_GAP,
+    CONTROL_GAP,
+    CONTROL_HEIGHT,
+    DENSE_GAP,
+    SECONDARY_ALPHA,
+)
+
+
+def action_words(spec: ActionSpec, state: ActionState) -> tuple[str, str]:
+    """What a registry-fed button says: its words, and the standing explanation behind them.
+
+    One definition for both presenters. A state that rewords a verb to carry a count or a
+    refusal — *Delete 3 Steps*, *— pick a feature* — has to read the same on a strip of
+    glyphs, where the words are the tooltip, as on a strip of words.
+    """
+    label = (state.label if state.label is not None else spec.label).replace("&", "")
+    return label, spec.tip or label
 
 
 def control_bar(parent: QWidget | None = None) -> QToolBar:
@@ -166,8 +208,8 @@ class ActionToolbar(QWidget):
         for action_id, button in self._buttons.items():
             spec = self._registry.spec(action_id)
             state = spec.state(context)
-            label = state.label if state.label is not None else spec.label
-            text = self._button_text.get(action_id, label.replace("&", ""))
+            label, tip = action_words(spec, state)
+            text = self._button_text.get(action_id, label)
             button.setText(text)
             # QToolButton shows its icon and nothing else unless told otherwise, so a button
             # with words on it has to say so — and one with an empty override stays a glyph.
@@ -181,7 +223,7 @@ class ActionToolbar(QWidget):
             if state.checked is not None:
                 button.setCheckable(True)
                 button.setChecked(state.checked)
-            button.setToolTip(spec.tip or label.replace("&", ""))
+            button.setToolTip(tip)
 
     def dispose(self) -> None:
         self._unsubscribe()
@@ -194,8 +236,67 @@ DIVIDER_INSET = 6  # A divider stops this far short of the controls' top and bot
 @dataclass
 class _Item:
     widget: QWidget
-    action: QAction | None  # A verb's action, which the … menu lists; None for a widget.
+    # What the … menu lists when this item folds — one verb, or a whole group's. Empty for
+    # a widget, which never enters the menu, and for a divider, which only parts.
+    actions: Sequence[QAction] = ()
     divider: bool = False
+
+
+class _Group(QWidget):
+    """One labelled band of a strip: its buttons in a row, its name under them.
+
+    The band is the unit — it is what a divider parts and what the … menu takes whole — so
+    it is one widget rather than a run of items the reflow would have to keep together.
+    Its glyphs are read as one set, so they sit ``DENSE_GAP`` apart where the bands
+    themselves stand ``CONTROL_GAP`` apart.
+    """
+
+    def __init__(self, label: str, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.verbs: list[QAction] = []
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(CAPTION_GAP if label else 0)
+        # Added to its parent before it is filled: a parentless layout given widgets first
+        # leaves QWidgetItem wrappers alive on the Python side (CLAUDE.md, §14).
+        self.row = QHBoxLayout()
+        column.addLayout(self.row)
+        self.row.setContentsMargins(0, 0, 0, 0)
+        self.row.setSpacing(DENSE_GAP)
+        self.caption: QLabel | None = None
+        if label:
+            self.caption = QLabel(label, self)
+            self.caption.setObjectName("ToolbarGroupLabel")
+            self.caption.setFont(detail_font(self.caption.font()))
+            self.caption.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            column.addWidget(self.caption)
+
+    def hold(self, widget: QWidget, action: QAction | None) -> None:
+        widget.setFixedHeight(CONTROL_HEIGHT)
+        self.row.addWidget(widget, 0, Qt.AlignmentFlag.AlignTop)
+        if action is not None:
+            self.verbs.append(action)
+
+
+def _divider(parent: QWidget) -> QWidget:
+    """The hairline between two bands, hung from the top so it parts the buttons.
+
+    A band is taller than a control — its name sits under it — and a rule centred on the
+    whole band would hang below the row it is parting. The line keeps the controls'
+    inset and the space under it is the label's.
+    """
+    holder = QWidget(parent)
+    holder.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+    column = QVBoxLayout(holder)
+    column.setContentsMargins(0, DIVIDER_INSET, 0, 0)
+    column.setSpacing(0)
+    rule = QFrame(holder)
+    rule.setObjectName("ToolbarDivider")
+    rule.setFixedSize(1, CONTROL_HEIGHT - 2 * DIVIDER_INSET)
+    column.addWidget(rule)
+    column.addStretch(1)
+    return holder
 
 
 class Toolbar(QWidget):
@@ -218,6 +319,16 @@ class Toolbar(QWidget):
     click; a set that folds stops answering its question at all, and the aspect bar in a
     360 px dock showed two of its ten toggles at the verb strip's metrics. Dense keeps
     `CONTROL_HEIGHT` and takes the width back from the sides and the gaps.
+
+    **A strip may be cut into labelled bands** (:meth:`add_group`), which is what a drawing
+    surface's strip is: nineteen glyphs in a row are nineteen riddles, and six named bands
+    of three are a tool palette. The band is then the unit — the divider parts bands, and
+    the … menu takes a band whole, with a rule where each begins — because half a band on
+    the strip and half in the menu is worse than all of it in either.
+
+    **A verb may come from the registry** (:meth:`add_action`), which is how a real surface
+    fills one: the glyph is the spec's, the words and the state are restated on every
+    context change, and an arrow may drop the verb's own child menu down.
     """
 
     def __init__(self, parent: QWidget | None = None, *, dense: bool = False) -> None:
@@ -228,6 +339,18 @@ class Toolbar(QWidget):
         self._items: list[_Item] = []
         self._painters: dict[QAction, Callable[[QColor], QIcon]] = {}
         self._tips: dict[QAction, str] = {}
+        # The shortcut a tooltip prints. A registry-fed verb never *takes* the key — the
+        # menu bar's QAction owns it, and a second QAction with the same sequence makes
+        # both ambiguous and fires neither — so the words are all this strip carries.
+        self._keys: dict[QAction, str] = {}
+        self._group: _Group | None = None
+        # Registry-fed verbs: the id, its action and its button, restated together.
+        self._bound: list[tuple[str, QAction, QToolButton]] = []
+        self._popups: dict[QAction, tuple[QMenu, str, str | None, str | None]] = {}
+        self._faces: dict[QAction, QToolButton] = {}
+        self._registry: ActionRegistry | None = None
+        self._context: ContextService | None = None
+        self._unsubscribe: Callable[[], None] | None = None
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(DENSE_GAP if dense else CONTROL_GAP)
@@ -243,10 +366,30 @@ class Toolbar(QWidget):
         self._menu.aboutToShow.connect(self._fill_more)
         self._more.setMenu(self._menu)
         self._more.hide()
-        self._layout.addWidget(self._more)
+        self._layout.addWidget(self._more, 0, Qt.AlignmentFlag.AlignTop)
         self._layout.addStretch(1)
 
     # -- filling it --------------------------------------------------------------------
+
+    def add_group(self, label: str = "") -> None:
+        """Open a band: what follows lands in it, under ``label``, parted from the last.
+
+        The bands stand ``CONTROL_GAP`` apart whatever the strip's own gap is — a dense
+        strip is dense *within* a band, and two bands four pixels apart would be one — and
+        a banded strip's glyph buttons are squares (``#ControlBar[banded="true"]``): a tool
+        palette is a grid of targets of one size, where a strip that answers a question
+        about the thing on screen would rather seat one more glyph.
+        """
+        self._layout.setSpacing(CONTROL_GAP)
+        if not self.property("banded"):
+            self.setProperty("banded", True)
+            self.style().unpolish(self)
+            self.style().polish(self)
+        if self._items:
+            self.add_divider()
+        group = _Group(label, self)
+        self._group = group
+        self._place(_Item(group, group.verbs))
 
     def add_verb(
         self,
@@ -266,67 +409,292 @@ class Toolbar(QWidget):
         entry in the … menu, so a host that rewords an action to carry a refusal does not
         lose the standing explanation with it.
         """
-        action = QAction(text, self)
-        action.setCheckable(checkable)
-        if tip:
-            self._tips[action] = tip
+        action = self._verb(text, icon, checkable=checkable, tip=tip, keys=shortcut)
         if shortcut:
             action.setShortcut(shortcut)
         action.triggered.connect(lambda _checked=False: slot())
-        action.changed.connect(lambda a=action: self._retip(a))
-        self._painters[action] = icon
-        self._retip(action)
+        self._seat(self._glyph(action), action)
+        return action
+
+    def add_action(
+        self,
+        registry: ActionRegistry,
+        context: ContextService,
+        action_id: str,
+        *,
+        menu: tuple[str, str] | None = None,
+    ) -> QAction:
+        """A verb the registry owns, restated on every context change.
+
+        The glyph is ``ActionSpec.icon``, the words and the reason come from the spec and
+        its state (:func:`action_words`), and a click goes through ``registry.run``, so the
+        state gate holds even if a stale context left a button enabled. ``menu`` names the
+        ``(menu, submenu)`` the button's arrow drops down — the child menu itself, refilled
+        on every open, never a copy of it.
+        """
+        self._bind(registry, context)
+        spec = registry.spec(action_id)
+        keys = key_sequences(spec.shortcut)
+        action = self._verb(
+            spec.label.replace("&", ""),
+            spec.icon if spec.icon is not None else blank_icon,
+            checkable=False,
+            tip=spec.tip,
+            keys=keys[0].toString(QKeySequence.SequenceFormat.NativeText) if keys else "",
+        )
+        action.triggered.connect(
+            lambda _checked=False, a=action_id: registry.run(a, context.current())
+        )
+        button = self._glyph(action)
+        if menu is not None:
+            self._arrow(button, action, menu[0], menu[1])
+        self._seat(button, action)
+        self._bound.append((action_id, action, button))
+        self._state(action_id, action, button, context.current())
+        return action
+
+    def add_menu_face(
+        self,
+        text: str,
+        icon: Callable[[QColor], QIcon],
+        registry: ActionRegistry,
+        context: ContextService,
+        menu: str,
+        *,
+        submenu: str | None = None,
+        group: str | None = None,
+    ) -> QAction:
+        """A button that is only a menu: one glyph dropping a menu of the action table.
+
+        Not :meth:`add_action` with an arrow — there is no verb under the face, so there is
+        no second target and no hairline parting two halves. Folded into the … menu it
+        becomes a child menu of the same entries, so a band of one face is still reachable
+        from a strip too narrow to show it.
+        """
+        self._bind(registry, context)
+        action = self._verb(text, icon, checkable=False, tip="", keys="")
+        popup = QMenu(self)
+        popup.aboutToShow.connect(lambda: self._refill(action))
+        self._popups[action] = (popup, menu, submenu, group)
+        action.setMenu(popup)  # So the … menu shows the face as a child menu of the same.
+        # Not ``setDefaultAction``: a QToolButton takes its menu from its default action,
+        # and giving it one of its own lets the action go — the face then renders its
+        # words in place of the glyph. It wears the action's face instead, and :meth:`_ink`
+        # keeps the two together.
         button = QToolButton(self)
         button.setObjectName("ToolbarButton")
         button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))  # Qt's toolbar default is 24.
-        button.setDefaultAction(action)
-        self._place(_Item(button, action))
-        self._reink()
+        button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        button.setIcon(action.icon())
+        button.setToolTip(action.toolTip())
+        button.setMenu(popup)
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        # The layout picker's look: a face that drops choices down, with the arrow's room.
+        button.setProperty("face", True)
+        self._faces[action] = button
+        self._seat(button, action)
         return action
 
     def add_widget(self, widget: QWidget) -> QWidget:
         """A control that is not a verb — a filter, a grouping — among the verbs."""
         widget.setParent(self)
-        self._place(_Item(widget, None))
+        self._seat(widget, None)
         return widget
 
     def add_divider(self) -> None:
-        rule = QFrame(self)
-        rule.setObjectName("ToolbarDivider")
-        rule.setFixedSize(1, CONTROL_HEIGHT - 2 * DIVIDER_INSET)
-        self._place(_Item(rule, None, divider=True))
+        self._place(_Item(_divider(self), (), divider=True))
+
+    # -- the pieces a seat is made of ----------------------------------------------------
+
+    def _verb(
+        self,
+        text: str,
+        icon: Callable[[QColor], QIcon],
+        *,
+        checkable: bool,
+        tip: str,
+        keys: str,
+    ) -> QAction:
+        action = QAction(text, self)
+        action.setCheckable(checkable)
+        if tip:
+            self._tips[action] = tip
+        if keys:
+            self._keys[action] = keys
+        action.changed.connect(lambda a=action: self._retip(a))
+        # A checked button is filled with the accent, so its glyph changes ink with it.
+        # `toggled` and not `changed`: re-inking inside `changed` would re-enter it.
+        action.toggled.connect(lambda _on, a=action: self._ink(a))
+        self._painters[action] = icon
+        self._retip(action)
+        # Inked here, before any button takes it as its default action: a QToolButton
+        # copies what the action has at that moment, and one given a null icon renders
+        # its words instead.
+        self._ink(action)
+        return action
+
+    def _glyph(self, action: QAction) -> QToolButton:
+        button = QToolButton(self)
+        button.setObjectName("ToolbarButton")
+        # A toolbar never takes the keyboard. Without this, clicking a button moves focus
+        # off the surface it just acted on, and the next keystroke goes nowhere — which a
+        # canvas with its own key bindings notices immediately.
+        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))  # Qt's toolbar default is 24.
+        button.setDefaultAction(action)
+        return button
+
+    def _arrow(self, button: QToolButton, action: QAction, menu: str, submenu: str) -> None:
+        """The arrow beside a button, rendering one child menu of the action table.
+
+        ``MenuButtonPopup``, not ``InstantPopup``: the button half still runs the verb, so
+        Sort lays the graph out the layered way and the arrow is only for the rest of the
+        family. Qt sizes the arrow from ``PM_MenuButtonIndicator`` — about ten pixels, both
+        unaimable and a thing that reads as a rendering fault — so ``hasMenu`` is what lets
+        the theme widen it and leave the glyph its room.
+        """
+        popup = QMenu(button)
+        popup.aboutToShow.connect(lambda: self._refill(action))
+        self._popups[action] = (popup, menu, submenu, None)
+        button.setMenu(popup)
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        button.setProperty("hasMenu", True)
+
+    def _seat(self, widget: QWidget, action: QAction | None) -> None:
+        if self._group is not None:
+            self._group.hold(widget, action)
+            self._reflow()
+            return
+        self._place(_Item(widget, () if action is None else (action,)))
 
     def _place(self, item: _Item) -> None:
-        if not item.divider:
+        if not item.divider and not isinstance(item.widget, _Group):
             # One height for every control, in code: the styles' content heights agree for
             # a worded button and a combo and disagree by three pixels for one with a menu.
             item.widget.setFixedHeight(CONTROL_HEIGHT)
         self._layout.insertWidget(
-            self._layout.indexOf(self._more), item.widget, 0, Qt.AlignmentFlag.AlignVCenter
+            self._layout.indexOf(self._more), item.widget, 0, Qt.AlignmentFlag.AlignTop
         )
         self._items.append(item)
         self._reflow()
 
     def verbs(self) -> list[QAction]:
-        return [item.action for item in self._items if item.action is not None]
+        return [action for item in self._items for action in item.actions]
+
+    # -- what the registry says ----------------------------------------------------------
+
+    def _bind(self, registry: ActionRegistry, context: ContextService) -> None:
+        if self._unsubscribe is None:
+            self._registry = registry
+            self._context = context
+            self._unsubscribe = context.changed.connect(self._restate)
+
+    def _restate(self, context: Context) -> None:
+        for action_id, action, button in self._bound:
+            self._state(action_id, action, button, context)
+        self._reflow()
+
+    def _state(
+        self, action_id: str, action: QAction, button: QToolButton, context: Context
+    ) -> None:
+        assert self._registry is not None
+        spec = self._registry.spec(action_id)
+        state = spec.state(context)
+        label, tip = action_words(spec, state)
+        action.setText(label)
+        self._tips[action] = tip
+        self._retip(action)
+        action.setEnabled(state.enabled)
+        if state.checked is not None:
+            action.setCheckable(True)
+            action.setChecked(state.checked)
+        # A QToolButton follows its default action's text, icon, state and tooltip, but
+        # not its visibility; and the reflow must not put back what a state took away.
+        action.setVisible(state.visible)
+        button.setVisible(state.visible)
+
+    def _refill(self, action: QAction) -> None:
+        popup, menu, submenu, group = self._popups[action]
+        assert self._registry is not None and self._context is not None
+        popup.clear()
+        fill_menu(popup, self._registry, self._context, menu, submenu, group)
+
+    def menu_for(self, action_id: str) -> QMenu | None:
+        """The dropdown a registered verb's button carries, filled as it would open."""
+        for bound_id, action, _button in self._bound:
+            if bound_id == action_id and action in self._popups:
+                self._refill(action)
+                return self._popups[action][0]
+        return None
+
+    def face_menu(self, action: QAction) -> QMenu:
+        """The menu a face drops, filled as it would open — :meth:`menu_for` for a face."""
+        self._refill(action)
+        return self._popups[action][0]
+
+    def button_for(self, action_id: str) -> QToolButton | None:
+        """The button one registered verb wears — how a test asks what the row is saying."""
+        for bound_id, _action, button in self._bound:
+            if bound_id == action_id:
+                return button
+        return None
+
+    def dispose(self) -> None:
+        """A strip lives inside a tab and must let the context go when the tab closes."""
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+            self._unsubscribe = None
 
     # -- the words -----------------------------------------------------------------------
 
     def _retip(self, action: QAction) -> None:
-        words = self._tips.get(action) or action.text()
-        if not action.shortcut().isEmpty():
-            words = f"{words}  {action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)}"
+        """The verb's words and its key, and what else it has to say under them.
+
+        A glyph says nothing until somebody hovers it, so the words must be the first line
+        — a tooltip that carries only the standing explanation leaves the verb unnamed.
+        The explanation is worth having too, so it goes on a second line rather than
+        instead.
+        """
+        words = action.text()
+        keys = self._keys.get(action) or (
+            ""
+            if action.shortcut().isEmpty()
+            else action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+        )
+        if keys:
+            words = f"{words}  {keys}"
+        said = self._tips.get(action, "")
+        if said and said != action.text():
+            words = f"{words}\n{said}"
         if action.toolTip() != words:
             action.setToolTip(words)
 
+    def _inks(self) -> tuple[QColor, QColor]:
+        """The quiet ink, and the one a glyph takes on an accent-filled button."""
+        secondary = self.palette().color(QPalette.ColorRole.Text)
+        secondary.setAlpha(SECONDARY_ALPHA)
+        # BrightText carries the theme's $ON_ACCENT: a checked button is filled with the
+        # accent, and a glyph left in the quiet tone disappears into it.
+        return secondary, self.palette().color(QPalette.ColorRole.BrightText)
+
+    def _ink(self, action: QAction) -> None:
+        painter = self._painters.get(action)
+        if painter is None:
+            return
+        secondary, on_accent = self._inks()
+        icon = painter(on_accent if action.isChecked() else secondary)
+        action.setIcon(icon)
+        face = self._faces.get(action)
+        if face is not None:
+            face.setIcon(icon)  # A face wears the action's glyph without following it.
+
     def _reink(self) -> None:
-        ink = self.palette().color(QPalette.ColorRole.Text)
-        ink.setAlpha(SECONDARY_ALPHA)
-        for action, painter in self._painters.items():
-            action.setIcon(painter(ink))
+        for action in self._painters:
+            self._ink(action)
 
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
         if event.type() == QEvent.Type.PaletteChange:
@@ -380,12 +748,14 @@ class Toolbar(QWidget):
             if item.divider:
                 pending_divider = bool(self._menu.actions())
                 continue
-            if item.action is None:
-                continue  # A widget never enters the menu.
+            listed = [action for action in item.actions if action.isVisible()]
+            if not listed:
+                continue  # A widget never enters the menu, and nor does an empty band.
             if pending_divider:
                 self._menu.addSeparator()
                 pending_divider = False
-            self._menu.addAction(item.action)
+            for action in listed:
+                self._menu.addAction(action)
 
 
 class _StayOpenMenu(QMenu):

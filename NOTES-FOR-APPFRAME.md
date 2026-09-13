@@ -2987,3 +2987,194 @@ second widget that reimplemented the tone mapping to change one character.
 
 **Upstream?** Yes, with the constraint in the docstring: the tone is the vocabulary, the
 glyph is the surface's, and a second *mood* glyph is what the tones exist to prevent.
+
+## 35. From the graph-editor pass
+
+### `framework/toolbar.py` — bands, a registry feed, a menu face, and a checked glyph's ink
+
+**What.** Four additions to the `Toolbar` primitive, and one correction.
+
+- `add_group(label)` opens a **band**: what follows lands in it, `DENSE_GAP` apart, under a
+  name in `#ToolbarGroupLabel`, and a divider is placed before every band but the first. A
+  band is one `_Group` widget and therefore one item of the reflow, so what folds into the
+  `…` menu is a whole band, listed as glyph *and* words with a rule where each begins. It
+  also sets a `banded` property, which is what makes the strip's glyph buttons **squares**
+  (`CONTROL_HEIGHT` each way) — a palette wants targets of one size, and a dense strip that
+  is *not* banded must stay narrow, because the aspect bar seats ten toggles in a 360 px
+  dock and squaring them costs it two.
+- `add_action(registry, context, action_id, *, menu=…)` fills a verb from the registry: the
+  glyph is `ActionSpec.icon`, the words and the reason come from `action_words(spec, state)`
+  (which `ActionToolbar._refresh` now shares, so there is one definition of what a button
+  says), the state is restated on every context change, and `menu` gives the button the
+  arrow that drops its own child menu. `dispose()` lets the context go.
+- `add_menu_face(...)` is a button that is *only* a menu — no verb under it, so no split
+  arrow. Folded, it becomes a child menu of the same entries.
+- A **checked verb's glyph is re-inked in `$ON_ACCENT`**, which `theme/palette.py` now
+  carries in `QPalette.ColorRole.BrightText` (it held `accent_hover`, which nothing read).
+
+**Why.** DESIGN.md already said "on a real surface the verbs come from the registry —
+`ActionToolbar` over registered `ActionSpec`s becomes a `Toolbar` fed by them in the design
+passes". The canvas strip was the first such pass. The bands are what a drawing surface's
+strip is; folding by band is what keeps the `…` menu readable.
+
+The checked ink is the interesting one: `#ToolbarButton:checked` fills with the accent, and
+a glyph painted in the secondary tone disappears into it — which is why that strip's mode
+switches carried *words* for as long as they did, and why the aspect bar's ten toggles have
+the same fault today. A painter has no stylesheet, so the palette is the only way it can
+learn a colour the stylesheet writes.
+
+**Watch.** Four Qt traps, all found the hard way.
+
+1. `QToolButton.setMenu()` on a button that already has a default action **detaches the
+   default action**, and the button then renders the action's text in place of a glyph it
+   no longer follows. A face therefore sets its own icon and tooltip and is kept in step by
+   `_ink`, rather than using `setDefaultAction`.
+2. A `QToolButton` copies its default action's icon **at `setDefaultAction` time**. Ink the
+   action before seating it, or a button given a null icon falls back to drawing its words.
+3. `_reink()` repaints every glyph on the strip. Calling it once per added verb makes a
+   nineteen-verb strip paint 361 pixmaps to build; `add_*` inks only the action it made.
+4. **A dense strip's padding shorthand outranks the rules that ask for an arrow's room.**
+   `#ControlBar[dense="true"] #ToolbarButton { padding: 6px 4px }` is two names and an
+   attribute; `#ToolbarButton[hasMenu="true"] { padding-right: … }` is one. So a dense strip
+   silently took the room back and Qt painted a 20 px subcontrol straight over a 16 px
+   glyph — a clipped icon and nothing else to show for it, because a styled subcontrol
+   widens no button by itself. `theme.qss` now states both dense variants, and
+   `tests/test_theme.py` renders a dense strip and asserts a button that drops a menu is
+   wider than a plain one by the room it was promised. The literal a *face* leaves is
+   `INDICATOR_ROOM` now, so the three rules that shared it share a name too.
+
+**Upstream?** Yes, all of it. A template with a drawing surface wants bands; a template
+with an action registry wants the registry feed; and the checked-glyph ink is a bug fix
+wherever a checkable glyph button exists.
+
+### `framework/picker.py` — the fuzzy picker, with the palette rebuilt on it
+
+**What.** `PickerDialog` over `PickerRow(id, label, detail, trailing, icon, also, landmark)`:
+the field, the ranking, the `TwoLineDelegate` rows, the arrow keys and the after-close pick.
+`fuzzy_score` moved here from `palette.py`, and `CommandPalette` is now the half that turns
+the registry into rows.
+
+**Why.** A second fuzzy picker (the graph's *Jump to*) would otherwise have been a
+hundred-and-thirty-line near-copy of the palette, whose registry and context were wired
+into its constructor. Two surfaces are what justify a primitive.
+
+**Watch.** `also` is what a row is *searched* by beyond its name, and is deliberately not
+`detail` or `trailing`: a palette row shows its shortcut at the right, and folding that
+into the haystack makes "ctrl" match every verb that has one. `landmark` is what a picker
+over hundreds of rows opens on; a list with no landmarks opens whole, which is what the
+palette wants.
+
+**Upstream?** Yes. The template ships the palette, and the palette is this with rows from
+a registry.
+
+### `framework/action_menu.py` — `fill_menu(..., group=…)`
+
+**What.** A filter beside the existing `submenu` one: naming a `group` renders just that
+band of a menu, child menus nested as usual.
+
+**Why.** A toolbar face that stands for a band — the graph strip's *Options* for *Graph*'s
+`look` — must render the menu rather than keep a copy of it, which is the rule every other
+pop-up in the application follows.
+
+**Watch.** The nested `child_menu` helper had a parameter also called `group`; it is
+`entry_group` now, or the new filter would have been shadowed inside it.
+
+**Upstream?** Yes, with `submenu`. It is eight lines and the same idea.
+
+### `theme/icons.py` — every glyph painted at the screen's device pixel ratio
+
+**What.** `_canvas()` makes its pixmap `ICON_SIZE * ratio` across, stamps that ratio on it
+and scales the painter by it, so the forty-odd painters below keep writing plain 16-unit
+coordinates. `key_badge_icon`, `filter_icon` and `palette_strip_icon` went through it too,
+rather than making pixmaps of their own.
+
+**Why.** A glyph painted into a 16-pixel pixmap and shown at 16 logical points on a 2x
+display is upscaled by the compositor, and every stroke in it goes soft. That is most of
+what "the icons look a bit blurry" turns out to mean, and it is four lines to fix.
+
+**Watch.** **Do not scale the painter as well.** A paint device that declares a device
+pixel ratio already maps logical coordinates, so `painter.scale(ratio, ratio)` applies it
+twice and a 16-unit glyph lands in the top-left quarter of its own icon. That shipped, and
+nothing here could show it: the offscreen platform reports a ratio of 1, so every render
+and every test was correct and every glyph on the developer's 2x screen was a fragment.
+`tests/test_theme.py` forces the ratio now and asserts a known glyph still spans its own
+16 units — it fails on the double scale and on no scale at all.
+
+The ratio is read from `QGuiApplication` when the glyph is painted, not when the screen
+changes. Icons are repainted on a theme change, so a window dragged between a 1x and a 2x
+screen keeps the ratio it was painted at until then — the same trade every
+`QIcon`-from-`QPixmap` in the application already makes, and the fix if it ever matters is a
+`screenChanged` hook, not a different painter.
+
+**Upstream?** Yes. Any template that paints its own glyphs has this.
+
+### `theme/tokens.py` — `$BORDER_FAINT` fades towards the elevated ground
+
+**What.** `mix(theme.border, theme.bg_elevated, 0.5)` where it was `bg_base`.
+
+**Why.** A strip of verbs sits on `$BG_ELEVATED`, and faded into the *page's* ground the
+divider came out three levels from the canvas strip on the light theme — a divider that
+parts nothing. Its only consumers are strip dividers (`#ToolbarDivider`,
+`#ControlBar::separator`), so the change is contained and strictly an improvement on both
+grounds.
+
+**Upstream?** Yes.
+
+### A render script must redirect QSettings
+
+Not a framework change — a rule for `scripts/render_*.py`. `render_graph_editor.py` opens
+the graph's side panel, which writes a per-user preference; the first run wrote it into the
+developer's real settings, and every later run then started with the panel already open, so
+the "closed" screenshot could not be taken twice. The suite's `conftest.py` already
+redirects `QSettings` to a throwaway ini directory for both reasons — a render script wants
+the same two lines, and to `clear()` between themes so each renders from the same state.
+
+### `theme/icons.py` — the glyphs are a vendored SVG set
+
+**What.** Forty-odd hand-painted `QPainter` glyphs became fifty-two Tabler SVGs (MIT) under
+`theme/glyphs/`, fetched by `scripts/vendor_tabler_icons.py`, which holds the mapping from
+*what a glyph means here* to the icon that says it. `paint_glyph(painter, rect, name,
+colour)` is the one painter; `glyph_icon(name, colour)` wraps it in a `QIcon`. The module
+went from 1,075 lines to 461, and the five `paint_*_glyph` functions and the if/elif chain
+that chose between them are gone — the kind *is* the glyph's name.
+
+**Why.** A handful of painters did not justify a resource pipeline; forty did not justify
+hand-drawing. The strokes drifted between glyphs and nobody could add one that matched.
+Copied in rather than depended on: 212 KB of files against a package, a version to resolve
+and a release cadence — and only the ones used, because the full set is six thousand files.
+
+**Watch.** Two things. **Qt's SVG renderer knows no `currentColor`** — substitute the ink
+into the source before rendering (cache the substitution; the canvas asks for the same few
+glyphs in the same few colours on every repaint). And **an SVG stroke colour carries no
+alpha**, so the colour's alpha has to become the painter's opacity; a strip's glyphs are the
+text colour at `SECONDARY_ALPHA`, so getting that wrong makes every toolbar read a shade
+too loud.
+
+**Upstream?** The mechanism, yes — a template that paints its own glyphs wants this loader.
+The set is an application's choice, and its licence notice travels with it.
+
+### A `:checked::menu-button` rule drops the button's own left border
+
+**What.** `#ToolbarButton:checked::menu-button { border-left-color: … }` existed so the
+divider between a split button's halves would not vanish into the accent fill a checked
+mode button wears. Declaring it — in *any* form, `border-left-color` or a full
+`border-left` — makes Qt drop the **widget's own left border**, on every `#ToolbarButton`
+in the application, checked or not, menu or no menu. It is gone; the unconditional
+`::menu-button` divider is `$BORDER_STRONG` instead, one colour that reads on the quiet
+ground and on the accent fill alike.
+
+**Why it took a user to find it.** Nothing in the rule mentions the widget's border, the
+symptom is one missing hairline, and every theme test we had read the stylesheet's *text*
+or measured a subcontrol's geometry. `tests/test_theme.py` now renders a `#ToolbarButton`
+in both themes, checked and not, with and without a menu, and asserts the four edge pixels
+are **one colour** — a checked button's border is the accent it is filled with, an
+unchecked one's is the hairline, and a side that differs from the other three is a side
+that is not drawn. It fails eight ways with the rule put back.
+
+**Watch.** The general shape: a pseudo-state on a subcontrol (`:checked::menu-button`) is
+not a scoped override in Qt's stylesheet engine — it can change how the *whole* widget's
+box is rendered. Prefer one unconditional subcontrol rule whose colour works in every
+state over a second rule for one state.
+
+**Upstream?** The finding, yes. Any template with a split toolbar button will write this
+rule sooner or later.

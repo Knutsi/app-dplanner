@@ -11,12 +11,13 @@ from importlib.resources import files
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QMenu, QSplitter, QStyle, QToolButton, QWidget
 
 import dplanner
 from dplanner.theme import load_stylesheet, tokens
+from dplanner.theme.icons import ICON_SIZE, plus_icon
 from dplanner.theme.palette import build_palette
 from dplanner.theme.providers import BUILTIN, OMARCHY_THEMES
 from dplanner.theme.style import build_style
@@ -183,6 +184,119 @@ def test_a_buttons_dropdown_arrow_is_a_target_of_its_own(app, theme):
     ground = QColor(theme.bg_overlay).rgb()
     column = [image.pixel(arrow.left() - 2, y) for y in range(4, button.height() - 4)]
     assert all(pixel == ground for pixel in column)
+
+
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=("dark", "light"))
+@pytest.mark.parametrize(
+    ("marker", "popup", "room"),
+    (
+        ("hasMenu", QToolButton.ToolButtonPopupMode.MenuButtonPopup, tokens.ARROW_ROOM),
+        ("face", QToolButton.ToolButtonPopupMode.InstantPopup, tokens.INDICATOR_ROOM),
+    ),
+    ids=("arrow", "menu face"),
+)
+def test_a_dense_strips_arrow_keeps_its_room(app, theme, marker, popup, room):
+    """A dense strip narrows every button's sides — and must not narrow the arrow's room.
+
+    ``#ControlBar[dense="true"] #ToolbarButton`` is two names and an attribute, so its
+    padding shorthand outranks the two rules that ask for the arrow's width. It did, and
+    Qt painted a 20 px subcontrol straight over a 16 px glyph: a clipped icon and nothing
+    else to show for it, because a styled subcontrol widens no button by itself.
+    """
+    strip = QWidget()
+    strip.setObjectName("ControlBar")
+    strip.setProperty("dense", True)
+    plain, dropping = (_glyph_button(strip) for _ in range(2))
+    dropping.setMenu(QMenu(dropping))
+    dropping.setPopupMode(popup)
+    dropping.setProperty(marker, True)
+    strip.setStyleSheet(load_stylesheet(theme))
+    strip.show()
+    app.processEvents()
+
+    # The room replaces the dense side padding rather than adding to it, and what is left
+    # is what the arrow is drawn in.
+    gained = dropping.sizeHint().width() - plain.sizeHint().width()
+    assert gained >= room - tokens.DENSE_GAP
+
+
+@pytest.mark.parametrize("ratio", (1.0, 2.0, 3.0), ids=("1x", "2x", "3x"))
+def test_a_glyph_is_the_same_picture_at_every_device_pixel_ratio(app, monkeypatch, ratio):
+    """A glyph is painted at the screen's resolution, in glyph units either way.
+
+    The pixmap grows with the ratio and carries it; the painter is *not* scaled, because a
+    paint device that declares a ratio already maps logical coordinates. Scaling it as well
+    applies the ratio twice and the glyph lands in the top-left quarter of its own icon —
+    which is what shipped, and which the offscreen platform cannot show, because there the
+    ratio is always 1. Hence a forced ratio here.
+    """
+    from dplanner.theme import icons
+
+    monkeypatch.setattr(icons, "_ratio", lambda: ratio)
+    pixmap = icons.plus_icon("#ffffff").pixmap(QSize(ICON_SIZE, ICON_SIZE), ratio)
+    image = pixmap.toImage()
+    assert image.width() == round(ICON_SIZE * ratio)  # Painted at the screen's resolution…
+
+    lit = [
+        x
+        for x in range(image.width())
+        if any(image.pixelColor(x, y).alpha() > 0 for y in range(image.height()))
+    ]
+    # …and the plus still spans the glyph's own 16 units, whatever the ratio.
+    assert min(lit) / ratio < ICON_SIZE / 4
+    assert max(lit) / ratio > 3 * ICON_SIZE / 4
+
+
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=("dark", "light"))
+@pytest.mark.parametrize("drops_a_menu", (False, True), ids=("plain", "with an arrow"))
+@pytest.mark.parametrize("checked", (False, True), ids=("off", "on"))
+def test_a_toolbar_button_is_bordered_on_all_four_sides(app, theme, drops_a_menu, checked):
+    """Rendered, not read — because what broke this was a rule that names no border at all.
+
+    A ``#ToolbarButton:checked::menu-button`` rule, in *any* form, made Qt drop the
+    **button's own left border** — on every toolbar button in the application, checked or
+    not, menu or no menu. Nothing in the rule says "left border of the widget", and nothing
+    short of looking at the pixels could have caught it.
+    """
+    strip = QWidget()
+    strip.setObjectName("ControlBar")
+    strip.setProperty("dense", True)
+    button = _glyph_button(strip)
+    button.setCheckable(True)
+    button.setChecked(checked)
+    if drops_a_menu:
+        button.setMenu(QMenu(button))
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        button.setProperty("hasMenu", True)
+    button.setFixedHeight(tokens.CONTROL_HEIGHT)
+    button.resize(button.sizeHint())
+    strip.resize(button.size())
+    strip.setStyleSheet(load_stylesheet(theme))
+    strip.show()
+    app.processEvents()
+
+    image = button.grab().toImage()
+    middle_x, middle_y = button.width() // 2, button.height() // 2
+    edges = {
+        "left": (0, middle_y),
+        "right": (button.width() - 1, middle_y),
+        "top": (middle_x, 0),
+        "bottom": (middle_x, button.height() - 1),
+    }
+    drawn = {side: QColor(image.pixel(x, y)).name() for side, (x, y) in edges.items()}
+    # One colour on all four, whatever it is: a checked button's border is the accent it is
+    # filled with, and an unchecked one's is the hairline. A side that differs from the
+    # other three is a side that is not drawn.
+    assert len(set(drawn.values())) == 1, drawn
+
+
+def _glyph_button(parent):
+    button = QToolButton(parent)
+    button.setObjectName("ToolbarButton")
+    button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+    button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+    button.setIcon(plus_icon("#ffffff"))
+    return button
 
 
 def _tool_option(button):

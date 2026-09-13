@@ -1,11 +1,17 @@
 """The toolbar primitive: verbs as glyphs with their words in tooltips, what no longer fits
-folded into a … menu as glyph and words, a widget hidden rather than listed, one height."""
+folded into a … menu as glyph and words, a widget hidden rather than listed, one height —
+and, for a strip that is a tool palette, named bands that fold whole."""
 
 import pytest
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QComboBox, QWidget
 
-from dplanner.framework.toolbar import MORE, Toolbar
-from dplanner.theme.icons import plus_icon, refresh_icon, trash_icon
+from dplanner.framework.action_registry import ActionRegistry, ActionSpec, MenuStructure
+from dplanner.framework.context import ContextService
+from dplanner.framework.toolbar import MORE, Toolbar, _Group
+from dplanner.theme import apply_theme
+from dplanner.theme.icons import lasso_icon, plus_icon, refresh_icon, trash_icon
+from dplanner.theme.themes import DARK
 
 
 @pytest.fixture
@@ -57,7 +63,7 @@ def test_a_narrow_strip_folds_the_trailing_verbs_into_the_more_menu(host, app):
     bar.resize(120, bar.height())
     app.processEvents()
     assert not bar._more.isHidden() and bar._more.text() == MORE
-    hidden = [item.action.text() for item in bar.hidden_items() if item.action is not None]
+    hidden = [action.text() for item in bar.hidden_items() for action in item.actions]
     assert "Empty" in hidden and "Refresh" in hidden
     assert combo.isHidden()  # A widget never enters the menu; it hides.
     bar._fill_more()
@@ -137,3 +143,137 @@ def test_a_filter_button_says_when_a_filter_is_on_and_keeps_its_size(host, app):
     assert button.active() == [] and heard[-1] == [] and not button.clear_button.isEnabled()
     assert button.face.property("active") is False
     assert all(a.isCheckable() for a in button.menu.actions())
+
+
+# -- named bands ---------------------------------------------------------------------------
+
+
+def banded(host, app, *, width=900):
+    """Three bands of two, the way a drawing surface's strip is cut."""
+    bar = Toolbar(host, dense=True)
+    for label in ("Go", "Step", "Link"):
+        bar.add_group(label)
+        for name in ("one", "two"):
+            bar.add_verb(f"{label} {name}", plus_icon, lambda: None)
+    host.resize(width, 90)
+    host.show()
+    app.processEvents()
+    bar.resize(width, bar.sizeHint().height())
+    app.processEvents()
+    return bar
+
+
+def band_names(bar):
+    return [
+        group.caption.text()
+        for group in bar.findChildren(_Group)
+        if group.caption is not None and not group.isHidden()
+    ]
+
+
+def test_a_band_says_what_its_glyphs_are_for(host, app):
+    bar = banded(host, app)
+    assert band_names(bar) == ["Go", "Step", "Link"]
+    assert bar.hidden_items() == [] and bar._more.isHidden()
+
+
+def test_a_narrow_strip_folds_a_whole_band_at_a_time(host, app):
+    """Half a band on the strip and half in a menu is worse than all of it in either."""
+    bar = banded(host, app)
+    bar.resize(140, bar.height())
+    app.processEvents()
+    assert band_names(bar) == ["Go"] and not bar._more.isHidden()
+
+    bar._fill_more()
+    listed = [a.text() for a in bar._menu.actions() if not a.isSeparator()]
+    assert listed == ["Step one", "Step two", "Link one", "Link two"]
+    # A rule where each band begins, so the menu says what the strip was saying.
+    assert sum(1 for a in bar._menu.actions() if a.isSeparator()) == 1
+    assert all(not a.icon().isNull() for a in bar._menu.actions() if not a.isSeparator())
+
+    bar.resize(900, bar.height())
+    app.processEvents()
+    assert band_names(bar) == ["Go", "Step", "Link"]
+
+
+# -- fed by the registry -------------------------------------------------------------------
+
+MENUS = MenuStructure({"Step": ("edit",), "Graph": ("look",)})
+
+
+def registry_with(*specs):
+    registry = ActionRegistry(MENUS)
+    for spec in specs:
+        registry.register(spec)
+    return registry
+
+
+def test_a_registry_fed_verb_wears_the_specs_glyph_and_follows_its_state(host, app):
+    picked: list[str] = []
+    registry = registry_with(
+        ActionSpec(
+            id="steps.new",
+            label="&New Step",
+            menu="Step",
+            group="edit",
+            icon=plus_icon,
+            tip="Add a step to this project",
+            run=lambda _context: picked.append("new"),
+        )
+    )
+    context = ContextService()
+    bar = Toolbar(host)
+    action = bar.add_action(registry, context, "steps.new")
+    host.show()
+    app.processEvents()
+
+    button = bar.button_for("steps.new")
+    assert button is not None and not button.icon().isNull()
+    # The words lead the tooltip: a glyph that says nothing until hovered must be named.
+    assert action.toolTip().startswith("New Step")
+    assert "Add a step to this project" in action.toolTip()
+    action.trigger()
+    assert picked == ["new"]
+
+    before = len(context.changed._slots)
+    bar.dispose()
+    assert len(context.changed._slots) < before
+
+
+def test_a_checked_verbs_glyph_changes_ink_with_its_fill(host, app):
+    """A checked button is filled with the accent; a glyph left in the quiet tone
+    disappears into it, which is why the switches used to be words."""
+    apply_theme(app, DARK)
+    registry = registry_with(
+        ActionSpec(id="steps.lasso", label="&Lasso", menu="Step", group="edit", icon=lasso_icon)
+    )
+    bar = Toolbar(host)
+    action = bar.add_action(registry, ContextService(), "steps.lasso")
+    host.show()
+    app.processEvents()
+
+    quiet = action.icon().pixmap(16, 16).toImage()
+    action.setCheckable(True)
+    action.setChecked(True)
+    lit = action.icon().pixmap(16, 16).toImage()
+    assert quiet != lit
+    # And the ink it takes is the one the stylesheet writes on a checked button.
+    assert bar.palette().color(QPalette.ColorRole.BrightText).name() == DARK.on_accent
+
+
+def test_a_face_drops_a_band_of_the_menus_and_folds_as_a_child_menu(host, app):
+    """One glyph standing for a whole band of the action table — rendered, never copied."""
+    registry = registry_with(
+        ActionSpec(id="canvas.frame", label="&Frame Graph", menu="Graph", group="look"),
+        ActionSpec(id="canvas.snap", label="Snap to &Grid", menu="Graph", group="look"),
+        ActionSpec(id="steps.new", label="&New Step", menu="Step", group="edit"),
+    )
+    context = ContextService()
+    bar = Toolbar(host)
+    face = bar.add_menu_face("Look", refresh_icon, registry, context, "Graph", group="look")
+    host.show()
+    app.processEvents()
+
+    entries = bar.face_menu(face).actions()
+    listed = [a.text().replace("&", "") for a in entries if not a.isSeparator()]
+    assert listed == ["Frame Graph", "Snap to Grid"]  # The band, and nothing from Step.

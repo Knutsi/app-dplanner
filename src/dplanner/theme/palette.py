@@ -38,7 +38,12 @@ def build_palette(theme: Theme) -> QPalette:
         "PlaceholderText": theme.text_disabled,
         "Button": theme.bg_elevated,
         "ButtonText": theme.text_primary,
-        "BrightText": theme.accent_hover,
+        # Qt's own words for BrightText are "a text colour that contrasts well with a dark
+        # fill" — which is exactly what $ON_ACCENT is, and the palette is the only way a
+        # painter can learn it: a glyph on an accent-filled button (a canvas mode you are
+        # in, an aspect toggle that is on) is painted in Python and has no stylesheet.
+        # It held accent_hover before, which nothing ever read.
+        "BrightText": theme.on_accent,
         "Link": theme.link,
         "LinkVisited": theme.link_visited,
         "Highlight": theme.selection_bg,

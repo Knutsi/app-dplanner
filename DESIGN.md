@@ -29,6 +29,8 @@ re-rendering — never styling one surface by name.
 | a dialog, a confirmation, a one-line prompt | `DialogFrame`, `confirm()`, `LinePrompt` | `framework/dialog.py`, `framework/widgets.py` | the modal: `dialog-*`, `dialog-refused-*` |
 | a table | `Table`, `Column`, `Cell`; `key_badge_icon` for a milestone | `framework/table.py`, `theme/icons.py` | the table tab: `table-*`, `table-selected-*` |
 | a strip of verbs over a surface | `Toolbar` | `framework/toolbar.py` | the table tab's strip |
+| a strip that is a tool palette | `Toolbar.add_group` | `framework/toolbar.py` | the toolbars tab: `toolbars-*`, `toolbars-folded-*` |
+| a fuzzy picker over a long list | `PickerDialog`, `PickerRow` | `framework/picker.py` | the palette, and Find: `s7-graph-editor/find-*` |
 | a filter on a strip | `FilterButton` | `framework/toolbar.py` | `table-filtered-*`, `filters-*` |
 | a combo box on a strip or in a dialog | a plain `QComboBox` — the stylesheet dresses it | `theme.qss` | `dropdown-*` |
 | "the view is rebuilding" | `UpdatingIndicator` — a `Spinner` on its own | `framework/signalling.py` | the strip's right end, `dialog-working-*` |
@@ -484,7 +486,17 @@ Example Table wears one.
 - **A verb is a glyph, and its words are the tooltip** (with the shortcut beside them). A
   row of words is a sentence the eye has to read every time; a row of glyphs is learned
   once, and the tooltip is there for the first time. Every glyph is one of
-  `theme/icons.py`'s painters, inked in the secondary tone and re-inked on a theme change.
+  `theme/glyphs/`'s vendored Tabler SVGs, inked in the secondary tone and re-inked on a
+  theme change —
+  and painted at the screen's device pixel ratio, because a 16-pixel pixmap shown at 16
+  points on a 2× display is upscaled, and every stroke in it goes soft.
+- **A control that drops a menu asks for its arrow's room** (`ARROW_ROOM` for a split
+  button, `INDICATOR_ROOM` for a face). A styled subcontrol is outside Qt's size hint, so
+  nothing widens the button by itself: without the padding the arrow is painted over the
+  glyph, and a clipped icon is the only sign. **And the divider between the halves is one
+  colour for every state** (`$BORDER_STRONG`, which reads on the quiet ground and on a
+  checked button's accent fill alike): a second rule for the checked state — a pseudo-state
+  on a subcontrol — makes Qt drop the button's own left border everywhere.
 - **What no longer fits folds into a `…` menu at the strip's end**, as glyph *and* words,
   taken from the right — never a second row, and never Qt's own overflow, which pops the
   hidden buttons up as glyphs again. A widget among the verbs (a filter) never enters the
@@ -502,8 +514,36 @@ Example Table wears one.
   that panel can be; dense seats all ten. It is a mode the primitive offers, never a surface
   styled by name.
 - **A divider is the hairline at half strength** (`$BORDER_FAINT`, the border blended
-  halfway into the ground), 6 px short of the controls' top and bottom: it parts groups
-  without being read as a control.
+  halfway into the elevated ground), 6 px short of the controls' top and bottom: it parts
+  groups without being read as a control.
+- **A strip that is a tool palette is cut into named bands** (`Toolbar.add_group(label)`):
+  the glyphs of a band sit `DENSE_GAP` apart and read as one set, the bands stand
+  `CONTROL_GAP` apart with a divider between them, and each carries its name under it — a
+  point smaller, secondary, centred. Nineteen glyphs in a row are nineteen riddles; six
+  named bands of three or four are something to learn once. The name is *structure*, not
+  an explainer: it says what the glyphs above it are for, where a label on each button
+  would say what the tooltip already says.
+- **A band's glyph buttons are squares** — `CONTROL_HEIGHT` each way, the padding derived
+  from the height rather than typed. A palette is a grid of targets of one size, and a
+  square is also what puts the glyph in the middle of its button. A *dense* strip that is
+  not banded stays narrow: the aspect bar wants ten toggles in a 360 px dock, and squaring
+  them costs it two.
+- **The band is then the unit that folds.** What no longer fits leaves the strip a whole
+  band at a time and is listed in the `…` menu with a rule where each band begins — half a
+  band on the strip and half in a menu is worse than all of it in either.
+- **A control that is not a verb goes in the band it is about**, as a widget: the graph's
+  layout picker names the arrangement the canvas is showing, so it sits at the end of
+  *Arrange*. A widget never enters the `…` menu — it hides when there is no room — which is
+  what keeps "not a verb" true without standing it outside the strip, where a lone worded
+  button past a row of named bands reads as something that fell off.
+- **A checked verb's glyph takes `$ON_ACCENT`.** A checked button is filled with the
+  accent, and a glyph left in the quiet tone disappears into it — which is why the canvas's
+  mode switches carried words for as long as they did. The primitive re-inks on the toggle,
+  so a glyph is legible in both states and nothing on a strip needs words to be readable.
+- **A face is a glyph that stands for a band of the menus** (`Toolbar.add_menu_face`):
+  one control dropping a menu the action table renders, never a copy of it — the graph's
+  *Options* is *Graph*'s `look` band. It has no verb under it, so it wears the layout
+  picker's look rather than the split arrow of a button that runs one.
 - **A combo box on a strip is one of the buttons** — the quiet bordered look, the arrow's
   room at its right — and **the list it drops down is a menu**: the overlay ground behind
   a strong hairline, rounded, 6 px around every entry, the accent on the one under the
@@ -614,6 +654,8 @@ reaching `theme.qss` as `$NAME` for free. A literal in a layout is a copy that d
 | `DENSE_GAP` | 4 | between the glyphs of a dense strip, and its buttons' sides (*Toolbars*) |
 | `CONTROL_HEIGHT` | 32 | every control on a strip, set in code |
 | `ICON_SIZE` (+ `ICON_GAP`) | 16 (+ 8) | a glyph, and the gap after it |
+| `ARROW_W` / `ARROW_ROOM` | 20 / 24 | a split button's arrow, and the room the words leave it |
+| `INDICATOR_ROOM` | 20 | the room a *face* leaves — a control that is only a menu |
 | `KEY_BADGE_W` | 28 | a key badge, and the slot a glyph column reserves on every row |
 | `RADIUS_SM` / `RADIUS_MD` | 5 / 8 | buttons, chips, fields / wells, cards, tables, lanes |
 | `SECONDARY_ALPHA` | 160 | a painter's secondary ink (~63 %) |
@@ -623,7 +665,7 @@ reaching `theme.qss` as `$NAME` for free. A literal in a layout is a copy that d
 | an edge | 2 px | a picked row's left, the active pane's top |
 | a hairline | 1 px `$BORDER` | a header's rule, a seam, a pinned row |
 | a progress bar | 4 px | the one kind there is |
-| `$BORDER_FAINT` | derived | the hairline blended halfway into the ground: a strip's dividers |
+| `$BORDER_FAINT` | derived | the hairline blended halfway into the elevated ground: a strip's dividers |
 | `$ACCENT_WASH` | derived | the accent washed over the overlay ground: a control that is on |
 
 ## Bringing a surface up
@@ -647,7 +689,8 @@ from the code or a screenshot, and Debug ▸ Design Example is what *yes* looks 
 10. Does a row wash on hover and pick with the edge over the quiet ground?
 11. Does an empty page swap through `EmptyState.stands_in_for`, and nothing else?
 12. Is the strip a `Toolbar` — glyphs with their words in tooltips, folding into `…`, every
-    control one height — with a `FilterButton` where there are filters?
+    control one height — with a `FilterButton` where there are filters, and named bands
+    where it is a tool palette rather than a handful of verbs?
 13. Does the Updating indicator turn at the strip's right from the first trigger to the
     rebuild's end?
 14. Is every busy, ok and error a `StatusLine` in place, and every rewritten `QLabel` gone?
@@ -689,9 +732,15 @@ Dialogs:
 - `SaveSnapshotDialog` — the panel's 6 px idiom hand-simulated with `addSpacing`; the box's
   Save.
 - `DiffDialog` — no margins, no spacing, an uncaptioned picker over an unstyled pane.
-- `CommandPalette` — designed rows in an unstyled frameless frame.
+- *(done — the graph editor pass)* `CommandPalette` is a `PickerDialog`
+  (`framework/picker.py`) and the frame is styled: the menu's own ground and hairline, a
+  focused field, and a picked row wearing the accent on its edge rather than a band of
+  colour. *Find Step…* is the same picker over a project's steps.
 - The Run Agent confirmation — the application's most consequential question, as a
   `QMessageBox` with a bulleted list; and fourteen `QInputDialog.getText` prompts.
+- *(done — the graph editor pass)* Help ▸ About was a `QMessageBox.about` still naming the
+  template's product. It is a `DialogFrame` over a `Table` now: the name and version, then
+  what DPlanner is built on, a row per component with its licence.
 
 Tables and lists:
 
@@ -706,8 +755,10 @@ Tables and lists:
 - Specs tree — uniform row heights under a two-line delegate; a pinned header faked as a
   row.
 - Assets — two lists with no object name at all; a baked empty message (now on the swap).
-- Features panel — single-line rows with the detail in a tooltip; the hint hides when the
-  list is empty, the inverse of every other surface.
+- *(done — the graph editor pass)* Features panel — two-line rows with what became of
+  each feature on the second line, a `Toolbar` of verbs over them, and an `EmptyState`
+  offering *Add Feature…* where the hint used to hide. It stands inside the project tab
+  now, beside the canvas.
 - Agent profiles — plain strings with *(default)* appended and three stock buttons.
 - Settings tree, Index tree, palette list — unstyled or ink-only hover.
 - Task and Agents browsers, Milestones list — widget rows laid out by hand, one of them by

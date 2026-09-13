@@ -45,13 +45,7 @@ from dplanner.theme.cards import (
     title_font,
     title_lines,
 )
-from dplanner.theme.icons import (
-    paint_beaker_glyph,
-    paint_layers_glyph,
-    paint_shield_glyph,
-    paint_spark_glyph,
-    paint_tag_glyph,
-)
+from dplanner.theme.icons import paint_glyph
 from dplanner.theme.tokens import SECONDARY_ALPHA
 from dplanner.theme.tones import (
     BADGE_BORDER,
@@ -602,16 +596,9 @@ def paint_icon_medallions(
         glyph = QRectF(
             centre.x() - ICON_GLYPH / 2, centre.y() - ICON_GLYPH / 2, ICON_GLYPH, ICON_GLYPH
         )
-        if kind == "tag":
-            paint_tag_glyph(painter, glyph, ink)
-        elif kind == "spark":
-            paint_spark_glyph(painter, glyph, faded)
-        elif kind == "layers":
-            paint_layers_glyph(painter, glyph, faded)
-        elif kind == "beaker":
-            paint_beaker_glyph(painter, glyph, faded)
-        elif kind == "shield":
-            paint_shield_glyph(painter, glyph, faded)
+        # A milestone's glyph is full ink on its own tinted medallion; every other kind
+        # sits quietly on the card's own ground. The kind *is* the glyph's name.
+        paint_glyph(painter, glyph, kind, ink if kind == "tag" else faded)
         x += ICON_D + ICON_GAP
 
 

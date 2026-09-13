@@ -130,6 +130,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.project_editor.drops import CanvasDrop
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
+    from dplanner.modules.project_editor.side_panel import SidePanel
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
     from dplanner.modules.projects.repos import (
         LogEntry,
@@ -198,6 +199,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         gauge_icon,
         graph_icon,
         image_icon,
+        layers_icon,
         list_icon,
         spec_icon,
     )
@@ -688,6 +690,25 @@ def default_modules(services: "AppServices") -> list["Module"]:
             ).id
         ]
 
+    # Constructed before the list because the Specs tab reads the catalogue's passages
+    # through it and cites a selection into it — the feature side of one seam; and
+    # because the graph tab stands its list beside the canvas, below.
+    feature = FeatureModule(
+        FeatureDeps(
+            library=library,
+            debounce=services.debounce,
+            undo=services.undo,
+            actions=services.actions,
+            panels=services.panels,
+            sections=services.inspector_sections,
+            files=store.files,
+            theme=services.theme,
+            parent=services.window,
+            documents_of=lambda project_id: spec_document_names(library.project(project_id)),
+            digest_of=lambda project_id, name: spec_digest_of(library.project(project_id), name),
+        )
+    )
+
     project_editor = ProjectEditorModule(
         ProjectEditorDeps(
             library=library,
@@ -711,23 +732,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
             cards=services.detail_cards,
             # What the canvas takes by drop: a feature from the Features panel.
             drops=(CanvasDrop(FEATURE_MIME, place_feature),),
-        )
-    )
-    # Constructed before the list because the Specs tab reads the catalogue's passages
-    # through it and cites a selection into it — the feature side of one seam.
-    feature = FeatureModule(
-        FeatureDeps(
-            library=library,
-            debounce=services.debounce,
-            undo=services.undo,
-            actions=services.actions,
-            panels=services.panels,
-            sections=services.inspector_sections,
-            files=store.files,
-            theme=services.theme,
-            parent=services.window,
-            documents_of=lambda project_id: spec_document_names(library.project(project_id)),
-            digest_of=lambda project_id, name: spec_digest_of(library.project(project_id), name),
+            # And what stands beside the canvas: that same list, where the drag onto the
+            # graph is a short one. The editor never learns whose widget it is.
+            side_panel=SidePanel("Features", layers_icon, feature.create_panel),
         )
     )
 
