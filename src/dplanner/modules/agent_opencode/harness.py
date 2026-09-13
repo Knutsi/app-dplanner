@@ -17,6 +17,8 @@ cannot read answers ``None``.
 
 import os
 import sqlite3
+import sys
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -25,11 +27,30 @@ from dplanner.domain.agents import AgentHarness, RunFacts, RunReport, Usage
 CLOCK_SLACK = timedelta(minutes=2)
 
 
-def database_path(env: dict[str, str] | None = None) -> Path:
+def database_path(
+    env: Mapping[str, str] | None = None,
+    platform: str = sys.platform,
+    home: Path | None = None,
+) -> Path:
+    """Where OpenCode keeps its sessions on this machine.
+
+    Platform, environment and home are arguments with defaults — ``cli/desktop.py``'s
+    convention — so every platform's answer is checkable from any other. XDG is not a
+    Windows idea and the data directory there is ``%LOCALAPPDATA%``, the same base
+    ``cli/desktop.py`` writes the launcher icon under. A wrong guess costs a usage report
+    and nothing else: :func:`report` answers None for a database that is not there, and
+    ``$OPENCODE_DB`` is the way out when it moves.
+    """
     environ = os.environ if env is None else env
     if environ.get("OPENCODE_DB"):
         return Path(environ["OPENCODE_DB"])
-    data_home = Path(environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    home = home or Path.home()
+    if environ.get("XDG_DATA_HOME"):
+        data_home = Path(environ["XDG_DATA_HOME"])
+    elif platform.startswith("win"):
+        data_home = Path(environ.get("LOCALAPPDATA") or home / "AppData" / "Local")
+    else:
+        data_home = home / ".local" / "share"
     return data_home / "opencode" / "opencode.db"
 
 

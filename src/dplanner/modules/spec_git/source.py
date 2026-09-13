@@ -506,7 +506,8 @@ def _materialise(
     info = directory / ".git" / "info"
     if locator["path"]:
         info.mkdir(parents=True, exist_ok=True)
-        (info / "sparse-checkout").write_text(f"/{locator['path']}/\n")
+        pattern = f"/{locator['path']}/\n"
+        (info / "sparse-checkout").write_text(pattern, encoding="utf-8", newline="\n")
         _git(directory, locator, "config", "core.sparseCheckout", "true")
     _git(
         directory,

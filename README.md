@@ -3,7 +3,7 @@
 A development planner: your **projects**, each one a folder of plain files inside its own
 git repository, so every plan lives in version control next to the code it plans. Built on
 [app-framework](https://github.com/Knutsi/app-framework) — PySide6 (Qt 6, LGPL), managed
-with uv, running on Linux and macOS.
+with uv, running on Linux, macOS and Windows.
 
 It has two front doors, and they are equals: a desktop window, and a `dplanner` command that
 any coding agent can drive.
@@ -220,12 +220,29 @@ absent means default — so a diff shows exactly the steps whose plan actually c
 QT_QPA_PLATFORM=offscreen uv run pytest -q   # tests (always prefix the platform)
 uv run ruff check                            # lint
 uv run mypy                                  # strict type checking, whole tree
+uv run mypy --platform win32                 # the same tree as Windows sees it
 ```
 
 The suite runs on every core, so the whole thing takes about two minutes; run the whole thing.
 `-n0` gives a single-threaded run when a failure needs readable output or a debugger, and
 `pytest tests/core tests/domain tests/cli` is the Qt-free layers on their own in under twenty
 seconds.
+
+### Windows
+
+Windows is checked rarely and by hand — there is no CI. `uv run mypy --platform win32` above
+is the guard that runs everywhere in between; the real thing is a VM:
+
+```bash
+uv run python scripts/windows_check.py status   # what the target has, and what it is using
+uv run python scripts/windows_check.py all      # sync, the three checks, build, screenshots
+uv run python scripts/windows_check.py clean    # give the disk back
+```
+
+It targets the developer's own Omarchy VM by default and a throwaway container with
+`--target box`. `scripts/windows/README.md` is the recipe, including the one line that starts
+the runner in the VM. A frozen build — `uv run pyinstaller dplanner.spec` — works on every
+platform and is how the spec stays correct between Windows runs.
 
 Layering rules are enforced by `tests/test_architecture.py`; the module recipe and the rules
 live in `CLAUDE.md`. `ARCHITECTURE.md` explains the shape and why. `DESIGN.md` is the UI
@@ -249,6 +266,10 @@ src/dplanner/
 ├── scripts/render_design_example.py  Debug ▸ Design Example — the modal, the table and the toolbars — both themes, to PNG
 ├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Features panel — docs/screenshots/s7-graph-editor/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
+├── scripts/windows_check.py       the Windows check: the three checks, the frozen build and a real window, in a VM
+├── scripts/windows/              what it drives — the throwaway box, the guest provisioning, and its README
+├── dplanner.spec                 the frozen build: onedir, two executables, one analysis (LGPL — see the docstring)
+├── freeze/                       what PyInstaller is handed: the entry point, and the manifest of shipped files
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
 │   ├── storage/             three providers behind one protocol: folder, git, GitHub

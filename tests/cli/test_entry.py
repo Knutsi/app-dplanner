@@ -129,6 +129,7 @@ def test_the_entry_point_answers_a_bare_or_mistyped_call_without_qt(tmp_path, ar
             **os.environ,
             "XDG_CONFIG_HOME": str(tmp_path),
             "HOME": str(tmp_path),
+            "USERPROFILE": str(tmp_path),  # What Path.home() reads on Windows.
             "APPDATA": str(tmp_path),
         },
     )

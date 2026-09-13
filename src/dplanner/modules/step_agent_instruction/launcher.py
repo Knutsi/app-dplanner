@@ -433,7 +433,10 @@ def prepare(
     if directory is None:
         directory = new_run_dir()
     prompt_file = directory / "prompt.md"
-    prompt_file.write_text(prompt_text)
+    # utf-8 and LF said out loud: a briefing is prose, this project's prose is full of em
+    # dashes, and Windows would otherwise write it in the console code page. Every agent
+    # CLI reads the file as utf-8 on every platform.
+    prompt_file.write_text(prompt_text, encoding="utf-8", newline="\n")
     files = LaunchFiles(
         directory=directory,
         prompt_file=prompt_file,
@@ -444,13 +447,22 @@ def prepare(
         session=session or new_session(),
         prompt_chars=len(prompt_text),
     )
+    # newline="": each builder already ends its lines the way its interpreter needs them —
+    # CRLF for cmd, LF for sh — and the default translation turned _windows_script's "\r\n"
+    # into "\r\r\n" on a Windows host. cmd tolerates that; git diff, an editor and anything
+    # reading the file a line at a time do not. The test that should have caught it could
+    # not, because read_text normalises every line ending it reads.
     if platform.startswith("win"):
         files.script.write_text(
-            _windows_script(files, workdir, agent_command, worktree, project_id, harnesses)
+            _windows_script(files, workdir, agent_command, worktree, project_id, harnesses),
+            encoding="utf-8",
+            newline="",
         )
     else:
         files.script.write_text(
-            _posix_script(files, workdir, agent_command, worktree, project_id, harnesses)
+            _posix_script(files, workdir, agent_command, worktree, project_id, harnesses),
+            encoding="utf-8",
+            newline="",
         )
         files.script.chmod(0o755)
     return files
@@ -709,6 +721,27 @@ STAGE_SEPARATOR = "&&"
 _PANE_ID = re.compile(r'"pane_id"\s*:\s*"([^"]+)"')
 STAGE_TIMEOUT_S = 20
 
+# CreateProcess flags, spelled as their Win32 values rather than read off ``subprocess``,
+# which defines them only on Windows. Every platform's launch is exercised from any machine
+# here (``prepare(platform=…)``), and a getattr fallback would make ``detached_flags("win32")``
+# answer 0 in the very suite that has to check it.
+DETACHED_PROCESS = 0x00000008
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+
+
+def detached_flags(platform: str = sys.platform) -> int:
+    """The Windows half of ``start_new_session``; nothing anywhere else.
+
+    Windows has no sessions and no SIGHUP, so a terminal already outlives DPlanner there and
+    ``start_new_session`` is silently ignored. What the child *would* inherit is the console
+    DPlanner was started from, and that console's Ctrl+C — which would reach the agent.
+    ``DETACHED_PROCESS`` unhooks it; ``CREATE_NEW_PROCESS_GROUP`` is the flag
+    ``spec_git/client.py`` sets for the same reason. Not ``CREATE_NEW_CONSOLE``: every
+    Windows row in ``TERMINALS`` opens its own window already, so it would only add a stray
+    black one behind each launch.
+    """
+    return DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP if platform.startswith("win") else 0
+
 
 def stages(command: list[str]) -> list[list[str]]:
     """The command split at its ``&&`` tokens: one stage per call the terminal needs."""
@@ -747,6 +780,7 @@ def spawn(command: list[str], workdir: Path, harnesses: tuple[AgentHarness, ...]
             cwd=workdir,
             env=env,
             start_new_session=True,
+            creationflags=detached_flags(),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

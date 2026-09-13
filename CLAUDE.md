@@ -58,13 +58,23 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
   each point at the other. A decision that lives only in a commit message is one the next
   feature rediscovers.
 
-## Checks — run all three before finishing any task
+## Checks — run all four before finishing any task
 
 ```bash
 QT_QPA_PLATFORM=offscreen uv run pytest -q   # ALWAYS prefix the env var — see below
 uv run ruff check      # lint (ruff format for formatting)
 uv run mypy            # strict type checking, whole tree
+uv run mypy --platform win32   # the same tree as Windows sees it
 ```
+
+**`--platform win32` is a check, not a curiosity.** The application ships on Windows, and
+almost none of the suite can run there from here, so the type checker is the only reader we
+have of the Windows half — mypy skips a `sys.platform == "win32"` branch entirely on Linux,
+so that code is otherwise read by nobody until somebody runs it. It takes thirty seconds and
+it found four real errors the day it was first run. Keeping it clean costs one habit:
+**compare `sys.platform` inline where you branch on the platform**, never through a module
+constant, because mypy narrows on the comparison and a constant is opaque to it
+(`modules/spec_git/client.py` is the worked example).
 
 On a machine whose shell already presets `QT_QPA_PLATFORM` (Arch with a tiling WM, for
 instance), the `setdefault` in `tests/conftest.py` does not kick in and a bare `pytest`
@@ -75,7 +85,7 @@ window becomes active one event round late, so a focus-dependent test
 (`test_the_editor_ignores_the_echo_of_its_own_write_while_editing`) passed one evening and
 failed every run the next morning. A headless suite must not depend on the desktop's state.
 
-The suite runs on every core (`-n auto` in `pyproject.toml`) — about **half a minute** for the
+The suite runs on every core (`-n auto` in `pyproject.toml`) — about **two minutes** for the
 whole thing, so run the whole thing; there is nothing to be saved by not. Two flags are worth
 knowing while working:
 
@@ -200,6 +210,28 @@ hand-written thread-plus-signal goes through it. **The amplifier for this whole 
 access instead of somewhere random; the committed `TaskRunner` before this pass died 3 of
 3 under it in a 3000-round stress. `NOTES-FOR-APPFRAME.md` §15 has the sources and the
 backtraces.
+
+**A test asserts what the code produced, in the terms the code produced it.** An expected
+string carrying a path, a separator or a quoting is built from the *same object the test
+handed in* and run through the *same formatter production used* (`shlex.quote`,
+`_exec_quote`) — never retyped in one platform's spelling. Nearly every Windows failure in
+the suite was an assertion that rebuilt a path as an f-string with `/` in it, and the fix is
+not a skip: comparing against the `Path` that went in is portable **and** a better test,
+because it stops duplicating the value under test. A platform mark goes only on a test whose
+whole subject is that platform's own concept or a capability the host may not have — a POSIX
+mode bit, making a symlink — and it is phrased as the **capability**, in `tests/platforms.py`,
+so it switches itself on when a Windows developer enables Developer Mode. There are five in
+the whole suite. When the code itself reads `sys.platform`, the answer is neither: give it a
+`platform` argument with a default, as `cli/desktop.py`'s `launcher_for` does.
+
+**The Windows check is a disposable target, run by hand.** `scripts/windows_check.py` is the
+one command; `scripts/windows/README.md` is the recipe. It targets the developer's own
+Omarchy VM by default — installed, persistent, and driven through its shared folder by
+`runner.ps1`, because adding a port would mean recreating a container that is not this
+check's to recreate — or `--target box`, a throwaway `dockurr/windows` container on ports
+nothing else uses. There is deliberately **no CI**: Windows is checked rarely, on purpose, and
+`mypy --platform win32` above is the cheap guard that runs on every machine in between. Never
+leave a VM running for a check, and `clean` gives the disk back.
 
 The layering rules below are enforced by `tests/test_architecture.py`, which runs with the
 normal suite. **If it fails, fix the dependency direction — don't loosen the test.** Every

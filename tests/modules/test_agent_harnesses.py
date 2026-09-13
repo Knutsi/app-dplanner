@@ -250,9 +250,18 @@ def test_an_opencode_database_this_build_cannot_read_answers_none(tmp_path):
 
 
 def test_the_opencode_database_path_follows_the_variables():
+    home = Path("/home/dev")
     assert opencode.database_path({"OPENCODE_DB": "/x/o.db"}) == Path("/x/o.db")
     assert opencode.database_path({"XDG_DATA_HOME": "/d"}) == Path("/d/opencode/opencode.db")
-    assert opencode.database_path({}) == Path.home() / ".local/share/opencode/opencode.db"
+    assert opencode.database_path({}, "linux", home) == home / ".local/share/opencode/opencode.db"
+    # XDG is not a Windows idea; the data directory there is %LOCALAPPDATA%.
+    local = Path("C:/Users/dev/AppData/Local")
+    assert opencode.database_path({"LOCALAPPDATA": str(local)}, "win32", home) == (
+        local / "opencode" / "opencode.db"
+    )
+    assert opencode.database_path({}, "win32", home) == (
+        home / "AppData" / "Local" / "opencode" / "opencode.db"
+    )
 
 
 # -- the multiplexer rows and the staged launch ------------------------------------------------

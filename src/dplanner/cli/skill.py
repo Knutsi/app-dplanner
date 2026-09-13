@@ -42,7 +42,7 @@ def _description(aspects: Sequence[AspectSpec]) -> str:
 
 
 def preamble() -> str:
-    return (Path(__file__).parent / "skill_preamble.md").read_text()
+    return (Path(__file__).parent / "skill_preamble.md").read_text(encoding="utf-8")
 
 
 def generate(registry: CliRegistry, aspects: Sequence[AspectSpec]) -> dict[str, str]:
@@ -163,7 +163,7 @@ def status(files: dict[str, str], directory: Path) -> str:
         path = directory / name
         if not path.is_file():
             return "missing"
-        if path.read_text() != content:
+        if path.read_text(encoding="utf-8") != content:
             return "stale"
     return "installed"
 
@@ -173,7 +173,7 @@ def install(files: dict[str, str], directory: Path) -> list[Path]:
     written = []
     for name, content in sorted(files.items()):
         path = directory / name
-        path.write_text(content)
+        path.write_text(content, encoding="utf-8", newline="\n")
         written.append(path)
     return written
 

@@ -5,6 +5,7 @@ sentences it writes for what it left out. Qt-free, over real directories under t
 import hashlib
 
 import pytest
+from tests.platforms import SYMLINKS
 
 from dplanner.domain.assets import asset_name
 from dplanner.domain.document_folder import (
@@ -181,6 +182,7 @@ def test_every_skip_is_one_sentence(tmp_path):
     ]
 
 
+@SYMLINKS
 def test_a_symlink_out_of_the_folder_is_left_out(tmp_path):
     outside = tmp_path / "outside"
     write(outside, "secret.md", "# Secret\n")
@@ -194,6 +196,7 @@ def test_a_symlink_out_of_the_folder_is_left_out(tmp_path):
     assert notes == ["escape: a symlink out of the folder, left out"]
 
 
+@SYMLINKS
 def test_a_symlink_pointing_back_up_cannot_loop_the_walk(tmp_path):
     root = tmp_path / "specs"
     write(root, "one.md", "# One\n")

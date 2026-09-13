@@ -51,7 +51,7 @@ def read_meta(directory: Path) -> dict[str, Any]:
     """``project.dproj`` as a dict, or {} for one that cannot be read — a torn or
     hand-broken file is no reason to fail a listing that has other rows."""
     try:
-        raw = json.loads((directory / PROJECT_META).read_text())
+        raw = json.loads((directory / PROJECT_META).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
     return raw if isinstance(raw, dict) else {}

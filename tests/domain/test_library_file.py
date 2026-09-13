@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+from tests.platforms import set_home
+
 from dplanner.domain.library_file import (
     LIBRARY_FORMAT,
     LibraryEntry,
@@ -43,7 +45,7 @@ def test_a_bad_checkout_is_dropped_but_the_row_is_kept(tmp_path):
 
 
 def test_a_tilde_is_expanded_in_both_paths(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    set_home(monkeypatch, tmp_path)
     path = tmp_path / "library.json"
     rows = [{"path": "~/plans/search", "checkout": "~/src/widget"}]
     path.write_text(json.dumps({"format": 2, "projects": rows}))

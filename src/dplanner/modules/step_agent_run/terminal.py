@@ -186,7 +186,7 @@ def _focus_mac(facts: Mapping[str, str], run: Runner) -> str:
 
 def _read_stat(pid: int) -> str | None:
     try:
-        return Path(f"/proc/{pid}/stat").read_text()
+        return Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
     except OSError:
         return None
 

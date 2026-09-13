@@ -46,7 +46,7 @@ def main_checkout(root: Path) -> Path:
     gitfile = root / ".git"
     if not gitfile.is_file():
         return root
-    content = gitfile.read_text().strip()
+    content = gitfile.read_text(encoding="utf-8").strip()
     if not content.startswith("gitdir:"):
         return root
     gitdir = Path(content.removeprefix("gitdir:").strip())

@@ -709,7 +709,8 @@ class StepAgentInstructionModule:
                 continue
             ours = run_dir / "mine" / conflict.path
             ours.parent.mkdir(parents=True, exist_ok=True)
-            ours.write_text(_our_version(library.node(conflict.node_id), conflict.entry))
+            mine = _our_version(library.node(conflict.node_id), conflict.entry)
+            ours.write_text(mine, encoding="utf-8", newline="\n")
             entries.append((conflict.path, str(ours)))
         text = conflict_prompt(
             step_title=_titled(step),

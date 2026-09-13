@@ -1,10 +1,12 @@
 """Run Agent: the assembled briefing, the cross-platform launch, and the fallback."""
 
 import json
+import shlex
 from pathlib import Path
 
 import pytest
 from PySide6.QtWidgets import QSpinBox
+from tests.platforms import POSIX_MODE_BITS, SYMLINKS
 
 from dplanner.modules import agent_harnesses
 from dplanner.modules.step_agent_instruction import launcher
@@ -228,8 +230,8 @@ def test_prepare_writes_prompt_and_executable_script(tmp_path):
     files = prepare("the prompt", tmp_path, platform="linux")
     assert files.prompt_file.read_text() == "the prompt"
     assert files.script.name == "run.sh"
-    assert files.script.stat().st_mode & 0o100
     assert str(tmp_path) in files.script.read_text()
+    assert b"\r" not in files.script.read_bytes()  # An sh script is LF, on every host.
     assert "dplanner-agent-" in str(files.directory)
     # Measured where it was written: the one place that knows what reached the file.
     assert files.prompt_chars == len("the prompt")
@@ -265,13 +267,15 @@ def test_the_script_reports_the_shell_and_the_exit(tmp_path):
     assert files.title == "dplanner: Deploy: the beta (v2)"
     assert files.shell_file == run_dir / "shell" and files.exit_file == run_dir / "exit"
     assert "printf '\\033]0;%s\\007' 'dplanner: Deploy: the beta (v2)'" in script
+    shell = shlex.quote(str(run_dir / "shell"))
+    exit_file = shlex.quote(str(run_dir / "exit"))
     assert (
         f'"$(tty)" "$$" "$TMUX_PANE" "$TERM_PROGRAM" \'dplanner: Deploy: the beta (v2)\''
-        f" 7a1e4c2e-0000-4000-8000-000000000001 > {run_dir}/shell"
+        f" 7a1e4c2e-0000-4000-8000-000000000001 > {shell}"
     ) in script
-    assert f"printf 'dir=%s\\n' \"$(pwd)\" >> {run_dir}/shell" in script
-    assert f"trap 'echo closed > {run_dir}/exit; exit 129' HUP" in script
-    assert f'echo "$code" > {run_dir}/exit' in script
+    assert f"printf 'dir=%s\\n' \"$(pwd)\" >> {shell}" in script
+    assert f"trap 'echo closed > {exit_file}; exit 129' HUP" in script
+    assert f'echo "$code" > {exit_file}' in script
     assert "read -r _" in script
     assert "exec " not in script  # A replaced shell could not report the exit.
 
@@ -280,7 +284,12 @@ def test_the_windows_script_reports_the_same_two_files(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     files = prepare("p", tmp_path, platform="win32", directory=run_dir, step_title="Deploy")
-    script = files.script.read_text()
+    raw = files.script.read_bytes()
+    # A cmd script is CRLF, and CRLF exactly. read_text normalises every ending it reads,
+    # so the \r\r\n a newline-translating write produced here read back as \n and this
+    # test passed over it on every Windows host for as long as it existed.
+    assert b"\r\r" not in raw and raw.count(b"\n") == raw.count(b"\r\n")
+    script = raw.decode("utf-8")
     assert "title dplanner: Deploy" in script
     assert f"Set-Content -Path '{run_dir / 'shell'}'" in script and "'pid=' + $PID" in script
     assert "exit $LASTEXITCODE" in script
@@ -293,7 +302,7 @@ def test_a_run_name_isolates_the_run_beside_the_pointer_file(tmp_path):
     pointer *file* a project kept in a subfolder leaves at the repository root, and the
     first version's `git worktree add` under it failed on every such project."""
     script = prepare("p", tmp_path, worktree="s7-build-it", platform="linux").script.read_text()
-    tree = f"{tmp_path}/.dplanner-worktrees/s7-build-it"
+    tree = tmp_path / ".dplanner-worktrees" / "s7-build-it"
     assert f'git worktree add "{tree}" -b "agent/s7-build-it"' in script
     assert f'git worktree add "{tree}" "agent/s7-build-it"' in script  # Reused on the next run.
     assert "info/exclude" in script  # The worktree dir never pollutes git status.
@@ -404,7 +413,8 @@ def test_the_briefing_never_rides_in_argv(tmp_path):
     script = files.script.read_text()
     assert files.prompt_file.read_text() == briefing
     assert "Web.Host" not in script and "vite" not in script
-    assert f"'Read your briefing in {run_dir}/prompt.md in full, then follow it.'" in script
+    opening = f"Read your briefing in {run_dir / 'prompt.md'} in full, then follow it."
+    assert shlex.quote(opening) in script
     assert "$(cat" not in script
     windows = prepare(briefing, tmp_path, platform="win32", directory=run_dir).script.read_text()
     assert "Web.Host" not in windows and "Get-Content" not in windows
@@ -423,11 +433,13 @@ def test_the_claude_preset_names_the_session_and_the_script_says_how_to_resume(t
     files = prepare("p", tmp_path, platform="linux", directory=run_dir, session=session)
     script = files.script.read_text()
     assert files.session == session
-    assert f"\nclaude --add-dir {run_dir} --permission-mode plan --session-id {session} 'Read" in (
+    added = shlex.quote(str(run_dir))
+    assert f"\nclaude --add-dir {added} --permission-mode plan --session-id {session} 'Read" in (
         script
     )
     assert (
-        f'printf \'resume=cd "%s" && claude --resume {session}\\n\' "$(pwd)" >> {run_dir}/shell'
+        f'printf \'resume=cd "%s" && claude --resume {session}\\n\' "$(pwd)"'
+        f" >> {shlex.quote(str(run_dir / 'shell'))}"
     ) in script
     assert f'To pick it up again: cd "%s" && claude --resume {session}' in script
     assert resume_command(
@@ -473,6 +485,7 @@ def test_the_run_directory_is_handed_over_as_an_additional_directory(tmp_path):
     )
 
 
+@SYMLINKS
 def test_a_run_directory_is_made_resolved(tmp_path, monkeypatch):
     """macOS's temp directory sits under `/var`, a symlink to `/private/var`, and
     Windows's Temp is often a short name; the permission check compares a file's
@@ -1706,3 +1719,10 @@ def test_the_launch_names_the_steps_project_for_the_shell(services, step, monkey
     _fake_terminal(monkeypatch)
     services.actions.run("agent.run", services.context.current())
     assert seen["project_id"] == services.document.project_of(step.id).id
+
+
+@POSIX_MODE_BITS
+def test_the_posix_wrapper_is_made_executable(tmp_path):
+    """A terminal row runs the script by path, so it needs the bit. Its own test: chmod is
+    a no-op on Windows and this assertion would be testing the host's filesystem."""
+    assert prepare("p", tmp_path, platform="linux").script.stat().st_mode & 0o100
