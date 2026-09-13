@@ -50,6 +50,7 @@ from dplanner.modules.docs.aspect import (
 from dplanner.modules.docs.collect import (
     as_markdown,
     collectors,
+    compiled_state,
     digest,
     sources_for,
     state_of,
@@ -341,7 +342,7 @@ def _status(context: CliContext, args: Namespace, kinds: Sequence[ScopeKind]) ->
     for project in projects:
         for step in collectors(kinds, project):
             found = sources_for(kinds, library, project, step.id)
-            state = state_of(kinds, library, project, step.id)
+            state = compiled_state(step, found)
             rows.append(
                 {
                     "project": project.id,

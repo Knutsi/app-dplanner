@@ -5259,6 +5259,31 @@ touching any of this.
 connect and per paste in the window's deferred regime, and `tests/modules/test_sync.py`
 that a step add asks git nothing.
 
+**An action's state is read on every announce, so it may not derive anything over the
+project.** The day compiling documentation moved to a launched agent (2026-09-13), the
+*Compile Out of Date* entry gained a label that counts what is due — and its state
+callback computed that count by walking every collector's cone and digesting its sources,
+on every announce. A title keystroke announces once, so the context refresh went from a
+flat 4–6 ms to 198 ms at 400 steps in one commit; the menu bar re-evaluates every state
+per announce, and one slow state taxes every gesture in the window. The same rule as the
+keyring and the subprocess above, broken by a pure derivation, which is the version
+nobody notices until the plan is large.
+
+The fix is the shape the Problems count already has: the module keeps the frontier per
+project as last *settled* — a `Debounced` at `SETTLE_MS` recomputes it for the projects
+somebody asked about, every library signal forgets what was settled, and the state reads
+the last answer (`DocsModule._frontier_of`). A settle that changed an answer announces the
+context, so the label catches up one settle after the burst; a project never asked about
+reads *checking…*, disabled, for that one settle. The gesture (`_compile_stale`) computes
+fresh — it is one click and may pay the walk. In the suite's immediate regime the trigger
+runs inline, so the answer a test reads is always current and the settle never re-enters
+the announce it was read from (`_reading`). `collect.frontier` is the derivation, one
+walk per collector where the state made three; `docs status` reads `compiled_state` over
+sources it already holds for the same reason.
+`tests/modules/test_docs_compile.py` asserts, in the deferred regime, that ten reads walk
+nothing, that a change leaves the label as it was until the settle, and that the settle
+announces.
+
 ## The journal: what ran, how long it took, and why it hung
 
 Nothing in the application timed anything, configured logging, or caught a crash. A slot

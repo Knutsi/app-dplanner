@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DPlanner Architecture State</title>
+<meta name="description" content="How separate DPlanner's modules still are, how they integrate, and where the entropy sits — measured on 13 September 2026.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+:root{
+  --paper:#F3F5F6; --surface:#FFFFFF; --sunk:#EAEEF0;
+  --ink:#1A222B; --ink2:#46525E; --muted:#7A8792; --line:#D6DDE2; --line2:#C3CCD3;
+  --accent:#0E7686; --accent-ink:#0A5C69; --accent-soft:#DCEEF1; --accent-bar:#3A9AA8;
+  --good:#2E7D4E; --good-soft:#DFF0E5; --warn:#A8690F; --warn-soft:#F6EBD3; --bad:#B0392E; --bad-soft:#F4DEDB; --info:#4B5B8A; --info-soft:#E3E6F1;
+  --code-bg:#EEF1F3;
+  --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --sans:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono","SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#11161B; --surface:#181F26; --sunk:#1F272F;
+    --ink:#E4EAEE; --ink2:#B4BEC7; --muted:#7E8B96; --line:#2A343D; --line2:#37434D;
+    --accent:#52B9C8; --accent-ink:#7DCDD9; --accent-soft:#15303A; --accent-bar:#3E9DAB;
+    --good:#66B98A; --good-soft:#173324; --warn:#D9A24A; --warn-soft:#3A2D12; --bad:#E07A6E; --bad-soft:#3C1E1A; --info:#9AA9DA; --info-soft:#232A42;
+    --code-bg:#20282F; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#11161B; --surface:#181F26; --sunk:#1F272F;
+  --ink:#E4EAEE; --ink2:#B4BEC7; --muted:#7E8B96; --line:#2A343D; --line2:#37434D;
+  --accent:#52B9C8; --accent-ink:#7DCDD9; --accent-soft:#15303A; --accent-bar:#3E9DAB;
+  --good:#66B98A; --good-soft:#173324; --warn:#D9A24A; --warn-soft:#3A2D12; --bad:#E07A6E; --bad-soft:#3C1E1A; --info:#9AA9DA; --info-soft:#232A42;
+  --code-bg:#20282F; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);font-size:17px;line-height:1.55;padding-inline:20px;padding-block:0 64px}
+a{color:var(--accent-ink);text-decoration-thickness:1px;text-underline-offset:3px}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+code,kbd{font-family:var(--mono);font-size:.86em;background:var(--code-bg);padding:.08em .35em;border-radius:3px;color:var(--ink)}
+pre{font-family:var(--mono);font-size:.82rem;line-height:1.5;background:var(--code-bg);padding:12px 14px;border-radius:4px;overflow-x:auto;margin:0}
+pre code{background:none;padding:0;font-size:inherit}
+h1,h2,h3,h4{font-family:var(--sans);line-height:1.2;text-wrap:balance;margin:0}
+h1{font-size:2.35rem;font-weight:600;letter-spacing:-.01em}
+h2{font-size:1.55rem;font-weight:600;margin-top:8px}
+h3{font-size:1.12rem;font-weight:600;margin-top:28px;margin-bottom:8px}
+h4{font-size:.95rem;font-weight:600;margin-top:18px;margin-bottom:6px}
+p{margin:0 0 14px;max-width:68ch}
+ul,ol{max-width:68ch;padding-left:1.3em;margin:0 0 14px}
+li{margin-bottom:6px}
+li::marker{color:var(--muted)}
+.eyebrow{font-family:var(--sans);font-size:.74rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)}
+.shell{max-width:1180px;margin:0 auto}
+header.masthead{padding-block:40px 28px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:1fr auto;gap:24px 40px;align-items:end}
+header.masthead .lede{font-size:1.12rem;color:var(--ink2);max-width:62ch;margin-top:14px}
+.facts{font-family:var(--sans);font-size:.84rem;color:var(--ink2);display:grid;grid-template-columns:auto auto;gap:4px 14px;font-variant-numeric:tabular-nums}
+.facts dt{color:var(--muted);margin:0}
+.facts dd{margin:0}
+.layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:48px;padding-top:32px}
+nav.toc{position:sticky;top:20px;align-self:start;font-family:var(--sans);font-size:.86rem}
+nav.toc ol{list-style:none;padding:0;margin:0;border-left:1px solid var(--line)}
+nav.toc li{margin:0}
+nav.toc a{display:block;padding:6px 0 6px 14px;color:var(--ink2);text-decoration:none;border-left:2px solid transparent;margin-left:-1px}
+nav.toc a:hover{color:var(--ink);border-left-color:var(--line2)}
+nav.toc a.q{color:var(--accent-ink);font-weight:500}
+main{min-width:0}
+section{padding-block:8px 36px;border-bottom:1px solid var(--line);margin-bottom:28px}
+section:last-of-type{border-bottom:0}
+.summary{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);padding:16px 20px;margin:18px 0 22px;max-width:none;border-radius:0 4px 4px 0}
+.summary .eyebrow{color:var(--accent-ink);margin-bottom:6px;display:block}
+.summary p{margin-bottom:8px;max-width:78ch}
+.summary p:last-child{margin-bottom:0}
+.verdicts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:22px 0 8px}
+.verdict{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:20px 22px;display:flex;flex-direction:column;gap:10px}
+.verdict .q{font-family:var(--sans);font-weight:600;font-size:1.05rem;line-height:1.3}
+.verdict .a{font-family:var(--sans);font-size:1.7rem;font-weight:600;letter-spacing:-.01em;line-height:1.1}
+.verdict p{font-size:.98rem;color:var(--ink2);margin:0;max-width:none}
+.chip{display:inline-block;font-family:var(--sans);font-size:.72rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:999px;vertical-align:middle;white-space:nowrap}
+.chip.good{background:var(--good-soft);color:var(--good)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)}
+.chip.info{background:var(--info-soft);color:var(--info)}
+.chip.acc{background:var(--accent-soft);color:var(--accent-ink)}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0 8px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:12px 14px}
+.tile .n{font-family:var(--sans);font-size:1.6rem;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
+.tile .l{font-family:var(--sans);font-size:.8rem;color:var(--muted);margin-top:4px}
+.tile .s{font-family:var(--sans);font-size:.78rem;color:var(--ink2);margin-top:6px;overflow-wrap:anywhere}
+.tile code{white-space:normal;overflow-wrap:anywhere}
+.tablewrap{overflow-x:auto;margin:12px 0 18px;border:1px solid var(--line);border-radius:4px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-family:var(--sans);font-size:.86rem}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.74rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--sunk);position:sticky;top:0}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+code.id{background:none;padding:0;font-size:.84rem}
+td code{white-space:nowrap}
+.bars{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:6px 12px;align-items:center;font-family:var(--sans);font-size:.84rem;margin:14px 0 6px}
+.bars .k{font-family:var(--mono);font-size:.8rem;white-space:nowrap}
+.bars .b{height:12px;background:var(--sunk);border-radius:2px;position:relative}
+.bars .b i{position:absolute;inset:0 auto 0 0;background:var(--accent-bar);border-radius:2px 3px 3px 2px}
+.bars .b i.dim{background:var(--line2)}
+.bars .v{font-variant-numeric:tabular-nums;color:var(--ink2);text-align:right}
+figure{margin:18px 0 22px}
+figcaption{font-family:var(--sans);font-size:.8rem;color:var(--muted);margin-top:8px;max-width:70ch}
+.diagram{width:100%;max-width:820px;height:auto;display:block;font-family:var(--sans)}
+.diagram .box{fill:var(--surface);stroke:var(--line2);stroke-width:1}
+.diagram .box.root{fill:var(--accent-soft);stroke:var(--accent)}
+.diagram .box.fw{fill:var(--sunk)}
+.diagram text{fill:var(--ink);font-size:12px}
+.diagram text.t{font-weight:600;font-size:13px}
+.diagram text.s{fill:var(--ink2);font-size:11px}
+.diagram .arrow{stroke:var(--ink2);stroke-width:1.4;fill:none;marker-end:url(#ah)}
+.diagram .arrow.acc{stroke:var(--accent)}
+.diagram .lbl{fill:var(--accent-ink);font-size:11px;font-weight:500}
+.finding{border:1px solid var(--line);border-radius:4px;background:var(--surface);padding:16px 20px;margin:0 0 14px}
+.finding header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px}
+.finding h4{margin:0;font-size:1rem}
+.finding p{max-width:78ch}
+.finding p:last-child{margin-bottom:0}
+.finding .where{font-family:var(--mono);font-size:.78rem;color:var(--ink2);margin-bottom:8px}
+.checks{list-style:none;padding:0;max-width:none}
+.checks li{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;padding:8px 0;border-bottom:1px solid var(--line)}
+.checks li:last-child{border-bottom:0}
+.channels{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:16px 0 20px}
+.channel{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:14px 16px}
+.channel h4{margin:0 0 6px;font-size:.95rem}
+.channel p{font-size:.92rem;color:var(--ink2);margin-bottom:6px;max-width:none}
+.channel .ex{font-family:var(--mono);font-size:.76rem;color:var(--ink2)}
+.reco{counter-reset:r}
+.reco li{margin-bottom:12px}
+.reco strong{font-family:var(--sans)}
+footer{margin-top:40px;font-family:var(--sans);font-size:.8rem;color:var(--muted);max-width:none}
+@media (max-width: 960px){
+  .layout{grid-template-columns:1fr;gap:16px}
+  nav.toc{position:static;border-bottom:1px solid var(--line);padding-bottom:12px}
+  nav.toc ol{border-left:0;display:flex;flex-wrap:wrap;gap:2px 14px}
+  nav.toc a{padding:4px 0;border-left:0;margin-left:0}
+  header.masthead{grid-template-columns:1fr}
+  .verdicts{grid-template-columns:1fr}
+  .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width: 560px){
+  body{font-size:16px}
+  h1{font-size:1.8rem}
+  .bars{grid-template-columns:max-content minmax(0,1fr) max-content}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="masthead">
+  <div>
+    <span class="eyebrow">Architecture report · measured, not recalled</span>
+    <h1>DPlanner Architecture State</h1>
+    <p class="lede">Two questions, answered from the tree as it stands: are the modules still fully separate, and what do they do to integrate or share what they know? Then how the application starts and scales, where the entropy has collected, and what it would cost to take it back out.</p>
+  </div>
+  <dl class="facts">
+    <dt>Measured</dt><dd>13 September 2026</dd>
+    <dt>Commit</dt><dd><code>8e36a61</code> on <code>main</code></dd>
+    <dt>History</dt><dd>288 commits since 2 Sep 2026</dd>
+    <dt>Source</dt><dd>≈92k lines of Python, 46 module packages</dd>
+    <dt>Suite</dt><dd>2,969 passed · 26 skipped · 1 failed</dd>
+  </dl>
+</header>
+
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <ol>
+    <li><a class="q" href="#answers">The two answers</a></li>
+    <li><a href="#glance">At a glance</a></li>
+    <li><a href="#layers">1 · The layers</a></li>
+    <li><a href="#modules">2 · The modules</a></li>
+    <li><a href="#integration">3 · How modules integrate</a></li>
+    <li><a href="#entropy">4 · Where the entropy sits</a></li>
+    <li><a href="#startup">5 · Startup and scalability</a></li>
+    <li><a href="#health">6 · Health checks</a></li>
+    <li><a href="#recommendations">7 · What to do about it</a></li>
+    <li><a href="#method">Appendix · Method</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="answers">
+  <span class="eyebrow">The two primary questions</span>
+  <div class="verdicts">
+    <div class="verdict">
+      <div class="q">Do the modules still remain fully separate?</div>
+      <div class="a">Yes. <span class="chip good">holds</span></div>
+      <p>Not one of the 46 packages under <code>modules/</code> imports another, and the rule is enforced by a test that parses every file's imports with <code>ast</code> (type-checking imports included). Framework, domain, core and CLI never reach up into a module. The only leaks are three places where a module names another module's id as a string, and one of them is a deliberate migration.</p>
+    </div>
+    <div class="verdict">
+      <div class="q">How do they integrate or share functionality?</div>
+      <div class="a">Through five channels, and one room. <span class="chip warn">crowded</span></div>
+      <p>Framework registries, typed callbacks on each module's <code>Deps</code>, Qt-free exports collected into tuples, derivations in <code>domain/</code> handed functions instead of schemas, and a shared on-disk vocabulary. Every one of those channels is wired in one file — <code>modules/__init__.py</code>, now 2,838 lines — and that file has quietly become the largest module in the application.</p>
+    </div>
+  </div>
+  <p>The short version: the boundary the architecture promised is intact, and the cost of keeping it has been paid in a single place. The entropy is concentrated, which is the good kind — it is findable, and most of it comes out with one refactor of the composition root and one deletion. The one urgent item is not entropy at all: a change landed today makes every keystroke re-walk the graph (§5).</p>
+</section>
+
+<section id="glance">
+  <h2>At a glance</h2>
+  <div class="tiles">
+    <div class="tile"><div class="n">0</div><div class="l">module → module imports</div><div class="s">enforced by <code>tests/test_architecture.py</code></div></div>
+    <div class="tile"><div class="n">46</div><div class="l">module packages</div><div class="s">41 window modules, 5 headless providers</div></div>
+    <div class="tile"><div class="n">2,838</div><div class="l">lines in the composition root</div><div class="s">1,529 of them one function</div></div>
+    <div class="tile"><div class="n">342</div><div class="l">fields across 41 <code>Deps</code></div><div class="s">79 are typed callbacks</div></div>
+    <div class="tile"><div class="n">25%</div><div class="l">of all commits touch the root</div><div class="s">71 of 288</div></div>
+    <div class="tile"><div class="n">≈1,000</div><div class="l">lines with no caller</div><div class="s">the LLM service and its 3 provider modules</div></div>
+  </div>
+</section>
+
+<section id="layers">
+  <span class="eyebrow">Section 1</span>
+  <h2>The layers</h2>
+  <aside class="summary"><span class="eyebrow">Summary</span>
+    <p>Seven layers, bottom to top: <code>core</code> → <code>domain</code> → <code>cli</code> → <code>framework</code> → <code>modules/&lt;name&gt;</code> → the composition root → <code>app</code>/<code>entry</code>. All nine layering rules hold on the current tree, and each is a test rather than a convention. The modules are two thirds of the code, which is where a feature-driven application should carry its weight.</p>
+  </aside>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Layer</th><th>What it is</th><th class="num">Lines</th><th class="num">Files</th><th class="num">Commits</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td><code>core/</code></td><td>storage, persistence contracts, signals, telemetry — from app-framework</td><td class="num">3,285</td><td class="num">21</td><td class="num">17</td><td>imports no Qt, nothing above it</td></tr>
+      <tr><td><code>domain/</code></td><td>the model, its store, the derivations (ordering, schedule, scope, progression)</td><td class="num">5,434</td><td class="num">22</td><td class="num">31</td><td>Qt-free; <code>core</code> only</td></tr>
+      <tr><td><code>cli/</code></td><td>the headless surface an agent drives; report renderer; lint; install; skill</td><td class="num">5,754</td><td class="num">25</td><td class="num">49</td><td>Qt-free; nothing above <code>domain</code></td></tr>
+      <tr><td><code>theme/</code></td><td>palettes, tones, glyphs, providers — a leaf</td><td class="num">2,274</td><td class="num">13</td><td class="num">—</td><td>imports <code>core</code> at most; no Qt on import</td></tr>
+      <tr><td><code>framework/</code></td><td>everything Qt that is not a feature: registries, services, primitives, the builder</td><td class="num">10,146</td><td class="num">55</td><td class="num">61</td><td>never imports <code>modules</code> or <code>app</code></td></tr>
+      <tr><td><code>modules/*/</code></td><td>the 46 features, aspects and providers</td><td class="num">62,035</td><td class="num">≈290</td><td class="num">—</td><td>never import each other or the builder</td></tr>
+      <tr><td><code>modules/__init__.py</code></td><td>the composition root: wiring, collectors, and (see §4) a briefing assembler</td><td class="num">2,838</td><td class="num">1</td><td class="num">71</td><td>the one importer of everything</td></tr>
+      <tr><td><code>app.py</code>, <code>entry.py</code>, <code>menus.py</code></td><td>the window, the dispatch on the first command word, the menu table</td><td class="num">437</td><td class="num">3</td><td class="num">—</td><td>import the root and nothing deeper</td></tr>
+    </tbody>
+  </table></div>
+  <p>The two facts worth holding onto from this table: <code>modules/</code> is 67% of the tree, and the root has been touched by a quarter of every commit ever made. A file every feature has to pass through is a file every feature will keep editing.</p>
+</section>
+
+<section id="modules">
+  <span class="eyebrow">Section 2</span>
+  <h2>The modules</h2>
+  <aside class="summary"><span class="eyebrow">Summary</span>
+    <p>46 packages. 41 carry a window half (<code>module.py</code> with a frozen <code>Deps</code> and a <code>register()</code>); five are pure providers with no Qt at all — three agent harnesses and two theme providers. Two packages house a second module class (<code>docs_compiled</code> in <code>docs</code>, <code>progress_history</code> in <code>time_estimates</code>), both documented. Size is lopsided: <code>project_editor</code> and <code>time_estimates</code> alone are a quarter of all module code, and <code>step_agent_instruction</code> has outgrown its name.</p>
+  </aside>
+
+  <h3>Where the weight is</h3>
+  <div class="bars" role="img" aria-label="Lines of Python per module, largest twelve">
+    <span class="k">project_editor</span><span class="b"><i style="width:100%"></i></span><span class="v">9,670</span>
+    <span class="k">time_estimates</span><span class="b"><i style="width:71%"></i></span><span class="v">6,883</span>
+    <span class="k">spec</span><span class="b"><i style="width:47%"></i></span><span class="v">4,525</span>
+    <span class="k">step_agent_instruction</span><span class="b"><i style="width:45%"></i></span><span class="v">4,348</span>
+    <span class="k">projects</span><span class="b"><i style="width:43%"></i></span><span class="v">4,179</span>
+    <span class="k">testing</span><span class="b"><i style="width:37%"></i></span><span class="v">3,612</span>
+    <span class="k">docs</span><span class="b"><i style="width:25%"></i></span><span class="v">2,376</span>
+    <span class="k">coverage</span><span class="b"><i style="width:20%"></i></span><span class="v">1,921</span>
+    <span class="k">notes</span><span class="b"><i style="width:20%"></i></span><span class="v">1,892</span>
+    <span class="k">spec_confluence</span><span class="b"><i style="width:19%"></i></span><span class="v">1,825</span>
+    <span class="k">step_agent_run</span><span class="b"><i style="width:17%"></i></span><span class="v">1,661</span>
+    <span class="k">feature</span><span class="b"><i style="width:16%"></i></span><span class="v">1,593</span>
+    <span class="k muted">the other 34</span><span class="b"><i class="dim" style="width:100%"></i></span><span class="v">17,550</span>
+  </div>
+  <figure><figcaption>Lines of Python per package. The last bar is the remaining 34 packages together, for scale: the median module is about 600 lines.</figcaption></figure>
+
+  <h3>Where the churn is</h3>
+  <div class="bars" role="img" aria-label="Commits touching each module, most-changed twelve">
+    <span class="k">project_editor</span><span class="b"><i style="width:100%"></i></span><span class="v">35</span>
+    <span class="k">step_agent_instruction</span><span class="b"><i style="width:89%"></i></span><span class="v">31</span>
+    <span class="k">spec</span><span class="b"><i style="width:74%"></i></span><span class="v">26</span>
+    <span class="k">time_estimates</span><span class="b"><i style="width:63%"></i></span><span class="v">22</span>
+    <span class="k">docs</span><span class="b"><i style="width:49%"></i></span><span class="v">17</span>
+    <span class="k">debug</span><span class="b"><i style="width:49%"></i></span><span class="v">17</span>
+    <span class="k">projects</span><span class="b"><i style="width:46%"></i></span><span class="v">16</span>
+    <span class="k">sync</span><span class="b"><i style="width:37%"></i></span><span class="v">13</span>
+    <span class="k">step_agent_run</span><span class="b"><i style="width:37%"></i></span><span class="v">13</span>
+    <span class="k">progression</span><span class="b"><i style="width:34%"></i></span><span class="v">12</span>
+    <span class="k">testing</span><span class="b"><i style="width:29%"></i></span><span class="v">10</span>
+    <span class="k">step_order</span><span class="b"><i style="width:29%"></i></span><span class="v">10</span>
+  </div>
+  <figure><figcaption>Commits that touched each package, over all 288. Size and churn rank almost identically, which is the expected shape: the modules being built are the modules being changed. The outlier is the root itself at 71, ahead of every module.</figcaption></figure>
+
+  <h3>The inventory</h3>
+  <p>One row per package. <em>Deps</em> is the number of fields on its dependency record, with how many are typed callbacks in brackets. <em>Root lines</em> is how many lines of <code>default_modules()</code> it takes to construct that module — the best single measure of how much the root has to know about it. <em>Headless</em> lists the Qt-free files the CLI or a collector reaches.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Package</th><th>Role</th><th class="num">Lines</th><th class="num">Files</th><th class="num">Deps</th><th class="num">Root lines</th><th class="num">Commits</th><th>Headless</th></tr></thead>
+    <tbody>
+<tr><td><code class=id>agent_claude</code></td><td>agent harness</td><td class=num>153</td><td class=num>1</td><td class=num><span class=muted>none</span></td><td class=num><span class=muted>—</span></td><td class=num>1</td><td><code>harness.py</code></td></tr>
+<tr><td><code class=id>agent_codex</code></td><td>agent harness</td><td class=num>183</td><td class=num>1</td><td class=num><span class=muted>none</span></td><td class=num><span class=muted>—</span></td><td class=num>1</td><td><code>harness.py</code></td></tr>
+<tr><td><code class=id>agent_opencode</code></td><td>agent harness</td><td class=num>133</td><td class=num>1</td><td class=num><span class=muted>none</span></td><td class=num><span class=muted>—</span></td><td class=num>2</td><td><code>harness.py</code></td></tr>
+<tr><td><code class=id>appearance</code></td><td>shell</td><td class=num>266</td><td class=num>2</td><td class=num>7 <span class=muted>(3 fn)</span></td><td class=num>14</td><td class=num>3</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>appshell</code></td><td>shell</td><td class=num>522</td><td class=num>2</td><td class=num>8 <span class=muted>(0 fn)</span></td><td class=num>57</td><td class=num>7</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>checklist</code></td><td>shell</td><td class=num>803</td><td class=num>3</td><td class=num>5 <span class=muted>(1 fn)</span></td><td class=num>12</td><td class=num>3</td><td><code>checks.py</code></td></tr>
+<tr><td><code class=id>coverage</code></td><td>project view</td><td class=num>1,921</td><td class=num>5</td><td class=num>14 <span class=muted>(5 fn)</span></td><td class=num>54</td><td class=num>10</td><td><code>cli.py</code></td></tr>
+<tr><td><code class=id>debug</code></td><td>shell</td><td class=num>1,248</td><td class=num>5</td><td class=num>9 <span class=muted>(0 fn)</span></td><td class=num>7</td><td class=num>17</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>docs</code></td><td>step aspect</td><td class=num>2,376</td><td class=num>7</td><td class=num>21 <span class=muted>(7 fn)</span></td><td class=num>24</td><td class=num>17</td><td><code>cli.py</code> <code>aspect.py</code></td></tr>
+<tr><td><code class=id>estimation</code></td><td>step aspect</td><td class=num>1,480</td><td class=num>8</td><td class=num>8 <span class=muted>(2 fn)</span></td><td class=num>20</td><td class=num>7</td><td><code>cli.py</code> <code>report.py</code> <code>aspect.py</code></td></tr>
+<tr><td><code class=id>feature</code></td><td>step aspect</td><td class=num>1,593</td><td class=num>6</td><td class=num>8 <span class=muted>(2 fn)</span></td><td class=num>77</td><td class=num>10</td><td><code>cli.py</code> <code>report.py</code> <code>aspect.py</code></td></tr>
+<tr><td><code class=id>github</code></td><td>step aspect</td><td class=num>1,307</td><td class=num>8</td><td class=num>7 <span class=muted>(1 fn)</span></td><td class=num>23</td><td class=num>10</td><td><code>cli.py</code> <code>report.py</code> <code>aspect.py</code> <code>checks.py</code></td></tr>
+<tr><td><code class=id>install</code></td><td>shell</td><td class=num>314</td><td class=num>3</td><td class=num>4 <span class=muted>(1 fn)</span></td><td class=num>21</td><td class=num>3</td><td><code>checks.py</code></td></tr>
+<tr><td><code class=id>library</code></td><td>shell</td><td class=num>377</td><td class=num>3</td><td class=num>7 <span class=muted>(1 fn)</span></td><td class=num>14</td><td class=num>4</td><td><code>cli.py</code></td></tr>
+<tr><td><code class=id>library_watch</code></td><td>shell</td><td class=num>335</td><td class=num>2</td><td class=num>9 <span class=muted>(2 fn)</span></td><td class=num>23</td><td class=num>3</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>llm</code></td><td>LLM (unused)</td><td class=num>125</td><td class=num>3</td><td class=num>3 <span class=muted>(0 fn)</span></td><td class=num>7</td><td class=num>3</td><td><code>checks.py</code></td></tr>
+<tr><td><code class=id>llm_anthropic</code></td><td>LLM (unused)</td><td class=num>153</td><td class=num>3</td><td class=num>3 <span class=muted>(0 fn)</span></td><td class=num>7</td><td class=num>2</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>llm_openai</code></td><td>LLM (unused)</td><td class=num>334</td><td class=num>3</td><td class=num>3 <span class=muted>(0 fn)</span></td><td class=num>10</td><td class=num>2</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>notes</code></td><td>project view</td><td class=num>1,892</td><td class=num>9</td><td class=num>6 <span class=muted>(1 fn)</span></td><td class=num>16</td><td class=num>7</td><td><code>cli.py</code> <code>report.py</code></td></tr>
+<tr><td><code class=id>problems</code></td><td>project view</td><td class=num>393</td><td class=num>2</td><td class=num>10 <span class=muted>(3 fn)</span></td><td class=num>20</td><td class=num>2</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>progression</code></td><td>project view</td><td class=num>1,091</td><td class=num>4</td><td class=num>9 <span class=muted>(4 fn)</span></td><td class=num>26</td><td class=num>12</td><td><code>cli.py</code> <code>report.py</code></td></tr>
+<tr><td><code class=id>project_assets</code></td><td>project view</td><td class=num>893</td><td class=num>3</td><td class=num>9 <span class=muted>(0 fn)</span></td><td class=num>39</td><td class=num>5</td><td><code>cli.py</code></td></tr>
+<tr><td><code class=id>project_editor</code></td><td>project view</td><td class=num>9,670</td><td class=num>32</td><td class=num>17 <span class=muted>(2 fn)</span></td><td class=num>21</td><td class=num>35</td><td><code>cli.py</code> <code>report.py</code></td></tr>
+<tr><td><code class=id>projects</code></td><td>shell</td><td class=num>4,179</td><td class=num>12</td><td class=num>21 <span class=muted>(5 fn)</span></td><td class=num>14</td><td class=num>16</td><td><code>cli.py</code></td></tr>
+<tr><td><code class=id>reopen_tabs</code></td><td>shell</td><td class=num>177</td><td class=num>2</td><td class=num>4 <span class=muted>(1 fn)</span></td><td class=num>14</td><td class=num>1</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>reporting</code></td><td>project view</td><td class=num>602</td><td class=num>3</td><td class=num>15 <span class=muted>(6 fn)</span></td><td class=num>18</td><td class=num>5</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>settings</code></td><td>shell</td><td class=num>208</td><td class=num>2</td><td class=num>3 <span class=muted>(0 fn)</span></td><td class=num>20</td><td class=num>3</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>spec</code></td><td>project view</td><td class=num>4,525</td><td class=num>12</td><td class=num>14 <span class=muted>(1 fn)</span></td><td class=num>3</td><td class=num>26</td><td><code>cli.py</code> <code>aspect.py</code></td></tr>
+<tr><td><code class=id>spec_confluence</code></td><td>spec source</td><td class=num>1,825</td><td class=num>7</td><td class=num>5 <span class=muted>(1 fn)</span></td><td class=num>33</td><td class=num>7</td><td><code>checks.py</code></td></tr>
+<tr><td><code class=id>spec_folder</code></td><td>spec source</td><td class=num>156</td><td class=num>2</td><td class=num><span class=muted>none</span></td><td class=num><span class=muted>—</span></td><td class=num>2</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>spec_git</code></td><td>spec source</td><td class=num>1,227</td><td class=num>4</td><td class=num>2 <span class=muted>(0 fn)</span></td><td class=num>18</td><td class=num>6</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>step_agent_instruction</code></td><td>step aspect</td><td class=num>4,348</td><td class=num>11</td><td class=num>23 <span class=muted>(10 fn)</span></td><td class=num>10</td><td class=num>31</td><td><code>cli.py</code> <code>aspect.py</code> <code>checks.py</code></td></tr>
+<tr><td><code class=id>step_agent_run</code></td><td>step aspect</td><td class=num>1,661</td><td class=num>7</td><td class=num>9 <span class=muted>(1 fn)</span></td><td class=num>37</td><td class=num>13</td><td><code>cli.py</code> <code>aspect.py</code></td></tr>
+<tr><td><code class=id>step_check</code></td><td>step aspect</td><td class=num>158</td><td class=num>3</td><td class=num>3 <span class=muted>(0 fn)</span></td><td class=num>6</td><td class=num>1</td><td><code>cli.py</code> <code>aspect.py</code></td></tr>
+<tr><td><code class=id>step_description</code></td><td>step aspect</td><td class=num>605</td><td class=num>5</td><td class=num>7 <span class=muted>(1 fn)</span></td><td class=num>8</td><td class=num>2</td><td><code>cli.py</code> <code>report.py</code> <code>aspect.py</code></td></tr>
+<tr><td><code class=id>step_milestone</code></td><td>step aspect</td><td class=num>424</td><td class=num>5</td><td class=num>5 <span class=muted>(1 fn)</span></td><td class=num>49</td><td class=num>4</td><td><code>cli.py</code> <code>report.py</code> <code>aspect.py</code></td></tr>
+<tr><td><code class=id>step_order</code></td><td>project view</td><td class=num>862</td><td class=num>5</td><td class=num>12 <span class=muted>(6 fn)</span></td><td class=num>87</td><td class=num>10</td><td><code>cli.py</code> <code>report.py</code></td></tr>
+<tr><td><code class=id>step_properties</code></td><td>project view</td><td class=num>710</td><td class=num>5</td><td class=num>9 <span class=muted>(0 fn)</span></td><td class=num><span class=muted>—</span></td><td class=num>7</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>step_status</code></td><td>step aspect</td><td class=num>260</td><td class=num>3</td><td class=num>3 <span class=muted>(0 fn)</span></td><td class=num>11</td><td class=num>5</td><td><code>cli.py</code> <code>aspect.py</code></td></tr>
+<tr><td><code class=id>step_ticket</code></td><td>step aspect</td><td class=num>287</td><td class=num>5</td><td class=num>4 <span class=muted>(0 fn)</span></td><td class=num>115</td><td class=num>3</td><td><code>cli.py</code> <code>report.py</code> <code>aspect.py</code></td></tr>
+<tr><td><code class=id>sync</code></td><td>shell</td><td class=num>1,195</td><td class=num>5</td><td class=num>16 <span class=muted>(5 fn)</span></td><td class=num>13</td><td class=num>13</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>taskcenter</code></td><td>shell</td><td class=num>404</td><td class=num>2</td><td class=num>4 <span class=muted>(0 fn)</span></td><td class=num>18</td><td class=num>1</td><td><span class=muted>—</span></td></tr>
+<tr><td><code class=id>testing</code></td><td>step aspect</td><td class=num>3,612</td><td class=num>9</td><td class=num>14 <span class=muted>(2 fn)</span></td><td class=num>9</td><td class=num>10</td><td><code>cli.py</code> <code>report.py</code> <code>aspect.py</code></td></tr>
+<tr><td><code class=id>theme_omarchy</code></td><td>theme provider</td><td class=num>85</td><td class=num>1</td><td class=num><span class=muted>none</span></td><td class=num><span class=muted>—</span></td><td class=num>1</td><td><code>themes.py</code></td></tr>
+<tr><td><code class=id>theme_system</code></td><td>theme provider</td><td class=num>80</td><td class=num>1</td><td class=num><span class=muted>none</span></td><td class=num><span class=muted>—</span></td><td class=num>1</td><td><code>themes.py</code></td></tr>
+<tr><td><code class=id>time_estimates</code></td><td>project view</td><td class=num>6,883</td><td class=num>11</td><td class=num>16 <span class=muted>(9 fn)</span></td><td class=num>11</td><td class=num>22</td><td><code>cli.py</code> <code>report.py</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>Reading it as the new developer would: the <code>step_*</code> prefix says <em>aspect of a step</em> and mostly holds — but <code>estimation</code>, <code>github</code>, <code>testing</code>, <code>docs</code> and <code>feature</code> are step aspects too and carry no prefix, so the prefix names history rather than a category. The <code>spec_*</code>, <code>agent_*</code>, <code>llm_*</code> and <code>theme_*</code> families are the clean pattern: one contract, one package per implementation, no <code>if</code>.</p>
+</section>
+
+<section id="integration">
+  <span class="eyebrow">Section 3</span>
+  <h2>How modules integrate</h2>
+  <aside class="summary"><span class="eyebrow">Summary</span>
+    <p>A module never asks another module anything. It either registers into a framework registry that a host reads, declares a typed callback on its own <code>Deps</code> that the root fills in, or exports a Qt-free value the root collects into a tuple. Facts several modules need are derived in <code>domain/</code> from functions handed in, never from schemas. The design is sound and consistently applied; the pressure shows up as the same fact being handed to many modules under more than one name, and as logic that has no module to live in accumulating in the root.</p>
+  </aside>
+
+  <figure>
+    <svg class="diagram" viewBox="0 0 820 330" role="img" aria-label="Modules register into framework registries, export Qt-free pieces the root collects, and receive typed callbacks the root wires from other modules' headless halves">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+      <!-- modules column -->
+      <rect class="box" x="20" y="30" width="200" height="80" rx="3"/>
+      <text class="t" x="34" y="54">modules/&lt;a&gt;</text>
+      <text class="s" x="34" y="74">module.py · Deps · register()</text>
+      <text class="s" x="34" y="92">cli.py · aspect.py · report.py …</text>
+      <rect class="box" x="20" y="130" width="200" height="80" rx="3"/>
+      <text class="t" x="34" y="154">modules/&lt;b&gt;</text>
+      <text class="s" x="34" y="174">module.py · Deps · register()</text>
+      <text class="s" x="34" y="192">cli.py · aspect.py · checks.py …</text>
+      <rect class="box" x="20" y="230" width="200" height="70" rx="3"/>
+      <text class="t" x="34" y="254">agent_*, theme_*, spec_*</text>
+      <text class="s" x="34" y="274">harness.py / themes.py / source.py</text>
+      <text class="s" x="34" y="290">a contract, one package each</text>
+      <!-- root -->
+      <rect class="box root" x="310" y="30" width="200" height="270" rx="3"/>
+      <text class="t" x="324" y="56">modules/__init__.py</text>
+      <text class="s" x="324" y="76">the composition root</text>
+      <text class="s" x="324" y="104">default_modules()  1,529 lines</text>
+      <text class="s" x="324" y="122">41 Deps constructed</text>
+      <text class="s" x="324" y="140">56 lambdas, 256 module imports</text>
+      <text class="s" x="324" y="170">collectors: aspects, cli, report,</text>
+      <text class="s" x="324" y="186">lint, checks, assets, paste,</text>
+      <text class="s" x="324" y="202">source kinds, harnesses, themes</text>
+      <text class="s" x="324" y="232">own logic: briefing, step key</text>
+      <text class="s" x="324" y="248">&amp; kind, coverage trace, stats</text>
+      <text class="s" x="324" y="264">≈550 lines that are not wiring</text>
+      <!-- framework / domain column -->
+      <rect class="box fw" x="600" y="30" width="200" height="120" rx="3"/>
+      <text class="t" x="614" y="54">framework/ registries</text>
+      <text class="s" x="614" y="74">actions · tabs · segments · panels</text>
+      <text class="s" x="614" y="90">inspector ×3 · settings · llm</text>
+      <text class="s" x="614" y="112">services: context, undo, tasks,</text>
+      <text class="s" x="614" y="128">debounce, theme, autosave …</text>
+      <rect class="box fw" x="600" y="180" width="200" height="120" rx="3"/>
+      <text class="t" x="614" y="204">domain/ derivations</text>
+      <text class="s" x="614" y="224">ordering · schedule · scope</text>
+      <text class="s" x="614" y="240">progression · assets · shelf</text>
+      <text class="s" x="614" y="262">handed days_for, status_for,</text>
+      <text class="s" x="614" y="278">is_milestone — never a schema</text>
+      <!-- arrows -->
+      <path class="arrow acc" d="M220 60 H300"/><text class="lbl" x="228" y="52">Deps in</text>
+      <path class="arrow" d="M300 95 H222"/><text class="lbl" x="232" y="118">Qt-free exports out</text>
+      <path class="arrow acc" d="M220 160 H300"/>
+      <path class="arrow" d="M300 195 H222"/>
+      <path class="arrow" d="M220 265 H300"/><text class="lbl" x="232" y="316">collected into tuples</text>
+      <path class="arrow" d="M510 90 H592"/><text class="lbl" x="520" y="82">hands registries</text>
+      <path class="arrow" d="M510 240 H592"/><text class="lbl" x="518" y="232">wraps derivations</text>
+    </svg>
+    <figcaption>The shape of the integration. Everything crosses at the root: a module's window half receives its <code>Deps</code> from it, its headless half is imported by it, and nothing else on the left knows what is on the right. That is why the boundary holds and also why the root grows.</figcaption>
+  </figure>
+
+  <h3>The five channels</h3>
+  <div class="channels">
+    <div class="channel"><h4>1 · Framework registries</h4><p>A module registers a thing; a host it has never heard of renders it. Eleven registries and services, three of which are the same <code>InspectorSectionRegistry</code> type instantiated for three hosts (step tabs, Details blocks, project cards).</p><div class="ex">deps.actions.register · deps.tabs.register_factory · deps.segments · deps.panels · deps.sections · deps.cards · deps.settings_sections</div></div>
+    <div class="channel"><h4>2 · Typed callbacks on <code>Deps</code></h4><p>A module names the fact it needs as a function on its own frozen dataclass; the root closes it over another module's headless half. 79 of the 342 <code>Deps</code> fields are such callbacks.</p><div class="ex">status_for · days_for · step_key · milestone_color · facts_for · pick_assets · compile_with_agent</div></div>
+    <div class="channel"><h4>3 · Qt-free collectors</h4><p>A module exports a value from a file the architecture test knows by name; the root assembles the tuple both surfaces read. Ten collectors, from 14 aspect specs to 32 CLI command modules.</p><div class="ex">aspect_specs · default_cli_commands · _report_sources · _lint_checks · _machine_checks · _asset_sources · _paste_policies · _source_kinds · agent_harnesses · theme_providers</div></div>
+    <div class="channel"><h4>4 · Domain derivations</h4><p>The order, the schedule, a collector's cone, the frontier, the asset catalogue: computed in <code>domain/</code> from functions handed in, so the owner of a fact keeps its shape. The same seam as a <code>Deps</code> callback, one level down.</p><div class="ex">schedule.parallel_finish(days_for=…) · scope.cone(stops_at=…) · progression(status_for=…)</div></div>
+    <div class="channel"><h4>5 · Shared vocabulary on disk</h4><p>A module owns a namespace in <code>module_data</code>, <code>module_text</code> and a file area, versioned by itself. The shelf, the formats list and the migration pass are the framework's; no module reads another's key except through channel 2.</p><div class="ex">node.module_data[MODULE_ID] · store.files(node, MODULE_ID) · modules/shelf.json · Takeover</div></div>
+    <div class="channel"><h4>+ · Protocols and small contracts</h4><p>Where a callback is not enough, a consumer-owned <code>Protocol</code> or a small record: <code>SidePanel</code>, <code>ScopeKind</code>, <code>PastePolicy</code>, <code>AgentHarness</code>, <code>ThemeProvider</code>, <code>SourceKind</code>, <code>ReportSource</code>, <code>RepositoryServices</code>. This is the pattern working best.</p></div>
+  </div>
+
+  <h3>The same fact, handed out many times</h3>
+  <p>Channel 2 is honest but repetitive. When five modules need the step's key, the root hands the same function to five <code>Deps</code>, and the field is not always called the same thing. This table counts, across every <code>Deps</code>, how many modules receive a given fact.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Fact</th><th class="num">Modules handed it</th><th>Field names it travels under</th><th>Owner of the answer</th></tr></thead>
+    <tbody>
+      <tr><td>a step's file area</td><td class="num">10</td><td><code>files</code></td><td>the store, through <code>FilesFor</code></td></tr>
+      <tr><td>a step's key (<code>S7</code>, <code>M2</code>)</td><td class="num">7</td><td><code>step_key</code> ×5, <code>key_of</code> ×2</td><td>the root's <code>_step_key</code></td></tr>
+      <tr><td>a step's status word</td><td class="num">4</td><td><code>status_for</code></td><td><code>step_status/aspect.py</code></td></tr>
+      <tr><td>pick an existing asset</td><td class="num">4</td><td><code>pick_assets</code></td><td><code>project_assets</code></td></tr>
+      <tr><td>a milestone's colour</td><td class="num">3</td><td><code>milestone_color</code></td><td>the root's <code>_milestone_colors</code> over <code>time_estimates/schedule.py</code></td></tr>
+      <tr><td>a step's estimate in days</td><td class="num">2</td><td><code>days_for</code></td><td><code>estimation/aspect.py</code></td></tr>
+      <tr><td>a step's kind glyphs</td><td class="num">1 (+2 copies)</td><td><code>step_icons</code>; recomputed in <code>docs/activity.py</code></td><td>the root's <code>_step_type_icons</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>None of this is a violation. It is the visible price of channel 2, and the two things worth fixing are the aliases (<code>key_of</code>/<code>kind_of</code> beside <code>step_key</code>/<code>step_kind</code>) and the one module that re-derives an answer the root already hands out.</p>
+
+  <h3>Where the boundary is thin</h3>
+  <p>The import rule cannot see a string. Three places name another module's id as a literal:</p>
+  <ul>
+    <li><code>modules/docs/activity.py</code> maps <code>"feature"</code>, <code>"step_milestone"</code> and <code>"step_check"</code> to glyph names in <code>_glyph_for</code> — a copy of what <code>_step_type_icons</code> and <code>theme/icons.py</code> already agree on. <span class="chip warn">copy</span></li>
+    <li><code>modules/feature/migrate.py</code> writes into <code>"step_description"</code>'s namespace when it absorbs the old catalogue — a documented one-way migration, and the least bad way to do one. <span class="chip info">deliberate</span></li>
+    <li><code>modules/step_order/view.py</code> keeps a <code>KIND_FEATURE = "feature"</code>, and <code>project_assets</code> matches a role against <code>"spec"</code> — vocabulary, not a read of the other module's data. <span class="chip info">minor</span></li>
+  </ul>
+</section>
+
+<section id="entropy">
+  <span class="eyebrow">Section 4</span>
+  <h2>Where the entropy sits</h2>
+  <aside class="summary"><span class="eyebrow">Summary</span>
+    <p>Moderate, and concentrated. The module boundary is clean, the tests are green bar one font-metric assertion, lint and strict typing pass on both platforms, and there is not a single TODO in the tree. What has accumulated is (1) a composition root that does work of its own, (2) a subsystem with no caller, (3) a handful of facts with more than one home, (4) names that stopped describing their package, and (5) a rulebook large enough to be an entropy source in itself.</p>
+  </aside>
+
+  <article class="finding">
+    <header><span class="chip bad">high</span><h4>The composition root is a module in disguise</h4></header>
+    <div class="where">src/dplanner/modules/__init__.py · 2,838 lines · 71 commits</div>
+    <p><code>default_modules()</code> is one function of 1,529 lines constructing 41 <code>Deps</code> records with 56 lambdas and 256 imports from module packages. That much is wiring and belongs here. Below it sit roughly 550 lines that are not wiring: the whole agent briefing assembler (<code>_briefing_sections</code>, <code>_briefing_instruction</code>, <code>_agent_preamble</code>, <code>_agent_epilogue</code>, <code>_plan_whereabouts</code>), step identity (<code>_step_key</code>, <code>_step_kind</code>, <code>_step_type_icons</code>, <code>_ticket_key</code>, <code>_run_name</code>), the milestone and step statistics, and the coverage trace assembly (103 lines). Each is genuinely cross-module, which is why it landed here, but the file has no tests of its own, no docstring at the top saying what it now contains, and every feature edits it — the largest wiring blocks are <code>projects</code> (115 lines), <code>reporting</code> (87) and <code>step_properties</code> (77).</p>
+    <p>The architecture already has the answer for cross-module verbs: <code>cli/lint.py</code>, <code>cli/scopes.py</code> and <code>cli/report/</code> own their shapes and are fed by the root. The briefing and step identity are the same kind of thing without that home.</p>
+  </article>
+
+  <article class="finding">
+    <header><span class="chip warn">medium</span><h4>The LLM service has no caller</h4></header>
+    <div class="where">modules/llm, llm_anthropic, llm_openai (612 lines) · framework/llm.py, llm_service.py · modules/debug/view.py</div>
+    <p>Since compiling documentation moved to a launched agent, nothing in a feature calls <code>LLMService.complete()</code>. The only reader is the Debug menu's LLM call log, which logs calls nobody makes. That is three modules, two framework files, a settings page, a provider registry and a keychain secret — about a thousand lines that must still pass type checking, be listed in the Settings dialog, and be explained to the next developer. The <code>debug</code> package's docstring still says it is "currently the LLM call log".</p>
+  </article>
+
+  <article class="finding">
+    <header><span class="chip warn">medium</span><h4>Step identity has three homes and two names</h4></header>
+    <div class="where">modules/__init__.py::_step_type_icons · modules/docs/activity.py::_glyph_for · Deps fields step_key / key_of, kind_of</div>
+    <p>The rule in <code>CLAUDE.md</code> is one rule, four readers: the letter of a step's key follows its kind, computed in <code>_step_key</code>. The glyph for a kind is the same question, and the docs tab answers it with a private dictionary keyed on other modules' ids rather than through the <code>step_icons</code> callback <code>step_order</code> already receives. Meanwhile <code>reporting</code> takes the key as <code>key_of</code> and the kind as <code>kind_of</code>, where every other module says <code>step_key</code>. Two spellings of one seam is how a reader concludes they are two seams.</p>
+  </article>
+
+  <article class="finding">
+    <header><span class="chip warn">medium</span><h4>Names that stopped describing their package</h4></header>
+    <div class="where">modules/step_agent_instruction · modules/debug · modules/feature · modules/step_order</div>
+    <p><code>step_agent_instruction</code> is 4,348 lines across eleven files — the launcher, the terminal table, launch profiles, the run dialog, the detect dialog, the settings page and the 23-field <code>Deps</code> with ten callbacks. The instruction aspect is one file of it. The package is the <em>agent launch</em> module, and a developer looking for "where does Run Agent live" will not open it first. Three docstrings are also behind the code: <code>debug</code> ("currently the LLM call log"; it holds the design example, the telemetry view and the Windows check), <code>feature</code> ("catalogued beside it"; the catalogue was removed — a feature is a step) and <code>step_order</code> ("what can be started now"; that moved to the Ready-to-start board).</p>
+  </article>
+
+  <article class="finding">
+    <header><span class="chip info">low</span><h4>The project start date has a split owner</h4></header>
+    <div class="where">modules/estimation/schedule.py (stores it) · modules/time_estimates (edits it) · domain/schedule.py</div>
+    <p><code>CLAUDE.md</code> says the Time tab "owns the start date", but the value is read and written by <code>estimation/schedule.py</code> under <code>estimation</code>'s namespace, and the root hands <code>start_of</code>/<code>set_start</code> across. It works, and the seam is typed — but a developer following the rulebook will look in the wrong package, and two files called <code>schedule.py</code> beside a third in <code>domain/</code> do not help. Either move the date with a <code>Takeover</code> or write down why it stays.</p>
+  </article>
+
+  <article class="finding">
+    <header><span class="chip info">low</span><h4>The rulebook is large enough to drift</h4></header>
+    <div class="where">CLAUDE.md 1,781 lines / 118 rule bullets · ARCHITECTURE.md 5,542 lines / 54 sections · README.md layout map</div>
+    <p>The documentation is a real asset — it is why the boundary has held through 288 commits in twelve days. But <code>CLAUDE.md</code>'s <em>Mechanical facts</em> list is now 118 bullets of prose, most of them a paragraph, and it is read in full by every agent on every task. The README's layout map is behind by four packages (<code>docs</code>, <code>llm_anthropic</code>, <code>step_description</code>, <code>taskcenter</code>), and nothing checks it. A map nobody verifies is the first thing to stop being true.</p>
+  </article>
+
+  <article class="finding">
+    <header><span class="chip good">fine</span><h4>What looked like entropy and is not</h4></header>
+    <p>Two packages carrying a second module class (<code>DocsCompiledModule</code>, <code>ProgressHistoryModule</code>) are documented and each declares only a format. Registration order carrying meaning is documented at every constrained position. The <code>spec_*</code>, <code>agent_*</code> and <code>theme_*</code> families are the cleanest pattern in the tree. Nine <code>settings_page.py</code> files and twelve <code>report.py</code> files are repetition by <em>name</em>, which is the convention working, not a duplicate.</p>
+  </article>
+</section>
+
+<section id="startup">
+  <span class="eyebrow">Section 5</span>
+  <h2>Startup and scalability</h2>
+  <aside class="summary"><span class="eyebrow">Summary</span>
+    <p>The application is constructed in one fixed sequence on the GUI thread, behind a splash: dispatch on the first command word (the CLI path never imports Qt), then <code>QApplication</code> and the theme, then the builder reads every plan file of every listed project, constructs the framework services, calls <code>default_modules()</code>, migrates formats, and runs 41 <code>register()</code> calls — one of which reopens last session's tabs. Only then is the window shown and the watchdog started. The CLI starts in about 0.3 s; a window opens in under a second up to a few hundred steps, and the first open of a process pays 2 to 3 s of imports. What scales badly is not the graph maths, which is linear and cheap, but the reactions to a gesture and the plan on disk: a two-second poll that stats every plan file, a git subprocess per repository every two seconds, a day-by-day calendar walk inside every canvas sync, and three tabs whose cold open grows faster than the project. Of the ten fixes the architecture document listed on 8 September, one has landed in full and two in part.</p>
+  </aside>
+
+  <h3>How the application is started and constructed</h3>
+  <p>Two doors, one sequence. <code>dplanner &lt;verb&gt;</code> and <code>dplanner window</code> enter through <code>entry.main</code>, which decides on the first command word before any Qt module is imported and refuses the window inside an agent's shell. Everything below the first row runs synchronously on the GUI thread; the splash's status line is the only sign of progress, and the stall watchdog is deliberately not running yet.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Stage</th><th>Where</th><th>What happens</th><th>Cost, measured here</th></tr></thead>
+    <tbody>
+      <tr><td>1 · Dispatch</td><td><code>entry.py</code></td><td>Reads the first word; installs the telemetry journal; for the CLI, builds the command registry by importing 32 modules' <code>cli.py</code>; for the window, imports <code>app.py</code> and with it PySide6.</td><td class="num">CLI ≈ 300 ms wall for <code>--help</code> (35 ms of it the interpreter); Qt import ≈ 260 ms on top of the CLI's ≈ 100 ms</td></tr>
+      <tr><td>2 · Application</td><td><code>app.build_application</code></td><td><code>AA_DontUseNativeMenuBar</code> before any menu bar; <code>QApplication</code>; identity, icon; the saved theme applied through the machine's providers; the gc policy installed (automatic collection off, a 200 ms timer collects at safe points).</td><td class="num">tens of ms</td></tr>
+      <tr><td>3 · Diagnostics</td><td><code>app.main</code></td><td>Crash log opened, exception hooks chained into the journal, the 100 ms heartbeat created but <em>not started</em>, a <code>session</code> record written.</td><td class="num">negligible</td></tr>
+      <tr><td>4 · Load</td><td><code>AppBuilder.build</code> → <code>LibraryStore.load</code></td><td>Seeds an empty library if none; reads <code>library.json</code>; for each listed project checks the directory is inside a git repository, reads <code>project.dproj</code> and every step's <code>step.json</code>, module JSON and prose file, records a stamp per file, and writes back any project whose format migrated.</td><td class="num">proportional to files: about 5.5 plan files per step (a 220-step synthetic library is 1,203 files)</td></tr>
+      <tr><td>5 · Services</td><td><code>AppBuilder.build</code></td><td>Context, actions, undo, autosave (1.5 s), debounce, tabs, panels, dock, the window, the index panel, theme, zoom, tasks, LLM, telemetry — the <code>AppServices</code> record every module's <code>Deps</code> is cut from.</td><td class="num">tens of ms</td></tr>
+      <tr><td>6 · Modules</td><td><code>default_modules(services)</code></td><td>The 1,529-line function: 41 <code>Deps</code> records built, every cross-module callback closed over another module's headless half. No Qt work yet — that is <code>register()</code>'s.</td><td class="num">import-bound: the 256 module imports are paid here on a cold process</td></tr>
+      <tr><td>7 · Migrate</td><td><code>migrate_module_data</code>, <code>migrate_shelved</code></td><td>Every module format's converter runs over every node, then over the shelf; a changed node is flushed to disk before any view exists.</td><td class="num">zero on a current plan; one write per migrated node otherwise</td></tr>
+      <tr><td>8 · Register</td><td><code>module.register()</code> ×41, in list order</td><td>Actions, tabs, index folders, panels, sections, settings pages, status-bar widgets. Order carries meaning at six documented positions. <code>reopen_tabs</code> is last and <em>restores the previous session's tabs synchronously here</em>, so a tab that is expensive to open cold is paid at startup if it was open.</td><td class="num">build 221 ms at 25 steps, 622 ms at 100, 2.6 s at 400 (stages 4–8 together)</td></tr>
+      <tr><td>9 · Show</td><td><code>AppSession._open</code></td><td><code>window.show()</code>; on a reload the new window takes the old one's geometry and the old build is discarded after the new one is on screen.</td><td class="num">opened 333 ms at 100 steps, 756 ms at 400; 3.6 s for the first open of a process</td></tr>
+      <tr><td>10 · First turn</td><td>zero-delay timers</td><td>Watchdog starts; the checklist probes its required rows off the GUI thread and greets a new machine; the GitHub refresher's first tick fetches PR state on a worker; the sync module baselines every repository's branch with one <code>git branch --show-current</code> each; the four two-second pollers start.</td><td class="num">one git subprocess per repository, ≈ 5 ms each, on the GUI thread</td></tr>
+    </tbody>
+  </table></div>
+  <p>Two properties of this sequence matter for scale. Nothing is lazy: every project in the library is read whole before the window exists, and a library of many projects pays for all of them at every start. And nothing leaves the GUI thread until stage 10: the load, the migrations and the tab restore all run inside one <code>session open</code> span behind the splash, which is honest — the journal records it as the largest single stall the application has — but it also means a slow disk or a large plan is felt as a frozen splash rather than a window that fills in.</p>
+
+  <h3>What keeps running</h3>
+  <p>A window at rest runs eleven timers. Four of them fire every two seconds, and two of those touch the disk or spawn a process on the GUI thread.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Cadence</th><th>Owner</th><th>Per tick</th><th>Scales with</th></tr></thead>
+    <tbody>
+      <tr><td class="num">100 ms</td><td><code>framework/diagnostics.py</code></td><td>heartbeat; a daemon thread samples the GUI stack when the beat is 250 ms late</td><td>—</td></tr>
+      <tr><td class="num">200 ms</td><td><code>framework/gc_policy.py</code></td><td>the interpreter's own generational policy, run at a safe point; a generation-2 pass is 240–360 ms over 240k–326k live objects</td><td>the application more than the plan</td></tr>
+      <tr><td class="num">2 s</td><td><code>framework/window_watch.py</code></td><td><code>LibraryStore.changed_underneath()</code>: a <code>stat</code> of every plan file of every project, then adoption of anything foreign</td><td>projects × steps × module files</td></tr>
+      <tr><td class="num">2 s</td><td><code>modules/sync</code></td><td>one <code>git branch --show-current</code> subprocess per repository, synchronously, to notice a switch made underneath</td><td>repositories in the library</td></tr>
+      <tr><td class="num">2 s</td><td><code>modules/step_agent_run</code></td><td>a handful of stats per live run; the plan is asked about only once a run has ended</td><td>live agent runs</td></tr>
+      <tr><td class="num">2 s</td><td><code>framework/theme_service.py</code></td><td>asks the serving theme provider for its current theme, applies on change</td><td>—</td></tr>
+      <tr><td class="num">1.5 s after last edit</td><td><code>framework/autosave.py</code></td><td>flush: walks each dirty project's tree once to check for a foreign change and once more to re-stamp what it wrote</td><td>files of the dirty project</td></tr>
+      <tr><td class="num">0 / 300 / 500 ms</td><td><code>framework/debounce.py</code></td><td>coalesced rebuilds: the canvas once per turn, tables after 300 ms, the Time tab after 500 ms; the recorder simulates every project after 300 ms</td><td>steps, and the plan's length in days</td></tr>
+      <tr><td class="num">5 min</td><td><code>modules/github/refresh.py</code></td><td>PR state per step with a PR, on a worker, applied off the undo stack</td><td>PR-bearing steps</td></tr>
+      <tr><td class="num">10 min</td><td><code>modules/spec/refresh.py</code></td><td>each spec source's <code>check</code>; writes nothing</td><td>sourced documents</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>What scales, and what does not</h3>
+  <p>The tree has its own harness — <code>scripts/measure_scaling.py</code> builds the application headless over a synthetic library and journals every gesture — and <code>ARCHITECTURE.md</code>'s <em>How the application scales</em> records a full sweep from 8 September. It was re-run for this report at 25, 100 and 400 steps with the graph, order and time tabs open. The rows below are the ones that decide how the application feels; the 8 September figures are beside them so movement is visible.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Per gesture, ms</th><th class="num">25</th><th class="num">100</th><th class="num">400</th><th class="num">8 Sep at 25 / 100 / 400</th><th>Reads as</th></tr></thead>
+    <tbody>
+      <tr><td>session build + open (stages 4–9)</td><td class="num">221 + 3,601*</td><td class="num">622 + 333</td><td class="num">2,632 + 756</td><td class="num">1,784* / 311 / 710</td><td>linear in files; the first open pays imports</td></tr>
+      <tr><td><strong>context refresh</strong>, one announce</td><td class="num">3</td><td class="num">10</td><td class="num">198</td><td class="num">4 / 4 / 6</td><td><span class="chip bad">regressed today</span></td></tr>
+      <tr><td>title keystroke, whole reaction</td><td class="num">10</td><td class="num">25</td><td class="num">327</td><td class="num">≈7 / 15 / 64</td><td>the row above plus the canvas sync</td></tr>
+      <tr><td>canvas sync per keystroke</td><td class="num">—</td><td class="num">—</td><td class="num">65</td><td class="num">3 / 11 / 58</td><td>superlinear: the calendar walk</td></tr>
+      <tr><td>click on a step, the dock</td><td class="num">27</td><td class="num">42</td><td class="num">52</td><td class="num">42 / 51 / 80</td><td>flat: nine sections shown per click</td></tr>
+      <tr><td>after a burst — Order table</td><td class="num">—</td><td class="num">—</td><td class="num">233</td><td class="num">11 / 20 / 126</td><td>linear in rows, a table rebuilt whole</td></tr>
+      <tr><td>after a burst — Time tab</td><td class="num">—</td><td class="num">—</td><td class="num">222</td><td class="num">11 / 21 / 206</td><td>the simulation, calendar walk included</td></tr>
+      <tr><td>after a burst — Problems panel</td><td class="num">—</td><td class="num">—</td><td class="num">240</td><td class="num">not measured</td><td>as costly as the Order table; new in the top list</td></tr>
+      <tr><td><strong>disk poll</strong>, every 2 s</td><td class="num">17</td><td class="num">45</td><td class="num">173</td><td class="num">18 / 43 / 151</td><td>a stat per plan file, on the GUI thread</td></tr>
+      <tr><td>autosave flush after one edit</td><td class="num">14</td><td class="num">44</td><td class="num">149</td><td class="num">17 / 49 / 159</td><td>the same walk, twice</td></tr>
+      <tr><td>paste of 20 steps — the command</td><td class="num">22</td><td class="num">19</td><td class="num">22</td><td class="num">122 / 137 / 188</td><td><span class="chip good">fixed</span> the membership guard</td></tr>
+      <tr><td>details dialog — construct + first show</td><td class="num">105</td><td class="num">106</td><td class="num">144</td><td class="num">108 / 113 / 157</td><td>a second full panel, flat</td></tr>
+      <tr><td>full garbage collection (gen 2)</td><td class="num">145</td><td class="num">127</td><td class="num">166</td><td class="num">239 / 250 / 360</td><td>251k–306k live objects; mostly the application</td></tr>
+      <tr><td>cold open: Tests tab</td><td class="num">72</td><td class="num">202</td><td class="num">990</td><td class="num">146 / 278 / 1,637</td><td>≈ N<sup>1.2</sup></td></tr>
+      <tr><td>cold open: Coverage tab</td><td class="num">83</td><td class="num">222</td><td class="num">2,371</td><td class="num">113 / 335 / 2,672</td><td>≈ N<sup>1.4</sup></td></tr>
+      <tr><td>cold open: Estimates tab</td><td class="num">318</td><td class="num">720</td><td class="num">3,290</td><td class="num">315 / 707 / 2,358</td><td>an editor widget per row</td></tr>
+      <tr><td>cold open: Docs tab</td><td class="num">40</td><td class="num">60</td><td class="num">967</td><td class="num">not measured</td><td>16× from 100 to 400: the same cone walk</td></tr>
+    </tbody>
+  </table></div>
+  <figure><figcaption>*the first open of the process. Measured here on 13 September in a two-core container (Python 3.13, offscreen platform), so absolute numbers run a little slower than the developer's desktop on the 8 September rows; the shape across sizes is what to compare. Harness: <code>scripts/measure_scaling.py --sizes 25,100,400</code>.</figcaption></figure>
+
+  <article class="finding">
+    <header><span class="chip bad">regression, today</span><span class="chip good">fixed on this branch</span><h4>A menu-bar state walks every collector's cone on every keystroke</h4></header>
+    <div class="where">modules/docs/module.py::_stale_state → _stale → collect.sources_for → domain/scope.cone · introduced in 252b51d (13 Sep)</div>
+    <p>The context refresh went from a flat 4–6 ms to 198 ms at 400 steps in one day. The profile names it: the <em>Compile Out of Date…</em> action's state callback asks <code>_stale(project)</code>, which runs <code>sources_for</code> for every collector in the project — 96 of them on the synthetic plan, 20,786 <code>cone</code> walks and 537,000 node visits per ten keystrokes — and hashes their fragments, to decide what the menu entry's label should say. The menu bar re-evaluates every action's state on every announce, so this runs on every keystroke, click and selection. It is the rule <code>CLAUDE.md</code> already states for the keychain and for subprocesses (no heavy work in a state callback), broken by a derivation instead. The fix is the architecture document's item 3 — memoise the stale set per library revision — or, cheaper today, compute it once per project change in a <code>Debounced</code> and have the state read the last answer, the way the Problems count is read rather than probed.</p>
+    <p><strong>Fixed on this branch.</strong> <code>collect.frontier</code> is now the one derivation (one walk per collector where the state made three), the module settles it per project in a <code>Debounced</code> and the state reads the last answer, the settle announces the context so the label catches up, and the gesture still computes fresh. Re-measured at 400 steps: the context refresh is back to 4 ms per announce from 198, a title keystroke's whole reaction is 90 ms from 327, and a click is 60 ms from 323.</p>
+  </article>
+  <p>Two smaller things the same profile shows. The disk poll spends most of its time in <code>pathlib.Path.relative_to</code> — 35,000 calls, three quarters of the walk — so the 173 ms hitch is largely string handling that a precomputed prefix would remove without moving the walk off the thread. And <code>working_days_after</code> was called 4,852 times for ten keystrokes, from <code>step_accents</code> inside the canvas sync, which is item 4 on the list.</p>
+
+  <p>The shape has not changed in five days. Every domain derivation stays linear and small; the cost is in reactions and in disk, and most of the reaction cost is a constant paid per gesture rather than a function of the plan. Three things grow faster than the project and are the scalability ceiling as it stands:</p>
+  <ul>
+    <li><strong>The plan on disk, twice a second.</strong> The poll and the flush walk every plan file — about 5.5 per step — on the GUI thread. At 400 steps that is a 150 ms hitch every two seconds whether or not anybody is typing.</li>
+    <li><strong>A calendar walked a day at a time.</strong> <code>domain/schedule.py</code>'s <code>working_days_after</code> loops from the project's start for every step, so the canvas sync, the Time tab and the recorder are quadratic in the plan's length in days. It is still a loop on the current tree.</li>
+    <li><strong>Cold tab opens.</strong> Tests and Coverage walk every collector's cone and build a widget per row (about N<sup>1.2</sup> and N<sup>1.4</sup>); Estimates builds a <code>QWidget</code> editor per step. All three are seconds at 400 steps, and <code>reopen_tabs</code> puts them into startup.</li>
+  </ul>
+  <p>Two smaller facts are structural rather than sized: a paste of twenty steps used to spawn twenty git subprocesses because every structure signal reached the sync module's membership handler — that guard has since landed — and a full garbage collection is a quarter of a second at any size, on the GUI thread, because the live object graph is mostly the application itself.</p>
+
+  <h3>The ten fixes, five days on</h3>
+  <p><code>ARCHITECTURE.md</code> closed its measurement with an ordered list of ten framework-level changes. This is where each stands on the current tree.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>#</th><th>Fix</th><th>Status</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td>A section shows on demand, not on every selection</td><td><span class="chip warn">open</span></td><td>no <code>stale</code> mechanism in <code>framework/inspector.py</code> or <code>step_properties/panel.py</code>; all nine sections still show on every click</td></tr>
+      <tr><td class="num">2</td><td>The recorder reads the settled state and never re-emits into it</td><td><span class="chip info">partial</span></td><td>writes with its own <code>RECORD_ORIGIN</code> and only on a day something changed, but the write is still a <code>module_data_changed</code> every following view rebuilds on</td></tr>
+      <tr><td class="num">3</td><td>A derived fact is cached per library revision</td><td><span class="chip warn">open</span></td><td>no revision counter on <code>Library</code> or the store</td></tr>
+      <tr><td class="num">4</td><td><code>working_days_after</code> is arithmetic, not a loop</td><td><span class="chip warn">open</span></td><td>still <code>for _ in range(…)</code> over <code>next_working_day</code></td></tr>
+      <tr><td class="num">5</td><td>A structure signal under a project is not a membership change</td><td><span class="chip good">done</span></td><td><code>sync/module.py</code> rewires only when <code>parent_id == library.id</code></td></tr>
+      <tr><td class="num">6</td><td>An action state never leaves the process (LLM status cached)</td><td><span class="chip info">moot</span></td><td>nothing calls the LLM service any more (§4); the keyring round trip went with the caller</td></tr>
+      <tr><td class="num">7</td><td>Every subscriber follows a project and coalesces</td><td><span class="chip warn">open</span></td><td><code>estimation/bulk.py</code>, <code>AllTestsActivity</code> and <code>project_list_segment.py</code> still connect to the library's raw signals; no architecture-test rule</td></tr>
+      <tr><td class="num">8</td><td>Full collections run when the window is idle</td><td><span class="chip warn">open</span></td><td><code>gc_policy.py</code> has no idle gate</td></tr>
+      <tr><td class="num">9</td><td>The poll and the flush walk the tree once, off the GUI thread</td><td><span class="chip warn">open</span></td><td><code>window_watch.py</code> still walks on the GUI thread; the flush still snapshots twice</td></tr>
+      <tr><td class="num">10</td><td>The smaller ones</td><td><span class="chip info">partial</span></td><td>the scene now announces a multi-selection once; lazy rows, one toggle evaluation and a cached ground are open</td></tr>
+    </tbody>
+  </table></div>
+  <p>Read as a whole: the measurement was good and the list is right, but it has not been worked. The one fix that landed is the one that was a two-line guard. The three that would change the ceiling — the poll off the GUI thread, the calendar as arithmetic, sections shown on demand — are each a morning's work and are still open.</p>
+</section>
+
+<section id="health">
+  <span class="eyebrow">Section 6</span>
+  <h2>Health checks</h2>
+  <aside class="summary"><span class="eyebrow">Summary</span>
+    <p>All four checks from <code>CLAUDE.md</code> were run on this tree. Lint is clean, strict typing is clean on Linux and as Windows sees it, and the suite is green except one table test whose assertion depends on font metrics this container does not have. The architecture test passes, and it is the one that answers question one.</p>
+  </aside>
+  <ul class="checks">
+    <li><span class="chip good">pass</span><div><strong>Architecture rules</strong> — <code>tests/test_architecture.py</code>: six tests, all layering rules hold; the test also proves it can catch a violation and that the root and the CLI import without Qt.</div></li>
+    <li><span class="chip warn">1 failed</span><div><strong>Full suite</strong> — <code>QT_QPA_PLATFORM=offscreen uv run pytest -q</code>: 2,969 passed, 26 skipped, 1 failed in 4 min 37 s. The failure is <code>tests/framework/test_table.py::test_a_column_sized_to_its_contents_shows_them_whole</code>, asserting that "10" is not elided in a column sized to it; it reproduces alone and this container has only DejaVu and Free fonts, so the measured width is a different font's. Confirm on a desktop before treating it as a regression.</div></li>
+    <li><span class="chip good">pass</span><div><strong>Lint</strong> — <code>uv run ruff check</code>: all checks passed.</div></li>
+    <li><span class="chip good">pass</span><div><strong>Types</strong> — <code>uv run mypy</code>: no issues in 605 source files.</div></li>
+    <li><span class="chip good">pass</span><div><strong>Types as Windows sees them</strong> — <code>uv run mypy --platform win32</code>: no issues in 605 source files.</div></li>
+    <li><span class="chip good">0</span><div><strong>Markers</strong> — no TODO, FIXME, XXX or HACK anywhere under <code>src/</code>.</div></li>
+  </ul>
+  <p>Test weight by layer, as collected: 1,452 under <code>tests/modules</code>, 410 <code>cli</code>, 346 <code>framework</code>, 248 <code>domain</code>, 171 <code>core</code>, 37 at the top — 169 files. The composition root, the most-edited file, is covered only indirectly through the application builds those tests make.</p>
+</section>
+
+<section id="recommendations">
+  <span class="eyebrow">Section 7</span>
+  <h2>What to do about it</h2>
+  <aside class="summary"><span class="eyebrow">Summary</span>
+    <p>Ranked by what they remove per hour. The first is a same-day regression and comes before everything; the next two are the structural ones; the rest are an afternoon each and mostly renames.</p>
+  </aside>
+  <ol class="reco">
+    <li><strong>Take the cone walk out of the menu bar.</strong> <span class="chip good">done on this branch</span> <code>docs</code>'s frontier is settled once per burst in a <code>Debounced</code> and the state reads the last answer; the context refresh is back to single-digit milliseconds at every size (§5).</li>
+    <li><strong>Make the composition root a package.</strong> Keep <code>modules/__init__.py</code> as the one importer of everything, but let it be a thin façade over <code>modules/_root/</code>: <code>wiring.py</code> (<code>default_modules</code>), <code>collectors.py</code> (aspects, CLI, report, lint, checks, assets, paste, sources, harnesses, themes), <code>briefing.py</code> and <code>identity.py</code> (step key, kind, icons, stats). Extend rule 4 in <code>tests/test_architecture.py</code> so that package is the only other place allowed to import modules, and give <code>identity.py</code> and <code>briefing.py</code> tests of their own. No module changes; the seams stay exactly where they are.</li>
+    <li><strong>Retire the LLM service, or give it a caller.</strong> If no feature is coming back to it, delete <code>llm</code>, <code>llm_anthropic</code>, <code>llm_openai</code>, <code>framework/llm.py</code>, <code>framework/llm_service.py</code>, the <code>LLMProviderRegistry</code> field on <code>AppServices</code> and Debug's call log, and record the removal in <code>NOTES-FOR-APPFRAME.md</code>. About a thousand lines and one keychain entry go, and the Settings dialog loses three pages that configure nothing.</li>
+    <li><strong>One name per seam.</strong> Rename <code>ReportingDeps.key_of</code> → <code>step_key</code> and <code>kind_of</code> → <code>step_kind</code>; hand <code>docs</code> the <code>step_icons</code> callback and delete <code>_glyph_for</code>'s dictionary.</li>
+    <li><strong>Rename <code>step_agent_instruction</code> to what it is</strong> — <code>agent_launch</code>, keeping the aspect id on disk through the existing <code>Takeover</code> mechanism so no project changes — and refresh the four stale docstrings (<code>debug</code>, <code>feature</code>, <code>step_order</code>, and the renamed package).</li>
+    <li><strong>Settle the start date.</strong> Move it into <code>time_estimates</code> with a <code>Takeover</code> converter, or add one sentence to the rule in <code>CLAUDE.md</code> saying it lives in <code>estimation</code> and why.</li>
+    <li><strong>Work the scaling list, in the order it was written.</strong> The poll off the GUI thread (and <code>relative_to</code> out of its inner loop), <code>working_days_after</code> as arithmetic, sections shown on demand. Each is a morning, and together they move the ceiling from about a hundred steps per project to several hundred (§5).</li>
+    <li><strong>Make the layout map a test.</strong> A ten-line test that every directory under <code>modules/</code> appears in README's <em>Layout</em> section; then consider moving the <em>Mechanical facts</em> bullets that are about one module into that module's docstring, with <code>CLAUDE.md</code> keeping the cross-cutting rules only.</li>
+  </ol>
+</section>
+
+<section id="method">
+  <span class="eyebrow">Appendix</span>
+  <h2>Method</h2>
+  <p>Every number on this page was measured on commit <code>8e36a61</code> and can be re-run. Line counts are <code>wc -l</code> over <code>*.py</code>; churn is <code>git log --oneline -- &lt;path&gt; | wc -l</code>; <code>Deps</code> fields were read with <code>ast</code> from each <code>module.py</code> (and <code>coverage/activity.py</code>, where that module keeps its record); a field counts as a callback when its annotation contains <code>Callable</code>. Root lines per module is the distance in <code>default_modules()</code> from the previous <code>*Deps(</code> to that module's. Cross-module imports were checked both with the suite's own <code>test_architecture.py</code> and with an independent grep; string coupling was found by searching every module for another module's <code>MODULE_ID</code> literal and reading each hit in context.</p>
+  <pre><code>QT_QPA_PLATFORM=offscreen uv run pytest -q     # 2969 passed, 26 skipped, 1 failed (font metrics)
+uv run ruff check                               # clean
+uv run mypy                                     # clean, 605 files
+uv run mypy --platform win32                    # clean, 605 files
+grep -rn "from dplanner.modules\." src/dplanner/modules --include=*.py \
+  | grep -v "modules/__init__.py"               # 0 cross-package hits</code></pre>
+  <p>What this report does not measure: runtime behaviour, the size of the per-user data formats, and whether the rules in <code>CLAUDE.md</code> are each still followed — only whether the tree still has the shape they describe.</p>
+</section>
+
+</main>
+</div>
+
+<footer>Generated for the DPlanner repository · 13 September 2026 · a point-in-time report; re-measure before quoting it against a later tree.</footer>
+</div>
+</body>
+</html>

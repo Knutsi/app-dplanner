@@ -160,14 +160,51 @@ def state_of(
 ) -> CompiledState:
     """Whether ``step_id``'s compiled document is missing, current, or out of date."""
     step = project.step(step_id)
-    if step is None or not read_compiled(step):
+    if step is None:
+        return "never"
+    return compiled_state(step, sources_for(kinds, library, project, step_id))
+
+
+def compiled_state(step: Step, found: Sequence[Source]) -> CompiledState:
+    """:func:`state_of` for a caller that already holds what the step would read.
+
+    The walk is the expensive half of the question, so a reader that needs both the sources
+    and the state — ``docs status``, the frontier — asks once and compares here.
+    """
+    if not read_compiled(step):
         return "never"
     stored = read_digest(step)
-    return (
-        "current"
-        if stored and stored == digest(sources_for(kinds, library, project, step_id))
-        else "stale"
-    )
+    return "current" if stored and stored == digest(found) else "stale"
+
+
+def frontier(
+    kinds: Sequence[ScopeKind], library: Library, project: Project
+) -> tuple[list[StepId], list[StepId]]:
+    """Which of this project's documents want compiling now, and which must wait.
+
+    **A collector whose own sub-collectors are out of date waits**, because a milestone
+    reads its features' *compiled* documents: launching both at once would have the
+    milestone read a document that is about to change, and ``docs status``'s advice says
+    as much to an agent. So one gesture takes the frontier and the next takes what it
+    unblocked. Both lists are in project order.
+
+    One walk per collector. This is the whole project asked at once, and it is what the
+    window's *Compile Out of Date* label shows — read from a settled answer, never computed
+    inside the action's state: at four hundred steps this is a fifth of a second.
+    """
+    due: set[StepId] = set()
+    for step in collectors(kinds, project):
+        found = sources_for(kinds, library, project, step.id)
+        if found and compiled_state(step, found) != "current":
+            due.add(step.id)
+    ready: list[StepId] = []
+    waiting: list[StepId] = []
+    for step in project.steps:
+        if step.id not in due:
+            continue
+        behind = {sub.id for sub in sub_collectors(kinds, library, project, step.id)}
+        (waiting if behind & due else ready).append(step.id)
+    return ready, waiting
 
 
 def collectors(kinds: Sequence[ScopeKind], project: Project) -> list[Step]:
