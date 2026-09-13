@@ -1,13 +1,14 @@
-"""How this user looks at graphs: the marks, the spotlight, the ground under them, and
-whether a gesture snaps to its grid — one value, kept per user and pushed to every open
-canvas.
+"""How this user works on graphs: the marks, the spotlight, the ground under them, whether
+a gesture snaps to its grid, and whether the panel beside the canvas is open — one value,
+kept per user and pushed to every open canvas.
 
 None of it is a fact about a project. Whether a graph's ends are lit, whether dots are
-drawn under it and whether a drag lands on the grid say nothing about the plan, so the
-value never reaches the project directory: the module keeps it in ``user_config`` and hands
-it to every canvas it builds, and a tab opened later wears the same look. One value rather
-than one per preference, because the plumbing — a key, a setter, a fan-out — is the same
-for all of them, and the next preference is a field here instead of a third copy of it.
+drawn under it, whether a drag lands on the grid and whether a tool palette stands beside
+it say nothing about the plan, so the value never reaches the project directory: the module
+keeps it in ``user_config`` and hands it to every canvas it builds, and a tab opened later
+wears the same look. One value rather than one per preference, because the plumbing — a
+key, a setter, a fan-out — is the same for all of them, and the next preference is a field
+here instead of a third copy of it.
 
 Qt-free, like ``marks.py``: tolerant JSON in, the same JSON out.
 """
@@ -43,6 +44,9 @@ class Look:
     spotlight: bool = False
     background: str = DEFAULT_BACKGROUND
     snap: bool = True
+    # Whether the panel beside the canvas is open. Off by default: the canvas is what a
+    # project tab is for, and a palette nobody asked for is width taken from it.
+    side_panel: bool = False
 
     def with_mark(self, name: str, on: bool) -> "Look":
         return replace(self, marks=self.marks.with_(name, on))
@@ -58,12 +62,16 @@ class Look:
     def with_snap(self, on: bool) -> "Look":
         return replace(self, snap=on)
 
+    def with_side_panel(self, on: bool) -> "Look":
+        return replace(self, side_panel=on)
+
     def to_json(self) -> dict[str, object]:
         return {
             "marks": self.marks.to_json(),
             "spotlight": self.spotlight,
             "background": self.background,
             "snap": self.snap,
+            "side_panel": self.side_panel,
         }
 
     @classmethod
@@ -77,4 +85,5 @@ class Look:
             spotlight=bool(data.get("spotlight", False)),
             background=background if background in BACKGROUNDS else DEFAULT_BACKGROUND,
             snap=bool(data.get("snap", True)),
+            side_panel=bool(data.get("side_panel", False)),
         )

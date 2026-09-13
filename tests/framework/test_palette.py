@@ -11,14 +11,14 @@ MENUS = MenuStructure({"File": ("open",), "Graph": ("arrange",)})
 
 
 def listed(palette):
-    return [palette._list.item(row).text() for row in range(palette._list.count())]
+    return [palette.list.item(row).text() for row in range(palette.list.count())]
 
 
 def row(palette, label):
     return next(
-        palette._list.item(i)
-        for i in range(palette._list.count())
-        if palette._list.item(i).text() == label
+        palette.list.item(i)
+        for i in range(palette.list.count())
+        if palette.list.item(i).text() == label
     )
 
 

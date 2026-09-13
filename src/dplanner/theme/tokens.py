@@ -76,8 +76,11 @@ def as_qss_mapping(theme: Theme) -> dict[str, str]:
         if field.name != "name" and isinstance(value, str):
             mapping[field.name.upper()] = value
     # A divider between controls, faded halfway into the ground: a rule that parts without
-    # drawing attention, where $BORDER is a hairline meant to be seen.
-    mapping["BORDER_FAINT"] = mix(theme.border, theme.bg_base, 0.5)
+    # drawing attention, where $BORDER is a hairline meant to be seen. It fades towards the
+    # *elevated* ground and not the page's, because that is the ground a strip of verbs
+    # sits on — faded into the page's it came out three levels from the canvas strip on the
+    # light theme, which is a divider that parts nothing.
+    mapping["BORDER_FAINT"] = mix(theme.border, theme.bg_elevated, 0.5)
     # The accent washed over the overlay ground: a control that is *on* (a filter) without
     # being filled, so its words keep their ink.
     mapping["ACCENT_WASH"] = mix(theme.bg_overlay, theme.accent, 0.22)

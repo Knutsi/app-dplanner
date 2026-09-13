@@ -109,6 +109,49 @@ QMenu::right-arrow {
     margin-right: 8px;
 }
 
+/* The picker (framework/picker.py): the command palette, and Jump to on the graph. It is
+   an overlay a keystroke raises over the window, not a dialog with a question and a way
+   out — so it wears the menu's own frame rather than a dialog's, and its field and list
+   sit inside it with no ground of their own. */
+#Picker {
+    background-color: $BG_OVERLAY;
+    border: 1px solid $BORDER_STRONG;
+    border-radius: ${RADIUS_MD}px;
+}
+
+#PickerInput {
+    background-color: $BG_BASE;
+    color: $TEXT_PRIMARY;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    padding: 6px 12px;
+}
+
+#PickerInput:focus {
+    border-color: $ACCENT;
+}
+
+/* The rows are the delegate's; the list is a hole in the overlay, not a well inside it.
+   A picked row is the table's: the accent on its left edge over a quiet ground, never a
+   band of colour across it. */
+#PickerList {
+    background: transparent;
+    border: none;
+}
+
+#PickerList::item {
+    border-left: 2px solid transparent;
+}
+
+#PickerList::item:hover {
+    background-color: $BG_ELEVATED;
+}
+
+#PickerList::item:selected {
+    background-color: $ACCENT_WASH;
+    border-left: 2px solid $ACCENT;
+}
+
 /* ---- Status bar -------------------------------------------------------------------- */
 
 QStatusBar {
@@ -461,6 +504,35 @@ QSplitter::handle:vertical:pressed {
     background-color: $BG_ELEVATED;
 }
 
+/* A panel inside a tab, beside the canvas (project_editor/side_panel.py): a panel area's
+   ground and, like one, no edge of its own — the seam beside it is the splitter's. */
+#SidePanel {
+    background-color: $BG_ELEVATED;
+}
+
+/* A list of rich rows inside a panel: a well on the panel's elevated ground, the same
+   contrast a plain field has, so a panel of lists and a panel of fields read alike. The
+   rows themselves are the two-line delegate's. */
+#PanelList {
+    background-color: $BG_BASE;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
+}
+
+/* Its way out. A panel in the window's dock is hidden from its header's right-click; one
+   inside a tab has no such menu, so it carries the verb — flat, because a bordered box in
+   a header reads as a second caption. */
+#SidePanelClose {
+    background: transparent;
+    border: none;
+    padding: 2px;
+}
+
+#SidePanelClose:hover {
+    background-color: $BG_OVERLAY;
+    border-radius: ${RADIUS_SM}px;
+}
+
 #InspectorTitle {
     background-color: $BG_BASE;
     color: $TEXT_PRIMARY;
@@ -724,14 +796,21 @@ QComboBox QAbstractItemView::item:selected {
 }
 
 /* A face that names the current choice and drops the choices down: the layout picker on
-   the canvas, the template on the aspect bar. Both leave the indicator its room — a
-   styled subcontrol is outside Qt's size hint, so without this the arrow is painted over
-   the last letter. */
-#LayoutButton, #TemplateButton {
+   the canvas, the template on the aspect bar, a strip's glyph face standing for a whole
+   band of the menus. All three leave the indicator its room — a styled subcontrol is
+   outside Qt's size hint, so without this the arrow is painted over the last letter. */
+#LayoutButton, #TemplateButton, #ToolbarButton[face="true"] {
     padding-right: 20px;
 }
 
 #ToolbarLabel {
+    color: $TEXT_SECONDARY;
+}
+
+/* The name under a band of a grouped strip (framework/toolbar.py's Toolbar): quiet words
+   a point smaller, set in code, saying what the glyphs above them are for. It is chrome
+   over a row of controls, never a caption over a block, so it takes no weight. */
+#ToolbarGroupLabel {
     color: $TEXT_SECONDARY;
 }
 

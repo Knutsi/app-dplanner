@@ -52,6 +52,7 @@ from dplanner.modules.project_editor.modes import (
     mode_uri,
 )
 from dplanner.modules.project_editor.placement import positions
+from dplanner.modules.project_editor.side_panel import SidePanel
 from dplanner.modules.project_editor.verbs import picked_edges
 from dplanner.theme.icons import (
     connect_icon,
@@ -59,7 +60,11 @@ from dplanner.theme.icons import (
     divide_vertical_icon,
     frame_icon,
     grid_icon,
+    jump_icon,
     lasso_icon,
+    mark_ends_icon,
+    mark_orphans_icon,
+    mark_starts_icon,
     redirect_from_icon,
     redirect_to_icon,
 )
@@ -89,9 +94,15 @@ class CanvasVerbs:
     # Enter or leave a named canvas mode (modes.CONNECT, modes.LASSO, the divide pair).
     set_mode: Callable[[str, bool], None]
     frame: Callable[[], None]
-    # The user's look — marks, spotlight, background, snapping — and a setter for the whole.
+    # Raise the Jump-to picker over the window; a no-op when no canvas is current.
+    jump: Callable[[], None]
+    # The user's look — marks, spotlight, background, snapping, the side panel — and a
+    # setter for the whole.
     look: Callable[[], Look]
     set_look: Callable[[Look], None]
+    # What this build hosts beside the canvas, named by the composition root. None means
+    # the capability is absent, and the verb is hidden rather than greyed.
+    side_panel: SidePanel | None = None
 
     def register_into(self, actions: ActionRegistry) -> None:
         for spec in self._specs():
@@ -150,6 +161,19 @@ class CanvasVerbs:
                 tip="Draw round the steps to select them. Shift adds. Esc leaves",
                 state=self._mode_state(LASSO),
                 run=self._mode_toggle(LASSO),
+            ),
+            ActionSpec(
+                id="steps.jump",
+                # Order 4: the first of this band. Reveal takes you to the step you have
+                # already named; Jump is how you name one.
+                label="&Jump to Step…",
+                menu="Step",
+                group="navigate",
+                order=4,
+                icon=jump_icon,
+                tip="Find a step by name or key and put the canvas on it",
+                state=self._on_a_canvas,
+                run=lambda _context: self.jump(),
             ),
             ActionSpec(
                 id="steps.reveal",
@@ -238,11 +262,12 @@ class CanvasVerbs:
                     submenu="Mark",
                     # After Frame Graph, and before the grid and the ground below it.
                     order=20 + 10 * index,
+                    icon=icon,
                     tip=tip,
                     state=self._mark_state(name),
                     run=self._mark_toggle(name),
                 )
-                for index, (name, label, tip) in enumerate(
+                for index, (name, label, tip, icon) in enumerate(
                     zip(
                         MARK_NAMES,
                         ("&Starts", "&Ends", "&Orphans"),
@@ -251,10 +276,26 @@ class CanvasVerbs:
                             "Colour the right socket of every step nothing follows",
                             "Ring every step with no links at all",
                         ),
+                        (mark_starts_icon, mark_ends_icon, mark_orphans_icon),
                         strict=True,
                     )
                 )
             ],
+            ActionSpec(
+                id="canvas.side_panel",
+                label=f"&{self.side_panel.title}" if self.side_panel else "&Side Panel",
+                menu="Graph",
+                group="panels",
+                order=10,
+                icon=self.side_panel.icon if self.side_panel else None,
+                tip=(
+                    f"Show the {self.side_panel.title} list beside the canvas"
+                    if self.side_panel
+                    else ""
+                ),
+                state=self._side_panel_state,
+                run=self._side_panel_toggle,
+            ),
             ActionSpec(
                 id="canvas.spotlight",
                 label="&Spotlight Selection",
@@ -365,6 +406,16 @@ class CanvasVerbs:
 
     def _spotlight_toggle(self, _context: Context) -> None:
         self.set_look(self.look().with_spotlight(not self.look().spotlight))
+
+    def _side_panel_state(self, _context: Context) -> ActionState:
+        """Hidden when this build hosts nothing beside the canvas — the documented use of
+        HIDDEN, a capability that is absent rather than a verb that does not apply now."""
+        if self.side_panel is None:
+            return ActionState(visible=False, enabled=False)
+        return ActionState(checked=self.look().side_panel)
+
+    def _side_panel_toggle(self, _context: Context) -> None:
+        self.set_look(self.look().with_side_panel(not self.look().side_panel))
 
     def _snap_state(self, _context: Context) -> ActionState:
         return ActionState(checked=self.look().snap)

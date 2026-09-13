@@ -28,6 +28,7 @@ from dplanner.framework.undo import UndoService
 from dplanner.framework.window import PanelHost
 from dplanner.framework.zoom import ZoomService
 from dplanner.identity import APP_NAME, APP_VERSION
+from dplanner.theme.icons import redo_icon, undo_icon
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,7 @@ class AppShellModule:
                 group="history",
                 order=10,
                 shortcut=QKeySequence.StandardKey.Undo,
+                icon=undo_icon,
                 tip="Undo the last change",
                 state=undo_state,
                 run=lambda _context: undo.undo(),
@@ -93,6 +95,7 @@ class AppShellModule:
                 group="history",
                 order=20,
                 shortcut=QKeySequence.StandardKey.Redo,
+                icon=redo_icon,
                 tip="Redo the last undone change",
                 state=redo_state,
                 run=lambda _context: undo.redo(),

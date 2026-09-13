@@ -45,14 +45,14 @@ from functools import partial
 from typing import Any
 
 from PySide6.QtCore import QEvent, QSize, Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QPalette
+from PySide6.QtGui import QAction, QColor, QPalette
 from PySide6.QtWidgets import QHBoxLayout, QMenu, QToolButton, QWidget
 
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.context import Context
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.undo import UndoService
-from dplanner.theme.icons import ICON_SIZE, glyph_painter
+from dplanner.theme.icons import ICON_SIZE, blank_icon, glyph_painter
 from dplanner.theme.tokens import CONTROL_HEIGHT, FIELD_GAP, SECONDARY_ALPHA, SECTION_GAP
 from dplanner.theme.tones import button_tone
 
@@ -120,7 +120,7 @@ class AspectBar(QWidget):
             # has one, stands in the tooltip so rewording a refusal never loses it.
             self._actions[action_id] = self.tools.add_verb(
                 spec.label.replace("&", ""),
-                spec.icon if spec.icon is not None else _no_glyph,
+                spec.icon if spec.icon is not None else blank_icon,
                 partial(self._run, action_id),
                 checkable=True,
                 tip=spec.tip,
@@ -267,8 +267,3 @@ class AspectBar(QWidget):
     def selected_label(self) -> str:
         """The template the step amounts to right now — what the face is wearing."""
         return self._selected.label if self._selected is not None else ""
-
-
-def _no_glyph(_ink: QColor) -> QIcon:
-    """A toggle whose spec carries no painter still needs a slot, or the row jumps."""
-    return QIcon()

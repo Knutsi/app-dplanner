@@ -17,6 +17,7 @@ from dplanner.domain.commands import (
     RemoveNodeCommand,
     SetEdgesCommand,
     SetFieldCommand,
+    SetModuleDataCommand,
 )
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION
@@ -1455,19 +1456,36 @@ def test_the_redirect_button_drops_both_ends(services, project, tab):
     assert dropdown(tab, "steps.redirect_to") == {"To Step", "From Step"}
 
 
-def test_a_strip_too_narrow_for_its_verbs_overflows_rather_than_squeezing(services, project, tab):
-    """A canvas can always be dragged narrower than its own strip. A plain row answers that
-    by shrinking every button until "Divide" reads "D…e"; a toolbar answers it by moving the
-    groups that no longer fit into its » menu, so what is on screen stays readable."""
-    bar = tab._toolbar
-    bar.resize(400, bar.sizeHint().height())
-    bar.layout().activate()
-    assert bar.sizeHint().width() > 400  # It really does not fit.
+def bands(tab):
+    """Each band of the strip, as its name and the verbs seated in it."""
+    from dplanner.framework.toolbar import _Group
 
-    for action_id in ("steps.new", "steps.lasso", "steps.redirect_to"):
-        button = toolbar_button(tab, action_id)
-        if button.isVisible():
-            assert button.width() >= button.sizeHint().width(), action_id
+    return [
+        (group.caption.text() if group.caption is not None else "", [a.text() for a in group.verbs])
+        for group in tab._toolbar.tools.findChildren(_Group)
+    ]
+
+
+def test_the_strip_is_named_bands_of_glyphs(services, project, tab):
+    """Nineteen glyphs in a row are nineteen riddles; six named bands are a tool palette.
+    Where you are looking leads it — a graph is a place before it is a thing to edit."""
+    named = [name for name, _verbs in bands(tab)]
+    assert named == ["Go", "Step", "Link", "Arrange", "History", "Options"]
+    seated = {verb for _name, verbs in bands(tab) for verb in verbs}
+    assert {"Jump to Step…", "New Step", "Undo", "Look"} <= seated
+    # Regions are on their way out, and the strip is where that shows first.
+    assert not any("Region" in verb for verb in seated)
+
+
+def test_every_verb_on_the_strip_is_a_glyph_with_its_words_in_the_tooltip(services, project, tab):
+    """A row of words is a sentence the eye rereads every time. The words are not lost —
+    they lead the tooltip, and they are what the … menu lists."""
+    for action_id in ("steps.new", "steps.lasso", "canvas.mark_starts", "steps.jump"):
+        assert services.actions.spec(action_id).icon is not None, action_id
+    button = toolbar_button(tab, "steps.new")
+    assert button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+    assert not button.icon().isNull()
+    assert button.toolTip().startswith("New Step")
 
 
 def test_the_graph_verbs_live_on_the_graph_menu_and_the_link_verbs_on_step(services):
@@ -1494,6 +1512,111 @@ def test_closing_the_tab_lets_its_toolbars_go(services, project, tab):
     before = len(services.context.changed._slots)
     tab.close()
     assert len(services.context.changed._slots) < before
+
+
+# -- jump to, and landing on the step ----------------------------------------------------------
+
+
+def editor_module(services):
+    from dplanner.modules.project_editor.module import ProjectEditorModule
+
+    return next(m for m in services.modules if isinstance(m, ProjectEditorModule))
+
+
+def picked_rows(picker):
+    return [picker.list.item(i).text() for i in range(picker.list.count())]
+
+
+def test_jump_to_opens_on_the_landmarks_and_searches_every_step(services, project, tab):
+    """A plan of three hundred steps has a dozen a person navigates by. They are what the
+    picker opens on; everything is in play from the first keystroke."""
+    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
+    from dplanner.modules.step_milestone.aspect import write as milestone_write
+
+    first, second = project.steps
+    services.undo.push(SetModuleDataCommand(first.id, MILESTONE_ID, milestone_write("Ship it")))
+    picker = editor_module(services).jump_picker()
+    assert picker is not None
+    assert picked_rows(picker) == [first.title]  # The milestone alone, before anything typed.
+
+    picker._refilter(second.title[:5])
+    assert second.title in picked_rows(picker)
+    picker.deleteLater()
+
+
+def test_a_step_is_found_by_its_key_as_well_as_its_name(services, project, tab):
+    """S7 and "build the modal" are two ways of naming one step; the graph answers to both."""
+    step = project.steps[0]
+    picker = editor_module(services).jump_picker()
+    assert picker is not None
+    picker._refilter(f"S{step.number}")
+    assert picked_rows(picker) == [step.title]
+    picker.deleteLater()
+
+
+def test_jumping_to_a_step_puts_the_canvas_on_it(services, project, tab):
+    """Selecting a step a screen away selects something nobody can see — which is what
+    Reveal in Graph did until this landed, and what Jump to must never do."""
+    from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
+    from dplanner.modules.project_editor.positions import write_position
+
+    far = project.steps[1]
+    services.undo.push(SetModuleDataCommand(far.id, POSITION_KEY, write_position(4000.0, 3000.0)))
+    tab._sync_soon.flush()
+    before = tab._view._looking_at().center()
+
+    services.actions.run("steps.reveal", context_of(services, far.id))
+    after = tab._view._looking_at().center()
+    assert after != before
+    node = scene(tab).node(far.id)
+    assert (after - node.body_scene_rect().center()).manhattanLength() < 1.0
+
+
+def test_jump_to_is_a_step_verb_beside_reveal_and_a_canvas_key(services):
+    spec = services.actions.spec("steps.jump")
+    assert (spec.menu, spec.group) == ("Step", "navigate")
+    assert spec.icon is not None
+    from dplanner.modules.project_editor.keymap import bound_actions
+
+    assert bound_actions(Qt.Key.Key_Slash, Qt.KeyboardModifier.NoModifier) == ("steps.jump",)
+
+
+# -- the panel beside the canvas -----------------------------------------------------------------
+
+
+def test_the_features_list_stands_in_the_tab_not_in_the_window(services, project, tab):
+    """Where the drag onto the canvas is a short one. The window's dock no longer offers
+    it, so there is no second copy to keep in step."""
+    assert tab._panel_frame is not None
+    assert "feature.panel" not in {spec.id for spec in services.panels.panels()}
+
+
+def test_the_panel_is_shut_until_it_is_asked_for_and_then_remembered(
+    services, project, tab, make_project
+):
+    """A preference, so it outlives the tab: a canvas opened later stands as this one does."""
+    frame = tab._panel_frame
+    assert frame is not None and frame.isHidden()
+    assert not look_of(services).side_panel
+
+    services.actions.run("canvas.side_panel", services.context.current())
+    assert not frame.isHidden() and look_of(services).side_panel
+    assert toolbar_button(tab, "canvas.side_panel").isChecked()
+
+    other = services.tabs.open("project", make_project("Later").id)
+    assert other._panel_frame is not None and not other._panel_frame.isHidden()
+
+    # And the panel's own way out is the same verb, so the preference is written once.
+    frame.close_button.click()
+    assert frame.isHidden() and not look_of(services).side_panel
+
+
+def test_the_panels_verb_is_the_graphs_own_chrome(services):
+    """View is the window; Graph is the canvas — and this panel is inside the canvas's tab."""
+    spec = services.actions.spec("canvas.side_panel")
+    assert (spec.menu, spec.group) == ("Graph", "panels")
+    # Named for what it holds, by the composition root — this module never spells it.
+    assert spec.label == "&Features" and spec.icon is not None
 
 
 # -- selecting everything ----------------------------------------------------------------------
@@ -2127,13 +2250,30 @@ def test_an_orphan_wears_a_red_ring_until_something_links_it(services, project, 
     assert ring().red() <= ring().green() + 20
 
 
+def look_entry(tab, label):
+    """One entry of the Options face's menu, read as it would be on opening.
+
+    The menu is the action table rendered afresh every time, so an entry is never held
+    across a change — the test asks again, as a person would by opening the menu again.
+    """
+    popup = tab._toolbar.look_menu()
+    found = [a for a in popup.actions() if a.text().replace("&", "") == label]
+    for entry in popup.actions():
+        child = entry.menu()
+        if child is not None:
+            found += [a for a in child.actions() if a.text().replace("&", "") == label]
+    assert found, f"{label} is not under the Options face"
+    return found[0]
+
+
 def test_a_mark_is_remembered_and_every_canvas_wears_it(services, project, tab, make_project):
     from dplanner.modules.project_editor.marks import Marks
 
-    button = toolbar_button(tab, "canvas.mark_ends")
-    assert button.isChecked()  # On by default; switching one off is the deliberate act.
+    # The marks are under the strip's Options face now: six worded switches on a row of
+    # glyphs was a row half words, and how the graph is *drawn* is a menu's question.
+    assert look_entry(tab, "Ends").isChecked()  # On by default; off is the deliberate act.
     services.actions.run("canvas.mark_ends", services.context.current())
-    assert not button.isChecked()
+    assert not look_entry(tab, "Ends").isChecked()
     assert look_of(services).marks == Marks(ends=False)
 
     other = services.tabs.open("project", make_project("Later").id)
@@ -2141,7 +2281,7 @@ def test_a_mark_is_remembered_and_every_canvas_wears_it(services, project, tab, 
     assert scene(tab)._marks == Marks(ends=False)
 
     services.actions.run("canvas.mark_ends", services.context.current())
-    assert button.isChecked()
+    assert look_entry(tab, "Ends").isChecked()
     assert other._scene._marks == Marks()
 
 

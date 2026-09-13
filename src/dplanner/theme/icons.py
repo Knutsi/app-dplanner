@@ -188,7 +188,7 @@ def project_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
-def graph_icon(color: str) -> QIcon:
+def graph_icon(color: str | QColor) -> QIcon:
     """Three joined nodes: a project's step graph."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 1.2))
@@ -287,7 +287,7 @@ def trash_icon(color: str | QColor) -> QIcon:
     return QIcon(pixmap)
 
 
-def unlink_icon(color: str) -> QIcon:
+def unlink_icon(color: str | QColor) -> QIcon:
     """The same two nodes with the join broken: remove a link."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 1.2))
@@ -317,7 +317,7 @@ def lasso_icon(color: str | QColor) -> QIcon:
     return QIcon(pixmap)
 
 
-def isolate_icon(color: str) -> QIcon:
+def isolate_icon(color: str | QColor) -> QIcon:
     """One node with the joins on both sides cut: cut a selection loose."""
     pixmap, painter = _canvas()
     painter.setPen(_pen(color, 1.2))
@@ -454,17 +454,17 @@ def grid_icon(color: str | QColor) -> QIcon:
     return QIcon(pixmap)
 
 
-def undo_icon(color: str) -> QIcon:
+def undo_icon(color: str | QColor) -> QIcon:
     """An arrow curving back on itself, anticlockwise."""
     return _turn_icon(color, mirrored=False)
 
 
-def redo_icon(color: str) -> QIcon:
+def redo_icon(color: str | QColor) -> QIcon:
     """The same arrow the other way round."""
     return _turn_icon(color, mirrored=True)
 
 
-def _turn_icon(color: str, mirrored: bool) -> QIcon:
+def _turn_icon(color: str | QColor, mirrored: bool) -> QIcon:
     pixmap, painter = _canvas()
     if mirrored:
         painter.translate(ICON_SIZE, 0.0)
@@ -504,6 +504,76 @@ def refresh_icon(color: str | QColor) -> QIcon:
     painter.drawPolygon([QPointF(13.5, 3.0), QPointF(13.5, 8.0), QPointF(9.5, 5.0)])
     painter.end()
     return QIcon(pixmap)
+
+
+def jump_icon(color: str | QColor) -> QIcon:
+    """A crosshair: name a step and put the viewport on it."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.3))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(QPointF(8.0, 8.0), 4.0, 4.0)
+    for start, end in (
+        (QPointF(8.0, 1.6), QPointF(8.0, 3.4)),
+        (QPointF(8.0, 12.6), QPointF(8.0, 14.4)),
+        (QPointF(1.6, 8.0), QPointF(3.4, 8.0)),
+        (QPointF(12.6, 8.0), QPointF(14.4, 8.0)),
+    ):
+        painter.drawLine(start, end)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def options_icon(color: str | QColor) -> QIcon:
+    """Two sliders: how the graph is drawn, rather than what is drawn."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.3))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    for rail, knob in ((5.0, 10.0), (11.0, 6.0)):
+        painter.drawLine(QPointF(2.0, rail), QPointF(14.0, rail))
+        painter.drawEllipse(QPointF(knob, rail), 1.9, 1.9)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def mark_starts_icon(color: str | QColor) -> QIcon:
+    """A bar with the flow leaving it: a step nothing comes before."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.4))
+    painter.drawLine(QPointF(2.6, 3.0), QPointF(2.6, 13.0))
+    painter.setPen(_pen(color, 1.2))
+    _arrow(painter, QPointF(5.0, 8.0), QPointF(13.4, 8.0))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def mark_ends_icon(color: str | QColor) -> QIcon:
+    """The flow arriving at a bar: a step nothing comes after."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    _arrow(painter, QPointF(2.6, 8.0), QPointF(11.0, 8.0))
+    painter.setPen(_pen(color, 1.4))
+    painter.drawLine(QPointF(13.4, 3.0), QPointF(13.4, 13.0))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def mark_orphans_icon(color: str | QColor) -> QIcon:
+    """A node ringed and joined to nothing: the one thing a graph can be wrong about."""
+    pixmap, painter = _canvas()
+    painter.setPen(_pen(color, 1.2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(5.4, 5.4, 5.2, 5.2), 1.2, 1.2)
+    ring = _pen(color, 1.2)
+    ring.setStyle(Qt.PenStyle.DotLine)
+    painter.setPen(ring)
+    painter.drawEllipse(QPointF(8.0, 8.0), 6.3, 6.3)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def blank_icon(_color: str | QColor) -> QIcon:
+    """No glyph, but the slot: a verb whose spec carries no painter must not jump the row."""
+    return QIcon()
 
 
 # A step's key as a badge — the width a three-character key needs at a glyph's height.
