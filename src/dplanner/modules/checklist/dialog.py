@@ -47,7 +47,9 @@ from dplanner.theme.cards import detail_font
 from dplanner.theme.icons import refresh_icon
 from dplanner.theme.tokens import FIELD_GAP, ROW_LINE_GAP, SECTION_GAP
 
-DIALOG_SIZE = (660, 560)
+# Tall enough that a machine with every row shows them all without scrolling; it is a
+# framed dialog, so the screen's 80 % still caps it and the person can drag it smaller.
+DIALOG_SIZE = (660, 640)
 TASK_KEY = "checklist.probe"
 CHECKING = "checking…"
 GREETING = "You can open this again from Tools ▸ Setup Checklist."
